@@ -1,0 +1,3 @@
+{
+    "extends": ["@freestylejs/config/biome"]
+}
