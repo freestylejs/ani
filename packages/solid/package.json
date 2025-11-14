@@ -1,7 +1,7 @@
 {
     "name": "@freestylejs/ani-solid",
     "author": "freestyle",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "description": "Core functionality for the Ani animation library.",
     "license": "MIT",
     "type": "module",
@@ -11,7 +11,9 @@
     "publishConfig": {
         "access": "public"
     },
-    "files": ["dist"],
+    "files": [
+        "dist"
+    ],
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
     "types": "./dist/index.d.ts",
