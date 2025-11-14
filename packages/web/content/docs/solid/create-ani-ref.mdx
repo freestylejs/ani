@@ -1,0 +1,113 @@
+---
+title: createAniRef
+description: A performant primitive that directly animates a DOM element via a ref, bypassing reactive updates.
+---
+
+This primitive is designed for high-performance animations of CSS properties. It subscribes to a timeline and applies styles directly to an element's `style` property, avoiding Solid's reactive updates for the animated element.
+
+### Example
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { createAniRef } from "@freestylejs/ani-solid";
+import { createMemo } from "solid-js";
+
+const InteractiveBox = () => {
+  // 1. Define the animation and create a timeline.
+  const myTimeline = createMemo(() =>
+    a.timeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 }))
+  );
+
+  // 2. Use the primitive to get the ref callback and the controller.
+  const [ref, controller] = createAniRef({
+    timeline: myTimeline,
+    initialValue: { x: 0, rotate: 0 },
+  });
+
+  // 3. The component only renders once. The animation is applied directly to the DOM.
+  return (
+    <>
+      <button onClick={() => controller.play({ from: { x: 0, rotate: 0 } })}>
+        Play
+      </button>
+      <div
+        ref={ref}
+        style={{ width: "100px", height: "100px", background: "blue" }}
+      />
+    </>
+  );
+};
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `createAniRef` primitive is the key to smooth, 60fps animations in Solid. It returns a `ref` callback and the timeline controller. On each animation update, it converts the values to CSS styles and applies them directly to the element's style property.
+
+#### Example: Interactivity
+
+For interactive animations, you can pass an `events` object. This uses a built-in `EventManager` to attach listeners to the element. Event handlers receive the timeline controller, allowing you to `play`, `pause`, etc., in response to user input.
+
+```tsx
+// ... inside a component
+const [ref, controller] = createAniRef({
+  timeline: myTimeline,
+  events: {
+    onMouseDown: (ctx, event) => {
+      // The context `ctx` is the timeline controller.
+      ctx.play({ from: { x: event.clientX } });
+    },
+    onMouseUp: (ctx) => {
+      ctx.pause();
+    },
+  },
+});
+```
+
+#### When to Use
+
+-   **Do** use `createAniRef` for animating CSS properties like `transform` and `opacity`.
+-   **Do** use it for complex, interactive animations that need to respond to user input at 60fps.
+-   **Don't** use `createAniRef` if you need the animated value to render text content or pass to another component's props. Use `createAni` for that.
+
+### API Reference
+
+#### Parameters
+
+| Name    | Type                   | Description                                 | Default |
+| ------- | ---------------------- | ------------------------------------------- | ------- |
+| `props` | `AniRefProps<G, true>` | The configuration object for the animation. | —       |
+
+#### `AniRefProps` Object
+
+| Name            | Type                       | Description                                                      | Default     |
+| --------------- | -------------------------- | ---------------------------------------------------------------- | ----------- |
+| `timeline`      | `() => Timeline<G>`        | An accessor function that returns the timeline instance.         | —           |
+| `initialValue`  | `AniGroup<G>`              | (Optional) The initial style of the element.                     | —           |
+| `events`        | `EventHandlerRegistration` | (Optional) A map of event handlers for interactivity.            | `undefined` |
+| `cleanupEvents` | `boolean`                  | (Optional) Whether to automatically clean up events on unmount. | `true`      |
+
+#### Return Value
+
+The primitive returns a `readonly` tuple with the following structure:
+
+| Index | Type                    | Description                                                |
+| ----- | ----------------------- | ---------------------------------------------------------- |
+| `[0]` | `(el: E) => void`       | The ref callback to be passed to an element's `ref` attribute. |
+| `[1]` | `TimelineController<G>` | The controller object for the timeline (`play`, `pause`, etc.). |
+
+#### Type Definitions
+
+```typescript
+import { Groupable, Timeline, TimelineController, AniRefProps } from '@freestylejs/ani-core';
+
+function createAniRef<G extends Groupable, E extends HTMLElement = HTMLElement>(
+  props: AniRefProps<G, true>
+): readonly [(el: E) => void, TimelineController<G>];
+```
+
+### Related Components
+
+-   [`createAni`](/en/docs/solid/create-ani) - For reactive animations that integrate with Solid's signal system.
+-   [`EventManager`](/en/docs/core-api/advanced/event-management) - The underlying utility used by the `events` property.

@@ -1,0 +1,95 @@
+---
+title: createAniStates
+description: A reactive primitive for managing and transitioning between multiple animation states.
+---
+
+This primitive is a Solid-specific wrapper around the core `createStates` function. It's designed for components with multiple, distinct visual states (e.g., idle, hover, active) and provides a simple, reactive API to manage transitions between them.
+
+### Example
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { createAniStates, createAniRef } from "@freestylejs/ani-solid";
+
+const StateButton = () => {
+  // 1. Define the animations for each state.
+  const animations = {
+    idle: a.ani({ to: { scale: 1, opacity: 0.7 }, duration: 0.5 }),
+    hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
+  };
+
+  // 2. Use the primitive to create the state machine.
+  // It returns reactive signals and a function to transition.
+  const [{ timeline }, transitionTo] = createAniStates({
+    initial: "idle",
+    initialFrom: { scale: 1, opacity: 0.7 },
+    states: animations,
+  });
+
+  // 3. Connect the active timeline to the DOM element for high-performance updates.
+  const [animationRef] = createAniRef({ timeline });
+
+  return (
+    <button
+      ref={animationRef}
+      onMouseEnter={() => transitionTo("hover")}
+      onMouseLeave={() => transitionTo("idle")}
+      style={{ opacity: "0.7", scale: "1" }}
+      class="rounded-md bg-blue-500 px-4 py-2 transition-all"
+    >
+      Hover Me
+    </button>
+  );
+};
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `createAniStates` primitive simplifies stateful animation logic in Solid. It manages the active animation state and its corresponding timeline, automatically handling seamless transitions. When you call `transitionTo`, it uses the current animation's value as the starting point for the next animation, ensuring smooth, interruptible effects.
+
+#### When to Use
+
+-   **Do** use `createAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
+-   **Do** combine `createAniStates` with `createAniRef` for high-performance style animations that react to state changes.
+-   **Don't** create the `states` object inside a reactive computation without memoization, as this can lead to unexpected behavior.
+
+### API Reference
+
+#### Parameters
+
+| Name    | Type                          | Description                                  | Default |
+| :------ | :---------------------------- | :------------------------------------------- | ------- |
+| `props` | `StateProps<AnimationStates>` | The configuration object for the state machine. | —       |
+
+#### Return Value
+
+The primitive returns a `readonly` tuple with the following structure:
+
+| Index | Type       | Description                                                                              |
+| ----- | ---------- | ---------------------------------------------------------------------------------------- |
+| `[0]` | `object`   | An object containing signal accessors for the current `state` name and active `timeline`. |
+| `[1]` | `function` | The `transitionTo` function to switch between animation states.                          |
+
+#### Type Definitions
+
+```typescript
+import { AnimationStateShape, StateProps, GetTimeline, StateController } from '@freestylejs/ani-core';
+
+declare function createAniStates<const AnimationStates extends AnimationStateShape>(
+  props: StateProps<AnimationStates>
+): readonly [
+    {
+        state: () => keyof AnimationStates;
+        timeline: () => GetTimeline<AnimationStates>;
+    },
+    StateController<AnimationStates>['transitionTo']
+];
+```
+
+### Related Components
+
+-   [`createStates`](/en/docs/core-api/states) - The core function that this primitive is built upon.
+-   [`createAniRef`](/en/docs/solid/create-ani-ref) - To apply the stateful animations to the DOM.
+-   [`createAni`](/en/docs/solid/create-ani) - To reactively read the animation values from the active timeline.
