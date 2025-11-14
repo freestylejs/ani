@@ -1,0 +1,15 @@
+{
+    "title": "Core API",
+    "pages": [
+        "timeline",
+        "ani",
+        "sequence",
+        "parallel",
+        "stagger",
+        "loop",
+        "delay",
+        "states",
+        "---Advanced---",
+        "advanced"
+    ]
+}
