@@ -1,0 +1,93 @@
+---
+title: useAniRef
+description: A performant, event-driven Svelte action that binds animations directly to a DOM element.
+---
+
+This primitive applies animation styles directly to a DOM element using the `use:` directive, bypassing Svelte's reactivity for high performance. It also includes a built-in event manager to simplify interactive animations.
+
+### Example
+
+```svelte
+<script>
+  import { useAniRef, timeline, a } from '@freestylejs/ani-svelte';
+
+  // 1. Define the animation structure and timeline.
+  const myTimeline = timeline(
+    a.sequence([
+      a.ani({ to: { x: 500, rotate: 360 }, duration: 1 }),
+      a.ani({ to: { x: 0, rotate: 0 }, duration: 1 }),
+    ])
+  );
+
+  // 2. Use the utility to get the action and controller.
+  const [refAction, controller] = useAniRef({
+    timeline: myTimeline,
+    initialValue: { x: 0, rotate: 0 },
+    // 3. Add event handlers for interactivity.
+    events: {
+      onMousedown: (ctx, event) => {
+        // The context `ctx` contains the current animation value and the controller.
+        ctx.play({ from: { x: ctx.x, rotate: ctx.rotate } });
+      },
+      onMouseup: (ctx) => {
+        ctx.pause();
+      },
+    },
+  });
+</script>
+
+<!-- 4. Bind the action to the element -->
+<div use:refAction style="width: 100px; height: 100px; background: blue;" on:click={() => controller.play({ from: { x: 0, rotate: 0 } })} />
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `useAniRef` primitive is designed for performance. It takes a configuration object (`AniRefProps`) and returns a Svelte `Action` and the timeline controller. When the action is applied to an element, it directly manipulates its styles on each animation frame, avoiding Svelte's virtual DOM overhead.
+
+Event handlers passed to the `events` property receive a context object containing both the current animation value and the timeline controller, making it easy to build complex interactions.
+
+#### When to Use
+
+-   **Do** use `useAniRef` for high-performance animations of CSS properties like `transform` and `opacity`.
+-   **Do** use it for complex, interactive animations driven by user input at 60fps.
+-   **Don't** use `useAniRef` when you need to read the animated values elsewhere in your component. Use `useAni` for that.
+
+### API Reference
+
+#### Parameters
+
+The `useAniRef` primitive accepts a single `props` object with the following properties:
+
+| Name            | Type                       | Description                                                      | Default |
+| --------------- | -------------------------- | ---------------------------------------------------------------- | ------- |
+| `timeline`      | `Timeline<G>`              | The animation timeline instance to run.                          | —       |
+| `initialValue`  | `AniGroup<G>`              | (Optional) An initial state for the animation.                   | —       |
+| `events`        | `EventHandlerRegistration` | (Optional) A map of event handlers for interactive animations.   | —       |
+| `cleanupEvents` | `boolean`                  | (Optional) If `true`, automatically removes event listeners.     | `true`  |
+
+#### Return Value
+
+The primitive returns a `readonly` tuple with the following structure:
+
+| Index | Type                       | Description                                      |
+| ----- | -------------------------- | ------------------------------------------------ |
+| `[0]` | `Action<HTMLElement, any>` | A Svelte Action to apply to your target DOM element. |
+| `[1]` | `TimelineController<G>`    | The controller to play, pause, or stop the timeline. |
+
+#### Type Definitions
+
+```typescript
+import { Groupable, Timeline, TimelineController, AniRefProps } from '@freestylejs/ani-core';
+import { Action } from 'svelte/action';
+
+declare function useAniRef<G extends Groupable>(
+  props: AniRefProps<G>
+): readonly [Action<HTMLElement, any>, TimelineController<G>];
+```
+
+### Related Components
+
+-   [`useAni`](/en/docs/svelte/use-ani) - For reactive animations that integrate with Svelte stores.
+-   [`EventManager`](/en/docs/core-api/advanced/event-management) - The underlying utility used by the `events` property.
