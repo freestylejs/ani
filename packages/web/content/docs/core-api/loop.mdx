@@ -1,0 +1,63 @@
+---
+title: loop
+description: A composition node that repeats a child animation a specified number of times.
+---
+
+A `loop` node is a composition that repeats a single child animation node a set number of times, one after another.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define an animation that pulses an element's scale.
+const pulse = a.sequence([
+    a.ani({ to: { scale: 1.2 }, duration: 0.5 }),
+    a.ani({ to: { scale: 1 }, duration: 0.5 }),
+]);
+
+// 2. Create a loop to repeat the pulse animation 3 times.
+const loopedPulse = a.loop(pulse, 3);
+
+// 3. Create and play the timeline.
+const myTimeline = a.timeline(loopedPulse);
+myTimeline.play({ from: { scale: 1 } });
+```
+
+### Usage & Concepts
+
+#### Overview
+
+`loop` is a composition node that takes a single child animation and repeats it a set number of times. The total duration of the `loop` node is the duration of its child multiplied by the loop count. This is a convenient alternative to manually creating a long `sequence` of identical animations.
+
+#### Best Practices
+
+-   **Do** use `loop` for simple, repetitive animations like pulsing or bouncing.
+-   **Don't** use `loop` for the main application loop. For continuous animations, use the `repeat: Infinity` option in the `timeline.play()` method, which is more efficient.
+
+### API Reference
+
+#### Parameters
+
+| Name | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `child` | `AnimationNode<G>` | The animation node to repeat. | — |
+| `count` | `number` | The number of times to repeat the child node. | — |
+| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire loop's timeline. | `linear` |
+| `id` | `AnimationId` | (Optional) A unique identifier for the node. | `undefined` |
+
+#### Type Definitions
+
+```typescript
+function loop<G>(
+    child: AnimationNode<G>,
+    count: number,
+    timing?: TimingFunction | TimingFunction[],
+    id?: AnimationId
+): AnimationNode<G>;
+```
+
+### Related Components
+
+-   [`timeline`](/en/docs/core-api/timeline) - The `play` method's `repeat` option provides an alternative way to loop.
+-   [`sequence`](/en/docs/core-api/sequence) - Can be used to manually create loops, though `loop` is more concise.
