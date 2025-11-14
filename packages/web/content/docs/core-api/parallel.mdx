@@ -1,0 +1,65 @@
+---
+title: parallel
+description: A composition node that plays all of its child animations at the same time.
+---
+
+A `parallel` node is a composition that plays all of its child animations at the same time.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define two animations with different durations.
+const fadeIn = a.ani({ to: { opacity: 1, scale: 1.2 }, duration: 0.5 });
+const move = a.ani({ to: { x: 100, y: 50 }, duration: 0.8 });
+
+// 2. Create a parallel block. Both animations will start at the same time.
+const popIn = a.parallel([fadeIn, move]);
+
+// 3. Create a timeline. The total duration will be that of the longest child (0.8s).
+const myTimeline = a.timeline(popIn);
+
+// 4. Play the animation.
+myTimeline.play({ from: { opacity: 0, scale: 1, x: 0, y: 0 } });
+```
+
+### Usage & Concepts
+
+#### Overview
+
+`parallel` is a "branch" composition node that groups animations to run concurrently. This is useful for creating effects where multiple properties change at once, like an element fading in while scaling up. The total duration of a `parallel` block is determined by the duration of its longest child animation.
+
+#### Type Safety
+
+Like `sequence`, `parallel` enforces that all children operate on a compatible data shape `G`. This allows you to safely compose animations for different properties.
+
+#### Best Practices
+
+-   **Do** use `parallel` whenever you want two or more animations to happen simultaneously.
+-   **Don't** nest `parallel` blocks if a single one will suffice. `parallel([a, parallel([b, c])])` is the same as `parallel([a, b, c])`.
+
+### API Reference
+
+#### Parameters
+
+| Name | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `children` | `AnimationNode<G>[]` | An array of animation nodes to play simultaneously. | — |
+| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire block's timeline. | `linear` |
+| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+
+#### Type Definitions
+
+```typescript
+function parallel<G extends Groupable>(
+  children: AnimationNode<G>[],
+  timing?: TimingFunction | TimingFunction[],
+  id?: AnimationId
+): AnimationNode<G>;
+```
+
+### Related Components
+
+-   [`sequence`](/en/docs/core-api/sequence) - To run animations in order instead of simultaneously.
+-   [`ani`](/en/docs/core-api/ani) - The leaf nodes that are typically placed inside a `parallel` block.

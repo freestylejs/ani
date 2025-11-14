@@ -1,0 +1,63 @@
+---
+title: Dynamic Animations
+description: Create interactive animations with runtime values using keyframes, durations, and repeat.
+---
+
+The primary mechanism for creating interactive animations is to provide dynamic values to the `timeline.play()` method. This allows you to override the static values defined in your `ani` nodes at runtime.
+
+### API Definition
+
+The `play` method's configuration object accepts several properties for dynamic animations.
+
+```typescript
+timeline.play(config: {
+  from: G;
+  keyframes?: Array<G | 'keep'>;
+  durations?: Array<number | 'keep'>;
+  repeat?: number;
+});
+```
+
+-   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes.
+-   `durations`: An array of `duration` values (in seconds) that override the original durations.
+-   `repeat`: A number indicating how many times the animation should repeat. Use `Infinity` for an endless loop.
+
+### How it Works
+
+When you call `play` with a `keyframes` or `durations` array, the library ignores the corresponding static values in your `ani` nodes. Instead, it maps the values from the array to each `ani` node in the order they appear in the animation tree.
+
+**The number of items in the arrays must exactly match the number of `ani` nodes in your animation structure.** You can use the string `'keep'` to skip an override for a specific node.
+
+### Example Usage
+
+This example creates a "spring back" effect where an element animates past its origin and then settles back. The start and end points are determined at runtime.
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define the structure. The `to` values here are placeholders.
+const recoverAnimation = a.sequence([
+  a.ani({ to: { y: -15 }, duration: 0.3 }), // Overshoot stage
+  a.ani({ to: { y: 0 }, duration: 0.5 }),   // Settle stage
+]);
+
+const myTimeline = a.timeline(recoverAnimation);
+
+// 2. On user interaction, get dynamic start/end values.
+const releasePosition = { y: 200 };
+const finalPosition = { y: 0 };
+const overshootPosition = { y: -30 };
+
+// 3. Play the animation with dynamic keyframes.
+myTimeline.play({
+  from: releasePosition,
+  keyframes: [
+    overshootPosition, // This becomes the 'to' for the first ani()
+    finalPosition,     // This becomes the 'to' for the second ani()
+  ],
+});
+```
+
+### When to Use
+
+Always use dynamic properties when an animation's destination, speed, or repetition depends on user interaction or any other runtime state, such as element position, mouse velocity, or scroll position. This is the key to building dynamic, responsive, and interactive animations.

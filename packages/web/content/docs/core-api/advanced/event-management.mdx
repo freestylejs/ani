@@ -1,0 +1,79 @@
+---
+title: Event Management [internal]
+description: Connect your animations to DOM events with the EventManager.
+---
+
+### Internal API
+
+The `EventManager` simplifies creating interactive animations that respond to user input. It acts as a bridge between the DOM event system and the animation system.
+
+### Example
+
+```typescript
+import { a, EventManager } from "@freestylejs/ani-core";
+
+// 1. Define an animation and timeline.
+const myAnimation = a.ani({ to: { x: 500 }, duration: 1 });
+const myTimeline = a.timeline(myAnimation);
+
+// 2. Define the events you want to listen for.
+const supportedEvents = ["mousedown", "mouseup"] as const;
+const eventManager = new EventManager(supportedEvents);
+
+// 3. Bind the manager to a DOM element.
+const myElement = document.getElementById("my-element");
+if (myElement) {
+  eventManager.bind(myElement);
+}
+
+// 4. Provide a "getter" so the manager can access the timeline.
+eventManager.setAnimeGetter(() => myTimeline);
+
+// 5. Attach event handlers.
+eventManager.attach({
+  onMousedown: (timeline, event) => {
+    // The first argument is the timeline instance from the getter.
+    timeline.play({ from: { x: event.clientX } });
+  },
+  onMouseup: (timeline, event) => {
+    timeline.pause();
+  },
+});
+
+// 6. Clean up when the component unmounts.
+// eventManager.cleanupAll();
+```
+
+### Usage & Concepts
+
+#### Overview
+
+By providing a "getter" for your animation context (like a `timeline`), your event handlers receive a direct, up-to-date reference to the animation controller, allowing you to `play`, `pause`, `seek`, etc., in response to events.
+
+#### Best Practices
+
+-   **Do** use `EventManager` to keep your event handling logic clean and co-located with your animation logic.
+-   **Do** call `cleanupAll()` when your component or element is destroyed to prevent memory leaks.
+-   **Don't** create multiple `EventManager` instances for the same element; one is sufficient.
+
+### API Reference
+
+#### Constructor
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `supportedEvents` | `readonly string[]` | An array of DOM event names to support (e.g., `['click', 'mousemove']`). |
+
+#### Methods
+
+| Method | Description |
+| :--- | :--- |
+| `bind(el)` | Binds the manager to a DOM element. |
+| `setAnimeGetter(getter)` | Provides a function that returns the animation context (e.g., a timeline). |
+| `add(name, listener)` | Adds a listener for a specific event. |
+| `attach(handlers)` | Attaches a map of `onEventName` handlers. |
+| `cleanupAll()` | Removes all registered event listeners from the element. |
+
+### Related Components
+
+-   [`timeline`](/en/docs/core-api/timeline) - The typical animation context provided to the `EventManager`.
