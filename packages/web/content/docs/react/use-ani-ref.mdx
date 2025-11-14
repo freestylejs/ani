@@ -1,0 +1,112 @@
+---
+title: useAniRef
+description: A performant hook that directly animates a DOM element via a ref, bypassing React renders.
+---
+
+This hook is designed for high-performance animations of CSS properties. It subscribes to a timeline and applies styles directly to an element's `style` property, avoiding the overhead of re-rendering the component on every frame.
+
+### Example
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { useAniRef } from "@freestylejs/ani-react";
+import { useMemo, useRef } from "react";
+
+const InteractiveBox = () => {
+  // 1. Create a ref to attach to the DOM element.
+  const ref = useRef<HTMLDivElement>(null);
+
+  // 2. Define the animation and create a timeline.
+  const myTimeline = useMemo(
+    () => a.timeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 })),
+    []
+  );
+
+  // 3. Use the hook to get the controller and bind the animation to the ref.
+  const controller = useAniRef(ref, {
+    timeline: myTimeline,
+    initialValue: { x: 0, rotate: 0 },
+  });
+
+  // 4. The component only renders once. The animation is applied directly to the DOM.
+  return (
+    <>
+      <button onClick={() => controller.play({ from: { x: 0, rotate: 0 } })}>
+        Play
+      </button>
+      <div ref={ref} style={{ width: 100, height: 100, background: "blue" }} />
+    </>
+  );
+};
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `useAniRef` hook is the key to smooth, 60fps animations. It takes a React `ref` and an animation configuration. On each frame, it converts the animation values to CSS styles (e.g., `{ x: 100 }` becomes `transform: translateX(100px)`) and writes them directly to the DOM element.
+
+#### Example: Interactivity
+
+For interactive animations, you can pass an `events` object. This uses a built-in `EventManager` to attach listeners to the element. Event handlers receive the timeline controller, allowing you to `play`, `pause`, etc., in response to user input.
+
+```tsx
+// ... inside a component
+const controller = useAniRef(ref, {
+  timeline: myTimeline,
+  events: {
+    onMouseDown: (ctx, event) => {
+      // The context `ctx` is the timeline controller.
+      ctx.play({ from: { x: event.clientX } });
+    },
+    onMouseUp: (ctx) => {
+      ctx.pause();
+    },
+  },
+});
+```
+
+#### When to Use
+
+-   **Do** use `useAniRef` for animating CSS properties like `transform` and `opacity`.
+-   **Do** use it for complex, interactive animations that need to respond to user input at 60fps.
+-   **Don't** use `useAniRef` if you need the animated value to render text content or pass to a child component's props. Use `useAni` for that.
+
+### API Reference
+
+#### Parameters
+
+| Name    | Type                   | Description                                          | Default |
+| ------- | ---------------------- | ---------------------------------------------------- | ------- |
+| `ref`   | `RefObject<E>`         | The React ref attached to the DOM element.           | —       |
+| `props` | `AniRefProps<G>`       | The configuration object for the animation.          | —       |
+
+#### `AniRefProps` Object
+
+| Name            | Type                       | Description                                                      | Default     |
+| --------------- | -------------------------- | ---------------------------------------------------------------- | ----------- |
+| `timeline`      | `Timeline<G>`              | The timeline instance to run.                                    | —           |
+| `initialValue`  | `AniGroup<G>`              | (Optional) The initial style of the element.                     | —           |
+| `events`        | `EventHandlerRegistration` | (Optional) A map of event handlers for interactivity.            | `undefined` |
+| `cleanupEvents` | `boolean`                  | (Optional) Whether to automatically clean up events on unmount. | `true`      |
+
+#### Return Value
+
+Returns the `TimelineController<G>` instance, which you can use to control the animation's playback.
+
+#### Type Definitions
+
+```typescript
+import { Groupable, Timeline, TimelineController, AniRefProps } from '@freestylejs/ani-core';
+import { RefObject } from 'react';
+
+function useAniRef<G extends Groupable, E extends HTMLElement = HTMLElement>(
+  ref: RefObject<E | null>,
+  props: AniRefProps<G>
+): TimelineController<G>;
+```
+
+### Related Components
+
+-   [`useAni`](/en/docs/react/use-ani) - For reactive animations that integrate with the component render cycle.
+-   [`EventManager`](/en/docs/core-api/advanced/event-management) - The underlying utility used by the `events` property.
