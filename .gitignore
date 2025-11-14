@@ -1,14 +1,16 @@
 # Local
 *.local
+@resources
 
 # Build
 dist
 .turbo
 benchmark
-content
 .obsidian
 .vite
 output.css
+.source
+.next
 
 # Dependencies
 node_modules/
@@ -39,6 +41,7 @@ pnpm-debug.log*
 dist/
 .astro/
 .store/
+.legacy
 
 # Editor
 !.vscode/extensions.json
