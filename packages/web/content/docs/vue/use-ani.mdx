@@ -1,0 +1,82 @@
+---
+title: useAni
+description: A reactive composable that updates a Vue ref on each animation frame.
+---
+
+This composable subscribes to a `timeline`'s state and updates a Vue `ref` on each animation frame. It's ideal when animated values need to be read within your component's template or other reactive computations.
+
+### Example
+
+```vue
+<script setup>
+import { useAni, timeline, a } from "@freestylejs/ani-vue";
+
+// 1. Define the animation structure and create a timeline.
+const myTimeline = timeline(
+  a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
+);
+
+// 2. Use the composable to get the reactive ref and controller.
+const [value, controller] = useAni(myTimeline, { count: 0 });
+
+// 3. Play the animation.
+function handlePlay() {
+  controller.play({ from: { count: 0 } });
+}
+</script>
+
+<template>
+  <div>
+    <!-- 4. The ref's value is automatically unwrapped in the template. -->
+    <h1>Counter: {{ Math.round(value.count) }}</h1>
+    <button @click="handlePlay">Start</button>
+  </div>
+</template>
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `useAni` composable acts as a bridge between the `@freestylejs/ani-core` engine and Vue's reactivity system. It takes a `timeline` instance and an `initialValue`, returning a reactive Vue `ref` that is updated with the latest animation value, alongside the timeline's controller. Vue's reactivity system automatically tracks this `ref` and updates the component whenever its value changes.
+
+#### When to Use
+
+-   **Do** use `useAni` when you need the animated values to be part of Vue's reactive system.
+-   **Do** use it for animations that affect text content, attributes, or props.
+-   **Don't** use `useAni` for high-frequency style updates on a single element. For that, `useAniRef` is a better choice.
+
+### API Reference
+
+#### Parameters
+
+| Name           | Type             | Description                               | Default |
+| -------------- | ---------------- | ----------------------------------------- | ------- |
+| `timeline`     | `Timeline<G>`    | The animation timeline instance to track. | —       |
+| `initialValue` | `AniGroup<G>`    | The initial value of the animation state. | —       |
+
+#### Return Value
+
+The composable returns a `readonly` tuple with the following structure:
+
+| Index | Type                    | Description                                      |
+| ----- | ----------------------- | ------------------------------------------------ |
+| `[0]` | `Ref<AniGroup<G>>`      | A reactive Vue `ref` holding the animation state. |
+| `[1]` | `TimelineController<G>` | The controller to play, pause, or stop the timeline. |
+
+#### Type Definitions
+
+```typescript
+import { Groupable, Timeline, AniGroup, TimelineController } from '@freestylejs/ani-core';
+import { Ref } from 'vue';
+
+declare function useAni<G extends Groupable>(
+  timeline: Timeline<G>, 
+  initialValue: AniGroup<G>
+): readonly [Ref<AniGroup<G>>, TimelineController<G>];
+```
+
+### Related Components
+
+-   [`useAniRef`](/en/docs/vue/use-ani-ref) - For performance-critical animations that write directly to the DOM.
+-   [`timeline`](/en/docs/core-api/timeline) - The core controller that this composable subscribes to.
