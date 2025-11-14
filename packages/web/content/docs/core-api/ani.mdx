@@ -1,0 +1,67 @@
+---
+title: ani
+description: Defines a single animation segment from a start value to an end value over a duration.
+---
+
+The `ani` function is the fundamental building block of the entire animation system. It represents a single, atomic "tween"—a transition from a starting state to a target `to` state over a specified `duration`.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define a simple animation that moves an object on the x-axis.
+const moveRight = a.ani({ to: { x: 100 }, duration: 0.5 });
+
+// 2. Create a timeline to control the animation.
+// The data shape `{ x: number }` is inferred from the `ani` node.
+const myTimeline = a.timeline(moveRight);
+
+// 3. Listen for updates to apply the animated values.
+myTimeline.onUpdate(({ state }) => {
+  // `state` is strongly typed as { x: number }
+  console.log(`Current x value: ${state.x}`);
+});
+
+// 4. Play the animation from a starting state.
+myTimeline.play({ from: { x: 0 } });
+// Console will log 'x' increasing from 0 to 100 over 0.5 seconds.
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `ani` function is a "leaf" node in the animation tree, meaning it doesn't contain other animation nodes. All complex animations are built by composing these `ani` nodes inside "branch" nodes like `sequence` or `parallel`. The shape of the `to` object is what enforces type safety throughout the animation tree.
+
+#### Best Practices
+
+-   **Do** use `ani` for any individual tween.
+-   **Don't** try to animate multiple, unrelated properties in a single `ani` call if they belong to different conceptual animations. Instead, use multiple `ani` nodes within a `parallel` block.
+
+### API Reference
+
+#### Parameters
+
+| Name | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `props` | `SegmentNodeProps<G>` | An object containing the animation's properties. | — |
+| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+
+#### Type Definitions
+
+```typescript
+interface SegmentNodeProps<G> {
+  to: G;
+  duration?: number; // Duration is optional
+  timing?: TimingFunction | TimingFunction[];
+};
+
+function ani<G>(props: SegmentNodeProps<G>, id?: AnimationId): AnimationNode<G>;
+```
+
+### Related Components
+
+-   [`timeline`](/en/docs/core-api/timeline) - The controller required to run the animation.
+-   [`sequence`](/en/docs/core-api/sequence) - To play multiple `ani` nodes one after another.
+-   [`parallel`](/en/docs/core-api/parallel) - To play multiple `ani` nodes at the same time.
