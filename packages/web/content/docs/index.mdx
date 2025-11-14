@@ -1,0 +1,48 @@
+---
+title: FreestyleJS Ani
+description: A type-safe, compositional library for building declarative, reusable, and interactive animations in modern web frameworks.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Card, Cards } from 'fumadocs-ui/components/card';
+import { BlocksIcon, ShieldCheckIcon, ZapIcon, BoxesIcon, RocketIcon, BookOpenIcon } from 'lucide-react';
+
+**FreestyleJS Ani** is a declarative and compositional animation library designed for the modern web. It provides a set of powerful, type-safe primitives to define complex animation structures that can be reused and controlled with precision, offering dedicated, high-performance bindings for React, Solid, Svelte, and Vue.
+
+The core philosophy is to **separate an animation's declarative structure from its imperative execution**. You define a complex animation *once* as a static tree, and then use a controller to play it many times with different runtime values.
+
+## Core Features
+
+<Cards>
+  <Card
+    icon={<BlocksIcon />}
+    title="Declarative & Compositional"
+    description="Build complex animations by combining simple, reusable nodes. Describe what you want to happen, not how, leading to more readable and maintainable code."
+    href="/docs/introduction/core-concepts"
+  />
+  <Card
+    icon={<ShieldCheckIcon />}
+    title="End-to-End Type Safety"
+    description="Leverage TypeScript to catch errors at compile time. Refactor animations with confidence, knowing your data structures are consistent from definition to execution."
+    href="/docs/introduction/core-concepts"
+  />
+  <Card
+    icon={<ZapIcon />}
+    title="High Performance"
+    description="Animate styles directly on the DOM, bypassing framework render cycles for buttery-smooth, 60fps animations, even for complex, interactive scenes."
+    href="/docs/react/use-ani-ref"
+  />
+  <Card
+    icon={<BoxesIcon />}
+    title="Framework Agnostic"
+    description="The core engine is pure TypeScript. Use our dedicated bindings for React, Solid, Svelte, and Vue, or integrate it into any project."
+    href="/docs/introduction/getting-started"
+  />
+</Cards>
+
+## What is Next?
+
+<Cards>
+  <Card icon={<RocketIcon />} title="Get Started in 2 Minutes" href="/docs/introduction/getting-started" />
+  <Card icon={<BookOpenIcon />} title="Explore the Core API" href="/docs/core-api/timeline" />
+</Cards>
