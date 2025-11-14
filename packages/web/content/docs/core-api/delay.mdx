@@ -1,0 +1,53 @@
+---
+title: delay
+description: A node that introduces a pause in an animation sequence.
+---
+
+The `delay` function is a simple utility node that creates a pause in an animation. It is a declarative and readable way to create a delay within a `sequence`.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define an animation that fades in, waits, and then moves.
+const myAnimation = a.sequence([
+  a.ani({ to: { opacity: 1, x: 0 }, duration: 0.5 }),
+  a.delay(1), // 2. Wait for 1 second.
+  a.ani({ to: { opacity: 1, x: 100 }, duration: 1 }),
+]);
+
+// 3. Create and play the timeline.
+const myTimeline = a.timeline(myAnimation);
+myTimeline.play({ from: { opacity: 0, x: 0 } });
+```
+
+### Usage & Concepts
+
+#### Overview
+
+`delay` is a simple utility node that does nothing for a specified `duration`. Its primary purpose is to insert pauses within a `sequence` composition. It is a "leaf" node, similar to `ani`, but it does not affect any values.
+
+#### Best Practices
+
+-   **Do** use `delay` inside a `sequence` to create a pause between two animations.
+-   **Don't** use `delay` inside a `parallel` block, as it will have no effect on other parallel animations. It will simply extend the total duration of the `parallel` block if it is the longest item.
+
+### API Reference
+
+#### Parameters
+
+| Name | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `duration` | `number` | The duration of the delay in seconds. | — |
+| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+
+#### Type Definitions
+
+```typescript
+function delay<G>(duration: number, id?: AnimationId): AnimationNode<G>;
+```
+
+### Related Components
+
+-   [`sequence`](/en/docs/core-api/sequence) - The primary composition where `delay` is used.

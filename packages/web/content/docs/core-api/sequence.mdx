@@ -1,0 +1,69 @@
+---
+title: sequence
+description: A composition node that plays its child animations one after another.
+---
+
+A `sequence` is a composition node that plays its child animations one after another. It enforces that all children operate on the same data shape.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define two separate animation segments.
+const fadeIn = a.ani({ to: { opacity: 1, x: 50 }, duration: 1 });
+const moveRight = a.ani({ to: { opacity: 1, x: 100 }, duration: 2 });
+
+// 2. Create a sequence. `moveRight` will start only after `fadeIn` completes.
+// The data shape `{ opacity: number, x: number }` must be consistent across all children.
+const myAnimation = a.sequence([fadeIn, moveRight]);
+
+// 3. Create a timeline to run the sequence.
+const myTimeline = a.timeline(myAnimation);
+
+// 4. Play the animation. Total duration will be 1 + 2 = 3 seconds.
+myTimeline.play({ from: { opacity: 0, x: 50 } });
+```
+
+### Usage & Concepts
+
+#### Overview
+
+`sequence` is a "branch" composition node. Its role is to organize other animation nodes (either `ani` leaves or other branches) into a linear, chronological order. The total duration of a `sequence` is the sum of the durations of all its children.
+
+#### Type Safety
+
+`sequence` enforces that all its direct children operate on the same data shape `G`. This is a core feature that prevents you from sequencing animations with incompatible data types, catching errors at compile time.
+
+> **Note:** The type inference for `G` is based on the *first* element in the children array. If subsequent elements have a different shape, TypeScript will raise an error.
+
+#### Best Practices
+
+-   **Do** use `sequence` for multi-stage animations, like an element fading in and then moving.
+-   **Don't** use `sequence` if you just need two properties to animate at the same time. Use `parallel` for that.
+
+### API Reference
+
+#### Parameters
+
+| Name | Type | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `children` | `AnimationNode<G>[]` | An array of animation nodes to play in order. | — |
+| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire sequence's timeline. | `linear` |
+| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+
+#### Type Definitions
+
+```typescript
+function sequence<G>(
+  children: AnimationNode<G>[],
+  timing?: TimingFunction | TimingFunction[],
+  id?: AnimationId
+): AnimationNode<G>;
+```
+
+### Related Components
+
+-   [`parallel`](/en/docs/core-api/parallel) - To run animations simultaneously instead of in order.
+-   [`stagger`](/en/docs/core-api/stagger) - A specialized sequence for creating cascading effects.
+-   [`ani`](/en/docs/core-api/ani) - The leaf nodes that are typically placed inside a `sequence`.

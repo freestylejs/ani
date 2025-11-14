@@ -1,0 +1,105 @@
+---
+title: createStates
+description: Creates a state machine to manage and transition between different animations.
+---
+
+The `createStates` function is a high-level utility for managing complex animation logic. It allows you to define a set of named animation trees and provides a simple API for seamless transitions between them.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define different animation structures for each named state.
+const animations = {
+  inactive: a.ani({ to: { scale: 1, opacity: 0.5 }, duration: 0.5 }),
+  active: a.ani({ to: { scale: 1.2, opacity: 1 }, duration: 0.3 }),
+};
+
+// 2. Create a state machine controller with an initial state and initial values.
+const myStates = a.createStates({
+  initial: 'inactive',
+  initialFrom: { scale: 1, opacity: 0.5 }, // The starting point for the first animation
+  states: animations,
+});
+
+// 3. Listen for updates from the currently active timeline.
+myStates.timeline().onUpdate(({ state }) => {
+    console.log(state.scale);
+});
+
+// 4. Transition to a new state. This will smoothly switch to the 'active' animation.
+myStates.transitionTo('active');
+```
+
+### Usage & Concepts
+
+#### Overview
+
+`createStates` is ideal for UI components with multiple visual states (e.g., hover, active, disabled, selected) or complex character animations. When you call `transitionTo`, it intelligently retrieves the current animation's values and uses them as the `from` point for the new state's animation, ensuring graceful and seamless transitions rather than abrupt cuts.
+
+#### The Controller
+
+The `createStates` function returns a controller object with the following methods:
+
+-   `timeline()`: Returns the currently active `timeline` instance. Use this to subscribe to updates or control playback manually (e.g., `myStates.timeline().pause()`).
+-   `transitionTo(newState, [timelineConfig], [canBeIntercepted])`: Switches to a different animation state. You can optionally provide a `timelineConfig` object (similar to `timeline.play()`) to customize the transition's duration, keyframes, or repeat count. `canBeIntercepted` determines if the transition will occur even if the timeline is already playing.
+-   `onTimelineChange(callback)`: Registers a callback that fires whenever the active timeline changes (i.e., after a `transitionTo` call). This is useful for reacting to global state changes managed by `createStates`.
+
+#### Best Practices
+
+-   **Do** use `createStates` to manage distinct visual states of a component, especially when smooth transitions between states are required.
+-   **Do** provide a sensible `initialFrom` value that matches the component's initial appearance.
+-   **Don't** manually manage multiple `timeline` instances and their transitions; `createStates` is designed to abstract this complexity.
+-   **Don't** create a new `createStates` instance frequently; it should be initialized once for a given set of states.
+
+### API Reference
+
+#### Parameters
+
+The `createStates` function accepts a single `config` object with the following properties:
+
+| Name          | Type                | Description                                                     |
+| :------------ | :------------------ | :-------------------------------------------------------------- |
+| `initial`     | `keyof states`      | The key of the initial animation state to play.                 |
+| `initialFrom` | `AniGroup<...>`     | The initial `from` value for the very first animation.          |
+| `states`      | `AnimationStateShape` | A record where keys are state names and values are animation nodes. |
+| `clock`       | `AnimationClock`    | (Optional) A custom animation clock.                            |
+
+#### Type Definitions
+
+```typescript
+import { AnimationClockInterface, AnimationNode, Groupable, Timeline, TimelineStartingConfig, ExtractAnimationNode, AniGroup } from '@freestylejs/ani-core';
+
+type AnimationStateShape = Record<string, AnimationNode<Groupable>>;
+
+type GetTimeline<State extends AnimationStateShape> = Timeline<ExtractAnimationNode<State[keyof State]>, any>;
+
+interface StateController<AnimationStates extends AnimationStateShape> {
+    timeline: () => GetTimeline<AnimationStates>;
+    transitionTo(
+        newState: keyof AnimationStates, 
+        timelineConfig?: TimelineStartingConfig<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>, any>, 
+        canBeIntercepted?: boolean
+    ): void;
+    onTimelineChange(callback: (newTimeline: GetTimeline<AnimationStates>) => void): () => void;
+}
+
+interface StateProps<AnimationStates extends AnimationStateShape> {
+    initial: keyof AnimationStates;
+    initialFrom: AniGroup<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>>;
+    states: AnimationStates;
+    clock?: AnimationClockInterface;
+}
+
+declare function createStates<AnimationStates extends AnimationStateShape>(
+  config: StateProps<AnimationStates>
+): StateController<AnimationStates>;
+```
+
+### Related Components
+
+-   [`timeline`](/en/docs/core-api/timeline) - The underlying controller for each state within the machine.
+-   [`ani`](/en/docs/core-api/ani) - The basic building block for individual animations within each state.
+-   [`sequence`](/en/docs/core-api/sequence) - To compose animations into sequential stages within a state.
+-   [`parallel`](/en/docs/core-api/parallel) - To run multiple animations simultaneously within a state.
