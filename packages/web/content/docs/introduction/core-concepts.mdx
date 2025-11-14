@@ -1,0 +1,63 @@
+---
+title: Core Concepts
+description: Understand the foundational ideas behind FreestyleJS Ani.
+---
+
+import { File, Folder, Files } from "fumadocs-ui/components/files";
+
+**The core philosophy is to separate an animation's declarative structure from its imperative execution.**
+
+This separation is what makes animations in FreestyleJS Ani reusable, type-safe, and easy to reason about. You define a complex animation *once* as a static tree, and then use a controller to play it many times with different runtime values.
+
+### The Animation Tree: A Declarative Blueprint
+
+Every animation is a tree of **Animation Nodes**. This tree is a declarative blueprint that describes the animation's behavior and timing, but holds no state itself.
+
+There are two kinds of nodes:
+
+-   **Leaf Nodes:** These are the simplest units. The most important is [`ani`](/docs/core-api/ani), which defines a single tween from a start value to an end value.
+-   **Branch Nodes:** These are **composition** nodes that group other nodes together. They allow you to build complex animations from simple parts. Examples include [`sequence`](/docs/core-api/sequence), [`parallel`](/docs/core-api/parallel), and [`stagger`](/docs/core-api/stagger).
+
+You build an animation by nesting these nodes. For example, the following tree describes an animation that fades in, then moves and rotates at the same time, and finally fades out.
+
+<Files>
+  <Folder name="sequence" defaultOpen>
+    <File name="ani (fade in)" />
+    <Folder name="parallel" defaultOpen>
+      <File name="ani (move x)" />
+      <File name="ani (rotate)" />
+    </Folder>
+    <File name="ani (fade out)" />
+  </Folder>
+</Files>
+
+### The Timeline: The Execution Engine
+
+The **[`timeline`](/docs/core-api/timeline)** is the engine that brings the animation tree to life. It takes the root node of your tree and provides a controller to manage its playback.
+
+-   It calculates the animation's state for each frame.
+-   It is completely stateless with respect to the animation tree.
+-   It exposes imperative controls like `play()`, `pause()`, and `seek()`.
+
+You create a `timeline` once for a given animation structure, and you can play it multiple times with different starting values or dynamic `keyframes`.
+
+### End-to-End Type Safety
+
+A key feature of the library is its **strong generic type system**. When you create the first `ani` node in a tree with a specific data shape (e.g., `{ x: number, opacity: number }`), the TypeScript compiler enforces that all subsequent nodes in that same tree operate on a compatible shape.
+
+```ts
+// The shape { x: number } is inferred from the first `ani` node.
+const myAnimation = a.sequence([
+    a.ani({ to: { x: 100 }, duration: 1 }),
+    // This would cause a TypeScript error because `y` is not in the shape.
+    // a.ani({ to: { y: 50 }, duration: 1 }),
+]);
+```
+
+This catches a large class of runtime errors at compile time, making your animations more robust and easier to refactor with confidence.
+
+### Best Practices
+
+-   **Define Once, Play Many Times:** Treat animation trees as static, reusable definitions. Create them once (e.g., in a `useMemo` hook or as a constant) and use the `timeline` controller to play them with different `from` values.
+-   **Embrace Composition:** Build complex effects by combining simple, single-purpose nodes. A fade and a move should be two separate `ani` nodes inside a `parallel` block, not one giant `ani` node.
+-   **Separate Concerns:** Keep your animation definitions separate from your component logic. This makes both easier to read, test, and maintain.
