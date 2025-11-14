@@ -1,0 +1,80 @@
+---
+title: createAni
+description: A reactive primitive that syncs an animation's state with a SolidJS signal.
+---
+
+This primitive subscribes to a `timeline`'s state and updates a SolidJS signal on each animation frame, making it ideal for animations that drive reactive computations.
+
+### Example
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { createAni } from "@freestylejs/ani-solid";
+import { createMemo } from "solid-js";
+
+const Counter = () => {
+  // 1. Define the animation and create a timeline instance within a memo.
+  const myTimeline = createMemo(() =>
+    a.timeline(a.ani({ to: { count: 100 }, duration: 5 }))
+  );
+
+  // 2. Use the primitive to get the reactive value accessor and the controller.
+  const [value, controller] = createAni(myTimeline, { count: 0 });
+
+  // 3. The component reactively updates as the signal's value changes.
+  return (
+    <div>
+      <h1>Counter: {Math.round(value().count)}</h1>
+      <button onClick={() => controller.play({ from: { count: 0 } })}>
+        Start
+      </button>
+    </div>
+  );
+};
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `createAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Solid's reactivity system. It takes an accessor function that returns a `timeline` instance and an `initialValue`. It returns a signal accessor and the timeline's controller, allowing you to read the animation's state within Solid's reactive graph.
+
+#### When to Use
+
+-   **Do** use `createAni` when the animated values need to be part of Solid's reactive system.
+-   **Do** use it for animations that affect text content, attributes, or props of other components.
+-   **Don't** use `createAni` for high-frequency style updates. Use `createAniRef` for those cases to avoid performance overhead.
+
+### API Reference
+
+#### Parameters
+
+| Name           | Type                | Description                                          | Default |
+| -------------- | ------------------- | ---------------------------------------------------- | ------- |
+| `timeline`     | `() => Timeline<G>` | An accessor function that returns the timeline instance. | —       |
+| `initialValue` | `AniGroup<G>`       | The value for the signal before the animation starts. | —       |
+
+#### Return Value
+
+The primitive returns a `readonly` tuple with the following structure:
+
+| Index | Type                    | Description                                                |
+| ----- | ----------------------- | ---------------------------------------------------------- |
+| `[0]` | `() => AniGroup<G>`     | A SolidJS signal accessor for the current animation state. |
+| `[1]` | `TimelineController<G>` | The controller object for the timeline (`play`, `pause`, etc.). |
+
+#### Type Definitions
+
+```typescript
+import { Groupable, Timeline, AniGroup, TimelineController } from '@freestylejs/ani-core';
+
+function createAni<G extends Groupable>(
+  timeline: () => Timeline<G>,
+  initialValue: AniGroup<G>
+): readonly [() => AniGroup<G>, TimelineController<G>];
+```
+
+### Related Components
+
+-   [`createAniRef`](/en/docs/solid/create-ani-ref) - For performance-critical animations that write directly to the DOM.
+-   [`timeline`](/en/docs/core-api/timeline) - The core controller that this primitive subscribes to.
