@@ -1,0 +1,167 @@
+---
+title: Getting Started
+description: Install and create your first animation with FreestyleJS Ani.
+---
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+
+### Quick Start: Your First Animation
+
+This example uses React and the `useAniRef` hook for a high-performance animation that updates the DOM directly.
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { useAniRef } from "@freestylejs/ani-react";
+import { useMemo, useRef } from "react";
+
+const MyAnimatedComponent = () => {
+  // 1. Create a ref to attach to the DOM element you want to animate.
+  const ref = useRef<HTMLDivElement>(null);
+
+  // 2. Define the animation's timeline.
+  const myTimeline = useMemo(
+    () =>
+      a.timeline(
+        // Animation structure.
+        // >> move   to x: 500
+        // >> return to x: 0
+        a.sequence([
+          a.ani({ to: { x: 500 }, duration: 0.8 }),
+          a.ani({ to: { x: 0 }, duration: 1.2 }),
+        ]),
+      )
+    []
+  );
+
+  // 3. Connect the timeline to the ref.
+  const controller = useAniRef(ref, {
+    timeline: myTimeline,
+    initialValue: { x: 0 }, // Set the initial animation value.
+  });
+
+  return (
+    <>
+
+      {/* 4. Attach the ref to your element. */}
+      <div
+        ref={ref}
+        className="h-20 w-20 rounded-lg bg-blue-500"
+      />
+
+      {/* 5. Use the controller to play the animation. */}
+      <button
+        onClick={() => controller.play({ from: { x: 0 } })}
+      >
+        Play
+      </button>
+
+    </>
+  );
+};
+
+export default MyAnimatedComponent;
+```
+
+---
+
+## How It Works
+
+The library is built on a few simple ideas. The example above demonstrates the core workflow:
+
+<Steps>
+<Step>
+### 1. Installation
+
+First, install the `core` library and the `bindings` for your chosen framework.
+
+<Tabs items={['npm', 'pnpm', 'yarn']} defaultValue="npm" groupId="package-manager">
+  <Tab value="npm">
+    ```bash
+    npm install @freestylejs/ani-core @freestylejs/ani-react
+    ```
+  </Tab>
+  <Tab value="pnpm">
+    ```bash
+    pnpm add @freestylejs/ani-core @freestylejs/ani-react
+    ```
+  </Tab>
+  <Tab value="yarn">
+    ```bash
+    yarn add @freestylejs/ani-core @freestylejs/ani-react
+    ```
+  </Tab>
+</Tabs>
+
+<Callout>
+    Frameworks available: `react`, `solid`, `vue`, `svelte`.
+    
+    <Tabs items={['react', 'solid', 'vue', 'svelte']} defaultValue="react" groupId="framework-integration">
+        <Tab value="react">
+        ```bash
+        pnpm add @freestylejs/ani-react
+        ```
+        </Tab>
+        <Tab value="solid">
+        ```bash
+        pnpm add @freestylejs/ani-solid
+        ```
+        </Tab>
+        <Tab value="vue">
+        ```bash
+        pnpm add @freestylejs/ani-vue
+        ```
+        </Tab>
+        <Tab value="svelte">
+        ```bash
+        pnpm add @freestylejs/ani-svelte
+        ```
+        </Tab>
+    </Tabs>
+</Callout>
+
+</Step>
+<Step>
+### 2. Define a Structure
+
+You define an animation's structure using **composition nodes** like `sequence`, `parallel`, and `ani`. This structure is a blueprint for the animation—it describes *what* should happen, but it doesn't hold any live values.
+
+```ts
+// This structure is a reusable blueprint.
+const myAnimation = a.sequence([
+  a.ani({ to: { x: 500 }, duration: 0.8 }),
+  a.ani({ to: { x: 0 }, duration: 1.2 }),
+]);
+```
+</Step>
+<Step>
+### 3. Create a Timeline
+
+The **`timeline`** is the engine that runs your animation structure. You create a timeline from your structure, and it gives you a `controller` to manage playback.
+
+```ts
+// The timeline is the controller for the blueprint.
+const myTimeline = a.timeline(myAnimation);
+```
+</Step>
+<Step>
+### 4. Connect to UI & Play
+
+Finally, you use a framework-specific primitive (like `useAniRef` for React) to connect the `timeline` to a DOM element. You then use the `controller`'s `play` method to start the animation, providing a `from` value to set the starting point.
+
+```tsx
+// Connect the timeline to a ref...
+const controller = useAniRef(ref, { timeline: myTimeline });
+
+// ...and play it on demand.
+controller.play({ from: { x: 0 } });
+```
+</Step>
+</Steps>
+
+## Next Steps
+
+You've successfully created your first animation! Now you're ready to dive deeper.
+
+-   Explore the **[Core Concepts](/en/docs/introduction/core-concepts)** to understand the foundational ideas of the library.
+-   Jump into the **[Core API](/en/docs/core-api/timeline)** documentation to see all the available animation primitives.
