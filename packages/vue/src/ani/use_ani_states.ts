@@ -5,11 +5,19 @@ import {
     type StateController,
     type StateProps,
 } from '@freestylejs/ani-core'
-import { onMounted, onUnmounted, readonly, ref } from 'vue'
+import { onMounted, onUnmounted, type Ref, readonly, ref } from 'vue'
 
-export function useAniStates<const AnimationStates extends AnimationStateShape>(
+export function useAniStates<
+    const AnimationStates extends Record<string, any> & AnimationStateShape,
+>(
     props: StateProps<AnimationStates>
-) {
+): readonly [
+    {
+        state: Readonly<Ref<keyof AnimationStates>>
+        timeline: Readonly<Ref<GetTimeline<AnimationStates>>>
+    },
+    StateController<AnimationStates>['transitionTo'],
+] {
     const statesController = createStates(props)
     const timeline = ref<GetTimeline<AnimationStates>>(
         statesController.timeline()
@@ -41,7 +49,12 @@ export function useAniStates<const AnimationStates extends AnimationStateShape>(
     }
 
     return [
-        { state: readonly(state), timeline: readonly(timeline) },
+        {
+            state: readonly(state) as Readonly<Ref<keyof AnimationStates>>,
+            timeline: readonly(timeline) as Readonly<
+                Ref<GetTimeline<AnimationStates>>
+            >,
+        },
         transitionTo,
     ] as const
 }
