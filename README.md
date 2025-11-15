@@ -1,6 +1,6 @@
 # freestyle/ani
 
-<img src="./assets/ani_banner.png" alt="Ani banner" style="width: 100%;" />
+<img src="./assets/ani-banner.png" alt="Ani banner" style="width: 100%;" />
 
 ## Documentation
 
