@@ -8,7 +8,7 @@ export const CONFIG = {
     authorName: 'freestylejs',
     repoUrl: 'https://github.com/freestylejs/ani',
     siteUrl: prodUrl,
-    mainBannerUrl: '/ani_banner.png',
+    mainBannerUrl: '/ani-banner.png',
     supportedLang: [
         'en',
         // 'ko'
