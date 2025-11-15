@@ -2,21 +2,16 @@
     "name": "@freestylejs/ani-vue",
     "author": "freestyle",
     "version": "1.0.0",
-    "description": "Vue bindings for the Ani animation library.",
+    "description": "Ani for vue.",
     "license": "MIT",
     "type": "module",
-    "keywords": [
-        "vue",
-        "animation"
-    ],
+    "keywords": ["vue", "animation"],
     "sideEffects": false,
     "private": false,
     "publishConfig": {
         "access": "public"
     },
-    "files": [
-        "dist"
-    ],
+    "files": ["dist"],
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
     "types": "./dist/index.d.ts",
