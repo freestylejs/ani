@@ -32,7 +32,7 @@ export const CodeBlock = ({ code, lang, wrapper }: CodeBlockProps) => {
         return null
     }
 
-    const hast = highlighter.codeToHast(code, {
+    const hast = highlighter.codeToHast(code.trim(), {
         lang,
         defaultColor: false,
         themes: {
