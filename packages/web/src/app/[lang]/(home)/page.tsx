@@ -79,7 +79,7 @@ export default function HomePage() {
                 <FeatureCard
                     title="Dynamic Spring Animation"
                     description="Create simulation based dynamic spring animations."
-                    link={`/${CONFIG.majorLang}/docs/core-api/stagger`}
+                    link={`/${CONFIG.majorLang}/docs/core-api/timing`}
                     code={pointerFollowingCode}
                 >
                     <PointerFollowingBalls ballCount={9} />
