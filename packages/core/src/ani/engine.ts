@@ -1,5 +1,6 @@
 import type { TimingFunction } from '~/timing'
 import { isEndOfAnimation } from '~/utils/time'
+import type { Groupable, GroupableRecord } from './timeline'
 
 export type AnimePrimitive = readonly number[]
 
@@ -10,7 +11,12 @@ export interface SegmentDefinition {
     timing: SegmentTiming
 }
 
-export type SegmentTiming = TimingFunction | readonly TimingFunction[]
+export type SegmentTiming<G extends Groupable = Groupable> =
+    G extends AnimePrimitive
+        ? readonly TimingFunction[] | TimingFunction
+        : G extends GroupableRecord
+          ? Record<keyof G, TimingFunction> | TimingFunction
+          : never
 
 export interface SegmentState {
     values: AnimePrimitive
