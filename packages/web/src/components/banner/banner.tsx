@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'react'
 import { CONFIG } from '@/constant/config'
 import { tw } from '@/lib/utils'
 import { Button } from '../ui'
-import BannerImage from './banner_bg.png'
+import BannerImage from './bg.png'
 
 const dmSerif = DM_Serif_Display({
     weight: '400',
