@@ -53,7 +53,7 @@ The `ani` function is a "leaf" node in the animation tree, meaning it doesn't co
 ```typescript
 interface SegmentNodeProps<G> {
   to: G;
-  duration?: number; // Duration is optional
+  duration: number;
   timing?: TimingFunction | TimingFunction[];
 };
 
