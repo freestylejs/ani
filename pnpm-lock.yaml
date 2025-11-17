@@ -16,7 +16,7 @@ importers:
         version: 2.29.7(@types/node@24.10.1)
       '@freestylejs/config':
         specifier: latest
-        version: 1.2.2(@biomejs/biome@2.3.5)(typescript@5.9.3)
+        version: 1.2.3(@biomejs/biome@2.3.5)(typescript@5.9.3)
       '@types/node':
         specifier: latest
         version: 24.10.1
@@ -658,8 +658,8 @@ packages:
   '@formatjs/intl-localematcher@0.6.2':
     resolution: {integrity: sha512-XOMO2Hupl0wdd172Y06h6kLpBz6Dv+J4okPLl4LPtzbr8f66WbIoy4ev98EBuZ6ZK4h5ydTN6XneT4QVpD7cdA==}
 
-  '@freestylejs/config@1.2.2':
-    resolution: {integrity: sha512-Kv9DmUT88FzJlEw9+mh8KxJ6/I3TOMIjejZOaKJTBuExImB8uBJFWT9xVrDO1/KXLK5IU/hLx0U+ttlgOlc2+w==}
+  '@freestylejs/config@1.2.3':
+    resolution: {integrity: sha512-6FpJWpqWiMSs4kJSgnwlZcevf8gRhqAX6QQeiY2twW2T0ywB/QMulhn0Pz4L/dafStKShd9XsMi+TuMnxRFa+A==}
     peerDependencies:
       '@biomejs/biome': '>=2.0.0'
       typescript: '>=5.0.0'
@@ -4018,7 +4018,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@freestylejs/config@1.2.2(@biomejs/biome@2.3.5)(typescript@5.9.3)':
+  '@freestylejs/config@1.2.3(@biomejs/biome@2.3.5)(typescript@5.9.3)':
     dependencies:
       '@biomejs/biome': 2.3.5
       typescript: 5.9.3
