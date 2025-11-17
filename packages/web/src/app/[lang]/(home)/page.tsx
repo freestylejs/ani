@@ -2,12 +2,20 @@ import { Banner } from '@/components/banner'
 import { CONFIG } from '@/constant/config'
 import {
     DynamicDemo,
+    dynamicCode,
     FeatureCard,
     LoopDelayDemo,
+    loopDelayDemoCodeString,
     ParallelDemo,
+    PointerFollowingBalls,
+    parallelCode,
+    pointerFollowingCode,
     SequenceDemo,
     StaggerDemo,
     StatesDemo,
+    sequenceCode,
+    staggerCode,
+    statesCode,
 } from './components'
 
 export default function HomePage() {
@@ -27,6 +35,7 @@ export default function HomePage() {
                     title="Sequence"
                     description="Chain animations together to run one after another."
                     link={`/${CONFIG.majorLang}/docs/core-api/sequence`}
+                    code={sequenceCode}
                 >
                     <SequenceDemo />
                 </FeatureCard>
@@ -35,6 +44,7 @@ export default function HomePage() {
                     title="Parallel"
                     description="Run multiple animations at the exact same time."
                     link={`/${CONFIG.majorLang}/docs/core-api/parallel`}
+                    code={parallelCode}
                 >
                     <ParallelDemo />
                 </FeatureCard>
@@ -43,20 +53,14 @@ export default function HomePage() {
                     title="Stagger"
                     description="Create cascading effects with a delay between animations."
                     link={`/${CONFIG.majorLang}/docs/core-api/stagger`}
+                    code={staggerCode}
                 >
                     <StaggerDemo />
                 </FeatureCard>
 
                 <FeatureCard
-                    title="Dynamic & Interactive"
-                    description="Drive animations with runtime values from user input."
-                    link={`/${CONFIG.majorLang}/docs/core-api/advanced/dynamic-animations`}
-                >
-                    <DynamicDemo />
-                </FeatureCard>
-
-                <FeatureCard
                     title="Loop & Delay"
+                    code={loopDelayDemoCodeString}
                     description="Repeat animations and create pauses with ease."
                     link={`/${CONFIG.majorLang}/docs/core-api/loop`}
                 >
@@ -64,9 +68,28 @@ export default function HomePage() {
                 </FeatureCard>
 
                 <FeatureCard
+                    title="Dynamic Keyframes"
+                    description="Drive animations with runtime values from user input keyframes."
+                    link={`/${CONFIG.majorLang}/docs/core-api/advanced/dynamic-animations`}
+                    code={dynamicCode}
+                >
+                    <DynamicDemo />
+                </FeatureCard>
+
+                <FeatureCard
+                    title="Dynamic Spring Animation"
+                    description="Create simulation based dynamic spring animations."
+                    link={`/${CONFIG.majorLang}/docs/core-api/stagger`}
+                    code={pointerFollowingCode}
+                >
+                    <PointerFollowingBalls ballCount={9} />
+                </FeatureCard>
+
+                <FeatureCard
                     title="States"
                     description="Manage complex UI states with declarative transitions."
                     link={`/${CONFIG.majorLang}/docs/core-api/states`}
+                    code={statesCode}
                 >
                     <StatesDemo />
                 </FeatureCard>

@@ -1,6 +1,5 @@
 import path from 'node:path'
 import DynamicLink from 'fumadocs-core/dynamic-link'
-import { InlineTOC } from 'fumadocs-ui/components/inline-toc'
 import type { Metadata } from 'next'
 import { Darker_Grotesque, DM_Serif_Display, Inter } from 'next/font/google'
 import { notFound } from 'next/navigation'
@@ -39,51 +38,55 @@ export default async function Page(props: PageProps<'/blog/[slug]'>) {
         <div
             className={tw.join(
                 inter.className,
-                'mx-auto flex w-full max-w-[800px] flex-col px-4 py-8'
+                'mx-auto flex w-full max-w-[800px] flex-col gap-y-7 px-4 py-8'
             )}
         >
-            <section
-                className={tw.join(
-                    darkerGrotesque.className,
-                    'mb-8 flex flex-row gap-4 text-lg'
-                )}
-            >
-                <div>
-                    <p className="mb-1 text-fd-muted-foreground">Written by</p>
-                    <p className="font-medium">{page.data.author}</p>
-                </div>
-                <div>
-                    <p className="mb-1 text-fd-muted-foreground">At</p>
-                    <p className="font-medium">
-                        {new Date(
-                            page.data.date ??
-                                path.basename(
-                                    page.path,
-                                    path.extname(page.path)
-                                )
-                        ).toDateString()}
-                    </p>
-                </div>
+            <section className="flex flex-col items-start justify-center gap-y-4">
+                <ul
+                    className={tw.join(
+                        darkerGrotesque.className,
+                        'mb-7 flex flex-row gap-4 font-normal text-lg'
+                    )}
+                >
+                    <li>
+                        <p className="mb-1 text-fd-muted-foreground">
+                            Written by
+                        </p>
+                        <p className="font-medium">{page.data.author}</p>
+                    </li>
+                    <li>
+                        <p className="mb-1 text-fd-muted-foreground">At</p>
+                        <p className="font-medium">
+                            {new Date(
+                                page.data.update ??
+                                    path.basename(
+                                        page.path,
+                                        path.extname(page.path)
+                                    )
+                            ).toDateString()}
+                        </p>
+                    </li>
+                </ul>
+
+                <h1
+                    className={tw.join(
+                        darkerGrotesque.className,
+                        'mb-4 font-normal text-5xl'
+                    )}
+                >
+                    {page.data.title}
+                </h1>
+                <p
+                    className={tw.join(
+                        darkerGrotesque.className,
+                        'mb-8 font-normal text-fd-muted-foreground text-xl'
+                    )}
+                >
+                    {page.data.description}
+                </p>
             </section>
 
-            <h1
-                className={tw.join(
-                    darkerGrotesque.className,
-                    'mb-4 font-normal text-5xl'
-                )}
-            >
-                {page.data.title}
-            </h1>
-            <p
-                className={tw.join(
-                    darkerGrotesque.className,
-                    'mb-8 text-fd-muted-foreground text-xl'
-                )}
-            >
-                {page.data.description}
-            </p>
-
-            <article className="prose min-w-0 flex-1">
+            <section className="flex flex-col items-start justify-center gap-y-4">
                 <div className="not-prose mb-8 flex flex-row items-center gap-2">
                     <ShareButton
                         className={tw.join(
@@ -107,8 +110,9 @@ export default async function Page(props: PageProps<'/blog/[slug]'>) {
                         Back
                     </DynamicLink>
                 </div>
+            </section>
 
-                <InlineTOC items={toc} />
+            <article className="prose min-w-0 flex-1 font-normal">
                 <Mdx components={getMDXComponents()} />
             </article>
         </div>

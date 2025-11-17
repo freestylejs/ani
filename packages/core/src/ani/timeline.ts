@@ -4,6 +4,7 @@ import {
     type AnimationClockInterface,
 } from '~/loop'
 import type { Resolver, StylesheetSupportedLiteral } from '~/style'
+import { TimingFunction } from '~/timing'
 import { isEndOfAnimation } from '~/utils/time'
 import type {
     Prettify,
@@ -84,6 +85,13 @@ export interface TimelineStartingConfig<G extends Groupable, Ctx = any> {
     repeat?: number
 
     /**
+     * Initial delay before animation starts.
+     *
+     * - unit = `MS`
+     */
+    delay?: number
+
+    /**
      * Custom style property resolver.
      *
      * @example
@@ -142,6 +150,8 @@ export class Timeline<G extends Groupable, Ctx = any>
     private readonly _clock: AnimationClockInterface
 
     private _masterTime = 0
+
+    private _delay = 0
 
     private _status: TimelineStatus = 'IDLE'
     private _currentConfig: TimelineStartingConfig<G, Ctx> | null = null
@@ -264,11 +274,19 @@ export class Timeline<G extends Groupable, Ctx = any>
 
             // From value calculations
             let fromValues: Array<number> = []
+            const timings: Array<TimingFunction> = []
+            const t = segment.node.props.timing
+            const isRecordTiming: boolean = t && !(t instanceof TimingFunction)
+
             if (isRecordAni) {
                 for (const key of keyMap!.keys()) {
-                    fromValues.push(
-                        stateAtLastStartTime[this._propertyKeyMap!.get(key)!]!
-                    )
+                    const index = this._propertyKeyMap!.get(key)!
+                    fromValues.push(stateAtLastStartTime[index]!)
+                    if (isRecordTiming) {
+                        timings.push(
+                            (t as Record<string, TimingFunction>)[key]!
+                        )
+                    }
                 }
             } else {
                 fromValues = stateAtLastStartTime
@@ -282,7 +300,7 @@ export class Timeline<G extends Groupable, Ctx = any>
                 from: fromValues,
                 to: toValues,
                 duration: segment.node.duration,
-                timing: segment.node.props.timing,
+                timing: isRecordAni && isRecordTiming ? timings : t,
             }
 
             const segmentState = calculateSegmentState(
@@ -424,6 +442,10 @@ export class Timeline<G extends Groupable, Ctx = any>
         // update current config
         this._currentConfig = config
 
+        if (this._repeatCount === 0) {
+            this._delay = (this._currentConfig.delay ?? 0) * 1e-3 // MS
+        }
+
         this._currentExecutionPlan = this._resolveExecutionPlan(
             config.keyframes,
             config.durations
@@ -436,7 +458,7 @@ export class Timeline<G extends Groupable, Ctx = any>
 
         this._status = 'PLAYING'
         this._clock.subscribe(this)
-        this.update(0) // Render initial frame
+        this.notify()
     }
 
     public pause(): void {
@@ -456,6 +478,7 @@ export class Timeline<G extends Groupable, Ctx = any>
         this._currentConfig = null
 
         this._masterTime = 0
+        this._delay = 0
 
         this._state = []
         this._initialState = []
@@ -501,6 +524,16 @@ export class Timeline<G extends Groupable, Ctx = any>
     update(dt: number): void {
         if (this._status !== 'PLAYING') {
             return
+        }
+
+        if (this._delay > 0) {
+            this._delay -= dt
+            if (this._delay < 0) {
+                dt = -this._delay
+                this._delay = 0
+            } else {
+                return
+            }
         }
 
         this._masterTime += dt
