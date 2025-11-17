@@ -1,6 +1,9 @@
+'use client'
+
 import { getHighlighter, hastToJsx } from 'fumadocs-core/highlight'
 import * as Base from 'fumadocs-ui/components/codeblock'
-import type { BundledLanguage } from 'shiki'
+import { useEffect, useState } from 'react'
+import type { BundledLanguage, Highlighter } from 'shiki'
 import { cn } from '@/lib/utils'
 
 export interface CodeBlockProps {
@@ -9,21 +12,34 @@ export interface CodeBlockProps {
     lang: string
 }
 
-const highlighter = await getHighlighter('js', {
-    langs: ['js', 'ts', 'jsx', 'tsx'],
-    themes: ['vesper', 'github-light'],
-})
+export const CodeBlock = ({ code, lang, wrapper }: CodeBlockProps) => {
+    const [highlighter, setHighlighter] = useState<Highlighter | null>(null)
+    useEffect(() => {
+        const loadLang = async () => {
+            const highlighter = await getHighlighter('js', {
+                langs: ['js', 'ts', 'jsx', 'tsx'],
+                themes: ['catppuccin-macchiato'],
+            })
+            await highlighter.loadLanguage(lang as BundledLanguage)
+            setHighlighter(highlighter)
+            return
+        }
 
-export const CodeBlock = async ({ code, lang, wrapper }: CodeBlockProps) => {
-    await highlighter.loadLanguage(lang as BundledLanguage)
+        loadLang()
+    }, [])
 
-    const hast = highlighter.codeToHast(code, {
+    if (!highlighter) {
+        return null
+    }
+
+    const hast = highlighter.codeToHast(code.trim(), {
         lang,
         defaultColor: false,
         themes: {
-            light: 'github-light',
-            dark: 'vesper',
+            light: 'catppuccin-macchiato',
+            dark: 'catppuccin-macchiato',
         },
+        theme: 'catppuccin-macchiato',
     })
 
     const rendered = hastToJsx(hast, {

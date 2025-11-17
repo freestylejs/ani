@@ -1,9 +1,9 @@
 'use client'
 
 import DynamicLink from 'fumadocs-core/dynamic-link'
-import { ArrowUpRight } from 'lucide-react'
+import { ArrowUpRight, Code, X } from 'lucide-react'
 import * as React from 'react'
-import { cn } from '@/lib/utils' // Assumes you have the Shadcn 'cn' utility
+import { cn } from '@/lib/utils'
 
 const Card = React.forwardRef<
     HTMLDivElement,
@@ -30,19 +30,49 @@ const CardLink = React.forwardRef<
         data-slot="card-link"
         className={cn(
             'absolute top-4 right-4 z-20 block rounded-full p-2.5',
-            'bg-neutral-200/90 dark:bg-black/20',
+            'bg-neutral-50 dark:bg-zinc-900/20',
             'border border-neutral-200 dark:border-zinc-800',
             'hover:border-neutral-300 dark:hover:border-zinc-700',
-            'opacity-0 transition-all duration-200',
+            'opacity-100 transition-all duration-200 lg:opacity-0',
             'group-hover:scale-110 group-hover:opacity-100 group-hover:active:scale-95',
             className
         )}
         ref={ref}
         {...props}
     >
-        {children || <ArrowUpRight className="size-5 text-white/90" />}
+        {children || (
+            <ArrowUpRight className="size-5 text-zinc-900 dark:text-zinc-100" />
+        )}
     </DynamicLink>
 ))
+CardLink.displayName = 'CardLink'
+
+export const CardShow = ({
+    className,
+    children,
+    show,
+    ...props
+}: { show: boolean } & React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+    <button
+        {...props}
+        className={cn(
+            'absolute top-4 right-18 z-20 block rounded-full p-2.5',
+            'bg-neutral-50 dark:bg-zinc-900/20',
+            'border border-neutral-200 dark:border-zinc-800',
+            'hover:border-neutral-300 dark:hover:border-zinc-700',
+            'opacity-100 transition-all duration-200 lg:opacity-0',
+            'group-hover:scale-110 group-hover:opacity-100 group-hover:active:scale-95',
+            className
+        )}
+        type="button"
+    >
+        {children || show ? (
+            <X className="size-5 text-zinc-500" />
+        ) : (
+            <Code className="size-5 text-zinc-900 dark:text-zinc-100" />
+        )}
+    </button>
+)
 CardLink.displayName = 'CardLink'
 
 const CardContent = React.forwardRef<

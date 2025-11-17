@@ -18,7 +18,10 @@ export const ShareButton = ({
     return (
         <button
             type="button"
-            className={cn(buttonVariants({ className: 'gap-2' }), className)}
+            className={cn(
+                buttonVariants({ variant: 'outline', className: 'gap-2' }),
+                className
+            )}
             onClick={onCopy}
         >
             {isChecked ? (

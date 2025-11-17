@@ -4,8 +4,8 @@ import { type AnimationId, AnimationNode } from './base'
 
 export interface SegmentNodeProps<G extends Groupable> {
     readonly to: G
-    readonly duration?: number
-    readonly timing?: SegmentTiming
+    readonly duration: number
+    readonly timing?: SegmentTiming<G>
 }
 
 /**
@@ -19,14 +19,14 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
         super(id)
         const nodeProps: SegmentNodeProps<G> = {
             to: props.to,
-            duration: props.duration ?? 0,
+            duration: props.duration,
             ...(props.timing !== undefined && { timing: props.timing }),
         }
         this.props = nodeProps
     }
 
-    get duration(): number {
-        return this.props.duration!
+    public get duration(): number {
+        return this.props.duration
     }
 
     public construct(plan: ExecutionPlan<G>, startTime: number): void {

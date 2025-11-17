@@ -556,4 +556,153 @@ describe('Timeline Controller', () => {
             )
         })
     })
+
+    describe('Delay Behavior', () => {
+        it('should delay the start of the animation', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = timeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], delay: 0.5 * 1e3 })
+
+            // Initial state should be set immediately
+            expect(onUpdate).toHaveBeenCalledWith({
+                state: [0],
+                status: 'PLAYING',
+            })
+
+            // During the delay, state should not change
+            clock.tick(0.25)
+            expect(onUpdate).toHaveBeenCalledTimes(1) // No new updates
+
+            clock.tick(0.25) // Delay finishes
+            expect(onUpdate).toHaveBeenCalledTimes(1)
+
+            // After delay, animation starts
+            clock.tick(0.5) // Halfway through animation
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [50],
+                status: 'PLAYING',
+            })
+
+            clock.tick(0.5) // Animation finishes
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [100],
+                status: 'ENDED',
+            })
+        })
+
+        it('should handle a delay of zero correctly', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = timeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], delay: 0 * 1e3 }), clock.tick(0.5)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [50],
+                status: 'PLAYING',
+            })
+        })
+
+        it('should pause and resume during the delay period', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = timeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], delay: 1 * 1e3 })
+
+            clock.tick(0.5) // Halfway through delay
+            line.pause()
+
+            // Tick while paused, nothing should happen
+            const callCount = onUpdate.mock.calls.length
+            clock.tick(1)
+            expect(onUpdate).toHaveBeenCalledTimes(callCount)
+
+            line.resume()
+            clock.tick(0.25) // Tick for half of the remaining delay
+            expect(onUpdate).toHaveBeenCalledTimes(callCount) // Still in delay
+
+            clock.tick(0.25) // Remaining delay finishes
+            clock.tick(0.5) // Animation is halfway
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [50],
+                status: 'PLAYING',
+            })
+        })
+
+        it('should reset correctly during the delay period', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = timeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], delay: 1 * 1e3 })
+            clock.tick(0.5)
+
+            line.reset()
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [],
+                status: 'IDLE',
+            })
+
+            // Ensure clock subscription is removed
+            const callCount = onUpdate.mock.calls.length
+            clock.tick(1)
+            expect(onUpdate).toHaveBeenCalledTimes(callCount)
+        })
+
+        it('should bypass the delay when seeking', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = timeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], delay: 1 * 1e3 })
+            line.seek(0.5)
+
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [50],
+                status: 'PAUSED',
+            })
+        })
+
+        it('should only apply the delay on the first run, not on repetitions', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = timeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], delay: 0.5 * 1e3, repeat: 1 })
+
+            // Initial delay
+            clock.tick(0.5)
+
+            // First run
+            clock.tick(1)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [100],
+                status: 'PLAYING',
+            })
+
+            line.play({
+                from: [0],
+                delay: 0 * 1e3,
+            })
+            expect(onUpdate).toHaveBeenCalledTimes(3) // tick(0.5) + tick(1) + play()
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [0],
+                status: 'PLAYING',
+            })
+
+            clock.tick(0.5)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [50],
+                status: 'PLAYING',
+            })
+        })
+    })
 })
