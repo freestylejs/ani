@@ -20,14 +20,17 @@ export function GET() {
     })
 
     for (const page of blogSource.getPages().sort((a, b) => {
-        return new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+        return (
+            new Date(b.data.update).getTime() -
+            new Date(a.data.update).getTime()
+        )
     })) {
         feed.addItem({
             id: page.url,
             title: page.data.title,
             description: page.data.description,
             link: `${baseUrl}${page.url}`,
-            date: new Date(page.data.date),
+            date: new Date(page.data.update),
 
             author: [
                 {

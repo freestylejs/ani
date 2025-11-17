@@ -14,8 +14,8 @@ export default function BlogIntroduction() {
         .filter((p) => Boolean(p.data.draft) === false)
         .sort(
             (a, b) =>
-                new Date(b.data.date ?? getName(b.path)).getTime() -
-                new Date(a.data.date ?? getName(a.path)).getTime()
+                new Date(b.data.update ?? getName(b.path)).getTime() -
+                new Date(a.data.update ?? getName(a.path)).getTime()
         )
 
     const hasNoPost = posts.length === 0
@@ -54,7 +54,7 @@ export default function BlogIntroduction() {
 
                             <p className="mt-auto pt-4 text-brand text-xs">
                                 {new Date(
-                                    post.data.date ?? getName(post.path)
+                                    post.data.update ?? getName(post.path)
                                 ).toDateString()}
                             </p>
                         </Link>
