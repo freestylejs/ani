@@ -1,0 +1,125 @@
+---
+title: Custom Timing Functions
+description: Extend the animation system with custom logic by creating your own timing functions.
+---
+
+The animation library is designed to be extensible. You can create completely custom animation behaviors by writing your own timing functions. This allows you to go beyond simple easing curves and implement physics-based motion, procedural animations, or any other time-based logic you can imagine.
+
+### The `TimingFunction` Abstract Class
+
+At the heart of this system is the `TimingFunction` abstract class. To create a custom timing function, you must extend this class and implement its `step` method.
+
+```typescript
+import { TimingFunction, TimingFunctionContext } from '@freestylejs/ani-core';
+
+export abstract class TimingFunction {
+  /**
+   * Calculates the next value in the animation.
+   * @param time Current time (typically elapsed time).
+   * @param context Contextual information for the current frame.
+   * @returns An object with the new `value` and a boolean `endOfAnimation`.
+   */
+  public abstract step(
+    time: number,
+    context: TimingFunctionContext
+  ): {
+    value: number;
+    endOfAnimation: boolean;
+  };
+}
+```
+
+The `step` method is called on every frame for each property being animated. Its job is to return the new value for that property and to signal when the animation for that property is complete.
+
+### The `TimingFunctionContext`
+
+The `step` method receives a `context` object with essential information for its calculations:
+
+| Name        | Type     | Description                                                     |
+| :---------- | :------- | :-------------------------------------------------------------- |
+| `dt`        | `number` | **Delta Time**: The time elapsed since the last frame (in seconds). |
+| `from`      | `number` | The starting value of the animation property.                   |
+| `to`        | `number` | The target (end) value of the animation property.               |
+| `duration`  | `number` | The total duration of the `ani` node (in seconds).              |
+| `tolerance` | `number` | (Optional) A small value to determine if the animation is finished. |
+
+### Example: A Simple "Snap To" Function
+
+This example shows a basic timing function that immediately snaps the value to its `to` position and ends.
+
+```typescript
+import { a, TimingFunction, TimingFunctionContext } from "@freestylejs/ani-core";
+
+// 1. Define the custom timing function class.
+class SnapTo extends TimingFunction {
+  public step(time: number, context: TimingFunctionContext) {
+    // Immediately return the final value.
+    const value = context.to;
+    // End the animation on the first step.
+    const endOfAnimation = true;
+    return { value, endOfAnimation };
+  }
+}
+
+// 2. Define an animation that uses it.
+const myAnimation = a.ani({
+  to: { x: 500 },
+  duration: 1, // Duration is ignored by our SnapTo function
+  timing: new SnapTo(),
+});
+
+// 3. Create and play the timeline.
+const myTimeline = a.timeline(myAnimation);
+myTimeline.onUpdate(({ state }) => {
+  console.log(state.x); // Will log 500 immediately
+});
+
+myTimeline.play({ from: { x: 0 } });
+```
+
+### Advanced Example: Physics-Based Springs
+
+The built-in `DynamicSpringTimingFunction` is a perfect example of a stateful, complex timing function. It uses the Runge-Kutta 4th order method (RK4) to simulate a physical spring.
+
+-   It maintains its own internal state (`currentValue`, `currentVelocity`).
+-   It uses `dt` from the context to perform physics calculations.
+-   It ignores the `time` and `duration` parameters, as its completion is determined by the spring settling, not by a fixed time.
+
+```typescript
+// Simplified snippet from the source code
+import { TimingFunction, type TimingFunctionContext } from './function'
+
+export class DynamicSpringTimingFunction extends TimingFunction {
+    private currentValue: number = 0
+    private currentVelocity: number = 0
+
+    public step(
+        _time: number,
+        context: TimingFunctionContext
+    ): {
+        value: number
+        endOfAnimation: boolean
+    } {
+        // ... RK4 physics calculations using context.dt ...
+
+        this.currentValue = /* new calculated value */;
+        this.currentVelocity = /* new calculated velocity */;
+
+        // Check if the spring has settled
+        const isMoving = Math.abs(this.currentVelocity) > context.tolerance;
+        const isDisplaced = Math.abs(this.currentValue - context.to) > context.tolerance;
+        const endOfAnimation = !isMoving && !isDisplaced;
+
+        return {
+            value: this.currentValue,
+            endOfAnimation: endOfAnimation,
+        }
+    }
+}
+```
+
+### When to Use
+
+-   **Do** create a custom timing function when you need animation logic that goes beyond standard easing curves (e.g., physics, procedural noise).
+-   **Do** use stateful properties inside your class for complex behaviors like springs that need to track velocity across frames.
+-   **Don't** implement simple easing curves this way. For standard curves, use the built-in `bezier` function or other provided timing utilities.
