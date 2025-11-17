@@ -2,21 +2,27 @@
 import { a } from '@freestylejs/ani-core'
 import { useAniRef } from '@freestylejs/ani-react'
 import { useCallback, useMemo, useRef } from 'react'
+import { cn } from '@/lib/utils'
 
-const NUM_BALLS = 9
 const BALL_SIZE = 25
 const THROTTLE_DELAY = 32
 
 const colors = ['#4285F4', '#DB4437', '#F4B400', '#0F9D58', '#4285F4']
 
-export const PointerFollowingBalls = () => {
+export const PointerFollowingBalls = ({
+    ballCount,
+    className,
+}: {
+    ballCount: number
+    className?: string
+}) => {
     const containerRef = useRef<HTMLDivElement>(null)
-    const ballRefs = Array.from({ length: NUM_BALLS }, () =>
+    const ballRefs = Array.from({ length: ballCount }, () =>
         useRef<HTMLDivElement>(null)
     )
 
     const timelines = useMemo(() => {
-        return Array.from({ length: NUM_BALLS }, (_, i) =>
+        return Array.from({ length: ballCount }, (_, i) =>
             a.timeline(
                 a.ani({
                     to: { translateX: 0, translateY: 0, scale: 1 },
@@ -128,7 +134,10 @@ export const PointerFollowingBalls = () => {
             ref={containerRef}
             onPointerMove={handleMouseMove}
             onPointerDown={handlePointerDown}
-            className="glass-3 group relative h-full min-h-52 w-full cursor-pointer rounded-xl border border-transparent border-dashed transition-colors duration-200 hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-800 hover:dark:bg-transparent"
+            className={cn(
+                className,
+                'glass-3 group relative h-full min-h-52 w-full cursor-pointer rounded-xl border border-transparent border-dashed transition-colors duration-200 hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-800 hover:dark:bg-transparent'
+            )}
         >
             <div className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 text-center text-gray-500 opacity-100 transition-opacity duration-300 group-hover:opacity-50 dark:text-gray-400">
                 <p className="font-semibold text-lg">Move your mouse</p>

@@ -82,7 +82,7 @@ export default function HomePage() {
                     link={`/${CONFIG.majorLang}/docs/core-api/stagger`}
                     code={pointerFollowingCode}
                 >
-                    <PointerFollowingBalls />
+                    <PointerFollowingBalls ballCount={9} />
                 </FeatureCard>
 
                 <FeatureCard
