@@ -1,3 +1,8 @@
 {
-    "title": "Advanced Topics"
+    "title": "Advanced Topics",
+    "pages": [
+        "dynamic-animations",
+        "custom_timing_function",
+        "event-management"
+    ]
 }
