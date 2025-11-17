@@ -18,7 +18,7 @@ export const CodeBlock = ({ code, lang, wrapper }: CodeBlockProps) => {
         const loadLang = async () => {
             const highlighter = await getHighlighter('js', {
                 langs: ['js', 'ts', 'jsx', 'tsx'],
-                themes: ['catppuccin-macchiato'],
+                themes: ['catppuccin-macchiato', 'github-light'],
             })
             await highlighter.loadLanguage(lang as BundledLanguage)
             setHighlighter(highlighter)
@@ -36,10 +36,9 @@ export const CodeBlock = ({ code, lang, wrapper }: CodeBlockProps) => {
         lang,
         defaultColor: false,
         themes: {
-            light: 'catppuccin-macchiato',
+            light: 'github-light',
             dark: 'catppuccin-macchiato',
         },
-        theme: 'catppuccin-macchiato',
     })
 
     const rendered = hastToJsx(hast, {
