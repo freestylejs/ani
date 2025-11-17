@@ -1,0 +1,104 @@
+---
+title: timing
+description: Control the rate of change of an animation with timing functions.
+---
+
+A **`TimingFunction`** is a core concept that dictates the speed and acceleration of an animation over its duration. It controls **how an animation progresses from its start value to its end value**, allowing for effects like smooth easing, bouncing, and realistic physical motion.
+
+Timing functions are provided to the `timing` property of an `ani` node.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// This animation will start slow, accelerate, and then slow down at the end.
+const myAnimation = a.ani({
+  to: { x: 500 },
+  duration: 2,
+  // Use a built-in bezier curve for an "ease-in-out" effect.
+  timing: a.timing.bezier({
+    p2: { x: 0.42, y: 0 },
+    p3: { x: 0.58, y: 1 },
+  }),
+});
+```
+
+### Built-in Timing Functions
+
+The library provides several ready-to-use timing functions accessible via `a.timing`.
+
+| Function        | Description                                                              |
+| :-------------- | :----------------------------------------------------------------------- |
+| `linear()`      | **A constant rate of change**. No acceleration or deceleration.              |
+| `bezier()`      | Defines a **cubic bezier curve** for classic easing effects (e.g., ease-in, ease-out). |
+| `spring()`      | A **duration-based**, **static spring model** for bouncy UI effects.         |
+| `dynamicSpring()` | A **dynamic-based**, **spring simulation** for interactive animations. |
+
+---
+
+### `spring` vs. `dynamicSpring`
+
+The library offers two types of spring functions, each designed for different scenarios. The key difference lies in how they handle time and physics.
+
+| Feature         | `spring`                       | `dynamicSpring`                           |
+| :-------------- | :--------------------------------------------------- | :--------------------------------------------------- |
+| **Purpose**    | **Static fixed** animation.        | **Interactive dynamic** animations.   |
+| **Duration**    | **Fixed**. | **Variable**. The animation ends when the spring settles. |
+| **Physics**     | **Static**.                            | **Dynamic** (internal velocity, displacement preserved.) |
+
+> Please do not use `dynamicSpring` for **static** animations.
+
+#### A. When to Use `spring`
+
+Use the `spring` timing function when you need a spring-like, bouncy effect that **must complete within a specific timeframe**. It's ideal for UI animations that need a fixed duration.
+
+-   **Situation Example:** Animate a modal window appearing on screen. You want it to have a slight "overshoot" bounce, but the entire animation must finish in exactly 400ms.
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+const modalAppear = a.ani({
+  to: { scale: 1, opacity: 1 },
+  duration: 0.4, // The animation is guaranteed to finish in 0.4s
+  timing: a.timing.spring({ m: 1, k: 180, c: 12 }),
+});
+```
+
+#### B. When to Use `dynamicSpring`
+
+Use the `dynamicSpring` timing function for animations that need to **react to user input or other dynamic conditions**. Its duration is determined by the physics, not a preset value.
+
+-   **Situation Example:** Animate a draggable card that can be "flung." When the user releases the card, you want it to spring back to its original position with a momentum that depends on how fast it was thrown. The animation duration will feel natural, not fixed.
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+const cardReturn = a.ani({
+  to: { x: 0, y: 0 },
+  // Duration is not the primary driver here; the physics are.
+  duration: 1,
+  timing: a.timing.dynamicSpring({ m: 1, k: 200, c: 20 }),
+});
+
+// On mouse up, play the animation from the card's current position.
+// The animation will feel different depending on how far it was dragged.
+myTimeline.play({ from: { x: currentDragX, y: currentDragY } });
+```
+
+-  **Dynamic ball** example
+
+import { PointerFollowingBalls, pointerFollowingCode } from "../../../src/app/[lang]/(home)/components/pointer_following_balls"
+import { CodeBlock } from "../../../src/components/ui/codeblock"
+
+<PointerFollowingBalls ballCount={1} className="relative max-h-20 h-20" />
+
+<br />
+
+<CodeBlock code={pointerFollowingCode} lang="tsx">
+</CodeBlock>
+
+### Related Components
+
+-   [`ani`](/en/docs/core-api/ani) - The animation node where timing functions are applied.
+-   [`Custom Timing Functions`](/en/docs/core-api/advanced/custom_timing_function) - Learn how to create your own timing logic.
