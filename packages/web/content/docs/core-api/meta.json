@@ -3,6 +3,7 @@
     "pages": [
         "timeline",
         "ani",
+        "timing",
         "sequence",
         "parallel",
         "stagger",
