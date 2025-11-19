@@ -55,7 +55,7 @@ export function compileToKeyframes<G extends Groupable>(
 
     const keyframes: WebAniKeyframe[] = []
 
-    const getEasingForInterval = (t: number, nextT: number): string => {
+    const getEasingForInterval = (t: number, nextT: number): string | null => {
         const activeSegments = plan.filter(
             (s) => s.startTime <= t && s.endTime >= nextT
         )
@@ -83,6 +83,9 @@ export function compileToKeyframes<G extends Groupable>(
         return 'linear'
     }
 
+    const FPS = 60
+    const SAMPLE_RATE = 1 / FPS
+
     for (let i = 0; i < sortedTimes.length; i++) {
         const t = sortedTimes[i]!
         const state = resolveStateAt(plan, initialFrom, t)
@@ -92,13 +95,34 @@ export function compileToKeyframes<G extends Groupable>(
             offset: t / duration,
             ...style,
         }
+        
+        keyframes.push(keyframe)
 
         if (i < sortedTimes.length - 1) {
             const nextT = sortedTimes[i + 1]!
-            keyframe.easing = getEasingForInterval(t, nextT)
+            const easing = getEasingForInterval(t, nextT)
+            
+            if (easing === null) {
+                // Sampling required for complex timing (e.g., Spring)
+                // We insert intermediate keyframes between t and nextT
+                let sampleT = t + SAMPLE_RATE
+                while (sampleT < nextT) {
+                    const sampleState = resolveStateAt(plan, initialFrom, sampleT)
+                    const sampleStyle = createStyleSheet(sampleState as Record<string, number>)
+                    keyframes.push({
+                        offset: sampleT / duration,
+                        ...sampleStyle,
+                        easing: 'linear'
+                    })
+                    sampleT += SAMPLE_RATE
+                }
+                // The start keyframe of this interval (pushed above) should be linear
+                keyframe.easing = 'linear' 
+            } else {
+                // Standard CSS easing
+                keyframe.easing = easing
+            }
         }
-
-        keyframes.push(keyframe)
     }
 
     return keyframes
@@ -176,16 +200,23 @@ function resolveStateAt<G extends Groupable>(
 
         const result = calculateSegmentState(localTime, segmentDef)
 
+        let finalValues = result.values
+        // Force exact target value if segment is complete (t >= duration)
+        // This matches Timeline behavior and ensures clean end states.
+        if (result.isComplete) {
+            finalValues = toValues
+        }
+
         if (propertyKeyMap) {
             let i = 0
             for (const key of segKeyMap!.keys()) {
                 const stateIndex = propertyKeyMap.get(key)!
-                nextState[stateIndex] = result.values[i]!
+                nextState[stateIndex] = finalValues[i]!
                 i++
             }
         } else {
-            for (let i = 0; i < result.values.length; i++) {
-                nextState[i] = result.values[i]!
+            for (let i = 0; i < finalValues.length; i++) {
+                nextState[i] = finalValues[i]!
             }
         }
     }
