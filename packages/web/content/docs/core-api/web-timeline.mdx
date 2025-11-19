@@ -52,6 +52,20 @@ Because it runs natively, `webTimeline` does not emit `onUpdate` events. State m
 - **Do** use standard CSS property names like `translateX` instead of shorthands like `x` to ensure compatibility.
 - **Don't** use `webTimeline` if you need to sync non-DOM elements (like Canvas or WebGL) or if you need to react to value changes every frame.
 
+#### Timing Functions
+
+Since `webTimeline` compiles to native CSS Keyframes, not all timing functions are supported.
+
+| Timing Function | Compilation Behavior |
+| :--- | :--- |
+| `linear()` | Compiles to `linear`. |
+| `bezier()` | Compiles to `cubic-bezier(x1, y1, x2, y2)`. |
+| `spring()` | **Not Supported**. Fallback to `linear`. |
+| `dynamicSpring()` | **Not Supported**. Fallback to `linear`. |
+| Custom | **Not Supported**. Fallback to `linear`. |
+
+> **Note:** The Web Animations API (WAAPI) relies on CSS easing strings. Complex physics-based animations (like springs) or custom JavaScript-based easing logic cannot be directly represented as a simple CSS string and will fallback to `linear`. If you need spring physics, use the standard `timeline`.
+
 ### API Reference
 
 #### Methods
