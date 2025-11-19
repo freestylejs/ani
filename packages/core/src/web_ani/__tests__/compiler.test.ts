@@ -240,4 +240,98 @@ describe('WebAni Compiler', () => {
         expect(keyframes[3]!.offset).toBe(1)
         expect(keyframes[3]!['transform']).toBe('translateX(200px)')
     })
+
+    it('should compile a loop block', () => {
+        // Loop a 1s animation 3 times. Total duration = 3s.
+        const node = a.loop(
+            a.ani({ to: { x: 100 }, duration: 1 }),
+            3
+        )
+        const initialFrom = { x: 0 }
+
+        const keyframes = compileToKeyframes(node, initialFrom)
+
+        expect(keyframes).toHaveLength(4) // 0, 1, 2, 3
+
+        // t=0 (start)
+        expect(keyframes[0]!.offset).toBe(0)
+        expect(keyframes[0]!['transform']).toBe('translateX(0px)')
+
+        // t=1 (end of loop 1)
+        expect(keyframes[1]!.offset).toBeCloseTo(1/3)
+        expect(keyframes[1]!['transform']).toBe('translateX(100px)')
+
+        // t=2 (end of loop 2)
+        // Note: loop logic in `construct` just repeats the child.
+        // `ani` node doesn't reset `from` automatically?
+        // `resolveStateAt` uses previous state.
+        // Loop iteration 1: 0 -> 100. State becomes 100.
+        // Loop iteration 2: from 100 -> 100.
+        // Wait, `ani` takes `to` value. It doesn't define `from` (implicit from previous).
+        // So if we just loop `to: 100`, it goes 0->100, then 100->100, then 100->100.
+        // This is how `ani-core` works for simple `ani` nodes without `from` reset.
+        // To make it "ping-pong" or "reset", one needs a sequence like `0->100, 100->0`.
+        
+        // Let's test with a reset sequence inside loop for clarity.
+        const pingPong = a.loop(
+            a.sequence([
+                a.ani({ to: { x: 100 }, duration: 0.5 }),
+                a.ani({ to: { x: 0 }, duration: 0.5 }),
+            ]),
+            2
+        )
+        // Total duration 2s.
+        // 0 -> 100 (0.5s)
+        // 100 -> 0 (1.0s)
+        // 0 -> 100 (1.5s)
+        // 100 -> 0 (2.0s)
+        
+        const pingPongKeyframes = compileToKeyframes(pingPong, { x: 0 })
+        
+        expect(pingPongKeyframes).toHaveLength(5) // 0, 0.5, 1, 1.5, 2
+        
+        expect(pingPongKeyframes[0]!.offset).toBe(0)
+        expect(pingPongKeyframes[0]!['transform']).toBe('translateX(0px)')
+        
+        expect(pingPongKeyframes[1]!.offset).toBe(0.25)
+        expect(pingPongKeyframes[1]!['transform']).toBe('translateX(100px)')
+        
+        expect(pingPongKeyframes[2]!.offset).toBe(0.5)
+        expect(pingPongKeyframes[2]!['transform']).toBe('translateX(0px)')
+        
+        expect(pingPongKeyframes[3]!.offset).toBe(0.75)
+        expect(pingPongKeyframes[3]!['transform']).toBe('translateX(100px)')
+        
+        expect(pingPongKeyframes[4]!.offset).toBe(1)
+        expect(pingPongKeyframes[4]!['transform']).toBe('translateX(0px)')
+    })
+
+    it('should compile a delay node', () => {
+        const node = a.sequence([
+            a.ani({ to: { x: 100 }, duration: 1 }),
+            a.delay(1), // Hold for 1s
+            a.ani({ to: { x: 200 }, duration: 1 })
+        ])
+        
+        const keyframes = compileToKeyframes(node, { x: 0 })
+        
+        // Total 3s.
+        // 0-1: 0->100
+        // 1-2: 100 (hold)
+        // 2-3: 100->200
+        
+        expect(keyframes).toHaveLength(4) // 0, 1, 2, 3
+        
+        // t=1 (offset 0.33)
+        expect(keyframes[1]!.offset).toBeCloseTo(1/3)
+        expect(keyframes[1]!['transform']).toBe('translateX(100px)')
+        
+        // t=2 (offset 0.66) - should still be 100
+        expect(keyframes[2]!.offset).toBeCloseTo(2/3)
+        expect(keyframes[2]!['transform']).toBe('translateX(100px)')
+        
+        // t=3 (offset 1)
+        expect(keyframes[3]!.offset).toBe(1)
+        expect(keyframes[3]!['transform']).toBe('translateX(200px)')
+    })
 })
