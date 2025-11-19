@@ -5,8 +5,8 @@ import {
     type SegmentDefinition,
 } from '../ani/engine'
 import { createStyleSheet } from '../style'
-import { BezierTimingFunction } from '../timing/bezier'
 import { LinearTimingFunction } from '../timing/linear'
+import { compileTiming } from './timing_compiler'
 
 /**
  * Represents a WAAPI compatible keyframe
@@ -68,15 +68,20 @@ export function compileToKeyframes<G extends Groupable>(
 
         if (timings.length === 0) return 'linear'
 
+        // We only support unified easing if all active segments share the same timing logic.
         const firstTiming = timings[0]
-        if (firstTiming instanceof BezierTimingFunction) {
-            const allSame = timings.every((t) => t === firstTiming)
-            if (allSame) {
-                const { p2, p3 } = firstTiming.opt
-                return `cubic-bezier(${p2.x}, ${p2.y}, ${p3.x}, ${p3.y})`
-            }
+        // We check referential equality or identical content for optimization?
+        // Referentail equality is safe.
+        const allSame = timings.every((t) => t === firstTiming)
+
+        if (allSame) {
+            return compileTiming(firstTiming)
         }
 
+        // Mixed timings in parallel?
+        // WAAPI does not support per-property easing in a single KeyframeEffect easily
+        // without splitting into multiple effects or dense sampling.
+        // For now, we fallback to linear (or we could sample).
         return 'linear'
     }
 
