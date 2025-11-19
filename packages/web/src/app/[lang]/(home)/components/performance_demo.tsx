@@ -60,10 +60,13 @@ export function PerformanceDemo() {
     const jsTimeline = useMemo(
         () =>
             a.timeline(
-                a.sequence([
-                    a.ani({ to: { x: 200 }, duration: 1 }),
-                    a.ani({ to: { x: 0 }, duration: 1 }),
-                ])
+                a.sequence(
+                    [
+                        a.ani({ to: { x: 200 }, duration: 1 }),
+                        a.ani({ to: { x: 0 }, duration: 1 }),
+                    ],
+                    a.timing.spring({ m: 1, k: 200, c: 20 })
+                )
             ),
         []
     )
