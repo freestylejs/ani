@@ -13,8 +13,8 @@ import { useAniRef } from '@freestylejs/ani-react'
 // Subject to jank if the main thread is busy.
 const jsTimeline = a.timeline(
     a.sequence([
-        a.ani({ to: { x: 200 }, duration: 1 }),
-        a.ani({ to: { x: 0 }, duration: 1 })
+        a.ani({ to: { translateX: 200 }, duration: 1 }),
+        a.ani({ to: { translateX: 0 }, duration: 1 })
     ])
 )
 
@@ -22,8 +22,8 @@ const jsTimeline = a.timeline(
 // Runs smoothly even if the main thread is blocked.
 const webAniTimeline = a.webTimeline(
     a.sequence([
-        a.ani({ to: { x: 200 }, duration: 1 }),
-        a.ani({ to: { x: 0 }, duration: 1 })
+        a.ani({ to: { translateX: 200 }, duration: 1 }),
+        a.ani({ to: { translateX: 0 }, duration: 1 })
     ])
 )
 
@@ -34,7 +34,7 @@ const webRef = useRef(null)
 // Standard
 useAniRef(jsRef, { 
     timeline: jsTimeline,
-    initialValue: { x: 0 }
+    initialValue: { translateX: 0 }
 })
 // Note: For infinite loop in JS timeline, we can use 'repeat: Infinity' in play config,
 // but useAniRef usually plays once or needs explicit trigger. 
@@ -44,7 +44,7 @@ useAniRef(jsRef, {
 useEffect(() => {
     if (webRef.current) {
         webAniTimeline.play(webRef.current, { 
-            from: { x: 0 },
+            from: { translateX: 0 },
             repeat: Infinity 
         })
     }
@@ -62,17 +62,17 @@ export function PerformanceDemo() {
             a.timeline(
                 a.sequence(
                     [
-                        a.ani({ to: { x: 200 }, duration: 1 }),
-                        a.ani({ to: { x: 0 }, duration: 1 }),
+                        a.ani({ to: { translateX: 200 }, duration: 1 }),
+                        a.ani({ to: { translateX: 0 }, duration: 1 }),
                     ],
-                    a.timing.spring({ m: 1, k: 200, c: 20 })
+                    a.timing.linear()
                 )
             ),
         []
     )
     const controller = useAniRef(jsRef, {
         timeline: jsTimeline,
-        initialValue: { x: 0 },
+        initialValue: { translateX: 0 },
     })
 
     // 2. Web Ani Based
@@ -80,8 +80,8 @@ export function PerformanceDemo() {
         () =>
             a.webTimeline(
                 a.sequence([
-                    a.ani({ to: { x: 200 }, duration: 1 }),
-                    a.ani({ to: { x: 0 }, duration: 1 }),
+                    a.ani({ to: { translateX: 200 }, duration: 1 }),
+                    a.ani({ to: { translateX: 0 }, duration: 1 }),
                 ])
             ),
         []
@@ -89,10 +89,10 @@ export function PerformanceDemo() {
 
     useEffect(() => {
         // Auto play
-        controller.play({ from: { x: 0 }, repeat: Infinity })
+        controller.play({ from: { translateX: 0 }, repeat: Infinity })
         if (webRef.current) {
             webTimeline.play(webRef.current, {
-                from: { x: 0 },
+                from: { translateX: 0 },
                 repeat: Infinity,
             })
         }
@@ -130,7 +130,14 @@ export function PerformanceDemo() {
 
             <div className="w-full space-y-2">
                 <div className="flex items-center justify-between text-muted-foreground text-xs">
-                    <span>WAAPI (Native Compositor)</span>
+                    <a 
+                        href="/docs/core-api/web-timeline" 
+                        className="hover:underline hover:text-foreground transition-colors"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
+                        WAAPI (Native Compositor) ↗
+                    </a>
                 </div>
                 <div className="relative h-8 w-full rounded-full bg-secondary/50">
                     <div
