@@ -3,7 +3,6 @@ import {
     type AnimePrimitive,
     calculateSegmentState,
     type SegmentDefinition,
-    SegmentTiming,
 } from '../ani/engine'
 import { createStyleSheet } from '../style'
 import { TimingFunction } from '../timing'
@@ -56,7 +55,6 @@ export function compileToKeyframes<G extends Groupable>(
 
     const keyframes: WebAniKeyframe[] = []
 
-    // Helper to detect easing for an interval [t, nextT]
     const getEasingForInterval = (t: number, nextT: number): string => {
         const activeSegments = plan.filter(
             (s) => s.startTime <= t && s.endTime >= nextT
@@ -70,12 +68,9 @@ export function compileToKeyframes<G extends Groupable>(
 
         if (timings.length === 0) return 'linear'
 
-        // We only support unified easing if all active segments share the same timing logic.
         const firstTiming = timings[0]
 
-        // Check if firstTiming is a single TimingFunction instance
         if (!(firstTiming instanceof TimingFunction)) {
-            // Array or Record based timings are too complex to compile to a single CSS easing string
             return 'linear'
         }
 
@@ -85,17 +80,14 @@ export function compileToKeyframes<G extends Groupable>(
             return compileTiming(firstTiming)
         }
 
-        // Mixed timings in parallel?
-        // WAAPI does not support per-property easing in a single KeyframeEffect easily
-        // without splitting into multiple effects or dense sampling.
-        // For now, we fallback to linear (or we could sample).
         return 'linear'
     }
 
     for (let i = 0; i < sortedTimes.length; i++) {
         const t = sortedTimes[i]!
         const state = resolveStateAt(plan, initialFrom, t)
-        const style = createStyleSheet(state as Record<string, number>)
+        const normalizedState = normalizeKeys(state)
+        const style = createStyleSheet(normalizedState as Record<string, number>)
 
         const keyframe: WebAniKeyframe = {
             offset: t / duration,
@@ -111,6 +103,24 @@ export function compileToKeyframes<G extends Groupable>(
     }
 
     return keyframes
+}
+
+function normalizeKeys(state: Groupable): Record<string, any> {
+    if (Array.isArray(state)) return {}
+    const normalized: Record<string, any> = {}
+    const recordState = state as Record<string, any>
+    for (const key in recordState) {
+        if (key === 'x') {
+            normalized['translateX'] = recordState[key]
+        } else if (key === 'y') {
+            normalized['translateY'] = recordState[key]
+        } else if (key === 'z') {
+            normalized['translateZ'] = recordState[key]
+        } else {
+            normalized[key] = recordState[key]
+        }
+    }
+    return normalized
 }
 
 function resolveGroup(group: Groupable): {
