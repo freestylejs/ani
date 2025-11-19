@@ -33,7 +33,7 @@ export function FeatureCard({
     return (
         <Card
             className={tw.join(
-                'group relative grid size-full grid-rows-[auto_1fr] transition-all',
+                'group relative grid size-full grid-rows-[auto_1fr] transition-all duration-500 ease-in-out',
                 showCode
                     ? 'min-h-[600px] lg:min-h-[750px]'
                     : 'min-h-[350px] lg:min-h-[375px]'
