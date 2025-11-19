@@ -9,6 +9,7 @@ import {
     timeline,
 } from './ani'
 import { T } from './timing'
+import { webTimeline } from './web_ani'
 
 export * from './ani'
 export * from './binding_api'
@@ -16,6 +17,7 @@ export * from './event'
 export * from './loop'
 export * from './style'
 export * from './timing'
+export * from './web_ani'
 
 export const a = {
     timing: T,
@@ -27,4 +29,5 @@ export const a = {
     sequence,
     stagger,
     timeline,
+    webTimeline,
 } as const
