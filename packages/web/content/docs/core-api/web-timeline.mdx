@@ -52,6 +52,15 @@ Because it runs natively, `webTimeline` does not emit `onUpdate` events. State m
 - **Do** use standard CSS property names like `translateX` instead of shorthands like `x` to ensure compatibility.
 - **Don't** use `webTimeline` if you need to sync non-DOM elements (like Canvas or WebGL) or if you need to react to value changes every frame.
 
+#### Limitation: Static Destinations
+
+A critical difference between `webTimeline` and the standard `timeline` is how they handle dynamic values.
+
+-   **Standard `timeline`**: Supports dynamic overrides for **both** start (`from`) and end (`to`) values via the `keyframes` property in `play()`.
+-   **`webTimeline`**: Supports dynamic overrides **only** for the start (`from`) value. The destination values (`to`) are **fixed** when you create the timeline structure.
+
+This means `webTimeline` is **not suitable** for animations where the target changes based on user interaction (e.g., moving an element to the mouse cursor position). It is best used for "static" animations where the movement pattern is pre-defined, such as loading spinners, entrance animations, or fixed-distance hover effects.
+
 #### Timing Functions
 
 Since `webTimeline` compiles to native CSS Keyframes, standard easing functions are compiled directly to CSS strings, while complex physics-based timings are **sampled** into a series of linear keyframes.
