@@ -54,17 +54,17 @@ Because it runs natively, `webTimeline` does not emit `onUpdate` events. State m
 
 #### Timing Functions
 
-Since `webTimeline` compiles to native CSS Keyframes, not all timing functions are supported.
+Since `webTimeline` compiles to native CSS Keyframes, standard easing functions are compiled directly to CSS strings, while complex physics-based timings are **sampled** into a series of linear keyframes.
 
 | Timing Function | Compilation Behavior |
 | :--- | :--- |
 | `linear()` | Compiles to `linear`. |
-| `bezier()` | Compiles to `cubic-bezier(x1, y1, x2, y2)`. |
-| `spring()` | **Not Supported**. Fallback to `linear`. |
-| `dynamicSpring()` | **Not Supported**. Fallback to `linear`. |
-| Custom | **Not Supported**. Fallback to `linear`. |
+| `bezier()` | Compiles to `cubic-bezier(...)`. |
+| `spring()` | **Supported**. Sampled into high-density linear keyframes (60fps). |
+| `dynamicSpring()` | **Not Supported**. Requires frame-by-frame stateful simulation. |
+| Custom | **Supported**. Sampled, provided the function is stateless (pure function of time). |
 
-> **Note:** The Web Animations API (WAAPI) relies on CSS easing strings. Complex physics-based animations (like springs) or custom JavaScript-based easing logic cannot be directly represented as a simple CSS string and will fallback to `linear`. If you need spring physics, use the standard `timeline`.
+> **Note:** Using `spring()` or custom timing functions with `webTimeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard CSS easing. Stateful animations like `dynamicSpring` (which depend on velocity from the previous frame) cannot be pre-compiled and are not supported.
 
 ### API Reference
 
