@@ -7,7 +7,9 @@ import {
     LoopDelayDemo,
     loopDelayDemoCodeString,
     ParallelDemo,
+    PerformanceDemo,
     PointerFollowingBalls,
+    performanceCode,
     parallelCode,
     pointerFollowingCode,
     SequenceDemo,
@@ -92,6 +94,15 @@ export default function HomePage() {
                     code={statesCode}
                 >
                     <StatesDemo />
+                </FeatureCard>
+
+                <FeatureCard
+                    title="Web Animation API"
+                    description="Zero-overhead animations running on the compositor thread. Perfect for background effects."
+                    link={`/${CONFIG.majorLang}/docs/core-api/timeline`}
+                    code={performanceCode}
+                >
+                    <PerformanceDemo />
                 </FeatureCard>
             </div>
         </main>
