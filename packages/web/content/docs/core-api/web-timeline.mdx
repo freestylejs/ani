@@ -1,0 +1,92 @@
+---
+title: Web Animation API (WAAPI)
+description: High-performance, browser-native timeline powered by the Web Animations API.
+---
+
+The `webTimeline` API compiles your declarative animation tree into native browser keyframes and plays them using `Element.animate()`. This allows animations to run on the compositor thread (where possible), resulting in silky smooth performance even when the JavaScript main thread is busy.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define the animation structure.
+const myAnimation = a.sequence([
+  a.ani({ to: { translateX: 100 }, duration: 1 }),
+  a.ani({ to: { translateY: 100 }, duration: 1 }),
+]);
+
+// 2. Create a web-native timeline.
+const timeline = a.webTimeline(myAnimation);
+
+// 3. Play on a specific DOM element.
+const element = document.getElementById("box");
+if (element) {
+    timeline.play(element, {
+        from: { translateX: 0, translateY: 0 },
+        repeat: Infinity
+    });
+}
+```
+
+### Usage & Concepts
+
+#### Overview
+
+Unlike the standard `timeline` which runs frame-by-frame via JavaScript, `webTimeline` uses the browser's native animation engine. This offers significant performance benefits, especially for continuous animations (loops) or on lower-end devices.
+
+Because it runs natively, `webTimeline` does not emit `onUpdate` events. State management is handled entirely by the browser's CSSOM.
+
+#### Key Differences from `timeline`
+
+| Feature | `timeline` (JS) | `webTimeline` (Native) |
+| :--- | :--- | :--- |
+| **Engine** | JavaScript `requestAnimationFrame` | Browser `Element.animate()` |
+| **Performance** | Good, but blocked by main thread | Excellent, often compositor-threaded |
+| **Events** | `onUpdate` for every frame | No frame updates |
+| **Properties** | Any numeric property | CSS properties only |
+
+#### Best Practices
+
+- **Do** use `webTimeline` for purely visual UI transitions (fades, slides, scaling) and infinite background loops.
+- **Do** use standard CSS property names like `translateX` instead of shorthands like `x` to ensure compatibility.
+- **Don't** use `webTimeline` if you need to sync non-DOM elements (like Canvas or WebGL) or if you need to react to value changes every frame.
+
+### API Reference
+
+#### Methods
+
+| Method | Description |
+| :--- | :--- |
+| `play(target, config)` | Compiles and plays the animation on the target DOM element. Returns the native `Animation` object. |
+| `pause()` | Pauses the native animation. |
+| `resume()` | Resumes the native animation. |
+| `cancel()` | Cancels the animation and removes effects. |
+| `seek(time)` | Jumps to a specific time (in seconds). |
+| `nativeAnimation` | Getter to access the underlying WAAPI `Animation` instance. |
+
+#### Type Definitions
+
+```typescript
+function webTimeline<G extends Groupable>(rootNode: AnimationNode<G>): WebAniTimeline<G>;
+
+interface WebAniTimelineConfig<G extends Groupable> {
+    from: G;
+    repeat?: number; // Defaults to 1. Use Infinity for loops.
+    delay?: number; // milliseconds
+}
+
+interface WebAniTimeline<G extends Groupable> {
+    play(target: Element, config: WebAniTimelineConfig<G>): Animation | null;
+    pause(): void;
+    resume(): void;
+    cancel(): void;
+    seek(time: number): void;
+    get nativeAnimation(): Animation | null;
+}
+```
+
+### Related Components
+
+-   [`timeline`](/en/docs/core-api/timeline) - The standard JavaScript-based controller.
+-   [`ani`](/en/docs/core-api/ani) - The building block for animations.
