@@ -5,9 +5,11 @@ import { LinearTimingFunction, type TimingFunction } from '../timing'
  * Converts a TimingFunction instance into a WAAPI easing string.
  *
  * @param timing The TimingFunction instance to compile.
- * @returns A valid CSS easing string (e.g., 'linear', 'cubic-bezier(...)').
+ * @returns A valid CSS easing string (e.g., 'linear', 'cubic-bezier(...)'), or null if sampling is required.
  */
-export function compileTiming(timing: TimingFunction | undefined): string {
+export function compileTiming(
+    timing: TimingFunction | undefined
+): string | null {
     if (!timing) {
         return 'linear'
     }
@@ -21,12 +23,7 @@ export function compileTiming(timing: TimingFunction | undefined): string {
         return `cubic-bezier(${p2.x}, ${p2.y}, ${p3.x}, ${p3.y})`
     }
 
-    // Fallback for unknown or unsupported timing functions (e.g., Spring, DynamicSpring)
-    // Ideally, we should sample these into keyframes, but for now, we default to linear
-    // to ensure valid output, or we could throw/warn.
-    // Since WAAPI keyframes can be dense, a future improvement would be to return 'linear'
-    // here but have the caller sample the function if it detects a non-compilable type.
-
-    // For now, return linear.
-    return 'linear'
+    // Fallback for complex timing functions (e.g., Spring)
+    // Return null to signal that we should sample the values into keyframes.
+    return null
 }

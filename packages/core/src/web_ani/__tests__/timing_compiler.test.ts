@@ -20,9 +20,9 @@ describe('Timing Compiler', () => {
         expect(compileTiming(timing)).toBe('cubic-bezier(0.4, 0, 0.2, 1)')
     })
 
-    it('should fallback to linear for SpringTimingFunction (for now)', () => {
+    it('should fallback to null for SpringTimingFunction (to trigger sampling)', () => {
         const timing = a.timing.spring({ m: 1, k: 100, c: 10 })
-        expect(compileTiming(timing)).toBe('linear')
+        expect(compileTiming(timing)).toBeNull()
     })
 
     it('should compile standard presets', () => {
