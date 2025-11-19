@@ -12,21 +12,19 @@ import { useAniRef } from '@freestylejs/ani-react'
 // 1. Standard JS Animation (Main Thread)
 // Subject to jank if the main thread is busy.
 const jsTimeline = a.timeline(
-    a.loop(
+    a.sequence([
         a.ani({ to: { x: 200 }, duration: 1 }),
-        Infinity,
-        a.timing.bezier({ p2: { x: 0.4, y: 0 }, p3: { x: 0.2, y: 1 } })
-    )
+        a.ani({ to: { x: 0 }, duration: 1 })
+    ])
 )
 
 // 2. Web Animation API (Compositor Thread)
 // Runs smoothly even if the main thread is blocked.
 const webAniTimeline = a.webTimeline(
-    a.loop(
+    a.sequence([
         a.ani({ to: { x: 200 }, duration: 1 }),
-        Infinity,
-        a.timing.bezier({ p2: { x: 0.4, y: 0 }, p3: { x: 0.2, y: 1 } })
-    )
+        a.ani({ to: { x: 0 }, duration: 1 })
+    ])
 )
 
 // ... Usage in Component
@@ -34,7 +32,13 @@ const jsRef = useRef(null)
 const webRef = useRef(null)
 
 // Standard
-useAniRef(jsRef, { timeline: jsTimeline })
+useAniRef(jsRef, { 
+    timeline: jsTimeline,
+    initialValue: { x: 0 }
+})
+// Note: For infinite loop in JS timeline, we can use 'repeat: Infinity' in play config,
+// but useAniRef usually plays once or needs explicit trigger. 
+// Here we assume the controller is played with repeat: Infinity.
 
 // Native
 useEffect(() => {
@@ -56,13 +60,10 @@ export function PerformanceDemo() {
     const jsTimeline = useMemo(
         () =>
             a.timeline(
-                a.loop(
-                    a.sequence([
-                        a.ani({ to: { x: 200 }, duration: 1 }),
-                        a.ani({ to: { x: 0 }, duration: 1 }),
-                    ]),
-                    Infinity
-                )
+                a.sequence([
+                    a.ani({ to: { x: 200 }, duration: 1 }),
+                    a.ani({ to: { x: 0 }, duration: 1 }),
+                ])
             ),
         []
     )
@@ -75,20 +76,17 @@ export function PerformanceDemo() {
     const webTimeline = useMemo(
         () =>
             a.webTimeline(
-                a.loop(
-                    a.sequence([
-                        a.ani({ to: { x: 200 }, duration: 1 }),
-                        a.ani({ to: { x: 0 }, duration: 1 }),
-                    ]),
-                    Infinity
-                )
+                a.sequence([
+                    a.ani({ to: { x: 200 }, duration: 1 }),
+                    a.ani({ to: { x: 0 }, duration: 1 }),
+                ])
             ),
         []
     )
 
     useEffect(() => {
         // Auto play
-        controller.play({ from: { x: 0 } })
+        controller.play({ from: { x: 0 }, repeat: Infinity })
         if (webRef.current) {
             webTimeline.play(webRef.current, {
                 from: { x: 0 },
@@ -116,7 +114,7 @@ export function PerformanceDemo() {
     return (
         <div className="flex size-full flex-col items-center justify-center gap-4 p-4">
             <div className="w-full space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center justify-between text-muted-foreground text-xs">
                     <span>JS Engine (Main Thread)</span>
                 </div>
                 <div className="relative h-8 w-full rounded-full bg-secondary/50">
@@ -128,7 +126,7 @@ export function PerformanceDemo() {
             </div>
 
             <div className="w-full space-y-2">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center justify-between text-muted-foreground text-xs">
                     <span>WAAPI (Native Compositor)</span>
                 </div>
                 <div className="relative h-8 w-full rounded-full bg-secondary/50">
@@ -142,13 +140,15 @@ export function PerformanceDemo() {
             <button
                 onClick={blockMainThread}
                 disabled={isBlocking}
-                className={`mt-4 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors ${
+                className={`mt-4 rounded-md px-4 py-2 font-medium text-sm text-white transition-colors ${
                     isBlocking
                         ? 'cursor-not-allowed bg-gray-400'
                         : 'bg-blue-600 hover:bg-blue-700'
                 }`}
             >
-                {isBlocking ? 'Blocking Thread...' : 'Stress Test (Block Main Thread)'}
+                {isBlocking
+                    ? 'Blocking Thread...'
+                    : 'Stress Test (Block Main Thread)'}
             </button>
         </div>
     )
