@@ -186,11 +186,11 @@ export class Timeline<G extends Groupable, Ctx = any>
         this._clock = clock ?? AnimationClock.create()
 
         // binding
-        this.play.bind(this)
-        this.pause.bind(this)
-        this.seek.bind(this)
-        this.resume.bind(this)
-        this.reset.bind(this)
+        this.play = this.play.bind(this)
+        this.pause = this.pause.bind(this)
+        this.seek = this.seek.bind(this)
+        this.resume = this.resume.bind(this)
+        this.reset = this.reset.bind(this)
     }
 
     /**
