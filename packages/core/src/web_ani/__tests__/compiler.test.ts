@@ -244,10 +244,10 @@ describe('WebAni Compiler', () => {
     it('should compile a loop block', () => {
         // Loop a 1s animation 3 times. Total duration = 3s.
         const node = a.loop(
-            a.ani({ to: { x: 100 }, duration: 1 }),
+            a.ani({ to: { translateX: 100 }, duration: 1 }),
             3
         )
-        const initialFrom = { x: 0 }
+        const initialFrom = { translateX: 0 }
 
         const keyframes = compileToKeyframes(node, initialFrom)
 
@@ -275,8 +275,8 @@ describe('WebAni Compiler', () => {
         // Let's test with a reset sequence inside loop for clarity.
         const pingPong = a.loop(
             a.sequence([
-                a.ani({ to: { x: 100 }, duration: 0.5 }),
-                a.ani({ to: { x: 0 }, duration: 0.5 }),
+                a.ani({ to: { translateX: 100 }, duration: 0.5 }),
+                a.ani({ to: { translateX: 0 }, duration: 0.5 }),
             ]),
             2
         )
@@ -286,7 +286,7 @@ describe('WebAni Compiler', () => {
         // 0 -> 100 (1.5s)
         // 100 -> 0 (2.0s)
         
-        const pingPongKeyframes = compileToKeyframes(pingPong, { x: 0 })
+        const pingPongKeyframes = compileToKeyframes(pingPong, { translateX: 0 })
         
         expect(pingPongKeyframes).toHaveLength(5) // 0, 0.5, 1, 1.5, 2
         
@@ -308,12 +308,12 @@ describe('WebAni Compiler', () => {
 
     it('should compile a delay node', () => {
         const node = a.sequence([
-            a.ani({ to: { x: 100 }, duration: 1 }),
+            a.ani({ to: { translateX: 100 }, duration: 1 }),
             a.delay(1), // Hold for 1s
-            a.ani({ to: { x: 200 }, duration: 1 })
+            a.ani({ to: { translateX: 200 }, duration: 1 })
         ])
         
-        const keyframes = compileToKeyframes(node, { x: 0 })
+        const keyframes = compileToKeyframes(node, { translateX: 0 })
         
         // Total 3s.
         // 0-1: 0->100
