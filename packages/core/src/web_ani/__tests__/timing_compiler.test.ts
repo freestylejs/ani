@@ -24,4 +24,11 @@ describe('Timing Compiler', () => {
         const timing = a.timing.spring({ m: 1, k: 100, c: 10 })
         expect(compileTiming(timing)).toBe('linear')
     })
+
+    it('should compile standard presets', () => {
+        expect(compileTiming(a.timing.ease())).toBe('cubic-bezier(0.25, 0.1, 0.25, 1)')
+        expect(compileTiming(a.timing.easeIn())).toBe('cubic-bezier(0.42, 0, 1, 1)')
+        expect(compileTiming(a.timing.easeOut())).toBe('cubic-bezier(0, 0, 0.58, 1)')
+        expect(compileTiming(a.timing.easeInOut())).toBe('cubic-bezier(0.42, 0, 0.58, 1)')
+    })
 })
