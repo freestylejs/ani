@@ -86,8 +86,7 @@ export function compileToKeyframes<G extends Groupable>(
     for (let i = 0; i < sortedTimes.length; i++) {
         const t = sortedTimes[i]!
         const state = resolveStateAt(plan, initialFrom, t)
-        const normalizedState = normalizeKeys(state)
-        const style = createStyleSheet(normalizedState as Record<string, number>)
+        const style = createStyleSheet(state as Record<string, number>)
 
         const keyframe: WebAniKeyframe = {
             offset: t / duration,
@@ -103,24 +102,6 @@ export function compileToKeyframes<G extends Groupable>(
     }
 
     return keyframes
-}
-
-function normalizeKeys(state: Groupable): Record<string, any> {
-    if (Array.isArray(state)) return {}
-    const normalized: Record<string, any> = {}
-    const recordState = state as Record<string, any>
-    for (const key in recordState) {
-        if (key === 'x') {
-            normalized['translateX'] = recordState[key]
-        } else if (key === 'y') {
-            normalized['translateY'] = recordState[key]
-        } else if (key === 'z') {
-            normalized['translateZ'] = recordState[key]
-        } else {
-            normalized[key] = recordState[key]
-        }
-    }
-    return normalized
 }
 
 function resolveGroup(group: Groupable): {
