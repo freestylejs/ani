@@ -2,9 +2,10 @@
 
 import { a } from '@freestylejs/ani-core'
 import { useAniRef } from '@freestylejs/ani-react'
+import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-const STRESS_DURATION = 500 // ms to block thread
+const STRESS_DURATION = 1000 // ms to block thread
 
 export const performanceCode = `import { a } from '@freestylejs/ani-core'
 import { useAniRef } from '@freestylejs/ani-react'
@@ -13,8 +14,14 @@ import { useAniRef } from '@freestylejs/ani-react'
 // Subject to jank if the main thread is busy.
 const jsTimeline = a.timeline(
     a.sequence([
-        a.ani({ to: { translateX: 200 }, duration: 1 }),
-        a.ani({ to: { translateX: 0 }, duration: 1 })
+        a.ani({ 
+            to: { translateX: 200, rotate: 180, scale: 1.2 }, 
+            duration: 1 
+        }),
+        a.ani({ 
+            to: { translateX: 0, rotate: 0, scale: 1 }, 
+            duration: 1 
+        })
     ])
 )
 
@@ -22,8 +29,14 @@ const jsTimeline = a.timeline(
 // Runs smoothly even if the main thread is blocked.
 const webAniTimeline = a.webTimeline(
     a.sequence([
-        a.ani({ to: { translateX: 200 }, duration: 1 }),
-        a.ani({ to: { translateX: 0 }, duration: 1 })
+        a.ani({ 
+            to: { translateX: 200, rotate: 180, scale: 1.2 }, 
+            duration: 1 
+        }),
+        a.ani({ 
+            to: { translateX: 0, rotate: 0, scale: 1 }, 
+            duration: 1 
+        })
     ])
 )
 
@@ -34,17 +47,14 @@ const webRef = useRef(null)
 // Standard
 useAniRef(jsRef, { 
     timeline: jsTimeline,
-    initialValue: { translateX: 0 }
+    initialValue: { translateX: 0, rotate: 0, scale: 1 }
 })
-// Note: For infinite loop in JS timeline, we can use 'repeat: Infinity' in play config,
-// but useAniRef usually plays once or needs explicit trigger. 
-// Here we assume the controller is played with repeat: Infinity.
 
 // Native
 useEffect(() => {
     if (webRef.current) {
         webAniTimeline.play(webRef.current, { 
-            from: { translateX: 0 },
+            from: { translateX: 0, rotate: 0, scale: 1 },
             repeat: Infinity 
         })
     }
@@ -62,8 +72,14 @@ export function PerformanceDemo() {
             a.timeline(
                 a.sequence(
                     [
-                        a.ani({ to: { translateX: 200 }, duration: 1 }),
-                        a.ani({ to: { translateX: 0 }, duration: 1 }),
+                        a.ani({
+                            to: { translateX: 240, rotate: 180, scale: 1.2 },
+                            duration: 1,
+                        }),
+                        a.ani({
+                            to: { translateX: 0, rotate: 0, scale: 1 },
+                            duration: 1,
+                        }),
                     ],
                     a.timing.linear()
                 )
@@ -72,7 +88,7 @@ export function PerformanceDemo() {
     )
     const controller = useAniRef(jsRef, {
         timeline: jsTimeline,
-        initialValue: { translateX: 0 },
+        initialValue: { translateX: 0, rotate: 0, scale: 1 },
     })
 
     // 2. Web Ani Based
@@ -80,8 +96,14 @@ export function PerformanceDemo() {
         () =>
             a.webTimeline(
                 a.sequence([
-                    a.ani({ to: { translateX: 200 }, duration: 1 }),
-                    a.ani({ to: { translateX: 0 }, duration: 1 }),
+                    a.ani({
+                        to: { translateX: 240, rotate: 180, scale: 1.2 },
+                        duration: 1,
+                    }),
+                    a.ani({
+                        to: { translateX: 0, rotate: 0, scale: 1 },
+                        duration: 1,
+                    }),
                 ])
             ),
         []
@@ -89,10 +111,13 @@ export function PerformanceDemo() {
 
     useEffect(() => {
         // Auto play
-        controller.play({ from: { translateX: 0 }, repeat: Infinity })
+        controller.play({
+            from: { translateX: 0, rotate: 0, scale: 1 },
+            repeat: Infinity,
+        })
         if (webRef.current) {
             webTimeline.play(webRef.current, {
-                from: { translateX: 0 },
+                from: { translateX: 0, rotate: 0, scale: 1 },
                 repeat: Infinity,
             })
         }
@@ -115,50 +140,70 @@ export function PerformanceDemo() {
     }
 
     return (
-        <div className="flex size-full flex-col items-center justify-center gap-4 p-4">
-            <div className="w-full space-y-2">
-                <div className="flex items-center justify-between text-muted-foreground text-xs">
-                    <span>JS Engine (Main Thread)</span>
+        <div className="flex size-full flex-col items-center justify-center gap-8 p-4">
+            <div className="w-full max-w-md space-y-6">
+                {/* JS Track */}
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                        <span>JS Engine (Main Thread)</span>
+                        <span className="text-red-500/80">Janky</span>
+                    </div>
+                    <div className="relative h-3 w-full rounded-full bg-secondary/30">
+                        <div
+                            ref={jsRef}
+                            className="-top-2.5 absolute size-8 rounded-lg border border-white/20 bg-gradient-to-br from-red-500 to-pink-600 shadow-lg dark:from-red-500 dark:to-pink-600"
+                        />
+                    </div>
                 </div>
-                <div className="relative h-8 w-full rounded-full bg-secondary/50">
-                    <div
-                        ref={jsRef}
-                        className="absolute size-8 rounded-full bg-red-500 shadow-sm"
-                    />
-                </div>
-            </div>
 
-            <div className="w-full space-y-2">
-                <div className="flex items-center justify-between text-muted-foreground text-xs">
-                    <a 
-                        href="/docs/core-api/web-timeline" 
-                        className="hover:underline hover:text-foreground transition-colors"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                    >
-                        WAAPI (Native Compositor) ↗
-                    </a>
-                </div>
-                <div className="relative h-8 w-full rounded-full bg-secondary/50">
-                    <div
-                        ref={webRef}
-                        className="absolute size-8 rounded-full bg-green-500 shadow-sm"
-                    />
+                {/* WAAPI Track */}
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                        <span>
+                            <a
+                                href="/docs/core-api/web-timeline"
+                                className="hover:text-primary hover:underline transition-colors"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                WAAPI (Native Compositor) ↗
+                            </a>
+                        </span>
+                        <span className="text-green-500/80">Smooth</span>
+                    </div>
+                    <div className="relative h-3 w-full rounded-full bg-secondary/30">
+                        <div
+                            ref={webRef}
+                            className="-top-2.5 absolute size-8 rounded-lg border border-white/20 bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg dark:from-green-500 dark:to-emerald-600"
+                        />
+                    </div>
                 </div>
             </div>
 
             <button
                 onClick={blockMainThread}
                 disabled={isBlocking}
-                className={`mt-4 rounded-md px-4 py-2 font-medium text-sm text-white transition-colors ${
+                className={`group relative flex items-center gap-2 rounded-xl px-6 py-3 font-semibold text-sm text-white shadow-lg transition-all hover:scale-105 hover:shadow-xl active:scale-95 ${
                     isBlocking
-                        ? 'cursor-not-allowed bg-gray-400'
-                        : 'bg-blue-600 hover:bg-blue-700'
+                        ? 'cursor-not-allowed bg-zinc-600'
+                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500'
                 }`}
             >
-                {isBlocking
-                    ? 'Blocking Thread...'
-                    : 'Stress Test (Block Main Thread)'}
+                {isBlocking ? (
+                    <>
+                        <Loader2 className="size-4 animate-spin" />
+                        <span>Freezing UI...</span>
+                    </>
+                ) : (
+                    <>
+                        <span>Stress Test (Freeze 1s)</span>
+                    </>
+                )}
+                
+                {/* Visual cue that this button itself is on main thread */}
+                {!isBlocking && (
+                    <div className="-right-1 -top-1 absolute size-3 animate-ping rounded-full bg-indigo-400 opacity-75" />
+                )}
             </button>
         </div>
     )
