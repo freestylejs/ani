@@ -3,8 +3,10 @@ import {
     type AnimePrimitive,
     calculateSegmentState,
     type SegmentDefinition,
+    SegmentTiming,
 } from '../ani/engine'
 import { createStyleSheet } from '../style'
+import { TimingFunction } from '../timing'
 import { LinearTimingFunction } from '../timing/linear'
 import { compileTiming } from './timing_compiler'
 
@@ -70,8 +72,13 @@ export function compileToKeyframes<G extends Groupable>(
 
         // We only support unified easing if all active segments share the same timing logic.
         const firstTiming = timings[0]
-        // We check referential equality or identical content for optimization?
-        // Referentail equality is safe.
+
+        // Check if firstTiming is a single TimingFunction instance
+        if (!(firstTiming instanceof TimingFunction)) {
+            // Array or Record based timings are too complex to compile to a single CSS easing string
+            return 'linear'
+        }
+
         const allSame = timings.every((t) => t === firstTiming)
 
         if (allSame) {
@@ -88,10 +95,7 @@ export function compileToKeyframes<G extends Groupable>(
     for (let i = 0; i < sortedTimes.length; i++) {
         const t = sortedTimes[i]!
         const state = resolveStateAt(plan, initialFrom, t)
-        const normalizedState = normalizeStateKeys(state)
-        const style = createStyleSheet(
-            normalizedState as Record<string, number>
-        )
+        const style = createStyleSheet(state as Record<string, number>)
 
         const keyframe: WebAniKeyframe = {
             offset: t / duration,
@@ -107,24 +111,6 @@ export function compileToKeyframes<G extends Groupable>(
     }
 
     return keyframes
-}
-
-function normalizeStateKeys(state: Groupable): Record<string, any> {
-    if (Array.isArray(state)) return {}
-    const normalized: Record<string, any> = {}
-    const recordState = state as Record<string, any>
-    for (const key in recordState) {
-        if (key === 'x') {
-            normalized['translateX'] = recordState[key]
-        } else if (key === 'y') {
-            normalized['translateY'] = recordState[key]
-        } else if (key === 'z') {
-            normalized['translateZ'] = recordState[key]
-        } else {
-            normalized[key] = recordState[key]
-        }
-    }
-    return normalized
 }
 
 function resolveGroup(group: Groupable): {
