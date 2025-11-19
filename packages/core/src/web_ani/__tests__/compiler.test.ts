@@ -5,10 +5,10 @@ import { compileToKeyframes } from '../compiler'
 describe('WebAni Compiler', () => {
     it('should compile a simple segment', () => {
         const node = a.ani({
-            to: { x: 100 },
+            to: { translateX: 100 },
             duration: 1,
         })
-        const initialFrom = { x: 0 }
+        const initialFrom = { translateX: 0 }
 
         const keyframes = compileToKeyframes(node, initialFrom)
 
@@ -24,10 +24,10 @@ describe('WebAni Compiler', () => {
 
     it('should compile a sequence with offsets', () => {
         const node = a.sequence([
-            a.ani({ to: { x: 100 }, duration: 1 }), // 0-1s
-            a.ani({ to: { x: 200 }, duration: 1 }), // 1-2s
+            a.ani({ to: { translateX: 100 }, duration: 1 }), // 0-1s
+            a.ani({ to: { translateX: 200 }, duration: 1 }), // 1-2s
         ])
-        const initialFrom = { x: 0 }
+        const initialFrom = { translateX: 0 }
 
         const keyframes = compileToKeyframes(node, initialFrom)
 
@@ -54,10 +54,10 @@ describe('WebAni Compiler', () => {
 
     it('should compile a parallel block', () => {
         const node = a.parallel([
-            a.ani({ to: { x: 100 }, duration: 1 }),
-            a.ani({ to: { y: 100 }, duration: 1 }),
+            a.ani({ to: { translateX: 100 }, duration: 1 }),
+            a.ani({ to: { translateY: 100 }, duration: 1 }),
         ])
-        const initialFrom = { x: 0, y: 0 }
+        const initialFrom = { translateX: 0, translateY: 0 }
 
         const keyframes = compileToKeyframes(node, initialFrom)
 
@@ -80,20 +80,20 @@ describe('WebAni Compiler', () => {
         // A: x -> 100 (0-2s)
         // B: y -> 100 (0.5-1.5s)
         const _node = a.parallel([
-            a.ani({ to: { x: 100 }, duration: 2 }),
+            a.ani({ to: { translateX: 100 }, duration: 2 }),
             a.delay(0.5), // Just to offset? No delay in parallel just extends duration.
             // Parallel children start at 0.
             // We need to use sequence inside parallel to offset B.
         ])
 
         const complexNode = a.parallel([
-            a.ani({ to: { x: 200 }, duration: 2 }), // 0-2s
+            a.ani({ to: { translateX: 200 }, duration: 2 }), // 0-2s
             a.sequence([
                 a.delay(0.5),
-                a.ani({ to: { y: 100 }, duration: 1 }), // 0.5-1.5s
+                a.ani({ to: { translateY: 100 }, duration: 1 }), // 0.5-1.5s
             ]),
         ])
-        const initialFrom = { x: 0, y: 0 }
+        const initialFrom = { translateX: 0, translateY: 0 }
 
         const keyframes = compileToKeyframes(complexNode, initialFrom)
 
@@ -137,7 +137,7 @@ describe('WebAni Compiler', () => {
 
     it('should extract bezier easing', () => {
         const node = a.ani({
-            to: { x: 100 },
+            to: { translateX: 100 },
             duration: 1,
             timing: a.timing.bezier({
                 p2: { x: 0.4, y: 0 },
@@ -145,7 +145,7 @@ describe('WebAni Compiler', () => {
             }),
         })
 
-        const keyframes = compileToKeyframes(node, { x: 0 })
+        const keyframes = compileToKeyframes(node, { translateX: 0 })
         expect(keyframes).toHaveLength(2)
         // CSS bezier: cubic-bezier(x1, y1, x2, y2)
         // Our p2 is x1,y1. p3 is x2,y2.
@@ -155,12 +155,12 @@ describe('WebAni Compiler', () => {
     it('should compile a stagger block', () => {
         const node = a.stagger(
             [
-                a.ani({ to: { x: 100 }, duration: 1 }),
-                a.ani({ to: { x: 200 }, duration: 1 }),
+                a.ani({ to: { translateX: 100 }, duration: 1 }),
+                a.ani({ to: { translateX: 200 }, duration: 1 }),
             ],
             { offset: 0.5 }
         )
-        const initialFrom = { x: 0 }
+        const initialFrom = { translateX: 0 }
 
         const keyframes = compileToKeyframes(node, initialFrom)
 
