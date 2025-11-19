@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 const Card = React.forwardRef<
     HTMLDivElement,
     React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => (
     <div
         data-slot="card"
         className={cn(
@@ -17,7 +17,20 @@ const Card = React.forwardRef<
         )}
         ref={ref}
         {...props}
-    />
+    >
+        <div
+            className="-z-10 pointer-events-none absolute inset-0 rounded-xl p-0.5 opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100"
+            style={{
+                mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
+                maskComposite: 'exclude',
+                // @ts-ignore
+                WebkitMaskComposite: 'xor',
+            }}
+        >
+            <div className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 h-[200%] w-[200%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0_300deg,#000000FF_360deg)] opacity-100 blur-[1px] will-change-transform dark:bg-[conic-gradient(from_0deg,transparent_0_300deg,#38BDF8_360deg)]" />
+        </div>
+        {children}
+    </div>
 ))
 Card.displayName = 'Card'
 
