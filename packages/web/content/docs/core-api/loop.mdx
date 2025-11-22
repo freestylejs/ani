@@ -35,28 +35,6 @@ myTimeline.play({ from: { scale: 1 } });
 -   **Do** use `loop` for simple, repetitive animations like pulsing or bouncing.
 -   **Don't** use `loop` for the main application loop. For continuous animations, use the `repeat: Infinity` option in the `timeline.play()` method, which is more efficient.
 
-### API Reference
-
-#### Parameters
-
-| Name | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `child` | `AnimationNode<G>` | The animation node to repeat. | — |
-| `count` | `number` | The number of times to repeat the child node. | — |
-| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire loop's timeline. | `linear` |
-| `id` | `AnimationId` | (Optional) A unique identifier for the node. | `undefined` |
-
-#### Type Definitions
-
-```typescript
-function loop<G>(
-    child: AnimationNode<G>,
-    count: number,
-    timing?: TimingFunction | TimingFunction[],
-    id?: AnimationId
-): AnimationNode<G>;
-```
-
 ### Related Components
 
 -   [`timeline`](/en/docs/core-api/timeline) - The `play` method's `repeat` option provides an alternative way to loop.

@@ -43,31 +43,6 @@ myTimeline.play({ from: { opacity: 0, y: 20 } });
 -   **Do** use `stagger` for animating lists of items into or out of view.
 -   **Don't** use `stagger` if you need variable delays between animations; build a custom `sequence` with `delay` nodes instead.
 
-### API Reference
-
-#### Parameters
-
-| Name | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `children` | `AnimationNode<G>[]` | An array of animation nodes to play. | — |
-| `props` | `StaggerNodeProps` | An object containing the stagger configuration. | — |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
-
-#### Type Definitions
-
-```typescript
-interface StaggerNodeProps {
-  offset: number;
-  timing?: TimingFunction | TimingFunction[];
-};
-
-function stagger<G>(
-  children: AnimationNode<G>[],
-  props: StaggerNodeProps,
-  id?: AnimationId
-): AnimationNode<G>;
-```
-
 ### Related Components
 
 -   [`sequence`](/en/docs/core-api/sequence) - The underlying concept for `stagger`.

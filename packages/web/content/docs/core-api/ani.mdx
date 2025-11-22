@@ -3,7 +3,9 @@ title: ani
 description: Defines a single animation segment from a start value to an end value over a duration.
 ---
 
-The `ani` function is the fundamental building block of the entire animation system. It represents a single, atomic "tween"—a transition from a starting state to a target `to` state over a specified `duration`.
+The `ani` function is the fundamental building block of the entire animation system.
+
+It represents a single, atomic "tween"—a transition from a starting state to a target `to` state over a specified `duration`.
 
 ### Example
 
@@ -32,33 +34,12 @@ myTimeline.play({ from: { x: 0 } });
 
 #### Overview
 
-The `ani` function is a "leaf" node in the animation tree, meaning it doesn't contain other animation nodes. All complex animations are built by composing these `ani` nodes inside "branch" nodes like `sequence` or `parallel`. The shape of the `to` object is what enforces type safety throughout the animation tree.
+The `ani` function is a **"leaf" node in the animation tree**, meaning it doesn't contain other animation nodes. All complex animations are built by composing these `ani` nodes inside "branch" nodes like `sequence` or `parallel`. The shape of the `to` object is what enforces type safety throughout the animation tree.
 
 #### Best Practices
 
 -   **Do** use `ani` for any individual tween.
 -   **Don't** try to animate multiple, unrelated properties in a single `ani` call if they belong to different conceptual animations. Instead, use multiple `ani` nodes within a `parallel` block.
-
-### API Reference
-
-#### Parameters
-
-| Name | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `props` | `SegmentNodeProps<G>` | An object containing the animation's properties. | — |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
-
-#### Type Definitions
-
-```typescript
-interface SegmentNodeProps<G> {
-  to: G;
-  duration: number;
-  timing?: TimingFunction | TimingFunction[];
-};
-
-function ani<G>(props: SegmentNodeProps<G>, id?: AnimationId): AnimationNode<G>;
-```
 
 ### Related Components
 

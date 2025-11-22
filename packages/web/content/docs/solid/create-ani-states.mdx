@@ -9,7 +9,7 @@ This primitive is a Solid-specific wrapper around the core `createStates` functi
 
 ```tsx
 import { a } from "@freestylejs/ani-core";
-import { createAniStates, createAniRef } from "@freestylejs/ani-solid";
+import { createAniStates } from "@freestylejs/ani-solid";
 
 const StateButton = () => {
   // 1. Define the animations for each state.
@@ -18,16 +18,13 @@ const StateButton = () => {
     hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
   };
 
-  // 2. Use the primitive to create the state machine.
-  // It returns reactive signals and a function to transition.
-  const [{ timeline }, transitionTo] = createAniStates({
+  // 2. Use the primitive to create the state machine. It returns the ref callback,
+  // reactive signals for state info, and a function to transition.
+  const [animationRef, { timeline }, transitionTo] = createAniStates({
     initial: "idle",
     initialFrom: { scale: 1, opacity: 0.7 },
     states: animations,
   });
-
-  // 3. Connect the active timeline to the DOM element for high-performance updates.
-  const [animationRef] = createAniRef({ timeline });
 
   return (
     <button
@@ -54,39 +51,6 @@ The `createAniStates` primitive simplifies stateful animation logic in Solid. It
 -   **Do** use `createAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
 -   **Do** combine `createAniStates` with `createAniRef` for high-performance style animations that react to state changes.
 -   **Don't** create the `states` object inside a reactive computation without memoization, as this can lead to unexpected behavior.
-
-### API Reference
-
-#### Parameters
-
-| Name    | Type                          | Description                                  | Default |
-| :------ | :---------------------------- | :------------------------------------------- | ------- |
-| `props` | `StateProps<AnimationStates>` | The configuration object for the state machine. | —       |
-
-#### Return Value
-
-The primitive returns a `readonly` tuple with the following structure:
-
-| Index | Type       | Description                                                                              |
-| ----- | ---------- | ---------------------------------------------------------------------------------------- |
-| `[0]` | `object`   | An object containing signal accessors for the current `state` name and active `timeline`. |
-| `[1]` | `function` | The `transitionTo` function to switch between animation states.                          |
-
-#### Type Definitions
-
-```typescript
-import { AnimationStateShape, StateProps, GetTimeline, StateController } from '@freestylejs/ani-core';
-
-declare function createAniStates<const AnimationStates extends AnimationStateShape>(
-  props: StateProps<AnimationStates>
-): readonly [
-    {
-        state: () => keyof AnimationStates;
-        timeline: () => GetTimeline<AnimationStates>;
-    },
-    StateController<AnimationStates>['transitionTo']
-];
-```
 
 ### Related Components
 
