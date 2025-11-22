@@ -1,7 +1,7 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef, useAniStates } from '@freestylejs/ani-react'
+import { useAniStates } from '@freestylejs/ani-react'
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAppear } from './timeline'
@@ -13,7 +13,7 @@ export const StatesDemo = () => {
 
     useAppear(ref)
 
-    const [Ani, setCurrentState] = useAniStates({
+    const [ani, setCurrentState] = useAniStates(ref, {
         initial: 'idle',
         initialFrom: {
             opacity: 1,
@@ -60,7 +60,7 @@ export const StatesDemo = () => {
             success: a.sequence(
                 [
                     a.ani({
-                        to: { opacity: 1, scale: 1.35, rotate: 0 },
+                        to: { opacity: 1, scale: 1.5, rotate: 0 },
                         duration: 1,
                     }),
                     a.ani({ to: { scale: 1 }, duration: 0.3 }),
@@ -68,10 +68,6 @@ export const StatesDemo = () => {
                 Spring
             ),
         },
-    })
-
-    useAniRef(ref, {
-        timeline: Ani.timeline,
     })
 
     const handleClick = () => {
@@ -95,18 +91,18 @@ export const StatesDemo = () => {
         <div className="flex size-full items-center justify-center">
             <Button
                 ref={ref}
-                className="cursor-pointer text-xl"
+                className="inline-flex cursor-pointer text-xl transition-none"
                 onClick={handleClick}
                 variant={
-                    Ani.state === 'idle'
+                    ani.state === 'idle'
                         ? 'outline'
-                        : Ani.state === 'loading'
+                        : ani.state === 'loading'
                           ? 'ghost'
                           : 'glow'
                 }
-                disabled={Ani.state !== 'idle'}
+                disabled={ani.state !== 'idle'}
             >
-                {stateText[Ani.state]}
+                {stateText[ani.state]}
             </Button>
         </div>
     )
@@ -118,7 +114,7 @@ const Spring = a.timing.spring({ m: 1, k: 100, c: 10 })
 const StatesDemo = () => {
     const ref = useRef<HTMLButtonElement>(null)
 
-    const [Ani, setCurrentState] = useAniStates({
+    const [ani, setCurrentState] = useAniStates(ref, {
         initial: 'idle',
         initialFrom: {
             opacity: 1,
@@ -174,21 +170,6 @@ const StatesDemo = () => {
             ),
         },
     })
-
-    useAniRef(ref, {
-        timeline: Ani.timeline,
-    })
-
-    const handleClick = () => {
-        setCurrentState('loading')
-
-        setTimeout(() => {
-            setCurrentState('success')
-            setTimeout(() => {
-                setCurrentState('idle')
-            }, 1500)
-        }, 2000)
-    }
 
     const stateText = {
         idle: 'Submit',
