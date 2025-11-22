@@ -1,5 +1,5 @@
+import type { ExecutionPlan, Groupable } from '~/ani/core'
 import { LinearTimingFunction, type TimingFunction } from '~/timing'
-import type { ExecutionPlan, Groupable } from '../timeline'
 import {
     type AnimationId,
     AnimationNode,
