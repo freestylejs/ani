@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { TimingFunction } from '~/timing'
 import {
     type AnimationNode,
     ani,
@@ -7,7 +6,8 @@ import {
     parallel,
     sequence,
     stagger,
-} from '../nodes'
+} from '~/nodes'
+import type { TimingFunction } from '~/timing'
 
 describe('Animation Nodes & Compositors', () => {
     describe('animate()', () => {
@@ -106,7 +106,7 @@ describe('Animation Nodes & Compositors', () => {
                 ani({ to: [1], duration: 1 }), // ends at 0.5 + 1 = 1.5
                 ani({ to: [1], duration: 2 }), // ends at 1.0 + 2 = 3.0
             ]
-            const stag = stagger(children, { offset: 0.5 })
+            const stag = stagger(children, 0.5)
             // Total duration = (2 * 0.5) + 2 = 3
             expect(stag.duration).toBe(3)
         })
@@ -116,7 +116,7 @@ describe('Animation Nodes & Compositors', () => {
             const child2 = ani({ to: [1], duration: 2 })
             const mockCompile1 = vi.spyOn(child1, 'construct')
             const mockCompile2 = vi.spyOn(child2, 'construct')
-            const stag = stagger([child1, child2], { offset: 0.5 })
+            const stag = stagger([child1, child2], 0.5)
             const plan: any[] = []
             stag.construct(plan, 0)
             expect(mockCompile1).toHaveBeenCalledWith(plan, 0)
