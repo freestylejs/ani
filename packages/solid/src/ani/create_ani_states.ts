@@ -6,12 +6,15 @@ import {
     type StateProps,
 } from '@freestylejs/ani-core'
 import { createEffect, createSignal } from 'solid-js'
+import { createAniRef } from './create_ani_ref'
 
 export function createAniStates<
+    Element extends HTMLElement,
     const AnimationStates extends AnimationStateShape,
 >(
     props: StateProps<AnimationStates>
 ): readonly [
+    (el: Element) => void,
     {
         state: () => keyof AnimationStates
         timeline: () => GetTimeline<AnimationStates>
@@ -30,6 +33,11 @@ export function createAniStates<
 
     const [state, setState] = createSignal<keyof AnimationStates>(props.initial)
 
+    const [ref] = createAniRef({
+        timeline,
+        initialValue: props.initialFrom,
+    })
+
     const transitionTo: StateController<AnimationStates>['transitionTo'] = (
         newState,
         timelineConfig,
@@ -43,5 +51,5 @@ export function createAniStates<
         )
     }
 
-    return [{ state, timeline }, transitionTo] as const
+    return [ref, { state, timeline }, transitionTo] as const
 }
