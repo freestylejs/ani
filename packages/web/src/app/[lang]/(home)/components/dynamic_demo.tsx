@@ -1,7 +1,6 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
 import type { PointerEvent } from 'react'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
@@ -12,7 +11,7 @@ export const DynamicDemo = () => {
 
     useAppear(ref)
 
-    const myTimeline = useMemo(
+    const controller = useMemo(
         () =>
             a.timeline(
                 a.ani({
@@ -23,16 +22,6 @@ export const DynamicDemo = () => {
             ),
         []
     )
-    myTimeline.onUpdate((val) => {
-        lastVal.current = {
-            translateX: val.state.translateX,
-            translateY: val.state.translateY,
-        }
-    })
-
-    const controller = useAniRef(ref, {
-        timeline: myTimeline,
-    })
 
     const lastVal = useRef<{ translateX: number; translateY: number }>({
         translateX: 0,
@@ -40,15 +29,20 @@ export const DynamicDemo = () => {
     })
 
     const play = (e: PointerEvent<HTMLDivElement>) => {
-        if (!containerRef.current) return
+        if (!containerRef.current || !ref.current) return
         const rect = containerRef.current.getBoundingClientRect()
         const x = e.clientX - rect.left - 32
         const y = e.clientY - rect.top - 32
 
-        controller.play({
+        controller.play(ref.current, {
             from: lastVal.current,
             keyframes: [{ translateX: x, translateY: y }],
         })
+
+        lastVal.current = {
+            translateX: x,
+            translateY: y,
+        }
     }
 
     return (
@@ -73,14 +67,13 @@ export const DynamicDemo = () => {
 }
 
 export const dynamicCode = `
-
-const DynamicDemo = () => {
+export const DynamicDemo = () => {
     const ref = useRef<HTMLDivElement>(null)
     const containerRef = useRef<HTMLDivElement>(null)
 
-    const myTimeline = useMemo(
+    const timeline = useMemo(
         () =>
-            a.timeline(
+            a.webTimeline(
                 a.ani({
                     to: { translateX: 0, translateY: 0 },
                     duration: 0.5,
@@ -89,16 +82,6 @@ const DynamicDemo = () => {
             ),
         []
     )
-    myTimeline.onUpdate((val) => {
-        lastVal.current = {
-            translateX: val.state.translateX,
-            translateY: val.state.translateY,
-        }
-    })
-
-    const controller = useAniRef(ref, {
-        timeline: myTimeline,
-    })
 
     const lastVal = useRef<{ translateX: number; translateY: number }>({
         translateX: 0,
@@ -106,15 +89,20 @@ const DynamicDemo = () => {
     })
 
     const play = (e: PointerEvent<HTMLDivElement>) => {
-        if (!containerRef.current) return
+        if (!containerRef.current || !ref.current) return
         const rect = containerRef.current.getBoundingClientRect()
         const x = e.clientX - rect.left - 32
         const y = e.clientY - rect.top - 32
 
-        controller.play({
+        timeline.play(ref.current, {
             from: lastVal.current,
             keyframes: [{ translateX: x, translateY: y }],
         })
+
+        lastVal.current = {
+            translateX: x,
+            translateY: y,
+        }
     }
 
     return (
@@ -123,12 +111,14 @@ const DynamicDemo = () => {
             onPointerDown={(e) => {
                 play(e)
             }}
+            className="relative h-full min-h-52 w-full cursor-pointer"
         >
             <div
                 ref={ref}
-                className="absolute size-16"
+                className="absolute h-16 w-16"
             />
         </div>
     )
 }
+
 `

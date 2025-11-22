@@ -2,6 +2,7 @@
     "title": "Core API",
     "pages": [
         "timeline",
+        "dynamic_timeline",
         "ani",
         "timing",
         "sequence",

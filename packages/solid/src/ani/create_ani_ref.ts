@@ -6,11 +6,10 @@ import {
     type EventKey,
     EventManager,
     type Groupable,
-    type TimelineController,
+    type RafAniTimeline,
 } from '@freestylejs/ani-core'
 import type { JSX } from 'solid-js'
 import { createEffect, createMemo, onCleanup } from 'solid-js'
-import { createStore, produce } from 'solid-js/store'
 
 function applyStylesToRef<E extends HTMLElement>(
     el: E | null,
@@ -31,15 +30,13 @@ export function createAniRef<
     G extends Groupable,
     E extends HTMLElement = HTMLElement,
 >(
-    props: AniRefProps<G, true>
-): readonly [(el: E) => void, TimelineController<G>] {
+    props: AniRefProps<RafAniTimeline<G>, G, true>
+): readonly [(el: E) => void, RafAniTimeline<G>] {
     let element: E | null = null
 
     const { timeline, initialValue, events, cleanupEvents = true } = props
 
-    const [latestValue, setLatestValue] = createStore<AniGroup<G>>(
-        initialValue ?? ({} as AniGroup<G>)
-    )
+    let animeValue: AniGroup<G> | null = initialValue ?? null
 
     const manager = events
         ? new EventManager<readonly EventKey[], AniRefContext<G>>(
@@ -47,23 +44,23 @@ export function createAniRef<
           )
         : null
 
-    const controller = createMemo((): TimelineController<G> => {
+    const controller = createMemo((): RafAniTimeline<G> => {
         const tl = timeline()
         return {
             play: (config) => {
-                setLatestValue(
-                    produce((s) => Object.assign(s as G, config.from))
-                )
+                if (config.from) {
+                    animeValue = config.from as AniGroup<G>
+                }
                 tl?.play(config)
             },
-            pause: tl.pause,
-            resume: tl.resume,
-            seek: tl.seek,
+            seek: (time) => tl.seek(time),
+            pause: () => tl.pause(),
+            resume: () => tl.resume(),
             reset: () => {
                 tl?.reset()
-                const resetVal = initialValue ?? ({} as G)
-                setLatestValue(produce((s) => Object.assign(s as G, resetVal)))
-                if (element) {
+                const resetVal = initialValue ?? null
+                animeValue = resetVal
+                if (element && resetVal) {
                     const styleObject = createStyleSheet(
                         resetVal as Record<string, number>,
                         tl.currentConfig?.propertyResolver
@@ -71,7 +68,12 @@ export function createAniRef<
                     applyStylesToRef(element, styleObject)
                 }
             },
-        }
+            get currentConfig() {
+                return tl.currentConfig
+            },
+            onUpdate: (cb) => tl.onUpdate(cb),
+            getCurrentValue: () => tl.getCurrentValue(),
+        } as RafAniTimeline<G>
     })
 
     // >> animation subscription + direct style application.
@@ -79,8 +81,17 @@ export function createAniRef<
         const tl = timeline()
         if (!element) return
 
+        const target = tl.getCurrentValue() ?? initialValue
+        if (target) {
+            const styleObject = createStyleSheet(
+                target as Record<string, number>,
+                tl.currentConfig?.propertyResolver
+            )
+            applyStylesToRef(element, styleObject)
+        }
+
         const unsubscribe = tl.onUpdate((value) => {
-            setLatestValue(produce((s) => Object.assign(s as G, value.state)))
+            animeValue = value.state as AniGroup<G>
             const styleObject = createStyleSheet(
                 value.state as Record<string, number>,
                 tl.currentConfig?.propertyResolver
@@ -97,9 +108,9 @@ export function createAniRef<
 
         const contextGetter = (): AniRefContext<G> => {
             return {
-                current: latestValue,
+                current: animeValue,
                 ...controller(),
-            }
+            } as AniRefContext<G>
         }
 
         manager.bind(element)

@@ -1,37 +1,30 @@
-import type {
-    AniGroup,
-    Groupable,
-    Timeline,
-    TimelineController,
-} from '@freestylejs/ani-core'
-import { onMounted, onUnmounted, type Ref, ref } from 'vue'
+import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import { onBeforeUnmount, onMounted, type Ref, ref } from 'vue'
 
 export function useAni<G extends Groupable>(
-    timeline: Timeline<G>,
+    timeline: RafAniTimeline<G>,
     initialValue: AniGroup<G>
-): readonly [Ref<AniGroup<G>>, TimelineController<G>] {
-    const value = ref(initialValue) as Ref<AniGroup<G>>
+): readonly [Ref<AniGroup<G>>, RafAniTimeline<G>] {
+    const value = ref(timeline.getCurrentValue() ?? initialValue) as Ref<
+        AniGroup<G>
+    >
     let unsubscribe: () => void
 
     onMounted(() => {
+        // Sync immediate value on mount
+        const current = timeline.getCurrentValue() ?? initialValue
+        value.value = current
+
         unsubscribe = timeline.onUpdate((newValue) => {
             value.value = newValue.state
         })
     })
 
-    onUnmounted(() => {
+    onBeforeUnmount(() => {
         if (unsubscribe) {
             unsubscribe()
         }
     })
 
-    const controller: TimelineController<G> = {
-        play: timeline.play,
-        seek: timeline.seek,
-        pause: timeline.pause,
-        resume: timeline.resume,
-        reset: timeline.reset,
-    }
-
-    return [value, controller]
+    return [value, timeline]
 }

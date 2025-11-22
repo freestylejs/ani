@@ -1,7 +1,6 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { rand } from '@/lib/math/rand'
 import { useAppear } from './timeline'
@@ -26,6 +25,16 @@ const randLoc = (config: {
         top: rand(config.top),
         left: rand(config.left),
         size: rand(config.size),
+    }
+}
+
+const CreateRandKeyframe = () => {
+    return {
+        scale: rand([0.5, 1.5]),
+        rotate: rand([0, 10]),
+        borderRadius: rand([0, 20]),
+        translateX: rand([-100, 100]),
+        skewX: rand([0, 10]),
     }
 }
 
@@ -94,36 +103,12 @@ export const ParallelDemo = ({
         )
     }, [])
 
-    refs.forEach((ref) => useAppear(ref))
-
-    const CreateRandKeyframe = () => {
-        return {
-            scale: rand([0, 1]),
-            rotate: rand([0, 10]),
-            borderRadius: rand([0, 20]),
-            translateX: rand([1, 0]),
-            skewX: rand([0, 10]),
-        }
-    }
-
-    refs.map((ref, i) =>
-        useAniRef(ref, {
-            timeline: parallelTimelines[i],
-            events: {
-                onPointerdown: (ctx, e) => {
-                    ctx.play({
-                        from: CreateRandKeyframe(),
-                        repeat: 2,
-                    })
-                },
-            },
-        })
-    )
-
     const [locations, setLocations] = useState<Location[]>([])
     const [colors, setColors] = useState<string[]>([])
 
     const containerRef = useRef<HTMLDivElement>(null)
+
+    useAppear(containerRef)
 
     useEffect(() => {
         const container = containerRef.current
@@ -156,6 +141,13 @@ export const ParallelDemo = ({
 
                     return (
                         <div
+                            onPointerDown={() => {
+                                if (!ref.current) return
+                                parallelTimelines[i].play(ref.current, {
+                                    from: CreateRandKeyframe(),
+                                    repeat: Infinity,
+                                })
+                            }}
                             key={i}
                             ref={ref}
                             style={{

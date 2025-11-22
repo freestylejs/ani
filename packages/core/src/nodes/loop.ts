@@ -1,5 +1,6 @@
+import type { Groupable } from '~/ani/core'
 import type { TimingFunction } from '~/timing'
-import type { Groupable } from '../timeline'
+
 import type { AnimationId, AnimationNode } from './base'
 import { CompositionNode, type CompositionPlan } from './composition'
 
@@ -39,10 +40,11 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
 }
 
 /**
- * Repeats a child animation node a specified number of times.
- * @param child The animation node to repeat.
- * @param loopCount The number of times to repeat the child node.
- * @param timing loop timing function.
+ * Create loop for children animation.
+ *
+ * @param child Target animation node to repeat.
+ * @param loopCount Loop count.
+ * @param timing Loop timing function.
  * @param id Optional ID for the node.
  */
 export function loop<G extends Groupable>(

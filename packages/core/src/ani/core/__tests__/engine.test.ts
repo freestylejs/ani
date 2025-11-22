@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { T, type TimingFunction } from '~/timing'
-import { calculateSegmentState } from '../engine'
+import { calculateSegmentState } from '../../core/engine'
 
 describe('calculateSegmentState', () => {
     it('should correctly interpolate a single value', () => {

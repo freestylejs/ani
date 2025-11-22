@@ -1,5 +1,4 @@
-import type { SegmentTiming } from '../engine'
-import type { ExecutionPlan, Groupable } from '../timeline'
+import type { ExecutionPlan, Groupable, SegmentTiming } from '~/ani/core'
 import { type AnimationId, AnimationNode } from './base'
 
 export interface SegmentNodeProps<G extends Groupable> {
@@ -39,7 +38,10 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
 }
 
 /**
- * Factory function to create a ani SegmentNode.
+ * Single animation segment.
+ *
+ * @param props Animation config.
+ * @param id Optional ID for the node.
  */
 export function ani<G extends Groupable>(
     props: SegmentNodeProps<G>,

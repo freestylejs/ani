@@ -1,7 +1,6 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
 
@@ -65,25 +64,23 @@ export const SequenceDemo = () => {
         )
     }, [])
 
-    const controller = useAniRef(ref, {
-        timeline: myTimeline,
-    })
-
     return (
         <div className="flex size-full items-center justify-center">
             <div
                 ref={ref}
                 className="h-16 w-16 cursor-pointer rounded-lg bg-blue-500 opacity-100 transition-colors duration-200 hover:bg-blue-400"
                 onClick={() => {
-                    controller.play({
-                        from: {
-                            translateX: 0,
-                            translateY: 0,
-                            rotate: 0,
-                            borderRadius: 10,
-                        },
-                        repeat: Infinity,
-                    })
+                    if (ref.current) {
+                        myTimeline.play(ref.current, {
+                            from: {
+                                translateX: 0,
+                                translateY: 0,
+                                rotate: 0,
+                                borderRadius: 10,
+                            },
+                            repeat: Infinity,
+                        })
+                    }
                 }}
             />
         </div>
@@ -149,25 +146,23 @@ const SequenceDemo = () => {
         )
     }, [])
 
-    const controller = useAniRef(ref, {
-        timeline: myTimeline,
-    })
-
     return (
         <div className="flex size-full items-center justify-center">
             <div
                 ref={ref}
                 className="size-16"
                 onClick={() => {
-                    controller.play({
-                        from: {
-                            translateX: 0,
-                            translateY: 0,
-                            rotate: 0,
-                            borderRadius: 10,
-                        },
-                        repeat: Infinity,
-                    })
+                    if (ref.current) {
+                        myTimeline.play(ref.current, {
+                            from: {
+                                translateX: 0,
+                                translateY: 0,
+                                rotate: 0,
+                                borderRadius: 10,
+                            },
+                            repeat: Infinity,
+                        })
+                    }
                 }}
             />
         </div>

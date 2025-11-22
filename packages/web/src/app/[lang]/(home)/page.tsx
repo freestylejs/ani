@@ -4,11 +4,15 @@ import {
     DynamicDemo,
     dynamicCode,
     FeatureCard,
+    HeartBeatingDemo,
+    heartBeatingCode,
     LoopDelayDemo,
     loopDelayDemoCodeString,
     ParallelDemo,
+    PerformanceDemo,
     PointerFollowingBalls,
     parallelCode,
+    performanceCode,
     pointerFollowingCode,
     SequenceDemo,
     StaggerDemo,
@@ -31,6 +35,42 @@ export default function HomePage() {
             />
 
             <div className="mt-16 grid size-full grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-2">
+                <FeatureCard
+                    title="Wow, Blazing-Fast"
+                    description="Unlock frictionless, zero-overhead animations powered by the native Web Animation API."
+                    link={`/${CONFIG.majorLang}/docs/core-api/web-timeline`}
+                    code={performanceCode}
+                >
+                    <PerformanceDemo />
+                </FeatureCard>
+
+                <FeatureCard
+                    title="Elegant State Management"
+                    description="Manage complex UI states with declarative transitions."
+                    link={`/${CONFIG.majorLang}/docs/core-api/states`}
+                    code={statesCode}
+                >
+                    <StatesDemo />
+                </FeatureCard>
+
+                <FeatureCard
+                    title="Dynamic Keyframes"
+                    description="Drive animations with runtime values from user input keyframes."
+                    link={`/${CONFIG.majorLang}/docs/core-api/advanced/dynamic-animations`}
+                    code={dynamicCode}
+                >
+                    <DynamicDemo />
+                </FeatureCard>
+
+                <FeatureCard
+                    title="Physics-Driven Spring Dynamics"
+                    description="Create simulation based dynamic spring animations."
+                    link={`/${CONFIG.majorLang}/docs/core-api/timing`}
+                    code={pointerFollowingCode}
+                >
+                    <PointerFollowingBalls ballCount={9} />
+                </FeatureCard>
+
                 <FeatureCard
                     title="Sequence"
                     description="Chain animations together to run one after another."
@@ -68,30 +108,12 @@ export default function HomePage() {
                 </FeatureCard>
 
                 <FeatureCard
-                    title="Dynamic Keyframes"
-                    description="Drive animations with runtime values from user input keyframes."
-                    link={`/${CONFIG.majorLang}/docs/core-api/advanced/dynamic-animations`}
-                    code={dynamicCode}
+                    title="Open Source Crafted with Heart"
+                    description="Create awesome product using ani and WebGL."
+                    link={`/${CONFIG.majorLang}/docs/core-api/loop`}
+                    code={heartBeatingCode}
                 >
-                    <DynamicDemo />
-                </FeatureCard>
-
-                <FeatureCard
-                    title="Dynamic Spring Animation"
-                    description="Create simulation based dynamic spring animations."
-                    link={`/${CONFIG.majorLang}/docs/core-api/timing`}
-                    code={pointerFollowingCode}
-                >
-                    <PointerFollowingBalls ballCount={9} />
-                </FeatureCard>
-
-                <FeatureCard
-                    title="States"
-                    description="Manage complex UI states with declarative transitions."
-                    link={`/${CONFIG.majorLang}/docs/core-api/states`}
-                    code={statesCode}
-                >
-                    <StatesDemo />
+                    <HeartBeatingDemo />
                 </FeatureCard>
             </div>
         </main>

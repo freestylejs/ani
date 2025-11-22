@@ -5,7 +5,7 @@ type PreserveRecord = Record<string, any>
 
 /**
  * Creates a pause in an animation sequence.
- * @param duration The duration of the delay in seconds.
+ * @param duration Duration of the delay in `seconds`.
  * @param id Optional ID for the node.
  */
 export function delay(

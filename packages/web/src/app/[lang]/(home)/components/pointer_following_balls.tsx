@@ -23,7 +23,7 @@ export const PointerFollowingBalls = ({
 
     const timelines = useMemo(() => {
         return Array.from({ length: ballCount }, (_, i) =>
-            a.timeline(
+            a.dynamicTimeline(
                 a.ani({
                     to: { translateX: 0, translateY: 0, scale: 1 },
                     duration: 200,

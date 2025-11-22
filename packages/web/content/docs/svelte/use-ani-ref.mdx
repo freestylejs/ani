@@ -9,10 +9,11 @@ This primitive applies animation styles directly to a DOM element using the `use
 
 ```svelte
 <script>
-  import { useAniRef, timeline, a } from '@freestylejs/ani-svelte';
+  import { a } from '@freestylejs/ani-core';
+  import { useAniRef } from '@freestylejs/ani-svelte';
 
   // 1. Define the animation structure and timeline.
-  const myTimeline = timeline(
+  const myTimeline = a.dynamicTimeline(
     a.sequence([
       a.ani({ to: { x: 500, rotate: 360 }, duration: 1 }),
       a.ani({ to: { x: 0, rotate: 0 }, duration: 1 }),
@@ -53,39 +54,6 @@ Event handlers passed to the `events` property receive a context object containi
 -   **Do** use `useAniRef` for high-performance animations of CSS properties like `transform` and `opacity`.
 -   **Do** use it for complex, interactive animations driven by user input at 60fps.
 -   **Don't** use `useAniRef` when you need to read the animated values elsewhere in your component. Use `useAni` for that.
-
-### API Reference
-
-#### Parameters
-
-The `useAniRef` primitive accepts a single `props` object with the following properties:
-
-| Name            | Type                       | Description                                                      | Default |
-| --------------- | -------------------------- | ---------------------------------------------------------------- | ------- |
-| `timeline`      | `Timeline<G>`              | The animation timeline instance to run.                          | —       |
-| `initialValue`  | `AniGroup<G>`              | (Optional) An initial state for the animation.                   | —       |
-| `events`        | `EventHandlerRegistration` | (Optional) A map of event handlers for interactive animations.   | —       |
-| `cleanupEvents` | `boolean`                  | (Optional) If `true`, automatically removes event listeners.     | `true`  |
-
-#### Return Value
-
-The primitive returns a `readonly` tuple with the following structure:
-
-| Index | Type                       | Description                                      |
-| ----- | -------------------------- | ------------------------------------------------ |
-| `[0]` | `Action<HTMLElement, any>` | A Svelte Action to apply to your target DOM element. |
-| `[1]` | `TimelineController<G>`    | The controller to play, pause, or stop the timeline. |
-
-#### Type Definitions
-
-```typescript
-import { Groupable, Timeline, TimelineController, AniRefProps } from '@freestylejs/ani-core';
-import { Action } from 'svelte/action';
-
-declare function useAniRef<G extends Groupable>(
-  props: AniRefProps<G>
-): readonly [Action<HTMLElement, any>, TimelineController<G>];
-```
 
 ### Related Components
 
