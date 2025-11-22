@@ -1,25 +1,33 @@
+import type { AniGroup, Groupable } from '~/ani/core'
 import type { AnimationClockInterface } from '~/loop'
-import type { AnimationNode, ExtractAnimationNode } from './nodes'
+import type { AnimationNode, ExtractAnimationNode } from '~/nodes'
 import {
-    type AniGroup,
-    type Groupable,
-    type Timeline,
-    type TimelineStartingConfig,
-    timeline,
+    type RafAniTimeline,
+    type RafTimelineConfig,
+    rafTimeline,
 } from './timeline'
 
 export type AnimationStateShape = Record<string, AnimationNode<Groupable>>
 
-export type GetTimeline<State extends AnimationStateShape> = Timeline<
+export type GetTimeline<State extends AnimationStateShape> = RafAniTimeline<
     ExtractAnimationNode<State[keyof State]>,
     any
 >
+
+type TimelineChangeCallback<AnimationStates extends AnimationStateShape> = (
+    timeline: GetTimeline<AnimationStates>
+) => void
 
 export interface StateController<AnimationStates extends AnimationStateShape> {
     /**
      * Get current timeline.
      */
     timeline: () => GetTimeline<AnimationStates>
+
+    /**
+     * Get current state.
+     */
+    state: () => keyof AnimationStates
 
     /**
      * Transition timeline animation into another state.
@@ -30,7 +38,7 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
      */
     transitionTo(
         newState: keyof AnimationStates,
-        timelineConfig?: TimelineStartingConfig<
+        timelineConfig?: RafTimelineConfig<
             ExtractAnimationNode<AnimationStates[keyof AnimationStates]>,
             any
         >,
@@ -43,7 +51,7 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
      * @returns unsubscribe function
      */
     onTimelineChange(
-        callback: (newTimeline: GetTimeline<AnimationStates>) => void
+        callback: TimelineChangeCallback<AnimationStates>
     ): () => void
 }
 
@@ -79,12 +87,12 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     config: StateProps<AnimationStates>
 ): StateController<AnimationStates> {
     let State: keyof AnimationStates = config.initial
-    let Timeline: Timeline<Groupable> = timeline(
+    let Timeline: RafAniTimeline<Groupable> = rafTimeline(
         config.states[State]!,
         config.clock
     )
 
-    const subs = new Set<(newTimeline: GetTimeline<AnimationStates>) => void>()
+    const subs = new Set<TimelineChangeCallback<AnimationStates>>()
     const notify = (timeline: GetTimeline<AnimationStates>) => {
         for (const Sub of subs) {
             Sub(timeline)
@@ -93,23 +101,19 @@ export function createStates<AnimationStates extends AnimationStateShape>(
 
     return {
         timeline: () => Timeline as unknown as GetTimeline<AnimationStates>,
+        state: () => State,
         onTimelineChange(callback) {
             subs.add(callback)
             return () => subs.delete(callback)
         },
         transitionTo(newState, timelineConfig, canBeIntercepted) {
-            // keep current timeline
-            if (!config.states[newState] || State === newState) {
-                return
-            }
-
             // new timeline
             const from = (timelineConfig?.from ?? // 1. config
                 Timeline.getCurrentValue() ?? // 2. last value
-                config.initialFrom) as TimelineStartingConfig<Groupable>['from'] // 3. initial value
+                config.initialFrom) as RafTimelineConfig<Groupable>['from'] // 3. initial value
 
             State = newState
-            Timeline = timeline(config.states[State]!, config.clock)
+            Timeline = rafTimeline(config.states[State]!, config.clock)
             notify(Timeline as unknown as GetTimeline<AnimationStates>)
 
             Timeline.play(

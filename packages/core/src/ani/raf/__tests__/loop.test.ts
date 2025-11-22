@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ani, loop, sequence } from '../nodes'
+import { ani, loop, sequence } from '~/nodes'
 
 describe('LoopNode', () => {
     it('should calculate duration as child duration multiplied by count', () => {

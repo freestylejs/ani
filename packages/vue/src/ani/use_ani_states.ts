@@ -5,13 +5,22 @@ import {
     type StateController,
     type StateProps,
 } from '@freestylejs/ani-core'
-import { onMounted, onUnmounted, type Ref, readonly, ref } from 'vue'
+import {
+    onBeforeUnmount,
+    onMounted,
+    type Ref,
+    readonly,
+    ref,
+    shallowRef,
+} from 'vue'
+import { useAniRef } from './use_ani_ref'
 
 export function useAniStates<
     const AnimationStates extends Record<string, any> & AnimationStateShape,
 >(
     props: StateProps<AnimationStates>
 ): readonly [
+    Ref<HTMLElement | null>,
     {
         state: Readonly<Ref<keyof AnimationStates>>
         timeline: Readonly<Ref<GetTimeline<AnimationStates>>>
@@ -19,9 +28,14 @@ export function useAniStates<
     StateController<AnimationStates>['transitionTo'],
 ] {
     const statesController = createStates(props)
-    const timeline = ref<GetTimeline<AnimationStates>>(
+    const timeline = shallowRef<GetTimeline<AnimationStates>>(
         statesController.timeline()
     )
+
+    const [elementRef] = useAniRef({
+        timeline: timeline,
+        initialValue: props.initialFrom,
+    })
 
     let unsubscribe: () => void
     onMounted(() => {
@@ -29,7 +43,7 @@ export function useAniStates<
             timeline.value = newTimeline
         })
     })
-    onUnmounted(() => {
+    onBeforeUnmount(() => {
         if (unsubscribe) unsubscribe()
     })
 
@@ -49,6 +63,7 @@ export function useAniStates<
     }
 
     return [
+        elementRef,
         {
             state: readonly(state) as Readonly<Ref<keyof AnimationStates>>,
             timeline: readonly(timeline) as Readonly<

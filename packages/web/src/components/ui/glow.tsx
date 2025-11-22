@@ -1,7 +1,6 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core/index'
-import { useAniRef } from '@freestylejs/ani-react/index'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { rand } from '@/lib/math/rand'
@@ -58,18 +57,15 @@ export function Glow({
 }: React.PropsWithChildren<React.ComponentProps<'div'>>) {
     const targetGlob = useRef<HTMLDivElement>(null)
 
-    const c = useAniRef(targetGlob, {
-        timeline: glowTimeline,
-    })
-
     const [randLocation, setRandLocation] = useState<{
         x: number
         y: number
     } | null>(null)
 
     useEffect(() => {
+        if (!targetGlob.current) return
         setRandLocation(randLoc())
-        c.play({
+        glowTimeline.play(targetGlob.current, {
             from: {
                 scale: 0,
                 opacity: 0,

@@ -6,15 +6,22 @@ import {
     type EventKey,
     EventManager,
     type Groupable,
-    type TimelineController,
+    type RafAniTimeline,
 } from '@freestylejs/ani-core'
-import { onMounted, onUnmounted, type Ref, ref } from 'vue'
+import { computed, onBeforeUnmount, type Ref, ref, unref, watch } from 'vue'
 
 function applyStylesToNode<E extends HTMLElement>(
     node: E,
     style: Record<string, string | number>
 ): void {
     Object.assign(node.style, style)
+}
+
+type VueAniRefProps<G extends Groupable> = Omit<
+    AniRefProps<RafAniTimeline<G>, G>,
+    'timeline'
+> & {
+    timeline: RafAniTimeline<G> | Ref<RafAniTimeline<G>>
 }
 
 /**
@@ -29,72 +36,103 @@ export function useAniRef<G extends Groupable>({
     initialValue,
     events,
     cleanupEvents = true,
-}: AniRefProps<G>): readonly [Ref<HTMLElement | null>, TimelineController<G>] {
+}: VueAniRefProps<G>): readonly [Ref<HTMLElement | null>, RafAniTimeline<G>] {
     const elementRef = ref<HTMLElement | null>(null)
-    const animeValue = ref<AniGroup<G> | null>(
-        initialValue ?? null
-    ) as Ref<AniGroup<G> | null>
+    let animeValue: AniGroup<G> | null = initialValue ?? null
 
-    const controller: TimelineController<G> = {
+    const currentTimeline = computed(() => unref(timeline))
+
+    const controller: RafAniTimeline<G> = {
         play: (config) => {
-            animeValue.value = config.from
-            timeline.play(config)
+            if (config.from) {
+                animeValue = config.from as AniGroup<G>
+            }
+            currentTimeline.value.play(config)
         },
-        seek: timeline.seek,
-        pause: timeline.pause,
-        resume: timeline.resume,
+        seek: (time) => currentTimeline.value.seek(time),
+        pause: () => currentTimeline.value.pause(),
+        resume: () => currentTimeline.value.resume(),
         reset: () => {
-            timeline.reset()
-            animeValue.value = initialValue ?? null
-        },
-    }
-
-    let unsubscribe: () => void
-    let manager: EventManager<readonly EventKey[], AniRefContext<G>> | null =
-        null
-
-    onMounted(() => {
-        if (!elementRef.value) {
-            return
-        }
-
-        if (initialValue) {
-            const styleObject = createStyleSheet(
-                initialValue as Record<string, number>,
-                timeline.currentConfig?.propertyResolver
-            )
-            applyStylesToNode(elementRef.value, styleObject)
-        }
-
-        unsubscribe = timeline.onUpdate((value) => {
-            animeValue.value = value.state
-            if (elementRef.value) {
+            currentTimeline.value.reset()
+            const resetVal = initialValue ?? null
+            animeValue = resetVal
+            if (elementRef.value && resetVal) {
                 const styleObject = createStyleSheet(
-                    value.state as Record<string, number>,
-                    timeline.currentConfig?.propertyResolver
+                    resetVal as Record<string, number>,
+                    currentTimeline.value.currentConfig?.propertyResolver
                 )
                 applyStylesToNode(elementRef.value, styleObject)
             }
-        })
+        },
+        get currentConfig() {
+            return currentTimeline.value.currentConfig
+        },
+        onUpdate: (cb) => currentTimeline.value.onUpdate(cb),
+        getCurrentValue: () => currentTimeline.value.getCurrentValue(),
+    } as RafAniTimeline<G>
 
-        if (events && elementRef.value) {
-            manager = new EventManager(
-                Object.keys(events).map(EventManager.getEvtKey)
-            )
-            const contextGetter = (): AniRefContext<G> => ({
-                current: animeValue.value,
-                ...controller,
+    // >> animation subscription + direct style application.
+    watch(
+        [currentTimeline, elementRef],
+        ([tl, el], _, onCleanup) => {
+            if (!el || !tl) return
+
+            const target = tl.getCurrentValue() ?? initialValue
+            if (target) {
+                const styleObject = createStyleSheet(
+                    target as Record<string, number>,
+                    tl.currentConfig?.propertyResolver
+                )
+                applyStylesToNode(el, styleObject)
+            }
+
+            const unsubscribe = tl.onUpdate((value) => {
+                animeValue = value.state
+                const styleObject = createStyleSheet(
+                    value.state as Record<string, number>,
+                    tl.currentConfig?.propertyResolver
+                )
+                applyStylesToNode(el, styleObject)
             })
-            manager.bind(elementRef.value)
-            manager.attach(events)
-            manager.setAnimeGetter(contextGetter)
-        }
+
+            onCleanup(() => {
+                unsubscribe()
+            })
+        },
+        { immediate: true }
+    )
+
+    // >> event subscription
+    let manager: EventManager<readonly EventKey[], AniRefContext<G>> | null =
+        null
+
+    if (events) {
+        manager = new EventManager(
+            Object.keys(events).map(EventManager.getEvtKey)
+        )
+    }
+
+    watch(elementRef, (el, _, onCleanup) => {
+        if (!manager || !el || !events) return
+
+        const contextGetter = (): AniRefContext<G> =>
+            ({
+                current: animeValue,
+                ...controller,
+            }) as AniRefContext<G>
+
+        manager.bind(el)
+        manager.attach(events)
+        manager.setAnimeGetter(contextGetter)
+
+        onCleanup(() => {
+            if (cleanupEvents) {
+                manager.cleanupAll()
+            }
+        })
     })
 
-    onUnmounted(() => {
-        if (unsubscribe) {
-            unsubscribe()
-        }
+    onBeforeUnmount(() => {
         if (manager && cleanupEvents) {
             manager.cleanupAll()
         }

@@ -18,7 +18,7 @@ const InteractiveBox = () => {
 
   // 2. Define the animation and create a timeline.
   const myTimeline = useMemo(
-    () => a.timeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 })),
+    () => a.dynamicTimeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 })),
     []
   );
 
@@ -71,40 +71,6 @@ const controller = useAniRef(ref, {
 -   **Do** use `useAniRef` for animating CSS properties like `transform` and `opacity`.
 -   **Do** use it for complex, interactive animations that need to respond to user input at 60fps.
 -   **Don't** use `useAniRef` if you need the animated value to render text content or pass to a child component's props. Use `useAni` for that.
-
-### API Reference
-
-#### Parameters
-
-| Name    | Type                   | Description                                          | Default |
-| ------- | ---------------------- | ---------------------------------------------------- | ------- |
-| `ref`   | `RefObject<E>`         | The React ref attached to the DOM element.           | —       |
-| `props` | `AniRefProps<G>`       | The configuration object for the animation.          | —       |
-
-#### `AniRefProps` Object
-
-| Name            | Type                       | Description                                                      | Default     |
-| --------------- | -------------------------- | ---------------------------------------------------------------- | ----------- |
-| `timeline`      | `Timeline<G>`              | The timeline instance to run.                                    | —           |
-| `initialValue`  | `AniGroup<G>`              | (Optional) The initial style of the element.                     | —           |
-| `events`        | `EventHandlerRegistration` | (Optional) A map of event handlers for interactivity.            | `undefined` |
-| `cleanupEvents` | `boolean`                  | (Optional) Whether to automatically clean up events on unmount. | `true`      |
-
-#### Return Value
-
-Returns the `TimelineController<G>` instance, which you can use to control the animation's playback.
-
-#### Type Definitions
-
-```typescript
-import { Groupable, Timeline, TimelineController, AniRefProps } from '@freestylejs/ani-core';
-import { RefObject } from 'react';
-
-function useAniRef<G extends Groupable, E extends HTMLElement = HTMLElement>(
-  ref: RefObject<E | null>,
-  props: AniRefProps<G>
-): TimelineController<G>;
-```
 
 ### Related Components
 
