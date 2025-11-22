@@ -1,7 +1,6 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
 
@@ -14,51 +13,47 @@ export const StaggerDemo = () => {
         useRef<HTMLDivElement>(null),
     ]
 
-    const controllers = refs.map((ref) => {
-        const spring = a.timing.spring({
-            m: 1,
-            k: 500,
-            c: 10,
+    const timelines = useMemo(() => {
+        return refs.map(() => {
+            const spring = a.timing.spring({
+                m: 1,
+                k: 500,
+                c: 10,
+            })
+            return a.timeline(
+                a.stagger(
+                    [
+                        a.ani({
+                            to: { translateY: -20, translateX: 20 },
+                            duration: 1,
+                            timing: spring,
+                        }),
+                        a.ani({
+                            to: { translateY: +20, translateX: -20 },
+                            duration: 1,
+                            timing: spring,
+                        }),
+                        a.ani({
+                            to: { translateY: 0, translateX: 0 },
+                            duration: 0.6,
+                            timing: spring,
+                        }),
+                    ],
+                    1
+                )
+            )
         })
-        const myTimeline = useMemo(
-            () =>
-                a.timeline(
-                    a.stagger(
-                        [
-                            a.ani({
-                                to: { translateY: -20, translateX: 20 },
-                                duration: 1,
-                                timing: spring,
-                            }),
-                            a.ani({
-                                to: { translateY: +20, translateX: -20 },
-                                duration: 1,
-                                timing: spring,
-                            }),
-                            a.ani({
-                                to: { translateY: 0, translateX: 0 },
-                                duration: 0.6,
-                                timing: spring,
-                            }),
-                        ],
-                        {
-                            offset: 1,
-                        }
-                    )
-                ),
-            []
-        )
-        return useAniRef(ref, {
-            timeline: myTimeline,
-        })
-    })
+    }, [])
 
     const handleClick = () => {
-        controllers.forEach((controller, i) => {
-            controller.play({
-                from: { translateX: 0, translateY: 0 },
-                delay: i * 50,
-            })
+        timelines.forEach((timeline, i) => {
+            const ref = refs[i]
+            if (ref?.current) {
+                timeline.play(ref.current, {
+                    from: { translateX: 0, translateY: 0 },
+                    delay: i * 50,
+                })
+            }
         })
     }
 
@@ -90,51 +85,49 @@ export const StaggerDemo = () => {
         useRef<HTMLDivElement>(null),
     ]
 
-    const controllers = refs.map((ref) => {
-        const spring = a.timing.spring({
-            m: 1,
-            k: 500,
-            c: 10,
+    const timelines = useMemo(() => {
+        return refs.map(() => {
+            const spring = a.timing.spring({
+                m: 1,
+                k: 500,
+                c: 10,
+            })
+            return a.timeline(
+                a.stagger(
+                    [
+                        a.ani({
+                            to: { translateY: -20, translateX: 20 },
+                            duration: 1,
+                            timing: spring,
+                        }),
+                        a.ani({
+                            to: { translateY: +20, translateX: -20 },
+                            duration: 1,
+                            timing: spring,
+                        }),
+                        a.ani({
+                            to: { translateY: 0, translateX: 0 },
+                            duration: 0.6,
+                            timing: spring,
+                        }),
+                    ],
+                    {
+                        offset: 1,
+                    }
+                )
+            )
         })
-        const myTimeline = useMemo(
-            () =>
-                a.timeline(
-                    a.stagger(
-                        [
-                            a.ani({
-                                to: { translateY: -20, translateX: 20 },
-                                duration: 1,
-                                timing: spring,
-                            }),
-                            a.ani({
-                                to: { translateY: +20, translateX: -20 },
-                                duration: 1,
-                                timing: spring,
-                            }),
-                            a.ani({
-                                to: { translateY: 0, translateX: 0 },
-                                duration: 0.6,
-                                timing: spring,
-                            }),
-                        ],
-                        {
-                            offset: 1,
-                        }
-                    )
-                ),
-            []
-        )
-        return useAniRef(ref, {
-            timeline: myTimeline,
-        })
-    })
+    }, [])
 
     const handleClick = () => {
-        controllers.forEach((controller, i) => {
-            controller.play({
-                from: { translateX: 0, translateY: 0 },
-                delay: i * 50,
-            })
+        timelines.forEach((timeline, i) => {
+            const ref = refs[i]
+            if (ref?.current) {
+                timeline.play(ref.current, {
+                    from: { translateX: 0, translateY: 0 },
+                    delay: i * 50,
+                })
+            }
         })
     }
 
@@ -152,4 +145,5 @@ export const StaggerDemo = () => {
             ))}
         </div>
     )
-}`
+}
+`
