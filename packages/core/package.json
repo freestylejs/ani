@@ -1,17 +1,22 @@
 {
     "name": "@freestylejs/ani-core",
     "author": "freestyle",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Core functionality for the Ani animation library.",
     "license": "MIT",
     "type": "module",
-    "keywords": ["animation", "core"],
+    "keywords": [
+        "animation",
+        "core"
+    ],
     "sideEffects": false,
     "private": false,
     "publishConfig": {
         "access": "public"
     },
-    "files": ["dist"],
+    "files": [
+        "dist"
+    ],
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
     "types": "./dist/index.d.ts",
