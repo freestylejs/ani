@@ -1,9 +1,9 @@
 // public binding api type-defs.
 
-import type { AniGroup, Groupable, Timeline, TimelineController } from './ani'
+import type { AniGroup, Groupable, TimelineBase } from './ani/core'
 import type { EventHandlerRegistration } from './event'
 
-export type AniRefContext<G extends Groupable> = TimelineController<G> & {
+export type AniRefContext<G extends Groupable> = TimelineBase<G> & {
     /**
      * Current animation value
      */
@@ -11,13 +11,14 @@ export type AniRefContext<G extends Groupable> = TimelineController<G> & {
 }
 
 export interface AniRefProps<
+    Timeline extends TimelineBase<G>,
     G extends Groupable,
     AsGetter extends boolean = false,
 > {
     /**
      * The compositional timeline to bind to the element.
      */
-    timeline: AsGetter extends true ? () => Timeline<G> : Timeline<G>
+    timeline: AsGetter extends true ? () => Timeline : Timeline
     /**
      * The initial style to apply to the element before the animation plays.
      */

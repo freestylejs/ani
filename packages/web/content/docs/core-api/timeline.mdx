@@ -1,9 +1,10 @@
 ---
-title: timeline
-description: The main controller that runs an animation, manages its state, and controls its playback.
+title: timeline (WebAPI)
+description:  The main controller that runs an animation, manages its state, and controls its playback. Powered by the Web Animations API.
 ---
 
-The `timeline` is the execution engine for any animation you create. It takes a root animation node (like a `sequence` or `parallel` block), manages the animation's state, and controls its playback.
+The `dynamicTimeline` API compiles your declarative animation tree into native browser keyframes and plays them using `Element.animate()`. 
+This allows animations to run on the compositor thread (where possible), resulting in silky smooth performance even when the JavaScript main thread is busy.
 
 ### Example
 
@@ -11,89 +12,73 @@ The `timeline` is the execution engine for any animation you create. It takes a 
 import { a } from "@freestylejs/ani-core";
 
 // 1. Define the animation structure.
-// TypeScript infers the data shape `G` as { opacity: number, x: number }
 const myAnimation = a.sequence([
-  a.ani({ to: { opacity: 1, x: 0 }, duration: 1 }),
-  a.ani({ to: { opacity: 1, x: 100 }, duration: 2 }),
+  a.ani({ to: { translateX: 100 }, duration: 1 }),
+  a.ani({ to: { translateY: 100 }, duration: 1 }),
 ]);
 
-// 2. Create a reusable timeline instance from the structure.
-const myTimeline = a.timeline(myAnimation);
+// 2. Create a web-native timeline.
+const timeline = a.timeline(myAnimation);
 
-// 3. Listen for updates to apply the animated values to your UI.
-const unsubscribe = myTimeline.onUpdate(({ state }) => {
-  // `state` is strongly typed as { opacity: number, x: number }
-  console.log(`Opacity: ${state.opacity}, X: ${state.x}`);
-  // e.g., element.style.opacity = state.opacity;
-  // e.g., element.style.transform = `translateX(${state.x}px)`;
-});
-
-// 4. Play the animation from a starting state.
-myTimeline.play({ from: { opacity: 0, x: 0 } });
+// 3. Play on a specific DOM element.
+const element = document.getElementById("box");
+if (element) {
+    timeline.play(element, {
+        from: { translateX: 0, translateY: 0 },
+        repeat: Infinity
+    });
+}
 ```
 
 ### Usage & Concepts
 
 #### Overview
 
-The `timeline` is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
+Unlike the standard `dynamicTimeline` which runs frame-by-frame via JavaScript, `timeline` uses the browser's native animation engine. This offers significant performance benefits, especially for continuous animations (loops) or on lower-end devices.
 
-When you call `.play()`, the timeline traverses the animation node tree and builds a flat list of "segments". Each segment represents a single `ani` call with its calculated start time, end time, and timing function. On each frame, the timeline calculates the elapsed time, finds the active segment, computes the interpolated value, and notifies subscribers via `onUpdate`.
+> Runs natively using web [`AnimationAPI`](https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API), `timeline` does not emit `onUpdate` events.
+> 
+> State management is handled entirely by the browser's `CSSOM` calculations.
+
+#### Key Differences from `dynamicTimeline`
+
+| Feature | `dynamicTimeline` (JS) | `timeline` (Native) |
+| :--- | :--- | :--- |
+| **Engine** | JavaScript `requestAnimationFrame` | Browser `Element.animate()` |
+| **Performance** | Good, but blocked by main thread | **Excellent**, often compositor-threaded |
+| **Events** | `onUpdate` for every frame | No frame updates |
+| **Properties** | **Any numeric property** | **`CSS` properties only** |
 
 #### Best Practices
 
--   **Do** create one timeline per independent animation.
--   **Do** reuse timelines when you need to play the same animation structure with different starting values.
--   **Don't** create a new timeline inside a render loop or frequently. Create it once and store it.
+- **Do** use `timeline` for purely visual UI transitions (fades, slides, scaling) and infinite background loops.
+- **Do** use standard `CSS` property names like `translateX` instead of shorthands like `x` to ensure compatibility.
+- **Don't** use `timeline` if you need to sync non-DOM elements (like Canvas or WebGL) or if you need to react to value changes every frame.
 
-### API Reference
+#### Limitation 1: Internal Value Can not be accessed.
 
-#### Methods
+> Use [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline), if you should access internal animation value directly.
 
-| Method | Description |
+`timeline` uses `WebAnimationAPI` so we can not access value directly, which is managed by browser internal logics. 
+
+But you can access animation values via [`getAnimations`](https://developer.mozilla.org/en-US/docs/Web/API/Element/getAnimations) api, but it is not recommended approach.
+
+#### Timing Functions
+
+Since `timeline` compiles to native `CSS` Keyframes, standard easing functions are compiled directly to `CSS` strings, while complex physics-based timings are **sampled** into a series of linear keyframes.
+
+| Timing Function | Compilation Behavior |
 | :--- | :--- |
-| `play(config, [canBeIntercepted])` | Starts the animation with a given configuration. |
-| `pause()` | Pauses the animation at its current state. |
-| `resume()` | Resumes a paused animation. |
-| `reset()` | Resets the animation to its initial state. |
-| `seek(time)` | Jumps to a specific time in the animation (in seconds). |
-| `onUpdate(cb)` | Registers a callback for state and status updates. Returns an unsubscribe function. |
+| `linear()` | **Compiles** to `linear`. Recommended. |
+| `bezier()` | **Compiles** to `cubic-bezier(...)`. Recommended. |
+| `spring()` | **Sampled(but can not be duration goes into `Infinity`)**. Compiles into high-density linear keyframes (60fps). |
+| `dynamicSpring()` | **Sampled(but can not be duration goes into `Infinity`)**. Compiles frame-by-frame stateful simulation. |
+| *User Custom* | **Sampled**, provided the function is stateless (pure function of time). |
 
-#### Type Definitions
-
-```typescript
-// Factory Function
-function timeline<G>(rootNode: AnimationNode<G>): Timeline<G>
-
-// Main play configuration
-interface TimelineStartingConfig<G> {
-    from: G;
-    keyframes?: Array<G | 'keep'>;
-    durations?: Array<number | 'keep'>;
-    repeat?: number; // e.g., Infinity
-    context?: any;
-}
-
-// onUpdate callback signature
-type OnUpdateCallback<G> = (current: {
-    state: G;
-    status: 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED';
-}) => void;
-
-// Timeline Interface
-interface Timeline<G> {
-  play(config: TimelineStartingConfig<G>, canBeIntercepted?: boolean): void;
-  pause(): void;
-  resume(): void;
-  reset(): void;
-  seek(targetTime: number): void;
-  onUpdate(callback: OnUpdateCallback<G>): () => void;
-}
-```
+> **Note:** Using `spring()` or custom timing functions with `timeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard `CSS` easing. Stateful animations like `dynamicSpring` (which depend on velocity from the previous frame) cannot be pre-compiled and are not supported.
 
 ### Related Components
 
--   [`ani`](/en/docs/core-api/ani) - The basic building block for animations controlled by a timeline.
--   [`sequence`](/en/docs/core-api/sequence) - A composition node to be passed to a timeline.
--   [`parallel`](/en/docs/core-api/parallel) - Another composition node to be passed to a timeline.
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The standard JavaScript-based controller.
+-   [`ani`](/en/docs/core-api/ani) - The building block for animations.
 -   [`Dynamic Animations`](/en/docs/core-api/advanced/dynamic-animations) - For creating interactive animations.

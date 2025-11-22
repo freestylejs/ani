@@ -10,7 +10,7 @@ This composable is a Vue-specific wrapper around the core `createStates` functio
 ```vue
 <script setup>
 import { a } from "@freestylejs/ani-core";
-import { useAniRef, useAniStates } from "@freestylejs/ani-vue";
+import { useAniStates } from "@freestylejs/ani-vue";
 import { ref } from "vue";
 
 // 1. Define the animations for each state.
@@ -19,16 +19,13 @@ const animations = {
   hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
 };
 
-// 2. Use the composable to create the state machine.
-// It returns reactive refs and a function to transition.
-const [{ timeline }, transitionTo] = useAniStates({
+// 2. Use the composable to create the state machine. It returns the template ref,
+// reactive refs for state info, and a function to transition.
+const [elementRef, { timeline }, transitionTo] = useAniStates({
   initial: "idle",
   initialFrom: { scale: 1, opacity: 0.7 },
   states: animations,
 });
-
-// 3. Connect the active timeline to the DOM element for high-performance updates.
-const [elementRef] = useAniRef({ timeline: timeline.value });
 </script>
 
 <template>
@@ -55,40 +52,6 @@ The `useAniStates` composable simplifies stateful animation logic in Vue. It man
 -   **Do** use `useAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
 -   **Do** combine `useAniStates` with `useAniRef` for high-performance style animations that react to state changes.
 -   **Don't** create the `states` object reactively, as this will create a new state machine on every change and lead to unexpected behavior.
-
-### API Reference
-
-#### Parameters
-
-| Name    | Type                          | Description                                  | Default |
-| :------ | :---------------------------- | :------------------------------------------- | ------- |
-| `props` | `StateProps<AnimationStates>` | The configuration object for the state machine. | —       |
-
-#### Return Value
-
-The composable returns a `readonly` tuple with the following structure:
-
-| Index | Type       | Description                                                                    |
-| ----- | ---------- | ------------------------------------------------------------------------------ |
-| `[0]` | `object`   | An object containing `readonly` refs for the current `state` and active `timeline`. |
-| `[1]` | `function` | The `transitionTo` function to switch between animation states.                |
-
-#### Type Definitions
-
-```typescript
-import { AnimationStateShape, StateProps, GetTimeline, StateController } from '@freestylejs/ani-core';
-import { Ref } from 'vue';
-
-declare function useAniStates<const AnimationStates extends AnimationStateShape>(
-  props: StateProps<AnimationStates>
-): readonly [
-    {
-        readonly state: Ref<keyof AnimationStates>;
-        readonly timeline: Ref<GetTimeline<AnimationStates>>;
-    },
-    StateController<AnimationStates>['transitionTo']
-];
-```
 
 ### Related Components
 

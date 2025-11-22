@@ -10,7 +10,7 @@ This primitive is a Svelte-specific wrapper around the core `createStates` funct
 ```svelte
 <script>
   import { a } from "@freestylejs/ani-core";
-  import { useAniRef, useAniStates } from "@freestylejs/ani-svelte";
+  import { useAniStates } from "@freestylejs/ani-svelte";
 
   // 1. Define the animations for each state.
   const animations = {
@@ -18,16 +18,13 @@ This primitive is a Svelte-specific wrapper around the core `createStates` funct
     hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
   };
 
-  // 2. Use the primitive to create the state machine.
-  // It returns reactive stores and a function to transition.
-  const [{ timeline }, transitionTo] = useAniStates({
+  // 2. Use the primitive to create the state machine. It returns the action,
+  // reactive stores for state info, and a function to transition.
+  const [refAction, { timeline }, transitionTo] = useAniStates({
     initial: "idle",
     initialFrom: { scale: 1, opacity: 0.7 },
     states: animations,
   });
-
-  // 3. Connect the active timeline to the DOM element for high-performance updates.
-  const [refAction] = useAniRef({ timeline: $timeline });
 </script>
 
 <button
@@ -52,40 +49,6 @@ The `useAniStates` primitive simplifies stateful animation logic in Svelte. It m
 -   **Do** use `useAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
 -   **Do** combine `useAniStates` with `useAniRef` for high-performance style animations that react to state changes.
 -   **Don't** create the `states` object inside a reactive computation without memoization, as this can lead to unexpected behavior.
-
-### API Reference
-
-#### Parameters
-
-| Name    | Type                          | Description                                  | Default |
-| :------ | :---------------------------- | :------------------------------------------- | ------- |
-| `props` | `StateProps<AnimationStates>` | The configuration object for the state machine. | —       |
-
-#### Return Value
-
-The primitive returns a `readonly` tuple with the following structure:
-
-| Index | Type       | Description                                                                              |
-| ----- | ---------- | ---------------------------------------------------------------------------------------- |
-| `[0]` | `object`   | An object containing readable stores for the current `state` name and active `timeline`. |
-| `[1]` | `function` | The `transitionTo` function to switch between animation states.                          |
-
-#### Type Definitions
-
-```typescript
-import { AnimationStateShape, StateProps, GetTimeline, StateController } from '@freestylejs/ani-core';
-import { Readable } from 'svelte/store';
-
-declare function useAniStates<const AnimationStates extends AnimationStateShape>(
-  props: StateProps<AnimationStates>
-): readonly [
-    {
-        state: Readable<keyof AnimationStates>;
-        timeline: Readable<GetTimeline<AnimationStates>>;
-    },
-    StateController<AnimationStates>["transitionTo"]
-];
-```
 
 ### Related Components
 

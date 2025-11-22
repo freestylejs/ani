@@ -9,10 +9,11 @@ This composable subscribes to a `timeline`'s state and updates a Vue `ref` on ea
 
 ```vue
 <script setup>
-import { useAni, timeline, a } from "@freestylejs/ani-vue";
+import { a } from "@freestylejs/ani-core";
+import { useAni } from "@freestylejs/ani-vue";
 
 // 1. Define the animation structure and create a timeline.
-const myTimeline = timeline(
+const myTimeline = a.dynamicTimeline(
   a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
 );
 
@@ -45,36 +46,6 @@ The `useAni` composable acts as a bridge between the `@freestylejs/ani-core` eng
 -   **Do** use `useAni` when you need the animated values to be part of Vue's reactive system.
 -   **Do** use it for animations that affect text content, attributes, or props.
 -   **Don't** use `useAni` for high-frequency style updates on a single element. For that, `useAniRef` is a better choice.
-
-### API Reference
-
-#### Parameters
-
-| Name           | Type             | Description                               | Default |
-| -------------- | ---------------- | ----------------------------------------- | ------- |
-| `timeline`     | `Timeline<G>`    | The animation timeline instance to track. | —       |
-| `initialValue` | `AniGroup<G>`    | The initial value of the animation state. | —       |
-
-#### Return Value
-
-The composable returns a `readonly` tuple with the following structure:
-
-| Index | Type                    | Description                                      |
-| ----- | ----------------------- | ------------------------------------------------ |
-| `[0]` | `Ref<AniGroup<G>>`      | A reactive Vue `ref` holding the animation state. |
-| `[1]` | `TimelineController<G>` | The controller to play, pause, or stop the timeline. |
-
-#### Type Definitions
-
-```typescript
-import { Groupable, Timeline, AniGroup, TimelineController } from '@freestylejs/ani-core';
-import { Ref } from 'vue';
-
-declare function useAni<G extends Groupable>(
-  timeline: Timeline<G>, 
-  initialValue: AniGroup<G>
-): readonly [Ref<AniGroup<G>>, TimelineController<G>];
-```
 
 ### Related Components
 

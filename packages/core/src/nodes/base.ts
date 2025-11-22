@@ -1,4 +1,4 @@
-import type { ExecutionPlan, Groupable } from '../timeline'
+import type { ExecutionPlan, Groupable } from '~/ani/core'
 
 export type AnimationId = string
 export type AnimationNodeType = string

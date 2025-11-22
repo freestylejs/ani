@@ -1,3 +1,4 @@
+export * from './bezier'
 export * from './function'
 export * from './linear'
 
@@ -37,4 +38,40 @@ export const T = {
      * Creates linear timing function instance.
      */
     linear: () => new LinearTimingFunction(),
+
+    /**
+     * Standard CSS 'ease' timing function (0.25, 0.1, 0.25, 1.0).
+     */
+    ease: () =>
+        new Bezier.BezierTimingFunction({
+            p2: { x: 0.25, y: 0.1 },
+            p3: { x: 0.25, y: 1.0 },
+        }),
+
+    /**
+     * Standard CSS 'ease-in' timing function (0.42, 0, 1.0, 1.0).
+     */
+    easeIn: () =>
+        new Bezier.BezierTimingFunction({
+            p2: { x: 0.42, y: 0 },
+            p3: { x: 1.0, y: 1.0 },
+        }),
+
+    /**
+     * Standard CSS 'ease-out' timing function (0, 0, 0.58, 1.0).
+     */
+    easeOut: () =>
+        new Bezier.BezierTimingFunction({
+            p2: { x: 0, y: 0 },
+            p3: { x: 0.58, y: 1.0 },
+        }),
+
+    /**
+     * Standard CSS 'ease-in-out' timing function (0.42, 0, 0.58, 1.0).
+     */
+    easeInOut: () =>
+        new Bezier.BezierTimingFunction({
+            p2: { x: 0.42, y: 0 },
+            p3: { x: 0.58, y: 1.0 },
+        }),
 } as const

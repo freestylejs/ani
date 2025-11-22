@@ -1,27 +1,9 @@
+import type {
+    SegmentDefinition,
+    SegmentState,
+} from '~/ani/core/interface/core_types'
 import type { TimingFunction } from '~/timing'
 import { isEndOfAnimation } from '~/utils/time'
-import type { Groupable, GroupableRecord } from './timeline'
-
-export type AnimePrimitive = readonly number[]
-
-export interface SegmentDefinition {
-    from: AnimePrimitive
-    to: AnimePrimitive
-    duration: number
-    timing: SegmentTiming
-}
-
-export type SegmentTiming<G extends Groupable = Groupable> =
-    G extends AnimePrimitive
-        ? readonly TimingFunction[] | TimingFunction
-        : G extends GroupableRecord
-          ? Record<keyof G, TimingFunction> | TimingFunction
-          : never
-
-export interface SegmentState {
-    values: AnimePrimitive
-    isComplete: boolean
-}
 
 /**
  * Calculates the animated values for a single segment at a specific local time.

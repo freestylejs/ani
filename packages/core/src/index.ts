@@ -1,13 +1,6 @@
-import {
-    ani,
-    createStates,
-    delay,
-    loop,
-    parallel,
-    sequence,
-    stagger,
-    timeline,
-} from './ani'
+import { createStates, rafTimeline } from './ani/raf'
+import { webTimeline } from './ani/waapi'
+import { ani, delay, loop, parallel, sequence, stagger } from './nodes'
 import { T } from './timing'
 
 export * from './ani'
@@ -19,12 +12,20 @@ export * from './timing'
 
 export const a = {
     timing: T,
+
+    dynamicTimeline: rafTimeline,
+    timeline: webTimeline,
+    /**
+     * Create animation segment.
+     */
     ani,
-    createStates,
+    /**
+     * Add delay
+     */
     delay,
     loop,
     parallel,
     sequence,
     stagger,
-    timeline,
+    createStates,
 } as const
