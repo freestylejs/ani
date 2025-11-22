@@ -1,4 +1,3 @@
-/** biome-ignore-all lint/style/noMagicNumbers: <>*/
 import {
     type Coord,
     TimingFunction,
@@ -24,7 +23,7 @@ export class BezierTimingFunction extends TimingFunction {
 
     public constructor(public readonly opt: { p2: Coord; p3: Coord }) {
         super()
-        // Pre-calculate sample table if necessary (only for valid range)
+        // Pre-calculate sample table
         if (
             this.opt.p2.x !== this.opt.p2.y ||
             this.opt.p3.x !== this.opt.p3.y
@@ -48,7 +47,9 @@ export class BezierTimingFunction extends TimingFunction {
 
     private getSlope(t: number, a1: number, a2: number): number {
         return (
-            3 * (1 - 3 * a2 + 3 * a1) * t * t + 2 * (3 * a2 - 6 * a1) * t + 3 * a1
+            3 * (1 - 3 * a2 + 3 * a1) * t * t +
+            2 * (3 * a2 - 6 * a1) * t +
+            3 * a1
         )
     }
 
@@ -63,7 +64,8 @@ export class BezierTimingFunction extends TimingFunction {
 
         for (
             ;
-            currentSample !== lastSample && this.sampleValues![currentSample]! <= x;
+            currentSample !== lastSample &&
+            this.sampleValues![currentSample]! <= x;
             ++currentSample
         ) {
             intervalStart += SAMPLE_STEP_SIZE
@@ -151,15 +153,14 @@ export class BezierTimingFunction extends TimingFunction {
         const x = Math.max(0, Math.min(time / duration, 1))
         let easedT = x
 
-        // If linear (p2.x=p2.y, p3.x=p3.y), we can skip solving.
+        // If linear (p2.x=p2.y, p3.x=p3.y), skip solving.
         // Otherwise solve x(t) = time for t.
         if (
             this.opt.p2.x !== this.opt.p2.y ||
             this.opt.p3.x !== this.opt.p3.y
         ) {
             if (!this.sampleValues) {
-                // Should have been initialized in constructor, but just in case
-                // Re-init or fallback (rare case if constructor inputs changed? they are readonly)
+                // Should have been initialized in constructor
             }
             // Solve for t given x
             const t = this.getTForX(x)
