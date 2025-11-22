@@ -1,5 +1,6 @@
 export * from './dynamic_demo'
 export * from './feature_card'
+export * from './heart_beating_demo'
 export * from './loop_delay_demo'
 export * from './parallel_demo'
 export * from './performance_demo'
