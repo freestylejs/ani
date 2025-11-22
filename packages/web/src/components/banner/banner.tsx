@@ -1,7 +1,6 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
 import { DM_Serif_Display } from 'next/font/google'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -15,6 +14,18 @@ const dmSerif = DM_Serif_Display({
     weight: '400',
     subsets: ['latin'],
 })
+
+const controller = a.timeline(
+    a.sequence(
+        [
+            a.ani({
+                to: { opacity: 1, skew: 0, translateX: 0, scale: 1 },
+                duration: 1.5,
+            }),
+        ],
+        a.timing.spring({ m: 1, k: 100, c: 20 })
+    )
+)
 
 export const Banner = ({
     title,
@@ -33,24 +44,10 @@ export const Banner = ({
 }) => {
     const target = useRef<HTMLElement>(null)
 
-    const controller = useAniRef(target, {
-        timeline: a.timeline(
-            a.sequence(
-                [
-                    a.ani({
-                        to: { opacity: 1, skew: 0, translateX: 0, scale: 1 },
-                        duration: 1.25,
-                    }),
-                ],
-                a.timing.spring({ m: 1, k: 100, c: 20 })
-            )
-        ),
-    })
-
     useEffect(() => {
         if (!target.current) return
         if (noAnimation) return
-        controller.play({
+        controller.play(target.current, {
             from: { opacity: 0, skew: 2, translateX: -10, scale: 0.975 },
         })
     }, [noAnimation])
