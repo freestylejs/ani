@@ -1,5 +1,6 @@
+import type { Groupable, GroupableRecord } from '~/ani/core'
 import type { TimingFunction } from '~/timing'
-import type { Groupable, GroupableRecord } from '../timeline'
+
 import type { AnimationId, AnimationNode } from './base'
 import {
     type CompositionChildren,
@@ -77,6 +78,8 @@ export class ParallelNode<
 
 /**
  * Parallel composition animation
+ * @param timing Loop timing function.
+ * @param id Optional ID for the node.
  */
 export function parallel<const Children extends CompositionChildren>(
     children: Children,

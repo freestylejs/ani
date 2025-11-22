@@ -31,6 +31,8 @@ export class SequenceNode<
 
 /**
  * Sequence composition animation
+ * @param timing Loop timing function.
+ * @param id Optional ID for the node.
  */
 export function sequence<const Children extends CompositionChildren>(
     children: Children,

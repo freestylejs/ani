@@ -6,10 +6,6 @@ import {
     type CompositionPlan,
 } from './composition'
 
-interface StaggerNodeProps {
-    offset: number
-    timing?: TimingFunction
-}
 /**
  * Composition node that runs its children with a fixed delay between each start time.
  */
@@ -20,10 +16,15 @@ export class StaggerNode<
     readonly duration: number
     readonly offset: number
 
-    constructor(children: Children, props: StaggerNodeProps, id?: AnimationId) {
-        super(children, props?.timing, id)
+    constructor(
+        children: Children,
+        offset: number,
+        timing?: TimingFunction,
+        id?: AnimationId
+    ) {
+        super(children, timing, id)
 
-        this.offset = props.offset
+        this.offset = offset
 
         if (children.length === 0) {
             this.duration = 0
@@ -45,11 +46,15 @@ export class StaggerNode<
 
 /**
  * Stagger composition animation
+ * @param offset Children animation offset, in seconds.
+ * @param timing Loop timing function.
+ * @param id Optional ID for the node.
  */
 export function stagger<const Children extends CompositionChildren>(
     children: Children,
-    props: StaggerNodeProps,
+    offset: number,
+    timing?: TimingFunction,
     id?: AnimationId
 ): StaggerNode<Children> {
-    return new StaggerNode(children, props, id)
+    return new StaggerNode(children, offset, timing, id)
 }
