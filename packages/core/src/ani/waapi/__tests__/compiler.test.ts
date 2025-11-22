@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { a } from '../../index'
-import { compileToKeyframes } from '../compiler'
+import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
+import type { AnimationNode } from '~/nodes'
+import { a } from '../../../index'
+import { compileToKeyframes } from '../compiler/keyframe_compiler'
 
 describe('WebAni Compiler', () => {
+    const constructExecutionPlan = (
+        rootNode: AnimationNode<Groupable>
+    ): ExecutionPlan<Groupable> => {
+        const plan: ExecutionPlan<Groupable> = []
+        rootNode.construct(plan, 0)
+        return plan
+    }
     it('should compile a simple segment', () => {
         const node = a.ani({
             to: { translateX: 100 },
@@ -10,7 +19,10 @@ describe('WebAni Compiler', () => {
         })
         const initialFrom = { translateX: 0 }
 
-        const keyframes = compileToKeyframes(node, initialFrom)
+        const keyframes = compileToKeyframes(
+            constructExecutionPlan(node),
+            initialFrom
+        )
 
         expect(keyframes).toHaveLength(2)
         // offset 0
@@ -29,7 +41,10 @@ describe('WebAni Compiler', () => {
         ])
         const initialFrom = { translateX: 0 }
 
-        const keyframes = compileToKeyframes(node, initialFrom)
+        const keyframes = compileToKeyframes(
+            constructExecutionPlan(node),
+            initialFrom
+        )
 
         // Total duration = 2
         // Keyframes should be at:
@@ -59,7 +74,10 @@ describe('WebAni Compiler', () => {
         ])
         const initialFrom = { translateX: 0, translateY: 0 }
 
-        const keyframes = compileToKeyframes(node, initialFrom)
+        const keyframes = compileToKeyframes(
+            constructExecutionPlan(node),
+            initialFrom
+        )
 
         // Total duration 1.
         // t=0: x=0, y=0
@@ -95,7 +113,10 @@ describe('WebAni Compiler', () => {
         ])
         const initialFrom = { translateX: 0, translateY: 0 }
 
-        const keyframes = compileToKeyframes(complexNode, initialFrom)
+        const keyframes = compileToKeyframes(
+            constructExecutionPlan(complexNode),
+            initialFrom
+        )
 
         // Critical points:
         // 0 (start of all)
@@ -145,7 +166,9 @@ describe('WebAni Compiler', () => {
             }),
         })
 
-        const keyframes = compileToKeyframes(node, { translateX: 0 })
+        const keyframes = compileToKeyframes(constructExecutionPlan(node), {
+            translateX: 0,
+        })
         expect(keyframes).toHaveLength(2)
         // CSS bezier: cubic-bezier(x1, y1, x2, y2)
         // Our p2 is x1,y1. p3 is x2,y2.
@@ -158,11 +181,14 @@ describe('WebAni Compiler', () => {
                 a.ani({ to: { translateX: 100 }, duration: 1 }),
                 a.ani({ to: { translateX: 200 }, duration: 1 }),
             ],
-            { offset: 0.5 }
+            0.5
         )
         const initialFrom = { translateX: 0 }
 
-        const keyframes = compileToKeyframes(node, initialFrom)
+        const keyframes = compileToKeyframes(
+            constructExecutionPlan(node),
+            initialFrom
+        )
 
         // Stagger offset 0.5.
         // Item 1: 0-1s. x -> 100.
@@ -197,7 +223,10 @@ describe('WebAni Compiler', () => {
         const node = a.loop(a.ani({ to: { translateX: 100 }, duration: 1 }), 3)
         const initialFrom = { translateX: 0 }
 
-        const keyframes = compileToKeyframes(node, initialFrom)
+        const keyframes = compileToKeyframes(
+            constructExecutionPlan(node),
+            initialFrom
+        )
 
         expect(keyframes).toHaveLength(4) // 0, 1, 2, 3
 
@@ -225,9 +254,12 @@ describe('WebAni Compiler', () => {
         // 0 -> 100 (1.5s)
         // 100 -> 0 (2.0s)
 
-        const pingPongKeyframes = compileToKeyframes(pingPong, {
-            translateX: 0,
-        })
+        const pingPongKeyframes = compileToKeyframes(
+            constructExecutionPlan(pingPong),
+            {
+                translateX: 0,
+            }
+        )
 
         expect(pingPongKeyframes).toHaveLength(5) // 0, 0.5, 1, 1.5, 2
 
@@ -254,7 +286,9 @@ describe('WebAni Compiler', () => {
             a.ani({ to: { translateX: 200 }, duration: 1 }),
         ])
 
-        const keyframes = compileToKeyframes(node, { translateX: 0 })
+        const keyframes = compileToKeyframes(constructExecutionPlan(node), {
+            translateX: 0,
+        })
 
         // Total 3s.
         // 0-1: 0->100
@@ -280,22 +314,24 @@ describe('WebAni Compiler', () => {
         const node = a.ani({
             to: { translateX: 100 },
             duration: 1,
-            timing: a.timing.spring({ m: 1, k: 100, c: 10 })
+            timing: a.timing.spring({ m: 1, k: 100, c: 10 }),
         })
-        
-        const keyframes = compileToKeyframes(node, { translateX: 0 })
-        
+
+        const keyframes = compileToKeyframes(constructExecutionPlan(node), {
+            translateX: 0,
+        })
+
         // Should be many keyframes due to sampling (60fps)
         expect(keyframes.length).toBeGreaterThan(10)
-        
+
         // Verify start and end
         expect(keyframes[0]!.offset).toBe(0)
         expect(keyframes[0]!['transform']).toBe('translateX(0px)')
-        
+
         const last = keyframes[keyframes.length - 1]!
         expect(last.offset).toBe(1)
         expect(last['transform']).toBe('translateX(100px)')
-        
+
         // Verify easing is linear for sampled frames
         expect(keyframes[5]!.easing).toBe('linear')
     })
