@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { a } from '../../index'
-import { compileTiming } from '../timing_compiler'
+import { a } from '../../../index'
+import { compileTiming } from '../compiler/timing_compiler'
 
 describe('Timing Compiler', () => {
     it('should compile undefined timing to linear', () => {
@@ -26,9 +26,17 @@ describe('Timing Compiler', () => {
     })
 
     it('should compile standard presets', () => {
-        expect(compileTiming(a.timing.ease())).toBe('cubic-bezier(0.25, 0.1, 0.25, 1)')
-        expect(compileTiming(a.timing.easeIn())).toBe('cubic-bezier(0.42, 0, 1, 1)')
-        expect(compileTiming(a.timing.easeOut())).toBe('cubic-bezier(0, 0, 0.58, 1)')
-        expect(compileTiming(a.timing.easeInOut())).toBe('cubic-bezier(0.42, 0, 0.58, 1)')
+        expect(compileTiming(a.timing.ease())).toBe(
+            'cubic-bezier(0.25, 0.1, 0.25, 1)'
+        )
+        expect(compileTiming(a.timing.easeIn())).toBe(
+            'cubic-bezier(0.42, 0, 1, 1)'
+        )
+        expect(compileTiming(a.timing.easeOut())).toBe(
+            'cubic-bezier(0, 0, 0.58, 1)'
+        )
+        expect(compileTiming(a.timing.easeInOut())).toBe(
+            'cubic-bezier(0.42, 0, 0.58, 1)'
+        )
     })
 })
