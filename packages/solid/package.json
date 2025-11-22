@@ -1,17 +1,22 @@
 {
     "name": "@freestylejs/ani-solid",
     "author": "freestyle",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Ani for solid.",
     "license": "MIT",
     "type": "module",
-    "keywords": ["solid", "animation"],
+    "keywords": [
+        "solid",
+        "animation"
+    ],
     "sideEffects": false,
     "private": false,
     "publishConfig": {
         "access": "public"
     },
-    "files": ["dist"],
+    "files": [
+        "dist"
+    ],
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
     "types": "./dist/index.d.ts",

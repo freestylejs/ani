@@ -1,5 +1,11 @@
 # @freestylejs/ani-core
 
+## 1.2.0
+
+### Minor Changes
+
+- Support raf/waapi based animation timeline using compilation. Update framework bindings.
+
 ## 1.1.0
 
 ### Minor Changes
