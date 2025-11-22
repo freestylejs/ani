@@ -15,7 +15,7 @@ import { createMemo } from "solid-js";
 const InteractiveBox = () => {
   // 1. Define the animation and create a timeline.
   const myTimeline = createMemo(() =>
-    a.timeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 }))
+    a.dynamicTimeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 }))
   );
 
   // 2. Use the primitive to get the ref callback and the controller.
@@ -70,42 +70,6 @@ const [ref, controller] = createAniRef({
 -   **Do** use `createAniRef` for animating CSS properties like `transform` and `opacity`.
 -   **Do** use it for complex, interactive animations that need to respond to user input at 60fps.
 -   **Don't** use `createAniRef` if you need the animated value to render text content or pass to another component's props. Use `createAni` for that.
-
-### API Reference
-
-#### Parameters
-
-| Name    | Type                   | Description                                 | Default |
-| ------- | ---------------------- | ------------------------------------------- | ------- |
-| `props` | `AniRefProps<G, true>` | The configuration object for the animation. | —       |
-
-#### `AniRefProps` Object
-
-| Name            | Type                       | Description                                                      | Default     |
-| --------------- | -------------------------- | ---------------------------------------------------------------- | ----------- |
-| `timeline`      | `() => Timeline<G>`        | An accessor function that returns the timeline instance.         | —           |
-| `initialValue`  | `AniGroup<G>`              | (Optional) The initial style of the element.                     | —           |
-| `events`        | `EventHandlerRegistration` | (Optional) A map of event handlers for interactivity.            | `undefined` |
-| `cleanupEvents` | `boolean`                  | (Optional) Whether to automatically clean up events on unmount. | `true`      |
-
-#### Return Value
-
-The primitive returns a `readonly` tuple with the following structure:
-
-| Index | Type                    | Description                                                |
-| ----- | ----------------------- | ---------------------------------------------------------- |
-| `[0]` | `(el: E) => void`       | The ref callback to be passed to an element's `ref` attribute. |
-| `[1]` | `TimelineController<G>` | The controller object for the timeline (`play`, `pause`, etc.). |
-
-#### Type Definitions
-
-```typescript
-import { Groupable, Timeline, TimelineController, AniRefProps } from '@freestylejs/ani-core';
-
-function createAniRef<G extends Groupable, E extends HTMLElement = HTMLElement>(
-  props: AniRefProps<G, true>
-): readonly [(el: E) => void, TimelineController<G>];
-```
 
 ### Related Components
 

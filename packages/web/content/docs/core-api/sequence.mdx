@@ -42,26 +42,6 @@ myTimeline.play({ from: { opacity: 0, x: 50 } });
 -   **Do** use `sequence` for multi-stage animations, like an element fading in and then moving.
 -   **Don't** use `sequence` if you just need two properties to animate at the same time. Use `parallel` for that.
 
-### API Reference
-
-#### Parameters
-
-| Name | Type | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `children` | `AnimationNode<G>[]` | An array of animation nodes to play in order. | — |
-| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire sequence's timeline. | `linear` |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
-
-#### Type Definitions
-
-```typescript
-function sequence<G>(
-  children: AnimationNode<G>[],
-  timing?: TimingFunction | TimingFunction[],
-  id?: AnimationId
-): AnimationNode<G>;
-```
-
 ### Related Components
 
 -   [`parallel`](/en/docs/core-api/parallel) - To run animations simultaneously instead of in order.

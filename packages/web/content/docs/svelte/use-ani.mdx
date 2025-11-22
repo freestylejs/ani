@@ -10,10 +10,11 @@ This primitive subscribes to a `timeline`'s state and exposes it as a readable S
 ```svelte
 <script>
   import { onMount } from 'svelte';
-  import { useAni, timeline, a } from '@freestylejs/ani-svelte';
+  import { a } from "@freestylejs/ani-core";
+  import { useAni } from '@freestylejs/ani-svelte';
 
   // 1. Define the animation structure and create a timeline.
-  const myTimeline = timeline(
+  const myTimeline = a.dynamicTimeline(
     a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
   );
 
@@ -46,36 +47,6 @@ The `useAni` primitive acts as a bridge between the `@freestylejs/ani-core` engi
 -   **Do** use `useAni` when you need the animated values to be part of Svelte's reactive system.
 -   **Do** use it for animations that affect text content, attributes, or props.
 -   **Don't** use `useAni` for high-frequency style updates on a single element. For that, `useAniRef` is a better choice.
-
-### API Reference
-
-#### Parameters
-
-| Name           | Type             | Description                               | Default |
-| -------------- | ---------------- | ----------------------------------------- | ------- |
-| `timeline`     | `Timeline<G>`    | The animation timeline instance to track. | —       |
-| `initialValue` | `AniGroup<G>`    | The initial value of the animation state. | —       |
-
-#### Return Value
-
-The primitive returns a `readonly` tuple with the following structure:
-
-| Index | Type                    | Description                                      |
-| ----- | ----------------------- | ------------------------------------------------ |
-| `[0]` | `Readable<AniGroup<G>>` | A readable Svelte store holding the animation state. |
-| `[1]` | `TimelineController<G>` | The controller to play, pause, or stop the timeline. |
-
-#### Type Definitions
-
-```typescript
-import { Groupable, Timeline, AniGroup, TimelineController } from '@freestylejs/ani-core';
-import { Readable } from 'svelte/store';
-
-declare function useAni<G extends Groupable>(
-  timeline: Timeline<G>, 
-  initialValue: AniGroup<G>
-): readonly [Readable<AniGroup<G>>, TimelineController<G>];
-```
 
 ### Related Components
 

@@ -15,7 +15,7 @@ import { useMemo } from "react";
 const Counter = () => {
   // 1. Define the animation and create a timeline instance.
   const myTimeline = useMemo(
-    () => a.timeline(a.ani({ to: { count: 100 }, duration: 5 })),
+    () => a.dynamicTimeline(a.ani({ to: { count: 100 }, duration: 5 })),
     []
   );
 
@@ -45,35 +45,6 @@ The `useAni` hook acts as a bridge between the `@freestylejs/ani-core` engine an
 -   **Do** use `useAni` when the animated values need to be part of React's state and render flow.
 -   **Do** use it for animations that affect text content, attributes, or props of other components.
 -   **Don't** use `useAni` for high-frequency style updates (like `transform` or `opacity`). Use `useAniRef` for those cases to avoid performance overhead.
-
-### API Reference
-
-#### Parameters
-
-| Name           | Type          | Description                                  | Default |
-| -------------- | ------------- | -------------------------------------------- | ------- |
-| `timeline`     | `Timeline<G>` | The timeline instance to subscribe to.       | —       |
-| `initialValue` | `AniGroup<G>`  | The value to use before the animation starts. | —       |
-
-#### Return Value
-
-The hook returns a `readonly` tuple with the following structure:
-
-| Index | Type                    | Description                                                |
-| ----- | ----------------------- | ---------------------------------------------------------- |
-| `[0]` | `AniGroup<G>`           | The current, reactive state of the animation.              |
-| `[1]` | `TimelineController<G>` | The controller object for the timeline (`play`, `pause`, etc.). |
-
-#### Type Definitions
-
-```typescript
-import { Groupable, Timeline, AniGroup, TimelineController } from '@freestylejs/ani-core';
-
-function useAni<G extends Groupable>(
-  timeline: Timeline<G>,
-  initialValue: AniGroup<G>
-): readonly [AniGroup<G>, TimelineController<G>];
-```
 
 ### Related Components
 
