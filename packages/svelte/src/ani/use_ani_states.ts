@@ -1,22 +1,18 @@
 import {
-    type AnimationNode,
     type AnimationStateShape,
     createStates,
     type GetTimeline,
-    type Groupable,
     type StateController,
     type StateProps,
 } from '@freestylejs/ani-core'
+import type { Action } from 'svelte/action'
 import { type Readable, readable, writable } from 'svelte/store'
+import { useAniRef } from './use_ani_ref'
 
-export function useAniStates<
-    const AnimationStates extends AnimationStateShape = Record<
-        string,
-        AnimationNode<Groupable>
-    >,
->(
+export function useAniStates<const AnimationStates extends AnimationStateShape>(
     props: StateProps<AnimationStates>
 ): readonly [
+    Action<HTMLElement, any>,
     {
         state: Readable<keyof AnimationStates>
         timeline: Readable<GetTimeline<AnimationStates>>
@@ -34,6 +30,11 @@ export function useAniStates<
 
     const stateStore = writable<keyof AnimationStates>(props.initial)
 
+    const [ref] = useAniRef({
+        timeline: timelineStore,
+        initialValue: props.initialFrom,
+    })
+
     const transitionTo: StateController<AnimationStates>['transitionTo'] = (
         newState,
         timelineConfig,
@@ -48,6 +49,7 @@ export function useAniStates<
     }
 
     return [
+        ref,
         {
             state: readable(props.initial, (set) => stateStore.subscribe(set)),
             timeline: readable(statesController.timeline(), (set) =>
