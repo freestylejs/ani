@@ -1,3 +1,4 @@
+export * from './bezier'
 export * from './function'
 export * from './linear'
 
