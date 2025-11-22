@@ -6,10 +6,10 @@ import {
     type EventKey,
     EventManager,
     type Groupable,
-    type TimelineController,
+    type RafAniTimeline,
 } from '@freestylejs/ani-core'
 import type { CSSProperties, RefObject } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 function applyStylesToRef<E extends HTMLElement>(
     ref: RefObject<E | null>,
@@ -30,11 +30,16 @@ function applyStylesToRef<E extends HTMLElement>(
  */
 export function useAniRef<
     G extends Groupable,
-    E extends HTMLElement = HTMLElement,
+    Element extends HTMLElement = HTMLElement,
 >(
-    ref: React.RefObject<E | null>,
-    { timeline, initialValue, events, cleanupEvents = true }: AniRefProps<G>
-): TimelineController<G> {
+    ref: React.RefObject<Element | null>,
+    {
+        timeline,
+        initialValue,
+        events,
+        cleanupEvents = true,
+    }: AniRefProps<RafAniTimeline<G>, G>
+): RafAniTimeline<G> {
     const [manager] = useState(() =>
         events
             ? new EventManager<readonly EventKey[], AniRefContext<G>>(
@@ -45,55 +50,72 @@ export function useAniRef<
 
     const animeValue = useRef<AniGroup<G> | null>(initialValue ?? null)
 
-    const controller = useMemo((): TimelineController<G> => {
+    const controller = useMemo((): RafAniTimeline<G> => {
         return {
             play: (config) => {
-                animeValue.current = config.from
+                animeValue.current = config.from as AniGroup<G>
                 timeline.play(config)
             },
-            seek: timeline.seek,
-            pause: timeline.pause,
-            resume: timeline.resume,
+            seek: (time) => timeline.seek(time),
+            pause: () => timeline.pause(),
+            resume: () => timeline.resume(),
             reset: () => {
                 timeline.reset()
                 // back to initial value
-                animeValue.current = initialValue ?? null
-                if (ref.current && animeValue.current) {
+                const initial = initialValue ?? null
+                if (ref.current && initial) {
                     const styleObject = createStyleSheet(
-                        animeValue.current as Record<string, number>,
+                        initial as Record<string, number>,
                         timeline.currentConfig?.propertyResolver
                     )
                     applyStylesToRef(ref, styleObject)
                 }
             },
-        }
-    }, [timeline, initialValue, ref])
+            get currentConfig() {
+                return timeline.currentConfig
+            },
+            onUpdate: (cb) => timeline.onUpdate(cb),
+            getCurrentValue: () => timeline.getCurrentValue(),
+        } as RafAniTimeline<G>
+    }, [timeline, initialValue])
 
     // >> animation subscription + direct style application.
     useEffect(() => {
-        if (!timeline) return
+        if (!timeline || !ref.current) return
+
+        const target = timeline.getCurrentValue() ?? initialValue
+        const styleObject = createStyleSheet(
+            target as Record<string, number>,
+            timeline.currentConfig?.propertyResolver
+        )
+        applyStylesToRef(ref, styleObject)
 
         const unsubscribe = timeline.onUpdate((value) => {
-            animeValue.current = value.state
+            /**
+             * !TODO: WebAnimation PRIORITY = This code will remove animation when executed.
+             * if (!ref.current) return
+             * ref.current.getAnimations().forEach((anim) => anim.cancel())
+             */
+
+            animeValue.current = value.state as AniGroup<G>
             const styleObject = createStyleSheet(
                 value.state as Record<string, number>,
                 timeline.currentConfig?.propertyResolver
             )
             applyStylesToRef(ref, styleObject)
         })
-
         return () => unsubscribe()
     }, [timeline, ref])
 
     // >> event subscription
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!manager || !ref.current || !events) return
 
         const contextGetter = (): AniRefContext<G> => {
             return {
                 current: animeValue.current,
                 ...controller,
-            }
+            } as AniRefContext<G>
         }
 
         manager.bind(ref.current)

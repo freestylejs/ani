@@ -1,10 +1,5 @@
-import type {
-    AniGroup,
-    Groupable,
-    Timeline,
-    TimelineController,
-} from '@freestylejs/ani-core'
-import { useCallback, useMemo, useSyncExternalStore } from 'react'
+import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import { useCallback, useSyncExternalStore } from 'react'
 
 /**
  * Reactive ani animation hook.
@@ -12,12 +7,12 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react'
  * @param timeline - `Timeline` instance.
  * @param initialValue - Initial value for the animation.
  *
- * @returns `[value, controller]`.
+ * @returns `[value, timeline]`.
  */
 export function useAni<G extends Groupable>(
-    timeline: Timeline<G>,
+    timeline: RafAniTimeline<G>,
     initialValue: AniGroup<G>
-): readonly [AniGroup<G>, TimelineController<G>] {
+): readonly [AniGroup<G>, RafAniTimeline<G>] {
     const subscribe = useCallback(
         // [subscribe -> unsubscribe]
         (onStoreChange: () => void) => timeline.onUpdate(onStoreChange),
@@ -30,15 +25,5 @@ export function useAni<G extends Groupable>(
 
     const value = useSyncExternalStore(subscribe, getSnapshot)
 
-    const controller = useMemo((): TimelineController<G> => {
-        return {
-            play: timeline.play,
-            seek: timeline.seek,
-            pause: timeline.pause,
-            resume: timeline.resume,
-            reset: timeline.reset,
-        }
-    }, [timeline])
-
-    return [value, controller] as const
+    return [value, timeline] as const
 }
