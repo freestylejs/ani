@@ -9,7 +9,7 @@ This hook is a React-specific wrapper around the core `createStates` function. I
 
 ```tsx
 import { a } from "@freestylejs/ani-core";
-import { useAniRef, useAniStates } from "@freestylejs/ani-react";
+import { useAniStates } from "@freestylejs/ani-react";
 import { useMemo, useRef } from "react";
 
 const StateButton = () => {
@@ -33,9 +33,9 @@ const StateButton = () => {
         []
     )
 
-    // 2. Use the hook to create the state machine.
+    // 2. Use the hook to create the state machine, passing the ref directly.
     // It returns the current state info and a function to transition.
-    const [{ timeline }, transitionTo] = useAniStates({
+    const [{ timeline }, transitionTo] = useAniStates(ref, {
         initial: 'idle',
         initialFrom: {
             opacity: 0,
@@ -43,9 +43,6 @@ const StateButton = () => {
         },
         states: animations,
     })
-
-    // 3. Connect the active timeline to the DOM element for high-performance updates.
-    useAniRef(ref, { timeline })
 
     return (
         <button
@@ -71,39 +68,6 @@ The `useAniStates` hook simplifies stateful animation logic in React. It manages
 -   **Do** use `useAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
 -   **Do** combine `useAniStates` with `useAniRef` for high-performance style animations that react to state changes without causing re-renders.
 -   **Don't** create the `states` object inside the render function without memoization, as this will create a new state machine on every render and lead to unexpected behavior.
-
-### API Reference
-
-#### Parameters
-
-| Name    | Type                          | Description                                  | Default |
-| :------ | :---------------------------- | :------------------------------------------- | ------- |
-| `props` | `StateProps<AnimationStates>` | The configuration object for the state machine. | —       |
-
-#### Return Value
-
-The hook returns a `readonly` tuple with the following structure:
-
-| Index | Type       | Description                                                                    |
-| ----- | ---------- | ------------------------------------------------------------------------------ |
-| `[0]` | `object`   | An object containing the current `state` name and the active `timeline` instance. |
-| `[1]` | `function` | The `transitionTo` function to switch between animation states.                |
-
-#### Type Definitions
-
-```typescript
-import { AnimationStateShape, StateProps, GetTimeline, StateController } from '@freestylejs/ani-core';
-
-declare function useAniStates<const AnimationStates extends AnimationStateShape>(
-  props: StateProps<AnimationStates>
-): readonly [
-    {
-        state: keyof AnimationStates;
-        timeline: GetTimeline<AnimationStates>;
-    },
-    StateController<AnimationStates>['transitionTo']
-];
-```
 
 ### Related Components
 

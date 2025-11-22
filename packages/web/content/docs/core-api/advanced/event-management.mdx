@@ -56,24 +56,6 @@ By providing a "getter" for your animation context (like a `timeline`), your eve
 -   **Do** call `cleanupAll()` when your component or element is destroyed to prevent memory leaks.
 -   **Don't** create multiple `EventManager` instances for the same element; one is sufficient.
 
-### API Reference
-
-#### Constructor
-
-| Parameter | Type | Description |
-| :--- | :--- | :--- |
-| `supportedEvents` | `readonly string[]` | An array of DOM event names to support (e.g., `['click', 'mousemove']`). |
-
-#### Methods
-
-| Method | Description |
-| :--- | :--- |
-| `bind(el)` | Binds the manager to a DOM element. |
-| `setAnimeGetter(getter)` | Provides a function that returns the animation context (e.g., a timeline). |
-| `add(name, listener)` | Adds a listener for a specific event. |
-| `attach(handlers)` | Attaches a map of `onEventName` handlers. |
-| `cleanupAll()` | Removes all registered event listeners from the element. |
-
 ### Related Components
 
 -   [`timeline`](/en/docs/core-api/timeline) - The typical animation context provided to the `EventManager`.

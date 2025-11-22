@@ -1,0 +1,52 @@
+---
+title: timeline (RequestAnimationFrame)
+description: The main controller that runs an animation, manages its state, and controls its playback. Based on RequestAnimationFrame.
+---
+
+The `timeline` is the execution engine for any animation you create. It takes a root animation node (like a `sequence` or `parallel` block), manages the animation's state, and controls its playback.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+// 1. Define the animation structure.
+// TypeScript infers the data shape `G` as { opacity: number, x: number }
+const myAnimation = a.sequence([
+  a.ani({ to: { opacity: 1, x: 0 }, duration: 1 }),
+  a.ani({ to: { opacity: 1, x: 100 }, duration: 2 }),
+]);
+
+// 2. Create a reusable timeline instance from the structure.
+const myTimeline = a.timeline(myAnimation);
+
+// 3. Listen for updates to apply the animated values to your UI.
+const unsubscribe = myTimeline.onUpdate(({ state }) => {
+  // `state` is strongly typed as { opacity: number, x: number }
+  console.log(`Opacity: ${state.opacity}, X: ${state.x}`);
+  // e.g., element.style.opacity = state.opacity;
+  // e.g., element.style.transform = `translateX(${state.x}px)`;
+});
+
+// 4. Play the animation from a starting state.
+myTimeline.play({ from: { opacity: 0, x: 0 } });
+```
+
+### Usage & Concepts
+
+#### Overview
+
+The `timeline` is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
+
+When you call `.play()`, the timeline traverses the animation node tree and builds a flat list of "segments". Each segment represents a single `ani` call with its calculated start time, end time, and timing function. On each frame, the timeline calculates the elapsed time, finds the active segment, computes the interpolated value, and notifies subscribers via `onUpdate`.
+
+#### Best Practices
+
+-   **Do** create one timeline per independent animation.
+-   **Do** reuse timelines when you need to play the same animation structure with different starting values.
+-   **Don't** create a new timeline inside a render loop or frequently. Create it once and store it.
+
+### Related Components
+
+-   [`ani`](/en/docs/core-api/ani) - The basic building block for animations controlled by a timeline.
+-   [`Dynamic Animations`](/en/docs/core-api/advanced/dynamic-animations) - For creating interactive animations.
