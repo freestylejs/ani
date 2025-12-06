@@ -38,7 +38,7 @@ export default function HomePage() {
                 <FeatureCard
                     title="Wow, Blazing-Fast"
                     description="Unlock frictionless, zero-overhead animations powered by the native Web Animation API."
-                    link={`/${CONFIG.majorLang}/docs/core-api/web-timeline`}
+                    link={`/${CONFIG.majorLang}/docs/core-api/timeline`}
                     code={performanceCode}
                 >
                     <PerformanceDemo />
