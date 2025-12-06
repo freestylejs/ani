@@ -5,18 +5,13 @@
     "description": "Ani for svelte.",
     "license": "MIT",
     "type": "module",
-    "keywords": [
-        "svelte",
-        "animation"
-    ],
+    "keywords": ["svelte", "animation"],
     "sideEffects": false,
     "private": false,
     "publishConfig": {
         "access": "public"
     },
-    "files": [
-        "dist"
-    ],
+    "files": ["dist"],
     "main": "./dist/index.js",
     "module": "./dist/index.mjs",
     "types": "./dist/index.d.ts",
