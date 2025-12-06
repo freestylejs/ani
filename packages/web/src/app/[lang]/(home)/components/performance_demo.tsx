@@ -180,7 +180,7 @@ export function PerformanceDemo() {
                     <div className="flex items-center justify-between font-medium text-muted-foreground text-xs uppercase tracking-wider">
                         <span>
                             <Link
-                                href="/en/docs/core-api/web-timeline"
+                                href="/en/docs/core-api/timeline"
                                 className="transition-colors hover:text-primary hover:underline"
                             >
                                 WAAPI (Native Compositor) ↗
