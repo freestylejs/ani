@@ -153,8 +153,9 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
         const isRepeating = (this._currentConfig?.repeat ?? 0) >= 1
         const savedRepeatCount = isRepeating ? this._repeatCount : 0
+        const isPlaying = this._status === 'PLAYING'
 
-        this.reset(false)
+        this.reset(false, !isPlaying)
         this._repeatCount = savedRepeatCount
 
         if (isRepeating && this._repeatCount >= config.repeat!) {
@@ -194,7 +195,10 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._clock.subscribe(this)
     }
 
-    public reset(notify: boolean = true): void {
+    public reset(
+        notify: boolean = true,
+        unsubscribeClock: boolean = true
+    ): void {
         this._status = 'IDLE'
         this._currentConfig = null
         this._masterTime = 0
@@ -203,7 +207,9 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._initialState = []
         this._propertyKeyMap = null
         this._currentExecutionPlan = null
-        this._clock.unsubscribe(this)
+        if (unsubscribeClock) {
+            this._clock.unsubscribe(this)
+        }
         this._repeatCount = 0
         if (notify) this.notify()
     }
