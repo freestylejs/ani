@@ -1,5 +1,11 @@
 # @freestylejs/ani-core
 
+## 1.2.1
+
+### Patch Changes
+
+- Fix start iterative fast calling makes lag
+
 ## 1.2.0
 
 ### Minor Changes
