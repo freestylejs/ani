@@ -18,6 +18,34 @@ describe('AnimationClock', () => {
         expect(first).toBe(second)
     })
 
+    it('should update maxDeltaTime via configure()', () => {
+        let rafCallback: ((ts: number) => void) | undefined
+        const requestAnimationFrame = vi.fn().mockImplementation((cb) => {
+            rafCallback = cb
+            return 1
+        })
+        const cancelAnimationFrame = vi.fn()
+        const updates: number[] = []
+
+        vi.stubGlobal('window', {
+            requestAnimationFrame,
+            cancelAnimationFrame,
+        })
+        vi.stubGlobal('performance', {
+            now: () => 0,
+        })
+
+        const clock = AnimationClock.create(0.1)
+        AnimationClock.configure(0.01)
+
+        clock.subscribe({
+            update: (dt) => updates.push(dt),
+        })
+
+        rafCallback?.(1_000)
+        expect(updates[0]).toBe(0.01)
+    })
+
     it('should start one RAF loop for multiple subscribers', () => {
         const requestAnimationFrame = vi.fn().mockReturnValue(1)
         const cancelAnimationFrame = vi.fn()
