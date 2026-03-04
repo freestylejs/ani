@@ -1,6 +1,8 @@
 # Local
 *.local
 @resources
+.agent
+.agents
 
 # Build
 dist
