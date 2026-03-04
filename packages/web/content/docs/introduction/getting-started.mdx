@@ -22,7 +22,7 @@ const MyAnimatedComponent = () => {
   // 2. Define the animation's timeline.
   const myTimeline = useMemo(
     () =>
-      a.timeline(
+      a.dynamicTimeline(
         // Animation structure.
         // >> move   to x: 500
         // >> return to x: 0
@@ -141,7 +141,7 @@ The **`timeline`** is the engine that runs your animation structure. You create 
 
 ```ts
 // The timeline is the controller for the blueprint.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 ```
 </Step>
 <Step>
@@ -164,4 +164,4 @@ controller.play({ from: { x: 0 } });
 You've successfully created your first animation! Now you're ready to dive deeper.
 
 -   Explore the **[Core Concepts](/en/docs/introduction/core-concepts)** to understand the foundational ideas of the library.
--   Jump into the **[Core API](/en/docs/core-api/timeline)** documentation to see all the available animation primitives.
+-   Jump into the **[Core API](/en/docs/core-api/dynamic_timeline)** documentation to see all the available animation primitives.

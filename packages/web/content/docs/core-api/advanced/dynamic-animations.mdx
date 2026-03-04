@@ -3,14 +3,14 @@ title: Dynamic Animations
 description: Create interactive animations with runtime values using keyframes, durations, and repeat.
 ---
 
-The primary mechanism for creating interactive animations is to provide dynamic values to the `timeline.play()` method. This allows you to override the static values defined in your `ani` nodes at runtime.
+The primary mechanism for creating interactive animations is to provide dynamic values to the `dynamicTimeline.play()` method. This allows you to override the static values defined in your `ani` nodes at runtime.
 
 ### API Definition
 
 The `play` method's configuration object accepts several properties for dynamic animations.
 
 ```typescript
-timeline.play(config: {
+dynamicTimeline.play(config: {
   from: G;
   keyframes?: Array<G | 'keep'>;
   durations?: Array<number | 'keep'>;
@@ -41,7 +41,7 @@ const recoverAnimation = a.sequence([
   a.ani({ to: { y: 0 }, duration: 0.5 }),   // Settle stage
 ]);
 
-const myTimeline = a.timeline(recoverAnimation);
+const myTimeline = a.dynamicTimeline(recoverAnimation);
 
 // 2. On user interaction, get dynamic start/end values.
 const releasePosition = { y: 200 };

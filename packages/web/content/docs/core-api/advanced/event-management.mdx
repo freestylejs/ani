@@ -14,7 +14,7 @@ import { a, EventManager } from "@freestylejs/ani-core";
 
 // 1. Define an animation and timeline.
 const myAnimation = a.ani({ to: { x: 500 }, duration: 1 });
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 2. Define the events you want to listen for.
 const supportedEvents = ["mousedown", "mouseup"] as const;
@@ -58,4 +58,4 @@ By providing a "getter" for your animation context (like a `timeline`), your eve
 
 ### Related Components
 
--   [`timeline`](/en/docs/core-api/timeline) - The typical animation context provided to the `EventManager`.
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The typical animation context provided to the `EventManager`.

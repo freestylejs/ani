@@ -18,7 +18,7 @@ const move = a.ani({ to: { x: 100, y: 50 }, duration: 0.8 });
 const popIn = a.parallel([fadeIn, move]);
 
 // 3. Create a timeline. The total duration will be that of the longest child (0.8s).
-const myTimeline = a.timeline(popIn);
+const myTimeline = a.dynamicTimeline(popIn);
 
 // 4. Play the animation.
 myTimeline.play({ from: { opacity: 0, scale: 1, x: 0, y: 0 } });
