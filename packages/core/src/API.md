@@ -8,7 +8,7 @@ A key feature of this API is its **end-to-end type safety**. The entire animatio
 
 ---
 
-## `timeline`
+## `dynamicTimeline` (`rafTimeline`)
 
 > **The main controller that runs an animation, manages its state, and controls its playback.**
 
@@ -25,7 +25,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 2. Create a reusable timeline instance from the structure.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 3. Listen for updates to apply the animated values to your UI.
 const unsubscribe = myTimeline.onUpdate(({ state }) => {
@@ -43,11 +43,11 @@ myTimeline.play({ from: { opacity: 0, x: 0 } });
 
 #### Overview
 
-The `timeline` is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
+The `dynamicTimeline` is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
 
 #### Dynamic Animations
 
-The `timeline.play()` method accepts a configuration object that allows you to provide dynamic values at runtime. This is the primary mechanism for creating interactive animations.
+The `dynamicTimeline.play()` method accepts a configuration object that allows you to provide dynamic values at runtime. This is the primary mechanism for creating interactive animations.
 
 -   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes. The number of keyframes must match the number of `ani` nodes.
 -   `durations`: An array of `duration` values (in seconds) that override the original durations.
@@ -60,7 +60,7 @@ const recoverAnimation = a.sequence([
   a.ani({ to: { y: -15 }, duration: 0.3 }), // Overshoot stage
   a.ani({ to: { y: 0 }, duration: 0.5 }),   // Settle stage
 ]);
-const myTimeline = a.timeline(recoverAnimation);
+const myTimeline = a.dynamicTimeline(recoverAnimation);
 
 // 2. On user interaction, play the animation with dynamic values.
 myTimeline.play({
@@ -97,7 +97,7 @@ myTimeline.play({
 
 ```typescript
 // Factory Function
-function timeline<G extends Groupable, Ctx = any>(rootNode: AnimationNode<G>, clock?: AnimationClockInterface): Timeline<G, Ctx>
+function dynamicTimeline<G extends Groupable, Ctx = any>(rootNode: AnimationNode<G>, clock?: AnimationClockInterface): Timeline<G, Ctx>
 
 // Main play configuration
 interface TimelineStartingConfig<G extends Groupable, Ctx = any> {
@@ -135,7 +135,7 @@ interface TimelineController<G extends Groupable, Ctx = any> {
 
 ---
 
-## `webTimeline`
+## `timeline` (`waapiTimeline` / `webTimeline`)
 
 > **A high-performance, browser-native timeline powered by the Web Animations API (WAAPI).**
 
@@ -167,15 +167,15 @@ if (element) {
 
 #### Overview
 
-`webTimeline` compiles your declarative animation tree into native browser Keyframes and plays them using `Element.animate()`. This runs animations off the main thread (where possible), resulting in silky smooth performance even when the JavaScript main thread is busy.
+`timeline` compiles your declarative animation tree into native browser Keyframes and plays them using `Element.animate()`. This runs animations off the main thread (where possible), resulting in silky smooth performance even when the JavaScript main thread is busy.
 
-Unlike the standard `timeline`, `webTimeline` does not emit `onUpdate` events because the animation state is managed by the browser's native engine.
+Unlike `dynamicTimeline`, `timeline` does not emit `onUpdate` events because the animation state is managed by the browser's native engine.
 
 #### Best Practices
 
-- **Do** use `webTimeline` for simple to moderately complex UI transitions that don't require per-frame JavaScript callbacks.
+- **Do** use `timeline` for simple to moderately complex UI transitions that don't require per-frame JavaScript callbacks.
 - **Do** use it when performance is critical (e.g., infinite loops, background animations).
-- **Don't** use it if you need to sync non-CSS properties (like scroll position or canvas drawing) to the animation. Use the standard `timeline` for that.
+- **Don't** use it if you need to sync non-CSS properties (like scroll position or canvas drawing) to the animation. Use `dynamicTimeline` for that.
 
 ### API Reference
 
@@ -192,7 +192,7 @@ Unlike the standard `timeline`, `webTimeline` does not emit `onUpdate` events be
 #### Type Definitions
 
 ```typescript
-function webTimeline<G extends Groupable>(rootNode: AnimationNode<G>): WebAniTimeline<G>;
+function timeline<G extends Groupable>(rootNode: AnimationNode<G>): WebAniTimeline<G>;
 
 interface WebAniTimelineConfig<G extends Groupable> {
     from: G;
@@ -212,7 +212,7 @@ interface WebAniTimeline<G extends Groupable> {
 
 ### Related Components
 
--   `timeline` - The standard JavaScript-based controller.
+-   `dynamicTimeline` - The standard JavaScript-based controller.
 
 ---
 
@@ -230,7 +230,7 @@ const moveRight = a.ani({ to: { x: 100 }, duration: 0.5 });
 
 // 2. Create a timeline to control the animation.
 // The data shape `{ x: number }` is inferred from the `ani` node.
-const myTimeline = a.timeline(moveRight);
+const myTimeline = a.dynamicTimeline(moveRight);
 
 // 3. Listen for updates to apply the animated values.
 myTimeline.onUpdate(({ state }) => {
@@ -300,7 +300,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 3. Create and play the timeline.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 myTimeline.play({ from: { opacity: 0, x: 0 } });
 ```
 
@@ -354,7 +354,7 @@ const moveRight = a.ani({ to: { opacity: 1, x: 100 }, duration: 2 });
 const myAnimation = a.sequence([fadeIn, moveRight]);
 
 // 3. Create a timeline to run the sequence.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 4. Play the animation. Total duration will be 1 + 2 = 3 seconds.
 myTimeline.play({ from: { opacity: 0, x: 50 } });
@@ -422,7 +422,7 @@ const move = a.ani({ to: { x: 100, y: 50 }, duration: 0.8 });
 const popIn = a.parallel([fadeIn, move]);
 
 // 3. Create a timeline. The total duration will be that of the longest child (0.8s).
-const myTimeline = a.timeline(popIn);
+const myTimeline = a.dynamicTimeline(popIn);
 
 // 4. Play the animation.
 myTimeline.play({ from: { opacity: 0, scale: 1, x: 0, y: 0 } });
@@ -494,7 +494,7 @@ const listEntrance = a.stagger(
 );
 
 // 3. Create a timeline.
-const myTimeline = a.timeline(listEntrance);
+const myTimeline = a.dynamicTimeline(listEntrance);
 
 // 4. Play the animation.
 // Note: The `from` value applies to all three conceptual items.
@@ -563,7 +563,7 @@ const pulse = a.sequence([
 const loopedPulse = a.loop(pulse, 3);
 
 // 3. Create and play the timeline.
-const myTimeline = a.timeline(loopedPulse);
+const myTimeline = a.dynamicTimeline(loopedPulse);
 myTimeline.play({ from: { scale: 1 } });
 ```
 
@@ -625,7 +625,7 @@ const myAnimation = a.ani({
   timing: a.timing.spring({ m: 1, k: 100, c: 10 }), // Mass, stiffness, damping
 });
 
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 myTimeline.play({ from: { y: 0 } });
 ```
 
@@ -782,7 +782,7 @@ import { a, EventManager } from "@freestylejs/ani-core";
 
 // 1. Define an animation and timeline.
 const myAnimation = a.ani({ to: { x: 500 }, duration: 1 });
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 2. Define the events you want to listen for.
 const supportedEvents = ["mousedown", "mouseup"] as const;
