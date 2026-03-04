@@ -39,6 +39,26 @@ export interface TimelineCommonConfig<G extends Groupable> {
     propertyResolver?: G extends AnimePrimitive ? never : Resolver<G>
 }
 
+/**
+ * Normalize repeat count as "additional iterations after first play".
+ */
+export function normalizeRepeatCount(repeat?: number): number {
+    if (repeat === Infinity) return Infinity
+    if (!Number.isFinite(repeat) || repeat === undefined || repeat <= 0) {
+        return 0
+    }
+    return Math.floor(repeat)
+}
+
+/**
+ * Converts repeat count to WAAPI iteration count.
+ * repeat=0 -> iterations=1, repeat=1 -> iterations=2
+ */
+export function toIterationCount(repeat?: number): number {
+    const normalized = normalizeRepeatCount(repeat)
+    return normalized === Infinity ? Infinity : normalized + 1
+}
+
 export abstract class TimelineBase<G extends Groupable> {
     public readonly duration: number
 
@@ -104,11 +124,11 @@ export abstract class TimelineBase<G extends Groupable> {
 
                 const newSegmentProps: SegmentNodeProps<G> = {
                     ...segment.node.props,
-                    ...(dynamicTo &&
+                    ...(dynamicTo !== undefined &&
                         dynamicTo !== 'keep' && {
                             to: dynamicTo,
                         }),
-                    ...(dynamicDuration &&
+                    ...(dynamicDuration !== undefined &&
                         dynamicDuration !== 'keep' && {
                             duration: dynamicDuration,
                         }),
