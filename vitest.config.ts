@@ -9,7 +9,6 @@ export default defineConfig({
         coverage: {
             reporter: ['html', 'text'],
             provider: 'v8',
-            include: [],
         },
     },
     resolve: {},
