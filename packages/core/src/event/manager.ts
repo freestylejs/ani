@@ -76,6 +76,7 @@ export class EventManager<
         if (!removeListener) return false
 
         this.targetElement.removeEventListener(eventName, removeListener)
+        this.eventMap.delete(eventName)
         return true
     }
 
