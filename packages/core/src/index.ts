@@ -13,8 +13,17 @@ export * from './timing'
 export const a = {
     timing: T,
 
+    /**
+     * @deprecated Use `rafTimeline` alias for explicit engine naming.
+     */
     dynamicTimeline: rafTimeline,
+    /**
+     * @deprecated Use `waapiTimeline` alias for explicit engine naming.
+     */
     timeline: webTimeline,
+    webTimeline,
+    rafTimeline,
+    waapiTimeline: webTimeline,
     /**
      * Create animation segment.
      */
