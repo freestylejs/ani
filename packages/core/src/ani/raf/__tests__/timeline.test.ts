@@ -555,6 +555,53 @@ describe('Timeline Controller', () => {
                 '[Timeline] Keyframe mismatch: Expected 2, received 1.'
             )
         })
+
+        it('should allow overriding duration with zero', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = rafTimeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({
+                from: [0],
+                durations: [0],
+            })
+
+            clock.tick(0.01)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [100],
+                status: 'PLAYING',
+            })
+        })
+    })
+
+    describe('Repeat Behavior', () => {
+        it('should treat repeat as additional runs after the first play', () => {
+            const root = ani({ to: [100], duration: 1, timing: linear })
+            const line = rafTimeline(root, clock)
+            const onUpdate = vi.fn()
+            line.onUpdate(onUpdate)
+
+            line.play({ from: [0], repeat: 1 })
+
+            // End first run -> starts second run immediately.
+            clock.tick(1)
+            expect(onUpdate).toHaveBeenCalledWith({
+                state: [100],
+                status: 'PLAYING',
+            })
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [0],
+                status: 'PLAYING',
+            })
+
+            // End second run.
+            clock.tick(1)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [100],
+                status: 'ENDED',
+            })
+        })
     })
 
     describe('Delay Behavior', () => {
@@ -683,21 +730,16 @@ describe('Timeline Controller', () => {
 
             // First run
             clock.tick(1)
-            expect(onUpdate).toHaveBeenLastCalledWith({
+            expect(onUpdate).toHaveBeenCalledWith({
                 state: [100],
                 status: 'PLAYING',
             })
-
-            line.play({
-                from: [0],
-                delay: 0 * 1e3,
-            })
-            expect(onUpdate).toHaveBeenCalledTimes(3) // tick(0.5) + tick(1) + play()
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [0],
                 status: 'PLAYING',
             })
 
+            // Second run should start immediately (no extra delay).
             clock.tick(0.5)
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [50],
