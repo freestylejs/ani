@@ -1,5 +1,9 @@
 import type { AniGroup, AnimePrimitive, Groupable } from '~/ani/core'
-import { TimelineBase, type TimelineCommonConfig } from '~/ani/core'
+import {
+    normalizeRepeatCount,
+    TimelineBase,
+    type TimelineCommonConfig,
+} from '~/ani/core'
 import {
     type Animatable,
     AnimationClock,
@@ -52,7 +56,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
     private _state: AnimePrimitive = []
     private _initialState: AnimePrimitive = []
-    private _repeatCount: number = 0
+    private _remainingRepeats: number = 0
 
     private _propertyKeyMap: Map<string, number> | null = null
     private _onUpdateCallbacks = new Set<OnUpdateCallback<G>>()
@@ -93,6 +97,30 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         )
     }
 
+    private _resolveRuntimeState(config: RafTimelineConfig<G, Ctx>): void {
+        this._currentExecutionPlan = this._resolveExecutionPlan(
+            config.keyframes,
+            config.durations
+        )
+
+        const { keyMap, values } = resolveGroup(config.from)
+        this._propertyKeyMap = keyMap
+        this._state = values
+        this._initialState = values
+        this._masterTime = 0
+    }
+
+    private _restartForRepeat(): void {
+        if (!this._currentConfig) {
+            return
+        }
+
+        this._delay = 0
+        this._resolveRuntimeState(this._currentConfig)
+        this._status = 'PLAYING'
+        this.notify()
+    }
+
     private notify(): void {
         for (const subscriber of this._onUpdateCallbacks) {
             subscriber({
@@ -128,14 +156,18 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this.notify()
 
         if (isEndOfAnimation(this._masterTime, this.duration)) {
-            this._repeatCount += 1
-            const noRepeat = (this._currentConfig!.repeat ?? 0) === 0
-            if (noRepeat) {
+            if (
+                this._remainingRepeats === Infinity ||
+                this._remainingRepeats > 0
+            ) {
+                if (this._remainingRepeats !== Infinity) {
+                    this._remainingRepeats -= 1
+                }
+                this._restartForRepeat()
+            } else {
                 this._status = 'ENDED'
                 this._clock.unsubscribe(this)
                 this.notify()
-            } else {
-                this.play(this._currentConfig!)
             }
         }
     }
@@ -150,34 +182,14 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         canBeIntercepted: boolean = true
     ): void {
         if (this._status === 'PLAYING' && !canBeIntercepted) return
-
-        const isRepeating = (this._currentConfig?.repeat ?? 0) >= 1
-        const savedRepeatCount = isRepeating ? this._repeatCount : 0
-        const isPlaying = this._status === 'PLAYING'
-
-        this.reset(false, !isPlaying)
-        this._repeatCount = savedRepeatCount
-
-        if (isRepeating && this._repeatCount >= config.repeat!) {
-            this._repeatCount = 0
-            return
-        }
+        this.reset(false, true)
 
         this._currentConfig = config
-        if (this._repeatCount === 0) {
-            this._delay = (this._currentConfig.delay ?? 0) * 1e-3
-        }
+        this._remainingRepeats = normalizeRepeatCount(config.repeat)
+        this._delay = (this._currentConfig.delay ?? 0) * 1e-3
 
         // >> Resolve Dynamic Plan via Base Class <<
-        this._currentExecutionPlan = this._resolveExecutionPlan(
-            config.keyframes,
-            config.durations
-        )
-
-        const { keyMap, values } = resolveGroup(config.from)
-        this._propertyKeyMap = keyMap
-        this._state = values
-        this._initialState = values
+        this._resolveRuntimeState(config)
 
         this._status = 'PLAYING'
         this._clock.subscribe(this)
@@ -210,7 +222,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         if (unsubscribeClock) {
             this._clock.unsubscribe(this)
         }
-        this._repeatCount = 0
+        this._remainingRepeats = 0
         if (notify) this.notify()
     }
 

@@ -107,10 +107,14 @@ export function createStates<AnimationStates extends AnimationStateShape>(
             return () => subs.delete(callback)
         },
         transitionTo(newState, timelineConfig, canBeIntercepted) {
+            const previousTimeline = Timeline
             // new timeline
             const from = (timelineConfig?.from ?? // 1. config
                 Timeline.getCurrentValue() ?? // 2. last value
                 config.initialFrom) as RafTimelineConfig<Groupable>['from'] // 3. initial value
+
+            // Ensure old timeline resources are released before replacing.
+            previousTimeline.reset(false)
 
             State = newState
             Timeline = rafTimeline(config.states[State]!, config.clock)
