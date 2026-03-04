@@ -70,6 +70,24 @@ describe('Animation Nodes & Compositors', () => {
             expect(mockCompile1).toHaveBeenCalledWith(plan, 0)
             expect(mockCompile2).toHaveBeenCalledWith(plan, 1) // 0 + duration of child1
         })
+
+        it('should not mutate reused child compositions when parent timing is provided', () => {
+            const reused = sequence([ani({ to: [1], duration: 1 })])
+
+            const parentTiming = {
+                step: () => ({ value: 0, endOfAnimation: false }),
+            } as unknown as TimingFunction
+
+            // Applies timing inheritance to a tree that includes `reused`.
+            sequence([reused], parentTiming)
+
+            // Reusing the same child composition in a new tree should stay unmodified.
+            const plainParent = sequence([reused])
+            const plan: any[] = []
+            plainParent.construct(plan, 0)
+
+            expect(plan[0]!.node.props.timing).toBeUndefined()
+        })
     })
 
     describe('parallel()', () => {
