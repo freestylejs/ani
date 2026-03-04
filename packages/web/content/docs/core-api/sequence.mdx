@@ -19,7 +19,7 @@ const moveRight = a.ani({ to: { opacity: 1, x: 100 }, duration: 2 });
 const myAnimation = a.sequence([fadeIn, moveRight]);
 
 // 3. Create a timeline to run the sequence.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 4. Play the animation. Total duration will be 1 + 2 = 3 seconds.
 myTimeline.play({ from: { opacity: 0, x: 50 } });

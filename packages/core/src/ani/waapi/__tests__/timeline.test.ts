@@ -112,4 +112,19 @@ describe('WebAniTimeline', () => {
         expect(first!.x).toBeUndefined()
         expect(last!.x).toBeUndefined()
     })
+
+    it('should expose cancel alias with reset behavior', () => {
+        const timeline = webTimeline(
+            ani({ to: { opacity: 1 }, duration: 1 })
+        )
+        timeline.play({} as Element, {
+            from: { opacity: 0 },
+        })
+
+        expect(timeline.nativeAnimation).not.toBeNull()
+        timeline.cancel()
+
+        expect(createdAnimations[0]!.cancel).toHaveBeenCalledTimes(1)
+        expect(timeline.nativeAnimation).toBeNull()
+    })
 })

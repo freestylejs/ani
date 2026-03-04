@@ -20,7 +20,7 @@ const pulse = a.sequence([
 const loopedPulse = a.loop(pulse, 3);
 
 // 3. Create and play the timeline.
-const myTimeline = a.timeline(loopedPulse);
+const myTimeline = a.dynamicTimeline(loopedPulse);
 myTimeline.play({ from: { scale: 1 } });
 ```
 
@@ -37,5 +37,5 @@ myTimeline.play({ from: { scale: 1 } });
 
 ### Related Components
 
--   [`timeline`](/en/docs/core-api/timeline) - The `play` method's `repeat` option provides an alternative way to loop.
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The `play` method's `repeat` option provides an alternative way to loop.
 -   [`sequence`](/en/docs/core-api/sequence) - Can be used to manually create loops, though `loop` is more concise.

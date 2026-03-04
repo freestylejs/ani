@@ -69,7 +69,7 @@ const myAnimation = a.ani({
 });
 
 // 3. Create and play the timeline.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 myTimeline.onUpdate(({ state }) => {
   console.log(state.x); // Will log 500 immediately
 });

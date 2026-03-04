@@ -21,11 +21,11 @@ const listEntrance = a.stagger(
     itemAnimation, // for item 2
     itemAnimation, // for item 3
   ],
-  { offset: 0.1 }
+  0.1
 );
 
 // 3. Create a timeline.
-const myTimeline = a.timeline(listEntrance);
+const myTimeline = a.dynamicTimeline(listEntrance);
 
 // 4. Play the animation.
 // Note: The `from` value applies to all three conceptual items.

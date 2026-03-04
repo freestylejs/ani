@@ -17,7 +17,7 @@ const moveRight = a.ani({ to: { x: 100 }, duration: 0.5 });
 
 // 2. Create a timeline to control the animation.
 // The data shape `{ x: number }` is inferred from the `ani` node.
-const myTimeline = a.timeline(moveRight);
+const myTimeline = a.dynamicTimeline(moveRight);
 
 // 3. Listen for updates to apply the animated values.
 myTimeline.onUpdate(({ state }) => {
@@ -43,6 +43,6 @@ The `ani` function is a **"leaf" node in the animation tree**, meaning it doesn'
 
 ### Related Components
 
--   [`timeline`](/en/docs/core-api/timeline) - The controller required to run the animation.
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The controller required to run the animation.
 -   [`sequence`](/en/docs/core-api/sequence) - To play multiple `ani` nodes one after another.
 -   [`parallel`](/en/docs/core-api/parallel) - To play multiple `ani` nodes at the same time.
