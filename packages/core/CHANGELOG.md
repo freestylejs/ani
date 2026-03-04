@@ -1,5 +1,11 @@
 # @freestylejs/ani-core
 
+## 1.3.0
+
+### Minor Changes
+
+- Fix all logic problems
+
 ## 1.2.1
 
 ### Patch Changes
