@@ -1,5 +1,5 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
-import { createStyleSheet } from '~/style'
+import { createStyleSheet, type Resolver } from '~/style'
 import { TimingFunction } from '~/timing'
 import { resolveStateAt } from './resolver'
 import { compileTiming } from './timing_compiler'
@@ -16,7 +16,8 @@ export interface WebAniKeyframe extends Record<string, string | number | null> {
  */
 export function compileToKeyframes<G extends Groupable>(
     plan: ExecutionPlan<G>,
-    initialFrom: G
+    initialFrom: G,
+    resolver?: Resolver<Record<string, number>>
 ): WebAniKeyframe[] {
     if (plan.length === 0) {
         return []
@@ -30,7 +31,10 @@ export function compileToKeyframes<G extends Groupable>(
 
     if (duration === 0) {
         const state = resolveStateAt(plan, initialFrom, 0, SAMPLE_RATE)
-        const style = createStyleSheet(state as Record<string, number>)
+        const style = createStyleSheet(
+            state as Record<string, number>,
+            resolver
+        )
         return [
             { offset: 0, ...style },
             { offset: 1, ...style },
@@ -77,7 +81,10 @@ export function compileToKeyframes<G extends Groupable>(
     for (let i = 0; i < sortedTimes.length; i++) {
         const currT = sortedTimes[i]!
         const state = resolveStateAt(plan, initialFrom, currT, SAMPLE_RATE)
-        const style = createStyleSheet(state as Record<string, number>)
+        const style = createStyleSheet(
+            state as Record<string, number>,
+            resolver
+        )
 
         const keyframe: WebAniKeyframe = {
             offset: currT / duration,
@@ -100,7 +107,8 @@ export function compileToKeyframes<G extends Groupable>(
                         SAMPLE_RATE
                     )
                     const sampleStyle = createStyleSheet(
-                        sampleState as Record<string, number>
+                        sampleState as Record<string, number>,
+                        resolver
                     )
                     keyframes.push({
                         offset: sampleT / duration,
