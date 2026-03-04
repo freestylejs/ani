@@ -11,6 +11,20 @@ export type CompositionChildren = readonly AnimationNode<Groupable>[]
 export type CompositionPlan<Children extends CompositionChildren> =
     ExecutionPlan<ExtractAnimationNode<Children[number]>>
 
+function cloneCompositionNodeWithChildren<T extends CompositionChildren>(
+    source: CompositionNode<T>,
+    children: T
+): CompositionNode<T> {
+    const clone = Object.create(
+        Object.getPrototypeOf(source)
+    ) as CompositionNode<T> & {
+        children: T
+    }
+    Object.assign(clone, source)
+    clone.children = children
+    return clone
+}
+
 /**
  * Composition animation
  */
@@ -48,9 +62,11 @@ export abstract class CompositionNode<
                 }
 
                 if (child instanceof CompositionNode) {
-                    // @ts-ignore
-                    child.children = adjustTiming(child.children)
-                    return child
+                    const adjustedChildren = adjustTiming(child.children)
+                    return cloneCompositionNodeWithChildren(
+                        child as CompositionNode<CompositionChildren>,
+                        adjustedChildren
+                    ) as unknown as T[number]
                 }
 
                 return child
