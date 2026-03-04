@@ -27,7 +27,9 @@ export class AnimationClock implements AnimationClockInterface {
      * @returns clock
      */
     public static create(maxDeltaTime: number = 1 / 10): AnimationClock {
-        AnimationClock.clock = new AnimationClock(maxDeltaTime)
+        if (!AnimationClock.clock) {
+            AnimationClock.clock = new AnimationClock(maxDeltaTime)
+        }
         return AnimationClock.clock
     }
     private constructor(maxDeltaTime: number) {
