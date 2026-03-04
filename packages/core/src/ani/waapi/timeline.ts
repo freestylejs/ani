@@ -88,6 +88,13 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
         this._animation = null
     }
 
+    /**
+     * Alias of reset() for WAAPI naming parity.
+     */
+    public cancel(): void {
+        this.reset()
+    }
+
     public seek(targetTime: number): void {
         if (this._animation) {
             this._animation.currentTime = targetTime * 1000

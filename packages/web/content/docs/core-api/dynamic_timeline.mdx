@@ -1,9 +1,9 @@
 ---
-title: timeline (RequestAnimationFrame)
+title: dynamicTimeline (RequestAnimationFrame)
 description: The main controller that runs an animation, manages its state, and controls its playback. Based on RequestAnimationFrame.
 ---
 
-The `timeline` is the execution engine for any animation you create. It takes a root animation node (like a `sequence` or `parallel` block), manages the animation's state, and controls its playback.
+The `dynamicTimeline` controller is the execution engine for any animation you create. It takes a root animation node (like a `sequence` or `parallel` block), manages the animation's state, and controls its playback.
 
 ### Example
 
@@ -18,7 +18,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 2. Create a reusable timeline instance from the structure.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 3. Listen for updates to apply the animated values to your UI.
 const unsubscribe = myTimeline.onUpdate(({ state }) => {
@@ -36,7 +36,7 @@ myTimeline.play({ from: { opacity: 0, x: 0 } });
 
 #### Overview
 
-The `timeline` is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
+The `dynamicTimeline` controller is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
 
 When you call `.play()`, the timeline traverses the animation node tree and builds a flat list of "segments". Each segment represents a single `ani` call with its calculated start time, end time, and timing function. On each frame, the timeline calculates the elapsed time, finds the active segment, computes the interpolated value, and notifies subscribers via `onUpdate`.
 

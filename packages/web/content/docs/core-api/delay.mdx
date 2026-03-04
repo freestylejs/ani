@@ -18,7 +18,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 3. Create and play the timeline.
-const myTimeline = a.timeline(myAnimation);
+const myTimeline = a.dynamicTimeline(myAnimation);
 myTimeline.play({ from: { opacity: 0, x: 0 } });
 ```
 
