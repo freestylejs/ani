@@ -1,5 +1,16 @@
 # @freestylejs/ani-web
 
+## 0.3.0
+
+### Minor Changes
+
+- Fix all logic problems
+
+### Patch Changes
+
+- Updated dependencies
+  - @freestylejs/ani-core@1.3.0
+
 ## 0.2.0
 
 ### Minor Changes
