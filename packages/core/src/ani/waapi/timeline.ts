@@ -1,5 +1,10 @@
 import type { Groupable } from '~/ani/core'
-import { TimelineBase, type TimelineCommonConfig } from '~/ani/core'
+import {
+    toIterationCount,
+    TimelineBase,
+    type TimelineCommonConfig,
+} from '~/ani/core'
+import type { Resolver } from '~/style'
 import type { AnimationNode } from '~/nodes'
 import { compileToKeyframes, type WebAniKeyframe } from './compiler'
 
@@ -44,7 +49,8 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
 
         this._keyframes = compileToKeyframes(
             this._currentExecutionPlan,
-            config.from
+            config.from,
+            config.propertyResolver as Resolver<Record<string, number>>
         )
 
         if (this._keyframes.length === 0) {
@@ -59,9 +65,10 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
 
         const effect = new KeyframeEffect(target, this._keyframes, {
             duration: totalDurationMs,
-            iterations: config.repeat ?? 1,
+            iterations: toIterationCount(config.repeat),
             delay: config.delay ?? 0,
             fill: 'forwards',
+            ...config.keyframeEffect,
         })
 
         this._animation = new Animation(effect, document.timeline)
