@@ -35,7 +35,9 @@ describe('EventManager', () => {
 
         manager.bind(element as unknown as HTMLElement)
         manager.setAnimeGetter(() => ({ value: 0 }))
-        manager.add('click', () => {})
+        manager.add('click', () => {
+            //
+        })
 
         expect(element.count('click')).toBe(1)
         expect(manager.cleanupOne('click')).toBe(true)

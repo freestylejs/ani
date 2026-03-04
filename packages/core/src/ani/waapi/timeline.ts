@@ -1,11 +1,11 @@
 import type { Groupable } from '~/ani/core'
 import {
-    toIterationCount,
     TimelineBase,
     type TimelineCommonConfig,
+    toIterationCount,
 } from '~/ani/core'
-import type { Resolver } from '~/style'
 import type { AnimationNode } from '~/nodes'
+import type { Resolver } from '~/style'
 import { compileToKeyframes, type WebAniKeyframe } from './compiler'
 
 export interface WebAniTimelineConfig<G extends Groupable>

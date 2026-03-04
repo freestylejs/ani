@@ -27,8 +27,5 @@ export abstract class AnimationNode<G extends Groupable> {
     public abstract construct(plan: ExecutionPlan<G>, startTime: number): void
 }
 
-export type ExtractAnimationNode<AnimeNode> = AnimeNode extends AnimationNode<
-    infer Group
->
-    ? Group
-    : never
+export type ExtractAnimationNode<AnimeNode> =
+    AnimeNode extends AnimationNode<infer Group> ? Group : never
