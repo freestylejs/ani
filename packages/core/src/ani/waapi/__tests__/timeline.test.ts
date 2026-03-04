@@ -64,9 +64,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should interpret repeat as additional iterations', () => {
-        const timeline = webTimeline(
-            ani({ to: { opacity: 1 }, duration: 1 })
-        )
+        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
             repeat: 2,
@@ -76,9 +74,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should forward keyframeEffect options to KeyframeEffect', () => {
-        const timeline = webTimeline(
-            ani({ to: { opacity: 1 }, duration: 1 })
-        )
+        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
             keyframeEffect: {
@@ -114,9 +110,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should expose cancel alias with reset behavior', () => {
-        const timeline = webTimeline(
-            ani({ to: { opacity: 1 }, duration: 1 })
-        )
+        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
         })
