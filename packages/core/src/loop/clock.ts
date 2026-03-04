@@ -32,6 +32,17 @@ export class AnimationClock implements AnimationClockInterface {
         }
         return AnimationClock.clock
     }
+
+    /**
+     * Reconfigure singleton clock.
+     * If not created yet, creates one with provided maxDeltaTime.
+     */
+    public static configure(maxDeltaTime: number): AnimationClock {
+        const clock = AnimationClock.create(maxDeltaTime)
+        clock.maxDeltaTime = maxDeltaTime
+        return clock
+    }
+
     private constructor(maxDeltaTime: number) {
         this.maxDeltaTime = maxDeltaTime
     }
