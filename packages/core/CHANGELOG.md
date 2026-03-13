@@ -1,5 +1,11 @@
 # @freestylejs/ani-core
 
+## 1.3.1
+
+### Patch Changes
+
+- Compiled execution pipe flow for optimization of execution.
+
 ## 1.3.0
 
 ### Minor Changes
