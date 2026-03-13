@@ -460,6 +460,26 @@ describe('Timeline Controller', () => {
             expect(line.getCurrentValue()).toEqual({ x: 50 })
         })
 
+        it('should provide independent record state objects to each subscriber', () => {
+            const root = ani({ to: { x: 100 }, duration: 1, timing: linear })
+            const line = rafTimeline(root, clock)
+            const first = vi.fn()
+            const second = vi.fn()
+
+            line.onUpdate(first)
+            line.onUpdate(second)
+
+            line.play({ from: { x: 0 } })
+            clock.tick(0.5)
+
+            const firstState = first.mock.lastCall?.[0].state
+            const secondState = second.mock.lastCall?.[0].state
+
+            expect(firstState).toEqual({ x: 50 })
+            expect(secondState).toEqual({ x: 50 })
+            expect(firstState).not.toBe(secondState)
+        })
+
         it('should allow seeking after the timeline has ended', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
             const line = rafTimeline(root, clock)
@@ -572,6 +592,38 @@ describe('Timeline Controller', () => {
                 state: [100],
                 status: 'PLAYING',
             })
+        })
+
+        it('should not create implicit linear timing instances during array frame updates', () => {
+            const root = sequence([
+                ani({ to: [100], duration: 1 }),
+                ani({ to: [200], duration: 1 }),
+            ])
+            const line = rafTimeline(root, clock)
+            const linearSpy = vi.spyOn(T, 'linear')
+
+            line.play({ from: [0] })
+            clock.tick(0.5)
+            clock.tick(0.5)
+            clock.tick(0.5)
+
+            expect(linearSpy).not.toHaveBeenCalled()
+        })
+
+        it('should not create implicit linear timing instances during record frame updates', () => {
+            const root = sequence([
+                ani({ to: { x: 100 }, duration: 1 }),
+                ani({ to: { x: 200 }, duration: 1 }),
+            ])
+            const line = rafTimeline(root, clock)
+            const linearSpy = vi.spyOn(T, 'linear')
+
+            line.play({ from: { x: 0 } })
+            clock.tick(0.5)
+            clock.tick(0.5)
+            clock.tick(0.5)
+
+            expect(linearSpy).not.toHaveBeenCalled()
         })
     })
 

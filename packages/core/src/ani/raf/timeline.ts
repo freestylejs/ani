@@ -12,8 +12,9 @@ import {
 import type { AnimationNode } from '~/nodes'
 import { isEndOfAnimation } from '~/utils/time'
 import {
+    compileResolvedPlan,
     resolveGroup,
-    resolvePlanState,
+    resolveCompiledPlanState,
     resolveStateToGroup,
 } from '../core/resolver'
 
@@ -59,6 +60,10 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _remainingRepeats: number = 0
 
     private _propertyKeyMap: Map<string, number> | null = null
+    private _propertyKeys: readonly string[] | null = null
+    private _compiledExecutionPlan: ReturnType<typeof compileResolvedPlan> | null =
+        null
+    private _compiledStateScratch: number[] = []
     private _onUpdateCallbacks = new Set<OnUpdateCallback<G>>()
 
     constructor(rootNode: AnimationNode<G>, clock?: AnimationClockInterface) {
@@ -74,26 +79,23 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
     public getCurrentValue(): AniGroup<G> | null {
         if (this._state.length === 0) return null
-        return resolveStateToGroup(
-            this._state,
-            this._propertyKeyMap
-        ) as AniGroup<G>
+        return this._resolveCurrentState()
     }
 
     private _calculateStateAtTime(
         targetTime: number,
         dt: number = 0
     ): AnimePrimitive {
-        if (this._initialState.length === 0 || !this._currentExecutionPlan) {
+        if (this._initialState.length === 0 || !this._compiledExecutionPlan) {
             return []
         }
 
-        return resolvePlanState(
-            this._currentExecutionPlan,
+        return resolveCompiledPlanState(
+            this._compiledExecutionPlan,
             this._initialState,
-            this._propertyKeyMap, // Using the class property directly
             targetTime,
-            dt
+            dt,
+            this._compiledStateScratch
         )
     }
 
@@ -103,11 +105,27 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             config.durations
         )
 
-        const { keyMap, values } = resolveGroup(config.from)
+        const { keys, keyMap, values } = resolveGroup(config.from)
         this._propertyKeyMap = keyMap
+        this._propertyKeys = keys
         this._state = values
         this._initialState = values
+        this._compiledExecutionPlan = compileResolvedPlan(
+            this._currentExecutionPlan,
+            keyMap
+        )
+        this._compiledStateScratch = new Array(
+            this._compiledExecutionPlan.maxSegmentLength
+        )
         this._masterTime = 0
+    }
+
+    private _resolveCurrentState(): AniGroup<G> {
+        return resolveStateToGroup(
+            this._state,
+            this._propertyKeyMap,
+            this._propertyKeys
+        ) as AniGroup<G>
     }
 
     private _restartForRepeat(): void {
@@ -124,10 +142,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private notify(): void {
         for (const subscriber of this._onUpdateCallbacks) {
             subscriber({
-                state: resolveStateToGroup(
-                    this._state,
-                    this._propertyKeyMap
-                ) as AniGroup<G>,
+                state: this._resolveCurrentState(),
                 status: this._status,
             })
         }
@@ -218,7 +233,10 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._state = []
         this._initialState = []
         this._propertyKeyMap = null
+        this._propertyKeys = null
         this._currentExecutionPlan = null
+        this._compiledExecutionPlan = null
+        this._compiledStateScratch = []
         if (unsubscribeClock) {
             this._clock.unsubscribe(this)
         }
