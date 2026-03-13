@@ -72,7 +72,8 @@ function compileArraySegment(
 ): CompiledExecutionSegment {
     const toValues = segment.node.props.to as AnimePrimitive
     const timing = segment.node.props.timing
-    const singleTiming = (timing as TimingFunction | undefined) ?? DEFAULT_LINEAR
+    const singleTiming =
+        (timing as TimingFunction | undefined) ?? DEFAULT_LINEAR
 
     if (Array.isArray(timing) && timing.length !== toValues.length) {
         throw new TypeError(
@@ -249,9 +250,7 @@ export function resolvePlanState(
             duration: segment.node.duration,
             // default fallback = linear
             timing:
-                isRecordAni && isRecordTiming
-                    ? timings
-                    : (t ?? DEFAULT_LINEAR),
+                isRecordAni && isRecordTiming ? timings : (t ?? DEFAULT_LINEAR),
         }
 
         const result = calculateSegmentState(localTime, segmentDef, dt)

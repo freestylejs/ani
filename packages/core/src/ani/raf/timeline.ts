@@ -13,8 +13,8 @@ import type { AnimationNode } from '~/nodes'
 import { isEndOfAnimation } from '~/utils/time'
 import {
     compileResolvedPlan,
-    resolveGroup,
     resolveCompiledPlanState,
+    resolveGroup,
     resolveStateToGroup,
 } from '../core/resolver'
 
@@ -61,8 +61,9 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
     private _propertyKeyMap: Map<string, number> | null = null
     private _propertyKeys: readonly string[] | null = null
-    private _compiledExecutionPlan: ReturnType<typeof compileResolvedPlan> | null =
-        null
+    private _compiledExecutionPlan: ReturnType<
+        typeof compileResolvedPlan
+    > | null = null
     private _compiledStateScratch: number[] = []
     private _onUpdateCallbacks = new Set<OnUpdateCallback<G>>()
 

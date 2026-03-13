@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import {
-    compileResolvedPlan,
-    resolveGroup,
-    resolveCompiledPlanState,
-    resolvePlanState,
-} from '../resolver'
 import { ani, sequence } from '~/nodes'
 import type { TimingFunction } from '~/timing'
+import {
+    compileResolvedPlan,
+    resolveCompiledPlanState,
+    resolveGroup,
+    resolvePlanState,
+} from '../resolver'
 
 describe('compiled resolver', () => {
     it('should preserve user-provided timing instances in compiled array segments', () => {

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import type {
+    ExecutionPlan,
+    GroupableRecord,
+} from '~/ani/core/interface/core_types'
 import {
     compileResolvedPlan,
     resolveCompiledPlanState,
     resolvePlanState,
 } from '~/ani/core/resolver'
-import type { ExecutionPlan, GroupableRecord } from '~/ani/core/interface/core_types'
 import { ani } from '~/nodes'
 
 type PerfCase = {
@@ -75,7 +78,10 @@ function buildRecordPlan(segmentCount: number, width: number): PerfCase {
     }
 }
 
-function warmup(caseDef: PerfCase, compiled = compileResolvedPlan(caseDef.plan, caseDef.keyMap)) {
+function warmup(
+    caseDef: PerfCase,
+    compiled = compileResolvedPlan(caseDef.plan, caseDef.keyMap)
+) {
     const warmupIterations = Math.min(500, Math.floor(caseDef.iterations / 2))
     for (let i = 0; i < warmupIterations; i++) {
         resolvePlanState(
