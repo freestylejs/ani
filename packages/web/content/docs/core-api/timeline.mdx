@@ -70,12 +70,12 @@ Since `timeline` compiles to native `CSS` Keyframes, standard easing functions a
 | Timing Function | Compilation Behavior |
 | :--- | :--- |
 | `linear()` | **Compiles** to `linear`. Recommended. |
-| `bezier()` | **Compiles** to `cubic-bezier(...)`. Recommended. |
+| `bezier()` | **Compiles** to `cubic-bezier(...)` when its segment maps 1:1 onto a keyframe interval; if adjacent segments subdivide the interval, it is **sampled** (60fps) so the curve is not restarted at split points. |
 | `spring()` | **Sampled(but can not be duration goes into `Infinity`)**. Compiles into high-density linear keyframes (60fps). |
-| `dynamicSpring()` | **Sampled(but can not be duration goes into `Infinity`)**. Compiles frame-by-frame stateful simulation. |
+| `dynamicSpring()` | **Sampled**. Its internal integrator state is reset on every `play()`, so compilation is deterministic per run. |
 | *User Custom* | **Sampled**, provided the function is stateless (pure function of time). |
 
-> **Note:** Using `spring()` or custom timing functions with `timeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard `CSS` easing. Stateful animations like `dynamicSpring` (which depend on velocity from the previous frame) cannot be pre-compiled and are not supported.
+> **Note:** Using `spring()`, `dynamicSpring()`, or subdivided `bezier()` timings with `timeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard `CSS` easing.
 
 ### Related Components
 

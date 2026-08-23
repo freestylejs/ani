@@ -50,6 +50,8 @@ eventManager.attach({
 
 By providing a "getter" for your animation context (like a `timeline`), your event handlers receive a direct, up-to-date reference to the animation controller, allowing you to `play`, `pause`, `seek`, etc., in response to events.
 
+Handler keys follow the `on` + capitalized event name convention (e.g. `onMousedown`, `onKeydown`, `onTransitionend`) and are normalized to their all-lowercase DOM event names before being registered with `addEventListener`.
+
 #### Best Practices
 
 -   **Do** use `EventManager` to keep your event handling logic clean and co-located with your animation logic.

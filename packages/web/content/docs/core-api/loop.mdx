@@ -30,6 +30,13 @@ myTimeline.play({ from: { scale: 1 } });
 
 `loop` is a composition node that takes a single child animation and repeats it a set number of times. The total duration of the `loop` node is the duration of its child multiplied by the loop count. This is a convenient alternative to manually creating a long `sequence` of identical animations.
 
+An optional third `timing` argument applies a timing function to the looped child segments (only where the child does not define its own timing):
+
+```typescript
+// Loop with an ease applied to every repetition.
+const easedLoop = a.loop(pulse, 3, a.timing.ease());
+```
+
 #### Best Practices
 
 -   **Do** use `loop` for simple, repetitive animations like pulsing or bouncing.

@@ -19,7 +19,7 @@ dynamicTimeline.play(config: {
 ```
 
 -   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes.
--   `durations`: An array of `duration` values (in seconds) that override the original durations.
+-   `durations`: An array of `duration` values (in seconds) that override the original durations. Overridden durations are reflected in the segment schedule and the timeline's total `duration`, so playback ends when the shortened (or extended) plan completes.
 -   `repeat`: A number indicating how many times the animation should repeat. Use `Infinity` for an endless loop.
 
 ### How it Works
