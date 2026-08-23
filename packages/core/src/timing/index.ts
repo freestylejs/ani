@@ -1,6 +1,8 @@
 export * from './bezier'
+export * from './dynamic_spring'
 export * from './function'
 export * from './linear'
+export * from './spring'
 
 import * as Bezier from './bezier'
 import { DynamicSpringTimingFunction } from './dynamic_spring'

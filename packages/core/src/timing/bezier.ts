@@ -23,6 +23,16 @@ export class BezierTimingFunction extends TimingFunction {
 
     public constructor(public readonly opt: { p2: Coord; p3: Coord }) {
         super()
+        // x coordinates must stay within [0, 1] (CSS cubic-bezier contract),
+        // otherwise x(t) is non-monotonic and the inverse lookup is invalid.
+        if (
+            !(this.opt.p2.x >= 0 && this.opt.p2.x <= 1) ||
+            !(this.opt.p3.x >= 0 && this.opt.p3.x <= 1)
+        ) {
+            throw new RangeError(
+                '[BezierTimingFunction] control point x values must be within [0, 1].'
+            )
+        }
         // Pre-calculate sample table
         if (
             this.opt.p2.x !== this.opt.p2.y ||
@@ -159,9 +169,6 @@ export class BezierTimingFunction extends TimingFunction {
             this.opt.p2.x !== this.opt.p2.y ||
             this.opt.p3.x !== this.opt.p3.y
         ) {
-            if (!this.sampleValues) {
-                // Should have been initialized in constructor
-            }
             // Solve for t given x
             const t = this.getTForX(x)
             // Calculate y(t)
