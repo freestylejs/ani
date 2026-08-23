@@ -23,7 +23,11 @@ export function useAni<G extends Groupable>(
         return timeline.getCurrentValue() ?? initialValue
     }, [timeline, initialValue])
 
-    const value = useSyncExternalStore(subscribe, getSnapshot)
+    const value = useSyncExternalStore(
+        subscribe,
+        getSnapshot,
+        () => initialValue
+    )
 
     return [value, timeline] as const
 }

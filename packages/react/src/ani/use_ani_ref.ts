@@ -56,7 +56,9 @@ export function useAniRef<
                 return timeline.duration
             },
             play: (config) => {
-                animeValue.current = config.from as AniGroup<G>
+                if (config.from) {
+                    animeValue.current = config.from as AniGroup<G>
+                }
                 timeline.play(config)
             },
             update: (dt) => timeline.update(dt),
@@ -67,6 +69,7 @@ export function useAniRef<
                 timeline.reset()
                 // back to initial value
                 const initial = initialValue ?? null
+                animeValue.current = initial
                 if (ref.current && initial) {
                     const styleObject = createStyleSheet(
                         initial as Record<string, number>,
@@ -85,28 +88,26 @@ export function useAniRef<
 
     // >> animation subscription + direct style application.
     useEffect(() => {
-        if (!timeline || !ref.current) return
+        if (!timeline) return
 
-        const target = timeline.getCurrentValue() ?? initialValue
-        const styleObject = createStyleSheet(
-            target as Record<string, number>,
-            timeline.currentConfig?.propertyResolver
-        )
-        applyStylesToRef(ref, styleObject)
-
-        const unsubscribe = timeline.onUpdate((value) => {
-            /**
-             * !TODO: WebAnimation PRIORITY = This code will remove animation when executed.
-             * if (!ref.current) return
-             * ref.current.getAnimations().forEach((anim) => anim.cancel())
-             */
-
-            animeValue.current = value.state as AniGroup<G>
+        const applyValue = (value: AniGroup<G>) => {
+            // Late-mounted refs pick up styling on the next animation frame.
+            if (!ref.current) return
+            animeValue.current = value
             const styleObject = createStyleSheet(
-                value.state as Record<string, number>,
+                value as Record<string, number>,
                 timeline.currentConfig?.propertyResolver
             )
             applyStylesToRef(ref, styleObject)
+        }
+
+        const initial = timeline.getCurrentValue() ?? initialValue
+        if (initial) {
+            applyValue(initial)
+        }
+
+        const unsubscribe = timeline.onUpdate((value) => {
+            applyValue(value.state as AniGroup<G>)
         })
         return () => unsubscribe()
     }, [timeline, ref])
