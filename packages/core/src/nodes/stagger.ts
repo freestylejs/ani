@@ -25,14 +25,11 @@ export class StaggerNode<
         super(children, timing, id)
 
         this.offset = offset
-
-        if (children.length === 0) {
-            this.duration = 0
-        } else {
-            const lastChild = children[children.length - 1]!
-            this.duration =
-                (children.length - 1) * this.offset + lastChild.duration
-        }
+        // True temporal coverage: each child ends at (i * offset + duration).
+        this.duration = Math.max(
+            0,
+            ...children.map((child, i) => i * offset + child.duration)
+        )
     }
 
     public construct(plan: CompositionPlan<Children>, startTime: number): void {

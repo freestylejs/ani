@@ -13,7 +13,6 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
     readonly type = 'LOOP'
     readonly duration: number
     readonly count: number
-    readonly child: AnimationNode<G>
 
     constructor(
         child: AnimationNode<G>,
@@ -22,9 +21,15 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
         id?: AnimationId
     ) {
         super([child], timing, id)
-        this.child = child
         this.count = loopCount
         this.duration = child.duration * loopCount
+    }
+
+    /**
+     * Timing-adjusted child (CompositionNode may clone it to inherit timing).
+     */
+    public get child(): AnimationNode<G> {
+        return this.children[0] as AnimationNode<G>
     }
 
     public construct(
