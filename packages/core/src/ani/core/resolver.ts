@@ -90,7 +90,11 @@ export function resolvePlanState(
             timing: isRecordAni && isRecordTiming ? timings : (t ?? T.linear()),
         }
 
-        const result = calculateSegmentState(localTime, segmentDef, dt)
+        // Completed segments must not keep consuming delta time, otherwise
+        // stateful integrators (dynamic springs) advance on foreign clocks.
+        const activeDt = localTime < segment.node.duration ? dt : 0
+
+        const result = calculateSegmentState(localTime, segmentDef, activeDt)
 
         const finalValues = result.isComplete ? toValues : result.values
 
