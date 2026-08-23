@@ -44,6 +44,9 @@ export class EventManager<
         (e: HTMLElementEventMap[SupportedEventList[number]]) => void
     > = new Map()
 
+    private eventOptions: Map<string, boolean | AddEventListenerOptions> =
+        new Map()
+
     private withAnimeValue = (
         listener: EventHandler<AnimationContext, SupportedEventList[number]>
     ): ((e: HTMLElementEventMap[SupportedEventList[number]]) => void) => {
@@ -60,8 +63,21 @@ export class EventManager<
         listener: EventHandler<AnimationContext, SupportedEventList[number]>,
         options?: boolean | AddEventListenerOptions
     ) => {
+        // Replace any previously registered listener for the same event
+        const previousListener = this.eventMap.get(eventName)
+        if (previousListener) {
+            this.targetElement.removeEventListener(
+                eventName,
+                previousListener,
+                this.eventOptions.get(eventName)
+            )
+        }
+
         const withAnime = this.withAnimeValue(listener)
         this.eventMap.set(eventName, withAnime)
+        if (options !== undefined) {
+            this.eventOptions.set(eventName, options)
+        }
         this.targetElement.addEventListener<EventName>(
             eventName,
             this.eventMap.get(eventName)!,
@@ -75,8 +91,14 @@ export class EventManager<
         const removeListener = this.eventMap.get(eventName)
         if (!removeListener) return false
 
-        this.targetElement.removeEventListener(eventName, removeListener)
+        // DOM matching requires the same capture flag used on registration.
+        this.targetElement.removeEventListener(
+            eventName,
+            removeListener,
+            this.eventOptions.get(eventName)
+        )
         this.eventMap.delete(eventName)
+        this.eventOptions.delete(eventName)
         return true
     }
 
@@ -94,9 +116,13 @@ export class EventManager<
      * @param key onX`{event_name}`
      */
     public static getEvtKey(key: string): EventKey {
-        const removed = key.substring(2, key.length)
-        const Capitalized = `${removed[0]!.toLowerCase()}${removed.substring(1, key.length)}`
-        return Capitalized as EventKey
+        if (!key.startsWith('on') || key.length <= 2) {
+            throw new TypeError(
+                `[EventManager] Invalid event handler key: "${key}". Expected the "on" prefix (e.g. "onClick").`
+            )
+        }
+        // DOM event names are all-lowercase (e.g. "onKeyDown" -> "keydown")
+        return key.slice(2).toLowerCase() as EventKey
     }
 
     public attach = (
