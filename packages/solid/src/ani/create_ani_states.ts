@@ -5,7 +5,7 @@ import {
     type StateController,
     type StateProps,
 } from '@freestylejs/ani-core'
-import { createEffect, createSignal } from 'solid-js'
+import { createSignal, onCleanup } from 'solid-js'
 import { createAniRef } from './create_ani_ref'
 
 export function createAniStates<
@@ -26,10 +26,8 @@ export function createAniStates<
         statesController.timeline()
     )
 
-    createEffect(() => {
-        const destroy = statesController.onTimelineChange(setTimeline)
-        return () => destroy()
-    })
+    const destroy = statesController.onTimelineChange(setTimeline)
+    onCleanup(destroy)
 
     const [state, setState] = createSignal<keyof AnimationStates>(props.initial)
 
