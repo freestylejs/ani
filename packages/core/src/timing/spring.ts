@@ -45,15 +45,8 @@ export class SpringTimingFunction extends TimingFunction {
         // Initial D
         const d0 = context.from - context.to
 
-        if (typeof d0 !== 'number') {
-            throw new TypeError(
-                'Spring step function, needs initial displacement d(0) = context.start'
-            )
-        }
-
         const wN = Math.sqrt(k / m)
         const zetta = c / (2 * Math.sqrt(m * k))
-        const Ms = 1000 as const
 
         if (zetta < 1) {
             // under-damped system
@@ -72,7 +65,9 @@ export class SpringTimingFunction extends TimingFunction {
 
             return {
                 value: ode,
-                endOfAnimation: t >= settlingTime && ode >= context.to,
+                // Envelope-based: amplitude is bounded by |d0| * tolerance past
+                // the settling time, which makes the predicate sticky.
+                endOfAnimation: t >= settlingTime,
             }
         }
 
@@ -89,40 +84,30 @@ export class SpringTimingFunction extends TimingFunction {
 
             return {
                 value: ode,
-                endOfAnimation:
-                    t >= settlingTime &&
-                    Math.abs(ode - context.to) <= context.to / Ms,
+                endOfAnimation: t >= settlingTime,
             }
         }
 
-        if (zetta > 1) {
-            // overdamped system
-            const settlingTime = (-1 / (zetta * wN)) * Math.log(tolerance)
-            const t = context?.duration
-                ? (settlingTime / context.duration) * time
-                : time
+        // overdamped system (zetta > 1)
+        const settlingTime = (-1 / (zetta * wN)) * Math.log(tolerance)
+        const t = context?.duration
+            ? (settlingTime / context.duration) * time
+            : time
 
-            const delta = Math.sqrt(zetta ** 2 - 1)
-            const lambda1 = -zetta * wN + wN * delta
-            const lambda2 = -zetta * wN - wN * delta
+        const delta = Math.sqrt(zetta ** 2 - 1)
+        const lambda1 = -zetta * wN + wN * delta
+        const lambda2 = -zetta * wN - wN * delta
 
-            const C2 = (-lambda1 * d0) / (lambda2 - lambda1)
-            const C1 = d0 - C2
+        const C2 = (-lambda1 * d0) / (lambda2 - lambda1)
+        const C1 = d0 - C2
 
-            // ODE solution
-            const ode =
-                C1 * Math.exp(lambda1 * t) +
-                C2 * Math.exp(lambda2 * t) +
-                context.to
+        // ODE solution
+        const ode =
+            C1 * Math.exp(lambda1 * t) + C2 * Math.exp(lambda2 * t) + context.to
 
-            return {
-                value: ode,
-                endOfAnimation:
-                    t >= settlingTime &&
-                    Math.abs(ode - context.to) <= context.to / Ms,
-            }
+        return {
+            value: ode,
+            endOfAnimation: t >= settlingTime,
         }
-
-        throw new Error('invalid system')
     }
 }

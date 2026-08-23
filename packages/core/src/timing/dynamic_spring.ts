@@ -17,6 +17,16 @@ export class DynamicSpringTimingFunction extends TimingFunction {
         this.isInitialized = true
     }
 
+    /**
+     * Clears internal integrator state so the next `step` re-initializes
+     * from the incoming `context.from` instead of a stale previous run.
+     */
+    public reset(): void {
+        this.currentValue = 0
+        this.currentVelocity = 0
+        this.isInitialized = false
+    }
+
     private getDerivatives(
         state: { x: number; v: number },
         to: number
@@ -85,7 +95,8 @@ export class DynamicSpringTimingFunction extends TimingFunction {
         const displacement = this.currentValue - to
         const isMoving = Math.abs(this.currentVelocity) > tol
         const isDisplaced = Math.abs(displacement) > tol
-        const endOfAnimation = !isMoving && !isDisplaced
+        const endOfAnimation =
+            (!isMoving && !isDisplaced) || _time >= context.duration
 
         if (endOfAnimation) {
             // Snap to final value
