@@ -28,6 +28,9 @@ jobs:
       - name: Format checking
         run: pnpm check
 
+      - name: Type checking
+        run: pnpm ts:typecheck
+
       - name: Build
         run: pnpm build
 

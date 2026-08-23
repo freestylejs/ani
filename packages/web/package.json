@@ -6,7 +6,8 @@
         "build": "next build",
         "dev": "next dev",
         "start": "next start",
-        "postinstall": "fumadocs-mdx"
+        "postinstall": "fumadocs-mdx",
+        "ts:typecheck": "tsc --noEmit --skipLibCheck"
     },
     "dependencies": {
         "@freestylejs/ani-core": "workspace:^",
