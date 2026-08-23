@@ -556,7 +556,7 @@ describe('Timeline Controller', () => {
             )
         })
 
-        it('should allow overriding duration with zero', () => {
+        it('should end immediately when duration is overridden to zero', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
             const line = rafTimeline(root, clock)
             const onUpdate = vi.fn()
@@ -568,9 +568,10 @@ describe('Timeline Controller', () => {
             })
 
             clock.tick(0.01)
+            expect(line.duration).toBe(0)
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [100],
-                status: 'PLAYING',
+                status: 'ENDED',
             })
         })
     })
@@ -621,10 +622,17 @@ describe('Timeline Controller', () => {
 
             // During the delay, state should not change
             clock.tick(0.25)
-            expect(onUpdate).toHaveBeenCalledTimes(1) // No new updates
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [0],
+                status: 'PLAYING',
+            })
 
-            clock.tick(0.25) // Delay finishes
-            expect(onUpdate).toHaveBeenCalledTimes(1)
+            // Delay finishes exactly on this frame; state stays at start.
+            clock.tick(0.25)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [0],
+                status: 'PLAYING',
+            })
 
             // After delay, animation starts
             clock.tick(0.5) // Halfway through animation
@@ -714,6 +722,14 @@ describe('Timeline Controller', () => {
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [50],
                 status: 'PAUSED',
+            })
+
+            // Resuming after seek must not re-apply the pending delay.
+            line.resume()
+            clock.tick(0.1)
+            expect(onUpdate).toHaveBeenLastCalledWith({
+                state: [60],
+                status: 'PLAYING',
             })
         })
 

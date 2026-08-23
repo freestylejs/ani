@@ -61,6 +61,10 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _propertyKeyMap: Map<string, number> | null = null
     private _onUpdateCallbacks = new Set<OnUpdateCallback<G>>()
 
+    // Cached resolved group for referentially stable getCurrentValue()
+    private _cachedGroup: AniGroup<G> | null = null
+    private _groupDirty = true
+
     constructor(rootNode: AnimationNode<G>, clock?: AnimationClockInterface) {
         super(rootNode)
         this._clock = clock ?? AnimationClock.create()
@@ -74,10 +78,15 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
     public getCurrentValue(): AniGroup<G> | null {
         if (this._state.length === 0) return null
-        return resolveStateToGroup(
+        if (!this._groupDirty && this._cachedGroup !== null) {
+            return this._cachedGroup
+        }
+        this._cachedGroup = resolveStateToGroup(
             this._state,
             this._propertyKeyMap
         ) as AniGroup<G>
+        this._groupDirty = false
+        return this._cachedGroup
     }
 
     private _calculateStateAtTime(
@@ -108,6 +117,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._state = values
         this._initialState = values
         this._masterTime = 0
+        this._groupDirty = true
     }
 
     private _restartForRepeat(): void {
@@ -141,7 +151,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
         if (this._delay > 0) {
             this._delay -= dt
-            if (this._delay < 0) {
+            if (this._delay <= 0) {
                 dt = -this._delay
                 this._delay = 0
             } else {
@@ -153,6 +163,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         if (this._masterTime >= this.duration) this._masterTime = this.duration
 
         this._state = this._calculateStateAtTime(this._masterTime, dt)
+        this._groupDirty = true
         this.notify()
 
         if (isEndOfAnimation(this._masterTime, this.duration)) {
@@ -219,6 +230,8 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._initialState = []
         this._propertyKeyMap = null
         this._currentExecutionPlan = null
+        this._cachedGroup = null
+        this._groupDirty = true
         if (unsubscribeClock) {
             this._clock.unsubscribe(this)
         }
@@ -231,8 +244,12 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             this.pause()
         }
         const seekTime = Math.max(0, Math.min(targetTime, this.duration))
+        // Seeking is an explicit time-domain override: any pending start
+        // delay must not re-apply when playback resumes.
+        this._delay = 0
         this._masterTime = seekTime
         this._state = this._calculateStateAtTime(seekTime, 0)
+        this._groupDirty = true
         this.notify()
     }
 
