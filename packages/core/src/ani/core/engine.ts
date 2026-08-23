@@ -25,6 +25,12 @@ export function calculateSegmentState(
 
     const isMultipleTiming = Array.isArray(segmentDef.timing)
 
+    if (segmentDef.from.length !== segmentDef.to.length) {
+        throw new TypeError(
+            `[calculateSegmentState] from/to length mismatch. from(${segmentDef.from.length}) and to(${segmentDef.to.length}) must have the same length.`
+        )
+    }
+
     if (
         isMultipleTiming &&
         (segmentDef.timing as Array<TimingFunction>).length !==

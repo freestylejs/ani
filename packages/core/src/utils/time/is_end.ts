@@ -3,5 +3,5 @@ export function isEndOfAnimation(
     duration: number,
     tolerance: number = 1e-3
 ): boolean {
-    return currentT === duration || currentT - duration >= tolerance
+    return Math.abs(currentT - duration) <= tolerance || currentT >= duration
 }
