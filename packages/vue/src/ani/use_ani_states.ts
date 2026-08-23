@@ -66,9 +66,10 @@ export function useAniStates<
         elementRef,
         {
             state: readonly(state) as Readonly<Ref<keyof AnimationStates>>,
-            timeline: readonly(timeline) as Readonly<
-                Ref<GetTimeline<AnimationStates>>
-            >,
+            // NOTE: no readonly() here — wrapping the class instance in a
+            // deep readonly proxy breaks identity and blocks internal
+            // timeline mutations. shallowRef alone is already shallow.
+            timeline: timeline as Readonly<Ref<GetTimeline<AnimationStates>>>,
         },
         transitionTo,
     ] as const
