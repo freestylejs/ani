@@ -9,7 +9,7 @@ import {
     type RafAniTimeline,
 } from '@freestylejs/ani-core'
 import type { JSX } from 'solid-js'
-import { createEffect, createMemo, onCleanup } from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 
 function applyStylesToRef<E extends HTMLElement>(
     el: E | null,
@@ -32,7 +32,8 @@ export function createAniRef<
 >(
     props: AniRefProps<RafAniTimeline<G>, G, true>
 ): readonly [(el: E) => void, RafAniTimeline<G>] {
-    let element: E | null = null
+    // Reactive element holder so late-mounted refs re-trigger effects.
+    const [element, setElement] = createSignal<E | null>(null)
 
     const { timeline, initialValue, events, cleanupEvents = true } = props
 
@@ -64,12 +65,12 @@ export function createAniRef<
                 tl?.reset()
                 const resetVal = initialValue ?? null
                 animeValue = resetVal
-                if (element && resetVal) {
+                if (element() && resetVal) {
                     const styleObject = createStyleSheet(
                         resetVal as Record<string, number>,
                         tl.currentConfig?.propertyResolver
                     )
-                    applyStylesToRef(element, styleObject)
+                    applyStylesToRef(element(), styleObject)
                 }
             },
             get currentConfig() {
@@ -83,7 +84,8 @@ export function createAniRef<
     // >> animation subscription + direct style application.
     createEffect(() => {
         const tl = timeline()
-        if (!element) return
+        const el = element()
+        if (!el) return
 
         const target = tl.getCurrentValue() ?? initialValue
         if (target) {
@@ -91,16 +93,18 @@ export function createAniRef<
                 target as Record<string, number>,
                 tl.currentConfig?.propertyResolver
             )
-            applyStylesToRef(element, styleObject)
+            applyStylesToRef(el, styleObject)
         }
 
         const unsubscribe = tl.onUpdate((value) => {
             animeValue = value.state as AniGroup<G>
+            const currentEl = element()
+            if (!currentEl) return
             const styleObject = createStyleSheet(
                 value.state as Record<string, number>,
                 tl.currentConfig?.propertyResolver
             )
-            applyStylesToRef(element, styleObject)
+            applyStylesToRef(currentEl, styleObject)
         })
 
         onCleanup(unsubscribe)
@@ -108,7 +112,8 @@ export function createAniRef<
 
     // >> event subscription
     createEffect(() => {
-        if (!manager || !element || !events) return
+        const el = element()
+        if (!manager || !el || !events) return
 
         const contextGetter = (): AniRefContext<G> => {
             return {
@@ -117,7 +122,7 @@ export function createAniRef<
             } as AniRefContext<G>
         }
 
-        manager.bind(element)
+        manager.bind(el)
         manager.attach(events)
         manager.setAnimeGetter(contextGetter)
 
@@ -130,7 +135,7 @@ export function createAniRef<
 
     // >> ref updater
     const refCallback = (el: E) => {
-        element = el
+        setElement(() => el)
     }
 
     return [refCallback, controller()] as const
