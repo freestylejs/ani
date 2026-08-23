@@ -1,4 +1,7 @@
 {
     "extends": "@freestylejs/config/tsconfig",
+    "compilerOptions": {
+        "ignoreDeprecations": "6.0"
+    },
     "include": ["packages"]
 }
