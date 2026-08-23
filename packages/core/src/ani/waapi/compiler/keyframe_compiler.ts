@@ -1,6 +1,6 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
 import { createStyleSheet, type Resolver } from '~/style'
-import { TimingFunction } from '~/timing'
+import { BezierTimingFunction, LinearTimingFunction } from '~/timing'
 import { resolveStateAt } from './resolver'
 import { compileTiming } from './timing_compiler'
 
@@ -19,6 +19,12 @@ export function compileToKeyframes<G extends Groupable>(
     initialFrom: G,
     resolver?: Resolver<Record<string, number>>
 ): WebAniKeyframe[] {
+    if (Array.isArray(initialFrom)) {
+        throw new TypeError(
+            '[compileToKeyframes] WAAPI backend requires record-shaped values (CSS property names). Received an array; use the RAF engine for positional values.'
+        )
+    }
+
     if (plan.length === 0) {
         return []
     }
@@ -70,7 +76,21 @@ export function compileToKeyframes<G extends Groupable>(
         // If mixing different timings, we must sample
         const allSame = timings.every((t) => t === firstTiming)
 
-        if (allSame && firstTiming instanceof TimingFunction) {
+        if (allSame && firstTiming instanceof LinearTimingFunction) {
+            // Linear composes safely across sub-intervals
+            return 'linear'
+        }
+
+        if (
+            allSame &&
+            firstTiming instanceof BezierTimingFunction &&
+            // A bezier curve can only be delegated when a single keyframe
+            // interval exactly tiles the segment; otherwise the curve would
+            // restart at every split point and diverge from the RAF engine.
+            activeSegments.every(
+                (s) => s.startTime === t && s.endTime === nextT
+            )
+        ) {
             return compileTiming(firstTiming)
         }
 

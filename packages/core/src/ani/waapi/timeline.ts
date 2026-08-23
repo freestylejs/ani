@@ -24,6 +24,8 @@ export interface WebAniTimelineConfig<G extends Groupable>
 export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
     private _animation: Animation | null = null
     private _keyframes: WebAniKeyframe[] = []
+    private _delayMs: number = 0
+    private _paused = false
 
     constructor(rootNode: AnimationNode<G>) {
         super(rootNode)
@@ -62,11 +64,19 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
                 (max, seg) => Math.max(max, seg.endTime),
                 0
             ) * 1000
+        const iterations = toIterationCount(config.repeat)
+
+        this._delayMs = config.delay ?? 0
+        this._paused = false
 
         const effect = new KeyframeEffect(target, this._keyframes, {
             duration: totalDurationMs,
-            iterations: toIterationCount(config.repeat),
-            delay: config.delay ?? 0,
+            iterations:
+                // Infinite iterations require a positive duration per spec.
+                totalDurationMs === 0 && iterations === Infinity
+                    ? 1
+                    : iterations,
+            delay: this._delayMs,
             fill: 'forwards',
             ...config.keyframeEffect,
         })
@@ -77,15 +87,20 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
     }
 
     public pause(): void {
+        this._paused = true
         this._animation?.pause()
     }
     public resume(): void {
+        // Parity with the RAF engine: resume is a no-op unless paused.
+        if (!this._paused) return
+        this._paused = false
         this._animation?.play()
     }
 
     public reset(): void {
         this._animation?.cancel()
         this._animation = null
+        this._paused = false
     }
 
     /**
@@ -96,9 +111,9 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
     }
 
     public seek(targetTime: number): void {
-        if (this._animation) {
-            this._animation.currentTime = targetTime * 1000
-        }
+        if (!this._animation) return
+        const seekTime = Math.max(0, Math.min(targetTime, this.duration))
+        this._animation.currentTime = seekTime * 1000 + this._delayMs
     }
 
     /**

@@ -23,6 +23,11 @@ export function compileTiming(
 
     if (timing instanceof BezierTimingFunction) {
         const { p2, p3 } = timing.opt
+        if (!(p2.x >= 0 && p2.x <= 1) || !(p3.x >= 0 && p3.x <= 1)) {
+            throw new RangeError(
+                '[compileTiming] cubic-bezier x values must be within [0, 1] per the CSS spec.'
+            )
+        }
         return `cubic-bezier(${p2.x}, ${p2.y}, ${p3.x}, ${p3.y})`
     }
 
