@@ -55,11 +55,11 @@ For interactive animations, you can pass an `events` object. This uses a built-i
 const controller = useAniRef(ref, {
   timeline: myTimeline,
   events: {
-    onMouseDown: (ctx, event) => {
+    onMousedown: (ctx, event) => {
       // The context `ctx` is the timeline controller.
       ctx.play({ from: { x: event.clientX } });
     },
-    onMouseUp: (ctx) => {
+    onMouseup: (ctx) => {
       ctx.pause();
     },
   },
