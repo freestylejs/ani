@@ -90,6 +90,13 @@ export class AnimationClock implements AnimationClockInterface {
             subscriber.update(dt)
         }
 
+        // Subscribers may have unsubscribed during update(): stop the loop
+        // instead of spinning an empty rAF cycle forever.
+        if (this.subscribers.size === 0) {
+            this.animationFrameId = null
+            return
+        }
+
         this.animationFrameId = window.requestAnimationFrame(this.tick)
     }
 }
