@@ -47,12 +47,16 @@ export function createAniRef<
     const controller = createMemo((): RafAniTimeline<G> => {
         const tl = timeline()
         return {
+            get duration() {
+                return tl.duration
+            },
             play: (config) => {
                 if (config.from) {
                     animeValue = config.from as AniGroup<G>
                 }
                 tl?.play(config)
             },
+            update: (dt) => tl.update(dt),
             seek: (time) => tl.seek(time),
             pause: () => tl.pause(),
             resume: () => tl.resume(),

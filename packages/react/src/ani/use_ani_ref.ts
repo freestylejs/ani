@@ -52,10 +52,14 @@ export function useAniRef<
 
     const controller = useMemo((): RafAniTimeline<G> => {
         return {
+            get duration() {
+                return timeline.duration
+            },
             play: (config) => {
                 animeValue.current = config.from as AniGroup<G>
                 timeline.play(config)
             },
+            update: (dt) => timeline.update(dt),
             seek: (time) => timeline.seek(time),
             pause: () => timeline.pause(),
             resume: () => timeline.resume(),

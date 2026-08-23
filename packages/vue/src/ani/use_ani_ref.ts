@@ -43,12 +43,16 @@ export function useAniRef<G extends Groupable>({
     const currentTimeline = computed(() => unref(timeline))
 
     const controller: RafAniTimeline<G> = {
+        get duration() {
+            return currentTimeline.value.duration
+        },
         play: (config) => {
             if (config.from) {
                 animeValue = config.from as AniGroup<G>
             }
             currentTimeline.value.play(config)
         },
+        update: (dt) => currentTimeline.value.update(dt),
         seek: (time) => currentTimeline.value.seek(time),
         pause: () => currentTimeline.value.pause(),
         resume: () => currentTimeline.value.resume(),
