@@ -19,7 +19,7 @@ const Card = React.forwardRef<
         {...props}
     >
         <div
-            className="-z-10 pointer-events-none absolute inset-0 rounded-xl p-0.5 opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100"
+            className="pointer-events-none absolute inset-0 -z-10 rounded-xl p-0.5 opacity-0 transition-opacity duration-700 ease-out group-hover:opacity-100"
             style={{
                 mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
                 maskComposite: 'exclude',
@@ -27,7 +27,7 @@ const Card = React.forwardRef<
                 WebkitMaskComposite: 'xor',
             }}
         >
-            <div className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 h-[200%] w-[200%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0_300deg,#000000FF_360deg)] opacity-100 blur-[1px] will-change-transform dark:bg-[conic-gradient(from_0deg,transparent_0_300deg,#38BDF8_360deg)]" />
+            <div className="absolute top-1/2 left-1/2 h-[200%] w-[200%] -translate-x-1/2 -translate-y-1/2 animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_0deg,transparent_0_300deg,#000000FF_360deg)] opacity-100 blur-[1px] will-change-transform dark:bg-[conic-gradient(from_0deg,transparent_0_300deg,#38BDF8_360deg)]" />
         </div>
         {children}
     </div>
@@ -153,9 +153,9 @@ CardVisual.displayName = 'CardVisual'
 
 export {
     Card as Card,
-    CardLink as CardLink,
     CardContent as CardContent,
-    CardTitle as CardTitle,
     CardDescription as CardDescription,
+    CardLink as CardLink,
+    CardTitle as CardTitle,
     CardVisual as CardVisual,
 }
