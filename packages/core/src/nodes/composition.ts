@@ -1,5 +1,5 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core'
-import { LinearTimingFunction, type TimingFunction } from '~/timing'
+import type { TimingFunction } from '~/timing'
 import {
     type AnimationId,
     AnimationNode,
@@ -39,9 +39,6 @@ export abstract class CompositionNode<
     constructor(children: Children, timing?: TimingFunction, id?: AnimationId) {
         super(id)
 
-        const parentTiming: TimingFunction =
-            timing ?? new LinearTimingFunction()
-
         const adjustTiming = <T extends CompositionChildren>(
             children: T
         ): T => {
@@ -55,7 +52,7 @@ export abstract class CompositionNode<
                     return new SegmentNode(
                         {
                             ...child.props,
-                            timing: parentTiming,
+                            timing: timing,
                         },
                         child.id
                     )
