@@ -6,9 +6,18 @@ import {
     type StateProps,
 } from '@freestylejs/ani-core'
 import type { Action } from 'svelte/action'
-import { type Readable, readable, writable } from 'svelte/store'
+import { type Readable, writable } from 'svelte/store'
 import { useAniRef } from './use_ani_ref'
 
+/**
+ * State-machine animation action. `props` are read once, when called.
+ *
+ * The hook owns the state controller. Svelte has no component-scope cleanup
+ * callable from plain functions, so ownership follows the action: when the
+ * last node using it is destroyed the controller is disposed (stopping any
+ * running timeline), and applying the action to a new node afterwards starts
+ * from a fresh controller in `props.initial`.
+ */
 export function useAniStates<const AnimationStates extends AnimationStateShape>(
     props: StateProps<AnimationStates>
 ): readonly [
@@ -19,42 +28,70 @@ export function useAniStates<const AnimationStates extends AnimationStateShape>(
     },
     StateController<AnimationStates>['transitionTo'],
 ] {
-    const statesController = createStates(props)
+    let controller = createStates(props)
+    let unsubscribeChange: (() => void) | undefined
+    let disposed = false
+    let liveNodes = 0
+
     const timelineStore = writable<GetTimeline<AnimationStates>>(
-        statesController.timeline()
+        controller.timeline()
     )
-
-    statesController.onTimelineChange((newTimeline) => {
-        timelineStore.set(newTimeline)
-    })
-
     const stateStore = writable<keyof AnimationStates>(props.initial)
 
-    const [ref] = useAniRef({
+    const connect = () => {
+        const current = controller
+        unsubscribeChange = current.onTimelineChange((next) => {
+            timelineStore.set(next)
+            stateStore.set(current.state())
+        })
+    }
+    connect()
+
+    const [refAction] = useAniRef({
         timeline: timelineStore,
         initialValue: props.initialFrom,
     })
+
+    const action: Action<HTMLElement, any> = (node, param) => {
+        if (disposed) {
+            controller = createStates(props)
+            disposed = false
+            connect()
+            timelineStore.set(controller.timeline())
+            stateStore.set(controller.state())
+        }
+        liveNodes++
+        const bound = refAction(node, param)
+        return {
+            ...bound,
+            destroy() {
+                bound?.destroy?.()
+                if (--liveNodes === 0) {
+                    unsubscribeChange?.()
+                    controller.dispose()
+                    disposed = true
+                }
+            },
+        }
+    }
 
     const transitionTo: StateController<AnimationStates>['transitionTo'] = (
         newState,
         timelineConfig,
         canBeIntercepted
     ) => {
-        stateStore.set(newState)
-        statesController.transitionTo(
-            newState,
-            timelineConfig,
-            canBeIntercepted
-        )
+        // After disposal the controller is inert; nothing to mirror.
+        if (disposed) return
+        // Controller first: it validates atomically and may reject.
+        controller.transitionTo(newState, timelineConfig, canBeIntercepted)
+        stateStore.set(controller.state())
     }
 
     return [
-        ref,
+        action,
         {
-            state: readable(props.initial, (set) => stateStore.subscribe(set)),
-            timeline: readable(statesController.timeline(), (set) =>
-                timelineStore.subscribe(set)
-            ),
+            state: { subscribe: stateStore.subscribe },
+            timeline: { subscribe: timelineStore.subscribe },
         },
         transitionTo,
     ] as const
