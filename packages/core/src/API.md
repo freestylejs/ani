@@ -883,8 +883,10 @@ pending?.(now); // one frame
 By default timelines share one process-wide clock with a **single** `requestAnimationFrame` loop. A playing timeline subscribes; the loop stops when the last one leaves.
 
 -   At most one pending frame request; a re-entrant `subscribe` / `unsubscribe` never creates a second loop.
--   A subscriber added during a tick first updates on the next tick; one unsubscribed during a tick is not updated afterwards. The first update advances by the time since it subscribed.
--   A subscriber that throws does not stop the others or the next frame. The error goes to `onError` or is rethrown asynchronously.
+-   Every frame runs three phases over all subscribers: **read** (first the one-shot `clock.read(fn)` callbacks in FIFO order, then each subscriber's optional `read()`), **update** (`update(dt)`, compute only) and **commit** (each subscriber's optional `commit()`, write only). Rule: read in `read`, compute in `update`, write in `commit`. A subscriber with only `update` works as before.
+-   A subscriber added during a tick (in any phase) first runs on the next tick; one unsubscribed before its `update` ran gets neither `update` nor `commit`. One that unsubscribes itself in `update` still commits in that tick (a timeline ending this frame writes its final value). The first update advances by the time since it subscribed.
+-   `clock.read(fn)` queues `fn` for the read phase of the next frame and arms an idle loop; callbacks queued during a tick run in the next tick, and a queued callback does not keep the loop alive after it ran. Without a frame source it is a silent no-op.
+-   A callback that throws (in any phase) does not stop the others or the next frame. The error goes to `onError` or is rethrown asynchronously.
 -   `subscribe` re-arms the loop if the environment dropped the pending frame (a pending frame older than 1 s is treated as lost).
 -   Without a frame source (SSR, plain workers) `subscribe` is a silent no-op and nothing is retained.
 -   Lag smoothing: a frame gap up to `lagThreshold` (default 0.5 s) advances animations by the real elapsed time (no slow motion under jank); a longer gap (hidden tab, debugger, sleep) advances by one ordinary frame. `lagThreshold: Infinity` follows the wall clock exactly. `maxDeltaTime` (unlimited by default) is an optional hard cap. Invalid values throw a `RangeError`.
@@ -900,6 +902,8 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`, `{ lagThreshold?, maxDeltaTime? }` sets either atomically. |
 | `AnimationClock.reset()` | Disposes the shared clock (test isolation, hot reload). |
 | `clock.size` | Number of subscribed animatables. |
+| `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
+| `Animatable` | `{ read?(): void; update(dt: number): void; commit?(): void }`. |
 
 ---
 

@@ -1,9 +1,13 @@
 export interface Animatable {
+    /** Read phase: measure layout or sample inputs. Must not write the DOM. */
+    read?(): void
     /**
-     * Update animation based on dt
+     * Update phase: advance by `dt` seconds and compute. Must not touch the DOM.
      * @param dt delta time
      */
     update(dt: number): void
+    /** Commit phase: write the results of this frame. */
+    commit?(): void
 }
 
 /**
@@ -84,6 +88,15 @@ export interface CreateClockOptions extends ClockTimingOptions {
  */
 export type ManagedClock = AnimationClockInterface & {
     readonly size: number
+    /**
+     * Queues `fn` for the read phase of the next frame (arms the loop when
+     * idle). Runs once; a no-op without a frame source.
+     */
+    read(fn: () => void): void
+    /**
+     * Stops the frame loop and drops every subscriber and queued read.
+     */
+    dispose(): void
 }
 
 const DEFAULT_LAG_THRESHOLD = 1 / 2
@@ -162,7 +175,11 @@ function rethrowAsync(error: unknown): void {
  *
  * Invariants:
  * - at most one pending frame request at any time;
+ * - every tick runs three phases over all subscribers: read (one-shot
+ *   `read(fn)` callbacks, then `read()`), update, commit;
  * - a subscriber added during a tick first updates on the next tick;
+ * - a subscriber that updated in a tick commits in it, even if it
+ *   unsubscribed meanwhile; one unsubscribed before its update does not;
  * - a throwing subscriber never affects other subscribers or the next frame;
  * - subscribing always (re)starts the loop when no live frame is pending;
  * - without a frame source (SSR, plain workers) subscribing is a no-op.
@@ -171,6 +188,13 @@ export class AnimationClock implements ManagedClock {
     private readonly subscribers: Set<Animatable> = new Set()
     // Reused per-tick snapshot, avoids a per-frame allocation.
     private readonly snapshot: (Animatable | undefined)[] = []
+    // Parallel to `snapshot`: whether the subscriber's update ran this tick.
+    private readonly updated: boolean[] = []
+    // One-shot read callbacks: two reusable arrays swapped every tick.
+    private readQueue: ((() => void) | undefined)[] = []
+    private readCount = 0
+    private readRunning: ((() => void) | undefined)[] = []
+    private readRunningCount = 0
     // Subscribe time of animatables that joined while the loop was already
     // running; their first update only advances by the time since joining.
     private readonly joinedAt: Map<Animatable, number> = new Map()
@@ -285,6 +309,22 @@ export class AnimationClock implements ManagedClock {
             this.joinedAt.set(animatable, this.now())
         }
 
+        this.ensureArmed(source)
+    }
+
+    /**
+     * Queues `fn` for the read phase of the next frame, before any
+     * subscriber's `read` / `update`. Runs once and does not keep the loop
+     * alive afterwards. Without a frame source it is a silent no-op.
+     */
+    public read(fn: () => void): void {
+        const source = this.resolveSource()
+        if (!source) return
+        this.readQueue[this.readCount++] = fn
+        this.ensureArmed(source)
+    }
+
+    private ensureArmed(source: FrameSource): void {
         // A running tick re-arms itself once it finishes.
         if (this.ticking) return
 
@@ -303,7 +343,11 @@ export class AnimationClock implements ManagedClock {
         this.joinedAt.delete(animatable)
         // During a tick the loop decides after all updates ran, so that an
         // unsubscribe + subscribe pair never spawns a second loop.
-        if (this.subscribers.size === 0 && !this.ticking) {
+        if (
+            this.subscribers.size === 0 &&
+            this.readCount === 0 &&
+            !this.ticking
+        ) {
             this.cancelPending()
             this.armed = false
             this.detachVisibility()
@@ -311,11 +355,16 @@ export class AnimationClock implements ManagedClock {
     }
 
     /**
-     * Stops the frame loop and drops every subscriber.
+     * Stops the frame loop and drops every subscriber and queued read.
      */
     public dispose(): void {
         this.subscribers.clear()
         this.joinedAt.clear()
+        for (let i = 0; i < this.readCount; i++) this.readQueue[i] = undefined
+        for (let i = 0; i < this.readRunningCount; i++) {
+            this.readRunning[i] = undefined
+        }
+        this.readCount = 0
         this.cancelPending()
         this.armed = false
         this.detachVisibility()
@@ -508,11 +557,42 @@ export class AnimationClock implements ManagedClock {
         this.lastTimestamp = timestamp
 
         const snapshot = this.snapshot
+        const updated = this.updated
         let count = 0
-        for (const subscriber of this.subscribers)
-            snapshot[count++] = subscriber
+        for (const subscriber of this.subscribers) {
+            snapshot[count] = subscriber
+            updated[count++] = false
+        }
+
+        // Reads queued from now on belong to the next tick.
+        const reads = this.readQueue
+        const readCount = this.readCount
+        this.readQueue = this.readRunning
+        this.readRunning = reads
+        this.readCount = 0
+        this.readRunningCount = readCount
 
         try {
+            for (let i = 0; i < readCount; i++) {
+                const fn = reads[i]
+                if (!fn) continue
+                try {
+                    fn()
+                } catch (error) {
+                    this.report(error)
+                }
+            }
+
+            for (let i = 0; i < count; i++) {
+                const subscriber = snapshot[i]!
+                if (!subscriber.read) continue
+                try {
+                    subscriber.read()
+                } catch (error) {
+                    this.report(error)
+                }
+            }
+
             for (let i = 0; i < count; i++) {
                 const subscriber = snapshot[i]!
                 // unsubscribed by an earlier subscriber in this very tick
@@ -528,8 +608,20 @@ export class AnimationClock implements ManagedClock {
                         )
                     }
                 }
+                updated[i] = true
                 try {
                     subscriber.update(delta)
+                } catch (error) {
+                    this.report(error)
+                }
+            }
+
+            for (let i = 0; i < count; i++) {
+                if (!updated[i]) continue
+                const subscriber = snapshot[i]!
+                if (!subscriber.commit) continue
+                try {
+                    subscriber.commit()
                 } catch (error) {
                     this.report(error)
                 }
@@ -537,11 +629,16 @@ export class AnimationClock implements ManagedClock {
         } finally {
             // Clear the slots (no retention) but keep the capacity:
             // `length = 0` drops the backing store, re-allocated every frame.
-            for (let i = 0; i < count; i++) snapshot[i] = undefined
+            for (let i = 0; i < count; i++) {
+                snapshot[i] = undefined
+                updated[i] = false
+            }
+            for (let i = 0; i < readCount; i++) reads[i] = undefined
+            this.readRunningCount = 0
             this.ticking = false
             this.armed = false
 
-            if (this.subscribers.size > 0) {
+            if (this.subscribers.size > 0 || this.readCount > 0) {
                 const source = this.resolveSource()
                 if (source) this.arm(source, false)
             }

@@ -45,11 +45,32 @@ AnimationClock.create().size; // number of timelines currently driven
 #### Guarantees
 
 -   **One pending frame at most.** A re-entrant `subscribe` / `unsubscribe` never creates a second loop.
--   **Per-tick snapshot.** A timeline subscribed during a tick first updates on the **next** tick. One unsubscribed during a tick is not updated afterwards in that tick.
+-   **Three phases per frame.** Every tick runs **read**, then **update**, then **commit** over all subscribers, so layout reads and DOM writes never interleave. See [Frame phases](#frame-phases).
+-   **Per-tick snapshot.** A timeline subscribed during a tick (in any phase) first runs on the **next** tick. One unsubscribed before its update ran gets neither `update` nor `commit` in that tick.
 -   **Progress since subscribe.** The first update of a new subscriber advances by the time elapsed since it subscribed, not by the time since the previous frame.
--   **Error isolation.** A subscriber that throws does not stop the others or the next frame. The error goes to `onError` when given, otherwise it is rethrown asynchronously. The subscriber stays subscribed unless it unsubscribes itself.
+-   **Error isolation.** A callback that throws, in any phase, does not stop the others or the next frame. The error goes to `onError` when given, otherwise it is rethrown asynchronously. The subscriber stays subscribed unless it unsubscribes itself.
 -   **Self-healing.** `subscribe` re-arms the loop when the environment dropped the pending frame (for example a fake rAF reinstalled). A pending frame older than one second is treated as lost.
 -   **No frame source, no work.** Without `requestAnimationFrame` (server rendering, plain workers) `subscribe` is a silent no-op and the subscriber is not retained. See [SSR](/en/docs/guides/ssr).
+
+#### Frame phases
+
+A subscriber implements `update` and may add `read` and `commit`. The rule: **read in `read`, compute in `update`, write in `commit`.**
+
+```typescript
+clock.subscribe({
+  read() { /* measure layout, sample inputs; no DOM writes */ },
+  update(dt) { /* advance by dt seconds and compute; no DOM access */ },
+  commit() { /* write this frame's results to the DOM */ },
+});
+```
+
+Each frame runs the phases in order over the same snapshot of subscribers:
+
+1. **Read:** first the one-shot callbacks queued with `clock.read(fn)` (FIFO), then `read()` of every subscriber that has one.
+2. **Update:** `update(dt)` of every subscriber that is still subscribed.
+3. **Commit:** `commit()` of every subscriber whose `update` ran in this tick, even if it unsubscribed during the tick, so a timeline that ends in this frame still writes its final value.
+
+A subscriber with only `update` keeps working unchanged. `clock.read(fn)` arms an idle loop and runs `fn` once, in the next frame before any update; callbacks queued during a tick run in the following tick, and a queued callback does not keep the loop alive afterwards. Without a frame source it is a silent no-op.
 
 #### Frame time: lag smoothing
 
@@ -73,7 +94,7 @@ The gap between two frames is turned into animation time with one rule:
 
 #### `createClock(options?)`
 
-Returns an independent clock (`AnimationClockInterface` plus a read-only `size`).
+Returns an independent clock (`AnimationClockInterface` plus a read-only `size` and `read(fn)`).
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -93,8 +114,9 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size`)
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`; `{ lagThreshold?, maxDeltaTime? }` sets either (validated before anything changes). |
 | `AnimationClock.reset()` | Disposes the shared clock; the next `create()` starts clean. |
 | `clock.size` | Number of animatables currently subscribed. |
-| `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. |
-| `clock.dispose()` | Stops the loop and drops all subscribers. |
+| `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. An `Animatable` is `{ read?(), update(dt), commit?() }`. |
+| `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
+| `clock.dispose()` | Stops the loop and drops all subscribers and queued `read` callbacks. |
 
 ### Related Components
 
