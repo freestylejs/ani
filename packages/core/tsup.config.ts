@@ -4,6 +4,7 @@ export default defineConfig((options) => ({
     entry: {
         index: 'src/index.ts',
         values: 'src/values/index.ts',
+        testing: 'src/testing/index.ts',
     },
     watch: options.watch ? ['src/**/*'] : false,
     clean: false,

@@ -7,64 +7,47 @@ Animations depend on time and `requestAnimationFrame`. Replace both with a clock
 
 ### A manual clock
 
-[`createClock`](/en/docs/core-api/clock) accepts your own frame source and time source. The helper below is a complete, deterministic harness.
+`@freestylejs/ani-core/testing` ships `createManualClock`: a real clock ([`createClock`](/en/docs/core-api/clock)) fed by a hand-cranked frame source and time source. It follows the production code path with deterministic time. It is not part of the root entry, so it never reaches your bundle.
 
 ```typescript
-import { createClock } from "@freestylejs/ani-core";
+import { createManualClock } from "@freestylejs/ani-core/testing";
 
-export function createManualClock(options: { lagThreshold?: number } = {}) {
-  let nextId = 1;
-  let time = 1000;
-  const pending = new Map<number, (timestamp: number) => void>();
-
-  const clock = createClock({
-    ...options,
-    requestFrame: (callback) => {
-      const id = nextId++;
-      pending.set(id, callback);
-      return id;
-    },
-    cancelFrame: (id) => {
-      pending.delete(id);
-    },
-    now: () => time,
-  });
-
-  return {
-    clock,
-    /** Run one display frame, `ms` after the previous one. */
-    frame(ms = 16) {
-      time += ms;
-      const callbacks = [...pending.values()];
-      pending.clear();
-      for (const callback of callbacks) callback(time);
-    },
-    /** Outstanding frame requests (a healthy clock has at most 1). */
-    get pending() {
-      return pending.size;
-    },
-  };
-}
+const manual = createManualClock(); // time starts at 1000 ms
 ```
+
+| Member | Description |
+| :--- | :--- |
+| `clock` | The `ManagedClock` to pass to timelines and `createStates`. |
+| `now` | Current time in ms. |
+| `pending` | Queued frame requests (0 or 1 for a healthy clock). |
+| `frame(ms = 16)` | Advance time by `ms` and run one frame. |
+| `frames(count, ms = 16)` | Run `count` frames. |
+| `advance(ms)` | Move time forward without delivering a frame. |
+| `drop()` | Lose the pending frame request, as a browser may. |
+| `setHidden(hidden)` | Flip the injected visibility source and fire `visibilitychange`. Throws `TypeError` with `visibility: false`. |
+
+Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError` (all forwarded to `createClock`) and `visibility` (default `true`, the manual clock injects its own source).
 
 ### Test a timeline
 
 ```typescript
 import { a } from "@freestylejs/ani-core";
+import { createManualClock } from "@freestylejs/ani-core/testing";
 import { expect, it } from "vitest";
 
 it("reaches the target and leaves the clock", () => {
   const manual = createManualClock();
-  const timeline = a.dynamicTimeline(
+  const timeline = a.rafTimeline(
     a.ani({ to: { x: 100 }, duration: 1, timing: a.timing.linear() }),
     manual.clock
   );
 
   timeline.play({ from: { x: 0 } });
-  for (let i = 0; i < 5; i++) manual.frame(100); // dt = 0.1 s each
+  manual.frames(5, 100); // dt = 0.1 s each
   expect(timeline.getCurrentValue()).toEqual({ x: 50 });
+  expect(timeline.status).toBe("PLAYING");
 
-  for (let i = 0; i < 10; i++) manual.frame(100);
+  manual.frames(10, 100);
   expect(timeline.status).toBe("ENDED");
   expect(manual.clock.size).toBe(0); // no leaked subscriber
   expect(manual.pending).toBe(0);    // no leaked frame request
@@ -76,14 +59,14 @@ it("reaches the target and leaves the clock", () => {
 
 ### Reset the shared clock
 
-If your code uses the default clock, isolate tests with `AnimationClock.reset()`. It disposes the shared clock and the next `AnimationClock.create()` starts clean.
+If your code uses the default clock (`defaultClock`), isolate tests with `resetDefaultClock()` (same as `AnimationClock.reset()`). It disposes the shared clock and restores its defaults (timing options, `timeScale` 1, not paused). The instance stays the same, so references to `defaultClock` remain valid.
 
 ```typescript
-import { AnimationClock } from "@freestylejs/ani-core";
+import { resetDefaultClock } from "@freestylejs/ani-core/testing";
 import { afterEach } from "vitest";
 
 afterEach(() => {
-  AnimationClock.reset();
+  resetDefaultClock();
 });
 ```
 
@@ -91,7 +74,7 @@ The same call is useful to tear down the shared clock on hot module reload.
 
 ### Test for leaks
 
--   After unmounting views, `clock.size` (or `AnimationClock.create().size`) must be `0`.
+-   After unmounting views, `clock.size` (or `defaultClock.size`) must be `0`.
 -   Count `onUpdate` subscriptions by wrapping `timeline.onUpdate` and counting subscribe minus unsubscribe calls.
 -   Repeat mount and unmount many times (hundreds) and assert the counts do not grow.
 
@@ -108,7 +91,7 @@ Callback errors are reported asynchronously. In a test, give the clock an `onErr
 
 ```typescript
 const errors: unknown[] = [];
-const clock = createClock({ /* ... */ onError: (error) => errors.push(error) });
+const manual = createManualClock({ onError: (error) => errors.push(error) });
 ```
 
 ### Related Components

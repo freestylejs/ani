@@ -272,20 +272,16 @@ export class AnimationClock implements ManagedClock {
     private armedAt = 0
     private lastTimestamp = 0
 
-    protected static clock: AnimationClock | undefined
-
     /**
-     * Process-wide default clock.
-     * @param maxDeltaTime when given, it is applied to the (possibly already
-     * existing) default clock as a hard per-frame cap. Unlimited by default.
+     * Process-wide default clock, same as {@link defaultClock}.
+     * @param maxDeltaTime when given, it is applied to the default clock as a
+     * hard per-frame cap. Unlimited by default.
      */
     public static create(maxDeltaTime?: number): AnimationClock {
-        if (!AnimationClock.clock) {
-            AnimationClock.clock = new AnimationClock(maxDeltaTime)
-        } else if (maxDeltaTime !== undefined) {
-            AnimationClock.clock.setTiming({ maxDeltaTime })
+        if (maxDeltaTime !== undefined) {
+            defaultClock.setTiming({ maxDeltaTime })
         }
-        return AnimationClock.clock
+        return defaultClock
     }
 
     /**
@@ -303,13 +299,18 @@ export class AnimationClock implements ManagedClock {
     }
 
     /**
-     * Disposes the process-wide default clock (stops its frame loop and drops
-     * its subscribers) so the next `create()` starts from scratch.
+     * Disposes {@link defaultClock} (stops its frame loop and drops its
+     * subscribers) and restores its defaults: timing options, `timeScale` 1,
+     * not paused. The instance stays the same, so references remain valid.
      * Intended for test isolation and hot-reload teardown.
      */
     public static reset(): void {
-        AnimationClock.clock?.dispose()
-        AnimationClock.clock = undefined
+        const clock = defaultClock
+        clock.dispose()
+        clock.scale = 1
+        clock.maxDeltaTime = Infinity
+        clock.lagThreshold = DEFAULT_LAG_THRESHOLD
+        clock.ordinaryFrame = DEFAULT_FRAME
     }
 
     /**
@@ -787,3 +788,10 @@ export class AnimationClock implements ManagedClock {
 export function createClock(options: CreateClockOptions = {}): ManagedClock {
     return new AnimationClock(options)
 }
+
+/**
+ * The process-wide shared clock, used by `rafTimeline` and `createStates`
+ * when no clock is given. Creating it touches neither the DOM nor
+ * `requestAnimationFrame`; the frame source resolves when the loop starts.
+ */
+export const defaultClock: AnimationClock = new AnimationClock()

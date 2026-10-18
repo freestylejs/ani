@@ -942,9 +942,12 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 | :--- | :--- |
 | `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `timeScale`, `visibility`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
 | `VisibilitySource` | `{ readonly hidden: boolean; addEventListener('visibilitychange', listener): void; removeEventListener('visibilitychange', listener): void }`. What `visibility: true` resolves to (`globalThis.document`); inject your own in tests. |
-| `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` applies to the existing clock. |
+| `defaultClock` | The process-wide shared clock instance (creating it touches neither the DOM nor `requestAnimationFrame`). |
+| `AnimationClock.create(maxDeltaTime?)` | Returns `defaultClock`. A given `maxDeltaTime` applies to it. |
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`, `{ lagThreshold?, maxDeltaTime? }` sets either atomically. |
-| `AnimationClock.reset()` | Disposes the shared clock (test isolation, hot reload). |
+| `AnimationClock.reset()` | Disposes `defaultClock` and restores its defaults (timing options, `timeScale` 1, not paused); the instance stays the same (test isolation, hot reload). |
+| `createManualClock(options?)` | `@freestylejs/ani-core/testing`, not in the root entry. A real clock driven by hand: `{ clock, now, pending, frame(ms = 16), frames(count, ms), advance(ms), drop(), setHidden(hidden) }`. Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError`, `visibility` (default `true`; `false` makes `setHidden` throw `TypeError`). |
+| `resetDefaultClock()` | `@freestylejs/ani-core/testing`. Same as `AnimationClock.reset()`. |
 | `clock.size` | Number of subscribed animatables. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
 | `clock.timeScale` | Get / set the delta multiplier (finite, >= 0, default 1). Throws `RangeError` otherwise. |
