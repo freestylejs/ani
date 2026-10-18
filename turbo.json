@@ -19,7 +19,7 @@
 
         "ts:typecheck": {
             "outputs": [],
-            "dependsOn": ["^ts:typecheck"]
+            "dependsOn": ["^ts:typecheck", "^build"]
         }
     }
 }

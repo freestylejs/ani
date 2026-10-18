@@ -1,0 +1,46 @@
+name: Publish
+
+# Manual on purpose: nothing is published until a maintainer starts this run.
+# The full gate (`pnpm test:ci`) must pass in the same run before
+# `changeset publish`.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout
+
+      - uses: pnpm/action-setup@v4
+        name: Setup PNPM
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        name: Setup Node.js
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: pnpm test:ci
+
+      - name: Publish
+        run: pnpm pkg:publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

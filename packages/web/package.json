@@ -7,7 +7,7 @@
         "dev": "next dev",
         "start": "next start",
         "postinstall": "fumadocs-mdx",
-        "ts:typecheck": "tsc --noEmit --skipLibCheck"
+        "ts:typecheck": "next typegen && tsc --noEmit --skipLibCheck"
     },
     "dependencies": {
         "@freestylejs/ani-core": "workspace:^",
