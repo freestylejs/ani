@@ -903,6 +903,31 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 
 ---
 
+## Value codecs (`@freestylejs/ani-core/values`)
+
+> **Colors, lengths and strings with numbers, on top of a numbers-only engine.**
+
+The engine animates numbers only. A **codec** turns a display value into a number vector (to animate) and back (to display). Codecs live in their own entry point that the engine never imports; the root entry does not export them.
+
+```typescript
+import { color } from '@freestylejs/ani-core/values'
+
+const tint = rafTimeline(a.ani({ to: color.encode('#ff3366'), duration: 0.4 }))
+tint.onUpdate(({ state }) => { swatch.style.backgroundColor = color.decode(state) })
+tint.play({ from: color.encode('rgb(51 85 255)') })
+```
+
+| Codec | Size | Notes |
+| :--- | :--- | :--- |
+| `color` / `colorIn(space)` | 4 | `[c1, c2, c3, alpha]` in `'oklab'` (default), `'srgb'` or `'srgb-linear'`. Accepts hex, `rgb()`, `hsl()`, `oklab()`, `oklch()`, `transparent` and the CSS named colors. |
+| `length(unit)` | 1 | `px`, `rem`, `em`, `%`, `vw`, `vh` or `deg`. No unit conversion; unitless `0` is accepted. |
+| `template` tagged template | one per slot | Each interpolation is the unit of its slot (`''` for unitless). |
+| `record({ bg: color, w: length('px') })` | sum of members | Members laid out in key order. |
+
+Decoded numbers have at most 4 decimals. Invalid input (and a vector of the wrong length) throws `AniError` with code `ANI_CODEC_MISMATCH`.
+
+---
+
 ## `createStyleSheet`, `applyStyleSheet`, `createTimelineController`
 
 > **The helpers behind the framework bindings.**
