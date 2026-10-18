@@ -153,9 +153,11 @@ describe('Timeline Controller', () => {
             status: 'PLAYING',
         })
 
-        clock.tick(0.25) // 1s -> curr = 100 -> 100 + (200-100) * 0.25s = 125
+        // 1s: the 2nd segment started at 0.75s from the 1st one's value then
+        // (75), a fixed snapshot: 75 + (200 - 75) * 0.25 = 106.25
+        clock.tick(0.25)
         expect(onUpdate).toHaveBeenCalledWith({
-            state: [125],
+            state: [106.25],
             status: 'PLAYING',
         })
     })

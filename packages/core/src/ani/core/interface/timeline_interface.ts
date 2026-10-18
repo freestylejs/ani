@@ -1,6 +1,5 @@
 import { type AnimationNode, SegmentNode, type SegmentNodeProps } from '~/nodes'
 import type { Resolver } from '~/style'
-import { DynamicSpringTimingFunction, TimingFunction } from '~/timing'
 import type { AnimePrimitive, ExecutionPlan, Groupable } from './core_types'
 
 export interface TimelineCommonConfig<G extends Groupable> {
@@ -60,29 +59,6 @@ export function toIterationCount(repeat?: number): number {
     return normalized === Infinity ? Infinity : normalized + 1
 }
 
-function collectTimings<G extends Groupable>(
-    timing: SegmentNodeProps<G>['timing']
-): TimingFunction[] {
-    if (!timing) return []
-    if (timing instanceof TimingFunction) return [timing]
-    if (Array.isArray(timing)) return timing as TimingFunction[]
-    return Object.values(timing as Record<string, TimingFunction>)
-}
-
-/**
- * Stateful integrators (e.g. DynamicSpring) must not leak state across
- * play/repeat/compile runs, so they are reset whenever a plan is resolved.
- */
-function resetStatefulTimings<G extends Groupable>(plan: ExecutionPlan<G>) {
-    for (const segment of plan) {
-        for (const timing of collectTimings(segment.node.props.timing)) {
-            if (timing instanceof DynamicSpringTimingFunction) {
-                timing.reset()
-            }
-        }
-    }
-}
-
 function computeTotalDuration<G extends Groupable>(
     plan: ExecutionPlan<G>
 ): number {
@@ -93,7 +69,10 @@ function computeTotalDuration<G extends Groupable>(
     return total
 }
 
-export abstract class TimelineBase<G extends Groupable> {
+export abstract class TimelineBase<
+    G extends Groupable,
+    PlayArgs extends readonly unknown[] = readonly any[],
+> {
     /**
      * Total duration of the currently resolved execution plan.
      * Reflects runtime `durations` overrides.
@@ -106,10 +85,16 @@ export abstract class TimelineBase<G extends Groupable> {
     protected _currentExecutionPlan: ExecutionPlan<G> | null = null
 
     private _totalDuration: number
+    private readonly _baseDuration: number
 
     constructor(protected readonly rootNode: AnimationNode<G>) {
         this._baseExecutionPlan = this._constructExecutionPlan(rootNode)
-        this._totalDuration = computeTotalDuration(this._baseExecutionPlan)
+        // The base plan is shared (compile caches key on its identity) and
+        // handed out as-is when no override is requested: keep it immutable.
+        for (const segment of this._baseExecutionPlan) Object.freeze(segment)
+        Object.freeze(this._baseExecutionPlan)
+        this._baseDuration = computeTotalDuration(this._baseExecutionPlan)
+        this._totalDuration = this._baseDuration
 
         this.play = this.play.bind(this)
         this.pause = this.pause.bind(this)
@@ -134,81 +119,105 @@ export abstract class TimelineBase<G extends Groupable> {
     }
 
     /**
-     * Merges the base plan with runtime dynamic overrides.
+     * Merges the base plan with runtime dynamic overrides, without touching
+     * any timeline state (so a failing `play()` leaves the timeline intact).
      * Overridden segments get their schedule (`endTime`) and the timeline
      * `duration` recomputed from the new durations.
+     */
+    protected _buildExecutionPlan(
+        keyframes?: Array<G | 'keep'>,
+        durations?: Array<number | 'keep'>
+    ): { plan: ExecutionPlan<G>; duration: number } {
+        if (!keyframes && !durations) {
+            return {
+                plan: this._baseExecutionPlan,
+                duration: computeTotalDuration(this._baseExecutionPlan),
+            }
+        }
+
+        const newPlan: ExecutionPlan<G> = []
+        let segLength = 0
+        for (const segment of this._baseExecutionPlan) {
+            if (segment.node.type === 'SEGMENT') segLength++
+        }
+
+        if (keyframes && keyframes.length !== segLength) {
+            throw new Error(
+                `[Timeline] Keyframe mismatch: Expected ${segLength}, received ${keyframes.length}.`
+            )
+        }
+        if (durations && durations.length !== segLength) {
+            throw new Error(
+                `[Timeline] Duration mismatch: Expected ${segLength}, received ${durations.length}.`
+            )
+        }
+
+        let keyframeIndex = 0
+
+        for (const segment of this._baseExecutionPlan) {
+            if (segment.node.type === 'SEGMENT') {
+                const dynamicTo = keyframes?.[keyframeIndex]
+                const dynamicDuration = durations?.[keyframeIndex]
+
+                const newSegmentProps: SegmentNodeProps<G> = {
+                    ...segment.node.props,
+                    ...(dynamicTo !== undefined &&
+                        dynamicTo !== 'keep' && {
+                            to: dynamicTo,
+                        }),
+                    ...(dynamicDuration !== undefined &&
+                        dynamicDuration !== 'keep' && {
+                            duration: dynamicDuration,
+                        }),
+                }
+
+                const newSegment = new SegmentNode(
+                    newSegmentProps,
+                    segment.node.id
+                )
+                newPlan.push({
+                    node: newSegment,
+                    startTime: segment.startTime,
+                    endTime: segment.startTime + newSegment.duration,
+                })
+                keyframeIndex++
+            } else {
+                newPlan.push(segment)
+            }
+        }
+
+        return { plan: newPlan, duration: computeTotalDuration(newPlan) }
+    }
+
+    /**
+     * Same as `_buildExecutionPlan`, but commits the resulting `duration`.
      */
     protected _resolveExecutionPlan(
         keyframes?: Array<G | 'keep'>,
         durations?: Array<number | 'keep'>
     ): ExecutionPlan<G> {
-        const newPlan: ExecutionPlan<G> = []
+        const { plan, duration } = this._buildExecutionPlan(
+            keyframes,
+            durations
+        )
+        this._totalDuration = duration
+        return plan
+    }
 
-        if (!keyframes && !durations) {
-            for (const segment of this._baseExecutionPlan) {
-                newPlan.push({ ...segment })
-            }
-        } else {
-            const segmentNodes = this._baseExecutionPlan.filter(
-                (segment) => segment.node.type === 'SEGMENT'
-            )
-            const segLength = segmentNodes.length
+    protected _commitDuration(duration: number): void {
+        this._totalDuration = duration
+    }
 
-            if (keyframes && keyframes.length !== segLength) {
-                throw new Error(
-                    `[Timeline] Keyframe mismatch: Expected ${segLength}, received ${keyframes.length}.`
-                )
-            }
-            if (durations && durations.length !== segLength) {
-                throw new Error(
-                    `[Timeline] Duration mismatch: Expected ${segLength}, received ${durations.length}.`
-                )
-            }
-
-            let keyframeIndex = 0
-
-            for (const segment of this._baseExecutionPlan) {
-                if (segment.node.type === 'SEGMENT') {
-                    const dynamicTo = keyframes?.[keyframeIndex]
-                    const dynamicDuration = durations?.[keyframeIndex]
-
-                    const newSegmentProps: SegmentNodeProps<G> = {
-                        ...segment.node.props,
-                        ...(dynamicTo !== undefined &&
-                            dynamicTo !== 'keep' && {
-                                to: dynamicTo,
-                            }),
-                        ...(dynamicDuration !== undefined &&
-                            dynamicDuration !== 'keep' && {
-                                duration: dynamicDuration,
-                            }),
-                    }
-
-                    const newSegment = new SegmentNode(
-                        newSegmentProps,
-                        segment.node.id
-                    )
-                    newPlan.push({
-                        node: newSegment,
-                        startTime: segment.startTime,
-                        endTime: segment.startTime + newSegment.duration,
-                    })
-                    keyframeIndex++
-                } else {
-                    newPlan.push({ ...segment })
-                }
-            }
-        }
-
-        this._totalDuration = computeTotalDuration(newPlan)
-        resetStatefulTimings(newPlan)
-
-        return newPlan
+    /**
+     * Drops runtime duration overrides.
+     */
+    protected _restoreDuration(): void {
+        this._totalDuration = this._baseDuration
     }
 
     // Abstract public members
 
-    public abstract play(...args: unknown[]): void
+    public abstract play(...args: PlayArgs): unknown
     /**
      * Pause animation.
      */
