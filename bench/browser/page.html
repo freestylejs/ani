@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" href="data:," />
+        <title>ANI browser benchmark</title>
+        <style>
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+        </style>
+    </head>
+    <body>
+        <!--
+            Instrumentation, installed before ANI is imported: every rAF
+            callback (the ANI clock is the only rAF user) is timed and its
+            frame timestamp recorded. `__perf.snapshot()` is read by the
+            runner after the measured window.
+        -->
+        <script>
+            (() => {
+                const requestFrame = window.requestAnimationFrame.bind(window)
+                const ticks = []
+                const frames = []
+                window.__perf = {
+                    reset() {
+                        ticks.length = 0
+                        frames.length = 0
+                    },
+                    snapshot() {
+                        return { ticks: ticks.slice(), frames: frames.slice() }
+                    },
+                }
+                window.requestAnimationFrame = (callback) => {
+                    return requestFrame((timestamp) => {
+                        const startedAt = performance.now()
+                        frames.push(timestamp)
+                        try {
+                            callback(timestamp)
+                        } finally {
+                            ticks.push(performance.now() - startedAt)
+                        }
+                    })
+                }
+            })()
+        </script>
+        <script type="module">
+            import * as ani from '/core/index.js'
+
+            window.__ani = ani
+            window.__aniReady = true
+        </script>
+    </body>
+</html>
