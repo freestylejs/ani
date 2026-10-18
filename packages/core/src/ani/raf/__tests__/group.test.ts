@@ -128,4 +128,89 @@ describe('rafGroup', () => {
             'disposed',
         ])
     })
+
+    it('returns a no-op unbind when bindAt is called on a disposed group', () => {
+        const clock = new ManualClock()
+        const group = rafGroup(tree(), { clock })
+        group.dispose()
+        const el = { style: {} as CSSStyleDeclaration }
+        const unbind = group.bindAt(0, el)
+        expect(typeof unbind).toBe('function')
+        expect(() => unbind()).not.toThrow()
+    })
+
+    it('supports multiple bindAt targets on the same index', () => {
+        const clock = new ManualClock()
+        const node = ani({
+            to: { translateX: 100 },
+            duration: 1,
+            timing: linear,
+        })
+        const group = rafGroup(node, { clock })
+        const el1 = { style: {} as Record<string, unknown> }
+        const el2 = { style: {} as Record<string, unknown> }
+        const unbind1 = group.bindAt(0, el1 as unknown as HTMLElement)
+        const unbind2 = group.bindAt(0, el2 as unknown as HTMLElement)
+        group.play({ from: { translateX: 0 }, count: 1 })
+        clock.tick(0.5)
+        expect(el1.style.transform).toBe('translateX(50px)')
+        expect(el2.style.transform).toBe('translateX(50px)')
+        unbind1()
+        clock.tick(0.5)
+        expect(el1.style.transform).toBe('translateX(50px)')
+        expect(el2.style.transform).toBe('translateX(100px)')
+        unbind2()
+    })
+
+    it('drops positional array bindings and reports error via microtask in bindAt', () => {
+        const clock = new ManualClock()
+        const arrayGroup = rafGroup(ani({ to: [100], duration: 1 }), { clock })
+        const el = { style: {} as Record<string, unknown> }
+        const reported: unknown[] = []
+        const originalQueueMicrotask = globalThis.queueMicrotask
+        globalThis.queueMicrotask = (task: () => void) => {
+            try {
+                task()
+            } catch (err) {
+                reported.push(err)
+            }
+        }
+        try {
+            arrayGroup.bindAt(0, el as unknown as HTMLElement)
+            arrayGroup.play({ from: [0], count: 1 })
+            expect(reported.length).toBeGreaterThan(0)
+            expect(reported[0]).toBeInstanceOf(TypeError)
+        } finally {
+            globalThis.queueMicrotask = originalQueueMicrotask
+        }
+    })
+
+    it('scales with active work when targets are bound individually with bindAt', () => {
+        const clock = new ManualClock()
+        const node = ani({
+            to: { translateX: 100 },
+            duration: 1,
+            timing: linear,
+        })
+        const group = rafGroup(node, { clock, stagger: 1 })
+        const writes: number[] = []
+        for (let i = 0; i < 50; i++) {
+            const index = i
+            const el = {
+                style: {
+                    setProperty() {
+                        // no-op
+                    },
+                    set transform(_val: string) {
+                        writes.push(index)
+                    },
+                } as unknown as CSSStyleDeclaration,
+            }
+            group.bindAt(i, el)
+        }
+        group.play({ from: { translateX: 0 }, count: 50 })
+        writes.length = 0
+        clock.tick(0.5)
+        expect(writes).toEqual([0])
+    })
 })

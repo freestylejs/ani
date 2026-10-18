@@ -83,6 +83,18 @@ const unbind = group.bind(elements, {
 -   Binding after a value exists writes immediately. `unbind` stops the writes and keeps the styles. `dispose()` drops all bindings.
 -   An element without a `style` object throws a `TypeError` synchronously. Positional (array) values cannot be styled: the first write reports a `TypeError` asynchronously and drops the binding. A failing write is isolated per element.
 
+Framework bindings attach list items one element at a time (e.g. per-item refs mounting at different times) using `bindAt`:
+
+```typescript
+// Bind a single item element to target index
+const unbindItem = group.bindAt(index, element, {
+  resolver: { translateY: (v) => ({ key: "top", value: `${v}px` }) },
+});
+```
+
+-   `bindAt(index, target, options?)` behaves like `bind` for target `index`: diffing writer, writes in commit phase, writes immediately if a value exists, idempotent unbind.
+-   `bindAt` does not provide `count`: `play()` still requires `count` when nothing is bound through `bind()`.
+
 #### Listening
 
 ```typescript
@@ -130,6 +142,11 @@ interface RafGroup<G extends Groupable> {
   valueAt(index: number): Readonly<AniGroup<G>> | null;
   bind(
     targets: ArrayLike<{ style: CSSStyleDeclaration }>,
+    options?: { resolver?: Resolver<Record<string, number>> }
+  ): () => void;
+  bindAt(
+    index: number,
+    target: { style: CSSStyleDeclaration } | HTMLElement,
     options?: { resolver?: Resolver<Record<string, number>> }
   ): () => void;
   onUpdate(
