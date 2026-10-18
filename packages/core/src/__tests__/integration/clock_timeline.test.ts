@@ -44,6 +44,31 @@ describe('real clock + real timelines', () => {
         expect(m.pending).toBe(0)
     })
 
+    it('a chaining listener sees the nested play() notification and later listeners still get ENDED', () => {
+        const m = createManualClock()
+        const timeline = rafTimeline(node(0.1), m.clock)
+        let chained = false
+        const first: string[] = []
+        const second: string[] = []
+        timeline.onUpdate(({ status }) => {
+            first.push(status)
+            if (status === 'ENDED' && !chained) {
+                chained = true
+                timeline.play({ from: { x: 0 } })
+            }
+        })
+        timeline.onUpdate(({ status }) => {
+            second.push(status)
+        })
+        timeline.play({ from: { x: 0 } })
+        m.frames(8, 100)
+
+        const endedAt = first.indexOf('ENDED')
+        expect(first[endedAt + 1]).toBe('PLAYING')
+        expect(first.filter((s) => s === 'ENDED')).toHaveLength(2)
+        expect(second.filter((s) => s === 'ENDED')).toHaveLength(2)
+    })
+
     it('chains a different timeline from ENDED and the clock drains afterwards', () => {
         const m = createManualClock()
         const first = rafTimeline(node(0.25), m.clock)

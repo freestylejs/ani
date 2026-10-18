@@ -16,9 +16,9 @@ class MockClock implements AnimationClockInterface {
     }
 
     public tick(dt: number): void {
-        for (const subscriber of this.subscribers) {
-            subscriber.update(dt)
-        }
+        const frame = [...this.subscribers]
+        for (const subscriber of frame) subscriber.update(dt)
+        for (const subscriber of frame) subscriber.commit?.()
     }
 }
 

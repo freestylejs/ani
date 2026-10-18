@@ -43,6 +43,7 @@ The timeline separates the animation definition (the node tree) from its executi
 
 -   **Per-frame cost** depends on the number of animated properties, not on how many segments the tree has or how many already finished.
 -   **Subscribers** of one notification receive the **same** `state` object. Treat it as read-only.
+-   **One notification per frame.** `update` only computes; bound styles are written and `onUpdate` listeners run in the clock's **commit** phase, after every timeline on the clock has computed. The frame a run ends notifies once, with `ENDED` and the final value; a frame that wraps a repeat notifies once with the post-wrap value. `play()`, `seek()` and `reset()` notify synchronously.
 -   **Errors thrown by an `onUpdate` callback** do not affect other callbacks or the timeline. They are rethrown asynchronously (they surface as uncaught errors).
 
 #### Lifecycle
@@ -60,6 +61,26 @@ The timeline separates the animation definition (the node tree) from its executi
 -   `seek(time)` clamps `time` to `[0, duration]`, **pauses** a `PLAYING` or `ENDED` timeline at that time and notifies once. Call `resume()` to continue from there. Calling `seek()` before the first `play()` does nothing.
 -   `reset()` returns to `IDLE`, drops the value (`getCurrentValue()` returns `null`) and restores the base `duration`. Subscribers receive one `IDLE` notification with an empty state, unless `reset(false)`.
 -   `dispose()` stops the timeline for good: it leaves the clock, removes every `onUpdate` callback, and `play()` / `resume()` become no-ops. It is idempotent.
+
+#### Binding styles
+
+`bind(target, options?)` writes the timeline's value to `target.style` (an element or any `{ style }`) on every notification, so you do not need an `onUpdate` callback just to set styles.
+
+```typescript
+const unbind = myTimeline.bind(element)
+// optional: decide which declaration a value becomes
+myTimeline.bind(other, {
+    resolver: { x: (v) => ({ key: 'left', value: `${v}px` }) },
+})
+```
+
+-   The value goes through `createStyleSheet`; `resolver` defaults to the current run's `propertyResolver`.
+-   Writes happen in the commit phase, **before** the `onUpdate` listeners of the same notification, and only for declarations whose value changed since that binding's previous write.
+-   A timeline that already has a value writes it immediately; otherwise the first write happens at the next notification.
+-   An invalid `target` (not an element or an object with a `style` object) throws a `TypeError` synchronously.
+-   The returned function unbinds (idempotent) and keeps the written styles. `dispose()` drops all bindings.
+-   Positional (array) values cannot be styled: the first write reports a `TypeError` asynchronously and the binding is dropped.
+-   A write that throws is isolated per binding and rethrown asynchronously.
 
 #### Validation
 
@@ -139,7 +160,8 @@ When several segments animate the same property at overlapping times (`parallel`
 | `seek(time)` | Jump to `time` seconds and pause. |
 | `reset(notify = true, unsubscribeClock = true)` | Return to `IDLE`. |
 | `dispose()` | Stop for good and release everything. |
-| `onUpdate(cb)` | Subscribe to `{ state, status }`. Returns an unsubscribe function. |
+| `bind(target, options?)` | Write the value to `target.style` on every notification. Returns an unbind function. |
+| `onUpdate(cb)` | Subscribe to `{ state, status }` (commit phase). Returns an unsubscribe function. |
 | `getCurrentValue()` | Frozen snapshot or `null`. |
 | `getCurrentVelocity()` | Velocity group or `null`. |
 

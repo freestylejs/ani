@@ -12,6 +12,8 @@ import {
     type AnimationClockInterface,
 } from '~/loop'
 import type { AnimationNode } from '~/nodes'
+import { createStyleSheet, type Resolver } from '~/style/create_sheet'
+import { createStyleWriter, type StyleWriter } from '~/style/writer'
 import { END_TOLERANCE } from '~/utils/time'
 
 export interface RafTimelineConfig<G extends Groupable, Ctx = any>
@@ -45,6 +47,22 @@ export type OnUpdateCallback<G extends Groupable> = (current: {
     status: TimelineStatus
 }) => void
 
+export interface BindOptions {
+    /**
+     * Maps animated values to style declarations. Defaults to the current
+     * run's `propertyResolver`.
+     */
+    resolver?: Resolver<Record<string, number>>
+}
+
+interface Binding {
+    readonly writer: StyleWriter
+    readonly resolver: Resolver<Record<string, number>> | undefined
+}
+
+/** Times one listener may be on the stack: its call plus one nested notification. */
+const MAX_REENTRY = 2
+
 function reportAsync(error: unknown): void {
     queueMicrotask(() => {
         throw error
@@ -69,8 +87,13 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _delay = 0
     private _status: TimelineStatus = 'IDLE'
     private _disposed = false
-    /** Bumped on every play/reset so re-entrant callbacks can be detected. */
+    /** Bumped on every play/reset/seek: a pending commit belongs to one run. */
     private _runId = 0
+    /**
+     * Bumped on reset/seek: the frame being notified is stale, so the
+     * remaining listeners skip it (a `play()` keeps delivering it).
+     */
+    private _epoch = 0
 
     private _currentConfig: RafTimelineConfig<G, Ctx> | null = null
     public get currentConfig() {
@@ -86,6 +109,17 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _keys: readonly string[] | null = null
     private _remainingRepeats: number = 0
     private _onUpdateCallbacks = new Set<OnUpdateCallback<G>>()
+
+    private _bindings = new Set<Binding>()
+    // how often a callback is on the stack; bounds re-entrant notifications
+    private _running = new Map<OnUpdateCallback<G>, number>()
+    // sheets of the notification being written, shared by its bindings
+    private _defaultSheet: Record<string, unknown> | null = null
+    private _customSheets: Map<object, Record<string, unknown>> | null = null
+
+    // update() produced a change that commit() has not published yet
+    private _pending = false
+    private _pendingRunId = 0
 
     private _lastDt = 0
     private _advanced = false
@@ -108,6 +142,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this.resume = this.resume.bind(this)
         this.reset = this.reset.bind(this)
         this.dispose = this.dispose.bind(this)
+        this.bind = this.bind.bind(this)
     }
 
     private _buildGroup(values: readonly number[]): Groupable {
@@ -178,21 +213,84 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         return this._buildGroup(out) as AniGroup<G>
     }
 
+    private _sheetFor(
+        binding: Binding,
+        group: Record<string, number>
+    ): Record<string, unknown> {
+        const resolver = binding.resolver
+        if (resolver === undefined) {
+            return (this._defaultSheet ??= createStyleSheet(
+                group,
+                this._currentConfig?.propertyResolver as
+                    | Resolver<Record<string, number>>
+                    | undefined
+            ))
+        }
+        const sheets = (this._customSheets ??= new Map())
+        let sheet = sheets.get(resolver)
+        if (sheet === undefined) {
+            sheet = createStyleSheet(group, resolver)
+            sheets.set(resolver, sheet)
+        }
+        return sheet
+    }
+
+    private _writeBinding(binding: Binding, group: AniGroup<G>): void {
+        try {
+            if (Array.isArray(group)) {
+                this._bindings.delete(binding)
+                throw new TypeError(
+                    '[Timeline] `bind()` can only style record values; positional (array) values have no style property.'
+                )
+            }
+            binding.writer.write(
+                this._sheetFor(binding, group as Record<string, number>)
+            )
+        } catch (error) {
+            reportAsync(error)
+        }
+    }
+
+    private _writeBindings(): void {
+        const runtime = this._runtime
+        if (!runtime || runtime.values.length === 0) return
+        const group = this._group()
+        for (const binding of this._bindings) {
+            this._writeBinding(binding, group)
+        }
+        this._defaultSheet = null
+        this._customSheets = null
+    }
+
+    /** Writes the bound targets, then calls the listeners. */
     private _notify(): void {
         const callbacks = this._onUpdateCallbacks
+        if (this._bindings.size > 0) this._writeBindings()
         if (callbacks.size === 0) return
+        const epoch = this._epoch
         const payload = { state: this._group(), status: this._status }
         for (const callback of callbacks) {
+            // a listener reset / sought this timeline: the frame is stale
+            if (epoch !== this._epoch) return
+            // a listener that calls play() / seek() / reset() sees the nested
+            // notification once; deeper re-entry would never terminate
+            const depth = this._running.get(callback) ?? 0
+            if (depth >= MAX_REENTRY) continue
+            this._running.set(callback, depth + 1)
             try {
                 callback(payload)
             } catch (error) {
                 reportAsync(error)
+            } finally {
+                if (depth === 0) this._running.delete(callback)
+                else this._running.set(callback, depth)
             }
         }
     }
 
     /**
-     * @private Internal clock subscription callback.
+     * @private Internal clock subscription callback. Computes only: bound
+     * targets are written and listeners called in `commit()`.
      */
     update(dt: number): void {
         if (this._status !== 'PLAYING' || !this._runtime) return
@@ -208,6 +306,18 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         }
 
         this._advance(dt)
+    }
+
+    /**
+     * @private Internal clock commit callback. Writes the bound targets, then
+     * notifies the listeners once with the frame's final state, unless the run
+     * was replaced since the update.
+     */
+    commit(): void {
+        if (!this._pending) return
+        this._pending = false
+        if (this._pendingRunId !== this._runId) return
+        this._notify()
     }
 
     private _advance(dt: number): void {
@@ -226,11 +336,8 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         if (dt > 0) this._advanced = true
         this._groupDirty = true
         this._snapshotDirty = true
-
-        const runId = this._runId
-        this._notify()
-        // a subscriber may have replaced / paused / reset this run
-        if (runId !== this._runId || this._status !== 'PLAYING') return
+        this._pending = true
+        this._pendingRunId = this._runId
 
         const reachedEnd = time >= duration - END_TOLERANCE
         if (reachedEnd || runtime.finished) {
@@ -256,7 +363,6 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
                 this._clock.unsubscribe(this)
                 this._groupDirty = true
                 this._snapshotDirty = true
-                this._notify()
                 return
             }
             if (this._remainingRepeats !== Infinity) this._remainingRepeats -= 1
@@ -267,10 +373,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             this._groupDirty = true
             this._snapshotDirty = true
 
-            if (carry <= 0 || duration <= 0) {
-                this._notify()
-                return
-            }
+            if (carry <= 0 || duration <= 0) return
             if (carry >= duration) {
                 // the whole repeat elapsed within this single frame
                 carry -= duration
@@ -280,7 +383,6 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             }
             this._masterTime = carry
             runtime.evaluate(carry, carry)
-            this._notify()
             return
         }
     }
@@ -463,6 +565,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         unsubscribeClock: boolean = true
     ): void {
         this._runId++
+        this._epoch++
         this._status = 'IDLE'
         this._currentConfig = null
         this._masterTime = 0
@@ -492,6 +595,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._disposed = true
         this.reset(false, true)
         this._onUpdateCallbacks.clear()
+        this._bindings.clear()
     }
 
     /**
@@ -515,6 +619,8 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             this._status = 'PAUSED'
             this._clock.unsubscribe(this)
         }
+        this._runId++
+        this._epoch++
         const seekTime = Math.max(0, Math.min(targetTime, this.duration))
         this._delay = 0
         this._masterTime = seekTime
@@ -526,9 +632,45 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     }
 
     /**
+     * Writes the timeline's value to `target.style` on every notification.
+     *
+     * Only declarations whose written value changed since this binding's
+     * previous write are written. A timeline that already has a value writes
+     * it immediately; otherwise the first write happens at the next
+     * notification. Bound targets are written before the `onUpdate` listeners
+     * of the same notification run. Positional (array) values cannot be
+     * styled: the first write reports a `TypeError` asynchronously and drops
+     * the binding. A failing write never affects other bindings.
+     * @param target Element, or any object with a `style`.
+     * @returns Unbind (idempotent; written styles are kept).
+     */
+    public bind(
+        target: { style: CSSStyleDeclaration } | HTMLElement,
+        options?: BindOptions
+    ): () => void {
+        if (this._disposed) return () => undefined
+        const binding: Binding = {
+            writer: createStyleWriter(target),
+            resolver: options?.resolver,
+        }
+        this._bindings.add(binding)
+        const runtime = this._runtime
+        if (runtime && runtime.values.length > 0) {
+            this._writeBinding(binding, this._group())
+            this._defaultSheet = null
+            this._customSheets = null
+        }
+        return () => {
+            this._bindings.delete(binding)
+        }
+    }
+
+    /**
      * When timeline updates, subscribes on update callback.
      *
-     * Every callback of one notification receives the same `state` object. A
+     * Called once per frame, in the commit phase (after bound styles are
+     * written), and synchronously by `play()`, `seek()` and `reset()`. Every
+     * callback of one notification receives the same `state` object. A
      * throwing callback does not affect the others nor the timeline; its
      * error is rethrown asynchronously.
      * @param callback Subscription callback.

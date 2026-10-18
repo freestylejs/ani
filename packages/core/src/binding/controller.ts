@@ -54,6 +54,8 @@ export function createTimelineController<G extends Groupable, Ctx = any>(
             hooks.onReset?.()
         },
         dispose: () => getTimeline().dispose(),
+        commit: () => getTimeline().commit(),
+        bind: (target, options) => getTimeline().bind(target, options),
         onUpdate: (callback) => getTimeline().onUpdate(callback),
         getCurrentValue: () => getTimeline().getCurrentValue(),
         getCurrentVelocity: () => getTimeline().getCurrentVelocity(),

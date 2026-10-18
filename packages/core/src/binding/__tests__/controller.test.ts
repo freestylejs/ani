@@ -78,6 +78,41 @@ describe('createTimelineController', () => {
         expect(first.status).toBe('PLAYING')
     })
 
+    it('forwards bind() to the timeline returned at call time', () => {
+        const { line, advance } = make()
+        const first = line()
+        const second = line()
+        let current = first
+        const controller = createTimelineController(() => current)
+        const writes: unknown[] = []
+        const style = {
+            set x(value: unknown) {
+                writes.push(value)
+            },
+        } as unknown as CSSStyleDeclaration
+
+        current = second
+        const unbind = controller.bind(
+            { style },
+            { resolver: { x: (v) => ({ key: 'x', value: v }) } }
+        )
+        controller.play({ from: { x: 0 } })
+        advance(500)
+        expect(writes).toEqual([0, 50])
+        unbind()
+        advance(250)
+        expect(writes).toEqual([0, 50])
+    })
+
+    it('bind() rejects an invalid target synchronously and registers nothing', () => {
+        const { line } = make()
+        const target = line()
+        target.play({ from: { x: 0 } })
+        expect(() => target.bind(null as never)).toThrow(TypeError)
+        expect(() => target.bind({} as never)).toThrow(TypeError)
+        expect(() => target.seek(0.5)).not.toThrow()
+    })
+
     it('forwards update() and the canBeIntercepted flag', () => {
         const { line } = make()
         const target = line()
