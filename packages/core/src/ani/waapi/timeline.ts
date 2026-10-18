@@ -1,18 +1,13 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core'
-import { TimelineBase, toIterationCount } from '~/ani/core'
+import { type RunResult, TimelineBase, toIterationCount } from '~/ani/core'
+
+export type { RunResult }
+
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import type { TimelineStatus } from '~/ani/raf/timeline'
 import type { AnimationNode } from '~/nodes'
 import type { Resolver } from '~/style'
 import { compileToKeyframes, type WebAniKeyframe } from './compiler'
-
-/** How a `play()` run ended. */
-export type RunResult =
-    | 'ended'
-    | 'interrupted'
-    | 'skipped'
-    | 'reset'
-    | 'disposed'
 
 interface CachedKeyframes {
     keys: string[]
