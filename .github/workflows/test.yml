@@ -65,6 +65,9 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Browser binding tests
+        run: pnpm test:browser
+
       - name: Browser benchmark (smoke)
         run: pnpm bench:browser --smoke --out bench/browser/results/ci-smoke.json
 
