@@ -5,7 +5,13 @@ import {
     type TimingFunctionContext,
 } from '~/timing'
 import { END_TOLERANCE } from '~/utils/time'
-import type { ExecutionPlan, Groupable } from './interface/core_types'
+import { bezierProgress } from './bezier_progress'
+import type {
+    ExecutionPlan,
+    ExecutionSegment,
+    Groupable,
+} from './interface/core_types'
+import { loopEnd, loopEnds, planLoops } from './plan_state'
 
 /**
  * Evaluation core of the raf engine.
@@ -22,6 +28,10 @@ import type { ExecutionPlan, Groupable } from './interface/core_types'
  *   winning segment, finished segments are never re-evaluated (value = `to`).
  * - Stateful timings (physics) get a private state object per
  *   (segment, property) owned by the runtime, never by the timing instance.
+ * - Loops: a loop with more than three iterations lists its first three
+ *   (`PlanLoop`). From the third iteration on every iteration starts from the
+ *   same end state, so the time of the lanes the loop writes is folded into
+ *   the third one ("fold"): evaluation is O(1) in the iteration index.
  */
 
 const LINEAR = new LinearTimingFunction()
@@ -45,6 +55,24 @@ export interface CompiledPlan {
      * their nominal duration.
      */
     readonly hardEnd: number
+    /**
+     * Folds of lane `k` are `[foldOff[k], foldOff[k + 1])`, ordered by start.
+     * Times in `[fStart, fEnd)` map into `[fStart, fStart + fPeriod)`.
+     */
+    readonly foldOff: Int32Array
+    readonly fStart: Float64Array
+    readonly fEnd: Float64Array
+    readonly fPeriod: Float64Array
+    /** Start of the loop (iteration `i` starts at `fOrigin + i * fPeriod`). */
+    readonly fOrigin: Float64Array
+    /** Iteration count of the loop (`Infinity` when endless). */
+    readonly fCount: Float64Array
+    /** Enclosing fold of the same lane, `-1` for none. */
+    readonly fParent: Int32Array
+    /** End of the first iteration of the endless loop on lane `k`, else `NaN`. */
+    readonly firstEnd: Float64Array
+    /** Latest end of everything that is not an endless loop. */
+    readonly finiteEnd: number
 }
 
 const compiledCache = new WeakMap<object, Map<string, CompiledPlan>>()
@@ -92,6 +120,142 @@ function isSortedByStart(plan: ExecutionPlan<any>): boolean {
         if (plan[i]!.startTime < plan[i - 1]!.startTime) return false
     }
     return true
+}
+
+interface Fold {
+    start: number
+    end: number
+    period: number
+    origin: number
+    count: number
+}
+
+type FoldTables = Pick<
+    CompiledPlan,
+    | 'foldOff'
+    | 'fStart'
+    | 'fEnd'
+    | 'fPeriod'
+    | 'fOrigin'
+    | 'fCount'
+    | 'fParent'
+    | 'firstEnd'
+>
+
+/** The folds of the plan's loops, per lane, and what they do to the ends. */
+function compileLoops(
+    plan: ExecutionPlan<Groupable>,
+    segments: readonly ExecutionSegment<Groupable>[],
+    segLanes: readonly number[][],
+    segHard: readonly boolean[],
+    laneCount: number
+): { folds: FoldTables; hardEnd: number; finiteEnd: number } {
+    const loops = planLoops(plan)
+    const byLane: Fold[][] = Array.from({ length: laneCount }, () => [])
+    const firstEnd = new Float64Array(laneCount).fill(Number.NaN)
+    const endless = new Uint8Array(segments.length)
+    let hardEnd = 0
+    let finiteEnd = 0
+
+    if (loops.length > 0) {
+        const index = new Map<ExecutionSegment<Groupable>, number>()
+        segments.forEach((segment, s) => {
+            index.set(segment, s)
+        })
+        const real = loopEnds(loops)
+        for (const loop of loops) {
+            const end = loopEnd(loop)
+            const lanes = new Set<number>()
+            let hard = end === Infinity
+            for (const iteration of loop.iterations) {
+                for (const segment of iteration) {
+                    const s = index.get(segment)
+                    if (s === undefined) continue
+                    if (end === Infinity) endless[s] = 1
+                    if (segHard[s]) hard = true
+                    for (const lane of segLanes[s]!) lanes.add(lane)
+                }
+            }
+            // the range the fold covers is `end`; the loop itself may end sooner
+            if (hard && real.get(loop)! > hardEnd) hardEnd = real.get(loop)!
+            const fold: Fold = {
+                start: loop.startTime + 2 * loop.period,
+                end,
+                period: loop.period,
+                origin: loop.startTime,
+                count: loop.count,
+            }
+            for (const lane of lanes) {
+                byLane[lane]!.push(fold)
+                if (end === Infinity) {
+                    firstEnd[lane] = loop.startTime + loop.period
+                }
+            }
+        }
+        // a finite loop inside an endless one ends with each iteration of it
+        for (const loop of loops) {
+            const end = real.get(loop)!
+            const first = loop.iterations[0][0]
+            const s = first === undefined ? undefined : index.get(first)
+            if (end !== Infinity && (s === undefined || !endless[s])) {
+                if (end > finiteEnd) finiteEnd = end
+            }
+        }
+    }
+    for (let s = 0; s < segments.length; s++) {
+        if (!endless[s] && segments[s]!.endTime > finiteEnd) {
+            finiteEnd = segments[s]!.endTime
+        }
+    }
+
+    let total = 0
+    for (const folds of byLane) total += folds.length
+    const foldOff = new Int32Array(laneCount + 1)
+    const fStart = new Float64Array(total)
+    const fEnd = new Float64Array(total)
+    const fPeriod = new Float64Array(total)
+    const fOrigin = new Float64Array(total)
+    const fCount = new Float64Array(total)
+    const fParent = new Int32Array(total).fill(-1)
+    let next = 0
+    for (let k = 0; k < laneCount; k++) {
+        const folds = byLane[k]!.sort(
+            (a, b) => a.start - b.start || b.end - a.end
+        )
+        const open: number[] = []
+        for (const fold of folds) {
+            const f = next++
+            fStart[f] = fold.start
+            fEnd[f] = fold.end
+            fPeriod[f] = fold.period
+            fOrigin[f] = fold.origin
+            fCount[f] = fold.count
+            // folds of one lane nest or follow each other, they never cross
+            while (open.length > 0) {
+                const top = open[open.length - 1]!
+                if (fold.start >= fStart[top]! && fold.end <= fEnd[top]!) break
+                open.pop()
+            }
+            fParent[f] = open.length > 0 ? open[open.length - 1]! : -1
+            open.push(f)
+        }
+        foldOff[k + 1] = next
+    }
+
+    return {
+        folds: {
+            foldOff,
+            fStart,
+            fEnd,
+            fPeriod,
+            fOrigin,
+            fCount,
+            fParent,
+            firstEnd,
+        },
+        hardEnd,
+        finiteEnd,
+    }
 }
 
 /**
@@ -235,6 +399,9 @@ export function compilePlan(
         if (hard && end > hardEnd) hardEnd = end
     }
 
+    const looped = compileLoops(plan, segments, segLanes, segHard, laneCount)
+    if (looped.hardEnd > hardEnd) hardEnd = looped.hardEnd
+
     const compiled: CompiledPlan = {
         laneCount,
         keys,
@@ -246,6 +413,8 @@ export function compilePlan(
         eStateful,
         eKind,
         hardEnd,
+        ...looped.folds,
+        finiteEnd: looped.finiteEnd,
     }
     if (!bySig) {
         bySig = new Map()
@@ -271,6 +440,8 @@ export class PlanRuntime {
     public readonly velocities: number[]
     /** True once every property reached its final value (see `hardEnd`). */
     public finished = false
+    // set by `fold`: the lane is before the last iteration of a loop
+    private folded = false
 
     private readonly c: CompiledPlan
     private readonly initial: number[]
@@ -355,6 +526,18 @@ export class PlanRuntime {
     /** Value of entry `e` at `local` without touching the live state. */
     private sampleDetached(e: number, local: number, lane: number): number {
         const fn = this.c.eTiming[e]!
+        if (this.c.eKind[e] === 2) {
+            // same easing as `run`, so a snapshot continues the segment
+            const dur = this.c.eDur[e]!
+            const from = this.eFrom[e]!
+            const to = this.c.eTo[e]!
+            if (!(local < dur)) return to
+            const x = local < 0 ? 0 : local / dur
+            return (
+                from +
+                (to - from) * bezierProgress(fn as BezierTimingFunction, x)
+            )
+        }
         const ctx = this.ctx
         ctx.dt = 0
         ctx.from = this.eFrom[e]!
@@ -381,6 +564,73 @@ export class PlanRuntime {
      * @param dt Frame delta handed to legacy (non-stateful) timings.
      */
     public evaluate(time: number, dt: number): void {
+        this.run(time, dt, false)
+    }
+
+    /**
+     * Shows every lane in its final state: finite parts completed, an endless
+     * loop at the end of its first iteration.
+     */
+    public settle(): void {
+        this.run(0, 0, true)
+    }
+
+    /** The time up to which `settle()` plays everything. */
+    public get settledAt(): number {
+        const { firstEnd, finiteEnd } = this.c
+        let at = finiteEnd
+        for (let k = 0; k < firstEnd.length; k++) {
+            if (firstEnd[k]! > at) at = firstEnd[k]!
+        }
+        return at
+    }
+
+    /**
+     * Maps `time` through the folds of a lane (see the header): an iteration
+     * of a loop beyond the third is shown as the third. `folded` tells that
+     * the time lies before the last iteration of a fold.
+     */
+    private fold(lo: number, hi: number, time: number): number {
+        const { fStart, fEnd, fPeriod, fOrigin, fCount, fParent } = this.c
+        let t = time
+        let applied = -1
+        this.folded = false
+        for (;;) {
+            // the last fold starting at or before `t`, or the fold around it
+            let a = lo - 1
+            let b = hi
+            while (b - a > 1) {
+                const mid = (a + b) >> 1
+                if (fStart[mid]! <= t) a = mid
+                else b = mid
+            }
+            let f = a < lo ? -1 : a
+            while (f >= 0 && fEnd[f]! <= t) f = fParent[f]!
+            if (f < 0 || f === applied) return t
+            // the iteration `t` is in, by the same sums the plan was built with
+            const origin = fOrigin[f]!
+            const period = fPeriod[f]!
+            let i = Math.floor((t - origin) / period)
+            let local: number
+            if (Number.isSafeInteger(i)) {
+                // rounding moves the estimate by an iteration or two at most
+                for (let n = 0; n < 4 && origin + i * period > t; n++) i--
+                for (let n = 0; n < 4 && origin + (i + 1) * period <= t; n++) {
+                    i++
+                }
+                local = Math.min(Math.max(t - (origin + i * period), 0), period)
+            } else {
+                // beyond 2^53 iterations neighbouring indices are not
+                // distinct: the remainder is all that is left to compute
+                local = (t - origin) % period
+            }
+            if (i < fCount[f]! - 1) this.folded = true
+            t = fStart[f]! + local
+            applied = f
+        }
+    }
+
+    private run(time: number, dt: number, settle: boolean): void {
         const {
             laneCount,
             laneOff,
@@ -390,12 +640,15 @@ export class PlanRuntime {
             eTiming,
             eStateful,
             eKind,
+            foldOff,
+            firstEnd,
+            finiteEnd,
         } = this.c
         const { velocities, cursor, eFrom, eState, ctx } = this
         const values = this.previous
         this.previous = this.values
         this.values = values
-        const t = time < 0 ? 0 : time
+        const now = time < 0 ? 0 : time
         let allDone = true
         // properties of one segment usually share a timing: ease once per frame
         let memoFn: TimingFunction | null = null
@@ -409,6 +662,17 @@ export class PlanRuntime {
             if (lo === hi) {
                 velocities[k] = Number.NaN
                 continue
+            }
+
+            let t = now
+            if (settle) {
+                const end = firstEnd[k]!
+                // inside the end tolerance of the iteration: it counts as done
+                t = Number.isNaN(end) ? finiteEnd : end - END_TOLERANCE / 2
+            } else if (foldOff[k] !== foldOff[k + 1]) {
+                t = this.fold(foldOff[k]!, foldOff[k + 1]!, now)
+                // before the last iteration of a loop the lane is not done
+                if (this.folded) allDone = false
             }
 
             let c = cursor[k]!
@@ -451,7 +715,9 @@ export class PlanRuntime {
                     memoDur = dur
                     const x = local / dur
                     memoEased =
-                        kind === 1 ? x : (fn as BezierTimingFunction).ease(x)
+                        kind === 1
+                            ? x
+                            : bezierProgress(fn as BezierTimingFunction, x)
                 }
                 const origin = eFrom[c]!
                 values[k] = origin + (eTo[c]! - origin) * memoEased
@@ -488,7 +754,8 @@ export class PlanRuntime {
             }
         }
 
-        this.finished = allDone && t >= this.c.hardEnd - END_TOLERANCE
+        this.finished =
+            !settle && allDone && now >= this.c.hardEnd - END_TOLERANCE
     }
 }
 

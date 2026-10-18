@@ -12,6 +12,11 @@ import {
     CompositionNode,
     type CompositionPlan,
 } from './composition'
+import {
+    assertNoEndlessOverlap,
+    type Footprint,
+    mergeFootprints,
+} from './footprint'
 import { SegmentNode } from './segment'
 
 /**
@@ -22,6 +27,7 @@ export class ParallelNode<
 > extends CompositionNode<Children> {
     readonly type = 'PARALLEL'
     readonly duration: number
+    readonly footprint: Footprint
 
     constructor(
         children: Children,
@@ -116,6 +122,13 @@ export class ParallelNode<
             if (child.duration > duration) duration = child.duration
         }
         this.duration = duration
+
+        const placed = this.children.map((child) => ({
+            footprint: child.footprint,
+            offset: 0,
+        }))
+        assertNoEndlessOverlap('parallel', placed)
+        this.footprint = mergeFootprints(placed)
     }
 
     public construct(plan: CompositionPlan<Children>, startTime: number): void {

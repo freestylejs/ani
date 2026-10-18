@@ -5,6 +5,7 @@ import {
     CompositionNode,
     type CompositionPlan,
 } from './composition'
+import { type Footprint, mergeFootprints, type Placed } from './footprint'
 
 /**
  * Composition node that runs its children one after another.
@@ -14,6 +15,7 @@ export class SequenceNode<
 > extends CompositionNode<Children> {
     readonly type = 'SEQUENCE'
     readonly duration: number
+    readonly footprint: Footprint
 
     constructor(
         children: Children,
@@ -28,7 +30,22 @@ export class SequenceNode<
             extra.length > 0
         )
         super(children, resolvedTiming, resolvedId)
-        this.duration = children.reduce((sum, child) => sum + child.duration, 0)
+        let duration = 0
+        let endless = -1
+        const placed: Placed[] = []
+        for (let i = 0; i < children.length; i++) {
+            const child = children[i]!
+            if (endless >= 0) {
+                throw new RangeError(
+                    `[sequence] Child #${i} is unreachable: child #${endless} never ends because it contains an endless loop. Put the endless child last, or run it in a parallel.`
+                )
+            }
+            placed.push({ footprint: child.footprint, offset: duration })
+            duration += child.duration
+            if (duration === Infinity) endless = i
+        }
+        this.duration = duration
+        this.footprint = mergeFootprints(placed)
     }
 
     public construct(plan: CompositionPlan<Children>, startTime: number): void {

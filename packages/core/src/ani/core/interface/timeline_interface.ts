@@ -1,6 +1,13 @@
 import { type AnimationNode, SegmentNode, type SegmentNodeProps } from '~/nodes'
 import type { Resolver } from '~/style'
-import type { AnimePrimitive, ExecutionPlan, Groupable } from './core_types'
+import { type BuiltPlan, buildPlan, unstableLoops } from '../plan_builder'
+import { loopEnds, type PlanLoop, planStateOf } from '../plan_state'
+import type {
+    AnimePrimitive,
+    ExecutionPlan,
+    ExecutionSegment,
+    Groupable,
+} from './core_types'
 
 export interface TimelineCommonConfig<G extends Groupable> {
     /**
@@ -16,11 +23,14 @@ export interface TimelineCommonConfig<G extends Groupable> {
      */
     delay?: number
     /**
-     * Dynamic target overrides. Matches the order of SEGMENT nodes in the plan.
+     * Dynamic target overrides, one per segment node as written in the tree
+     * (ordered by start time). The child of a loop is one entry whatever the
+     * loop count; it applies to every iteration.
      */
     keyframes?: Array<G | 'keep'>
     /**
-     * Dynamic duration overrides. Matches the order of SEGMENT nodes in the plan.
+     * Dynamic duration overrides, one per segment node as written in the tree
+     * (ordered by start time), see `keyframes`.
      */
     durations?: Array<number | 'keep'>
     /**
@@ -104,13 +114,28 @@ export function toIterationCount(repeat?: number): number {
 }
 
 function computeTotalDuration<G extends Groupable>(
-    plan: ExecutionPlan<G>
+    plan: ExecutionPlan<G>,
+    loops: readonly PlanLoop[]
 ): number {
     let total = 0
     for (const segment of plan) {
         if (segment.endTime > total) total = segment.endTime
     }
+    for (const end of loopEnds(loops).values()) {
+        if (end > total) total = end
+    }
     return total
+}
+
+/** Options of {@link TimelineBase}. */
+export interface TimelineBaseOptions<G extends Groupable> {
+    /**
+     * Writes every finite loop out instead of representing it once. The values
+     * are the same; engines that sample the plan per segment (WAAPI) need it.
+     */
+    expandLoops?: boolean
+    /** Node to plan instead of the root (its duration still is the root's). */
+    planRoot?: AnimationNode<G>
 }
 
 export abstract class TimelineBase<
@@ -119,7 +144,8 @@ export abstract class TimelineBase<
 > {
     /**
      * Total duration of the currently resolved execution plan.
-     * Reflects runtime `durations` overrides.
+     * Reflects runtime `durations` overrides. `Infinity` when the tree
+     * contains an endless loop.
      */
     public get duration(): number {
         return this._totalDuration
@@ -130,14 +156,31 @@ export abstract class TimelineBase<
 
     private _totalDuration: number
     private readonly _baseDuration: number
+    private readonly _base: BuiltPlan<G>
+    private readonly _planRoot: AnimationNode<G>
+    private readonly _expandLoops: boolean
 
-    constructor(protected readonly rootNode: AnimationNode<G>) {
-        this._baseExecutionPlan = this._constructExecutionPlan(rootNode)
+    constructor(
+        protected readonly rootNode: AnimationNode<G>,
+        options: TimelineBaseOptions<G> = {}
+    ) {
+        this._planRoot = options.planRoot ?? rootNode
+        this._expandLoops = options.expandLoops === true
+        this._base = buildPlan(this._planRoot, {
+            expandAll: this._expandLoops,
+        })
+        this._baseExecutionPlan = this._base.plan
         // The base plan is shared (compile caches key on its identity) and
         // handed out as-is when no override is requested: keep it immutable.
         for (const segment of this._baseExecutionPlan) Object.freeze(segment)
         Object.freeze(this._baseExecutionPlan)
-        this._baseDuration = computeTotalDuration(this._baseExecutionPlan)
+        this._baseDuration =
+            options.planRoot === undefined
+                ? computeTotalDuration(
+                      this._baseExecutionPlan,
+                      this._base.loops
+                  )
+                : rootNode.duration
         this._totalDuration = this._baseDuration
 
         this.play = this.play.bind(this)
@@ -148,25 +191,13 @@ export abstract class TimelineBase<
     }
 
     /**
-     * flatten the AST into a linear execution plan, ordered chronologically
-     * so that consumers can evaluate segments in time order.
-     */
-    private _constructExecutionPlan(
-        rootNode: AnimationNode<G>
-    ): ExecutionPlan<G> {
-        const plan: ExecutionPlan<G> = []
-        rootNode.construct(plan, 0)
-        // Stable sort: chronological evaluation order with declaration-order
-        // tie-breaking for simultaneous starts (e.g. parallel children).
-        plan.sort((a, b) => a.startTime - b.startTime)
-        return plan
-    }
-
-    /**
      * Merges the base plan with runtime dynamic overrides, without touching
      * any timeline state (so a failing `play()` leaves the timeline intact).
      * Overridden segments get their schedule (`endTime`) and the timeline
      * `duration` recomputed from the new durations.
+     *
+     * Overrides address the segment nodes as written in the tree: all
+     * iterations of a loop share the entry of the loop child.
      */
     protected _buildExecutionPlan(
         keyframes?: Array<G | 'keep'>,
@@ -175,62 +206,98 @@ export abstract class TimelineBase<
         if (!keyframes && !durations) {
             return {
                 plan: this._baseExecutionPlan,
-                duration: computeTotalDuration(this._baseExecutionPlan),
+                duration: computeTotalDuration(
+                    this._baseExecutionPlan,
+                    this._base.loops
+                ),
             }
         }
 
-        const newPlan: ExecutionPlan<G> = []
-        let segLength = 0
-        for (const segment of this._baseExecutionPlan) {
-            if (segment.node.type === 'SEGMENT') segLength++
-        }
-
-        if (keyframes && keyframes.length !== segLength) {
+        const { slotCount } = this._base
+        if (keyframes && keyframes.length !== slotCount) {
             throw new Error(
-                `[Timeline] Keyframe mismatch: Expected ${segLength}, received ${keyframes.length}.`
+                `[Timeline] Keyframe mismatch: Expected ${slotCount}, received ${keyframes.length}.`
             )
         }
-        if (durations && durations.length !== segLength) {
+        if (durations && durations.length !== slotCount) {
             throw new Error(
-                `[Timeline] Duration mismatch: Expected ${segLength}, received ${durations.length}.`
+                `[Timeline] Duration mismatch: Expected ${slotCount}, received ${durations.length}.`
             )
         }
 
-        let keyframeIndex = 0
-
-        for (const segment of this._baseExecutionPlan) {
-            if (segment.node.type === 'SEGMENT') {
-                const dynamicTo = keyframes?.[keyframeIndex]
-                const dynamicDuration = durations?.[keyframeIndex]
-
-                const newSegmentProps: SegmentNodeProps<G> = {
-                    ...segment.node.props,
-                    ...(dynamicTo !== undefined &&
-                        dynamicTo !== 'keep' && {
-                            to: dynamicTo,
-                        }),
-                    ...(dynamicDuration !== undefined &&
-                        dynamicDuration !== 'keep' && {
-                            duration: dynamicDuration,
-                        }),
+        // A loop whose iterations no longer repeat each other (a duration
+        // that runs past the iteration, or a target that adds a property
+        // another segment writes meanwhile) is written out and the plan
+        // rebuilt.
+        const expand = new Map<object, Set<number>>()
+        let base = this._base
+        for (;;) {
+            const { plan, loops } = this._override(base, keyframes, durations)
+            const bad = unstableLoops(plan, loops, keyframes !== undefined)
+            if (bad.length === 0) {
+                return { plan, duration: computeTotalDuration(plan, loops) }
+            }
+            for (const loop of bad) {
+                let starts = expand.get(loop.node)
+                if (starts === undefined) {
+                    starts = new Set()
+                    expand.set(loop.node, starts)
                 }
-
-                const newSegment = new SegmentNode(
-                    newSegmentProps,
-                    segment.node.id
-                )
-                newPlan.push({
-                    node: newSegment,
-                    startTime: segment.startTime,
-                    endTime: segment.startTime + newSegment.duration,
-                })
-                keyframeIndex++
-            } else {
-                newPlan.push(segment)
+                starts.add(loop.startTime)
             }
+            base = buildPlan(this._planRoot, {
+                expandAll: this._expandLoops,
+                expand,
+            })
+        }
+    }
+
+    private _override(
+        base: BuiltPlan<G>,
+        keyframes: Array<G | 'keep'> | undefined,
+        durations: Array<number | 'keep'> | undefined
+    ): { plan: ExecutionPlan<G>; loops: PlanLoop[] } {
+        const plan: ExecutionPlan<G> = []
+        const replaced = new Map<ExecutionSegment<G>, ExecutionSegment<G>>()
+        for (const segment of base.plan) {
+            const rank = base.rankOf[segment.slot ?? 0]!
+            const dynamicTo = keyframes?.[rank]
+            const dynamicDuration = durations?.[rank]
+
+            const newSegmentProps: SegmentNodeProps<G> = {
+                ...segment.node.props,
+                ...(dynamicTo !== undefined &&
+                    dynamicTo !== 'keep' && {
+                        to: dynamicTo,
+                    }),
+                ...(dynamicDuration !== undefined &&
+                    dynamicDuration !== 'keep' && {
+                        duration: dynamicDuration,
+                    }),
+            }
+
+            const newSegment = new SegmentNode(newSegmentProps, segment.node.id)
+            const next: ExecutionSegment<G> = {
+                node: newSegment,
+                startTime: segment.startTime,
+                endTime: segment.startTime + newSegment.duration,
+                ...(segment.slot !== undefined && { slot: segment.slot }),
+            }
+            replaced.set(segment, next)
+            plan.push(next)
         }
 
-        return { plan: newPlan, duration: computeTotalDuration(newPlan) }
+        const loops = base.loops.map((loop): PlanLoop => {
+            const iterations = loop.iterations.map((iteration) =>
+                iteration.map((segment) => replaced.get(segment as never)!)
+            )
+            return {
+                ...loop,
+                iterations: iterations as unknown as PlanLoop['iterations'],
+            }
+        })
+        planStateOf(plan).loops = loops
+        return { plan, loops }
     }
 
     /**

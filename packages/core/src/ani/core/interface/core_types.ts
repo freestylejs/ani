@@ -8,6 +8,8 @@ import type {
     WithLiteralRecord,
 } from '~/utils/types'
 
+export type { Footprint } from '~/nodes/footprint'
+
 /**
  * Animatable target values
  */
@@ -35,6 +37,12 @@ export interface ExecutionSegment<G extends Groupable> {
      * Animation end time
      */
     endTime: number
+    /**
+     * Position of the segment node in the tree as written. Every iteration of
+     * a loop shares the slots of the loop child (`keyframes` / `durations`
+     * overrides address slots).
+     */
+    slot?: number
 }
 
 export type ExecutionPlan<G extends Groupable> = Array<ExecutionSegment<G>>

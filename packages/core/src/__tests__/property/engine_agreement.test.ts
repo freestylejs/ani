@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ExecutionPlan } from '~/ani/core'
 import { ManualClock } from '~/ani/core/__tests__/manual_clock'
+import { planLoops } from '~/ani/core/plan_state'
 import { type RafAniTimeline, rafTimeline } from '~/ani/raf/timeline'
 import { compileToKeyframes, type WebAniKeyframe } from '~/ani/waapi/compiler'
 import { ani, sequence } from '~/nodes'
@@ -14,7 +15,13 @@ import {
 } from '~/timing'
 import { END_TOLERANCE } from '~/utils/time'
 import type { AnimationRecord } from './gen'
-import { caseMessage, generateTree, mulberry32, NUMBER_KEYS } from './gen'
+import {
+    caseMessage,
+    generateTree,
+    mulberry32,
+    NUMBER_KEYS,
+    type TreeOptions,
+} from './gen'
 import { planDuration, snapshot, sortedPlan } from './helpers'
 import { numericValue, referenceValueAt } from './waapi_reference'
 
@@ -83,6 +90,8 @@ type IntervalKind = 'exact' | 'sampled'
 
 interface OffsetGroup {
     offset: number
+    /** Offset of the last keyframe: later than `offset` within a group of near offsets. */
+    lastOffset: number
     first: WebAniKeyframe
     last: WebAniKeyframe
 }
@@ -99,16 +108,31 @@ interface Case {
     isBoundary: (time: number) => boolean
 }
 
-/** Keyframes bucketed by offset, in order. */
-function groupByOffset(keyframes: readonly WebAniKeyframe[]): OffsetGroup[] {
+/**
+ * Keyframes bucketed by offset, in order. Offsets less than `TIME_EPSILON`
+ * seconds apart are one time: the end of an iteration and the start of the
+ * next are sums an ulp apart.
+ */
+function groupByOffset(
+    keyframes: readonly WebAniKeyframe[],
+    duration: number
+): OffsetGroup[] {
     const groups: OffsetGroup[] = []
     for (const keyframe of keyframes) {
         const tail = groups[groups.length - 1]
-        if (tail !== undefined && tail.offset === keyframe.offset) {
+        if (
+            tail !== undefined &&
+            (tail.offset === keyframe.offset ||
+                (duration > TIME_EPSILON &&
+                    Math.abs(tail.offset - keyframe.offset) * duration <=
+                        TIME_EPSILON))
+        ) {
             tail.last = keyframe
+            tail.lastOffset = keyframe.offset
         } else {
             groups.push({
                 offset: keyframe.offset,
+                lastOffset: keyframe.offset,
                 first: keyframe,
                 last: keyframe,
             })
@@ -120,7 +144,9 @@ function groupByOffset(keyframes: readonly WebAniKeyframe[]): OffsetGroup[] {
 /**
  * Maps a keyframe offset back to seconds. `offset * duration` can land a few
  * ulp before the plan time it came from, on the other side of a jump, so
- * times within `TIME_EPSILON` of a segment boundary snap to the boundary.
+ * times within `TIME_EPSILON` of a segment boundary snap to the boundary. The
+ * end of one iteration and the start of the next are different sums, an ulp
+ * apart: the nearest boundary is the one the keyframe came from.
  */
 function planTimes(
     plan: Plan,
@@ -132,10 +158,17 @@ function planTimes(
         boundaries.add(segment.endTime)
     }
     const nearest = (time: number): number | undefined => {
+        let found: number | undefined
         for (const boundary of boundaries) {
-            if (Math.abs(boundary - time) <= TIME_EPSILON) return boundary
+            const gap = Math.abs(boundary - time)
+            if (
+                gap <= TIME_EPSILON &&
+                (found === undefined || gap < Math.abs(found - time))
+            ) {
+                found = boundary
+            }
         }
-        return undefined
+        return found
     }
     return {
         timeOf: (offset) => {
@@ -146,9 +179,12 @@ function planTimes(
     }
 }
 
-function buildCase(seed: number): Case {
+/** The default cases include loops the RAF engine represents once. */
+const DEFAULT_TREES: TreeOptions = { keys: NUMBER_KEYS }
+
+function buildCase(seed: number, options: TreeOptions = DEFAULT_TREES): Case {
     const rng = mulberry32(seed)
-    const { node, keys, from } = generateTree(rng, { keys: NUMBER_KEYS })
+    const { node, keys, from } = generateTree(rng, options)
     const plan = sortedPlan(node)
     const duration = planDuration(plan)
     const line = rafTimeline(node, new ManualClock())
@@ -292,11 +328,12 @@ function checkKeyframes(c: Case, groups: readonly OffsetGroup[]): void {
     const { seed, keys, from, plan, line } = c
     for (const group of groups) {
         const time = c.timeOf(group.offset)
-        const at = valuesAt(line, time)
+        const after = c.timeOf(group.lastOffset)
+        const at = valuesAt(line, after)
         for (const key of keys) {
             expect(
                 Math.abs(at[key]! - numericValue(group.last[key])),
-                caseMessage(seed, `value at t=${time} key "${key}"`)
+                caseMessage(seed, `value at t=${after} key "${key}"`)
             ).toBeLessThanOrEqual(KEYFRAME_TOLERANCE)
         }
 
@@ -389,7 +426,7 @@ function worstIntervalRatio(
     c: Case,
     keyframes: readonly WebAniKeyframe[]
 ): { ratio: number; detail: string } {
-    const groups = groupByOffset(keyframes)
+    const groups = groupByOffset(keyframes, c.duration)
     let worst = { ratio: 0, detail: 'no interval' }
     for (let g = 0; g < groups.length - 1; g++) {
         const ta = c.timeOf(groups[g]!.offset)
@@ -464,13 +501,30 @@ describe('P4: RAF/WAAPI agreement', () => {
     it('matches at keyframes and inside intervals (100 record trees)', () => {
         for (let i = 0; i < CASES; i++) {
             const c = buildCase(BASE_SEED + i)
-            checkKeyframes(c, groupByOffset(c.keyframes))
+            checkKeyframes(c, groupByOffset(c.keyframes, c.duration))
             const worst = worstIntervalRatio(c, c.keyframes)
             expect(
                 worst.ratio,
                 caseMessage(c.seed, worst.detail)
             ).toBeLessThanOrEqual(1)
         }
+    })
+
+    it('matches on loops the RAF engine represents once (100 record trees)', () => {
+        let folded = 0
+        for (let i = 0; i < CASES; i++) {
+            const c = buildCase(BASE_SEED + 7000 + i)
+            if (planLoops(c.line['_baseExecutionPlan'] as object).length > 0) {
+                folded++
+            }
+            checkKeyframes(c, groupByOffset(c.keyframes, c.duration))
+            const worst = worstIntervalRatio(c, c.keyframes)
+            expect(
+                worst.ratio,
+                caseMessage(c.seed, worst.detail)
+            ).toBeLessThanOrEqual(1)
+        }
+        expect(folded, 'trees with a folded loop').toBeGreaterThan(CASES / 10)
     })
 
     it.each<Mutation>([
