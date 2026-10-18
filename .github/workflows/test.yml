@@ -2,37 +2,35 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         name: Checkout
-
-      - uses: actions/setup-node@v3
-        name: Setup Node.js
-        with:
-          node-version: 22
 
       - uses: pnpm/action-setup@v4
         name: Setup PNPM
         with:
-          # Skip the default install so we can do our own
+          # version comes from the `packageManager` field
           run_install: false
 
+      - uses: actions/setup-node@v4
+        name: Setup Node.js
+        with:
+          node-version: 22
+          cache: pnpm
+
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      - name: Format checking
-        run: pnpm check
-
-      - name: Type checking
-        run: pnpm ts:typecheck
-
-      - name: Build
-        run: pnpm build
-
-      - name: Test
-        run: pnpm test
+      # biome check -> typecheck -> build -> tests with coverage thresholds
+      - name: Verify
+        run: pnpm test:ci

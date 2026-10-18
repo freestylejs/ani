@@ -13,7 +13,7 @@
     },
     "files": ["dist"],
     "main": "./dist/index.js",
-    "module": "./dist/index.mjs",
+    "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
         "./*": {
@@ -44,7 +44,12 @@
         "ts:typecheck": "tsc --noEmit --skipLibCheck"
     },
     "dependencies": {
-        "@freestylejs/ani-core": "workspace:^",
+        "@freestylejs/ani-core": "workspace:^"
+    },
+    "peerDependencies": {
+        "solid-js": ">=1.8.0"
+    },
+    "devDependencies": {
         "solid-js": "^1.9.10"
     }
 }
