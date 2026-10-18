@@ -3,6 +3,7 @@
     "pages": [
         "dynamic-animations",
         "custom_timing_function",
-        "event-management"
+        "event-management",
+        "building-bindings"
     ]
 }

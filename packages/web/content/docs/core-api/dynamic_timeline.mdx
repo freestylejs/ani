@@ -1,9 +1,11 @@
 ---
 title: dynamicTimeline (RequestAnimationFrame)
-description: The main controller that runs an animation, manages its state, and controls its playback. Based on RequestAnimationFrame.
+description: The controller that runs an animation tree frame by frame, manages its state and controls its playback.
 ---
 
-The `dynamicTimeline` controller is the execution engine for any animation you create. It takes a root animation node (like a `sequence` or `parallel` block), manages the animation's state, and controls its playback.
+import { Callout } from 'fumadocs-ui/components/callout';
+
+The `dynamicTimeline` (alias `rafTimeline`) is the execution engine for any animation you create. It takes a root animation node (like a `sequence` or `parallel` block), computes the animation state on every frame of a [clock](/en/docs/core-api/clock), and notifies subscribers through `onUpdate`.
 
 ### Example
 
@@ -21,32 +23,157 @@ const myAnimation = a.sequence([
 const myTimeline = a.dynamicTimeline(myAnimation);
 
 // 3. Listen for updates to apply the animated values to your UI.
-const unsubscribe = myTimeline.onUpdate(({ state }) => {
+const unsubscribe = myTimeline.onUpdate(({ state, status }) => {
   // `state` is strongly typed as { opacity: number, x: number }
-  console.log(`Opacity: ${state.opacity}, X: ${state.x}`);
-  // e.g., element.style.opacity = state.opacity;
-  // e.g., element.style.transform = `translateX(${state.x}px)`;
+  console.log(`Opacity: ${state.opacity}, X: ${state.x} (${status})`);
 });
 
 // 4. Play the animation from a starting state.
 myTimeline.play({ from: { opacity: 0, x: 0 } });
+
+// 5. Release the timeline when it is no longer needed.
+// myTimeline.dispose();
 ```
 
 ### Usage & Concepts
 
 #### Overview
 
-The `dynamicTimeline` controller is the execution engine. It takes a static animation tree and brings it to life. It's responsible for calculating the animation's state at any given time, handling playback (play, pause, seek), and emitting update events. The key design principle is the separation of the animation's definition (the node tree) from its execution and values (the timeline). This makes animations reusable and dynamic.
+The timeline separates the animation definition (the node tree) from its execution and values. When you call `play()`, it compiles the tree into per-property lanes once, then advances them from the clock.
 
-When you call `.play()`, the timeline traverses the animation node tree and builds a flat list of "segments". Each segment represents a single `ani` call with its calculated start time, end time, and timing function. On each frame, the timeline calculates the elapsed time, finds the active segment, computes the interpolated value, and notifies subscribers via `onUpdate`.
+-   **Per-frame cost** depends on the number of animated properties, not on how many segments the tree has or how many already finished.
+-   **Subscribers** of one notification receive the **same** `state` object. Treat it as read-only.
+-   **Errors thrown by an `onUpdate` callback** do not affect other callbacks or the timeline. They are rethrown asynchronously (they surface as uncaught errors).
+
+#### Lifecycle
+
+`status` is one of four values:
+
+| Status | Meaning | Entered by |
+| :--- | :--- | :--- |
+| `IDLE` | Nothing is playing and no value exists. | Creation, `reset()` |
+| `PLAYING` | Subscribed to the clock and advancing. | `play()`, `resume()` |
+| `PAUSED` | Holding its value, not on the clock. | `pause()`, `seek()` |
+| `ENDED` | Reached the end (after all repeats). Emitted **exactly once** per run. | Natural end |
+
+-   `pause()` only acts on `PLAYING` and `resume()` only acts on `PAUSED`. In any other status they do nothing.
+-   `seek(time)` clamps `time` to `[0, duration]`, **pauses** a `PLAYING` or `ENDED` timeline at that time and notifies once. Call `resume()` to continue from there. Calling `seek()` before the first `play()` does nothing.
+-   `reset()` returns to `IDLE`, drops the value (`getCurrentValue()` returns `null`) and restores the base `duration`. Subscribers receive one `IDLE` notification with an empty state, unless `reset(false)`.
+-   `dispose()` stops the timeline for good: it leaves the clock, removes every `onUpdate` callback, and `play()` / `resume()` become no-ops. It is idempotent.
+
+#### Validation
+
+Malformed input **throws synchronously from `play()`** and leaves the timeline untouched. Nothing can throw later inside the clock.
+
+-   A property animated by the tree is missing from `from`.
+-   Array and record shapes are mixed (array `to` with a record `from`, or the reverse), or lengths differ.
+-   A record `timing` has no function for an animated property.
+-   `from`, `to` or `velocity` contain a non-finite number.
+-   A segment duration is negative or not finite. `delay` is negative or not finite.
+-   `keyframes` or `durations` do not match the number of `ani` nodes.
+
+#### Interrupting a running animation
+
+Calling `play()` on a `PLAYING` timeline interrupts it (pass `canBeIntercepted = false` to ignore the call instead).
+
+-   **Velocity carries over.** Without `config.velocity`, the new run starts from the current [velocity](#getcurrentvelocity), so dynamic springs retarget without a visible kink.
+-   Pass `velocity: { x: 0 }` (same shape as `from`, partial for records) to start from rest.
+-   `play()` from `IDLE`, `PAUSED` or `ENDED` starts from zero velocity.
+
+#### Values and velocity
+
+-   `getCurrentValue()` returns a **frozen snapshot** that is stable until the next frame. It never aliases the `from` object you passed to `play()`. It returns `null` before the first `play()` and after `reset()`.
+-   `getCurrentVelocity()` returns per-property velocity in units per second: the integrator velocity for dynamic springs, otherwise the finite difference of the last frame. It returns zeros unless the status is `PLAYING`, and `null` before the first advanced frame.
+
+#### Repeat, delay and time
+
+-   `repeat` is the number of **additional** runs (`Infinity` for endless). The frame overshoot at the end of a run is carried into the next one, so repeats do not drift.
+-   `delay` is in **milliseconds** and holds the animation before the first frame.
+-   Progress per frame is clamped by the clock's `maxDeltaTime` (100 ms by default). See [clock](/en/docs/core-api/clock).
+-   An animation is considered finished within `1e-9` seconds of its end (`END_TOLERANCE`).
+
+#### Same-property overlap
+
+When several segments animate the same property at overlapping times (`parallel`, `stagger`, nested trees), the segment that **started most recently** produces the value. If two start together, the later one in declaration order wins.
+
+-   Each segment's `from` is the property's value **at the segment's start time**, captured once. It is never a moving target.
+-   The rule is identical for record and array shapes.
 
 #### Best Practices
 
--   **Do** create one timeline per independent animation.
--   **Do** reuse timelines when you need to play the same animation structure with different starting values.
--   **Don't** create a new timeline inside a render loop or frequently. Create it once and store it.
+-   **Do** create one timeline per independent animation and reuse the same node tree for many timelines.
+-   **Do** call `dispose()` for timelines you create when their owner goes away. Bindings dispose only what they create.
+-   **Don't** create a new timeline inside a render loop. Create it once and store it.
+-   **Don't** call `update(dt)` yourself outside tests. The clock drives it.
+
+### API Reference
+
+#### Factory
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `rootNode` | `AnimationNode<G>` | Root of the animation tree. |
+| `clock` | `AnimationClockInterface` | (Optional) Clock that drives the timeline. Defaults to the shared [`AnimationClock`](/en/docs/core-api/clock). |
+
+#### `play(config, canBeIntercepted = true)`
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `from` | `AniGroup<G>` | Start values. Every animated property must be present. Copied at `play()`. |
+| `repeat` | `number` | Additional runs. `Infinity` loops forever. |
+| `delay` | `number` | Milliseconds to wait before starting. |
+| `keyframes` | `Array<G \| 'keep'>` | Override each `ani` node's `to`. See [Dynamic Animations](/en/docs/core-api/advanced/dynamic-animations). |
+| `durations` | `Array<number \| 'keep'>` | Override each `ani` node's duration (seconds). |
+| `velocity` | `Partial<G>` | Initial velocity (units per second) that seeds dynamic springs. |
+| `propertyResolver` | `Resolver<G>` | Maps a property to a custom style key and value. See [style resolution](/en/docs/core-api/advanced/building-bindings). |
+| `context` | `Ctx` | Free-form value stored in `currentConfig`. |
+
+#### Members
+
+| Member | Description |
+| :--- | :--- |
+| `status` | `'IDLE' \| 'PLAYING' \| 'PAUSED' \| 'ENDED'`. |
+| `duration` | Total duration in seconds of the current plan (reflects `durations` overrides). |
+| `currentConfig` | The config of the current run, or `null`. |
+| `pause()` / `resume()` | Pause a `PLAYING` timeline, resume a `PAUSED` one. |
+| `seek(time)` | Jump to `time` seconds and pause. |
+| `reset(notify = true, unsubscribeClock = true)` | Return to `IDLE`. |
+| `dispose()` | Stop for good and release everything. |
+| `onUpdate(cb)` | Subscribe to `{ state, status }`. Returns an unsubscribe function. |
+| `getCurrentValue()` | Frozen snapshot or `null`. |
+| `getCurrentVelocity()` | Velocity group or `null`. |
+
+#### Type Definitions
+
+```typescript
+type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED';
+
+type OnUpdateCallback<G extends Groupable> = (current: {
+  state: AniGroup<G>;   // shared by all callbacks of one notification
+  status: TimelineStatus;
+}) => void;
+
+interface RafTimelineConfig<G extends Groupable, Ctx = any> {
+  from: G;
+  repeat?: number;
+  delay?: number; // ms
+  keyframes?: Array<G | 'keep'>;
+  durations?: Array<number | 'keep'>;
+  velocity?: Partial<G>;
+  propertyResolver?: Resolver<G>;
+  context?: Ctx;
+}
+
+function rafTimeline<G extends Groupable, Ctx = any>(
+  rootNode: AnimationNode<G>,
+  clock?: AnimationClockInterface
+): RafAniTimeline<G, Ctx>;
+```
 
 ### Related Components
 
 -   [`ani`](/en/docs/core-api/ani) - The basic building block for animations controlled by a timeline.
+-   [`clock`](/en/docs/core-api/clock) - What drives `dynamicTimeline` frame by frame.
+-   [`createStates`](/en/docs/core-api/states) - A state machine of timelines.
 -   [`Dynamic Animations`](/en/docs/core-api/advanced/dynamic-animations) - For creating interactive animations.
+-   [`Large-scale usage`](/en/docs/guides/performance) - Costs, sharing and ownership rules.

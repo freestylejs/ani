@@ -42,6 +42,14 @@ myTimeline.play({ from: { opacity: 0, x: 50 } });
 -   **Do** use `sequence` for multi-stage animations, like an element fading in and then moving.
 -   **Don't** use `sequence` if you just need two properties to animate at the same time. Use `parallel` for that.
 
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `children` | `AnimationNode[]` | Nodes played in order. All share one data shape. |
+| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
+| `id` | `string` | (Optional) Identifier of the node. |
+
 ### Related Components
 
 -   [`parallel`](/en/docs/core-api/parallel) - To run animations simultaneously instead of in order.

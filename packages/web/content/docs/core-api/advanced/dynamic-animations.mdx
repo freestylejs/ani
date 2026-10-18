@@ -15,18 +15,22 @@ dynamicTimeline.play(config: {
   keyframes?: Array<G | 'keep'>;
   durations?: Array<number | 'keep'>;
   repeat?: number;
+  delay?: number;
+  velocity?: Partial<G>;
 });
 ```
 
 -   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes.
--   `durations`: An array of `duration` values (in seconds) that override the original durations. Overridden durations are reflected in the segment schedule and the timeline's total `duration`, so playback ends when the shortened (or extended) plan completes.
--   `repeat`: A number indicating how many times the animation should repeat. Use `Infinity` for an endless loop.
+-   `durations`: An array of `duration` values (in seconds) that override the original durations. Overridden durations are reflected in the segment schedule and the timeline's total `duration`, so playback ends when the shortened (or extended) plan completes. `reset()` restores the base duration.
+-   `repeat`: The number of additional runs. Use `Infinity` for an endless loop.
+-   `delay`: Milliseconds to wait before the first frame.
+-   `velocity`: Initial velocity per property (units per second) for [`dynamicSpring`](/en/docs/core-api/timing). Without it, interrupting a playing timeline continues from its current velocity.
 
 ### How it Works
 
 When you call `play` with a `keyframes` or `durations` array, the library ignores the corresponding static values in your `ani` nodes. Instead, it maps the values from the array to each `ani` node in the order they appear in the animation tree.
 
-**The number of items in the arrays must exactly match the number of `ani` nodes in your animation structure.** You can use the string `'keep'` to skip an override for a specific node.
+**The number of items in the arrays must exactly match the number of `ani` nodes in your animation structure.** A mismatch throws from `play()`. Use the string `'keep'` to skip an override for a specific node. A `delay()` counts as one node, and so does a segment that [`parallel`](/en/docs/core-api/parallel) kept as a hold.
 
 ### Example Usage
 

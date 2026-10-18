@@ -28,10 +28,22 @@ myTimeline.play({ from: { opacity: 0, x: 0 } });
 
 `delay` is a simple utility node that does nothing for a specified `duration`. Its primary purpose is to insert pauses within a `sequence` composition. It is a "leaf" node, similar to `ani`, but it does not affect any values.
 
+A `delay` **holds every property** for its duration, in record and array timelines alike. The values stay where the previous segment left them.
+
+`duration` must be a finite number `>= 0` (seconds).
+
 #### Best Practices
 
 -   **Do** use `delay` inside a `sequence` to create a pause between two animations.
--   **Don't** use `delay` inside a `parallel` block, as it will have no effect on other parallel animations. It will simply extend the total duration of the `parallel` block if it is the longest item.
+-   **Do** use `delay` at the start of a branch of a `parallel` block to offset that branch.
+-   **Don't** expect `delay` inside a `parallel` block to pause the *other* branches. It only extends the total duration of the block when it is the longest item. A trailing `delay` counts toward the duration.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `duration` | `number` | Seconds, finite and `>= 0`. |
+| `id` | `string` | (Optional) Identifier of the node. |
 
 ### Related Components
 

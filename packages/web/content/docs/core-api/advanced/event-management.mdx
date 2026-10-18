@@ -58,6 +58,21 @@ Handler keys follow the `on` + capitalized event name convention (e.g. `onMoused
 -   **Do** call `cleanupAll()` when your component or element is destroyed to prevent memory leaks.
 -   **Don't** create multiple `EventManager` instances for the same element; one is sufficient.
 
+### API Reference
+
+| Member | Description |
+| :--- | :--- |
+| `new EventManager(supportedEvents)` | `supportedEvents` is the list of DOM event names the manager handles. |
+| `bind(element)` | Binds the manager to a DOM element. Call it before `add` / `attach`. |
+| `setAnimeGetter(getter)` | Provides the context passed as the first argument of every handler. |
+| `add(name, listener, [options])` | Adds a listener. Adding the same event again **replaces** the previous listener. |
+| `attach(handlers)` | Attaches a map of `onEventName` handlers. Keys must start with `on` (otherwise a `TypeError` is thrown). |
+| `cleanupOne(name)` | Removes one listener (using the same capture flag it was added with). Returns whether it existed. |
+| `cleanupAll()` | Removes every registered listener. |
+| `EventManager.getEvtKey('onKeyDown')` | Returns the DOM event name (`keydown`). |
+
+The framework bindings create and clean up an `EventManager` for you through the `events` option.
+
 ### Related Components
 
 -   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The typical animation context provided to the `EventManager`.

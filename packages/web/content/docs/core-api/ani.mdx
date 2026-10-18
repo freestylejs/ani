@@ -36,10 +36,41 @@ myTimeline.play({ from: { x: 0 } });
 
 The `ani` function is a **"leaf" node in the animation tree**, meaning it doesn't contain other animation nodes. All complex animations are built by composing these `ani` nodes inside "branch" nodes like `sequence` or `parallel`. The shape of the `to` object is what enforces type safety throughout the animation tree.
 
+#### Validation
+
+-   `duration` must be a finite number `>= 0` (seconds). Anything else throws a `RangeError` when the node is created.
+-   `to` values must be finite numbers. Non-finite values throw a `TypeError` when you call `play()` on a timeline.
+-   Every property in `to` must exist in the `from` passed to `play()`.
+
+#### Timing
+
+`timing` accepts one [timing function](/en/docs/core-api/timing) for all properties. Record shapes also accept one function per property (every animated property needs one), and array shapes accept an array with one function per value.
+
+```typescript
+a.ani({
+  to: { x: 100, opacity: 1 },
+  duration: 1,
+  timing: {
+    x: a.timing.spring({ m: 1, k: 120, c: 14 }),
+    opacity: a.timing.linear(),
+  },
+});
+```
+
 #### Best Practices
 
 -   **Do** use `ani` for any individual tween.
+-   **Do** share one `ani` node (and its tree) between many timelines. Nodes are immutable.
 -   **Don't** try to animate multiple, unrelated properties in a single `ani` call if they belong to different conceptual animations. Instead, use multiple `ani` nodes within a `parallel` block.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `props.to` | `G` | Target values. Its shape (record or array) defines the animated properties. |
+| `props.duration` | `number` | Seconds, finite and `>= 0`. |
+| `props.timing` | `TimingFunction` or per-property functions | Defaults to `linear()`. |
+| `id` | `string` | (Optional) Identifier of the node. |
 
 ### Related Components
 

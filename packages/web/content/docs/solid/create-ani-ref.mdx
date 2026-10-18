@@ -15,19 +15,19 @@ import { createMemo } from "solid-js";
 const InteractiveBox = () => {
   // 1. Define the animation and create a timeline.
   const myTimeline = createMemo(() =>
-    a.dynamicTimeline(a.ani({ to: { x: 500, rotate: 360 }, duration: 2 }))
+    a.dynamicTimeline(a.ani({ to: { translateX: 500, rotate: 360 }, duration: 2 }))
   );
 
   // 2. Use the primitive to get the ref callback and the controller.
   const [ref, controller] = createAniRef({
     timeline: myTimeline,
-    initialValue: { x: 0, rotate: 0 },
+    initialValue: { translateX: 0, rotate: 0 },
   });
 
   // 3. The component only renders once. The animation is applied directly to the DOM.
   return (
     <>
-      <button onClick={() => controller.play({ from: { x: 0, rotate: 0 } })}>
+      <button onClick={() => controller.play({ from: { translateX: 0, rotate: 0 } })}>
         Play
       </button>
       <div
@@ -43,7 +43,14 @@ const InteractiveBox = () => {
 
 #### Overview
 
-The `createAniRef` primitive is the key to smooth, 60fps animations in Solid. It returns a `ref` callback and the timeline controller. On each animation update, it converts the values to CSS styles and applies them directly to the element's style property.
+The `createAniRef` primitive is the key to smooth, 60fps animations in Solid. It returns a `ref` callback and the timeline controller. On each animation update, it converts the values to CSS styles (see [styles](/en/docs/core-api/advanced/building-bindings)) and applies them directly to the element's style property. Custom properties (`--x`) returned by a `propertyResolver` are written with `setProperty`.
+
+#### Lifecycle
+
+-   **Late refs.** The element is tracked in a signal, so a ref that is attached later (for example inside `Show`) receives the initial style and event handlers when it is set.
+-   **Never stale.** `timeline` is an accessor. When it changes, the old timeline is detached and the new one is bound. The returned controller always targets the **current** timeline and forwards every member, including `canBeIntercepted`.
+-   **Cleanup.** When the owner is disposed, the subscription and all listeners are removed and the element reference is dropped.
+-   **Ownership.** The primitive never disposes the timeline you pass. Call `timeline.dispose()` yourself if you created it.
 
 #### Example: Interactivity
 
@@ -55,10 +62,10 @@ const [ref, controller] = createAniRef({
   timeline: myTimeline,
   events: {
     onMousedown: (ctx, event) => {
-      // The context `ctx` is the timeline controller.
-      ctx.play({ from: { x: event.clientX } });
+      // `ctx` is the timeline controller plus `ctx.current`, the latest value.
+      ctx.play({ from: { translateX: event.clientX } });
     },
-    onMouseUp: (ctx) => {
+    onMouseup: (ctx) => {
       ctx.pause();
     },
   },
@@ -70,6 +77,17 @@ const [ref, controller] = createAniRef({
 -   **Do** use `createAniRef` for animating CSS properties like `transform` and `opacity`.
 -   **Do** use it for complex, interactive animations that need to respond to user input at 60fps.
 -   **Don't** use `createAniRef` if you need the animated value to render text content or pass to another component's props. Use `createAni` for that.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `props.timeline` | `() => RafAniTimeline<G>` | Accessor of the timeline to bind. |
+| `props.initialValue` | `AniGroup<G>` | (Optional) Style applied before the timeline has a value, and restored by `reset()`. |
+| `props.events` | `EventHandlerRegistration` | (Optional) `onClick`-style handlers. Receive `(ctx, event)`. |
+| `props.cleanupEvents` | `boolean` | (Optional, default `true`) Remove listeners on cleanup. |
+
+Returns `readonly [ref, controller]`: a ref callback for the element and the timeline controller.
 
 ### Related Components
 

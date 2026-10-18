@@ -15,20 +15,20 @@ This primitive applies animation styles directly to a DOM element using the `use
   // 1. Define the animation structure and timeline.
   const myTimeline = a.dynamicTimeline(
     a.sequence([
-      a.ani({ to: { x: 500, rotate: 360 }, duration: 1 }),
-      a.ani({ to: { x: 0, rotate: 0 }, duration: 1 }),
+      a.ani({ to: { translateX: 500, rotate: 360 }, duration: 1 }),
+      a.ani({ to: { translateX: 0, rotate: 0 }, duration: 1 }),
     ])
   );
 
   // 2. Use the utility to get the action and controller.
   const [refAction, controller] = useAniRef({
     timeline: myTimeline,
-    initialValue: { x: 0, rotate: 0 },
+    initialValue: { translateX: 0, rotate: 0 },
     // 3. Add event handlers for interactivity.
     events: {
       onMousedown: (ctx, event) => {
-        // The context `ctx` contains the current animation value and the controller.
-        ctx.play({ from: { x: ctx.x, rotate: ctx.rotate } });
+        // `ctx` is the timeline controller plus `ctx.current`, the latest value.
+        ctx.play({ from: ctx.current ?? { translateX: 0, rotate: 0 } });
       },
       onMouseup: (ctx) => {
         ctx.pause();
@@ -38,7 +38,7 @@ This primitive applies animation styles directly to a DOM element using the `use
 </script>
 
 <!-- 4. Bind the action to the element -->
-<div use:refAction style="width: 100px; height: 100px; background: blue;" on:click={() => controller.play({ from: { x: 0, rotate: 0 } })} />
+<div use:refAction style="width: 100px; height: 100px; background: blue;" on:click={() => controller.play({ from: { translateX: 0, rotate: 0 } })} />
 ```
 
 ### Usage & Concepts
@@ -47,13 +47,33 @@ This primitive applies animation styles directly to a DOM element using the `use
 
 The `useAniRef` primitive is designed for performance. It takes a configuration object (`AniRefProps`) and returns a Svelte `Action` and the timeline controller. When the action is applied to an element, it directly manipulates its styles on each animation frame, avoiding Svelte's virtual DOM overhead.
 
-Event handlers passed to the `events` property receive a context object containing both the current animation value and the timeline controller, making it easy to build complex interactions.
+Event handlers passed to the `events` property receive a context object: the timeline controller plus `current`, the latest animation value.
+
+#### Lifecycle
+
+-   **Timeline may be a store.** `timeline` can be a timeline or a `Readable` of one. Swaps are followed: the old timeline is detached and the new one's current value is applied at once.
+-   **One action, many nodes.** The returned action can be applied to several nodes. Each node keeps its own subscription and listeners; `controller.reset()` restyles all live nodes; destroying one node leaves the others bound.
+-   **Controller.** It always targets the current timeline and forwards every member, including `canBeIntercepted`.
+-   **Cleanup.** `destroy()` removes the node's subscription and listeners.
+-   **Styles.** Custom properties (`--x`) from a `propertyResolver` are written with `setProperty` (see [styles](/en/docs/core-api/advanced/building-bindings)).
+-   **Ownership.** The action never disposes the timeline you pass. Call `timeline.dispose()` yourself if you created it.
 
 #### When to Use
 
 -   **Do** use `useAniRef` for high-performance animations of CSS properties like `transform` and `opacity`.
 -   **Do** use it for complex, interactive animations driven by user input at 60fps.
 -   **Don't** use `useAniRef` when you need to read the animated values elsewhere in your component. Use `useAni` for that.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `timeline` | `RafAniTimeline<G> \| Readable<RafAniTimeline<G>>` | The timeline to bind. |
+| `initialValue` | `AniGroup<G>` | (Optional) Style applied before the timeline has a value, and restored by `reset()`. |
+| `events` | `EventHandlerRegistration` | (Optional) `onClick`-style handlers. Receive `(ctx, event)`. |
+| `cleanupEvents` | `boolean` | (Optional, default `true`) Remove listeners on destroy. |
+
+Returns `readonly [action, controller]`.
 
 ### Related Components
 

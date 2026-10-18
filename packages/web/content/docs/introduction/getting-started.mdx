@@ -24,20 +24,20 @@ const MyAnimatedComponent = () => {
     () =>
       a.dynamicTimeline(
         // Animation structure.
-        // >> move   to x: 500
-        // >> return to x: 0
+        // >> move   to translateX: 500
+        // >> return to translateX: 0
         a.sequence([
-          a.ani({ to: { x: 500 }, duration: 0.8 }),
-          a.ani({ to: { x: 0 }, duration: 1.2 }),
+          a.ani({ to: { translateX: 500 }, duration: 0.8 }),
+          a.ani({ to: { translateX: 0 }, duration: 1.2 }),
         ]),
-      )
+      ),
     []
   );
 
   // 3. Connect the timeline to the ref.
   const controller = useAniRef(ref, {
     timeline: myTimeline,
-    initialValue: { x: 0 }, // Set the initial animation value.
+    initialValue: { translateX: 0 }, // Set the initial animation value.
   });
 
   return (
@@ -51,7 +51,7 @@ const MyAnimatedComponent = () => {
 
       {/* 5. Use the controller to play the animation. */}
       <button
-        onClick={() => controller.play({ from: { x: 0 } })}
+        onClick={() => controller.play({ from: { translateX: 0 } })}
       >
         Play
       </button>
@@ -129,8 +129,8 @@ You define an animation's structure using **composition nodes** like `sequence`,
 ```ts
 // This structure is a reusable blueprint.
 const myAnimation = a.sequence([
-  a.ani({ to: { x: 500 }, duration: 0.8 }),
-  a.ani({ to: { x: 0 }, duration: 1.2 }),
+  a.ani({ to: { translateX: 500 }, duration: 0.8 }),
+  a.ani({ to: { translateX: 0 }, duration: 1.2 }),
 ]);
 ```
 </Step>
@@ -154,14 +154,21 @@ Finally, you use a framework-specific primitive (like `useAniRef` for React) to 
 const controller = useAniRef(ref, { timeline: myTimeline });
 
 // ...and play it on demand.
-controller.play({ from: { x: 0 } });
+controller.play({ from: { translateX: 0 } });
 ```
 </Step>
 </Steps>
+
+## Ownership
+
+-   You create timelines, so you own them. Call `timeline.dispose()` when their owner goes away. The bindings only **detach** from timelines you pass in.
+-   Bindings that create their own state machine (`useAniStates`, `createAniStates`) dispose it automatically.
+-   Property names such as `translateX`, `rotate`, `scale` and `opacity` map to CSS (see [styles](/en/docs/core-api/advanced/building-bindings)). A name like `x` is not a CSS property: it is written as a style key `x`.
 
 ## Next Steps
 
 You've successfully created your first animation! Now you're ready to dive deeper.
 
+-   Read **[Large-scale usage](/en/docs/guides/performance)** before animating many elements.
 -   Explore the **[Core Concepts](/en/docs/introduction/core-concepts)** to understand the foundational ideas of the library.
 -   Jump into the **[Core API](/en/docs/core-api/dynamic_timeline)** documentation to see all the available animation primitives.

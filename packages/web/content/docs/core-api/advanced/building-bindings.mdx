@@ -1,0 +1,82 @@
+---
+title: Styles & Building Bindings
+description: How animation values become CSS, and the helpers to write your own framework binding.
+---
+
+The framework bindings are thin layers over three core pieces. They are public, so you can use them to integrate Ani with any other UI layer.
+
+### From values to CSS: `createStyleSheet`
+
+`createStyleSheet(values, resolver?)` converts an animation group (`{ translateX: 100, opacity: 0.5 }`) into a style object.
+
+| Property | Output |
+| :--- | :--- |
+| `translate`, `translateX/Y/Z` | `translateX(100px)` (px) |
+| `rotate`, `rotateX/Y/Z`, `skew`, `skewX/Y` | `rotate(45deg)` (deg) |
+| `scale`, `scaleX/Y/Z` | `scale(1.2)` (unitless) |
+| `width`, `height`, `top`, `left`, `margin*`, `padding*`, `borderRadius`, ... | `100px` |
+| `opacity`, `zIndex`, `lineHeight`, `fontWeight` | unitless number |
+| anything else | the number as is |
+
+All transform functions are joined in key order into **one** `transform` string.
+
+> A property such as `x` is **not** a transform shorthand: it is passed through as a style key named `x`. Use `translateX`, or map it with a resolver.
+
+#### Custom `propertyResolver`
+
+Pass `propertyResolver` to `play()` to control the style key and value of a property. The returned key may be a CSS custom property (`--progress`) or a hyphenated name.
+
+```typescript
+timeline.play({
+  from: { progress: 0 },
+  propertyResolver: {
+    progress: (value) => ({ key: "--progress", value: `${value}%` }),
+  },
+});
+```
+
+### Writing styles: `applyStyleSheet`
+
+`applyStyleSheet(element, style)` writes a style object onto an element:
+
+-   camelCase keys (`opacity`, `transform`) are assigned as properties.
+-   `--custom` and hyphenated keys (`--progress`, `background-color`) go through `style.setProperty`. Plain property assignment silently ignores them.
+
+```typescript
+import { applyStyleSheet, createStyleSheet } from "@freestylejs/ani-core";
+
+const unsubscribe = timeline.onUpdate(({ state }) => {
+  applyStyleSheet(element, createStyleSheet(state, timeline.currentConfig?.propertyResolver));
+});
+```
+
+### A stable controller: `createTimelineController`
+
+State machines replace their timeline on every transition. `createTimelineController(getTimeline, hooks?)` returns a facade that forwards **every** public member of the timeline to whichever timeline `getTimeline()` returns *at call time*, so references handed to your users never go stale.
+
+```typescript
+import { createStates, createTimelineController } from "@freestylejs/ani-core";
+
+const states = createStates({ /* ... */ });
+const controller = createTimelineController(() => states.timeline(), {
+  onPlay: (config) => remember(config.from), // runs before each forwarded play()
+  onReset: () => restoreInitialStyle(),      // runs after each forwarded reset()
+});
+
+controller.play({ from: { opacity: 0 } }); // plays on the current timeline
+```
+
+-   The facade is compile-time exhaustive: adding a public member to the timeline without forwarding it fails type checking of the library.
+-   `dispose()` is forwarded as is. A binding must only call it on timelines it created itself.
+
+### Binding checklist
+
+-   **Subscribe synchronously** to timeline changes, then resync from `states.timeline()`, so a transition issued before the subscription is not missed.
+-   **Dispose what you create** (state controllers, timelines), and only **detach** from what the user passes in.
+-   **Never write to the DOM on the server.** Subscribe after mount. See [SSR](/en/docs/guides/ssr).
+-   **Write styles directly** (`applyStyleSheet`) instead of re-rendering per frame. See [large-scale usage](/en/docs/guides/performance).
+
+### Related Components
+
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - Provides `currentConfig`, `onUpdate` and `getCurrentValue`.
+-   [`createStates`](/en/docs/core-api/states) - The state machine whose timeline the controller follows.

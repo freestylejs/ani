@@ -33,12 +33,12 @@ const animationTree = a.loop(
       a.parallel([
           a.ani({ to: { translateX: 100 }, duration: 1.5 }),  // Translate X
           a.sequence([
-            a.delay(0.75)                                     // Delay 0.75s
+            a.delay(0.75),                                    // Delay 0.75s
             a.ani({ to: { rotate: 180 }, duration: 0.75 }),   // Rotate
           ]),
           a.sequence([
-            a.delay(0.75)                                     // Delay 0.75s
-            a.ani({ to: { translateX: 20 }, duration: 1.5 }), // Skew
+            a.delay(0.75),                                    // Delay 0.75s
+            a.ani({ to: { skewX: 20 }, duration: 1.5 }),      // Skew
           ]),
       ]),
       
@@ -46,12 +46,12 @@ const animationTree = a.loop(
       a.parallel([
           a.ani({ to: { translateX: 0 }, duration: 1 }),      // Translate X
           a.sequence([
-            a.delay(0.5)                                      // Delay 0.5s
+            a.delay(0.5),                                     // Delay 0.5s
             a.ani({ to: { translateY: 50 }, duration: 1 }),   // Translate Y
           ]),
       ]),
     ],
-    0.75, // Offset: Wait 0.5s before starting the second group
+    0.75, // Offset: the second group starts 0.75s after the first one started
   ),
   3 // Loop: Repeat the entire sequence 3 times
 )
@@ -73,14 +73,13 @@ timeline.play(targetElement, {
 })
 ```
 
-## 5x Smaller Bundle Size, but Powerful.
+## Small Bundle Size, but Powerful.
 
-It is also much smaller compared to other animation libraries.
+The whole core library (every export, bundled and minified with esbuild) is about **11 kB gzipped** and the package is tree-shakeable (`sideEffects: false`). Check the current size of any release on [bundlephobia](https://bundlephobia.com/package/@freestylejs/ani-core).
 
-- `ani` = [**5.6kB**](https://bundlephobia.com/package/@freestylejs/ani-core)
-- `motion` = 31.1kB
-- `anime.js` = 30.8kB
-- `gsap` = 26.6kB
+## Built for Scale
+
+Thousands of animated elements, many mounts and unmounts, server rendering and long-running apps are first-class use cases. Read [Large-scale usage](/en/docs/guides/performance).
 
 ## Core Features
 
@@ -100,7 +99,7 @@ It is also much smaller compared to other animation libraries.
   <Card
     icon={<ZapIcon />}
     title="High Performance"
-    description="Animate styles directly on the DOM, bypassing framework render cycles for buttery-smooth, 60fps animations, even for complex, interactive scenes."
+    description="Animate styles directly on the DOM, bypassing framework render cycles. One shared frame loop and per-frame cost that does not grow with the size of the animation tree."
     href="/en/docs/react/use-ani-ref"
   />
   <Card

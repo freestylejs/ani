@@ -2,6 +2,7 @@
     "pages": [
         "introduction",
         "core-api",
+        "guides",
         "---Framework Bindings---",
         "react",
         "solid",

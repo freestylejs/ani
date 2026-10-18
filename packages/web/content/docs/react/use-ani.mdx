@@ -40,11 +40,28 @@ const Counter = () => {
 
 The `useAni` hook acts as a bridge between the `@freestylejs/ani-core` engine and React's render cycle. It uses React's `useSyncExternalStore` internally to efficiently subscribe to the external animation state. On each frame, it provides the updated animation value, triggering a re-render.
 
+#### Behavior
+
+-   `initialValue` is read on the **first render only**. It is the value shown until the timeline produces one, and the value rendered on the server.
+-   The hook follows `timeline` identity changes: it unsubscribes from the old timeline and shows the new timeline's current value.
+-   The returned controller is stable per `timeline`.
+-   It subscribes after mount, so server rendering retains nothing. See [SSR](/en/docs/guides/ssr).
+-   It never disposes the timeline you pass.
+
 #### When to Use
 
 -   **Do** use `useAni` when the animated values need to be part of React's state and render flow.
 -   **Do** use it for animations that affect text content, attributes, or props of other components.
 -   **Don't** use `useAni` for high-frequency style updates (like `transform` or `opacity`). Use `useAniRef` for those cases to avoid performance overhead.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `timeline` | `RafAniTimeline<G>` | The timeline to read. |
+| `initialValue` | `AniGroup<G>` | Value before the timeline has one (first render only). |
+
+Returns `readonly [value, controller]`: the current `AniGroup<G>` and a stable `RafAniTimeline<G>` controller.
 
 ### Related Components
 

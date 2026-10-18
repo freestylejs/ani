@@ -1,0 +1,34 @@
+---
+title: Server rendering (SSR)
+description: What runs on the server, what does not, and how to avoid unstyled flashes.
+---
+
+Ani can be imported and rendered on the server without a DOM. Nothing animates there, and nothing leaks.
+
+### What is safe on the server
+
+-   **Importing** any package. No module touches `window` or `document` at import time.
+-   **Creating** animation trees, timelines, `createStates` machines and clocks.
+-   **Calling `play()` and `transitionTo()`.** The shared clock finds no frame source (`requestAnimationFrame`) and `subscribe` becomes a **silent no-op**: it does not throw and does **not retain** the timeline. The timeline holds its starting value but never advances.
+-   **Rendering with the bindings.** `useAni`, `useAniRef`, `useAniStates` (and the Solid, Vue and Svelte equivalents) render with their initial values. They subscribe to timelines only after mount, so a server-rendered tree retains no subscriptions.
+
+### What needs the browser
+
+-   [`webTimeline`](/en/docs/core-api/timeline) (`play` needs `KeyframeEffect` and `document.timeline`). Call it in a client-only effect.
+-   `EventManager.bind(element)` and the `events` option. They attach on mount.
+
+### Initial styles and hydration
+
+`useAniRef` and its equivalents apply `initialValue` to the element **after it mounts** (in a layout effect for React, before paint). The server HTML does not contain that style, so the first server-rendered paint shows the unstyled element until hydration.
+
+To avoid a flash, also write the starting style in your markup:
+
+```tsx
+<div ref={ref} style={{ opacity: 0, transform: "translateY(20px)" }} />
+```
+
+### Rules for your own code
+
+-   Do not call `play()` during render. Start animations in an effect, `onMounted` or `onMount`.
+-   Do not rely on animation callbacks (`onUpdate`) firing on the server.
+-   Test your components in a `node` environment to catch accidental DOM access. See [Testing](/en/docs/guides/testing).

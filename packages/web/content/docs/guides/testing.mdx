@@ -1,0 +1,117 @@
+---
+title: Testing
+description: Test animations deterministically with a manual frame source and isolated clocks.
+---
+
+Animations depend on time and `requestAnimationFrame`. Replace both with a clock you control and tests become exact and fast.
+
+### A manual clock
+
+[`createClock`](/en/docs/core-api/clock) accepts your own frame source and time source. The helper below is a complete, deterministic harness.
+
+```typescript
+import { createClock } from "@freestylejs/ani-core";
+
+export function createManualClock(options: { maxDeltaTime?: number } = {}) {
+  let nextId = 1;
+  let time = 1000;
+  const pending = new Map<number, (timestamp: number) => void>();
+
+  const clock = createClock({
+    ...options,
+    requestFrame: (callback) => {
+      const id = nextId++;
+      pending.set(id, callback);
+      return id;
+    },
+    cancelFrame: (id) => {
+      pending.delete(id);
+    },
+    now: () => time,
+  });
+
+  return {
+    clock,
+    /** Run one display frame, `ms` after the previous one. */
+    frame(ms = 16) {
+      time += ms;
+      const callbacks = [...pending.values()];
+      pending.clear();
+      for (const callback of callbacks) callback(time);
+    },
+    /** Outstanding frame requests (a healthy clock has at most 1). */
+    get pending() {
+      return pending.size;
+    },
+  };
+}
+```
+
+### Test a timeline
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+import { expect, it } from "vitest";
+
+it("reaches the target and leaves the clock", () => {
+  const manual = createManualClock();
+  const timeline = a.dynamicTimeline(
+    a.ani({ to: { x: 100 }, duration: 1, timing: a.timing.linear() }),
+    manual.clock
+  );
+
+  timeline.play({ from: { x: 0 } });
+  for (let i = 0; i < 5; i++) manual.frame(100); // dt = 0.1 s each
+  expect(timeline.getCurrentValue()).toEqual({ x: 50 });
+
+  for (let i = 0; i < 10; i++) manual.frame(100);
+  expect(timeline.status).toBe("ENDED");
+  expect(manual.clock.size).toBe(0); // no leaked subscriber
+  expect(manual.pending).toBe(0);    // no leaked frame request
+});
+```
+
+-   Keep frames at or below `maxDeltaTime` (0.1 s), or pass `maxDeltaTime: Infinity`.
+-   Pass `clock` to `createStates`, and to timelines created by your code, so nothing touches the shared clock.
+
+### Reset the shared clock
+
+If your code uses the default clock, isolate tests with `AnimationClock.reset()`. It disposes the shared clock and the next `AnimationClock.create()` starts clean.
+
+```typescript
+import { AnimationClock } from "@freestylejs/ani-core";
+import { afterEach } from "vitest";
+
+afterEach(() => {
+  AnimationClock.reset();
+});
+```
+
+The same call is useful to tear down the shared clock on hot module reload.
+
+### Test for leaks
+
+-   After unmounting views, `clock.size` (or `AnimationClock.create().size`) must be `0`.
+-   Count `onUpdate` subscriptions by wrapping `timeline.onUpdate` and counting subscribe minus unsubscribe calls.
+-   Repeat mount and unmount many times (hundreds) and assert the counts do not grow.
+
+### Test bindings
+
+-   Pass your manual clock to the timelines and to `useAniStates` / `createAniStates` (`clock` option).
+-   Run in `jsdom`. Wrap React updates in `act`.
+-   Assert on `element.style` after calling `manual.frame()`.
+-   For server rendering, run in the `node` environment and render. See [SSR](/en/docs/guides/ssr).
+
+### Test errors
+
+Callback errors are reported asynchronously. In a test, give the clock an `onError` to capture errors thrown by subscribers, and stub `queueMicrotask` to capture errors thrown by `onUpdate` callbacks:
+
+```typescript
+const errors: unknown[] = [];
+const clock = createClock({ /* ... */ onError: (error) => errors.push(error) });
+```
+
+### Related Components
+
+-   [`clock`](/en/docs/core-api/clock) - `createClock` options and guarantees.
+-   [`Large-scale usage`](/en/docs/guides/performance) - Ownership rules to assert in tests.
