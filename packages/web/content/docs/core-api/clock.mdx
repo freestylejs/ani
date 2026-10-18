@@ -57,11 +57,13 @@ The gap between two frames is turned into animation time with one rule:
 
 | Gap since the previous frame | Treated as | Animation advances by |
 | :--- | :--- | :--- |
+| during which the page was hidden (a `visibilitychange` event fired while `hidden` was `true`), whatever its length | **suspension**: the tab was hidden | one ordinary frame (the latest gap of at most 50 ms; 1/60 s before any) |
 | up to `lagThreshold` (default 0.5 s) | **jank**: the page is visible but busy | the real elapsed time |
 | above `lagThreshold` | **suspension**: hidden tab, debugger, sleep | one ordinary frame (the latest gap of at most 50 ms; 1/60 s before any) |
 
 -   **No slow motion under jank.** A 1 s animation under 250 ms frames still takes 1 s. RAF timelines stay on the wall clock, in sync with WAAPI, CSS transitions, audio and timers.
 -   **No jump after a suspension.** When a hidden tab comes back, animations continue where they paused instead of finishing instantly.
+-   **Hidden means suspended, however short.** With the default `visibility: true` the clock listens to `visibilitychange` while its loop runs, so a tab hidden for 0.3 s (below `lagThreshold`) is still a suspension instead of a 0.3 s jump. Detection is event driven: a `hidden` value merely read at frame time never suspends. An idle clock holds no listener; `visibility: false` disables detection, an injected `VisibilitySource` lets tests drive it, and without a usable `document` (SSR, workers) it is a silent no-op. Invalid values throw a `TypeError`.
 -   **Pure wall clock:** `lagThreshold: Infinity` applies every gap in full, exactly like WAAPI. This is safe: dynamic springs integrate in fixed substeps and stop once settled, and whole `repeat` iterations are skipped, so even an hour-long gap costs well under a millisecond.
 -   **Hard cap (legacy):** `maxDeltaTime` (unlimited by default) caps every delta. A finite value dilates animation time whenever a frame is slower; only set it deliberately.
 -   The first update of a timeline that joined a running loop follows the same rule, measured from its `play()`.
@@ -77,6 +79,7 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size`)
 | :--- | :--- | :--- | :--- |
 | `lagThreshold` | `number` | `0.5` | Gaps up to this many seconds apply in full; longer gaps count as one ordinary frame. `Infinity` = pure wall clock. |
 | `maxDeltaTime` | `number` | `Infinity` | Hard cap on one frame's `dt` in seconds. A finite value dilates time on slow frames. |
+| `visibility` | `boolean \| VisibilitySource` | `true` | A frame gap during which the page became hidden is a suspension whatever its length. `true` uses `globalThis.document`, an object injects a `VisibilitySource`, `false` disables detection (no listener). |
 | `requestFrame` | `(cb) => number` | `requestAnimationFrame` | Frame source. Resolved lazily at the first subscribe. |
 | `cancelFrame` | `(id) => void` | `cancelAnimationFrame` | Cancels a requested frame. |
 | `now` | `() => number` | `performance.now` | Time source in milliseconds, same domain as the frame timestamps. |

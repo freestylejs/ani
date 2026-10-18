@@ -888,12 +888,14 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 -   `subscribe` re-arms the loop if the environment dropped the pending frame (a pending frame older than 1 s is treated as lost).
 -   Without a frame source (SSR, plain workers) `subscribe` is a silent no-op and nothing is retained.
 -   Lag smoothing: a frame gap up to `lagThreshold` (default 0.5 s) advances animations by the real elapsed time (no slow motion under jank); a longer gap (hidden tab, debugger, sleep) advances by one ordinary frame. `lagThreshold: Infinity` follows the wall clock exactly. `maxDeltaTime` (unlimited by default) is an optional hard cap. Invalid values throw a `RangeError`.
+-   Visibility (default on): a frame gap during which the page became hidden (`visibilitychange` fired while `hidden` was `true`) is a suspension **whatever its length**, so a tab hidden for less than `lagThreshold` no longer jumps on return. Only events suspend: a `hidden` value read at frame time does not. The listener exists only while the loop is armed (an idle clock holds none). `visibility: false` disables detection and attaches nothing, an object injects a `VisibilitySource` (tests, custom hosts), and without a usable `document` it is a silent no-op (SSR, workers). Invalid values throw a `TypeError`.
 
 ### API Reference
 
 | Member | Description |
 | :--- | :--- |
-| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
+| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `visibility`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
+| `VisibilitySource` | `{ readonly hidden: boolean; addEventListener('visibilitychange', listener): void; removeEventListener('visibilitychange', listener): void }`. What `visibility: true` resolves to (`globalThis.document`); inject your own in tests. |
 | `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` applies to the existing clock. |
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`, `{ lagThreshold?, maxDeltaTime? }` sets either atomically. |
 | `AnimationClock.reset()` | Disposes the shared clock (test isolation, hot reload). |
