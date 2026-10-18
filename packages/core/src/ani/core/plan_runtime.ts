@@ -366,11 +366,13 @@ export class PlanRuntime {
         return r.endOfAnimation ? ctx.to : r.value
     }
 
-    /** Velocity seeds only apply to a lane's opening segment. */
+    /**
+     * Velocity seeds apply to every opening segment of a lane (start at
+     * t = 0), so whichever of them wins receives the seed. Segments starting
+     * later begin from rest.
+     */
     private seedFor(e: number, lane: number): number {
-        return e === this.c.laneOff[lane] && this.c.eStart[e]! <= END_TOLERANCE
-            ? this.seed[lane]!
-            : 0
+        return this.c.eStart[e]! <= END_TOLERANCE ? this.seed[lane]! : 0
     }
 
     /**
