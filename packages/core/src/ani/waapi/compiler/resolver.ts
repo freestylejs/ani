@@ -1,10 +1,11 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
-import {
-    resolveGroup,
-    resolvePlanState,
-    resolveStateToGroup,
-} from '~/ani/core/resolver'
+import { evaluatePlanAt } from '~/ani/core/plan_runtime'
+import { resolveGroup, resolveStateToGroup } from '~/ani/core/resolver'
 
+/**
+ * One-shot state lookup. Every call simulates from scratch, so stateful
+ * timings (dynamic springs) are deterministic and isolated.
+ */
 export function resolveStateAt<G extends Groupable>(
     plan: ExecutionPlan<G>,
     initialFrom: G,
@@ -13,10 +14,10 @@ export function resolveStateAt<G extends Groupable>(
 ): Groupable {
     const { keyMap, values: initialValues } = resolveGroup(initialFrom)
 
-    const rawResultState = resolvePlanState(
+    const rawResultState = evaluatePlanAt(
         plan,
         initialValues,
-        keyMap,
+        keyMap ? [...keyMap.keys()] : null,
         targetTime,
         dt
     )

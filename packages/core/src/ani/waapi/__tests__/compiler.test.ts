@@ -192,7 +192,8 @@ describe('WebAni Compiler', () => {
 
         // Stagger offset 0.5.
         // Item 1: 0-1s. x -> 100.
-        // Item 2: 0.5-1.5s. x -> 200. (Starts from x=50?)
+        // Item 2: 0.5-1.5s. x -> 200, starting from x=50 (Item 1's value
+        // at Item 2's start: a fixed snapshot, not a moving origin).
 
         // Critical points:
         // 0, 0.5, 1.0, 1.5. Total 1.5.
@@ -209,7 +210,8 @@ describe('WebAni Compiler', () => {
         expect(keyframes[1]!['transform']).toBe('translateX(50px)')
 
         expect(keyframes[2]!.offset).toBeCloseTo(1.0 / 1.5)
-        expect(keyframes[2]!['transform']).toBe('translateX(150px)')
+        // 50 + (200 - 50) * 0.5
+        expect(keyframes[2]!['transform']).toBe('translateX(125px)')
 
         // t=1.5.
         // Item 1 finished (100).
