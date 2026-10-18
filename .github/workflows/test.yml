@@ -35,6 +35,9 @@ jobs:
       - name: Verify
         run: pnpm test:ci
 
+      - name: Bundle size
+        run: node bench/size/run.ts
+
   browser:
     runs-on: ubuntu-latest
     steps:
