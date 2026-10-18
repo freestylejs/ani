@@ -236,3 +236,11 @@ export abstract class TimelineBase<
      */
     public abstract seek(targetTime: number): void
 }
+
+/** How a `play()` run ended (shared by every engine). */
+export type RunResult =
+    | 'ended'
+    | 'interrupted'
+    | 'skipped'
+    | 'reset'
+    | 'disposed'
