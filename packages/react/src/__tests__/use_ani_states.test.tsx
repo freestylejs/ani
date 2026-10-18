@@ -126,7 +126,9 @@ describe('react useAniStates', () => {
         const view = await mount(<C initial="a" />)
         await view.rerender(<C initial="b" />)
         expect(view.container.textContent).toBe('a')
-        await act(async () => transition('b'))
+        await act(async () => {
+            transition('b')
+        })
         expect(view.container.textContent).toBe('b')
         await view.unmount()
     })

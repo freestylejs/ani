@@ -49,7 +49,7 @@ export function useAniStates<const AnimationStates extends AnimationStateShape>(
 
     const [refAction] = useAniRef({
         timeline: timelineStore,
-        initialValue: props.initialFrom,
+        initialValue: (props.initialValue ?? props.initialFrom)!,
     })
 
     const action: Action<HTMLElement, any> = (node, param) => {
@@ -81,10 +81,15 @@ export function useAniStates<const AnimationStates extends AnimationStateShape>(
         canBeIntercepted
     ) => {
         // After disposal the controller is inert; nothing to mirror.
-        if (disposed) return
+        if (disposed) return Promise.resolve('disposed')
         // Controller first: it validates atomically and may reject.
-        controller.transitionTo(newState, timelineConfig, canBeIntercepted)
+        const run = controller.transitionTo(
+            newState,
+            timelineConfig,
+            canBeIntercepted
+        )
         stateStore.set(controller.state())
+        return run
     }
 
     return [

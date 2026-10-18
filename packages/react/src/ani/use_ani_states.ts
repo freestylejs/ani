@@ -59,7 +59,8 @@ export function useAniStates<
 
     useAniRef(ref, {
         timeline,
-        initialValue: propsRef.current.initialFrom,
+        initialValue: (propsRef.current.initialValue ??
+            propsRef.current.initialFrom)!,
     })
 
     // Subscribe, then resync: a transition issued before this effect ran
@@ -84,15 +85,16 @@ export function useAniStates<
         useCallback((newState, timelineConfig, canBeIntercepted) => {
             const entry = holder.current
             // After unmount the controller is disposed: stay inert.
-            if (!entry || entry.disposed) return
+            if (!entry || entry.disposed) return Promise.resolve('disposed')
             // Controller first: it validates atomically and may reject
             // (`canBeIntercepted`), so React state mirrors what happened.
-            entry.controller.transitionTo(
+            const run = entry.controller.transitionTo(
                 newState,
                 timelineConfig,
                 canBeIntercepted
             )
             setState(entry.controller.state())
+            return run
         }, [])
 
     return [{ state, timeline }, transitionTo] as const
