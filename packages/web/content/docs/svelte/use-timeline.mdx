@@ -1,0 +1,43 @@
+---
+title: useTimeline
+description: The owner primitive. Creates a timeline, group or any object with dispose() and disposes it when the component is destroyed.
+---
+
+Whoever creates an object disposes it. `useTimeline` creates the object with your factory and registers its `dispose()` with Svelte's `onDestroy`, so a timeline created in a component never outlives it.
+
+### Example
+
+```svelte
+<script>
+  import { a, rafTimeline } from '@freestylejs/ani-core';
+  import { useTimeline, useAniRef } from '@freestylejs/ani-svelte';
+
+  // Created here, disposed when the component is destroyed.
+  const timeline = useTimeline(() =>
+    rafTimeline(a.ani({ to: { opacity: 1 }, duration: 1 }))
+  );
+  const { action, style } = useAniRef(timeline, { initialValue: { opacity: 0 } });
+</script>
+
+<div use:action {style} on:click={() => timeline.play({ from: { opacity: 0 } })} />
+```
+
+### Usage & Concepts
+
+-   The factory is called once, synchronously. Its result is returned as is.
+-   `dispose()` runs in `onDestroy` (which also runs during server rendering). A disposed `rafTimeline` leaves the clock and settles its run as `'disposed'`.
+-   Every other primitive (`useAni`, `useAniRef`, `useAniGroup`) only *detaches* from the timeline or group you pass in. `useAniStates` and `useFollow` create their object themselves and dispose it the same way.
+-   Misuse throws synchronously: a factory that is not a function, or one that returns something without `dispose()`. An error thrown by the factory propagates and nothing is registered.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `factory` | `() => T` | Creates the object. `T` must have `dispose(): void`. |
+
+Returns the object the factory made.
+
+### Related Components
+
+-   [`useAniRef`](/en/docs/svelte/use-ani-ref) - Binds the timeline to an element.
+-   [`useAniGroup`](/en/docs/svelte/use-ani-group) - Binds a group to a list of elements.

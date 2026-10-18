@@ -1,0 +1,45 @@
+---
+title: useFollow
+description: A Svelte action for an element that chases a target with a spring, keeping its velocity.
+---
+
+`follow` creates a value that chases a target with a spring; setting a new target keeps the current velocity. `useFollow` creates one for the component and binds it to an element.
+
+### Example
+
+```svelte
+<script>
+  import { useFollow } from '@freestylejs/ani-svelte';
+
+  const { action, style, follower } = useFollow({ translateX: 0, translateY: 0 });
+</script>
+
+<svelte:window
+  on:pointermove={(e) => follower.set({ translateX: e.clientX, translateY: e.clientY })}
+/>
+
+<div use:action {style} class="dot" />
+```
+
+### Usage & Concepts
+
+-   **Owned.** The follower is created by the primitive and disposed when the component is destroyed (a pending `set` settles as `'disposed'`).
+-   **Bind on mount.** The action calls `follower.bind(node)`: the current value is written at once (also after `jump`), then on every frame. Destroy unbinds only; the follower keeps working.
+-   **Server rendering.** `style` is the CSS declaration string of `initial`; nothing subscribes to a clock while rendering on the server.
+-   **Options.** `spring` and `clock` go to `follow`; `resolver` shapes the `style` string and the writes.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `initial` | `G extends Record<string, number>` | Initial value; its keys are fixed. |
+| `options.spring` | `{ m, k, c, tolerance? }` | (Optional) Spring constants. |
+| `options.clock` | `AnimationClockInterface` | (Optional) Clock that drives the follower. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
+
+Returns `{ action, style, follower }`. See [`follow`](/en/docs/core-api/follow) for `set`, `jump`, `target` and `value`.
+
+### Related Components
+
+-   [`useTimeline`](/en/docs/svelte/use-timeline) - The owner primitive it is built on.
+-   [`useAniRef`](/en/docs/svelte/use-ani-ref) - For timeline-driven motion.

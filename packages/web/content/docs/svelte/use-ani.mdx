@@ -10,27 +10,29 @@ This primitive subscribes to a `timeline`'s state and exposes it as a readable S
 ```svelte
 <script>
   import { onMount } from 'svelte';
-  import { a } from "@freestylejs/ani-core";
-  import { useAni } from '@freestylejs/ani-svelte';
+  import { a, rafTimeline } from "@freestylejs/ani-core";
+  import { useAni, useTimeline } from '@freestylejs/ani-svelte';
 
-  // 1. Define the animation structure and create a timeline.
-  const myTimeline = a.dynamicTimeline(
-    a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
+  // 1. Create the timeline. The component owns it.
+  const myTimeline = useTimeline(() =>
+    rafTimeline(
+      a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
+    )
   );
 
-  // 2. Use the utility to get the readable store and controller.
-  const [value, controller] = useAni(myTimeline, { count: 0 });
+  // 2. Get the readable store (and the timeline back).
+  const [value] = useAni(myTimeline, { count: 0 });
 
   // 3. Play the animation on component mount.
   onMount(() => {
-      controller.play({ from: { count: 0 } });
+      myTimeline.play({ from: { count: 0 } });
   })
 </script>
 
 <div>
   <!-- 4. The animated value is read from the store via auto-subscription. -->
   <h1>Counter: {Math.round($value.count)}</h1>
-  <button on:click={() => controller.play({ from: { count: 0 } })}>
+  <button on:click={() => myTimeline.play({ from: { count: 0 } })}>
     Start
   </button>
 </div>
@@ -40,13 +42,13 @@ This primitive subscribes to a `timeline`'s state and exposes it as a readable S
 
 #### Overview
 
-The `useAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Svelte's reactivity model. It takes a `timeline` instance and an `initialValue`, returning a readable Svelte store that updates on every animation frame, along with the timeline's controller. You can auto-subscribe to the store's value using the `$` prefix.
+The `useAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Svelte's reactivity model. It takes a `timeline` instance and an `initialValue`, returning a readable Svelte store that updates on every animation frame, along with the timeline. You can auto-subscribe to the store's value using the `$` prefix.
 
 #### Behavior
 
 -   `timeline` may be a timeline or a `Readable` of one. Swaps are followed while the store has subscribers.
 -   The store subscribes to the timeline only while it has subscribers, so nothing is retained otherwise (also on the server).
--   The returned controller follows timeline swaps. The timeline you pass is never disposed.
+-   The returned timeline is the one you passed (the current one, for a store). The timeline you pass is never disposed; create it with [`useTimeline`](/en/docs/svelte/use-timeline) if the component owns it.
 
 #### When to Use
 
@@ -61,9 +63,10 @@ The `useAni` primitive acts as a bridge between the `@freestylejs/ani-core` engi
 | `timeline` | `RafAniTimeline<G> \| Readable<RafAniTimeline<G>>` | The timeline to read. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
-Returns `readonly [store, controller]`: a `Readable<AniGroup<G>>` and the timeline controller.
+Returns `readonly [store, timeline]`: a `Readable<AniGroup<G>>` and the timeline.
 
 ### Related Components
 
+-   [`useTimeline`](/en/docs/svelte/use-timeline) - Creates and disposes the timeline.
 -   [`useAniRef`](/en/docs/svelte/use-ani-ref) - For performance-critical animations that write directly to the DOM.
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this primitive subscribes to.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The core timeline that this primitive subscribes to.

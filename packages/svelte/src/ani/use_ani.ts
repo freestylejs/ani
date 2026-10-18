@@ -1,7 +1,6 @@
 import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
-import { createTimelineController } from '@freestylejs/ani-core'
 import { get, type Readable, readable } from 'svelte/store'
-import { isReadable } from './use_ani_ref'
+import { isReadable } from './shared'
 
 /**
  * Reactive ani animation store.
@@ -9,7 +8,8 @@ import { isReadable } from './use_ani_ref'
  * `timeline` may be a timeline or a store of one; swaps are followed while the
  * store has subscribers. Nothing is retained without subscribers.
  *
- * @returns `[store, controller]`; the controller follows timeline swaps.
+ * @returns `[store, timeline]`; the timeline is the one given, or the current
+ * one of a store.
  */
 export function useAni<G extends Groupable>(
     timeline: RafAniTimeline<G> | Readable<RafAniTimeline<G>>,
@@ -40,5 +40,5 @@ export function useAni<G extends Groupable>(
         }
     )
 
-    return [store, createTimelineController<G>(getTimeline)]
+    return [store, getTimeline()]
 }
