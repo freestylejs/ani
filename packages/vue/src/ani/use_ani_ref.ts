@@ -2,22 +2,25 @@ import {
     type AniGroup,
     type AniRefContext,
     type AniRefProps,
+    applyStyleSheet,
     createStyleSheet,
+    createTimelineController,
     type EventKey,
     EventManager,
     type Groupable,
     type RafAniTimeline,
 } from '@freestylejs/ani-core'
-import { computed, onBeforeUnmount, type Ref, ref, unref, watch } from 'vue'
+import {
+    computed,
+    onBeforeUnmount,
+    type Ref,
+    ref,
+    toRaw,
+    unref,
+    watch,
+} from 'vue'
 
-function applyStylesToNode<E extends HTMLElement>(
-    node: E,
-    style: Record<string, string | number>
-): void {
-    Object.assign(node.style, style)
-}
-
-type VueAniRefProps<G extends Groupable> = Omit<
+export type VueAniRefProps<G extends Groupable> = Omit<
     AniRefProps<RafAniTimeline<G>, G>,
     'timeline'
 > & {
@@ -26,6 +29,9 @@ type VueAniRefProps<G extends Groupable> = Omit<
 
 /**
  * Event-based non-reactive(ref) ani animation composable for Vue.
+ *
+ * `timeline` may be a timeline or a ref of one; swaps are followed
+ * synchronously. The composable never disposes a timeline it is given.
  *
  * @param props - Configuration including the timeline and event handlers.
  *
@@ -40,42 +46,37 @@ export function useAniRef<G extends Groupable>({
     const elementRef = ref<HTMLElement | null>(null)
     let animeValue: AniGroup<G> | null = initialValue ?? null
 
-    const currentTimeline = computed(() => unref(timeline))
+    // toRaw: a user-made `ref(timeline)` is a deep reactive proxy; the clock
+    // and the timeline internals must only ever see the raw instance.
+    const currentTimeline = computed(() => toRaw(unref(timeline)))
 
-    const controller: RafAniTimeline<G> = {
-        get duration() {
-            return currentTimeline.value.duration
-        },
-        play: (config) => {
-            if (config.from) {
-                animeValue = config.from as AniGroup<G>
-            }
-            currentTimeline.value.play(config)
-        },
-        update: (dt) => currentTimeline.value.update(dt),
-        seek: (time) => currentTimeline.value.seek(time),
-        pause: () => currentTimeline.value.pause(),
-        resume: () => currentTimeline.value.resume(),
-        reset: () => {
-            currentTimeline.value.reset()
-            const resetVal = initialValue ?? null
-            animeValue = resetVal
-            if (elementRef.value && resetVal) {
-                const styleObject = createStyleSheet(
-                    resetVal as Record<string, number>,
-                    currentTimeline.value.currentConfig?.propertyResolver
-                )
-                applyStylesToNode(elementRef.value, styleObject)
-            }
-        },
-        get currentConfig() {
-            return currentTimeline.value.currentConfig
-        },
-        onUpdate: (cb) => currentTimeline.value.onUpdate(cb),
-        getCurrentValue: () => currentTimeline.value.getCurrentValue(),
-    } as RafAniTimeline<G>
+    const controller = createTimelineController<G>(
+        () => currentTimeline.value,
+        {
+            onPlay: (config) => {
+                if (config.from) {
+                    animeValue = config.from as AniGroup<G>
+                }
+            },
+            onReset: () => {
+                animeValue = initialValue ?? null
+                if (elementRef.value && initialValue) {
+                    applyStyleSheet(
+                        elementRef.value,
+                        createStyleSheet(
+                            initialValue as Record<string, number>,
+                            currentTimeline.value.currentConfig
+                                ?.propertyResolver
+                        )
+                    )
+                }
+            },
+        }
+    )
 
     // >> animation subscription + direct style application.
+    // `sync`: a timeline swap must not leave a frame-sized gap before the
+    // new timeline is bound.
     watch(
         [currentTimeline, elementRef],
         ([tl, el], _, onCleanup) => {
@@ -83,27 +84,29 @@ export function useAniRef<G extends Groupable>({
 
             const target = tl.getCurrentValue() ?? initialValue
             if (target) {
-                const styleObject = createStyleSheet(
-                    target as Record<string, number>,
-                    tl.currentConfig?.propertyResolver
+                applyStyleSheet(
+                    el,
+                    createStyleSheet(
+                        target as Record<string, number>,
+                        tl.currentConfig?.propertyResolver
+                    )
                 )
-                applyStylesToNode(el, styleObject)
             }
 
             const unsubscribe = tl.onUpdate((value) => {
                 animeValue = value.state
-                const styleObject = createStyleSheet(
-                    value.state as Record<string, number>,
-                    tl.currentConfig?.propertyResolver
+                applyStyleSheet(
+                    el,
+                    createStyleSheet(
+                        value.state as Record<string, number>,
+                        tl.currentConfig?.propertyResolver
+                    )
                 )
-                applyStylesToNode(el, styleObject)
             })
 
-            onCleanup(() => {
-                unsubscribe()
-            })
+            onCleanup(unsubscribe)
         },
-        { immediate: true }
+        { immediate: true, flush: 'sync' }
     )
 
     // >> event subscription
@@ -116,25 +119,29 @@ export function useAniRef<G extends Groupable>({
         )
     }
 
-    watch(elementRef, (el, _, onCleanup) => {
-        if (!manager || !el || !events) return
+    watch(
+        elementRef,
+        (el, _, onCleanup) => {
+            if (!manager || !el || !events) return
 
-        const contextGetter = (): AniRefContext<G> =>
-            ({
-                current: animeValue,
-                ...controller,
-            }) as AniRefContext<G>
+            const contextGetter = (): AniRefContext<G> =>
+                ({
+                    current: animeValue,
+                    ...controller,
+                }) as AniRefContext<G>
 
-        manager.bind(el)
-        manager.attach(events)
-        manager.setAnimeGetter(contextGetter)
+            manager.bind(el)
+            manager.attach(events)
+            manager.setAnimeGetter(contextGetter)
 
-        onCleanup(() => {
-            if (cleanupEvents) {
-                manager.cleanupAll()
-            }
-        })
-    })
+            onCleanup(() => {
+                if (cleanupEvents) {
+                    manager?.cleanupAll()
+                }
+            })
+        },
+        { flush: 'sync' }
+    )
 
     onBeforeUnmount(() => {
         if (manager && cleanupEvents) {
