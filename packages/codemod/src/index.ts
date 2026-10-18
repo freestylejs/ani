@@ -1,4 +1,6 @@
 /**
- * ANI 1.x -> 2 codemod. The transforms land in the V2 migration packet.
+ * ANI 1.x -> 2 codemod.
  */
-export const TARGET_VERSION = '2.0.0'
+export type { WarningRule } from './script'
+export type { TransformResult, Warning } from './transform'
+export { SUPPORTED_EXTENSIONS, transform } from './transform'
