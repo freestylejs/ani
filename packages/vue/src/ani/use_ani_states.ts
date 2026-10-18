@@ -1,83 +1,68 @@
 import {
     type AnimationStateShape,
     createStates,
-    type GetTimeline,
+    createStyleSheet,
+    type Resolver,
     type StateController,
     type StateProps,
 } from '@freestylejs/ani-core'
 import {
+    type ComputedRef,
+    computed,
     getCurrentScope,
     onScopeDispose,
     type Ref,
     readonly,
-    ref,
+    type StyleValue,
     shallowRef,
 } from 'vue'
-import { useAniRef } from './use_ani_ref'
+import { createElementBinder, type ElementRef, withResolver } from './element'
 
 /**
- * State-machine animation composable. `props` are read once, at setup.
+ * State-machine animation composable. `config` is read once, at setup.
  *
  * The composable owns the state controller and disposes it with its scope
- * (component unmount), stopping any running timeline. `transitionTo` may be
- * called at any time, including inside `setup()`: the timeline swap is
- * subscribed synchronously and bound when the element mounts.
+ * (component unmount). The element is written through `machine.bind`, which
+ * follows every transition, so `transitionTo` may be called at any time,
+ * including inside `setup()`.
  */
-export function useAniStates<
-    const AnimationStates extends Record<string, any> & AnimationStateShape,
->(
-    props: StateProps<AnimationStates>
-): readonly [
-    Ref<HTMLElement | null>,
-    {
-        state: Readonly<Ref<keyof AnimationStates>>
-        timeline: Readonly<Ref<GetTimeline<AnimationStates>>>
-    },
-    StateController<AnimationStates>['transitionTo'],
-] {
-    const statesController = createStates(props)
-    const timeline = shallowRef<GetTimeline<AnimationStates>>(
-        statesController.timeline()
+export function useAniStates<const S extends AnimationStateShape>(
+    config: StateProps<S> & { resolver?: Resolver<Record<string, number>> }
+): {
+    ref: (element: ElementRef) => void
+    style: ComputedRef<StyleValue | undefined>
+    state: Readonly<Ref<keyof S>>
+    transitionTo: StateController<S>['transitionTo']
+    machine: StateController<S>
+} {
+    const machine = createStates<S>(config)
+    const state = shallowRef<keyof S>(machine.state())
+    // also fires when a failed transition rolls back
+    machine.onTransition((next) => {
+        state.value = next
+    })
+
+    const binder = createElementBinder((target) =>
+        machine.bind(target, withResolver(config.resolver))
     )
-    const state = ref<keyof AnimationStates>(props.initial)
+    const initial = (config.initialValue ?? config.initialFrom) as Record<
+        string,
+        number
+    >
+    const style = computed(() => createStyleSheet(initial, config.resolver))
 
-    const [elementRef] = useAniRef({
-        timeline: timeline,
-        initialValue: (props.initialValue ?? props.initialFrom)!,
-    })
-
-    statesController.onTimelineChange((newTimeline) => {
-        timeline.value = newTimeline
-        state.value = statesController.state()
-    })
     if (getCurrentScope()) {
-        onScopeDispose(() => statesController.dispose())
+        onScopeDispose(() => {
+            binder.dispose()
+            machine.dispose()
+        })
     }
 
-    const transitionTo: StateController<AnimationStates>['transitionTo'] = (
-        newState,
-        timelineConfig,
-        canBeIntercepted
-    ) => {
-        // Controller first: it validates atomically and may reject.
-        const run = statesController.transitionTo(
-            newState,
-            timelineConfig,
-            canBeIntercepted
-        )
-        state.value = statesController.state()
-        return run
+    return {
+        ref: binder.set,
+        style,
+        state: readonly(state) as Readonly<Ref<keyof S>>,
+        transitionTo: machine.transitionTo,
+        machine,
     }
-
-    return [
-        elementRef,
-        {
-            state: readonly(state) as Readonly<Ref<keyof AnimationStates>>,
-            // NOTE: no readonly() here — wrapping the class instance in a
-            // deep readonly proxy breaks identity and blocks internal
-            // timeline mutations. shallowRef alone is already shallow.
-            timeline: timeline as Readonly<Ref<GetTimeline<AnimationStates>>>,
-        },
-        transitionTo,
-    ] as const
 }

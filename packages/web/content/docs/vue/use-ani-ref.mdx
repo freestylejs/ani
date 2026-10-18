@@ -1,86 +1,67 @@
 ---
 title: useAniRef
-description: A performant, event-driven Vue composable that binds animations directly to a template ref.
+description: A function ref and an initial style that bind an element to a timeline.
 ---
 
-This composable applies animation styles directly to a DOM element, bypassing Vue's virtual DOM for high performance. It also includes a built-in event manager to simplify interactive animations.
+This composable binds one element to a timeline through `timeline.bind`. Styles are written by the core engine in the commit phase, changed declarations only, so Vue does not render per frame. DOM events are Vue's job: use `@click` and call the timeline yourself.
 
 ### Example
 
 ```vue
 <script setup>
-import { a } from "@freestylejs/ani-core";
-import { useAniRef } from "@freestylejs/ani-vue";
+import { a, rafTimeline } from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-vue";
 
-// 1. Define the animation structure and timeline.
-const myTimeline = a.dynamicTimeline(
-  a.sequence([
-    a.ani({ to: { translateX: 500, rotate: 360 }, duration: 1 }),
-    a.ani({ to: { translateX: 0, rotate: 0 }, duration: 1 }),
-  ])
+const timeline = useTimeline(() =>
+  rafTimeline(
+    a.sequence([
+      a.ani({ to: { translateX: 500, rotate: 360 }, duration: 1 }),
+      a.ani({ to: { translateX: 0, rotate: 0 }, duration: 1 }),
+    ])
+  )
 );
 
-// 2. Use the composable to get the template ref and controller.
-const [elementRef, controller] = useAniRef({
-  timeline: myTimeline,
+const { ref, style } = useAniRef(timeline, {
   initialValue: { translateX: 0, rotate: 0 },
-  // 3. Add event handlers for interactivity.
-  events: {
-    onMousedown: (ctx, event) => {
-      // `ctx` is the timeline controller plus `ctx.current`, the latest value.
-      ctx.play({ from: ctx.current ?? { translateX: 0, rotate: 0 } });
-    },
-    onMouseup: (ctx) => {
-      ctx.pause();
-    },
-  },
 });
 </script>
 
 <template>
-  <!-- 4. Bind the template ref to the element -->
   <div
-    :ref="elementRef"
-    style="width: 100px; height: 100px; background: blue;"
-    @click="controller.play({ from: { translateX: 0, rotate: 0 } })"
+    :ref="ref"
+    :style="style"
+    @click="timeline.play({ from: { translateX: 0, rotate: 0 } })"
   />
 </template>
 ```
 
 ### Usage & Concepts
 
-#### Overview
-
-The `useAniRef` composable is designed for performance. It takes a configuration object (`AniRefProps`) and returns a template `ref` to be attached to a DOM element, along with the timeline controller. On each animation frame, it converts animation values to CSS styles and applies them directly to the element, avoiding Vue's VDOM overhead for the animated properties.
-
-Event handlers passed to the `events` property receive a context object: the timeline controller plus `current`, the latest animation value.
-
 #### Lifecycle
 
--   **Timeline may be reactive.** `timeline` can be a timeline or a `Ref` of one. Swaps are followed synchronously: the old timeline is detached and the new one's current value is applied at once. A deep `ref(timeline)` is unwrapped to the raw instance, but prefer `shallowRef`.
--   **Template ref.** The binding starts when the element is set (also for `v-if`) and stops when it is removed or the component unmounts.
--   **Controller.** It always targets the current timeline and forwards every member, including `canBeIntercepted`.
--   **Styles.** Custom properties (`--x`) from a `propertyResolver` are written with `setProperty` (see [styles](/en/docs/core-api/advanced/building-bindings)).
--   **Ownership.** The composable never disposes the timeline you pass. Call `timeline.dispose()` yourself if you created it.
+-   **Function ref.** Use `:ref="ref"` and `:style="style"`. A component instance resolves to its `$el`. Setting the same element again does not add a binding; `null` unbinds.
+-   **Initial style.** `style` is `createStyleSheet(initialValue, resolver)`, or `undefined` without an `initialValue`. It is the same object on every render, so a re-render never resets an animated style. It is rendered on the server; nothing subscribes to a clock during SSR.
+-   **Timeline may be reactive.** `timeline` can be a timeline or a `Ref` of one. When it changes the element is rebound to the new one. Prefer `shallowRef`.
+-   **Ownership.** The composable never disposes the timeline you pass. Create it with [`useTimeline`](/en/docs/vue/use-timeline) to dispose it with the component. On unmount the element is unbound.
+-   **Resolver.** `resolver` shapes both the initial style and the frames (custom properties such as `--x` included).
 
 #### When to Use
 
--   **Do** use `useAniRef` for high-performance animations of CSS properties like `transform` and `opacity`.
--   **Do** use it for complex, interactive animations driven by user input at 60fps.
--   **Don't** use `useAniRef` when you need to read the animated values within your component's template or other computed properties. Use `useAni` for that.
+-   **Do** use `useAniRef` for high-frequency style animation of one element.
+-   **Don't** use it when the template needs to read the animated values. Use [`useAni`](/en/docs/vue/use-ani) for that.
 
 ### API Reference
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Ref<RafAniTimeline<G>>` | The timeline to bind. |
-| `initialValue` | `AniGroup<G>` | (Optional) Style applied before the timeline has a value, and restored by `reset()`. |
-| `events` | `EventHandlerRegistration` | (Optional) `onClick`-style handlers. Receive `(ctx, event)`. |
-| `cleanupEvents` | `boolean` | (Optional, default `true`) Remove listeners on unmount. |
+| `timeline` | `RafTimeline<G> \| Ref<RafTimeline<G>>` | The timeline to bind. |
+| `options.initialValue` | `AniGroup<G>` | (Optional) Rendered as the initial inline style. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Custom style resolver. |
 
-Returns `readonly [elementRef, controller]`.
+Returns `{ ref, style }`: `ref` is `(element: Element | ComponentPublicInstance | null) => void` and `style` is a `ComputedRef<StyleValue | undefined>`.
 
 ### Related Components
 
+-   [`useTimeline`](/en/docs/vue/use-timeline) - Create a timeline owned by the component.
+-   [`useAniGroup`](/en/docs/vue/use-ani-group) - The same for a list of elements.
 -   [`useAni`](/en/docs/vue/use-ani) - For reactive animations that integrate with Vue's Composition API.
--   [`EventManager`](/en/docs/core-api/advanced/event-management) - The underlying utility used by the `events` property.
