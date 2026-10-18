@@ -1,0 +1,23 @@
+{
+    "extends": "../../tsconfig.json",
+    "include": ["./**/*", "./*.d.ts"],
+    "compilerOptions": {
+        "noEmit": true,
+        "allowImportingTsExtensions": true,
+        "verbatimModuleSyntax": true,
+        "lib": ["ES2023", "DOM", "DOM.Iterable"],
+        "types": ["node"],
+        "baseUrl": "../..",
+        "paths": {
+            "@freestylejs/ani-core": ["packages/core/src/index.ts"],
+            "@freestylejs/ani-core/testing": [
+                "packages/core/src/testing/index.ts"
+            ],
+            "@freestylejs/ani-react": ["packages/react/src/index.ts"],
+            "@freestylejs/ani-vue": ["packages/vue/src/index.ts"],
+            "@freestylejs/ani-solid": ["packages/solid/src/index.ts"],
+            "@freestylejs/ani-svelte": ["packages/svelte/src/index.ts"],
+            "~/*": ["packages/core/src/*"]
+        }
+    }
+}
