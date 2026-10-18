@@ -14,15 +14,29 @@ export interface AnimationClockInterface {
     unsubscribe(animatable: Animatable): void
 }
 
-export interface CreateClockOptions {
+/**
+ * How frame gaps become animation time.
+ */
+export interface ClockTimingOptions {
     /**
-     * Upper bound (seconds) of the delta time handed to subscribers.
-     * Clamping keeps simulations stable after long stalls but dilates
-     * animation time (an animation never "catches up" a stall longer than
-     * this). Pass `Infinity` for real-time (wall clock) semantics.
-     * @default 0.1
+     * Lag smoothing threshold (seconds). A gap between frames up to this is
+     * applied as the real elapsed time, so jank never slows animations down
+     * (they stay on the wall clock, in sync with WAAPI, CSS and timers). A
+     * longer gap is treated as a suspension (hidden tab, debugger, sleep)
+     * and advances by one ordinary frame, so animations resume where they
+     * paused instead of jumping. `Infinity` gives pure wall-clock time.
+     * @default 0.5
+     */
+    lagThreshold?: number | undefined
+    /**
+     * Hard upper bound (seconds) of one frame's delta. Unlimited by default;
+     * a finite value dilates animation time whenever a frame takes longer.
+     * @default Infinity
      */
     maxDeltaTime?: number | undefined
+}
+
+export interface CreateClockOptions extends ClockTimingOptions {
     /**
      * Frame source. Resolved lazily from the environment when omitted
      * (`window.requestAnimationFrame`, then `globalThis.requestAnimationFrame`).
@@ -54,7 +68,13 @@ export type ManagedClock = AnimationClockInterface & {
     readonly size: number
 }
 
-const DEFAULT_MAX_DELTA_TIME = 1 / 10
+const DEFAULT_LAG_THRESHOLD = 1 / 2
+/**
+ * Gaps up to this (seconds) are ordinary frames (>= 20 fps); the latest one
+ * is what a suspension advances by.
+ */
+const ORDINARY_FRAME_LIMIT = 1 / 20
+const DEFAULT_FRAME = 1 / 60
 /**
  * A pending frame older than this (ms) is considered possibly dropped by the
  * environment and is re-armed on the next `subscribe`.
@@ -67,10 +87,10 @@ interface FrameSource {
     cancel: ((id: number) => void) | undefined
 }
 
-function assertMaxDeltaTime(value: number): number {
+function assertPositive(name: string, value: number): number {
     if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
         throw new RangeError(
-            `[AnimationClock] maxDeltaTime must be a positive number (Infinity allowed), received ${value}.`
+            `[AnimationClock] ${name} must be a positive number (Infinity allowed), received ${value}.`
         )
     }
     return value
@@ -106,7 +126,10 @@ export class AnimationClock implements ManagedClock {
     // running; their first update only advances by the time since joining.
     private readonly joinedAt: Map<Animatable, number> = new Map()
 
-    private maxDeltaTime: number
+    private maxDeltaTime = Infinity
+    private lagThreshold = DEFAULT_LAG_THRESHOLD
+    // Latest ordinary frame gap: what a suspension advances by.
+    private ordinaryFrame = DEFAULT_FRAME
     private readonly options: CreateClockOptions
 
     private armed = false
@@ -123,24 +146,28 @@ export class AnimationClock implements ManagedClock {
     /**
      * Process-wide default clock.
      * @param maxDeltaTime when given, it is applied to the (possibly already
-     * existing) default clock. Default maxDt = 100ms.
+     * existing) default clock as a hard per-frame cap. Unlimited by default.
      */
     public static create(maxDeltaTime?: number): AnimationClock {
         if (!AnimationClock.clock) {
             AnimationClock.clock = new AnimationClock(maxDeltaTime)
         } else if (maxDeltaTime !== undefined) {
-            AnimationClock.clock.maxDeltaTime = assertMaxDeltaTime(maxDeltaTime)
+            AnimationClock.clock.setTiming({ maxDeltaTime })
         }
         return AnimationClock.clock
     }
 
     /**
-     * Reconfigure singleton clock.
-     * If not created yet, creates one with provided maxDeltaTime.
+     * Reconfigure the default clock (created if needed). A number sets
+     * `maxDeltaTime`; an object sets any of `lagThreshold` / `maxDeltaTime`.
      */
-    public static configure(maxDeltaTime: number): AnimationClock {
+    public static configure(
+        timing: number | ClockTimingOptions
+    ): AnimationClock {
         const clock = AnimationClock.create()
-        clock.maxDeltaTime = assertMaxDeltaTime(maxDeltaTime)
+        clock.setTiming(
+            typeof timing === 'number' ? { maxDeltaTime: timing } : timing
+        )
         return clock
     }
 
@@ -160,9 +187,24 @@ export class AnimationClock implements ManagedClock {
     public constructor(options: CreateClockOptions | number = {}) {
         this.options =
             typeof options === 'number' ? { maxDeltaTime: options } : options
-        this.maxDeltaTime = assertMaxDeltaTime(
-            this.options.maxDeltaTime ?? DEFAULT_MAX_DELTA_TIME
-        )
+        this.setTiming(this.options)
+    }
+
+    // Validates everything before applying anything.
+    private setTiming({
+        lagThreshold,
+        maxDeltaTime,
+    }: ClockTimingOptions): void {
+        const lag =
+            lagThreshold === undefined
+                ? this.lagThreshold
+                : assertPositive('lagThreshold', lagThreshold)
+        const max =
+            maxDeltaTime === undefined
+                ? this.maxDeltaTime
+                : assertPositive('maxDeltaTime', maxDeltaTime)
+        this.lagThreshold = lag
+        this.maxDeltaTime = max
     }
 
     /**
@@ -328,12 +370,14 @@ export class AnimationClock implements ManagedClock {
     }
 
     /**
-     * negative / NaN (timestamp earlier than the reference time) -> 0,
-     * stalls are capped at maxDeltaTime.
+     * Elapsed seconds -> delta handed to subscribers (lag smoothing):
+     * negative / NaN -> 0; up to `lagThreshold` -> real time; a longer gap
+     * is a suspension -> one ordinary frame. Never above `maxDeltaTime`.
      */
-    private clampDelta(seconds: number): number {
+    private toDelta(seconds: number): number {
         if (!(seconds > 0)) return 0
-        return seconds > this.maxDeltaTime ? this.maxDeltaTime : seconds
+        const delta = seconds > this.lagThreshold ? this.ordinaryFrame : seconds
+        return delta > this.maxDeltaTime ? this.maxDeltaTime : delta
     }
 
     private tick(generation: number, timestamp: number): void {
@@ -342,7 +386,11 @@ export class AnimationClock implements ManagedClock {
         this.frameId = null
         this.ticking = true
 
-        const dt = this.clampDelta((timestamp - this.lastTimestamp) / 1000)
+        const elapsed = (timestamp - this.lastTimestamp) / 1000
+        const dt = this.toDelta(elapsed)
+        if (elapsed > 0 && elapsed <= ORDINARY_FRAME_LIMIT) {
+            this.ordinaryFrame = elapsed
+        }
         this.lastTimestamp = timestamp
 
         const snapshot = this.snapshot
@@ -360,7 +408,7 @@ export class AnimationClock implements ManagedClock {
                     const joined = this.joinedAt.get(subscriber)
                     if (joined !== undefined) {
                         this.joinedAt.delete(subscriber)
-                        delta = this.clampDelta((timestamp - joined) / 1000)
+                        delta = this.toDelta((timestamp - joined) / 1000)
                     }
                 }
                 try {
@@ -387,8 +435,8 @@ export class AnimationClock implements ManagedClock {
 /**
  * Creates an independent (non-singleton) animation clock with its own frame
  * loop. Pass it to `rafTimeline` / `createStates` to isolate engines, drive
- * animations manually in tests (custom `requestFrame`) or use real-time
- * semantics (`maxDeltaTime: Infinity`).
+ * animations manually in tests (custom `requestFrame`) or use pure
+ * wall-clock semantics (`lagThreshold: Infinity`).
  */
 export function createClock(options: CreateClockOptions = {}): ManagedClock {
     return new AnimationClock(options)

@@ -88,11 +88,31 @@ describe('AnimationClock', () => {
         const dts: number[] = []
 
         const clock = AnimationClock.create(0.1)
-        expect(AnimationClock.create(5)).toBe(clock)
+        expect(AnimationClock.create(0.2)).toBe(clock)
         clock.subscribe({ update: (dt) => dts.push(dt) })
-        driver.frame(3000)
+        driver.frame(300)
 
-        expect(dts).toEqual([3])
+        expect(dts).toEqual([0.2])
+    })
+
+    it('[configure] accepts timing options and applies them atomically', () => {
+        const driver = createFrameDriver()
+        vi.stubGlobal('window', {
+            requestAnimationFrame: driver.requestFrame,
+            cancelAnimationFrame: driver.cancelFrame,
+        })
+        vi.stubGlobal('performance', { now: driver.now })
+        const dts: number[] = []
+
+        const clock = AnimationClock.configure({ lagThreshold: 2 })
+        expect(() =>
+            AnimationClock.configure({ lagThreshold: 0.25, maxDeltaTime: -1 })
+        ).toThrow(RangeError)
+        clock.subscribe({ update: (dt) => dts.push(dt) })
+        driver.frame(1500)
+
+        // lagThreshold stayed 2 (the rejected call changed nothing)
+        expect(dts).toEqual([1.5])
     })
 
     it('[configure] rejects non-positive / NaN maxDeltaTime', () => {
@@ -101,6 +121,10 @@ describe('AnimationClock', () => {
             RangeError
         )
         expect(() => AnimationClock.configure(-1)).toThrow(RangeError)
+        expect(() => createClock({ lagThreshold: 0 })).toThrow(RangeError)
+        expect(() => createClock({ lagThreshold: Number.NaN })).toThrow(
+            RangeError
+        )
     })
 })
 
@@ -147,26 +171,85 @@ describe('createClock', () => {
         expect(clock.size).toBe(1)
     })
 
-    it('[M1] maxDeltaTime Infinity gives real-time dt', () => {
-        const { driver, clock } = make({
-            maxDeltaTime: Number.POSITIVE_INFINITY,
-        })
-        const dts: number[] = []
-        clock.subscribe({ update: (dt) => dts.push(dt) })
-        driver.frame(2500)
-        expect(dts).toEqual([2.5])
-    })
+    describe('lag smoothing (frame gap -> animation time)', () => {
+        const record = (options: Parameters<typeof createClock>[0] = {}) => {
+            const { driver, clock } = make(options)
+            const dts: number[] = []
+            clock.subscribe({ update: (dt) => dts.push(dt) })
+            return { driver, clock, dts }
+        }
 
-    it('clamps dt to maxDeltaTime by default (0.1s) and never passes negatives', () => {
-        const { driver, clock } = make()
-        const dts: number[] = []
-        clock.subscribe({ update: (dt) => dts.push(dt) })
-        driver.frame(1000)
-        driver.frame(-5)
-        driver.frame(16)
-        expect(dts[0]).toBe(0.1)
-        expect(dts[1]).toBe(0)
-        expect(dts[2]).toBeCloseTo(0.016)
+        it('applies jank frames up to the threshold in full (no time dilation)', () => {
+            const { driver, dts } = record()
+            driver.frame(16)
+            driver.frame(250)
+            driver.frame(500)
+            expect(dts[0]).toBeCloseTo(0.016)
+            expect(dts[1]).toBeCloseTo(0.25)
+            expect(dts[2]).toBeCloseTo(0.5)
+        })
+
+        it('advances a suspension (gap above the threshold) by the last ordinary frame', () => {
+            const { driver, dts } = record()
+            driver.frame(8)
+            driver.frame(10_000)
+            driver.frame(12)
+            expect(dts[1]).toBeCloseTo(0.008)
+            expect(dts[2]).toBeCloseTo(0.012)
+        })
+
+        it('a jank frame never becomes the suspension step', () => {
+            const { driver, dts } = record()
+            driver.frame(16)
+            driver.frame(400)
+            driver.frame(10_000)
+            expect(dts[2]).toBeCloseTo(0.016)
+        })
+
+        it('uses 1/60 s for a suspension before any ordinary frame was seen', () => {
+            const { driver, dts } = record()
+            driver.frame(3000)
+            expect(dts[0]).toBeCloseTo(1 / 60)
+        })
+
+        it('never passes negative or NaN deltas', () => {
+            const { driver, dts } = record()
+            driver.frame(-5)
+            driver.frame(16)
+            expect(dts[0]).toBe(0)
+            expect(dts[1]).toBeCloseTo(0.016)
+        })
+
+        it('lagThreshold is configurable; Infinity gives pure wall-clock time', () => {
+            const custom = record({ lagThreshold: 2 })
+            custom.driver.frame(1500)
+            custom.driver.frame(2500)
+            expect(custom.dts[0]).toBeCloseTo(1.5)
+            expect(custom.dts[1]).toBeCloseTo(1 / 60)
+
+            const wall = record({ lagThreshold: Number.POSITIVE_INFINITY })
+            wall.driver.frame(2500)
+            expect(wall.dts).toEqual([2.5])
+        })
+
+        it('an explicit maxDeltaTime still caps every delta', () => {
+            const { driver, dts } = record({ maxDeltaTime: 0.05 })
+            driver.frame(250)
+            driver.frame(16)
+            expect(dts[0]).toBe(0.05)
+            expect(dts[1]).toBeCloseTo(0.016)
+        })
+
+        it('the first update after joining a running loop follows the same rule', () => {
+            const { driver, clock } = make()
+            clock.subscribe({ update: vi.fn() })
+            driver.frame(16)
+            const late: number[] = []
+            clock.subscribe({ update: (dt) => late.push(dt) })
+            // joined, then the page was suspended for 8 s
+            driver.frame(8000)
+            expect(late[0]).toBeCloseTo(0.016)
+        })
     })
 
     it('[C1-a] keeps a single pending frame while subscribers churn', () => {
