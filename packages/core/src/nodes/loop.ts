@@ -21,6 +21,13 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
         id?: AnimationId
     ) {
         super([child], timing, id)
+        // Non-finite counts would flatten an unbounded plan (OOM); use
+        // `repeat: Infinity` on the timeline for endless playback.
+        if (!Number.isInteger(loopCount) || loopCount < 0) {
+            throw new RangeError(
+                `[loop] loopCount must be a finite integer >= 0, received ${loopCount}. Use the timeline \`repeat: Infinity\` option for endless playback.`
+            )
+        }
         this.count = loopCount
         this.duration = child.duration * loopCount
     }

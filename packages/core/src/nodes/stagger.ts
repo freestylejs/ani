@@ -24,12 +24,21 @@ export class StaggerNode<
     ) {
         super(children, timing, id)
 
+        if (!Number.isFinite(offset) || offset < 0) {
+            throw new RangeError(
+                `[stagger] offset must be a finite number >= 0 (seconds), received ${offset}.`
+            )
+        }
         this.offset = offset
         // True temporal coverage: each child ends at (i * offset + duration).
-        this.duration = Math.max(
-            0,
-            ...children.map((child, i) => i * offset + child.duration)
-        )
+        // Plain loop: spreading into Math.max overflows the stack for large
+        // child counts.
+        let duration = 0
+        for (let i = 0; i < children.length; i++) {
+            const end = i * offset + children[i]!.duration
+            if (end > duration) duration = end
+        }
+        this.duration = duration
     }
 
     public construct(plan: CompositionPlan<Children>, startTime: number): void {

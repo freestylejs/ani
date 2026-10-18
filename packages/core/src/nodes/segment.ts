@@ -16,6 +16,11 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
 
     constructor(props: SegmentNodeProps<G>, id?: AnimationId) {
         super(id)
+        if (!Number.isFinite(props.duration) || props.duration < 0) {
+            throw new RangeError(
+                `[SegmentNode] duration must be a finite number >= 0 (seconds), received ${props.duration}.`
+            )
+        }
         const nodeProps: SegmentNodeProps<G> = {
             to: props.to,
             duration: props.duration,

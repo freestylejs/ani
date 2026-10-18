@@ -56,4 +56,28 @@ describe('LoopNode', () => {
 
         expect(full.duration).toBe(5)
     })
+
+    describe('input validation', () => {
+        it.each([
+            Number.POSITIVE_INFINITY,
+            Number.NaN,
+            -1,
+            2.5,
+        ])('rejects loopCount %s with a descriptive RangeError (no OOM)', (count) => {
+            const child = ani({ to: [1], duration: 1 })
+            expect(() => loop(child, count)).toThrow(RangeError)
+            expect(() => loop(child, count)).toThrow(/loopCount/)
+        })
+
+        it('points to the timeline repeat option for endless playback', () => {
+            expect(() => loop(ani({ to: [1], duration: 1 }), Infinity)).toThrow(
+                /repeat: Infinity/
+            )
+        })
+
+        it('still accepts large finite integer counts', () => {
+            const looped = loop(ani({ to: [1], duration: 1 }), 10_000)
+            expect(looped.duration).toBe(10_000)
+        })
+    })
 })
