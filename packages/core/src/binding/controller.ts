@@ -65,6 +65,8 @@ export function createTimelineController<G extends Groupable, Ctx = any>(
             hooks.onPlay?.(config)
             return getTimeline().play(config, canBeIntercepted)
         },
+        drive: (progress, config) => getTimeline().drive(progress, config),
+        read: () => getTimeline().read(),
         update: (dt) => getTimeline().update(dt),
         seek: (time) => getTimeline().seek(time),
         pause: () => getTimeline().pause(),
