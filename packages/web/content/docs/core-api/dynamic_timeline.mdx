@@ -95,7 +95,7 @@ Malformed input **throws synchronously from `play()`** and leaves the timeline u
 
 #### Interrupting a running animation
 
-Calling `play()` on a `PLAYING` timeline interrupts it (pass `canBeIntercepted = false` to ignore the call instead).
+Calling `play()` on a `PLAYING` timeline interrupts it. Pass `interrupt: false` in the config to ignore the call instead; the returned promise then resolves `'skipped'`. (The second `play` argument `canBeIntercepted` is 1.x, removed in 2.0 by the codemod; `interrupt` wins when both are given.)
 
 -   **Velocity carries over.** Without `config.velocity`, the new run starts from the current [velocity](#getcurrentvelocity), so dynamic springs retarget without a visible kink.
 -   Pass `velocity: { x: 0 }` (same shape as `from`, partial for records) to start from rest.
@@ -103,8 +103,24 @@ Calling `play()` on a `PLAYING` timeline interrupts it (pass `canBeIntercepted =
 
 #### Values and velocity
 
--   `getCurrentValue()` returns a **frozen snapshot** that is stable until the next frame. It never aliases the `from` object you passed to `play()`. It returns `null` before the first `play()` and after `reset()`.
--   `getCurrentVelocity()` returns per-property velocity in units per second: the integrator velocity for dynamic springs, otherwise the finite difference of the last frame. It returns zeros unless the status is `PLAYING`, and `null` before the first advanced frame.
+-   `value` is a **frozen snapshot** that is stable until the next frame. It never aliases the `from` object you passed to `play()`. It is `null` before the first `play()` and after `reset()`.
+-   `velocity` is the per-property velocity in units per second: the integrator velocity for dynamic springs, otherwise the finite difference of the last frame. It is zeros unless the status is `PLAYING`, and `null` before the first advanced frame.
+-   `config` is the config of the current run, or `null`.
+-   `getCurrentValue()`, `getCurrentVelocity()` and `currentConfig` are the 1.x names of these members, removed in 2.0 by the codemod.
+
+#### Run result
+
+`play()` returns a `Promise<RunResult>` that never rejects and resolves exactly once per run, synchronously at the moment the run ends:
+
+| Result | When |
+| :--- | :--- |
+| `'ended'` | The run, repeats included, completed. |
+| `'interrupted'` | Another `play()` replaced it. |
+| `'skipped'` | `interrupt: false` on a `PLAYING` timeline. |
+| `'reset'` | `reset()` was called. |
+| `'disposed'` | `dispose()` was called, or `play()` on a disposed timeline. |
+
+An invalid config still throws synchronously before anything changes; no promise is created then. `isRafTimeline(value)` is a type guard that is `true` for a timeline and for the facade returned by `createTimelineController`.
 
 #### Repeat, delay and time
 
@@ -134,9 +150,9 @@ When several segments animate the same property at overlapping times (`parallel`
 | Name | Type | Description |
 | :--- | :--- | :--- |
 | `rootNode` | `AnimationNode<G>` | Root of the animation tree. |
-| `clock` | `AnimationClockInterface` | (Optional) Clock that drives the timeline. Defaults to the shared [`AnimationClock`](/en/docs/core-api/clock). |
+| `options` | `{ clock?: AnimationClockInterface }` | (Optional) `clock` drives the timeline and defaults to the shared [`AnimationClock`](/en/docs/core-api/clock). Passing a bare clock instead of an options object is 1.x, removed in 2.0 by the codemod. |
 
-#### `play(config, canBeIntercepted = true)`
+#### `play(config)`
 
 | Option | Type | Description |
 | :--- | :--- | :--- |
@@ -147,7 +163,8 @@ When several segments animate the same property at overlapping times (`parallel`
 | `durations` | `Array<number \| 'keep'>` | Override each `ani` node's duration (seconds). |
 | `velocity` | `Partial<G>` | Initial velocity (units per second) that seeds dynamic springs. |
 | `propertyResolver` | `Resolver<G>` | Maps a property to a custom style key and value. See [style resolution](/en/docs/core-api/advanced/building-bindings). |
-| `context` | `Ctx` | Free-form value stored in `currentConfig`. |
+| `interrupt` | `boolean` | Default `true`. With `false`, a `PLAYING` timeline is left untouched and the promise resolves `'skipped'`. |
+| `context` | `Ctx` | Free-form value stored in `config`. |
 
 #### Members
 
@@ -155,15 +172,17 @@ When several segments animate the same property at overlapping times (`parallel`
 | :--- | :--- |
 | `status` | `'IDLE' \| 'PLAYING' \| 'PAUSED' \| 'ENDED'`. |
 | `duration` | Total duration in seconds of the current plan (reflects `durations` overrides). |
-| `currentConfig` | The config of the current run, or `null`. |
+| `config` | The config of the current run, or `null`. |
+| `value` / `velocity` | Frozen value snapshot and per-property velocity, or `null`. |
+| `currentConfig` | 1.x, removed in 2.0 by the codemod. Use `config`. |
 | `pause()` / `resume()` | Pause a `PLAYING` timeline, resume a `PAUSED` one. |
 | `seek(time)` | Jump to `time` seconds and pause. |
 | `reset(notify = true, unsubscribeClock = true)` | Return to `IDLE`. |
 | `dispose()` | Stop for good and release everything. |
 | `bind(target, options?)` | Write the value to `target.style` on every notification. Returns an unbind function. |
 | `onUpdate(cb)` | Subscribe to `{ state, status }` (commit phase). Returns an unsubscribe function. |
-| `getCurrentValue()` | Frozen snapshot or `null`. |
-| `getCurrentVelocity()` | Velocity group or `null`. |
+| `getCurrentValue()` | 1.x, removed in 2.0 by the codemod. Use `value`. |
+| `getCurrentVelocity()` | 1.x, removed in 2.0 by the codemod. Use `velocity`. |
 
 #### Type Definitions
 
@@ -182,14 +201,19 @@ interface RafTimelineConfig<G extends Groupable, Ctx = any> {
   keyframes?: Array<G | 'keep'>;
   durations?: Array<number | 'keep'>;
   velocity?: Partial<G>;
+  interrupt?: boolean; // default true
   propertyResolver?: Resolver<G>;
   context?: Ctx;
 }
 
+type RunResult = 'ended' | 'interrupted' | 'skipped' | 'reset' | 'disposed';
+
 function rafTimeline<G extends Groupable, Ctx = any>(
   rootNode: AnimationNode<G>,
-  clock?: AnimationClockInterface
+  clockOrOptions?: AnimationClockInterface | { clock?: AnimationClockInterface }
 ): RafAniTimeline<G, Ctx>;
+
+function isRafTimeline(value: unknown): value is RafTimeline<Groupable>;
 ```
 
 ### Related Components

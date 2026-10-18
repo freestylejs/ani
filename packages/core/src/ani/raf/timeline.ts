@@ -1,4 +1,4 @@
-import type { AniGroup, Groupable } from '~/ani/core'
+import type { AniGroup, Groupable, RunResult } from '~/ani/core'
 import {
     normalizeRepeatCount,
     TimelineBase,
@@ -31,6 +31,21 @@ export interface RafTimelineConfig<G extends Groupable, Ctx = any>
      * `getCurrentVelocity()` automatically.
      */
     velocity?: Partial<G>
+    /**
+     * Whether this `play()` may replace a `PLAYING` run. With `false` it does
+     * nothing and resolves `'skipped'`. Wins over the legacy second argument
+     * of `play()`.
+     * @default true
+     */
+    interrupt?: boolean
+}
+
+/** Options of {@link rafTimeline} and the {@link RafAniTimeline} constructor. */
+export interface RafTimelineOptions {
+    /**
+     * Clock that drives the timeline. Defaults to the shared `AnimationClock`.
+     */
+    clock?: AnimationClockInterface
 }
 
 export type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED'
@@ -55,6 +70,47 @@ export interface BindOptions {
     resolver?: Resolver<Record<string, number>>
 }
 
+/** V2 public surface of the RAF timeline. */
+export interface RafTimeline<G extends Groupable> {
+    /** Current lifecycle status. */
+    readonly status: TimelineStatus
+    /** Total duration in seconds of the current plan. */
+    readonly duration: number
+    /** Config of the current run, or `null`. */
+    readonly config: RafTimelineConfig<G> | null
+    /** Frozen snapshot of the latest value, or `null`. */
+    readonly value: AniGroup<G> | null
+    /** Per-value velocity in units per second, or `null`. */
+    readonly velocity: AniGroup<G> | null
+    /**
+     * Starts (or interrupts) the animation. The promise never rejects and
+     * resolves once per run with how it ended.
+     */
+    play(config: RafTimelineConfig<G>): Promise<RunResult>
+    /** Pauses a `PLAYING` timeline. */
+    pause(): void
+    /** Resumes a `PAUSED` timeline. */
+    resume(): void
+    /** Jumps to `targetTime` seconds and pauses. */
+    seek(targetTime: number): void
+    /** Back to `IDLE`. */
+    reset(notify?: boolean, unsubscribeClock?: boolean): void
+    /** Stops the timeline for good and releases everything. */
+    dispose(): void
+    /** Writes the value to `target.style` on every notification. */
+    bind(
+        target: { style: CSSStyleDeclaration } | HTMLElement,
+        options?: BindOptions
+    ): () => void
+    /** Subscribes to `{ state, status }` notifications. */
+    onUpdate(callback: OnUpdateCallback<G>): () => void
+}
+
+interface Run {
+    readonly promise: Promise<RunResult>
+    readonly resolve: (result: RunResult) => void
+}
+
 interface Binding {
     readonly writer: StyleWriter
     readonly resolver: Resolver<Record<string, number>> | undefined
@@ -73,13 +129,46 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value)
 }
 
+const FACADE_FUNCTIONS = [
+    'play',
+    'pause',
+    'resume',
+    'seek',
+    'reset',
+    'dispose',
+    'bind',
+    'onUpdate',
+] as const
+
+const FACADE_MEMBERS = ['status', 'duration', 'config', 'value', 'velocity']
+
+/**
+ * Whether `value` is a RAF timeline: a {@link RafAniTimeline} or a facade
+ * with the same public surface (e.g. from `createTimelineController`).
+ */
+export function isRafTimeline(value: unknown): value is RafTimeline<Groupable> {
+    if (value instanceof RafAniTimeline) return true
+    if (typeof value !== 'object' || value === null) return false
+    const candidate = value as Record<string, unknown>
+    return (
+        FACADE_FUNCTIONS.every((key) => typeof candidate[key] === 'function') &&
+        FACADE_MEMBERS.every((key) => key in candidate)
+    )
+}
+
+function isClock(
+    value: AnimationClockInterface | RafTimelineOptions
+): value is AnimationClockInterface {
+    return 'subscribe' in value
+}
+
 export class RafAniTimeline<G extends Groupable, Ctx = any>
     extends TimelineBase<
         G,
         [config: RafTimelineConfig<G, Ctx>, canBeIntercepted?: boolean]
     >
     // Raf clock
-    implements Animatable
+    implements Animatable, RafTimeline<G>
 {
     private readonly _clock: AnimationClockInterface
 
@@ -98,6 +187,21 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _currentConfig: RafTimelineConfig<G, Ctx> | null = null
     public get currentConfig() {
         return this._currentConfig
+    }
+
+    /** Config of the current run, or `null`. */
+    public get config(): RafTimelineConfig<G, Ctx> | null {
+        return this._currentConfig
+    }
+
+    /** Same as `getCurrentValue()`. */
+    public get value(): AniGroup<G> | null {
+        return this.getCurrentValue()
+    }
+
+    /** Same as `getCurrentVelocity()`. */
+    public get velocity(): AniGroup<G> | null {
+        return this.getCurrentVelocity()
     }
 
     /** Current lifecycle status. */
@@ -121,6 +225,9 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _pending = false
     private _pendingRunId = 0
 
+    // the unsettled run: exactly one promise per play(), settled once
+    private _run: Run | null = null
+
     private _lastDt = 0
     private _advanced = false
 
@@ -132,8 +239,17 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _snapshot: AniGroup<G> | null = null
     private _snapshotDirty = true
 
-    constructor(rootNode: AnimationNode<G>, clock?: AnimationClockInterface) {
+    constructor(
+        rootNode: AnimationNode<G>,
+        clockOrOptions?: AnimationClockInterface | RafTimelineOptions
+    ) {
         super(rootNode)
+        const clock =
+            clockOrOptions === undefined
+                ? undefined
+                : isClock(clockOrOptions)
+                  ? clockOrOptions
+                  : clockOrOptions.clock
         this._clock = clock ?? AnimationClock.create()
 
         this.play = this.play.bind(this)
@@ -143,6 +259,13 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this.reset = this.reset.bind(this)
         this.dispose = this.dispose.bind(this)
         this.bind = this.bind.bind(this)
+    }
+
+    private _settle(result: RunResult): void {
+        const run = this._run
+        if (run === null) return
+        this._run = null
+        run.resolve(result)
     }
 
     private _buildGroup(values: readonly number[]): Groupable {
@@ -361,6 +484,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             ) {
                 this._status = 'ENDED'
                 this._clock.unsubscribe(this)
+                this._settle('ended')
                 this._groupDirty = true
                 this._snapshotDirty = true
                 return
@@ -464,14 +588,22 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
      * and `delay()`, always run to their scheduled end).
      *
      * @param config {@link https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame RequestAnimationFrame API} based config.
-     * @param canBeIntercepted if `true` animation can be intercepted even if already animation started.
+     * @param canBeIntercepted 1.x, removed in 2.0 by the codemod: use `config.interrupt`. If `false` a `PLAYING` timeline is not intercepted.
+     * @returns Never rejects. Resolves once per run: `'ended'`, `'interrupted'`
+     * (replaced by another `play()`), `'skipped'` (`interrupt: false`),
+     * `'reset'` or `'disposed'`.
      */
     public play(
         config: RafTimelineConfig<G, Ctx>,
         canBeIntercepted: boolean = true
-    ): void {
-        if (this._disposed) return
-        if (this._status === 'PLAYING' && !canBeIntercepted) return
+    ): Promise<RunResult> {
+        if (this._disposed) return Promise.resolve('disposed')
+        if (
+            this._status === 'PLAYING' &&
+            !(config.interrupt ?? canBeIntercepted)
+        ) {
+            return Promise.resolve('skipped')
+        }
 
         // ---- validate & prepare (no state is touched until this succeeds)
         const from = config.from as unknown
@@ -518,6 +650,12 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         const runtime = new PlanRuntime(compiled, values as number[], seed)
 
         // ---- commit
+        this._settle('interrupted')
+        let resolve!: (result: RunResult) => void
+        const promise = new Promise<RunResult>((done) => {
+            resolve = done
+        })
+        this._run = { promise, resolve }
         this._runId++
         this._currentConfig = config
         this._currentExecutionPlan = plan
@@ -534,6 +672,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._status = 'PLAYING'
         this._clock.subscribe(this)
         this._notify()
+        return promise
     }
 
     /**
@@ -564,6 +703,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         notify: boolean = true,
         unsubscribeClock: boolean = true
     ): void {
+        this._settle(this._disposed ? 'disposed' : 'reset')
         this._runId++
         this._epoch++
         this._status = 'IDLE'
@@ -688,11 +828,11 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 /**
  * Create dynamic timeline. {@link https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame RequestAnimationFrame API} based.
  * @param rootNode Root animation node.
- * @param clock [Custom clock]
+ * @param clockOrOptions [Options, or a custom clock (1.x form)]
  */
 export function rafTimeline<G extends Groupable, Ctx = any>(
     rootNode: AnimationNode<G>,
-    clock?: AnimationClockInterface
+    clockOrOptions?: AnimationClockInterface | RafTimelineOptions
 ): RafAniTimeline<G, Ctx> {
-    return new RafAniTimeline<G, Ctx>(rootNode, clock)
+    return new RafAniTimeline<G, Ctx>(rootNode, clockOrOptions)
 }
