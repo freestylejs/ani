@@ -1,0 +1,93 @@
+---
+title: follow (a value that chases a target)
+description: A spring-driven value that keeps its velocity when the target changes, so repeated input builds on where the motion is heading.
+---
+
+`follow` creates a value that springs toward a **target**. Setting a new target keeps the current velocity, so the motion never stops or kinks at an intermediate input. It is built on `rafTimeline` with a `dynamicSpring` timing, and ends once the spring has settled.
+
+### Example
+
+Keyboard paging: every press moves the target by one page, relative to where the motion is **heading**, not where it currently is.
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+const list = document.querySelector<HTMLElement>(".list")!;
+const scroll = a.follow({ y: 0 });
+
+scroll.bind(list, {
+  resolver: { y: (v) => ({ key: "transform", value: `translateY(${-v}px)` }) },
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "ArrowDown") {
+    // three quick presses end at +300, with no slowdown in between
+    void scroll.set({ y: scroll.target.y + 100 });
+  }
+});
+```
+
+Drag and release: follow the pointer with `jump`, then fling with the release velocity.
+
+```typescript
+const card = a.follow({ x: 0 });
+card.bind(element, {
+  resolver: { x: (v) => ({ key: "transform", value: `translateX(${v}px)` }) },
+});
+
+element.addEventListener("pointermove", (event) => {
+  if (dragging) card.jump({ x: event.clientX - startX });
+});
+
+element.addEventListener("pointerup", () => {
+  // spring home, starting at the speed of the pointer
+  void card.set({ x: 0 }, { velocity: { x: pointerVelocity } });
+});
+```
+
+### Usage & Concepts
+
+-   Keys are fixed by `initial`. `set` and `jump` take a partial record and merge it into the current target / value. An unknown key, a non-finite number or a non-record throws a `TypeError` synchronously and changes nothing.
+-   `set(partial)`: `target` changes **immediately**, then the value springs toward it. The current velocity carries over; `options.velocity` replaces it for the given keys.
+-   The promise of `set` resolves `'ended'` when the spring settles, `'interrupted'` when a later `set` / `jump` replaces the motion and `'disposed'` after `dispose()`. A `set` to the current target while idle resolves `'ended'` at once.
+-   `jump(partial)`: value and target change at once, velocity is `0`, status is `IDLE`. Bound targets are written and listeners notified synchronously; a pending `set` resolves `'interrupted'`.
+-   `status` is `PLAYING` while moving and `IDLE` before any motion and once settled. A moving follower adds one clock subscription, an idle one none.
+-   `spring` is `{ m, k, c, tolerance? }`, validated like `a.timing.dynamicSpring` (`RangeError`). The default is `{ m: 1, k: 170, c: 26 }`.
+-   `bind(target, [{ resolver }])` writes the value in the commit phase (changed declarations only) and writes the current value at once, also before any motion.
+-   `onUpdate` listeners get one `{ state, status }` frame per clock frame while moving (commit phase), plus the synchronous notification of `jump`.
+-   `dispose()` stops the motion and drops bindings and listeners. Later `set` calls resolve `'disposed'`, `jump` does nothing. It is idempotent.
+
+### API Reference
+
+```typescript
+function follow<G extends Record<string, number>>(
+  initial: G,
+  options?: {
+    spring?: { m: number; k: number; c: number; tolerance?: number }; // { m: 1, k: 170, c: 26 }
+    clock?: AnimationClockInterface;
+  }
+): Follower<G>;
+
+interface Follower<G extends Record<string, number>> {
+  readonly value: Readonly<G>; // frozen
+  readonly velocity: Readonly<G>; // units/s, zeros when idle
+  readonly target: Readonly<G>;
+  readonly status: "IDLE" | "PLAYING";
+  set(target: Partial<G>, options?: { velocity?: Partial<G> }): Promise<RunResult>;
+  jump(value: Partial<G>): void;
+  bind(
+    target: { style: CSSStyleDeclaration } | HTMLElement,
+    options?: { resolver?: Resolver<Record<string, number>> }
+  ): () => void;
+  onUpdate(
+    listener: (frame: { state: Readonly<G>; status: "IDLE" | "PLAYING" }) => void
+  ): () => void;
+  dispose(): void;
+}
+```
+
+### Related Components
+
+-   `dynamic_timeline` - The engine `follow` is built on.
+-   `timing` - `dynamicSpring`, the physics behind the motion.
+-   `clock` - The frame loop the follower subscribes to while moving.
