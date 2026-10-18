@@ -1,0 +1,148 @@
+---
+title: rafGroup (one plan, many targets)
+description: Drives N targets from one animation tree with a single clock subscription, one plan compilation and shared evaluation.
+---
+
+`rafGroup` plays **one** animation tree on **N targets** (a list of cards, a grid of tiles). Where N `rafTimeline`s cost N clock subscriptions, N plan compilations and N status machines, a group costs one of each. Targets can start at staggered offsets.
+
+### Example
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+const cards = a.rafGroup(
+  a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.35 }),
+  { stagger: (i) => Math.min(i, 20) * 0.03 }
+);
+
+cards.bind(document.querySelectorAll<HTMLElement>(".card"));
+cards.play({ from: { opacity: 0, translateY: 12 } });
+
+// when the owner goes away
+// cards.dispose();
+```
+
+### Usage & Concepts
+
+#### Offsets
+
+Target `i` starts `offset_i` seconds after the group starts and evaluates the plan at `groupTime - offset_i`, clamped to `[0, planDuration]`. Before its offset a target shows its `from`.
+
+-   `stagger: 0.1` gives target `i` the offset `i * 0.1`. `stagger: (index, count) => seconds` computes any offset, for example `(i, n) => (n - 1 - i) * 0.1` for a reverse order.
+-   `duration` is the plan duration plus the largest offset: one run of the whole group.
+-   Offsets must be finite and `>= 0`. The function result is validated per index when `play()` is called.
+
+#### Shared evaluation
+
+Targets with the same offset and the same `from` values (and the same start velocity) share one evaluation. With `stagger: 0` and a constant `from`, N targets cost **one** evaluation per frame plus N writes. A `from` function that returns the same values for many indices keeps them shared.
+
+#### Playing
+
+```typescript
+group.play({
+  from: (index) => ({ opacity: 0, translateY: index * 4 }), // or a constant
+  count: 20,        // default: number of bound targets
+  repeat: 1,        // repeats the whole group run, offsets included
+  delay: 0.2,       // SECONDS
+  velocity: { translateY: 0 },
+});
+```
+
+-   `count` defaults to the number of bound elements. It is **required** (a positive integer) when nothing is bound.
+-   `delay` is in **seconds** (unlike `rafTimeline`, which uses milliseconds).
+-   `play()` returns a promise that resolves **exactly once** per run with a `RunResult`: `'ended'` when the last target finished (after repeats), `'interrupted'` when another `play()` replaces the run, `'reset'` on `reset()`, `'disposed'` on `dispose()`.
+-   `play()` over a `PLAYING` group starts a new run from the config's `from` (there is no implicit current value). Each target **inherits its own current velocity** unless `velocity` is given, so groups of springs retarget without a kink.
+-   Malformed input throws synchronously and leaves the group untouched: no targets and no `count`, a `count` that is not a positive integer, a negative or non-finite `delay` or offset, a `from` whose shape does not match the tree or the first target, non-finite values, `keyframes` / `durations` of the wrong length.
+
+#### Lifecycle
+
+| Status | Meaning | Entered by |
+| :--- | :--- | :--- |
+| `IDLE` | No run and no value. | Creation, `reset()` |
+| `PLAYING` | Subscribed to the clock until the last target finished. | `play()`, `resume()` |
+| `PAUSED` | Holding its values. | `pause()`, `seek()` |
+| `ENDED` | The last target finished (after repeats). Notified **once** per run. | Natural end |
+
+-   `seek(time)` clamps to `[0, duration]`, pauses the group at that group time and notifies once. It does nothing before the first `play()`.
+-   `reset()` returns to `IDLE` and drops every value (`count` is `0` again).
+-   `dispose()` leaves the clock, drops bindings and listeners and is idempotent.
+
+#### Binding elements
+
+`bind(targets, options?)` writes element `i` of `targets` (an array or a `NodeList`) with target `i`.
+
+```typescript
+const unbind = group.bind(elements, {
+  resolver: { translateY: (v) => ({ key: "top", value: `${v}px` }) },
+});
+```
+
+-   Every element has its own style writer: only declarations whose value changed since that element's previous write are written, in the clock's commit phase.
+-   The style object is computed **once per distinct evaluation and frame** and shared by the targets that use it.
+-   Elements beyond `count` are left alone. Missing elements are simply not written.
+-   Binding after a value exists writes immediately. `unbind` stops the writes and keeps the styles. `dispose()` drops all bindings.
+-   An element without a `style` object throws a `TypeError` synchronously. Positional (array) values cannot be styled: the first write reports a `TypeError` asynchronously and drops the binding. A failing write is isolated per element.
+
+#### Listening
+
+```typescript
+const off = group.onUpdate(({ states, status }) => {
+  // one frozen state per target
+});
+const third = group.valueAt(2); // frozen snapshot, null out of range
+```
+
+-   Listeners run once per frame in the commit phase, after the bound styles are written, and synchronously on `play()`, `seek()` and `reset()`. All listeners of one notification receive the same `states` array.
+-   Building `states` is skipped when there are no listeners.
+-   A listener that resets or replays the group stops the remaining notifications of that frame. Listener errors are isolated and rethrown asynchronously.
+
+### API Reference
+
+```typescript
+function rafGroup<G extends Groupable>(
+  node: AnimationNode<G>,
+  options?: {
+    clock?: AnimationClockInterface;
+    stagger?: number | ((index: number, count: number) => number);
+  }
+): RafGroup<G>;
+
+interface RafGroupPlayConfig<G extends Groupable> {
+  from: G | ((index: number) => G);
+  count?: number;
+  keyframes?: Array<G | "keep">;
+  durations?: Array<number | "keep">;
+  repeat?: number;
+  delay?: number; // seconds
+  velocity?: Partial<G>;
+}
+
+interface RafGroup<G extends Groupable> {
+  readonly status: TimelineStatus;
+  readonly duration: number; // plan duration + largest offset
+  readonly count: number; // targets of the current run, 0 before play
+  play(config: RafGroupPlayConfig<G>): Promise<RunResult>;
+  pause(): void;
+  resume(): void;
+  seek(time: number): void;
+  reset(): void;
+  dispose(): void;
+  valueAt(index: number): Readonly<AniGroup<G>> | null;
+  bind(
+    targets: ArrayLike<{ style: CSSStyleDeclaration }>,
+    options?: { resolver?: Resolver<Record<string, number>> }
+  ): () => void;
+  onUpdate(
+    listener: (frame: {
+      states: ReadonlyArray<Readonly<AniGroup<G>>>;
+      status: TimelineStatus;
+    }) => void
+  ): () => void;
+}
+```
+
+### Related Components
+
+-   `dynamicTimeline` - One animation, one target; same engine and clock phases.
+-   `stagger` - A node that offsets children inside one tree; `rafGroup` offsets whole targets.
+-   `clock` - The frame loop the group subscribes to once.

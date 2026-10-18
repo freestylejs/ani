@@ -1,4 +1,4 @@
-import { createStates, rafTimeline } from './ani/raf'
+import { createStates, rafGroup, rafTimeline } from './ani/raf'
 import { webTimeline } from './ani/waapi'
 import { createClock } from './loop'
 import { ani, delay, loop, parallel, sequence, stagger } from './nodes'
@@ -26,6 +26,10 @@ export const a = {
     timeline: webTimeline,
     webTimeline,
     rafTimeline,
+    /**
+     * Create a group: one plan drives N targets through one clock subscription.
+     */
+    rafGroup,
     waapiTimeline: webTimeline,
     /**
      * Create animation segment.

@@ -199,6 +199,48 @@ class RafAniTimeline<G extends Groupable, Ctx = any> {
 
 ---
 
+## `rafGroup`
+
+> **One animation tree drives N targets through a single clock subscription.**
+
+N elements animated with N `rafTimeline`s cost N subscriptions, N plan compilations and N status machines. A group costs one of each; targets may start at staggered offsets.
+
+### Example
+
+```typescript
+const cards = a.rafGroup(a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.35 }), {
+    stagger: (i) => Math.min(i, 20) * 0.03,
+})
+cards.bind(document.querySelectorAll<HTMLElement>('.card'))
+cards.play({ from: { opacity: 0, translateY: 12 } })
+```
+
+### Usage & Concepts
+
+-   Target `i` evaluates the plan at `groupTime - offset_i`, clamped to `[0, planDuration]`; before its offset it shows its `from`. `duration` is the plan duration plus the largest offset (one run).
+-   Targets with the same offset, `from` values and start velocity share one `PlanRuntime`: evaluation cost is the number of distinct pairs, not N. Style objects are computed once per distinct runtime and frame.
+-   `play(config)` validates synchronously (nothing changes on failure) and returns a promise that resolves once per run: `'ended'` (last target finished, after repeats), `'interrupted'`, `'reset'` or `'disposed'`. `ENDED` is notified once per run.
+-   `count` defaults to the number of bound targets and is required (a positive integer) when nothing is bound. `delay` is in **seconds**. `repeat` repeats the whole group run, offsets included.
+-   `play()` over a `PLAYING` group starts from the config's `from`; each target inherits its own current velocity unless `velocity` is given.
+-   `bind(targets, [{ resolver }])` writes element `i` with target `i` in the commit phase through one style writer per element (changed declarations only). Extra elements are left alone, missing ones are not written. A group that has a value writes immediately. Array values report one `TypeError` asynchronously and drop the binding.
+-   `onUpdate` listeners get `{ states, status }` (one frozen state per target) once per frame from the commit phase and synchronously on `play`, `seek` and `reset`. Listener errors are isolated and rethrown asynchronously.
+
+### API Reference
+
+| Member | Description |
+| :--- | :--- |
+| `rafGroup(node, [{ clock, stagger }])` | `stagger` is seconds per target index or `(index, count) => seconds`. |
+| `play(config)` | `config`: `from` (value or `(index) => value`), `count`, `keyframes`, `durations`, `repeat`, `delay` (seconds), `velocity`. Returns `Promise<RunResult>`. |
+| `pause()` / `resume()` | Pause a `PLAYING` group / resume a `PAUSED` one. |
+| `seek(time)` | Group time clamped to `[0, duration]`; pauses and notifies once. |
+| `reset()` / `dispose()` | Back to `IDLE` / stop for good. |
+| `valueAt(index)` | Frozen snapshot of one target, `null` out of range or before `play()`. |
+| `bind(targets, [options])` | Returns an unbind function. |
+| `onUpdate(listener)` | Returns an unsubscribe function. |
+| `status`, `duration`, `count` | Lifecycle status, one run's duration, targets of the current run. |
+
+---
+
 ## `timeline` (`waapiTimeline` / `webTimeline`)
 
 > **A high-performance, browser-native timeline powered by the Web Animations API (WAAPI).**
