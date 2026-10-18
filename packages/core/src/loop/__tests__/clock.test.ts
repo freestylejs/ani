@@ -1,13 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rafTimeline } from '~/ani/raf/timeline'
+import { ani } from '~/nodes'
+import { T } from '~/timing'
 import type { Animatable } from '../clock'
-import { AnimationClock } from '../clock'
+import { AnimationClock, createClock } from '../clock'
+import { createFrameDriver } from './frame_driver'
 
 describe('AnimationClock', () => {
     beforeEach(() => {
-        delete (AnimationClock as unknown as { clock?: AnimationClock }).clock
+        AnimationClock.reset()
     })
 
     afterEach(() => {
+        AnimationClock.reset()
         vi.unstubAllGlobals()
     })
 
@@ -71,5 +76,454 @@ describe('AnimationClock', () => {
 
         clock.unsubscribe(second)
         expect(cancelAnimationFrame).toHaveBeenCalledTimes(1)
+    })
+
+    it('[configure] create(maxDt) on an existing clock applies instead of being ignored', () => {
+        const driver = createFrameDriver()
+        vi.stubGlobal('window', {
+            requestAnimationFrame: driver.requestFrame,
+            cancelAnimationFrame: driver.cancelFrame,
+        })
+        vi.stubGlobal('performance', { now: driver.now })
+        const dts: number[] = []
+
+        const clock = AnimationClock.create(0.1)
+        expect(AnimationClock.create(5)).toBe(clock)
+        clock.subscribe({ update: (dt) => dts.push(dt) })
+        driver.frame(3000)
+
+        expect(dts).toEqual([3])
+    })
+
+    it('[configure] rejects non-positive / NaN maxDeltaTime', () => {
+        expect(() => createClock({ maxDeltaTime: 0 })).toThrow(RangeError)
+        expect(() => createClock({ maxDeltaTime: Number.NaN })).toThrow(
+            RangeError
+        )
+        expect(() => AnimationClock.configure(-1)).toThrow(RangeError)
+    })
+})
+
+describe('createClock', () => {
+    afterEach(() => {
+        vi.unstubAllGlobals()
+    })
+
+    const make = (options: Parameters<typeof createClock>[0] = {}) => {
+        const driver = createFrameDriver()
+        const clock = createClock({
+            requestFrame: driver.requestFrame,
+            cancelFrame: driver.cancelFrame,
+            now: driver.now,
+            ...options,
+        })
+        return { driver, clock }
+    }
+
+    it('creates independent clocks with their own loops', () => {
+        const a = make()
+        const b = make()
+        const updatesA = vi.fn()
+        const updatesB = vi.fn()
+        a.clock.subscribe({ update: updatesA })
+        b.clock.subscribe({ update: updatesB })
+
+        a.driver.frame()
+
+        expect(updatesA).toHaveBeenCalledTimes(1)
+        expect(updatesB).not.toHaveBeenCalled()
+        expect(a.clock).not.toBe(AnimationClock.create())
+    })
+
+    it('reports its size', () => {
+        const { clock } = make()
+        const one: Animatable = { update: vi.fn() }
+        const two: Animatable = { update: vi.fn() }
+        clock.subscribe(one)
+        clock.subscribe(two)
+        clock.subscribe(two)
+        expect(clock.size).toBe(2)
+        clock.unsubscribe(one)
+        expect(clock.size).toBe(1)
+    })
+
+    it('[M1] maxDeltaTime Infinity gives real-time dt', () => {
+        const { driver, clock } = make({
+            maxDeltaTime: Number.POSITIVE_INFINITY,
+        })
+        const dts: number[] = []
+        clock.subscribe({ update: (dt) => dts.push(dt) })
+        driver.frame(2500)
+        expect(dts).toEqual([2.5])
+    })
+
+    it('clamps dt to maxDeltaTime by default (0.1s) and never passes negatives', () => {
+        const { driver, clock } = make()
+        const dts: number[] = []
+        clock.subscribe({ update: (dt) => dts.push(dt) })
+        driver.frame(1000)
+        driver.frame(-5)
+        driver.frame(16)
+        expect(dts[0]).toBe(0.1)
+        expect(dts[1]).toBe(0)
+        expect(dts[2]).toBeCloseTo(0.016)
+    })
+
+    it('[C1-a] keeps a single pending frame while subscribers churn', () => {
+        const { driver, clock } = make()
+        const first: Animatable = { update: vi.fn() }
+        const second: Animatable = { update: vi.fn() }
+        clock.subscribe(first)
+        clock.subscribe(second)
+        clock.unsubscribe(first)
+        clock.subscribe(first)
+        expect(driver.pending).toBe(1)
+        driver.frame()
+        expect(driver.pending).toBe(1)
+    })
+
+    it('[S3] ending the last subscriber and subscribing another in the same tick keeps ONE loop', () => {
+        const { driver, clock } = make()
+        const next: Animatable & { calls: number } = {
+            calls: 0,
+            update() {
+                this.calls++
+            },
+        }
+        const last: Animatable = {
+            update: () => {
+                clock.unsubscribe(last)
+                clock.subscribe(next)
+            },
+        }
+        clock.subscribe(last)
+
+        driver.frame()
+        expect(driver.pending).toBe(1)
+        expect(next.calls).toBe(0)
+
+        driver.frame()
+        driver.frame()
+        expect(next.calls).toBe(2)
+        expect(driver.pending).toBe(1)
+    })
+
+    it('[S3] chained rafTimelines (play next from ENDED handler) never multiply update calls', () => {
+        const { driver, clock } = make()
+        const updatesPerFrame: number[] = []
+        let calls = 0
+        const link = (i: number) => {
+            const line = rafTimeline(
+                ani({ to: { x: 1 }, duration: 0.05, timing: T.linear() }),
+                clock
+            )
+            line.onUpdate(({ status }) => {
+                calls++
+                if (status === 'ENDED' && i < 5) link(i + 1)
+            })
+            line.play({ from: { x: 0 } })
+        }
+        link(0)
+
+        for (let f = 0; f < 40; f++) {
+            calls = 0
+            driver.frame()
+            updatesPerFrame.push(calls)
+            expect(driver.pending).toBeLessThanOrEqual(1)
+        }
+        // exactly one timeline runs at a time -> at most 2 notifications
+        // (progress + ENDED) per frame, never one per accumulated loop
+        expect(Math.max(...updatesPerFrame)).toBeLessThanOrEqual(3)
+        expect(driver.pending).toBe(0)
+    })
+
+    describe('first update after joining (R2-2)', () => {
+        const ms = (value: number) => value / 1000
+
+        it('joining an idle clock advances by the frame delta (unchanged)', () => {
+            const { driver, clock } = make()
+            const dts: number[] = []
+            clock.subscribe({ update: (dt) => dts.push(dt) })
+            driver.frame(16)
+            driver.frame(16)
+            expect(dts[0]).toBeCloseTo(ms(16))
+            expect(dts[1]).toBeCloseTo(ms(16))
+        })
+
+        it('joining between frames advances only by the time since subscribing', () => {
+            const { driver, clock } = make()
+            const early: number[] = []
+            const late: number[] = []
+            clock.subscribe({ update: (dt) => early.push(dt) })
+            driver.frame(16)
+            driver.setNow(driver.now() + 9) // 9 ms into the next frame interval
+            clock.subscribe({ update: (dt) => late.push(dt) })
+            driver.frame(7) // frame lands 16 ms after the previous one
+
+            expect(early[1]).toBeCloseTo(ms(16))
+            expect(late).toHaveLength(1)
+            expect(late[0]).toBeCloseTo(ms(7))
+            driver.frame(16)
+            expect(late[1]).toBeCloseTo(ms(16))
+        })
+
+        it('joining inside a tick after simulated work advances from the join time', () => {
+            const { driver, clock } = make()
+            const joiner: number[] = []
+            const joined: Animatable = { update: (dt) => joiner.push(dt) }
+            let spawned = false
+            const spawner: Animatable = {
+                update: () => {
+                    if (spawned) return
+                    spawned = true
+                    driver.setNow(driver.now() + 20) // 20 ms of main-thread work
+                    clock.subscribe(joined)
+                },
+            }
+            clock.subscribe(spawner)
+            driver.frame(16)
+            expect(joiner).toEqual([]) // first update is on the NEXT tick (M4)
+
+            driver.frame(14) // next frame, 14 ms after the join
+            expect(joiner).toHaveLength(1)
+            expect(joiner[0]).toBeCloseTo(ms(14))
+            driver.frame(16)
+            expect(joiner[1]).toBeCloseTo(ms(16))
+        })
+
+        it('a join time in the future of the frame clamps to 0', () => {
+            const { driver, clock } = make()
+            clock.subscribe({ update: vi.fn() })
+            driver.frame(16)
+            const dts: number[] = []
+            driver.setNow(driver.now() + 50)
+            clock.subscribe({ update: (dt) => dts.push(dt) })
+            driver.frame(-40)
+            expect(dts).toEqual([0])
+        })
+
+        it('re-subscribing after unsubscribe starts from the new subscribe time', () => {
+            const { driver, clock } = make()
+            clock.subscribe({ update: vi.fn() })
+            driver.frame(16)
+            const dts: number[] = []
+            const animatable: Animatable = { update: (dt) => dts.push(dt) }
+            driver.setNow(driver.now() + 4)
+            clock.subscribe(animatable)
+            driver.setNow(driver.now() + 6)
+            clock.unsubscribe(animatable)
+            driver.setNow(driver.now() + 2)
+            clock.subscribe(animatable)
+            driver.frame(4)
+            expect(dts).toHaveLength(1)
+            expect(dts[0]).toBeCloseTo(ms(4))
+        })
+
+        it('maxDeltaTime still caps the first update', () => {
+            const { driver, clock } = make({ maxDeltaTime: 0.01 })
+            clock.subscribe({ update: vi.fn() })
+            driver.frame(16)
+            const dts: number[] = []
+            clock.subscribe({ update: (dt) => dts.push(dt) })
+            driver.frame(500)
+            expect(dts).toEqual([0.01])
+        })
+    })
+
+    it('[M4] a subscriber added during a tick is first updated on the next tick', () => {
+        const { driver, clock } = make()
+        const late: Animatable = { update: vi.fn() }
+        const starter: Animatable = {
+            update: () => {
+                clock.subscribe(late)
+                clock.unsubscribe(starter)
+            },
+        }
+        clock.subscribe(starter)
+        const other: Animatable = { update: vi.fn() }
+        clock.subscribe(other)
+
+        driver.frame()
+        expect(late.update).not.toHaveBeenCalled()
+        driver.frame()
+        expect(late.update).toHaveBeenCalledTimes(1)
+    })
+
+    it('a subscriber removed by an earlier subscriber is skipped within the same tick', () => {
+        const { driver, clock } = make()
+        const victim: Animatable = { update: vi.fn() }
+        const killer: Animatable = { update: () => clock.unsubscribe(victim) }
+        clock.subscribe(killer)
+        clock.subscribe(victim)
+        driver.frame()
+        expect(victim.update).not.toHaveBeenCalled()
+    })
+
+    it('[S1] a throwing subscriber does not stop others or the next frame (onError)', () => {
+        const onError = vi.fn()
+        const { driver, clock } = make({ onError })
+        const boom = new Error('boom')
+        const bad: Animatable = {
+            update: () => {
+                throw boom
+            },
+        }
+        const good: Animatable = { update: vi.fn() }
+        clock.subscribe(bad)
+        clock.subscribe(good)
+
+        driver.frame()
+        driver.frame()
+
+        expect(good.update).toHaveBeenCalledTimes(2)
+        expect(onError).toHaveBeenCalledTimes(2)
+        expect(onError).toHaveBeenCalledWith(boom)
+        expect(driver.pending).toBe(1)
+        expect(clock.size).toBe(2)
+    })
+
+    it('[S1] without onError, errors are rethrown asynchronously and the clock survives', () => {
+        const rethrown: Array<() => void> = []
+        vi.stubGlobal('queueMicrotask', (fn: () => void) => rethrown.push(fn))
+        const { driver, clock } = make()
+        const bad: Animatable = {
+            update: () => {
+                throw new Error('async-boom')
+            },
+        }
+        const good: Animatable = { update: vi.fn() }
+        clock.subscribe(bad)
+        clock.subscribe(good)
+
+        expect(() => driver.frame()).not.toThrow()
+        expect(good.update).toHaveBeenCalledTimes(1)
+        expect(rethrown).toHaveLength(1)
+        expect(() => rethrown[0]!()).toThrow('async-boom')
+        expect(driver.pending).toBe(1)
+    })
+
+    it('[S1] a throwing onUpdate callback of one timeline does not stall other timelines', () => {
+        // timelines report callback errors asynchronously
+        vi.stubGlobal('queueMicrotask', () => undefined)
+        const { driver, clock } = make({ onError: () => undefined })
+        const bad = rafTimeline(
+            ani({ to: { x: 1 }, duration: 1, timing: T.linear() }),
+            clock
+        )
+        bad.onUpdate(() => {
+            throw new Error('ui bug')
+        })
+        const good = rafTimeline(
+            ani({ to: { x: 100 }, duration: 1, timing: T.linear() }),
+            clock
+        )
+        good.play({ from: { x: 0 } })
+        try {
+            bad.play({ from: { x: 0 } })
+        } catch {
+            // play() notifies synchronously; the callback error may surface here
+        }
+
+        for (let i = 0; i < 5; i++) driver.frame(100)
+
+        expect((good.getCurrentValue() as { x: number }).x).toBeCloseTo(50)
+    })
+
+    it('[V1] recovers when the environment dropped the pending frame', () => {
+        const { driver, clock } = make()
+        const first: Animatable = { update: vi.fn() }
+        clock.subscribe(first)
+        driver.drop() // pending frame lost, clock still believes one is queued
+
+        // other subscribers arriving much later must restart the loop
+        driver.setNow(driver.now() + 5000)
+        const second: Animatable = { update: vi.fn() }
+        clock.subscribe(second)
+        driver.frame()
+
+        expect(first.update).toHaveBeenCalledTimes(1)
+        expect(second.update).toHaveBeenCalledTimes(1)
+        expect(driver.pending).toBe(1)
+    })
+
+    it('[V1] default clock restarts after the window / rAF stub is replaced', () => {
+        AnimationClock.reset()
+        const stubWindow = () => {
+            const driver = createFrameDriver()
+            vi.stubGlobal('window', {
+                requestAnimationFrame: driver.requestFrame,
+                cancelAnimationFrame: driver.cancelFrame,
+            })
+            vi.stubGlobal('performance', { now: driver.now })
+            return driver
+        }
+        const clock = AnimationClock.create()
+        const stale: Animatable = { update: vi.fn() }
+        const first = stubWindow()
+        clock.subscribe(stale)
+        expect(first.pending).toBe(1)
+
+        // test-runner style reinstall: new rAF, old queue gone
+        const second = stubWindow()
+        const fresh: Animatable = { update: vi.fn() }
+        clock.subscribe(fresh)
+        second.frame()
+
+        expect(fresh.update).toHaveBeenCalledTimes(1)
+        expect(stale.update).toHaveBeenCalledTimes(1)
+        AnimationClock.reset()
+    })
+
+    it('[H3] without a frame source subscribe neither throws nor retains', () => {
+        vi.stubGlobal('window', undefined)
+        vi.stubGlobal('requestAnimationFrame', undefined)
+        const clock = createClock()
+        const animatable: Animatable = { update: vi.fn() }
+
+        expect(() => clock.subscribe(animatable)).not.toThrow()
+        expect(clock.size).toBe(0)
+        expect(() => clock.unsubscribe(animatable)).not.toThrow()
+    })
+
+    it('[H3] timeline.play() is safe without a frame source', () => {
+        vi.stubGlobal('window', undefined)
+        vi.stubGlobal('requestAnimationFrame', undefined)
+        AnimationClock.reset()
+        const line = rafTimeline(
+            ani({ to: { x: 1 }, duration: 1, timing: T.linear() })
+        )
+        expect(() => line.play({ from: { x: 0 } })).not.toThrow()
+        expect(AnimationClock.create().size).toBe(0)
+    })
+
+    it('[H3] uses globalThis.requestAnimationFrame when there is no window (worker)', () => {
+        const driver = createFrameDriver()
+        vi.stubGlobal('window', undefined)
+        vi.stubGlobal('requestAnimationFrame', driver.requestFrame)
+        vi.stubGlobal('cancelAnimationFrame', driver.cancelFrame)
+        vi.stubGlobal('performance', { now: driver.now })
+        const clock = createClock()
+        const animatable: Animatable = { update: vi.fn() }
+        clock.subscribe(animatable)
+        driver.frame()
+        expect(animatable.update).toHaveBeenCalledTimes(1)
+    })
+
+    it('dispose() stops the loop and drops subscribers', () => {
+        const { driver, clock } = make()
+        const animatable: Animatable = { update: vi.fn() }
+        clock.subscribe(animatable)
+        ;(clock as AnimationClock).dispose()
+        expect(driver.pending).toBe(0)
+        expect(clock.size).toBe(0)
+        driver.frame()
+        expect(animatable.update).not.toHaveBeenCalled()
+    })
+
+    it('reset() on the default clock gives a fresh instance', () => {
+        const first = AnimationClock.create()
+        AnimationClock.reset()
+        expect(AnimationClock.create()).not.toBe(first)
+        AnimationClock.reset()
     })
 })
