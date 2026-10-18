@@ -202,7 +202,25 @@ if (element) {
 
 Unlike `dynamicTimeline`, `timeline` does not emit `onUpdate` events because the animation state is managed by the browser's native engine.
 
-Compiled keyframes are cached per root node, `from` values and `propertyResolver` (plans with `keyframes` / `durations` overrides are not cached), so many elements sharing a tree compile once. One `timeline` drives one target: playing it on another element cancels the first animation. It needs the DOM (`KeyframeEffect`), so call it on the client only.
+Compiled keyframes are cached per root node, `from` values and `resolver` (plans with `keyframes` / `durations` overrides are not cached), so many elements sharing a tree compile once. One `play()` can drive several targets: every target gets its own native `Animation`, with an optional `stagger` start offset. A `from` function gives each target its own starting value; targets with equal values share the compiled keyframes. It needs the DOM (`KeyframeEffect`), so call it on the client only.
+
+`play()` returns a `Promise<RunResult>` that never rejects. Exactly one result is reported per run:
+
+| Result | When |
+| :--- | :--- |
+| `'ended'` | Every animation finished (or `finish()` was called). |
+| `'interrupted'` | A later `play()` replaced the run. |
+| `'skipped'` | The timeline was running and `interrupt: false` was set. Nothing was created. |
+| `'reset'` | `cancel()` / `reset()` / `dispose()` stopped the run. |
+| `'disposed'` | `play()` was called after `dispose()`. |
+
+#### Interruption
+
+Playing over a running timeline calls `commitStyles()` on every old animation (ignored when it throws for an element that is not rendered) and then cancels it, so the element continues from the value it showed instead of jumping. **Velocity is not continuous on WAAPI**: only the position is kept (use `dynamicTimeline` for velocity continuity).
+
+#### Values
+
+`value` / `valueAt(index)` return the value of a target, computed from the plan at that animation's `currentTime` (minus its delay, wrapped per repeat, clamped to the run) with the same evaluation as the RAF engine. Computed styles are never parsed. They are `null` without a run or for an unknown index.
 
 #### Best Practices
 
@@ -214,38 +232,57 @@ Compiled keyframes are cached per root node, `from` values and `propertyResolver
 
 #### Methods
 
-| Method | Description |
+| Member | Description |
 | :--- | :--- |
-| `play(target, config)` | Compiles and plays the animation on the target DOM element. |
-| `pause()` | Pauses the native animation. |
-| `resume()` | Resumes the native animation. |
-| `cancel()` | Cancels the animation and removes effects. |
-| `seek(time)` | Jumps to a specific time (in seconds). |
+| `play(targets, config)` | Compiles and plays the animation on one element or a list of elements. Returns `Promise<RunResult>`. |
+| `pause()` / `resume()` | No-op unless `PLAYING` / `PAUSED`. |
+| `seek(time)` | Jumps every target to `time` (seconds, clamped), keeping their offsets. |
+| `finish()` | Jumps to the end: status `ENDED`, result `'ended'`. Throws for `repeat: Infinity`. |
+| `cancel()` / `reset()` | Cancels the animations: status `IDLE`, result `'reset'`. |
+| `dispose()` | `cancel()`, drops listeners; further `play()` resolves `'disposed'`. Idempotent. |
+| `onStatus(listener)` | Called on every status change. Returns an unsubscribe function. |
+| `status` | `'IDLE' \| 'PLAYING' \| 'PAUSED' \| 'ENDED'`. |
+| `duration` | Seconds of one run, without delay or stagger. |
+| `animations` | The native `Animation` of every target (`readonly Animation[]`). |
+| `value` / `valueAt(index)` | Plan value of a target, or `null`. |
 
 #### Type Definitions
 
 ```typescript
 function timeline<G extends Groupable>(rootNode: AnimationNode<G>): WebAniTimeline<G>;
 
-interface WebAniTimelineConfig<G extends Groupable> {
-    from: G;
-    repeat?: number;
-    delay?: number; // milliseconds
+type RunResult = 'ended' | 'interrupted' | 'skipped' | 'reset' | 'disposed';
+
+interface WaapiPlayConfig<G extends Groupable> {
+    from: G | ((index: number) => G); // record shapes only (CSS properties)
     keyframes?: Array<G | 'keep'>;
     durations?: Array<number | 'keep'>;
-    propertyResolver?: Resolver<G>;
-    keyframeEffect?: Omit<KeyframeEffectOptions, 'duration' | 'iterations' | 'delay'>;
+    repeat?: number; // extra runs, Infinity allowed
+    delay?: number; // seconds
+    stagger?: number | ((index: number, count: number) => number); // seconds, start offset per target
+    resolver?: Resolver<Record<string, number>>;
+    effect?: Omit<KeyframeEffectOptions, 'duration' | 'iterations' | 'delay'>;
+    interrupt?: boolean; // default true
 }
 
 interface WebAniTimeline<G extends Groupable> {
-    play(target: Element, config: WebAniTimelineConfig<G>): Animation | null;
+    play(targets: Element | ArrayLike<Element>, config: WaapiPlayConfig<G>): Promise<RunResult>;
     pause(): void;
     resume(): void;
-    cancel(): void;
     seek(time: number): void;
-    get nativeAnimation(): Animation | null;
+    finish(): void;
+    cancel(): void;
+    dispose(): void;
+    onStatus(listener: (status: TimelineStatus) => void): () => void;
+    readonly status: TimelineStatus;
+    readonly duration: number;
+    readonly animations: readonly Animation[];
+    readonly value: Readonly<Record<string, number>> | null;
+    valueAt(index: number): Readonly<Record<string, number>> | null;
 }
 ```
+
+Invalid input (array `from`, negative or non-finite `delay` / stagger offsets, no target) throws synchronously, before anything is touched.
 
 ### Related Components
 
