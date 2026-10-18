@@ -3,6 +3,7 @@
     "pages": [
         "timeline",
         "dynamic_timeline",
+        "group",
         "ani",
         "timing",
         "sequence",
