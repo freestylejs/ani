@@ -16,6 +16,7 @@ export interface HarnessClock {
 }
 
 export type ClockFactory = (options: {
+    lagThreshold?: number | undefined
     maxDeltaTime?: number | undefined
     onError?: ((error: unknown) => void) | undefined
     requestFrame: (callback: (timestamp: number) => void) => number
@@ -29,12 +30,17 @@ export type ClockFactory = (options: {
  */
 export function createManualClockWith(
     createClock: ClockFactory,
-    options: { maxDeltaTime?: number; onError?: (error: unknown) => void } = {}
+    options: {
+        lagThreshold?: number
+        maxDeltaTime?: number
+        onError?: (error: unknown) => void
+    } = {}
 ) {
     let nextId = 1
     let time = 1000
     const pending = new Map<number, (timestamp: number) => void>()
     const clock = createClock({
+        lagThreshold: options.lagThreshold,
         maxDeltaTime: options.maxDeltaTime,
         onError: options.onError,
         requestFrame: (callback) => {

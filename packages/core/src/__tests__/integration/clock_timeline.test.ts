@@ -135,16 +135,32 @@ describe('real clock + real timelines', () => {
         expect(late.getCurrentValue()!.x).toBeGreaterThan(0)
     })
 
-    it('clamps dt after jank by default and follows wall time with maxDeltaTime: Infinity', () => {
-        const clamped = createManualClock()
-        const slow = rafTimeline(node(10), clamped.clock)
-        slow.play({ from: { x: 0 } })
-        clamped.frame(16)
-        clamped.frame(5000)
-        // 16ms + clamped 100ms of a 10s animation
-        expect(slow.getCurrentValue()!.x).toBeCloseTo(1.16, 5)
+    it('stays on the wall clock under jank and pauses across a suspension', () => {
+        const m = createManualClock()
+        const t = rafTimeline(node(10), m.clock)
+        t.play({ from: { x: 0 } })
+        // jank: 16 ms, then a 400 ms frame -> both applied in full
+        m.frame(16)
+        m.frame(400)
+        expect(t.getCurrentValue()!.x).toBeCloseTo(4.16, 5)
+        // suspension (hidden tab): a 5 s gap advances by one ordinary frame
+        m.frame(5000)
+        expect(t.getCurrentValue()!.x).toBeCloseTo(4.32, 5)
+        m.frame(16)
+        expect(t.getCurrentValue()!.x).toBeCloseTo(4.48, 5)
+    })
 
-        const realtime = createManualClock({ maxDeltaTime: Infinity })
+    it('a 1 s animation under 250 ms frames takes 1 s of wall time', () => {
+        const m = createManualClock()
+        const t = rafTimeline(node(1), m.clock)
+        t.play({ from: { x: 0 } })
+        m.frames(4, 250)
+        expect(t.status).toBe('ENDED')
+        expect(t.getCurrentValue()).toEqual({ x: 100 })
+    })
+
+    it('follows pure wall time with lagThreshold: Infinity', () => {
+        const realtime = createManualClock({ lagThreshold: Infinity })
         const exact = rafTimeline(node(10), realtime.clock)
         exact.play({ from: { x: 0 } })
         realtime.frame(5000)
