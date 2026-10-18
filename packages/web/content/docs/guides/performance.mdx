@@ -74,7 +74,7 @@ Whoever creates a timeline or state machine owns it and must release it.
 ### Keep the loop healthy
 
 -   An error in one `onUpdate` callback or timeline does not stop the loop. It is reported asynchronously (use the clock's `onError` to route it to your logger).
--   Under jank, animations slow down instead of jumping (`maxDeltaTime`, 100 ms by default). Use `Infinity` for real-time semantics.
+-   Under jank (frames up to 0.5 s) animations stay on the wall clock; after a suspension (hidden tab) they resume instead of jumping. See [lag smoothing](/en/docs/core-api/clock).
 -   During development, assert in a test that nothing leaks: `AnimationClock.create().size` must return to `0` after your views unmount. See [Testing](/en/docs/guides/testing).
 
 ### Checklist

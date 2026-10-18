@@ -89,7 +89,7 @@ Calling `play()` on a `PLAYING` timeline interrupts it (pass `canBeIntercepted =
 
 -   `repeat` is the number of **additional** runs (`Infinity` for endless). The frame overshoot at the end of a run is carried into the next one, so repeats do not drift.
 -   `delay` is in **milliseconds** and holds the animation before the first frame.
--   Progress per frame is clamped by the clock's `maxDeltaTime` (100 ms by default). See [clock](/en/docs/core-api/clock).
+-   Progress per frame follows the clock's lag smoothing: real elapsed time up to 0.5 s, one ordinary frame after a longer suspension. See [clock](/en/docs/core-api/clock).
 -   An animation is considered finished within `1e-9` seconds of its end (`END_TOLERANCE`).
 
 #### Same-property overlap

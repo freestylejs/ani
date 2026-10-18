@@ -887,15 +887,15 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 -   A subscriber that throws does not stop the others or the next frame. The error goes to `onError` or is rethrown asynchronously.
 -   `subscribe` re-arms the loop if the environment dropped the pending frame (a pending frame older than 1 s is treated as lost).
 -   Without a frame source (SSR, plain workers) `subscribe` is a silent no-op and nothing is retained.
--   `maxDeltaTime` (default 0.1 s) clamps each frame's `dt`. This keeps physics stable but **dilates time under jank**. `Infinity` follows the wall clock. Invalid values throw a `RangeError`.
+-   Lag smoothing: a frame gap up to `lagThreshold` (default 0.5 s) advances animations by the real elapsed time (no slow motion under jank); a longer gap (hidden tab, debugger, sleep) advances by one ordinary frame. `lagThreshold: Infinity` follows the wall clock exactly. `maxDeltaTime` (unlimited by default) is an optional hard cap. Invalid values throw a `RangeError`.
 
 ### API Reference
 
 | Member | Description |
 | :--- | :--- |
-| `createClock(options?)` | Independent clock: `maxDeltaTime`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
+| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
 | `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` applies to the existing clock. |
-| `AnimationClock.configure(maxDeltaTime)` | Reconfigures the shared clock. |
+| `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`, `{ lagThreshold?, maxDeltaTime? }` sets either atomically. |
 | `AnimationClock.reset()` | Disposes the shared clock (test isolation, hot reload). |
 | `clock.size` | Number of subscribed animatables. |
 
