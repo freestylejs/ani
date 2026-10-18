@@ -1,8 +1,35 @@
 # Vue Animation Composables API
 
-These Vue composables integrate the `@freestylejs/ani-core` animation engine with Vue. They offer two strategies: a reactive one that syncs animation values with the framework's reactivity, and a ref-based one that writes styles directly to the DOM (no render per frame).
+These Vue composables integrate the `@freestylejs/ani-core` animation engine with Vue. `useAni` syncs animation values with the framework's reactivity; the others hand an element to the core engine, which writes its styles (no render per frame). DOM events are Vue's job (`@click`, ...).
 
-**Ownership:** a binding disposes the state machine it creates (`useAniStates`) and only *detaches* from timelines you pass in. Call `timeline.dispose()` yourself for timelines you create. See the large-scale usage guide in the docs.
+**Ownership:** a primitive that is given a timeline or group only *binds* to it and never disposes it. The primitives that create something (`useTimeline`, `useAniStates`, `useFollow`) dispose it with the component scope (`onScopeDispose`). Outside a component scope they still work, but you dispose the result yourself.
+
+**Function refs:** `ref` values are used as `<div :ref="ref" :style="style">`. A component instance resolves to its `$el`. `style` is the initial inline style (`createStyleSheet(initialValue, resolver)`), rendered on the server; nothing subscribes to a clock or touches the DOM during server rendering.
+
+---
+
+## `useTimeline`
+
+> **Creates an object and disposes it with the component.**
+
+```ts
+function useTimeline<T extends { dispose(): void }>(factory: () => T): T
+```
+
+```vue
+<script setup>
+import { a, rafTimeline } from "@freestylejs/ani-core";
+import { useTimeline } from "@freestylejs/ani-vue";
+
+const timeline = useTimeline(() =>
+  rafTimeline(a.ani({ to: { opacity: 1 }, duration: 1 }))
+);
+</script>
+```
+
+-   `factory` runs once; the result is disposed in `onScopeDispose` (also works in a plain `effectScope`).
+-   Works for timelines, groups and followers: anything with `dispose()`.
+-   Outside a scope it does not warn and the caller disposes. A throwing factory throws synchronously.
 
 ---
 
@@ -16,11 +43,11 @@ This composable subscribes to a `timeline`'s state and updates a Vue `ref` on ea
 
 ```vue
 <script setup>
-import { a } from "@freestylejs/ani-core";
+import { a, rafTimeline } from "@freestylejs/ani-core";
 import { useAni } from "@freestylejs/ani-vue";
 
 // 1. Define the animation structure and create a timeline.
-const myTimeline = a.dynamicTimeline(
+const myTimeline = rafTimeline(
   a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
 );
 
@@ -42,24 +69,12 @@ function handlePlay() {
 </template>
 ```
 
-### Usage & Concepts
-
-#### Overview
-
-The `useAni` composable acts as a bridge between the `@freestylejs/ani-core` engine and Vue's reactivity system. It takes a `timeline` instance and an `initialValue`, returning a reactive Vue `ref` that is updated with the latest animation value, alongside the timeline's controller. Vue's reactivity system automatically tracks this `ref` and updates the component whenever its value changes.
-
-#### Behavior
+### Behavior
 
 -   `timeline` may be a timeline or a `Ref` of one; swaps are followed.
 -   The value is a `shallowRef`: each frame replaces it as a whole, nothing is deeply proxied. Do not mutate it.
--   The composable subscribes on mount and unsubscribes before unmount, so server rendering retains nothing. See [SSR](/en/docs/guides/ssr).
+-   The composable subscribes on mount and unsubscribes before unmount, so server rendering retains nothing.
 -   The returned controller follows timeline swaps. The timeline you pass is never disposed.
-
-#### When to Use
-
--   **Do** use `useAni` when you need the animated values to be part of Vue's reactive system.
--   **Do** use it for animations that affect text content, attributes, or props.
--   **Don't** use `useAni` for high-frequency style updates on a single element. For that, `useAniRef` is a better choice.
 
 ### API Reference
 
@@ -70,119 +85,96 @@ The `useAni` composable acts as a bridge between the `@freestylejs/ani-core` eng
 
 Returns `readonly [value, controller]`: a `Ref<AniGroup<G>>` and the timeline controller.
 
-### Related Components
-
--   [`useAniRef`](/en/docs/vue/use-ani-ref) - For performance-critical animations that write directly to the DOM.
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this composable subscribes to.
-
 ---
 
 ## `useAniRef`
 
-> **A performant, event-driven Vue composable that binds animations directly to a template ref.**
+> **A function ref and an initial style that bind an element to a timeline.**
 
-This composable applies animation styles directly to a DOM element, bypassing Vue's virtual DOM for high performance. It also includes a built-in event manager to simplify interactive animations.
-
-### Example
+```ts
+function useAniRef<G>(
+  timeline: RafTimeline<G> | Ref<RafTimeline<G>>,
+  options?: { initialValue?: AniGroup<G>; resolver?: Resolver<Record<string, number>> }
+): {
+  ref: (element: Element | ComponentPublicInstance | null) => void
+  style: ComputedRef<StyleValue | undefined>
+}
+```
 
 ```vue
 <script setup>
-import { a } from "@freestylejs/ani-core";
-import { useAniRef } from "@freestylejs/ani-vue";
+import { a, rafTimeline } from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-vue";
 
-// 1. Define the animation structure and timeline.
-const myTimeline = a.dynamicTimeline(
-  a.sequence([
-    a.ani({ to: { translateX: 500, rotate: 360 }, duration: 1 }),
-    a.ani({ to: { translateX: 0, rotate: 0 }, duration: 1 }),
-  ])
+const timeline = useTimeline(() =>
+  rafTimeline(a.ani({ to: { translateX: 500 }, duration: 1 }))
 );
-
-// 2. Use the composable to get the template ref and controller.
-const [elementRef, controller] = useAniRef({
-  timeline: myTimeline,
-  initialValue: { translateX: 0, rotate: 0 },
-  // 3. Add event handlers for interactivity.
-  events: {
-    onMousedown: (ctx, event) => {
-      // `ctx` is the timeline controller plus `ctx.current`, the latest value.
-      ctx.play({ from: ctx.current ?? { translateX: 0, rotate: 0 } });
-    },
-    onMouseup: (ctx) => {
-      ctx.pause();
-    },
-  },
-});
+const { ref, style } = useAniRef(timeline, { initialValue: { translateX: 0 } });
 </script>
 
 <template>
-  <!-- 4. Bind the template ref to the element -->
-  <div
-    :ref="elementRef"
-    style="width: 100px; height: 100px; background: blue;"
-    @click="controller.play({ from: { translateX: 0, rotate: 0 } })"
-  />
+  <div :ref="ref" :style="style" @click="timeline.play({ from: { translateX: 0 } })" />
 </template>
 ```
 
-### Usage & Concepts
+-   The element is written through `timeline.bind` only (commit phase, changed declarations only).
+-   `style` is `undefined` without an `initialValue`. It is a stable object, so a re-render never resets an animated style.
+-   Setting the same element again adds no binding; `ref(null)` and unmount unbind. The timeline stays alive.
+-   A `Ref` timeline is followed: on change the element is rebound to the new one.
+-   `resolver` shapes both the initial style and the frames.
 
-#### Overview
+---
 
-The `useAniRef` composable is designed for performance. It takes a configuration object (`AniRefProps`) and returns a template `ref` to be attached to a DOM element, along with the timeline controller. On each animation frame, it converts animation values to CSS styles and applies them directly to the element, avoiding Vue's VDOM overhead for the animated properties.
+## `useAniGroup`
 
-Event handlers passed to the `events` property receive a context object: the timeline controller plus `current`, the latest animation value.
+> **Function refs that bind a list of elements to one group, one ref per index.**
 
-#### Lifecycle
+```ts
+function useAniGroup<G>(
+  group: RafGroup<G> | Ref<RafGroup<G>>,
+  options?: { initialValue?: AniGroup<G>; resolver?: Resolver<Record<string, number>> }
+): {
+  ref: (index: number) => (element: Element | ComponentPublicInstance | null) => void
+  style: ComputedRef<StyleValue | undefined>
+}
+```
 
--   **Timeline may be reactive.** `timeline` can be a timeline or a `Ref` of one. Swaps are followed synchronously: the old timeline is detached and the new one's current value is applied at once. A deep `ref(timeline)` is unwrapped to the raw instance, but prefer `shallowRef`.
--   **Template ref.** The binding starts when the element is set (also for `v-if`) and stops when it is removed or the component unmounts.
--   **Controller.** It always targets the current timeline and forwards every member, including `canBeIntercepted`.
--   **Styles.** Custom properties (`--x`) from a `propertyResolver` are written with `setProperty` (see [styles](/en/docs/core-api/advanced/building-bindings)).
--   **Ownership.** The composable never disposes the timeline you pass. Call `timeline.dispose()` yourself if you created it.
+```vue
+<template>
+  <li v-for="(item, i) in items" :key="item" :ref="ref(i)" :style="style" />
+</template>
+```
 
-#### When to Use
-
--   **Do** use `useAniRef` for high-performance animations of CSS properties like `transform` and `opacity`.
--   **Do** use it for complex, interactive animations driven by user input at 60fps.
--   **Don't** use `useAniRef` when you need to read the animated values within your component's template or other computed properties. Use `useAni` for that.
-
-### API Reference
-
-| Name | Type | Description |
-| :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Ref<RafAniTimeline<G>>` | The timeline to bind. |
-| `initialValue` | `AniGroup<G>` | (Optional) Style applied before the timeline has a value, and restored by `reset()`. |
-| `events` | `EventHandlerRegistration` | (Optional) `onClick`-style handlers. Receive `(ctx, event)`. |
-| `cleanupEvents` | `boolean` | (Optional, default `true`) Remove listeners on unmount. |
-
-Returns `readonly [elementRef, controller]`.
-
-### Related Components
-
--   [`useAni`](/en/docs/vue/use-ani) - For reactive animations that integrate with Vue's Composition API.
--   [`EventManager`](/en/docs/core-api/advanced/event-management) - The underlying utility used by the `events` property.
+-   `ref(index)` returns the same function for the same index and binds the element with `group.bindAt(index, ...)`.
+-   A removed item unbinds itself; an item that mounts later is bound to its index.
+-   A `Ref` group is followed: on change every element is rebound. The group is never disposed.
 
 ---
 
 ## `useAniStates`
 
-> **A reactive composable for managing and transitioning between multiple animation states.**
+> **A composable for managing and transitioning between multiple animation states.**
 
-This composable is a Vue-specific wrapper around the core `createStates` function. It's designed for components with multiple, distinct visual states (e.g., idle, hover, active) and provides a simple, reactive API to manage transitions between them.
-
-### Example
+```ts
+function useAniStates<const S extends AnimationStateShape>(
+  config: StateProps<S> & { resolver?: Resolver<Record<string, number>> }
+): {
+  ref: (element: Element | ComponentPublicInstance | null) => void
+  style: ComputedRef<StyleValue | undefined>
+  state: Readonly<Ref<keyof S>>
+  transitionTo: StateController<S>["transitionTo"]
+  machine: StateController<S>
+}
+```
 
 ```vue
 <script setup>
 import { a } from "@freestylejs/ani-core";
 import { useAniStates } from "@freestylejs/ani-vue";
 
-// Use the composable to create the state machine. It returns the template ref,
-// reactive refs for state info, and a function to transition.
-const [elementRef, { state }, transitionTo] = useAniStates({
+const { ref, style, state, transitionTo } = useAniStates({
   initial: "idle",
-  initialFrom: { scale: 1, opacity: 0.7 },
+  initialValue: { scale: 1, opacity: 0.7 },
   states: {
     idle: a.ani({ to: { scale: 1, opacity: 0.7 }, duration: 0.5 }),
     hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
@@ -192,53 +184,51 @@ const [elementRef, { state }, transitionTo] = useAniStates({
 
 <template>
   <button
-    :ref="elementRef"
+    :ref="ref"
+    :style="style"
+    :data-state="state"
     @mouseenter="transitionTo('hover')"
     @mouseleave="transitionTo('idle')"
-    :data-state="state"
-    class="rounded-md bg-blue-500 px-4 py-2 transition-all"
   >
     Hover Me
   </button>
 </template>
 ```
 
-### Usage & Concepts
+-   **Owns its machine** and disposes it with the component scope, which stops any running timeline. Outside a scope, call `machine.dispose()`.
+-   Config is read once, at setup. The element is written through `machine.bind`, which follows every transition, so `transitionTo` also works inside `setup()`.
+-   `state` is readonly and follows the machine, including transitions made on `machine` directly and rollbacks of failed ones.
+-   Interrupting a transition continues from the current value and velocity.
 
-#### Overview
+---
 
-The `useAniStates` composable simplifies stateful animation logic in Vue. It manages the active animation state and its corresponding timeline, automatically handling seamless transitions. When you call `transitionTo`, it uses the current animation's value as the starting point for the next animation, ensuring smooth, interruptible effects.
+## `useFollow`
 
-#### Lifecycle
+> **A spring follower bound to an element, disposed with the component.**
 
--   **Owns its controller.** The composable creates the state machine and **disposes it with the component scope** (unmount), which stops any running timeline (even `repeat: Infinity`).
--   **Props are read once**, at setup. `states`, `initial`, `initialFrom` and `clock` are not tracked.
--   **Never misses a transition.** It subscribes to timeline changes synchronously, so `transitionTo` also works inside `setup()` and from a child's `onMounted`.
--   **Atomic.** `transitionTo` validates first (an unknown state throws a `RangeError` and nothing changes). The `state` ref reflects what the machine actually did, including a transition rejected because `canBeIntercepted` is `false`.
--   **`timeline` is a `shallowRef`.** It is not wrapped in a deep proxy, so identity and internal mutation keep working.
+```ts
+function useFollow<G extends Record<string, number>>(
+  initial: G,
+  options?: FollowOptions & { resolver?: Resolver<Record<string, number>> }
+): {
+  ref: (element: Element | ComponentPublicInstance | null) => void
+  style: ComputedRef<StyleValue | undefined>
+  follower: Follower<G>
+}
+```
 
-#### When to Use
+```vue
+<script setup>
+import { useFollow } from "@freestylejs/ani-vue";
 
--   **Do** use `useAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
--   **Don't** use it for animations that are not state based. Use [`useAniRef`](/en/docs/vue/use-ani-ref) with your own timeline.
+const { ref, style, follower } = useFollow({ translateX: 0 });
+</script>
 
-### API Reference
+<template>
+  <div :ref="ref" :style="style" @pointermove="follower.set({ translateX: $event.clientX })" />
+</template>
+```
 
-| Name | Type | Description |
-| :--- | :--- | :--- |
-| `props` | `StateProps` | `initial`, `initialFrom`, `states` and optional `clock`. See [createStates](/en/docs/core-api/states). |
-
-Returns `readonly [elementRef, { state, timeline }, transitionTo]`.
-
-| Member | Description |
-| :--- | :--- |
-| `elementRef` | Template ref to attach to the element. |
-| `state` | Readonly ref of the current state name. |
-| `timeline` | Readonly ref of the active timeline. It changes on every transition. |
-| `transitionTo(name, config?, canBeIntercepted?)` | Switches state. |
-
-### Related Components
-
--   [`createStates`](/en/docs/core-api/states) - The core function that this composable is built upon.
--   [`useAniRef`](/en/docs/vue/use-ani-ref) - To apply the stateful animations to the DOM.
--   [`useAni`](/en/docs/vue/use-ani) - To reactively read the animation values from the active timeline.
+-   Owns the follower and disposes it with the component scope. Outside a scope, call `follower.dispose()`.
+-   `style` is `createStyleSheet(initial, resolver)`. `follower.jump(value)` writes the element synchronously.
+-   An invalid initial value (for example `NaN`) throws a `TypeError` synchronously.
