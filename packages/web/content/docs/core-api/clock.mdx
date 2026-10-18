@@ -48,7 +48,7 @@ AnimationClock.create().size; // number of timelines currently driven
 -   **Three phases per frame.** Every tick runs **read**, then **update**, then **commit** over all subscribers, so layout reads and DOM writes never interleave. See [Frame phases](#frame-phases).
 -   **Per-tick snapshot.** A timeline subscribed during a tick (in any phase) first runs on the **next** tick. One unsubscribed before its update ran gets neither `update` nor `commit` in that tick.
 -   **Progress since subscribe.** The first update of a new subscriber advances by the time elapsed since it subscribed, not by the time since the previous frame.
--   **Error isolation.** A callback that throws, in any phase, does not stop the others or the next frame. The error goes to `onError` when given, otherwise it is rethrown asynchronously. The subscriber stays subscribed unless it unsubscribes itself.
+-   **Error isolation.** A callback that throws, in any phase, does not stop the others or the next frame. The error goes to `onError` when given, otherwise it is rethrown asynchronously. The subscriber stays subscribed unless it unsubscribes itself or fails in 3 consecutive ticks (see [Quarantine](#quarantine)).
 -   **Self-healing.** `subscribe` re-arms the loop when the environment dropped the pending frame (for example a fake rAF reinstalled). A pending frame older than one second is treated as lost.
 -   **No frame source, no work.** Without `requestAnimationFrame` (server rendering, plain workers) `subscribe` is a silent no-op and the subscriber is not retained. See [SSR](/en/docs/guides/ssr).
 
@@ -71,6 +71,43 @@ Each frame runs the phases in order over the same snapshot of subscribers:
 3. **Commit:** `commit()` of every subscriber whose `update` ran in this tick, even if it unsubscribed during the tick, so a timeline that ends in this frame still writes its final value.
 
 A subscriber with only `update` keeps working unchanged. `clock.read(fn)` arms an idle loop and runs `fn` once, in the next frame before any update; callbacks queued during a tick run in the following tick, and a queued callback does not keep the loop alive afterwards. Without a frame source it is a silent no-op.
+
+#### Time scale
+
+`timeScale` (default `1`) multiplies every delta handed to subscribers, after lag smoothing and `maxDeltaTime`, including the first delta of a subscriber that joined a running loop. Use it for slow motion, fast forward or a global freeze.
+
+```typescript
+const clock = createClock({ timeScale: 0.5 }); // half speed
+clock.timeScale = 2;  // double speed from the next frame
+clock.timeScale = 0;  // freeze: frames keep running, timelines stay PLAYING with dt = 0
+clock.timeScale = -1; // throws RangeError (must be finite and >= 0)
+```
+
+A change applies from the next frame and never alters lag detection: a suspension still advances by one ordinary frame, then scaled.
+
+#### Pause and resume
+
+`clock.pause()` cancels the pending frame and keeps every subscriber, so nothing runs and no frame is requested. While paused, `subscribe` and `clock.read(fn)` retain their work but arm nothing; `unsubscribe` works as usual.
+
+`clock.resume()` re-arms the loop (when something is subscribed or queued) with a restarted time base: the paused wall-clock gap is never applied, and the first frame advances by the time since `resume()`. Both calls are idempotent, `resume()` on a running clock does nothing, and `dispose()` while paused leaves `clock.paused === false`.
+
+Unlike `timeScale = 0`, a paused clock requests no frames at all.
+
+#### Quarantine
+
+A subscriber whose `read`, `update` or `commit` throws in **3 consecutive ticks** is unsubscribed so a broken animation cannot report forever. Each of the three errors goes to `onError` as usual, followed by one extra `AniError` with code `ANI_SUBSCRIBER_QUARANTINED` whose `cause` is the last error.
+
+```typescript
+createClock({
+  onError(error) {
+    if (error instanceof AniError && error.code === "ANI_SUBSCRIBER_QUARANTINED") {
+      console.warn("dropped:", error.cause);
+    }
+  },
+});
+```
+
+A tick in which the subscriber runs without throwing resets its count, and so does unsubscribing. Other subscribers are never affected.
 
 #### Frame time: lag smoothing
 
@@ -100,6 +137,7 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size` 
 | :--- | :--- | :--- | :--- |
 | `lagThreshold` | `number` | `0.5` | Gaps up to this many seconds apply in full; longer gaps count as one ordinary frame. `Infinity` = pure wall clock. |
 | `maxDeltaTime` | `number` | `Infinity` | Hard cap on one frame's `dt` in seconds. A finite value dilates time on slow frames. |
+| `timeScale` | `number` | `1` | Multiplier of every delta. Finite and `>= 0`; `0` freezes animation time. Invalid values throw a `RangeError`. |
 | `visibility` | `boolean \| VisibilitySource` | `true` | A frame gap during which the page became hidden is a suspension whatever its length. `true` uses `globalThis.document`, an object injects a `VisibilitySource`, `false` disables detection (no listener). |
 | `requestFrame` | `(cb) => number` | `requestAnimationFrame` | Frame source. Resolved lazily at the first subscribe. |
 | `cancelFrame` | `(id) => void` | `cancelAnimationFrame` | Cancels a requested frame. |
@@ -116,6 +154,9 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size` 
 | `clock.size` | Number of animatables currently subscribed. |
 | `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. An `Animatable` is `{ read?(), update(dt), commit?() }`. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
+| `clock.timeScale` | Get / set the delta multiplier. Throws `RangeError` for values that are not finite or are negative. |
+| `clock.paused` | `true` after `pause()` until `resume()` or `dispose()`. |
+| `clock.pause()` / `clock.resume()` | Stop the loop keeping subscribers / restart it without applying the paused gap. Idempotent. |
 | `clock.dispose()` | Stops the loop and drops all subscribers and queued `read` callbacks. |
 
 ### Related Components

@@ -924,6 +924,9 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 -   A subscriber added during a tick (in any phase) first runs on the next tick; one unsubscribed before its `update` ran gets neither `update` nor `commit`. One that unsubscribes itself in `update` still commits in that tick (a timeline ending this frame writes its final value). The first update advances by the time since it subscribed.
 -   `clock.read(fn)` queues `fn` for the read phase of the next frame and arms an idle loop; callbacks queued during a tick run in the next tick, and a queued callback does not keep the loop alive after it ran. Without a frame source it is a silent no-op.
 -   A callback that throws (in any phase) does not stop the others or the next frame. The error goes to `onError` or is rethrown asynchronously.
+-   Quarantine: a subscriber whose `read`, `update` or `commit` throws in **3 consecutive ticks** is unsubscribed. Each error is still reported, then one extra `AniError('ANI_SUBSCRIBER_QUARANTINED')` whose `cause` is the last error. A tick without a throw (or an `unsubscribe`) resets the count.
+-   `timeScale` (default 1, finite and >= 0) multiplies every delta handed to `update`, including a new subscriber's first one, after lag smoothing and `maxDeltaTime`. `0` freezes animation time: frames keep running and timelines stay `PLAYING` with `dt = 0`. A change applies from the next frame and never alters lag detection. Invalid values throw a `RangeError` (also from `createClock`) and change nothing.
+-   `pause()` cancels the pending frame and keeps every subscriber; while paused, `subscribe` and `read(fn)` retain their work but request no frame. `resume()` re-arms with a restarted time base, so the paused gap is never applied (the first frame advances by the time since `resume()`). Both are idempotent; `dispose()` also clears `paused`.
 -   `subscribe` re-arms the loop if the environment dropped the pending frame (a pending frame older than 1 s is treated as lost).
 -   Without a frame source (SSR, plain workers) `subscribe` is a silent no-op and nothing is retained.
 -   Lag smoothing: a frame gap up to `lagThreshold` (default 0.5 s) advances animations by the real elapsed time (no slow motion under jank); a longer gap (hidden tab, debugger, sleep) advances by one ordinary frame. `lagThreshold: Infinity` follows the wall clock exactly. `maxDeltaTime` (unlimited by default) is an optional hard cap. Invalid values throw a `RangeError`.
@@ -933,13 +936,16 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 
 | Member | Description |
 | :--- | :--- |
-| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `visibility`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
+| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `timeScale`, `visibility`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
 | `VisibilitySource` | `{ readonly hidden: boolean; addEventListener('visibilitychange', listener): void; removeEventListener('visibilitychange', listener): void }`. What `visibility: true` resolves to (`globalThis.document`); inject your own in tests. |
 | `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` applies to the existing clock. |
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`, `{ lagThreshold?, maxDeltaTime? }` sets either atomically. |
 | `AnimationClock.reset()` | Disposes the shared clock (test isolation, hot reload). |
 | `clock.size` | Number of subscribed animatables. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
+| `clock.timeScale` | Get / set the delta multiplier (finite, >= 0, default 1). Throws `RangeError` otherwise. |
+| `clock.pause()` / `clock.resume()` / `clock.paused` | Stop the frame loop keeping subscribers / restart it without the paused gap / whether it is paused. |
+| `AniError` code `ANI_SUBSCRIBER_QUARANTINED` | Reported when a subscriber is unsubscribed after 3 consecutive failing ticks; `cause` is its last error. |
 | `Animatable` | `{ read?(): void; update(dt: number): void; commit?(): void }`. |
 
 ---

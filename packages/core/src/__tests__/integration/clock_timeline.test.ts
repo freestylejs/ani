@@ -113,7 +113,8 @@ describe('real clock + real timelines', () => {
         })
         m.clock.subscribe({ update: (dt) => seen.push(dt) })
         m.frames(3, 16)
-        expect(errors).toHaveLength(3)
+        // 3 errors, then the quarantine report on the third consecutive failure
+        expect(errors).toHaveLength(4)
         expect(seen).toHaveLength(3)
         expect(m.pending).toBe(1)
     })
