@@ -241,6 +241,45 @@ cards.play({ from: { opacity: 0, translateY: 12 } })
 
 ---
 
+## `follow`
+
+> **A value that chases a target with a spring and keeps its velocity when the target changes.**
+
+Built on `rafTimeline` with a `dynamicSpring` timing. Repeated input builds on where the motion is heading (`target`), not where it currently is.
+
+### Example
+
+```typescript
+const scroll = a.follow({ y: 0 })
+scroll.bind(list, { resolver: { y: (v) => ({ key: 'transform', value: `translateY(${-v}px)` }) } })
+
+// three quick presses end at +300, with no slowdown in between
+window.addEventListener('keydown', () => void scroll.set({ y: scroll.target.y + 100 }))
+```
+
+### Usage & Concepts
+
+-   Keys are fixed by `initial`. `set` / `jump` merge a partial record; an unknown key, a non-finite number or a non-record throws `TypeError` synchronously and changes nothing. `spring` is validated like `dynamicSpring` (`RangeError`).
+-   `set(partial, [{ velocity }])`: `target` changes immediately, the value springs toward it and the current velocity carries over (`velocity` overrides it per key). The promise resolves `'ended'` (settled; also at once for a `set` to the current target while idle), `'interrupted'` (a later `set` / `jump`) or `'disposed'`.
+-   `jump(partial)`: value and target change at once, velocity 0, `IDLE`; bound targets are written and listeners notified synchronously; a pending `set` resolves `'interrupted'`.
+-   `status` is `PLAYING` while moving, else `IDLE`. One clock subscription while moving, none while idle.
+-   `bind` writes in the commit phase (changed declarations only) and writes the current value at once. `onUpdate` gets one `{ state, status }` frame per clock frame while moving, plus `jump`'s synchronous notification.
+-   `dispose()` stops the motion and drops bindings and listeners; later `set` resolves `'disposed'`, `jump` does nothing.
+
+### API Reference
+
+| Member | Description |
+| :--- | :--- |
+| `follow(initial, [{ spring, clock }])` | `spring` is `{ m, k, c, tolerance? }`, default `{ m: 1, k: 170, c: 26 }`. |
+| `set(target, [{ velocity }])` | Returns `Promise<RunResult>`. |
+| `jump(value)` | Lands at once. |
+| `bind(target, [{ resolver }])` | Returns an unbind function. |
+| `onUpdate(listener)` | Returns an unsubscribe function. |
+| `dispose()` | Stop for good. |
+| `value`, `velocity`, `target`, `status` | Frozen current value, units/s (zeros when idle), where it is heading, `'IDLE' \| 'PLAYING'`. |
+
+---
+
 ## `timeline` (`waapiTimeline` / `webTimeline`)
 
 > **A high-performance, browser-native timeline powered by the Web Animations API (WAAPI).**
