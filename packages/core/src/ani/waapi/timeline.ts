@@ -1,10 +1,18 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core'
-import { type RunResult, TimelineBase, toIterationCount } from '~/ani/core'
+import {
+    prefersReducedMotion,
+    type ReducedMotionPolicy,
+    type RunResult,
+    resolveReducedMotionPolicy,
+    TimelineBase,
+    toIterationCount,
+} from '~/ani/core'
 
 export type { RunResult }
 
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import type { TimelineStatus } from '~/ani/raf/timeline'
+import { defaultClock } from '~/loop'
 import type { AnimationNode } from '~/nodes'
 import type { Resolver } from '~/style'
 import { compileToKeyframes, type WebAniKeyframe } from './compiler'
@@ -32,6 +40,23 @@ function sameFrom(entry: CachedKeyframes, from: Record<string, number>) {
         }
     }
     return true
+}
+
+/** Options of {@link webTimeline} (`waapiTimeline`). */
+export interface WaapiTimelineOptions {
+    /**
+     * What a `play()` does while the user prefers reduced motion. `'jump'`
+     * finishes the animations at once, `{ maxDuration }` raises their
+     * `playbackRate` so a longer run takes `maxDuration`.
+     * @default 'jump'
+     */
+    reducedMotion?: ReducedMotionPolicy
+    /**
+     * Only provides the reduced-motion preference (`clock.reducedMotion`);
+     * WAAPI animations are not driven by it.
+     * @default defaultClock
+     */
+    clock?: { readonly reducedMotion: boolean }
 }
 
 export interface WaapiPlayConfig<G extends Groupable> {
@@ -178,8 +203,16 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
         (status: TimelineStatus) => void
     >()
 
-    constructor(rootNode: AnimationNode<G>) {
+    private readonly _reducedMotion: ReducedMotionPolicy
+    private readonly _preference: { readonly reducedMotion: boolean }
+
+    constructor(
+        rootNode: AnimationNode<G>,
+        options: WaapiTimelineOptions = {}
+    ) {
         super(rootNode)
+        this._reducedMotion = resolveReducedMotionPolicy(options.reducedMotion)
+        this._preference = options.clock ?? defaultClock
 
         this.cancel = this.cancel.bind(this)
         this.finish = this.finish.bind(this)
@@ -381,11 +414,23 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
             variants.push(variant)
         }
 
+        const policy = this._reducedMotion
+        const reduced =
+            policy !== 'ignore' && prefersReducedMotion(this._preference)
+        const jump = reduced && policy === 'jump'
+        const playbackRate =
+            reduced &&
+            typeof policy === 'object' &&
+            duration > policy.maxDuration
+                ? duration / policy.maxDuration
+                : 1
+
         const durationMs = duration * 1000
         const requested = toIterationCount(config.repeat)
         const iterations =
-            // Infinite iterations require a positive duration per spec.
-            durationMs === 0 && requested === Infinity ? 1 : requested
+            // Infinite iterations require a positive duration per spec; a
+            // jump ends at the end of one run (an endless run can not finish).
+            requested === Infinity && (durationMs === 0 || jump) ? 1 : requested
         const delaysMs = offsets.map((offset) => (delay + offset) * 1000)
         // built before the old run is touched: a throwing option keeps it alive
         const animations = elements.map((element, i) => {
@@ -427,7 +472,15 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
         }
         this._run = run
 
+        if (jump) {
+            for (const animation of animations) animation.finish()
+            this._settle(run, 'ended')
+            this._setStatus('ENDED')
+            return promise
+        }
+
         for (const animation of animations) {
+            if (playbackRate !== 1) animation.playbackRate = playbackRate
             animation.play()
             animation.finished.then(
                 () => {
@@ -576,9 +629,11 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
 /**
  * Create web timeline. {@link https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API Web Animations API} based.
  * @param rootNode Root animation node.
+ * @param options Reduced-motion policy and the clock providing the preference.
  */
 export function webTimeline<G extends Groupable>(
-    rootNode: AnimationNode<G>
+    rootNode: AnimationNode<G>,
+    options?: WaapiTimelineOptions
 ): WebAniTimeline<G> {
-    return new WebAniTimeline(rootNode)
+    return new WebAniTimeline(rootNode, options)
 }

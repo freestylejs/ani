@@ -1,6 +1,9 @@
 import type { AniGroup, Groupable, RunResult } from '~/ani/core'
 import {
     normalizeRepeatCount,
+    prefersReducedMotion,
+    type ReducedMotionPolicy,
+    resolveReducedMotionPolicy,
     TimelineBase,
     type TimelineCommonConfig,
 } from '~/ani/core'
@@ -46,6 +49,12 @@ export interface RafTimelineOptions {
      * Clock that drives the timeline. Defaults to the shared `AnimationClock`.
      */
     clock?: AnimationClockInterface
+    /**
+     * What a `play()` does while the clock reports `reducedMotion`. The
+     * preference is read once at the start of each `play()`.
+     * @default 'jump'
+     */
+    reducedMotion?: ReducedMotionPolicy
 }
 
 export type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED'
@@ -171,6 +180,9 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     implements Animatable, RafTimeline<G>
 {
     private readonly _clock: AnimationClockInterface
+    private readonly _reducedMotion: ReducedMotionPolicy
+    // plan seconds per clock second: above 1 for a run sped up by `maxDuration`
+    private _speed = 1
 
     private _masterTime = 0
     private _delay = 0
@@ -244,6 +256,11 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         clockOrOptions?: AnimationClockInterface | RafTimelineOptions
     ) {
         super(rootNode)
+        this._reducedMotion = resolveReducedMotionPolicy(
+            clockOrOptions === undefined || isClock(clockOrOptions)
+                ? undefined
+                : clockOrOptions.reducedMotion
+        )
         const clock =
             clockOrOptions === undefined
                 ? undefined
@@ -327,11 +344,12 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
                 continue
             }
             const v = runtime.velocities[i]!
-            out[i] = Number.isNaN(v)
+            const perPlanSecond = Number.isNaN(v)
                 ? this._lastDt > 0
                     ? (runtime.values[i]! - runtime.previous[i]!) / this._lastDt
                     : 0
                 : v
+            out[i] = perPlanSecond * this._speed
         }
         return this._buildGroup(out) as AniGroup<G>
     }
@@ -428,7 +446,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             }
         }
 
-        this._advance(dt)
+        this._advance(dt * this._speed)
     }
 
     /**
@@ -639,6 +657,14 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             config.durations
         )
         const compiled = compilePlan(plan, keys, values.length)
+        const policy = this._reducedMotion
+        const reduced = policy !== 'ignore' && prefersReducedMotion(this._clock)
+        const jump = reduced && policy === 'jump'
+        const maxDuration =
+            reduced && typeof policy === 'object'
+                ? policy.maxDuration
+                : Infinity
+        const speed = duration > maxDuration ? duration / maxDuration : 1
         const seed =
             config.velocity === undefined
                 ? this._inheritVelocity(keys, values.length)
@@ -647,6 +673,10 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
                       keys,
                       values.length
                   )
+        // seeds are units per clock second, the runtime counts plan seconds
+        if (seed !== null && speed !== 1) {
+            for (let i = 0; i < seed.length; i++) seed[i] = seed[i]! / speed
+        }
         const runtime = new PlanRuntime(compiled, values as number[], seed)
 
         // ---- commit
@@ -669,10 +699,33 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._masterTime = 0
         this._groupDirty = true
         this._snapshotDirty = true
+        this._speed = speed
+        if (jump) {
+            this._jumpToEnd(duration)
+            return promise
+        }
         this._status = 'PLAYING'
         this._clock.subscribe(this)
         this._notify()
         return promise
+    }
+
+    /**
+     * Reduced motion: the run completes at once in the end state of its last
+     * repeat (an endless run ends after one), with a single `ENDED`
+     * notification and no clock subscription.
+     */
+    private _jumpToEnd(duration: number): void {
+        this._clock.unsubscribe(this)
+        this._remainingRepeats = 0
+        this._masterTime = duration
+        this._runtime!.evaluate(duration, 0)
+        this._pending = false
+        this._status = 'ENDED'
+        // settle first, as a run ending on a frame does: a listener that
+        // replays from the notification must not interrupt this run
+        this._settle('ended')
+        this._notify()
     }
 
     /**

@@ -1,0 +1,97 @@
+---
+title: Reduced motion
+description: Ani honors prefers-reduced-motion by default. Pick a policy per timeline and test it deterministically.
+---
+
+Some people get sick from large movement. They turn on **reduce motion** in their operating system, and browsers report it as `prefers-reduced-motion: reduce`. Ani honors it by default, for `rafTimeline` and `waapiTimeline`.
+
+### The default
+
+When the preference is on, a timeline **jumps**: `play()` validates as usual, then the run completes at once.
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+const timeline = a.rafTimeline(
+  a.ani({ to: { opacity: 1 }, duration: 1 }),
+);
+
+const result = await timeline.play({ from: { opacity: 0 } });
+// result === 'ended', timeline.status === 'ENDED', value is { opacity: 1 }
+```
+
+Bound targets are written, `onUpdate` listeners are notified once with `ENDED`, and the clock is never subscribed. With `repeat`, the value is the end of the last run; with `repeat: Infinity`, the end of one run.
+
+The preference comes from the clock: by default it follows `matchMedia('(prefers-reduced-motion: reduce)')` live (and is `false` where `matchMedia` does not exist, such as on the server). It is read **once at the start of each `play()`**, so a change affects the next run and never one that is already running.
+
+### Policies
+
+Set a policy with the `reducedMotion` option. It only matters while the preference is on.
+
+| Policy | Behavior |
+| :--- | :--- |
+| `'jump'` (default) | Every run completes at once in its end state. |
+| `{ maxDuration }` | A run longer than `maxDuration` seconds plays faster so it takes `maxDuration`. Shorter runs are untouched. |
+| `'ignore'` | Unchanged behavior. |
+
+```typescript
+// Keep a short, gentle transition instead of an instant change.
+const panel = a.rafTimeline(node, { reducedMotion: { maxDuration: 0.2 } });
+
+// A 1 s run plays 5x faster. `panel.duration` still reports 1.
+```
+
+`maxDuration` must be finite and greater than 0, otherwise the constructor throws a `RangeError`.
+
+On `waapiTimeline` the same options apply, and `clock` only provides the preference (it defaults to the shared clock):
+
+```typescript
+const line = a.waapiTimeline(node, { reducedMotion: "jump" });
+```
+
+`'jump'` creates the animations and finishes them immediately. `{ maxDuration }` raises each animation's `playbackRate` to `duration / maxDuration`.
+
+### When to use `'ignore'`
+
+Reduced motion is about decorative movement. Keep `'ignore'` for motion that carries information: a progress indicator, a loading spinner that proves the app is alive, a timer, a drag that follows the pointer.
+
+```typescript
+const progress = a.rafTimeline(node, { reducedMotion: "ignore" });
+```
+
+### Choosing the preference source
+
+Pass `reducedMotion` to `createClock` to override the system value:
+
+```typescript
+import { createClock } from "@freestylejs/ani-core";
+
+createClock({ reducedMotion: "system" }); // default
+createClock({ reducedMotion: true }); // force on, e.g. an in-app setting
+createClock({ reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)") });
+```
+
+An object with a boolean `matches` is read live. `clock.reducedMotion` returns the current effective value.
+
+### Testing
+
+`createManualClock` takes `reducedMotion` (default `false`) and exposes `setReducedMotion`:
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+import { createManualClock } from "@freestylejs/ani-core/testing";
+import { expect, it } from "vitest";
+
+it("jumps when reduced motion is on", async () => {
+  const manual = createManualClock();
+  const timeline = a.rafTimeline(node, { clock: manual.clock });
+
+  manual.setReducedMotion(true);
+
+  await expect(timeline.play({ from: { opacity: 0 } })).resolves.toBe("ended");
+  expect(timeline.getCurrentValue()).toEqual({ opacity: 1 });
+  expect(manual.clock.size).toBe(0);
+});
+```
+
+Flip the preference between plays to test both paths with the same timeline. See [Testing](/en/docs/guides/testing) for the rest of the manual clock.

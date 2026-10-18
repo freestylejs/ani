@@ -20,6 +20,11 @@ export interface ManualClockOptions {
      * @default true
      */
     visibility?: boolean
+    /**
+     * Initial reduced-motion preference (see `setReducedMotion`).
+     * @default false
+     */
+    reducedMotion?: boolean
 }
 
 /**
@@ -42,6 +47,8 @@ export interface ManualClock {
     drop(): void
     /** Flips the injected visibility source and fires `visibilitychange`. */
     setHidden(hidden: boolean): void
+    /** Flips the injected reduced-motion preference (`clock.reducedMotion`). */
+    setReducedMotion(on: boolean): void
 }
 
 /**
@@ -69,7 +76,10 @@ export function createManualClock(
     }
     const visibility = options.visibility ?? true
 
+    const preference = { matches: options.reducedMotion ?? false }
+
     const clock = createClock({
+        reducedMotion: preference,
         lagThreshold: options.lagThreshold,
         maxDeltaTime: options.maxDeltaTime,
         timeScale: options.timeScale,
@@ -117,6 +127,9 @@ export function createManualClock(
             }
             hidden = value
             for (const listener of [...listeners]) listener()
+        },
+        setReducedMotion(on) {
+            preference.matches = on
         },
     }
     return manual
