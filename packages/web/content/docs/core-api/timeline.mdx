@@ -79,14 +79,48 @@ Since `timeline` compiles to native `CSS` Keyframes, standard easing functions a
 
 #### Compilation cache
 
-Compiling a tree to keyframes is cached per **root node**, `from` values and `propertyResolver`. Playing the same tree again, or on many elements with the same `from`, reuses the compiled keyframes. Plans with `keyframes` or `durations` overrides, and array-shaped `from`, are not cached.
+Compiling a tree to keyframes is cached per **root node**, `from` values and `resolver`. Playing the same tree again, or on many elements with the same `from`, reuses the compiled keyframes. Plans with `keyframes` or `durations` overrides, and array-shaped `from`, are not cached.
 
 -   **Do** build the tree once and share it between timelines.
--   Reuse the same `propertyResolver` object between calls so the cache can hit.
+-   Reuse the same `resolver` object between calls so the cache can hit.
 
-#### One timeline, one target
+#### Several targets
 
-A `webTimeline` drives one native animation. Calling `play(target)` again cancels the previous one. Create one timeline per element (they can share the same tree), and call `cancel()` / `reset()` when the element is removed. The animation uses `fill: 'forwards'`, so it keeps holding its final values until cancelled.
+`play()` accepts one element or a list of elements. Every target gets its own native `Animation` (`timeline.animations`), started `delay` seconds from now plus a per-target `stagger` offset:
+
+```typescript
+const run = timeline.play(document.querySelectorAll('.card'), {
+    from: { opacity: 0, translateY: 20 },
+    delay: 0.2,
+    stagger: 0.05, // or (index, count) => (count - 1 - index) * 0.05
+})
+```
+
+`from` may be a function of the target index. Targets whose `from` values are equal share the compiled keyframes. The animations use `fill: 'forwards'`, so they keep holding their final values until cancelled; call `cancel()` / `dispose()` when the elements are removed.
+
+#### Results and status
+
+`play()` returns a `Promise<RunResult>` that never rejects and settles exactly once per run:
+
+| Result | When |
+| :--- | :--- |
+| `'ended'` | Every animation finished, or `finish()` was called. |
+| `'interrupted'` | A later `play()` replaced the run. |
+| `'skipped'` | The timeline was running and `interrupt: false` was set. |
+| `'reset'` | `cancel()` / `reset()` / `dispose()` stopped the run. |
+| `'disposed'` | `play()` was called after `dispose()`. |
+
+`status` is `'IDLE'`, `'PLAYING'`, `'PAUSED'` or `'ENDED'`; `onStatus(listener)` is called on every change (a throwing listener never affects the others).
+
+#### Interruptions
+
+Playing again while the timeline is running commits the current styles of every old animation (`commitStyles()`, skipped for elements that are not rendered) and then cancels it, so the element continues from the value it showed instead of jumping back.
+
+> **Velocity is not continuous on WAAPI.** Only the position is kept. A spring restarts from rest. Use [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) when velocity must carry over.
+
+#### Reading values
+
+`timeline.value` (target 0) and `timeline.valueAt(index)` return the value of a target, computed from the plan at that animation's `currentTime` (minus its delay, wrapped for repeats, clamped to one run). Computed styles are never parsed. They are `null` without a run or for an index that does not exist. Options in `effect` that change the playhead mapping (`direction`, `easing`, `iterationStart`) are not reflected.
 
 #### Server rendering
 
@@ -96,13 +130,21 @@ A `webTimeline` drives one native animation. Calling `play(target)` again cancel
 
 | Member | Description |
 | :--- | :--- |
-| `play(target, config)` | Compiles (or reuses cached keyframes) and plays on `target`. Returns the native `Animation` or `null` when there is nothing to animate. |
-| `pause()` / `resume()` | `resume()` only acts after `pause()`. |
-| `seek(time)` | Seconds, clamped to the duration. |
-| `reset()` / `cancel()` | Cancels the native animation. |
-| `nativeAnimation` | The current `Animation` or `null`. |
+| `play(targets, config)` | Compiles (or reuses cached keyframes) and plays on one element or a list. Returns `Promise<RunResult>`. |
+| `pause()` / `resume()` | No-op unless `PLAYING` / `PAUSED`. |
+| `seek(time)` | Seconds, clamped to the duration. Applies to every target and keeps their offsets. |
+| `finish()` | Jumps to the end: status `ENDED`, result `'ended'`. Throws for `repeat: Infinity`. |
+| `reset()` / `cancel()` | Cancels the native animations: status `IDLE`, result `'reset'`. |
+| `dispose()` | `cancel()` and drops the listeners. Further `play()` resolves `'disposed'`. Idempotent. |
+| `onStatus(listener)` | Called on every status change. Returns an unsubscribe function. |
+| `status` | `'IDLE'`, `'PLAYING'`, `'PAUSED'` or `'ENDED'`. |
+| `duration` | Seconds of one run, without delay or stagger. |
+| `animations` | The native `Animation` of every target. |
+| `value` / `valueAt(index)` | Plan value of a target, or `null`. |
 
-`config` accepts `from`, `repeat`, `delay` (milliseconds), `keyframes`, `durations`, `propertyResolver` and `keyframeEffect` (extra `KeyframeEffect` options).
+`config` accepts `from` (a record, or a function of the target index), `repeat`, `delay` (**seconds**), `stagger` (seconds, a number or `(index, count) => seconds`), `keyframes`, `durations`, `resolver`, `effect` (extra `KeyframeEffect` options) and `interrupt` (default `true`; `false` resolves `'skipped'` while running).
+
+Invalid input (array `from`, negative or non-finite `delay` / stagger offsets, no target) throws synchronously before anything is touched.
 
 ### Related Components
 

@@ -129,6 +129,8 @@ describe('WebAniTimeline', () => {
                 public play = vi.fn()
                 public pause = vi.fn()
                 public cancel = vi.fn()
+                public commitStyles = vi.fn()
+                public finished = new Promise<void>(() => undefined)
                 public currentTime = null
                 public constructor() {
                     animations.push(this)
@@ -163,15 +165,15 @@ describe('WebAniTimeline', () => {
         expect(timing.calls).toBeGreaterThan(compiledCalls)
     })
 
-    it('leaves no stale native animation behind a failing play()', () => {
+    it('keeps the running animation untouched behind a failing play()', () => {
         const timeline = webTimeline(ani({ to: { x: 1 }, duration: 1 }))
         timeline.play({} as Element, { from: { x: 0 } })
-        expect(timeline.nativeAnimation).not.toBeNull()
+        expect(timeline.animations).toHaveLength(1)
 
         expect(() =>
             timeline.play({} as Element, { from: [0] as never })
         ).toThrow(TypeError)
-        expect(timeline.nativeAnimation).toBeNull()
-        expect(animations[0]!.cancel).toHaveBeenCalledTimes(1)
+        expect(timeline.animations).toHaveLength(1)
+        expect(animations[0]!.cancel).not.toHaveBeenCalled()
     })
 })
