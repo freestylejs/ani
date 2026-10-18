@@ -12,6 +12,7 @@
         "delay",
         "states",
         "clock",
+        "values",
         "---Advanced---",
         "advanced"
     ]

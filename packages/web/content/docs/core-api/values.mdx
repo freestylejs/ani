@@ -1,0 +1,74 @@
+---
+title: values (value codecs)
+description: Animate colors, lengths and strings with numbers. Codecs turn display values into number vectors for the engine and back.
+---
+
+The engine animates numbers only. A **codec** turns a display value into a number vector (to animate) and back (to display). Codecs live in a separate entry point, `@freestylejs/ani-core/values`, that the engine never imports and the root entry does not export.
+
+### Example
+
+```typescript
+import { a, rafTimeline } from "@freestylejs/ani-core";
+import { color } from "@freestylejs/ani-core/values";
+
+const tint = rafTimeline(a.ani({ to: color.encode("#ff3366"), duration: 0.4 }));
+tint.onUpdate(({ state }) => { swatch.style.backgroundColor = color.decode(state); });
+tint.play({ from: color.encode("rgb(51 85 255)") });
+```
+
+### Usage & Concepts
+
+A codec has a `size` (numbers per value), `encode(value)` and `decode(values)`. Decoded numbers are formatted with at most 4 decimals, trailing zeros removed, and `-0` printed as `0`.
+
+#### `color` / `colorIn(space)`
+
+Size 4: `[c1, c2, c3, alpha]`. `color` is `colorIn("oklab")`, which interpolates perceptually evenly (`L` in `0..1`). `colorIn("srgb")` uses gamma-encoded channels in `0..1` and `colorIn("srgb-linear")` linear-light channels. Alpha is `0..1`.
+
+`encode` accepts hex (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`), `rgb()`/`rgba()` (comma or space syntax, numbers or percentages, `/` alpha), `hsl()`/`hsla()` (`deg`, `turn`, `rad` hues), `oklab()`, `oklch()`, `transparent` and the 148 CSS named colors. Anything else (`currentcolor`, `color(...)`, malformed input) throws.
+
+`decode` renders `oklab(L a b / A)`, `rgb(R G B / A)` (channels clamped to `0..255`) or `color(srgb-linear r g b / A)`. Alpha is clamped to `0..1`.
+
+#### `length(unit)`
+
+Size 1, for `px`, `rem`, `em`, `%`, `vw`, `vh` or `deg`. `length("rem").encode("12.5rem")` is `[12.5]`. Unitless `0` is accepted; a different unit, a missing unit or extra text throws. There is no unit conversion.
+
+#### `template`
+
+A tagged template with one slot per number. Each interpolation is the unit of its slot (`""` for unitless).
+
+```typescript
+import { template } from "@freestylejs/ani-core/values";
+
+const transform = template`translate(${"px"}, ${"px"}) rotate(${"deg"})`;
+transform.size; // 3
+transform.encode("translate(10px, 20px) rotate(45deg)"); // [10, 20, 45]
+transform.decode([10, 20, 45]); // "translate(10px, 20px) rotate(45deg)"
+```
+
+Literal parts must match exactly, except that a run of whitespace matches any run of whitespace.
+
+#### `record(codecs)`
+
+Combines codecs into one. The size is the sum of the member sizes, laid out in `Object.keys` order. Every key is required (extra keys are ignored).
+
+```typescript
+import { color, length, record } from "@freestylejs/ani-core/values";
+
+const style = record({ bg: color, w: length("px") });
+style.encode({ bg: "#fff", w: "10px" }); // 5 numbers
+```
+
+### Errors
+
+Invalid input, an unknown color space or unit, and a vector of the wrong length throw `AniError` with code `ANI_CODEC_MISMATCH`.
+
+### API Reference
+
+| Export | Description |
+| :--- | :--- |
+| `Codec<T>` | `{ size, encode(value), decode(values) }` |
+| `CodecValue<C>` | The display type of a codec. |
+| `color`, `colorIn(space)` | Color codecs in `oklab`, `srgb` or `srgb-linear`. |
+| `length(unit)` | Length codec for one unit. |
+| `template` | Tagged template codec. |
+| `record(codecs)` | Object codec. |
