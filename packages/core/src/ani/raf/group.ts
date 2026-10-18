@@ -108,6 +108,15 @@ export interface RafGroup<G extends Groupable> {
         options?: RafGroupBindOptions
     ): () => void
     /**
+     * Writes `target` with the value of target `index`, changed declarations
+     * only. Returns an unbind function (idempotent, written styles are kept).
+     */
+    bindAt(
+        index: number,
+        target: { style: CSSStyleDeclaration } | HTMLElement,
+        options?: RafGroupBindOptions
+    ): () => void
+    /**
      * Subscribes to updates: once per frame in the commit phase (after the
      * bound styles are written) and synchronously on `play`, `seek`, `reset`.
      * @returns Unsubscribe.
@@ -122,6 +131,8 @@ type StyleResolver = Resolver<Record<string, number>>
 interface Binding {
     readonly writers: readonly StyleWriter[]
     readonly resolver: StyleResolver | undefined
+    /** `bindAt`: the only position of `writers` that is set; `null` for `bind`. */
+    readonly index: number | null
 }
 
 interface SheetCache {
@@ -175,6 +186,8 @@ interface Prepared {
 
 /** Times one listener may be on the stack: its call plus one nested notification. */
 const MAX_REENTRY = 2
+/** Largest array index: `bindAt` keeps its writer at that position of a sparse array. */
+const MAX_INDEX = 2 ** 32 - 2
 
 function reportAsync(error: unknown): void {
     queueMicrotask(() => {
@@ -334,6 +347,7 @@ class RafAniGroup<G extends Groupable>
         this.dispose = this.dispose.bind(this)
         this.valueAt = this.valueAt.bind(this)
         this.bind = this.bind.bind(this)
+        this.bindAt = this.bindAt.bind(this)
         this.onUpdate = this.onUpdate.bind(this)
     }
 
@@ -354,6 +368,7 @@ class RafAniGroup<G extends Groupable>
     private _boundCount(): number {
         let count = 0
         for (const binding of this._bindings) {
+            if (binding.index !== null) continue
             if (binding.writers.length > count) count = binding.writers.length
         }
         return count
@@ -771,13 +786,25 @@ class RafAniGroup<G extends Groupable>
 
     /** Writes the targets of every runtime that changed since the last notification. */
     private _writeChanged(run: Run): void {
-        const { changed, members, memberStart } = run
-        for (const binding of this._bindings) {
-            if (run.keys === null) {
+        if (run.keys === null) {
+            for (const binding of this._bindings) {
                 this._dropArrayBinding(binding)
+            }
+            return
+        }
+
+        const { changed, members, memberStart } = run
+
+        for (const binding of this._bindings) {
+            const { writers, resolver, index } = binding
+            if (index !== null) {
+                if (index >= run.count) continue
+                const r = run.runtimeOf[index]!
+                if (!run.dirty[r]) continue
+                const sheet = this._sheet(run, resolver, r)
+                if (sheet !== undefined) this._writeOne(writers[index]!, sheet)
                 continue
             }
-            const { writers, resolver } = binding
             for (let c = 0; c < changed.length; c++) {
                 const r = changed[c]!
                 const start = memberStart[r]!
@@ -785,9 +812,9 @@ class RafAniGroup<G extends Groupable>
                 const sheet = this._sheet(run, resolver, r)
                 if (sheet === undefined) continue
                 for (let m = start; m < memberStart[r + 1]!; m++) {
-                    const index = members[m]!
-                    if (index >= writers.length) break
-                    this._writeOne(writers[index]!, sheet)
+                    const target = members[m]!
+                    if (target >= writers.length) break
+                    this._writeOne(writers[target]!, sheet)
                 }
             }
         }
@@ -799,7 +826,7 @@ class RafAniGroup<G extends Groupable>
             return
         }
         const length = Math.min(binding.writers.length, run.count)
-        for (let i = 0; i < length; i++) {
+        for (let i = binding.index ?? 0; i < length; i++) {
             const sheet = this._sheet(run, binding.resolver, run.runtimeOf[i]!)
             if (sheet !== undefined) this._writeOne(binding.writers[i]!, sheet)
         }
@@ -1005,12 +1032,44 @@ class RafAniGroup<G extends Groupable>
         for (let i = 0; i < targets.length; i++) {
             writers.push(createStyleWriter(targets[i]!))
         }
-        const binding: Binding = { writers, resolver: options?.resolver }
+        return this._attach({
+            writers,
+            resolver: options?.resolver,
+            index: null,
+        })
+    }
+
+    private _attach(binding: Binding): () => void {
         this._bindings.add(binding)
         if (this._run) this._writeAll(this._run, binding)
         return () => {
             this._bindings.delete(binding)
         }
+    }
+
+    /**
+     * Writes `target` with the value of target `index` on every notification
+     * (changed declarations only). If `index` is beyond `count`, writes
+     * nothing until a later run has enough targets. A group that already has a
+     * value writes immediately. An invalid index or target throws a `TypeError`
+     * synchronously.
+     * @returns Unbind (idempotent; written styles are kept).
+     */
+    public bindAt(
+        index: number,
+        target: { style: CSSStyleDeclaration } | HTMLElement,
+        options?: RafGroupBindOptions
+    ): () => void {
+        if (!Number.isInteger(index) || index < 0 || index > MAX_INDEX) {
+            throw new TypeError(
+                `[Group] \`index\` must be a non-negative integer, received ${index}.`
+            )
+        }
+        const writer = createStyleWriter(target)
+        if (this._disposed) return () => undefined
+        const writers: StyleWriter[] = []
+        writers[index] = writer
+        return this._attach({ writers, resolver: options?.resolver, index })
     }
 
     /**

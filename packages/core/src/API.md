@@ -212,6 +212,8 @@ const cards = a.rafGroup(a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.
     stagger: (i) => Math.min(i, 20) * 0.03,
 })
 cards.bind(document.querySelectorAll<HTMLElement>('.card'))
+// or bind elements individually (e.g. in framework list items):
+// const unbindFirst = cards.bindAt(0, firstCard)
 cards.play({ from: { opacity: 0, translateY: 12 } })
 ```
 
@@ -223,6 +225,7 @@ cards.play({ from: { opacity: 0, translateY: 12 } })
 -   `count` defaults to the number of bound targets and is required (a positive integer) when nothing is bound. `delay` is in **seconds**. `repeat` repeats the whole group run, offsets included.
 -   `play()` over a `PLAYING` group starts from the config's `from`; each target inherits its own current velocity unless `velocity` is given.
 -   `bind(targets, [{ resolver }])` writes element `i` with target `i` in the commit phase through one style writer per element (changed declarations only). Extra elements are left alone, missing ones are not written. A group that has a value writes immediately. Array values report one `TypeError` asynchronously and drop the binding.
+-   `bindAt(index, target, [{ resolver }])` binds one element to target `index` (e.g. for framework refs mounting individually). It uses the same diffing writer and resolver logic as `bind`, writes immediately if a value exists, but does not provide a default `count`.
 -   `onUpdate` listeners get `{ states, status }` (one frozen state per target) once per frame from the commit phase and synchronously on `play`, `seek` and `reset`. Listener errors are isolated and rethrown asynchronously.
 
 ### API Reference
@@ -236,6 +239,7 @@ cards.play({ from: { opacity: 0, translateY: 12 } })
 | `reset()` / `dispose()` | Back to `IDLE` / stop for good. |
 | `valueAt(index)` | Frozen snapshot of one target, `null` out of range or before `play()`. |
 | `bind(targets, [options])` | Returns an unbind function. |
+| `bindAt(index, target, [options])` | Binds one element to target `index`. Returns an unbind function. |
 | `onUpdate(listener)` | Returns an unsubscribe function. |
 | `status`, `duration`, `count` | Lifecycle status, one run's duration, targets of the current run. |
 
