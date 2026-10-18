@@ -1,4 +1,5 @@
-import type { Groupable } from '~/ani/core'
+import type { ExecutionSegment, Groupable } from '~/ani/core'
+import { type PlanLoop, planStateOf } from '~/ani/core/plan_state'
 import type { TimingFunction } from '~/timing'
 
 import {
@@ -8,9 +9,16 @@ import {
     parseNodeOptions,
 } from './base'
 import { CompositionNode, type CompositionPlan } from './composition'
+import { type Footprint, loopFootprint } from './footprint'
+
+/** Iterations written out before the plan repeats the last one. */
+const UNROLLED = 3
 
 /**
  * Composition node that repeats a child animation node a specified number of times.
+ *
+ * `Infinity` repeats forever. The plan holds at most three iterations of the
+ * child however large the count is; the runtime derives the others.
  */
 export class LoopNode<G extends Groupable> extends CompositionNode<
     readonly AnimationNode<G>[]
@@ -18,6 +26,7 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
     readonly type = 'LOOP'
     readonly duration: number
     readonly count: number
+    readonly footprint: Footprint
 
     constructor(
         child: AnimationNode<G>,
@@ -33,15 +42,24 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
             extra.length > 0
         )
         super([child], resolvedTiming, resolvedId)
-        // Non-finite counts would flatten an unbounded plan (OOM); use
-        // `repeat: Infinity` on the timeline for endless playback.
-        if (!Number.isInteger(loopCount) || loopCount < 0) {
+        if (
+            loopCount !== Infinity &&
+            (!Number.isInteger(loopCount) || loopCount < 0)
+        ) {
             throw new RangeError(
-                `[loop] loopCount must be a finite integer >= 0, received ${loopCount}. Use the timeline \`repeat: Infinity\` option for endless playback.`
+                `[loop] loopCount must be a finite integer >= 0 or Infinity, received ${String(loopCount)}.`
             )
         }
         this.count = loopCount
-        this.duration = child.duration * loopCount
+        this.duration =
+            loopCount === 0 || child.duration === 0
+                ? 0
+                : child.duration * loopCount
+        this.footprint = loopFootprint(
+            this.child.footprint,
+            child.duration,
+            loopCount
+        )
     }
 
     /**
@@ -55,10 +73,45 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
         plan: CompositionPlan<readonly AnimationNode<G>[]>,
         startTime: number
     ): void {
-        let currentTime = startTime
-        for (let i = 0; i < this.count; i++) {
-            this.child.construct(plan, currentTime)
-            currentTime += this.child.duration
+        const state = planStateOf(plan)
+        const { child, count } = this
+        const period = child.duration
+        const slot = state.slot
+
+        if (count === 0) {
+            // emits nothing, but the child keeps its slots
+            const size = plan.length
+            const loops = state.loops.length
+            child.construct(plan, startTime)
+            plan.length = size
+            state.loops.length = loops
+            return
+        }
+        // a child without extent, or without end, can not repeat
+        if (!(period > 0) || !Number.isFinite(period)) {
+            child.construct(plan, startTime)
+            return
+        }
+
+        const expand =
+            count <= UNROLLED ||
+            (count !== Infinity && state.expand?.(this, startTime) === true)
+        const iterations = expand ? count : UNROLLED
+        const written: ExecutionSegment<G>[][] = []
+        for (let i = 0; i < iterations; i++) {
+            state.slot = slot
+            const from = plan.length
+            child.construct(plan, startTime + i * period)
+            if (!expand) written.push(plan.slice(from))
+        }
+        if (!expand) {
+            state.loops.push({
+                node: this,
+                startTime,
+                period,
+                count,
+                iterations: written as unknown as PlanLoop['iterations'],
+            })
         }
     }
 }
@@ -67,7 +120,7 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
  * Create loop for children animation.
  *
  * @param child Target animation node to repeat.
- * @param loopCount Loop count.
+ * @param loopCount Loop count: an integer >= 0, or `Infinity` to repeat forever.
  * @param timingOrOptions Loop timing function or options object.
  * @param id Optional ID for the node (positional form).
  */

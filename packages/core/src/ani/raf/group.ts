@@ -36,11 +36,13 @@ export interface RafGroupPlayConfig<G extends Groupable> {
      */
     count?: number
     /**
-     * Dynamic target overrides. Matches the order of SEGMENT nodes in the plan.
+     * Dynamic target overrides, one per segment node as written in the tree
+     * (the child of a loop counts once).
      */
     keyframes?: Array<G | 'keep'>
     /**
-     * Dynamic duration overrides. Matches the order of SEGMENT nodes in the plan.
+     * Dynamic duration overrides, one per segment node as written in the tree
+     * (the child of a loop counts once).
      */
     durations?: Array<number | 'keep'>
     /**
@@ -979,6 +981,11 @@ class RafAniGroup<G extends Groupable>
         if (typeof time !== 'number' || Number.isNaN(time)) {
             throw new RangeError(
                 `[Group] seek time must be a number, received ${time}.`
+            )
+        }
+        if (time === Infinity && !Number.isFinite(run.duration)) {
+            throw new RangeError(
+                '[Group] seek time must be finite: an endless group has no end to seek to.'
             )
         }
         if (this._status === 'PLAYING' || this._status === 'ENDED') {

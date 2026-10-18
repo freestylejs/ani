@@ -1,5 +1,6 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core'
 import { TimingFunction } from '~/timing'
+import type { Footprint } from './footprint'
 
 export type AnimationId = string
 export type AnimationNodeType = string
@@ -71,7 +72,10 @@ export function parseNodeOptions(
  */
 export abstract class AnimationNode<G extends Groupable> {
     abstract readonly type: AnimationNodeType
+    /** Seconds; `Infinity` when the node contains an endless loop. */
     abstract readonly duration: AnimationDuration
+    /** The properties the node writes (used to reject endless overlaps). */
+    abstract readonly footprint: Footprint
 
     readonly id?: AnimationId
 

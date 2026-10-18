@@ -1,9 +1,9 @@
 ---
 title: loop
-description: A composition node that repeats a child animation a specified number of times.
+description: A composition node that repeats a child animation a specified number of times, or forever.
 ---
 
-A `loop` node is a composition that repeats a single child animation node a set number of times, one after another.
+A `loop` node is a composition that repeats a single child animation node a set number of times, one after another, or forever with `Infinity`.
 
 ### Example
 
@@ -24,6 +24,13 @@ const myTimeline = a.dynamicTimeline(loopedPulse);
 myTimeline.play({ from: { scale: 1 } });
 ```
 
+Endless:
+
+```typescript
+const heartbeat = a.dynamicTimeline(a.loop(pulse, Infinity));
+heartbeat.play({ from: { scale: 1 } }); // pending until reset() / dispose()
+```
+
 ### Usage & Concepts
 
 #### Overview
@@ -39,24 +46,53 @@ const easedLoop = a.loop(pulse, 3, a.timing.ease());
 
 #### Validation
 
-`loopCount` must be a finite integer `>= 0`. Anything else (including `Infinity`) throws a `RangeError`, because the tree is flattened into a plan and an unbounded plan can not be built. Use the `repeat: Infinity` option of [`play()`](/en/docs/core-api/dynamic_timeline) for endless playback.
+`loopCount` must be an integer `>= 0` or `Infinity`. Anything else (`-1`, `1.5`, `NaN`, `'3'`) throws a `RangeError`.
+
+#### The count does not cost anything
+
+A loop is represented once, not `count` times. The first iteration starts from the value the animated properties have where the loop starts; every later iteration starts from the end state of the previous one, which is the same for all of them. So seeking anywhere inside `loop(child, 1_000_000)` costs the same as seeking in the first iteration, building it takes as long as `loop(child, 2)`, and the values are those of the same tree written as a `sequence` of copies (dynamic springs restart in every iteration), to floating-point precision, `bezier` / `ease*` timings included.
+
+A finite loop that shares a property with another segment running at the same time (`parallel([loop(a, 3), b])` where both animate `x`) is written out as copies instead. The values are the same; the plan grows with the count.
+
+#### Endless loops
+
+`loop(child, Infinity)` repeats forever.
+
+-   `duration` is `Infinity`, for the loop and for every node that contains it in time: a `sequence` sums, a `parallel` takes the maximum. `loop(endless, n)` is just the endless loop.
+-   **Unreachable:** a `sequence` child placed after an endless child can never run. Constructing that `sequence` throws a `RangeError` (`unreachable`). Put the endless child last, or run it in a `parallel`.
+-   **Shared properties:** an endless loop owns its properties from its start on. `parallel([loop(a, Infinity), b])` where both animate `x` throws a `RangeError` that names the property. The same tree with a finite count works.
+-   A timeline with an infinite duration never ends: there is no `ENDED` notification, `play()` resolves only when the run is interrupted, `reset()` or disposed, and `repeat` is ignored. `seek(t)` accepts any finite `t >= 0`; `drive()` needs a finite duration and throws a `RangeError`.
+-   **Reduced motion:** `'jump'` shows every finite part completed and each endless loop at the end of its first iteration, and holds that state (`PAUSED`). `{ maxDuration }` does not apply to an infinite run.
+-   **WAAPI:** only a root `loop(child, Infinity)` is supported; the child is compiled once and played with `iterations: Infinity`. Any other tree with an endless loop throws a `RangeError` from `waapiTimeline(...).play()`; use the RAF engine (`dynamicTimeline` / `rafTimeline`) for it.
+-   `rafGroup` offsets work as usual.
+
+#### Overrides: one slot per node as written
+
+The `keyframes` and `durations` options of `play()` hold one entry per `ani` / `delay` node **as written in the tree**. The child of a loop counts once, whatever the count (also `0` and `Infinity`), and its entry applies to every iteration:
+
+```typescript
+const looped = a.loop(a.ani({ to: { x: 100 }, duration: 1 }), 3);
+timeline.play({ from: { x: 0 }, keyframes: [{ x: 50 }] }); // 50 in every iteration
+```
+
+Before 2.0 every iteration had its own entry. A `durations` entry that makes a segment run past the end of its iteration cuts it off at the next one; a finite loop is then written out, and an endless one throws a `RangeError` from `play()`.
 
 #### Best Practices
 
--   **Do** use `loop` for simple, repetitive animations like pulsing or bouncing.
--   **Don't** use `loop` for endless animations. Use `repeat: Infinity` in `play()`, which does not grow the plan.
--   **Don't** use very large counts. Each repetition adds segments to the plan; per-frame cost does not grow, but the plan build does.
+-   **Do** use `loop` for repetitive animations like pulsing or bouncing, finite or endless.
+-   **Do** use `loop(child, Infinity)` instead of `repeat: Infinity` when only a part of the tree repeats.
+-   **Don't** animate the properties of an endless loop elsewhere; split them between the children of a `parallel`.
 
 ### API Reference
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
 | `child` | `AnimationNode<G>` | The node to repeat. |
-| `loopCount` | `number` | Finite integer `>= 0`. |
+| `loopCount` | `number` | Integer `>= 0`, or `Infinity`. |
 | `timing` | `TimingFunction` | (Optional) Applied to child segments without their own timing. |
 | `id` | `string` | (Optional) Identifier of the node. |
 
 ### Related Components
 
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The `play` method's `repeat` option provides an alternative way to loop.
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The `play` method's `repeat` option repeats the whole timeline.
 -   [`sequence`](/en/docs/core-api/sequence) - Can be used to manually create loops, though `loop` is more concise.

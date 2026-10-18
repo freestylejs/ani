@@ -1,5 +1,7 @@
 import type { ExecutionPlan, Groupable, SegmentTiming } from '~/ani/core'
+import { planStateOf } from '~/ani/core/plan_state'
 import { type AnimationId, AnimationNode } from './base'
+import { type Footprint, segmentFootprint } from './footprint'
 
 export interface SegmentNodeProps<G extends Groupable> {
     readonly to: G
@@ -13,6 +15,7 @@ export interface SegmentNodeProps<G extends Groupable> {
 export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
     readonly type = 'SEGMENT'
     readonly props: SegmentNodeProps<G>
+    readonly footprint: Footprint
 
     constructor(
         props: SegmentNodeProps<G> & { id?: AnimationId },
@@ -31,6 +34,7 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
             ...(props.timing !== undefined && { timing: props.timing }),
         }
         this.props = nodeProps
+        this.footprint = segmentFootprint(props.to, props.duration)
     }
 
     public get duration(): number {
@@ -38,10 +42,14 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
     }
 
     public construct(plan: ExecutionPlan<G>, startTime: number): void {
+        const state = planStateOf(plan)
+        const slot = state.slot++
+        state.slotStart[slot] ??= startTime
         plan.push({
             node: this,
             startTime: startTime,
             endTime: startTime + this.duration,
+            slot,
         })
     }
 }

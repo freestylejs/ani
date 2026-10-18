@@ -51,7 +51,7 @@ The `dynamicTimeline` is the execution engine. It takes a static animation tree 
 
 The `dynamicTimeline.play()` method accepts a configuration object that allows you to provide dynamic values at runtime. This is the primary mechanism for creating interactive animations.
 
--   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes. The number of keyframes must match the number of `ani` nodes (a `delay()` counts as one).
+-   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes. The number of keyframes must match the number of `ani` nodes (a `delay()` counts as one). Entries address the nodes **as written in the tree**, ordered by start time: the child of a `loop` is one entry, whatever the loop count, and it applies to every iteration.
 -   `durations`: An array of `duration` values (in seconds) that override the original durations. The timeline `duration` reflects them; `reset()` restores the base duration.
 -   `repeat`: The number of additional runs. Use `Infinity` for an endless loop. Frame overshoot carries into the next run (no drift).
 -   `delay`: An initial delay in milliseconds before the animation starts.
@@ -811,10 +811,33 @@ myTimeline.play({ from: { scale: 1 } });
 
 `loop` is a composition node that takes a single child animation and repeats it a set number of times. The total duration of the `loop` node is the duration of its child multiplied by the loop count. This is a convenient alternative to manually creating a long `sequence` of identical animations.
 
+`loopCount` is an integer `>= 0` or `Infinity`; anything else throws a `RangeError`.
+
+#### Cost does not depend on the count
+
+A loop is represented once in the plan, not `count` times: the first iteration starts from the value the animated properties have where the loop starts, every later one from the end state of the previous iteration, which is the same for all of them. Seeking anywhere costs the same as seeking in the first iteration, and `loop(child, 1e6)` builds as fast as `loop(child, 2)`. Values equal those of the same tree written as a `sequence` of copies (dynamic springs restart in every iteration), to floating-point precision (1e-9), `bezier` / `ease*` timings included.
+
+A finite loop that shares a property with another segment running while the loop runs (for example `parallel([loop(a, 3), b])` where both animate `x`) is written out as copies instead, with identical values; the plan then grows with the count.
+
+#### Endless loops (`Infinity`)
+
+`loop(child, Infinity)` repeats forever. Its `duration` is `Infinity`, and so is the duration of every container that holds it in time (a `sequence` sums, a `parallel` takes the maximum). `loop(endless, n)` is just the endless loop.
+
+-   **Unreachable:** a `sequence` child placed after an endless child can never run, so constructing that `sequence` throws a `RangeError`. Put the endless child last, or run it in a `parallel`.
+-   **Shared properties:** an endless loop owns its properties from its start on. Another segment that writes the same property while the loop runs (`parallel([loop(a, Infinity), b])` with both animating `x`) throws a `RangeError` naming the property, when the node that creates the overlap is built.
+-   A timeline with an infinite duration never ends: no `ENDED` notification, `play()` resolves only when the run is interrupted, `reset()` or `dispose()`d, and `repeat` is ignored. `seek(t)` accepts any finite `t >= 0`; `drive()` needs a finite duration and throws a `RangeError`.
+-   Reduced motion: `'jump'` shows the state at the end of the first iteration of every endless loop, with all finite parts completed, and holds it (`PAUSED`); `{ maxDuration }` does not apply, the run plays unchanged.
+-   WAAPI: only a root `loop(child, Infinity)` is supported (the child is compiled once, `iterations: Infinity`). Any other tree with an endless loop throws a `RangeError` from `play()` that points to the RAF engine.
+-   `rafGroup` offsets work as usual.
+
+#### Overrides
+
+`keyframes` / `durations` of `play()` hold one entry per `ani` / `delay` node **as written in the tree**: the child of a loop counts once, whatever the count (also `0` and `Infinity`), and its entry applies to every iteration. Before 2.0 every iteration had its own entry. A `durations` entry that makes a segment run past the end of its iteration cuts it off at the next one; a finite loop is then written out, and an endless one throws a `RangeError` from `play()`.
+
 #### Best Practices
 
--   **Do** use `loop` for simple, repetitive animations like pulsing or bouncing.
--   **Don't** use `loop` for endless animations. `loopCount` must be a finite integer `>= 0` (anything else throws a `RangeError`); use `repeat: Infinity` in `play()` instead.
+-   **Do** use `loop` for repetitive animations like pulsing or bouncing, finite or endless.
+-   **Don't** nest an endless loop where something else writes its properties; split the properties between a `parallel`'s children.
 
 ### API Reference
 
@@ -823,7 +846,7 @@ myTimeline.play({ from: { scale: 1 } });
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `child` | `AnimationNode<G>` | The animation node to repeat. | — |
-| `loopCount` | `number` | The number of times to repeat the child node. | — |
+| `loopCount` | `number` | The number of times to repeat the child node: an integer `>= 0`, or `Infinity`. | — |
 | `timingOrOptions` | `TimingFunction \| NodeOptions` | (Optional) Options object `{ timing?: TimingFunction, id?: AnimationId }`, or an easing function (1.x positional form). | `undefined` |
 | `id` | `AnimationId` | (Optional, 1.x) Positional identifier for the node. | `undefined` |
 
@@ -840,7 +863,7 @@ function loop<G extends Groupable>(
 
 ### Related Components
 
--   `dynamicTimeline` - The `play` method's `repeat` option provides an alternative way to loop.
+-   `dynamicTimeline` - The `play` method's `repeat` option repeats the whole timeline.
 -   `sequence` - Can be used to manually create loops, though `loop` is more concise.
 
 ---
@@ -1141,7 +1164,8 @@ const essential = a.rafTimeline(node, { reducedMotion: "ignore" });
 -   The preference is read **once at the start of each `play()`**: a change affects the next run, never a running one.
 -   RAF `'jump'` (default): `play()` validates as usual, then the run completes at once. The value is the end state (the plan at its duration; with `repeat`, the end of the last run; `repeat: Infinity` ends after one run), the status is `ENDED`, bound targets are written, listeners are notified once with `ENDED` and the promise resolves `'ended'`. The clock is not subscribed.
 -   RAF `{ maxDuration }`: a run longer than `maxDuration` plays `duration / maxDuration` times faster (springs included); `duration` still reports the plan's. Shorter runs are untouched.
--   WAAPI (`waapiTimeline(node, { reducedMotion, clock })`; `clock` only provides the preference, default `defaultClock`): `'jump'` creates the animations and `finish()`es them at once (`ENDED`, `'ended'`; an endless run ends after one), `{ maxDuration }` sets `playbackRate` to `duration / maxDuration` when longer.
+-   A run of infinite duration (a tree with `loop(child, Infinity)`) never ends: RAF `'jump'` shows every finite part completed and each endless loop at the end of its first iteration, then holds that state `PAUSED` (no `ENDED`; the promise stays pending until `reset()` / `dispose()` / the next `play()`); `{ maxDuration }` does not apply and the run plays unchanged.
+-   WAAPI (`waapiTimeline(node, { reducedMotion, clock })`; `clock` only provides the preference, default `defaultClock`): `'jump'` creates the animations and `finish()`es them at once (`ENDED`, `'ended'`; a `repeat: Infinity` run ends after one; a root `loop(child, Infinity)` shows the end of its first iteration and holds `PAUSED` with the promise pending, like RAF), `{ maxDuration }` sets `playbackRate` to `duration / maxDuration` when longer.
 -   `'ignore'` keeps the normal behavior; use it for essential motion (progress indicators).
 -   Tests: `createManualClock({ reducedMotion })` and `setReducedMotion(on)` flip the preference.
 

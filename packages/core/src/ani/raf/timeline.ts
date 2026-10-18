@@ -83,7 +83,10 @@ export interface BindOptions {
 export interface RafTimeline<G extends Groupable> {
     /** Current lifecycle status. */
     readonly status: TimelineStatus
-    /** Total duration in seconds of the current plan. */
+    /**
+     * Total duration in seconds of the current plan; `Infinity` when the tree
+     * contains `loop(child, Infinity)` (such a run never ends).
+     */
     readonly duration: number
     /** Config of the current run, or `null`. */
     readonly config: RafTimelineConfig<G> | null
@@ -751,7 +754,11 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             reduced && typeof policy === 'object'
                 ? policy.maxDuration
                 : Infinity
-        const speed = duration > maxDuration ? duration / maxDuration : 1
+        // an endless run has no length to shorten: it plays unchanged
+        const speed =
+            Number.isFinite(duration) && duration > maxDuration
+                ? duration / maxDuration
+                : 1
         const seed =
             config.velocity === undefined
                 ? this._inheritVelocity(keys, values.length)
@@ -828,6 +835,11 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             )
         }
         const { keys, values, plan, duration, compiled } = this._prepare(config)
+        if (!Number.isFinite(duration)) {
+            throw new RangeError(
+                '[Timeline] `drive` maps progress onto the duration, which is endless for a tree with `loop(child, Infinity)`.'
+            )
+        }
         // ignored by a driven run, but validated like in `play()`
         if (config.velocity !== undefined) {
             this._resolveVelocitySeed(config.velocity, keys, values.length)
@@ -880,10 +892,23 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
      * Reduced motion: the run completes at once in the end state of its last
      * repeat (an endless run ends after one), with a single `ENDED`
      * notification and no clock subscription.
+     *
+     * A run of endless duration never ends: every finite part completes and
+     * each endless loop shows the end of its first iteration, then the
+     * timeline holds that state `PAUSED`.
      */
     private _jumpToEnd(duration: number): void {
         this._clock.unsubscribe(this)
         this._remainingRepeats = 0
+        if (!Number.isFinite(duration)) {
+            const runtime = this._runtime!
+            runtime.settle()
+            this._masterTime = runtime.settledAt
+            this._pending = false
+            this._status = 'PAUSED'
+            this._notify()
+            return
+        }
         this._masterTime = duration
         this._runtime!.evaluate(duration, 0)
         this._pending = false
@@ -973,6 +998,11 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         if (typeof targetTime !== 'number' || Number.isNaN(targetTime)) {
             throw new RangeError(
                 `[Timeline] seek time must be a number, received ${targetTime}.`
+            )
+        }
+        if (targetTime === Infinity && !Number.isFinite(this.duration)) {
+            throw new RangeError(
+                '[Timeline] seek time must be finite: an endless timeline has no end to seek to.'
             )
         }
         if (this._status === 'PLAYING' || this._status === 'ENDED') {

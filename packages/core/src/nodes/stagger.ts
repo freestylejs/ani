@@ -5,6 +5,11 @@ import {
     CompositionNode,
     type CompositionPlan,
 } from './composition'
+import {
+    assertNoEndlessOverlap,
+    type Footprint,
+    mergeFootprints,
+} from './footprint'
 
 /**
  * Options for configuring a stagger node.
@@ -76,6 +81,7 @@ export class StaggerNode<
     readonly type = 'STAGGER'
     readonly duration: number
     readonly offset: number
+    readonly footprint: Footprint
 
     constructor(
         children: Children,
@@ -102,6 +108,13 @@ export class StaggerNode<
             if (end > duration) duration = end
         }
         this.duration = duration
+
+        const placed = this.children.map((child, i) => ({
+            footprint: child.footprint,
+            offset: i * resolvedOffset,
+        }))
+        assertNoEndlessOverlap('stagger', placed)
+        this.footprint = mergeFootprints(placed)
     }
 
     public construct(plan: CompositionPlan<Children>, startTime: number): void {

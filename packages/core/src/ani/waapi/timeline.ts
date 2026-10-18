@@ -13,7 +13,7 @@ export type { RunResult }
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import type { TimelineStatus } from '~/ani/raf/timeline'
 import { defaultClock } from '~/loop'
-import type { AnimationNode } from '~/nodes'
+import { type AnimationNode, LoopNode } from '~/nodes'
 import type { Resolver } from '~/style'
 import { compileToKeyframes, type WebAniKeyframe } from './compiler'
 
@@ -67,11 +67,13 @@ export interface WaapiPlayConfig<G extends Groupable> {
      */
     from: G | ((index: number) => G)
     /**
-     * Dynamic target overrides. Matches the order of SEGMENT nodes in the plan.
+     * Dynamic target overrides, one per segment node as written in the tree
+     * (the child of a loop counts once).
      */
     keyframes?: Array<G | 'keep'>
     /**
-     * Dynamic duration overrides. Matches the order of SEGMENT nodes in the plan.
+     * Dynamic duration overrides, one per segment node as written in the tree
+     * (the child of a loop counts once).
      */
     durations?: Array<number | 'keep'>
     /**
@@ -192,6 +194,24 @@ function resolveOffsets(
     return offsets
 }
 
+/**
+ * The node one iteration of which an endless root loop repeats, `null` when
+ * `root` is not such a loop (`loop(loop(child, Infinity), n)` is one too).
+ */
+function endlessLoopBody<G extends Groupable>(
+    root: AnimationNode<G>
+): AnimationNode<G> | null {
+    let node = root
+    while (node instanceof LoopNode) {
+        const child = node.child as AnimationNode<G>
+        if (Number.isFinite(child.duration)) {
+            return node.count === Infinity ? child : null
+        }
+        node = child
+    }
+    return null
+}
+
 export class WebAniTimeline<G extends Groupable> extends TimelineBase<
     G,
     [targets: Element | ArrayLike<Element>, config: WaapiPlayConfig<G>]
@@ -205,12 +225,25 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
 
     private readonly _reducedMotion: ReducedMotionPolicy
     private readonly _preference: { readonly reducedMotion: boolean }
+    // the tree never ends / the engine can run it (an endless root loop)
+    private readonly _endless: boolean
+    private readonly _endlessBody: boolean
 
     constructor(
         rootNode: AnimationNode<G>,
         options: WaapiTimelineOptions = {}
     ) {
-        super(rootNode)
+        const body = Number.isFinite(rootNode.duration)
+            ? null
+            : endlessLoopBody(rootNode)
+        // keyframes are sampled per segment: loops are written out, and an
+        // endless root loop is compiled for one iteration
+        super(rootNode, {
+            expandLoops: true,
+            ...(body !== null && { planRoot: body }),
+        })
+        this._endless = !Number.isFinite(rootNode.duration)
+        this._endlessBody = body !== null
         this._reducedMotion = resolveReducedMotionPolicy(options.reducedMotion)
         this._preference = options.clock ?? defaultClock
 
@@ -353,6 +386,11 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
         if (this._disposed) return Promise.resolve('disposed')
 
         // ---- validate & prepare (no state is touched until this succeeds)
+        if (this._endless && !this._endlessBody) {
+            throw new RangeError(
+                '[Timeline] The WAAPI engine can only play an endless loop (`loop(child, Infinity)`) as the root node. Use the RAF engine (`rafTimeline`) for other trees with an endless loop.'
+            )
+        }
         const elements = toElements(targets)
         const count = elements.length
         if (count === 0) {
@@ -418,15 +456,19 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
         const reduced =
             policy !== 'ignore' && prefersReducedMotion(this._preference)
         const jump = reduced && policy === 'jump'
+        // an endless run has no length to shorten: it plays unchanged
         const playbackRate =
             reduced &&
+            !this._endless &&
             typeof policy === 'object' &&
             duration > policy.maxDuration
                 ? duration / policy.maxDuration
                 : 1
 
         const durationMs = duration * 1000
-        const requested = toIterationCount(config.repeat)
+        const requested = this._endless
+            ? Infinity
+            : toIterationCount(config.repeat)
         const iterations =
             // Infinite iterations require a positive duration per spec; a
             // jump ends at the end of one run (an endless run can not finish).
@@ -445,7 +487,7 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
         })
 
         // ---- commit
-        this._commitDuration(duration)
+        this._commitDuration(this._endless ? Infinity : duration)
         this._currentExecutionPlan = plan
         const previous = this._run
         if (previous) {
@@ -474,6 +516,12 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
 
         if (jump) {
             for (const animation of animations) animation.finish()
+            if (this._endless) {
+                // an endless timeline never ends: hold the settled state, as
+                // the RAF engine does
+                this._setStatus('PAUSED')
+                return promise
+            }
             this._settle(run, 'ended')
             this._setStatus('ENDED')
             return promise
@@ -566,7 +614,18 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
                 `[Timeline] seek time must be a number, received ${targetTime}.`
             )
         }
-        const seekTime = Math.max(0, Math.min(targetTime, run.duration))
+        // a tree with an endless loop has no end to clamp to (a finite tree
+        // with `repeat: Infinity` still clamps to one run)
+        const endless = this._endless && run.iterations === Infinity
+        if (endless && targetTime === Infinity) {
+            throw new RangeError(
+                '[Timeline] seek time must be finite: an endless run has no end to seek to.'
+            )
+        }
+        const seekTime = Math.max(
+            0,
+            endless ? targetTime : Math.min(targetTime, run.duration)
+        )
         run.animations.forEach((animation, i) => {
             animation.currentTime = seekTime * 1000 + run.delaysMs[i]!
         })
@@ -580,9 +639,9 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
     public finish(): void {
         const run = this._run
         if (!run || !this._isRunning()) return
-        if (run.iterations === Infinity) {
+        if (run.iterations === Infinity || this._endless) {
             throw new RangeError(
-                '[Timeline] `finish()` is not available for an endless run (`repeat: Infinity`); use `cancel()`.'
+                '[Timeline] `finish()` is not available for an endless run (`repeat: Infinity` or an endless loop); use `cancel()`.'
             )
         }
         for (const animation of run.animations) animation.finish()

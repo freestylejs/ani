@@ -1,16 +1,18 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core'
+import { buildPlan } from '~/ani/core/plan_builder'
 import type { AnimationNode } from '~/nodes'
 import { DynamicSpringTimingFunction } from '~/timing'
 import type { AnimationRecord } from './gen'
 
-/** Flattens a tree exactly like `TimelineBase` (stable chronological sort). */
+/**
+ * Flattens a tree exactly like `TimelineBase` (stable chronological sort), with
+ * every finite loop written out as `count` copies: the reference the engines'
+ * loop handling is compared against.
+ */
 export function sortedPlan<G extends Groupable>(
     node: AnimationNode<G>
 ): ExecutionPlan<G> {
-    const plan: ExecutionPlan<G> = []
-    node.construct(plan, 0)
-    plan.sort((a, b) => a.startTime - b.startTime)
-    return plan
+    return buildPlan(node, { expandAll: true }).plan
 }
 
 /** Total time span of a plan, computed like the keyframe compiler does. */

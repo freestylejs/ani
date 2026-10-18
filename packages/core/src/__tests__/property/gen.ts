@@ -69,7 +69,31 @@ export function mulberry32(seed: number): Rng {
 export interface TreeOptions {
     /** Keys allowed in generated records; defaults to {@link PROPERTY_KEYS}. */
     keys?: readonly PropertyKey[]
+    /**
+     * Count of the loops that are picked to be endless (a third of the loops).
+     * The same seed gives the same tree whatever the value, so `Infinity` and
+     * a large finite count produce twins. Defaults to ordinary counts.
+     */
+    endlessCount?: number
+    /**
+     * Allow loop counts above the three iterations a plan writes out. Turn off
+     * to keep every loop written out.
+     * @default true
+     */
+    foldedLoops?: boolean
+    /**
+     * Draw durations and stagger offsets from multiples of 1/1024 s. Sums of
+     * them are exact, so a loop written out and the same loop represented once
+     * read bit-identical times. Otherwise the times differ by an ulp.
+     * @default false
+     */
+    gridTimes?: boolean
 }
+
+/** Loop counts: mostly written out, some large enough to be folded. */
+const MAX_FOLDED_COUNT = 9
+/** Probability that a loop is the one `endlessCount` replaces. */
+const ENDLESS_CHANCE = 0.35
 
 export interface GeneratedTree {
     node: AnimationNode<AnimationRecord>
@@ -104,10 +128,19 @@ function springOptions(rng: Rng) {
 interface BuildContext {
     remaining: number
     hasDynamicSpring: boolean
+    endlessCount: number | undefined
+    foldedLoops: boolean
+    gridTimes: boolean
+}
+
+/** `seconds` rounded to a multiple of 1/1024 when the context asks for it. */
+function onGrid(context: BuildContext, seconds: number): number {
+    return context.gridTimes ? Math.round(seconds * 1024) / 1024 : seconds
 }
 
 function randomTiming(rng: Rng, context: BuildContext): TimingFunction {
-    switch (rng.int(0, 7)) {
+    const kind = rng.int(0, 7)
+    switch (kind) {
         case 0:
             return T.linear()
         case 1:
@@ -139,7 +172,7 @@ function buildLeaf(
     const injection = (): TimingFunction => randomTiming(rng, context)
     const duration = rng.chance(ZERO_DURATION_CHANCE)
         ? 0
-        : round3(rng.range(MIN_DURATION, MAX_DURATION))
+        : onGrid(context, round3(rng.range(MIN_DURATION, MAX_DURATION)))
     if (rng.chance(0.12)) {
         return delay(duration) as unknown as AnimationNode<AnimationRecord>
     }
@@ -175,7 +208,18 @@ function buildNode(
     if (rng.int(0, 3) === 3) {
         // loop: the child may itself be a composition
         const child = buildNode(rng, keys, depth + 1, context)
-        return loop(child, rng.int(1, 3))
+        // drawn in a fixed order: twins with different `endlessCount` match
+        const written = rng.int(1, 3)
+        const folded = rng.int(4, MAX_FOLDED_COUNT)
+        const ordinary =
+            context.foldedLoops && rng.chance(0.4) ? folded : written
+        const endless = rng.chance(ENDLESS_CHANCE)
+        return loop(
+            child,
+            endless && context.endlessCount !== undefined
+                ? context.endlessCount
+                : ordinary
+        )
     }
 
     const count = rng.int(1, Math.min(4, context.remaining))
@@ -195,7 +239,7 @@ function buildNode(
     if (kind === 1) {
         return parallel(children)
     }
-    return stagger(children, round3(rng.range(0, 0.3)))
+    return stagger(children, onGrid(context, round3(rng.range(0, 0.3))))
 }
 
 /** Builds a random tree (depth <= 3, <= 12 leaves) plus its `from` values. */
@@ -207,6 +251,9 @@ export function generateTree(
     const context: BuildContext = {
         remaining: MAX_LEAVES,
         hasDynamicSpring: false,
+        endlessCount: options.endlessCount,
+        foldedLoops: options.foldedLoops ?? true,
+        gridTimes: options.gridTimes ?? false,
     }
     const node = buildNode(rng, keys, 1, context)
     const from: AnimationRecord = {}
