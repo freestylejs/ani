@@ -1,9 +1,13 @@
 // public binding api type-defs.
 
 import type { AniGroup, Groupable, TimelineBase } from './ani/core'
+import type { RafTimelineConfig } from './ani/raf'
 import type { EventHandlerRegistration } from './event'
 
-export type AniRefContext<G extends Groupable> = TimelineBase<G> & {
+export type AniRefContext<G extends Groupable> = TimelineBase<
+    G,
+    [config: RafTimelineConfig<G>, canBeIntercepted?: boolean]
+> & {
     /**
      * Current animation value
      */

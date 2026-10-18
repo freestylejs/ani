@@ -42,7 +42,7 @@ describe('[Publish Gate] Regression Suite', () => {
     }
 
     beforeEach(() => {
-        delete (AnimationClock as unknown as { clock?: AnimationClock }).clock
+        AnimationClock.reset()
         rafCallbacks = []
         now = 0
         rafSpy = vi.fn((cb: (ts: number) => void) => {
@@ -57,6 +57,7 @@ describe('[Publish Gate] Regression Suite', () => {
     })
 
     afterEach(() => {
+        AnimationClock.reset()
         vi.unstubAllGlobals()
     })
 
@@ -182,6 +183,26 @@ describe('[Publish Gate] Regression Suite', () => {
         expect(rafSpy).toHaveBeenCalledTimes(1)
         tick(16)
         expect(rafSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('[L4A-2] one failing animation never stops the shared clock', () => {
+        vi.stubGlobal('queueMicrotask', () => undefined)
+        const clock = AnimationClock.create()
+        const bad = {
+            update: () => {
+                throw new Error('bad animation')
+            },
+        }
+        const good = rafTimeline(
+            ani({ to: { x: 100 }, duration: 1, timing: T.linear() })
+        )
+        good.play({ from: { x: 0 } })
+        clock.subscribe(bad)
+
+        expect(() => tick(100)).not.toThrow()
+        tick(100)
+        expect(rafCallbacks.length).toBe(1)
+        expect((good.getCurrentValue() as { x: number }).x).toBeCloseTo(20)
     })
 
     it('[L4A-3] seek bypasses pending delay on resume', () => {
