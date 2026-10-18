@@ -1,81 +1,75 @@
 ---
 title: useAniRef
-description: A performant, event-driven Svelte action that binds animations directly to a DOM element.
+description: A Svelte action that binds a timeline directly to a DOM element, with a server-rendered initial style.
 ---
 
-This primitive applies animation styles directly to a DOM element using the `use:` directive, bypassing Svelte's reactivity for high performance. It also includes a built-in event manager to simplify interactive animations.
+This primitive writes animation styles directly to a DOM element using the `use:` directive, bypassing Svelte's reactivity (no render per frame). The writes are done by core's `timeline.bind`; DOM events are Svelte's job (`on:click`, `onclick`).
 
 ### Example
 
 ```svelte
 <script>
-  import { a } from '@freestylejs/ani-core';
-  import { useAniRef } from '@freestylejs/ani-svelte';
+  import { a, rafTimeline } from '@freestylejs/ani-core';
+  import { useAniRef, useTimeline } from '@freestylejs/ani-svelte';
 
-  // 1. Define the animation structure and timeline.
-  const myTimeline = a.dynamicTimeline(
-    a.sequence([
-      a.ani({ to: { translateX: 500, rotate: 360 }, duration: 1 }),
-      a.ani({ to: { translateX: 0, rotate: 0 }, duration: 1 }),
-    ])
+  // 1. The component owns the timeline.
+  const timeline = useTimeline(() =>
+    rafTimeline(
+      a.sequence([
+        a.ani({ to: { translateX: 500, rotate: 360 }, duration: 1 }),
+        a.ani({ to: { translateX: 0, rotate: 0 }, duration: 1 }),
+      ])
+    )
   );
 
-  // 2. Use the utility to get the action and controller.
-  const [refAction, controller] = useAniRef({
-    timeline: myTimeline,
+  // 2. Get the action and the initial inline style.
+  const { action, style } = useAniRef(timeline, {
     initialValue: { translateX: 0, rotate: 0 },
-    // 3. Add event handlers for interactivity.
-    events: {
-      onMousedown: (ctx, event) => {
-        // `ctx` is the timeline controller plus `ctx.current`, the latest value.
-        ctx.play({ from: ctx.current ?? { translateX: 0, rotate: 0 } });
-      },
-      onMouseup: (ctx) => {
-        ctx.pause();
-      },
-    },
   });
 </script>
 
-<!-- 4. Bind the action to the element -->
-<div use:refAction style="width: 100px; height: 100px; background: blue;" on:click={() => controller.play({ from: { translateX: 0, rotate: 0 } })} />
+<!-- 3. Bind the action to the element. `style` is also rendered on the server. -->
+<div
+  use:action
+  {style}
+  on:click={() => timeline.play({ from: { translateX: 0, rotate: 0 } })}
+/>
 ```
 
 ### Usage & Concepts
 
 #### Overview
 
-The `useAniRef` primitive is designed for performance. It takes a configuration object (`AniRefProps`) and returns a Svelte `Action` and the timeline controller. When the action is applied to an element, it directly manipulates its styles on each animation frame, avoiding Svelte's virtual DOM overhead.
-
-Event handlers passed to the `events` property receive a context object: the timeline controller plus `current`, the latest animation value.
+`useAniRef(timeline, options?)` returns `{ action, style }`. `style` is a CSS declaration string made from `initialValue` (for example `"transform: translateX(0px) rotate(0deg)"`), so server-rendered markup starts in the right place. It is `undefined` without `initialValue`. Nothing subscribes to a clock or touches the DOM during server rendering.
 
 #### Lifecycle
 
--   **Timeline may be a store.** `timeline` can be a timeline or a `Readable` of one. Swaps are followed: the old timeline is detached and the new one's current value is applied at once.
--   **One action, many nodes.** The returned action can be applied to several nodes. Each node keeps its own subscription and listeners; `controller.reset()` restyles all live nodes; destroying one node leaves the others bound.
--   **Controller.** It always targets the current timeline and forwards every member, including `canBeIntercepted`.
--   **Cleanup.** `destroy()` removes the node's subscription and listeners.
--   **Styles.** Custom properties (`--x`) from a `propertyResolver` are written with `setProperty` (see [styles](/en/docs/core-api/advanced/building-bindings)).
--   **Ownership.** The action never disposes the timeline you pass. Call `timeline.dispose()` yourself if you created it.
+-   **Bind on mount.** The action calls `timeline.bind(node)`: a timeline that already has a value is written at once, then every frame, changed declarations only.
+-   **Unbind on destroy.** `destroy()` stops the writes and keeps the styles that were written.
+-   **Timeline may be a store.** `timeline` can be a timeline or a `Readable` of one. Swaps are followed: every mounted node is rebound to the new timeline and the replaced one writes nothing any more.
+-   **One action, many nodes.** The returned action can be applied to several nodes; each keeps its own binding.
+-   **Resolver.** `options.resolver` shapes both the `style` string and the writes (custom properties such as `--x` included).
+-   **Ownership.** The action never disposes the timeline you pass. Use [`useTimeline`](/en/docs/svelte/use-timeline) to create it.
+-   **Removed.** The `events` / `cleanupEvents` options and the `[action, controller]` tuple are gone.
 
 #### When to Use
 
 -   **Do** use `useAniRef` for high-performance animations of CSS properties like `transform` and `opacity`.
--   **Do** use it for complex, interactive animations driven by user input at 60fps.
 -   **Don't** use `useAniRef` when you need to read the animated values elsewhere in your component. Use `useAni` for that.
+-   For a list of elements driven by one plan, use [`useAniGroup`](/en/docs/svelte/use-ani-group).
 
 ### API Reference
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Readable<RafAniTimeline<G>>` | The timeline to bind. |
-| `initialValue` | `AniGroup<G>` | (Optional) Style applied before the timeline has a value, and restored by `reset()`. |
-| `events` | `EventHandlerRegistration` | (Optional) `onClick`-style handlers. Receive `(ctx, event)`. |
-| `cleanupEvents` | `boolean` | (Optional, default `true`) Remove listeners on destroy. |
+| `timeline` | `RafTimeline<G> \| Readable<RafTimeline<G>>` | The timeline to bind. |
+| `options.initialValue` | `AniGroup<G>` | (Optional) Rendered as the initial `style` string. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
 
-Returns `readonly [action, controller]`.
+Returns `{ action: Action<HTMLElement>, style: string | undefined }`.
 
 ### Related Components
 
+-   [`useTimeline`](/en/docs/svelte/use-timeline) - Creates and disposes the timeline.
 -   [`useAni`](/en/docs/svelte/use-ani) - For reactive animations that integrate with Svelte stores.
--   [`EventManager`](/en/docs/core-api/advanced/event-management) - The underlying utility used by the `events` property.
+-   [`useAniGroup`](/en/docs/svelte/use-ani-group) - One ref per index of a group.

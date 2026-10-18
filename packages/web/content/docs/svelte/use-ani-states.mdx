@@ -1,9 +1,9 @@
 ---
 title: useAniStates
-description: A reactive primitive for managing and transitioning between multiple animation states.
+description: A primitive for managing and transitioning between multiple animation states on an element.
 ---
 
-This primitive is a Svelte-specific wrapper around the core `createStates` function. It's designed for components with multiple, distinct visual states (e.g., idle, hover, active) and provides a simple, reactive API to manage transitions between them.
+This primitive is a Svelte-specific wrapper around the core `createStates` function. It's designed for components with multiple, distinct visual states (e.g., idle, hover, active) and provides a simple API to manage transitions between them.
 
 ### Example
 
@@ -12,11 +12,9 @@ This primitive is a Svelte-specific wrapper around the core `createStates` funct
   import { a } from "@freestylejs/ani-core";
   import { useAniStates } from "@freestylejs/ani-svelte";
 
-  // Use the primitive to create the state machine. It returns the action,
-  // reactive stores for state info, and a function to transition.
-  const [refAction, { state }, transitionTo] = useAniStates({
+  const { action, style, state, transitionTo } = useAniStates({
     initial: "idle",
-    initialFrom: { scale: 1, opacity: 0.7 },
+    initialValue: { scale: 1, opacity: 0.7 },
     states: {
       idle: a.ani({ to: { scale: 1, opacity: 0.7 }, duration: 0.5 }),
       hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
@@ -25,11 +23,11 @@ This primitive is a Svelte-specific wrapper around the core `createStates` funct
 </script>
 
 <button
-  use:refAction
+  use:action
+  {style}
   on:mouseenter={() => transitionTo("hover")}
   on:mouseleave={() => transitionTo("idle")}
   data-state={$state}
-  class="rounded-md bg-blue-500 px-4 py-2 transition-all"
 >
   Hover Me
 </button>
@@ -39,14 +37,15 @@ This primitive is a Svelte-specific wrapper around the core `createStates` funct
 
 #### Overview
 
-The `useAniStates` primitive simplifies stateful animation logic in Svelte. It manages the active animation state and its corresponding timeline, automatically handling seamless transitions. When you call `transitionTo`, it uses the current animation's value as the starting point for the next animation, ensuring smooth, interruptible effects.
+The primitive manages the active animation state and its timeline, handling seamless transitions. When you call `transitionTo`, the current value and velocity are the starting point of the next animation, so effects stay smooth and interruptible. The action binds the machine (`machine.bind`), so it follows every timeline swap.
 
 #### Lifecycle
 
--   **Ownership follows the action.** The primitive creates the state machine. When the **last node** using the action is destroyed, the machine is **disposed**, which stops any running timeline (even `repeat: Infinity`). Applying the action to a new node afterwards starts from a fresh machine in `initial`. After disposal `transitionTo` does nothing.
--   **Props are read once**, when the function is called.
--   **Atomic.** `transitionTo` validates first (an unknown state throws a `RangeError` and nothing changes). The `state` store reflects what the machine actually did, including a transition rejected because `canBeIntercepted` is `false`.
--   **Never misses a swap.** The primitive subscribes to timeline changes immediately, and the action follows the `timeline` store.
+-   **Owned.** The machine is created by the primitive and disposed when the component is destroyed, which stops any running timeline (even `repeat: Infinity`). After that `transitionTo` resolves `'disposed'`.
+-   **Action.** Binds on mount (the current value is written at once) and unbinds on destroy; it never disposes the machine.
+-   **Server rendering.** `style` is the CSS declaration string of `initialValue` (or the 1.x `initialFrom`). Nothing starts on the clock while rendering on the server.
+-   **Atomic.** `transitionTo` validates first (an unknown state throws a `RangeError` and nothing changes). The `state` store mirrors the machine, also for a direct `machine.transitionTo`.
+-   **Resolver.** `resolver` shapes both the `style` string and the writes.
 
 #### When to Use
 
@@ -57,19 +56,20 @@ The `useAniStates` primitive simplifies stateful animation logic in Svelte. It m
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `props` | `StateProps` | `initial`, `initialFrom`, `states` and optional `clock`. See [createStates](/en/docs/core-api/states). |
+| `config` | `StateProps & { resolver? }` | `initial`, `initialValue`, `states`, optional `clock` and `resolver`. See [createStates](/en/docs/core-api/states). |
 
-Returns `readonly [action, { state, timeline }, transitionTo]`.
+Returns `{ action, style, state, transitionTo, machine }`.
 
 | Member | Description |
 | :--- | :--- |
 | `action` | Svelte action to put on the element (`use:action`). |
+| `style` | Initial inline style string. |
 | `state` | Readable store of the current state name. |
-| `timeline` | Readable store of the active timeline. It changes on every transition. |
-| `transitionTo(name, config?, canBeIntercepted?)` | Switches state. |
+| `transitionTo(name, config?, canBeIntercepted?)` | Switches state. Resolves with how the run ended. |
+| `machine` | The state controller (`timeline()`, `value`, `onTransition`, ...). |
 
 ### Related Components
 
 -   [`createStates`](/en/docs/core-api/states) - The core function that this primitive is built upon.
--   [`useAniRef`](/en/docs/svelte/use-ani-ref) - To apply the stateful animations to the DOM.
--   [`useAni`](/en/docs/svelte/use-ani) - To reactively read the animation values from the active timeline.
+-   [`useAniRef`](/en/docs/svelte/use-ani-ref) - To bind a timeline you manage yourself.
+-   [`useAni`](/en/docs/svelte/use-ani) - To reactively read animation values.

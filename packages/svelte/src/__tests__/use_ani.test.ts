@@ -18,7 +18,8 @@ describe('svelte useAni', () => {
         const secondSubs = trackSubscriptions(second)
         second.play({ from: { opacity: 0.8 } })
         const source = writable<RafAniTimeline<{ opacity: number }>>(first)
-        const [store, controller] = useAni(source, { opacity: 0.1 })
+        const [store, returned] = useAni(source, { opacity: 0.1 })
+        expect(returned).toBe(first)
 
         expect(firstSubs.live).toBe(0)
         const seen: number[] = []
@@ -34,9 +35,6 @@ describe('svelte useAni', () => {
         expect(firstSubs.live).toBe(0)
         expect(secondSubs.live).toBe(1)
         expect(seen.at(-1)).toBe(second.getCurrentValue()?.opacity)
-        // controller follows the swap
-        controller.play({ from: { opacity: 0.2 } })
-        expect(second.getCurrentValue()).toEqual({ opacity: 0.2 })
 
         unsubscribe()
         expect(secondSubs.live).toBe(0)

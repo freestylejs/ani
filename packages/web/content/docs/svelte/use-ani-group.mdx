@@ -1,0 +1,58 @@
+---
+title: useAniGroup
+description: A Svelte action that binds each element of a list to its own target of a group.
+---
+
+A `rafGroup` drives N targets from one plan through one clock subscription. `useAniGroup` binds each element to its target with `use:action={index}`.
+
+### Example
+
+```svelte
+<script>
+  import { a, rafGroup } from '@freestylejs/ani-core';
+  import { useAniGroup, useTimeline } from '@freestylejs/ani-svelte';
+
+  const items = ['a', 'b', 'c'];
+
+  const group = useTimeline(() =>
+    rafGroup(a.ani({ to: { opacity: 1 }, duration: 0.5 }), { stagger: 0.1 })
+  );
+  const { action, style } = useAniGroup(group, {
+    initialValue: { opacity: 0 },
+  });
+</script>
+
+<button on:click={() => group.play({ from: { opacity: 0 }, count: items.length })}>
+  Play
+</button>
+
+<ul>
+  {#each items as item, index (item)}
+    <li use:action={index} {style}>{item}</li>
+  {/each}
+</ul>
+```
+
+### Usage & Concepts
+
+-   **One action, one index per node.** `use:action={index}` calls `group.bindAt(index, node)`. A node mounted while the group has a value is written at once.
+-   **Index changes.** When the parameter changes, Svelte calls `update(index)`: the node is rebound to the new target and no binding stays at the old index.
+-   **Destroy.** Unbinds; written styles are kept.
+-   **Group may be a store.** Swaps rebind every mounted node at its index.
+-   **Server rendering.** `style` is the CSS declaration string of `initialValue`; nothing subscribes during server rendering.
+-   **Ownership.** The action never disposes the group you pass. Create it with [`useTimeline`](/en/docs/svelte/use-timeline).
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `group` | `RafGroup<G> \| Readable<RafGroup<G>>` | The group to bind. |
+| `options.initialValue` | `AniGroup<G>` | (Optional) Rendered as the initial `style` string. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
+
+Returns `{ action: Action<HTMLElement, number>, style: string | undefined }`.
+
+### Related Components
+
+-   [`useTimeline`](/en/docs/svelte/use-timeline) - Creates and disposes the group.
+-   [`useAniRef`](/en/docs/svelte/use-ani-ref) - A single element bound to a timeline.

@@ -1,4 +1,11 @@
 {
     "title": "Svelte",
-    "pages": ["use-ani", "use-ani-ref", "use-ani-states"]
+    "pages": [
+        "use-timeline",
+        "use-ani",
+        "use-ani-ref",
+        "use-ani-group",
+        "use-ani-states",
+        "use-follow"
+    ]
 }
