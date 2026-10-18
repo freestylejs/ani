@@ -19,11 +19,18 @@ export class ParallelNode<
     readonly duration: number
 
     constructor(children: Children, timing?: TimingFunction, id?: AnimationId) {
-        // Handle object property conflicts
+        // Record-shaped direct segments: when several write the same key the
+        // later declaration wins (all start together). Overridden keys are
+        // stripped from earlier segments. A segment that ends up with no key
+        // stays as a key-less hold so that it keeps contributing its duration
+        // (and its slot in `keyframes` / `durations` overrides), exactly like
+        // `delay()`. Array / nested shapes are resolved by the timeline's
+        // overlap rule instead.
         const seenProperty = new Set<string>()
         const resolvedChildren: AnimationNode<Groupable>[] = []
 
-        for (const child of [...children].reverse()) {
+        for (let i = children.length - 1; i >= 0; i--) {
+            const child = children[i]!
             if (child instanceof SegmentNode) {
                 const segment = child as SegmentNode<Groupable>
                 const propsTo = segment.props.to
@@ -31,30 +38,46 @@ export class ParallelNode<
                 // record shape
                 if (propsTo && !Array.isArray(propsTo)) {
                     const propsToAnimate = Object.keys(propsTo)
-                    const finalConstructedTo: Record<string, number> = {}
-                    let handledCount = 0
+                    if (propsToAnimate.length > 0) {
+                        const finalConstructedTo: Record<string, number> = {}
+                        let handledCount = 0
 
-                    for (const propKey of propsToAnimate) {
-                        if (!seenProperty.has(propKey)) {
-                            finalConstructedTo[propKey] = (
-                                propsTo as Record<string, number>
-                            )[propKey]!
-                            seenProperty.add(propKey)
-                            handledCount++
+                        for (const propKey of propsToAnimate) {
+                            if (!seenProperty.has(propKey)) {
+                                finalConstructedTo[propKey] = (
+                                    propsTo as Record<string, number>
+                                )[propKey]!
+                                seenProperty.add(propKey)
+                                handledCount++
+                            }
                         }
-                    }
 
-                    if (handledCount > 0) {
-                        const newSegment = new SegmentNode<Groupable>(
-                            {
-                                ...segment.props,
-                                to: finalConstructedTo as GroupableRecord,
-                            },
-                            segment.id
-                        )
-                        resolvedChildren.push(newSegment)
+                        if (handledCount === propsToAnimate.length) {
+                            // nothing overridden
+                            resolvedChildren.push(child)
+                        } else if (handledCount > 0) {
+                            resolvedChildren.push(
+                                new SegmentNode<Groupable>(
+                                    {
+                                        ...segment.props,
+                                        to: finalConstructedTo as GroupableRecord,
+                                    },
+                                    segment.id
+                                )
+                            )
+                        } else {
+                            resolvedChildren.push(
+                                new SegmentNode<Groupable>(
+                                    {
+                                        to: {} as GroupableRecord,
+                                        duration: segment.duration,
+                                    },
+                                    segment.id
+                                )
+                            )
+                        }
+                        continue
                     }
-                    continue // Go to next child
                 }
             }
 
@@ -66,7 +89,13 @@ export class ParallelNode<
 
         super(resolvedChildren as unknown as Children, timing, id)
 
-        this.duration = Math.max(0, ...children.map((child) => child.duration))
+        // Plain loop: spreading into Math.max overflows the stack for large
+        // child counts.
+        let duration = 0
+        for (const child of children) {
+            if (child.duration > duration) duration = child.duration
+        }
+        this.duration = duration
     }
 
     public construct(plan: CompositionPlan<Children>, startTime: number): void {

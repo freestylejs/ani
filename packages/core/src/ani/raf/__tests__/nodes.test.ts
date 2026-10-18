@@ -7,7 +7,8 @@ import {
     sequence,
     stagger,
 } from '~/nodes'
-import type { TimingFunction } from '~/timing'
+import { T, type TimingFunction } from '~/timing'
+import { rafTimeline } from '../timeline'
 
 describe('Animation Nodes & Compositors', () => {
     describe('animate()', () => {
@@ -139,6 +140,124 @@ describe('Animation Nodes & Compositors', () => {
             stag.construct(plan, 0)
             expect(mockCompile1).toHaveBeenCalledWith(plan, 0)
             expect(mockCompile2).toHaveBeenCalledWith(plan, 0.5) // 0 + offset
+        })
+    })
+
+    describe('input validation', () => {
+        it.each([
+            Number.NaN,
+            -1,
+            Number.POSITIVE_INFINITY,
+        ])('ani() rejects duration %s with a RangeError', (duration) => {
+            expect(() => ani({ to: [1], duration })).toThrow(RangeError)
+        })
+
+        it('delay() rejects non-finite / negative durations', () => {
+            expect(() => delay(Number.POSITIVE_INFINITY)).toThrow(RangeError)
+            expect(() => delay(-0.5)).toThrow(RangeError)
+            expect(delay(0).duration).toBe(0)
+        })
+
+        it.each([
+            Number.NaN,
+            -0.1,
+            Number.POSITIVE_INFINITY,
+        ])('stagger() rejects offset %s', (offset) => {
+            expect(() =>
+                stagger([ani({ to: [1], duration: 1 })], offset)
+            ).toThrow(RangeError)
+        })
+    })
+
+    describe('parallel() same-key resolution', () => {
+        const line = (root: AnimationNode<any>, from: any) => {
+            const timeline = rafTimeline(root)
+            timeline.play({ from })
+            return timeline
+        }
+
+        it('keeps a trailing delay: timeline duration equals node duration', () => {
+            const par = parallel([
+                ani({ to: { x: 10 }, duration: 1 }),
+                delay(2),
+            ])
+            expect(par.duration).toBe(2)
+            expect(rafTimeline(par).duration).toBe(2)
+        })
+
+        it('keeps the duration of a fully overridden segment', () => {
+            const par = parallel([
+                ani({ to: { x: 10 }, duration: 3, timing: T.linear() }),
+                ani({ to: { x: 50 }, duration: 1, timing: T.linear() }),
+            ])
+            const timeline = line(par, { x: 0 })
+
+            expect(timeline.duration).toBe(par.duration)
+            expect(timeline.duration).toBe(3)
+
+            timeline.seek(0.5)
+            expect(timeline.getCurrentValue()).toEqual({ x: 25 })
+            timeline.seek(2)
+            expect(timeline.getCurrentValue()).toEqual({ x: 50 })
+        })
+
+        it('only strips the overridden keys of earlier segments', () => {
+            const par = parallel([
+                ani({ to: { x: 10, y: 20 }, duration: 1, timing: T.linear() }),
+                ani({ to: { x: 5 }, duration: 1, timing: T.linear() }),
+            ])
+            const timeline = line(par, { x: 0, y: 0 })
+            timeline.seek(1)
+            expect(timeline.getCurrentValue()).toEqual({ x: 5, y: 20 })
+        })
+
+        it('does not rebuild segments that have no conflicts and keeps ids', () => {
+            const a = ani({ to: { x: 1 }, duration: 1 }, 'a')
+            const b = ani({ to: { y: 1 }, duration: 1 }, 'b')
+            const par = parallel([a, b])
+            expect(par.children[0]).toBe(a)
+            expect(par.children[1]).toBe(b)
+
+            const overridden = parallel([
+                ani({ to: { x: 1 }, duration: 1 }, 'first'),
+                ani({ to: { x: 2 }, duration: 2 }, 'second'),
+            ])
+            expect(overridden.children.map((c) => c.id)).toEqual([
+                'first',
+                'second',
+            ])
+        })
+
+        it('scales to very large child counts (no spread stack overflow)', () => {
+            const children = Array.from({ length: 200_000 }, (_, i) =>
+                ani({ to: [i], duration: 1 + (i % 3) })
+            )
+            expect(parallel(children).duration).toBe(3)
+            expect(stagger(children, 0).duration).toBe(3)
+        })
+    })
+
+    describe('composition timing inheritance', () => {
+        it('shares subtrees that do not change instead of cloning them', () => {
+            const nested = sequence([ani({ to: [1], duration: 1 })])
+            const outer = sequence([nested])
+            expect(outer.children[0]).toBe(nested)
+        })
+
+        it('keeps ids, types and durations of cloned nodes', () => {
+            const segment = ani({ to: [1], duration: 1 }, 'seg')
+            const nested = sequence([segment], undefined, 'nested')
+            const outer = sequence([nested], T.linear(), 'outer')
+
+            const clonedNested = outer.children[0] as typeof nested
+            expect(clonedNested).not.toBe(nested)
+            expect(clonedNested.id).toBe('nested')
+            expect(clonedNested.type).toBe('SEQUENCE')
+            expect(clonedNested.duration).toBe(1)
+            expect(clonedNested.children[0]!.id).toBe('seg')
+            expect(outer.id).toBe('outer')
+            // original untouched
+            expect(segment.props.timing).toBeUndefined()
         })
     })
 })

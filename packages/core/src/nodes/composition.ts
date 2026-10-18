@@ -39,16 +39,20 @@ export abstract class CompositionNode<
     constructor(children: Children, timing?: TimingFunction, id?: AnimationId) {
         super(id)
 
+        // Only segments without their own timing inherit it; subtrees that
+        // end up unchanged are shared as-is (no needless deep clones).
         const adjustTiming = <T extends CompositionChildren>(
             children: T
         ): T => {
-            return children.map((child) => {
+            let changed = false
+            const adjusted = children.map((child) => {
                 if (
                     child instanceof SegmentNode &&
                     // child timing none >> override to parent
                     child.props.timing === undefined &&
                     timing
                 ) {
+                    changed = true
                     return new SegmentNode(
                         {
                             ...child.props,
@@ -60,6 +64,8 @@ export abstract class CompositionNode<
 
                 if (child instanceof CompositionNode) {
                     const adjustedChildren = adjustTiming(child.children)
+                    if (adjustedChildren === child.children) return child
+                    changed = true
                     return cloneCompositionNodeWithChildren(
                         child as CompositionNode<CompositionChildren>,
                         adjustedChildren
@@ -67,7 +73,8 @@ export abstract class CompositionNode<
                 }
 
                 return child
-            }) as unknown as T
+            })
+            return (changed ? adjusted : children) as unknown as T
         }
 
         const timingOverridingChildren = adjustTiming(children)
