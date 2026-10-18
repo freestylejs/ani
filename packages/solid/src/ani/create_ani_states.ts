@@ -1,63 +1,50 @@
 import {
     type AnimationStateShape,
     createStates,
-    type GetTimeline,
+    type Resolver,
     type StateController,
     type StateProps,
 } from '@freestylejs/ani-core'
-import { createSignal, onCleanup } from 'solid-js'
-import { createAniRef } from './create_ani_ref'
+import { type Accessor, createSignal, type JSX } from 'solid-js'
+import { bindOptions, createBinder, createInitialStyle } from './bind_element'
+import { createTimeline } from './create_timeline'
 
 /**
- * State-machine animation hook. `props` are read once, at setup.
+ * State-machine animation: the element follows the machine across its
+ * timeline swaps through core. The primitive owns the machine and disposes it
+ * with its owner. Use as `<div ref={ref} style={style()}>`.
  *
- * The hook owns the state controller and disposes it with its owner,
- * stopping any running timeline.
+ * @param config - `createStates` config plus an optional `resolver`.
+ * @returns `{ ref, style, state, transitionTo, machine }`
  */
-export function createAniStates<
-    Element extends HTMLElement,
-    const AnimationStates extends AnimationStateShape,
->(
-    props: StateProps<AnimationStates>
-): readonly [
-    (el: Element) => void,
-    {
-        state: () => keyof AnimationStates
-        timeline: () => GetTimeline<AnimationStates>
-    },
-    StateController<AnimationStates>['transitionTo'],
-] {
-    const statesController = createStates(props)
-    const [timeline, setTimeline] = createSignal<GetTimeline<AnimationStates>>(
-        statesController.timeline()
+export function createAniStates<const S extends AnimationStateShape>(
+    config: StateProps<S> & { resolver?: Resolver<Record<string, number>> }
+): {
+    ref: (element: HTMLElement) => void
+    style: Accessor<JSX.CSSProperties | undefined>
+    state: Accessor<keyof S>
+    transitionTo: StateController<S>['transitionTo']
+    machine: StateController<S>
+} {
+    const { resolver, ...props } = config
+    const machine = createTimeline(() =>
+        createStates<S>(props as StateProps<S>)
     )
-    const [state, setState] = createSignal<keyof AnimationStates>(props.initial)
+    const [state, setState] = createSignal<keyof S>(machine.state())
+    machine.onTransition((next) => setState(() => next))
 
-    statesController.onTimelineChange((next) => {
-        setTimeline(() => next)
-        setState(() => statesController.state())
-    })
-    onCleanup(() => statesController.dispose())
+    const attach = createBinder(() => machine, false)
+    const style = createInitialStyle(
+        (config.initialValue ?? config.initialFrom) as Record<string, number>,
+        resolver
+    )
 
-    const [ref] = createAniRef({
-        timeline,
-        initialValue: (props.initialValue ?? props.initialFrom)!,
-    })
-
-    const transitionTo: StateController<AnimationStates>['transitionTo'] = (
-        newState,
-        timelineConfig,
-        canBeIntercepted
-    ) => {
-        // Controller first: it validates atomically and may reject.
-        const run = statesController.transitionTo(
-            newState,
-            timelineConfig,
-            canBeIntercepted
-        )
-        setState(() => statesController.state())
-        return run
+    return {
+        ref: (element) => attach((m) => m.bind(element, bindOptions(resolver))),
+        style: () => style,
+        state,
+        transitionTo: (newState, timelineConfig, canBeIntercepted) =>
+            machine.transitionTo(newState, timelineConfig, canBeIntercepted),
+        machine,
     }
-
-    return [ref, { state, timeline }, transitionTo] as const
 }

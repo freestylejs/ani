@@ -1,28 +1,36 @@
 import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
 import { createTimelineController } from '@freestylejs/ani-core'
-import { createEffect, createSignal, onCleanup, untrack } from 'solid-js'
+import {
+    type Accessor,
+    createEffect,
+    createSignal,
+    onCleanup,
+    untrack,
+} from 'solid-js'
 
 /**
  * Reactive ani animation hook.
  *
- * @param timeline - `Timeline` accessor; swaps are followed.
+ * @param timeline - `Timeline` or an accessor of one; swaps are followed.
  * @param initialValue - Initial value for the animation state.
  *
  * @returns `[valueAccessor, controller]`; the controller follows swaps.
  */
 export function createAni<G extends Groupable>(
-    timeline: () => RafAniTimeline<G>,
+    timeline: RafAniTimeline<G> | Accessor<RafAniTimeline<G>>,
     initialValue: AniGroup<G>
-): readonly [() => AniGroup<G>, RafAniTimeline<G>] {
+): readonly [Accessor<AniGroup<G>>, RafAniTimeline<G>] {
+    const current: Accessor<RafAniTimeline<G>> =
+        typeof timeline === 'function' ? timeline : () => timeline
     const [value, setValue] = createSignal<AniGroup<G>>(
-        untrack(timeline).getCurrentValue() ?? initialValue
+        untrack(current).getCurrentValue() ?? initialValue
     )
 
     createEffect(() => {
-        const tl = timeline()
+        const tl = current()
         // Sync immediate value
-        const current = tl.getCurrentValue() ?? initialValue
-        setValue(() => current)
+        const latest = tl.getCurrentValue() ?? initialValue
+        setValue(() => latest)
 
         const unsubscribe = tl.onUpdate((val) => {
             setValue(() => val.state)
@@ -30,8 +38,5 @@ export function createAni<G extends Groupable>(
         onCleanup(unsubscribe)
     })
 
-    return [
-        value,
-        createTimelineController<G>(() => untrack(timeline)),
-    ] as const
+    return [value, createTimelineController<G>(() => untrack(current))] as const
 }

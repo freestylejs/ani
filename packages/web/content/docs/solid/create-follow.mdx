@@ -1,0 +1,50 @@
+---
+title: createFollow
+description: A value that chases a target with a spring and is written to an element.
+---
+
+This primitive creates a core `follow` value: it springs toward a target, keeping its velocity when the target changes. The element is bound with `follower.bind`.
+
+### Example
+
+```tsx
+import { createFollow } from "@freestylejs/ani-solid";
+
+const Cursor = () => {
+  const { ref, style, follower } = createFollow(
+    { translateX: 0, translateY: 0 },
+    { spring: { m: 1, k: 170, c: 26 } }
+  );
+
+  return (
+    <div
+      ref={ref}
+      style={style()}
+      onPointerMove={(e) => follower.set({ translateX: e.clientX, translateY: e.clientY })}
+    />
+  );
+};
+```
+
+### Usage & Concepts
+
+-   **Owns its follower.** The follower is created once and disposed with the owner; its motion stops and the clock subscription is released. `follower.set` then resolves `'disposed'`.
+-   **Late refs** are written with the current value at once. The binding is released with `onCleanup` of the owner that called `ref`.
+-   **Invalid input** (a non-object `initial`, a non-finite number) throws synchronously.
+-   **SSR.** `style()` is the inline style of `initial`; nothing subscribes to a clock.
+-   **Events.** DOM events are the framework's job.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `initial` | `Record<string, number>` | Initial value; `style()` is its inline style. |
+| `options.spring` | `{ m, k, c }` | (Optional) Spring parameters. |
+| `options.clock` | `ManagedClock` | (Optional) Clock to run on. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
+
+Returns `{ ref, style, follower }`; `follower` is the core `Follower` (`set`, `jump`, `target`, `value`, `bind`, `onUpdate`, `dispose`).
+
+### Related Components
+
+-   [`createAniStates`](/en/docs/solid/create-ani-states) - For discrete visual states.

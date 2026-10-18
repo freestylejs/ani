@@ -37,7 +37,7 @@ const Counter = () => {
 
 #### Overview
 
-The `createAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Solid's reactivity system. It takes an accessor function that returns a `timeline` instance and an `initialValue`. It returns a signal accessor and the timeline's controller, allowing you to read the animation's state within Solid's reactive graph.
+The `createAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Solid's reactivity system. It takes a `timeline` instance (or an accessor of one) and an `initialValue`. It returns a signal accessor and the timeline's controller, allowing you to read the animation's state within Solid's reactive graph.
 
 #### Behavior
 
@@ -55,7 +55,7 @@ The `createAni` primitive acts as a bridge between the `@freestylejs/ani-core` e
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `() => RafAniTimeline<G>` | Accessor of the timeline to read. |
+| `timeline` | `RafAniTimeline<G> \| Accessor<RafAniTimeline<G>>` | Timeline to read, or an accessor of one. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
 Returns `readonly [value, controller]`: an accessor of the current `AniGroup<G>` and the timeline controller.
@@ -63,4 +63,5 @@ Returns `readonly [value, controller]`: an accessor of the current `AniGroup<G>`
 ### Related Components
 
 -   [`createAniRef`](/en/docs/solid/create-ani-ref) - For performance-critical animations that write directly to the DOM.
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this primitive subscribes to.
+-   [`createTimeline`](/en/docs/solid/create-timeline) - To create the timeline and dispose it with the component.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this primitive subscribes to.

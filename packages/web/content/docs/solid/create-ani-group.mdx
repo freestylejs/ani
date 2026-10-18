@@ -1,0 +1,59 @@
+---
+title: createAniGroup
+description: Animates N elements with one group, one ref per index.
+---
+
+This primitive binds elements to a `rafGroup`: one plan drives N targets (optionally staggered) through one clock subscription. Each element is bound with `group.bindAt(index, element)`.
+
+### Example
+
+```tsx
+import { a, rafGroup } from "@freestylejs/ani-core";
+import { createAniGroup, createTimeline } from "@freestylejs/ani-solid";
+import { For } from "solid-js";
+
+const List = (props: { items: string[] }) => {
+  const group = createTimeline(() =>
+    rafGroup(a.ani({ to: { opacity: 1 }, duration: 0.4 }), { stagger: 0.05 })
+  );
+  const { ref, style } = createAniGroup(group, { initialValue: { opacity: 0 } });
+
+  return (
+    <>
+      <button onClick={() => group.play({ from: { opacity: 0 }, count: props.items.length })}>
+        Show
+      </button>
+      <For each={props.items}>
+        {(item, index) => (
+          <div ref={ref(index())} style={style()}>
+            {item}
+          </div>
+        )}
+      </For>
+    </>
+  );
+};
+```
+
+### Usage & Concepts
+
+-   **One ref per index.** `ref(index)` returns the element ref of target `index`. Refs may be given in any order and for a subset of the indices. An invalid index (negative, fractional, `NaN`) throws a `TypeError` when the ref is attached.
+-   **Late refs** are written with their target's value at once.
+-   **Swaps.** `group` may be an accessor; when it changes, every element is rebound to the new group.
+-   **Cleanup.** Each binding is released with `onCleanup` of the owner that called the ref.
+-   **Ownership.** The primitive never disposes the group you pass. Use [`createTimeline`](/en/docs/solid/create-timeline).
+-   **Style.** `style()` is the inline style of `initialValue` with kebab-case keys, or `undefined`.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `group` | `RafGroup<G> \| Accessor<RafGroup<G>>` | Group to bind, or an accessor of one. |
+| `options.initialValue` | `AniGroup<G>` | (Optional) Value of the initial `style()`. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
+
+Returns `{ ref, style }`.
+
+### Related Components
+
+-   [`createAniRef`](/en/docs/solid/create-ani-ref) - The same for a single element and timeline.
