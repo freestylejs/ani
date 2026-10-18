@@ -8,6 +8,12 @@ import {
 import { createSignal, onCleanup } from 'solid-js'
 import { createAniRef } from './create_ani_ref'
 
+/**
+ * State-machine animation hook. `props` are read once, at setup.
+ *
+ * The hook owns the state controller and disposes it with its owner,
+ * stopping any running timeline.
+ */
 export function createAniStates<
     Element extends HTMLElement,
     const AnimationStates extends AnimationStateShape,
@@ -25,11 +31,13 @@ export function createAniStates<
     const [timeline, setTimeline] = createSignal<GetTimeline<AnimationStates>>(
         statesController.timeline()
     )
-
-    const destroy = statesController.onTimelineChange(setTimeline)
-    onCleanup(destroy)
-
     const [state, setState] = createSignal<keyof AnimationStates>(props.initial)
+
+    statesController.onTimelineChange((next) => {
+        setTimeline(() => next)
+        setState(() => statesController.state())
+    })
+    onCleanup(() => statesController.dispose())
 
     const [ref] = createAniRef({
         timeline,
@@ -41,12 +49,13 @@ export function createAniStates<
         timelineConfig,
         canBeIntercepted
     ) => {
-        setState(newState as string)
+        // Controller first: it validates atomically and may reject.
         statesController.transitionTo(
             newState,
             timelineConfig,
             canBeIntercepted
         )
+        setState(() => statesController.state())
     }
 
     return [ref, { state, timeline }, transitionTo] as const

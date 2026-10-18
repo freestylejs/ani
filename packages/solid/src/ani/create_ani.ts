@@ -1,20 +1,21 @@
 import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
-import { createEffect, createSignal, onCleanup } from 'solid-js'
+import { createTimelineController } from '@freestylejs/ani-core'
+import { createEffect, createSignal, onCleanup, untrack } from 'solid-js'
 
 /**
  * Reactive ani animation hook.
  *
- * @param timeline - `Timeline` instance.
+ * @param timeline - `Timeline` accessor; swaps are followed.
  * @param initialValue - Initial value for the animation state.
  *
- * @returns `[valueAccessor, timeline]`.
+ * @returns `[valueAccessor, controller]`; the controller follows swaps.
  */
 export function createAni<G extends Groupable>(
     timeline: () => RafAniTimeline<G>,
     initialValue: AniGroup<G>
 ): readonly [() => AniGroup<G>, RafAniTimeline<G>] {
     const [value, setValue] = createSignal<AniGroup<G>>(
-        timeline().getCurrentValue() ?? initialValue
+        untrack(timeline).getCurrentValue() ?? initialValue
     )
 
     createEffect(() => {
@@ -29,5 +30,8 @@ export function createAni<G extends Groupable>(
         onCleanup(unsubscribe)
     })
 
-    return [value, timeline()] as const
+    return [
+        value,
+        createTimelineController<G>(() => untrack(timeline)),
+    ] as const
 }
