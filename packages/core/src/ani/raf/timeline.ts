@@ -96,6 +96,11 @@ export interface RafTimeline<G extends Groupable> {
      * resolves once per run with how it ended.
      */
     play(config: RafTimelineConfig<G>): Promise<RunResult>
+    /**
+     * Links the time of the timeline to an external progress value (scroll,
+     * a scrubbed gesture) instead of the clock. Returns a stop function.
+     */
+    drive(progress: () => number, config: RafTimelineConfig<G>): () => void
     /** Pauses a `PLAYING` timeline. */
     pause(): void
     /** Resumes a `PAUSED` timeline. */
@@ -138,8 +143,19 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value)
 }
 
+function clamp01(value: number): number {
+    return value < 0 ? 0 : value > 1 ? 1 : value
+}
+
+function badProgressError(value: unknown): RangeError {
+    return new RangeError(
+        `[Timeline] \`drive\` progress must be a finite number, received ${String(value)}.`
+    )
+}
+
 const FACADE_FUNCTIONS = [
     'play',
+    'drive',
     'pause',
     'resume',
     'seek',
@@ -243,6 +259,15 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _lastDt = 0
     private _advanced = false
 
+    // progress source of a driven run, `null` when not driven
+    private _progress: (() => number) | null = null
+    private _driveId = 0
+    // progress sampled in the read phase, consumed by the next update
+    private _sample = 0
+    private _badProgress = false
+    // the driven time changed in the last frame
+    private _moved = false
+
     // Cached group, shared with the onUpdate subscribers of one notification
     // and referentially stable for getCurrentValue() until the next frame.
     private _cachedGroup: AniGroup<G> | null = null
@@ -270,6 +295,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._clock = clock ?? AnimationClock.create()
 
         this.play = this.play.bind(this)
+        this.drive = this.drive.bind(this)
         this.pause = this.pause.bind(this)
         this.seek = this.seek.bind(this)
         this.resume = this.resume.bind(this)
@@ -337,7 +363,9 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         if (!runtime || !this._advanced) return null
         const count = runtime.values.length
         const out = new Array<number>(count)
-        const moving = this._status === 'PLAYING'
+        const moving =
+            this._status === 'PLAYING' &&
+            (this._progress === null || this._moved)
         for (let i = 0; i < count; i++) {
             if (!moving) {
                 out[i] = 0
@@ -430,11 +458,37 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     }
 
     /**
+     * @private Internal clock read callback. Samples the progress source of a
+     * driven run, once per frame, before any subscriber updates.
+     */
+    read(): void {
+        const progress = this._progress
+        if (progress === null || this._status !== 'PLAYING') return
+        try {
+            this._sample = progress()
+        } catch (error) {
+            this._sample = Number.NaN
+            this._reportBadProgress(error)
+        }
+    }
+
+    // a source that stays invalid is reported once, not once per frame
+    private _reportBadProgress(error: unknown): void {
+        if (this._badProgress) return
+        this._badProgress = true
+        reportAsync(error)
+    }
+
+    /**
      * @private Internal clock subscription callback. Computes only: bound
      * targets are written and listeners called in `commit()`.
      */
     update(dt: number): void {
         if (this._status !== 'PLAYING' || !this._runtime) return
+        if (this._progress !== null) {
+            this._follow(dt)
+            return
+        }
 
         if (this._delay > 0) {
             this._delay -= dt
@@ -459,6 +513,32 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._pending = false
         if (this._pendingRunId !== this._runId) return
         this._notify()
+    }
+
+    /** Driven run: the time is the sampled progress mapped onto the duration. */
+    private _follow(dt: number): void {
+        const p = this._sample
+        if (!isFiniteNumber(p)) {
+            this._reportBadProgress(badProgressError(p))
+            this._moved = false
+            this._advanced = true
+            return
+        }
+        this._badProgress = false
+        const time = clamp01(p) * this.duration
+        this._lastDt = dt
+        this._advanced = true
+        if (time === this._masterTime) {
+            this._moved = false
+            return
+        }
+        this._moved = true
+        this._masterTime = time
+        this._runtime!.evaluate(time, dt)
+        this._groupDirty = true
+        this._snapshotDirty = true
+        this._pending = true
+        this._pendingRunId = this._runId
     }
 
     private _advance(dt: number): void {
@@ -591,39 +671,8 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         return seed
     }
 
-    /**
-     * Plays animation.
-     *
-     * Malformed input (shape mismatches between `from` / segments / `timing`,
-     * non-finite numbers, bad overrides) throws synchronously from here and
-     * leaves the timeline untouched; nothing can throw later inside the clock.
-     *
-     * Playing over a `PLAYING` timeline interrupts it. Velocity carries over
-     * (see `velocity`), so stateful springs retarget without a visible kink.
-     *
-     * The run ends at `duration`, or earlier once every value is held by
-     * dynamic springs that have settled (segments with a non-physics timing,
-     * and `delay()`, always run to their scheduled end).
-     *
-     * @param config {@link https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame RequestAnimationFrame API} based config.
-     * @param canBeIntercepted 1.x, removed in 2.0 by the codemod: use `config.interrupt`. If `false` a `PLAYING` timeline is not intercepted.
-     * @returns Never rejects. Resolves once per run: `'ended'`, `'interrupted'`
-     * (replaced by another `play()`), `'skipped'` (`interrupt: false`),
-     * `'reset'` or `'disposed'`.
-     */
-    public play(
-        config: RafTimelineConfig<G, Ctx>,
-        canBeIntercepted: boolean = true
-    ): Promise<RunResult> {
-        if (this._disposed) return Promise.resolve('disposed')
-        if (
-            this._status === 'PLAYING' &&
-            !(config.interrupt ?? canBeIntercepted)
-        ) {
-            return Promise.resolve('skipped')
-        }
-
-        // ---- validate & prepare (no state is touched until this succeeds)
+    /** Validates `config` and builds its plan; touches no state. */
+    private _prepare(config: RafTimelineConfig<G, Ctx>) {
         const from = config.from as unknown
         if (typeof from !== 'object' || from === null) {
             throw new TypeError(
@@ -657,6 +706,44 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             config.durations
         )
         const compiled = compilePlan(plan, keys, values.length)
+        return { keys, values, delayMs, plan, duration, compiled }
+    }
+
+    /**
+     * Plays animation.
+     *
+     * Malformed input (shape mismatches between `from` / segments / `timing`,
+     * non-finite numbers, bad overrides) throws synchronously from here and
+     * leaves the timeline untouched; nothing can throw later inside the clock.
+     *
+     * Playing over a `PLAYING` timeline interrupts it. Velocity carries over
+     * (see `velocity`), so stateful springs retarget without a visible kink.
+     *
+     * The run ends at `duration`, or earlier once every value is held by
+     * dynamic springs that have settled (segments with a non-physics timing,
+     * and `delay()`, always run to their scheduled end).
+     *
+     * @param config {@link https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame RequestAnimationFrame API} based config.
+     * @param canBeIntercepted 1.x, removed in 2.0 by the codemod: use `config.interrupt`. If `false` a `PLAYING` timeline is not intercepted.
+     * @returns Never rejects. Resolves once per run: `'ended'`, `'interrupted'`
+     * (replaced by another `play()`), `'skipped'` (`interrupt: false`),
+     * `'reset'` or `'disposed'`.
+     */
+    public play(
+        config: RafTimelineConfig<G, Ctx>,
+        canBeIntercepted: boolean = true
+    ): Promise<RunResult> {
+        if (this._disposed) return Promise.resolve('disposed')
+        if (
+            this._status === 'PLAYING' &&
+            !(config.interrupt ?? canBeIntercepted)
+        ) {
+            return Promise.resolve('skipped')
+        }
+
+        // ---- validate & prepare (no state is touched until this succeeds)
+        const { keys, values, delayMs, plan, duration, compiled } =
+            this._prepare(config)
         const policy = this._reducedMotion
         const reduced = policy !== 'ignore' && prefersReducedMotion(this._clock)
         const jump = reduced && policy === 'jump'
@@ -681,6 +768,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
 
         // ---- commit
         this._settle('interrupted')
+        this._progress = null
         let resolve!: (result: RunResult) => void
         const promise = new Promise<RunResult>((done) => {
             resolve = done
@@ -708,6 +796,84 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._clock.subscribe(this)
         this._notify()
         return promise
+    }
+
+    /**
+     * Links the time of the timeline to an external progress value (scroll,
+     * a scrubbed gesture) instead of the clock.
+     *
+     * Starts a run from `config.from` and replaces the current one (a pending
+     * `play()` resolves `'interrupted'`); `repeat`, `delay` and `velocity` are
+     * ignored. `progress` is called once synchronously for the first value,
+     * then once per frame in the clock's read phase. The time is
+     * `clamp(progress(), 0, 1) * duration`; bound targets are written and
+     * listeners notified only in frames where it changed. The status stays
+     * `PLAYING` and the run never ends by itself. A non-finite progress keeps
+     * the previous time and is reported once, asynchronously. Reduced motion
+     * does not apply: the user controls the motion.
+     *
+     * `config` is validated like in `play()`; invalid input, or a `progress`
+     * that is not a function, throws synchronously and changes nothing.
+     * `play()`, `seek()`, `reset()` and `dispose()` also stop driving.
+     * @returns Stop (idempotent): leaves the clock and pauses at the current
+     * time; `resume()` then plays forward from there.
+     */
+    public drive(
+        progress: () => number,
+        config: RafTimelineConfig<G, Ctx>
+    ): () => void {
+        if (typeof progress !== 'function') {
+            throw new TypeError(
+                `[Timeline] \`progress\` must be a function, received ${typeof progress}.`
+            )
+        }
+        const { keys, values, plan, duration, compiled } = this._prepare(config)
+        // ignored by a driven run, but validated like in `play()`
+        if (config.velocity !== undefined) {
+            this._resolveVelocitySeed(config.velocity, keys, values.length)
+        }
+        if (this._disposed) return () => undefined
+        // sampled before any state changes: a throwing source changes nothing
+        let first = progress()
+        const runtime = new PlanRuntime(compiled, values as number[], null)
+
+        this._settle('interrupted')
+        this._runId++
+        this._currentConfig = config
+        this._currentExecutionPlan = plan
+        this._commitDuration(duration)
+        this._remainingRepeats = 0
+        this._delay = 0
+        this._keys = keys
+        this._runtime = runtime
+        this._lastDt = 0
+        this._advanced = false
+        this._speed = 1
+        this._moved = false
+        this._badProgress = false
+        if (!isFiniteNumber(first)) {
+            this._reportBadProgress(badProgressError(first))
+            first = 0
+        }
+        this._sample = first
+        this._masterTime = clamp01(first) * duration
+        runtime.evaluate(this._masterTime, 0)
+        this._groupDirty = true
+        this._snapshotDirty = true
+        this._progress = progress
+        const id = ++this._driveId
+        this._status = 'PLAYING'
+        this._clock.subscribe(this)
+        this._notify()
+
+        return () => {
+            if (this._progress === null || this._driveId !== id) return
+            this._progress = null
+            if (this._status === 'PLAYING') {
+                this._status = 'PAUSED'
+                this._clock.unsubscribe(this)
+            }
+        }
     }
 
     /**
@@ -757,6 +923,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         unsubscribeClock: boolean = true
     ): void {
         this._settle(this._disposed ? 'disposed' : 'reset')
+        this._progress = null
         this._runId++
         this._epoch++
         this._status = 'IDLE'
@@ -812,6 +979,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             this._status = 'PAUSED'
             this._clock.unsubscribe(this)
         }
+        this._progress = null
         this._runId++
         this._epoch++
         const seekTime = Math.max(0, Math.min(targetTime, this.duration))

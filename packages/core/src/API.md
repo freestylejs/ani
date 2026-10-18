@@ -93,6 +93,24 @@ myTimeline.play({
 -   Same-property overlap: the most recently started segment produces the value (ties: later declaration); each segment's `from` is the value at its start.
 -   Per-frame cost depends on the number of animated properties, not on the number of segments.
 
+#### Progress-linked time
+
+`drive(progress, config)` makes the time follow an external progress value (scroll position, a scrubbed gesture) instead of the clock. It starts a run from `config.from` (`keyframes` and `durations` are honored; `repeat`, `delay` and `velocity` are ignored) and replaces the current run, so a pending `play()` promise resolves `'interrupted'`.
+
+```ts
+const reveal = rafTimeline(a.ani({ to: { opacity: 1, translateY: 0 }, duration: 1 }))
+reveal.bind(hero)
+const stop = reveal.drive(() => Math.min(1, window.scrollY / 400), { from: { opacity: 0, translateY: 40 } })
+```
+
+-   `progress()` is called once synchronously for the first value (targets written, listeners notified once) and then once per frame in the clock's **read** phase. The time is `clamp(progress(), 0, 1) * duration`.
+-   Bound targets are written and listeners notified only in frames where the time changed. The status stays `PLAYING` and the run never ends by itself (reaching `1` does not emit `ENDED`).
+-   `velocity` is the time-derivative of the values in units per second, and zero after a frame in which the progress did not change.
+-   A non-finite progress keeps the previous time and is reported once, asynchronously.
+-   Reduced motion does not apply: the user controls the motion.
+-   The returned function stops driving (idempotent): the timeline leaves the clock and becomes `PAUSED` at the current time, and `resume()` plays forward from there. `play()`, `seek()`, `reset()` and `dispose()` stop driving too.
+-   Invalid `config`, or a `progress` that is not a function, throws synchronously and changes nothing.
+
 #### Best Practices
 
 -   **Do** create one timeline per independent animation and share the node tree between timelines.
@@ -106,6 +124,7 @@ myTimeline.play({
 | Member | Description |
 | :--- | :--- |
 | `play(config)` | Starts (or interrupts) the animation. Returns a `Promise<RunResult>` that never rejects and resolves once per run: `'ended'` (repeats included), `'interrupted'` (another `play()` replaced it), `'skipped'` (`interrupt: false` on a `PLAYING` timeline), `'reset'` (`reset()`), `'disposed'` (`dispose()`, or `play()` after it). An invalid config throws synchronously and creates no promise. |
+| `drive(progress, config)` | Links the time to an external progress value (scroll, a gesture) instead of the clock; replaces the current run. Returns a stop function. See "Progress-linked time". |
 | `pause()` | Pauses a `PLAYING` timeline. |
 | `resume()` | Resumes a `PAUSED` timeline. |
 | `reset([notify = true], [unsubscribeClock = true])` | Resets to `IDLE`. |
@@ -164,6 +183,7 @@ interface RafTimeline<G extends Groupable> {
   readonly value: AniGroup<G> | null;
   readonly velocity: AniGroup<G> | null;
   play(config: RafTimelineConfig<G>): Promise<RunResult>;
+  drive(progress: () => number, config: RafTimelineConfig<G>): () => void;
   pause(): void;
   resume(): void;
   seek(time: number): void;
