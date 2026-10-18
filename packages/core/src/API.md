@@ -475,8 +475,8 @@ The `ani` function is the fundamental building block of the entire animation sys
 
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `props` | `SegmentNodeProps<G>` | An object containing the animation's properties. | — |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+| `props` | `SegmentNodeProps<G> & { id?: AnimationId }` | An object containing the animation's properties and optional `id`. | — |
+| `id` | `AnimationId` | (Optional, 1.x) Positional identifier for the animation node (wins if both are given). | `undefined` |
 
 #### Type Definitions
 
@@ -485,9 +485,13 @@ interface SegmentNodeProps<G extends Groupable> {
   readonly to: G;
   readonly duration: number;
   readonly timing?: SegmentTiming<G>;
+  readonly id?: AnimationId;
 }
 
-function ani<G extends Groupable>(props: SegmentNodeProps<G>, id?: AnimationId): SegmentNode<G>;
+function ani<G extends Groupable>(
+  props: SegmentNodeProps<G> & { id?: AnimationId },
+  id?: AnimationId
+): SegmentNode<G>;
 ```
 
 ### Related Components
@@ -538,12 +542,19 @@ myTimeline.play({ from: { opacity: 0, x: 0 } });
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `duration` | `number` | The duration of the delay in seconds. | — |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+| `idOrOptions` | `AnimationId \| DelayOptions` | (Optional) Options object `{ id?: AnimationId }`, or positional string ID (1.x). | `undefined` |
 
 #### Type Definitions
 
 ```typescript
-function delay(duration: number, id?: AnimationId): SegmentNode<PreserveRecord>;
+interface DelayOptions {
+  id?: AnimationId;
+}
+
+function delay(
+  duration: number,
+  idOrOptions?: AnimationId | DelayOptions
+): SegmentNode<PreserveRecord>;
 ```
 
 ### Related Components
@@ -600,15 +611,20 @@ myTimeline.play({ from: { opacity: 0, x: 50 } });
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `children` | `readonly AnimationNode<Groupable>[]` | An array of animation nodes to play in order. | — |
-| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire sequence's timeline. | `linear` |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+| `timingOrOptions` | `TimingFunction \| NodeOptions` | (Optional) Options object `{ timing?: TimingFunction, id?: AnimationId }`, or an easing function (1.x positional form). | `undefined` |
+| `id` | `AnimationId` | (Optional, 1.x) Positional identifier for the animation node. | `undefined` |
 
 #### Type Definitions
 
 ```typescript
+interface NodeOptions {
+  timing?: TimingFunction;
+  id?: AnimationId;
+}
+
 function sequence<const Children extends readonly AnimationNode<Groupable>[]>(
   children: Children,
-  timing?: TimingFunction,
+  timingOrOptions?: TimingFunction | NodeOptions,
   id?: AnimationId
 ): SequenceNode<Children>;
 ```
@@ -670,15 +686,15 @@ When two children animate the same property, the later child wins. Record-shaped
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `children` | `readonly AnimationNode<Groupable>[]` | An array of animation nodes to play simultaneously. | — |
-| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire block's timeline. | `linear` |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+| `timingOrOptions` | `TimingFunction \| NodeOptions` | (Optional) Options object `{ timing?: TimingFunction, id?: AnimationId }`, or an easing function (1.x positional form). | `undefined` |
+| `id` | `AnimationId` | (Optional, 1.x) Positional identifier for the animation node. | `undefined` |
 
 #### Type Definitions
 
 ```typescript
 function parallel<const Children extends readonly AnimationNode<Groupable>[]>(
   children: Children,
-  timing?: TimingFunction,
+  timingOrOptions?: TimingFunction | NodeOptions,
   id?: AnimationId
 ): ParallelNode<Children>;
 ```
@@ -710,7 +726,7 @@ const listEntrance = a.stagger(
     itemAnimation, // for item 2
     itemAnimation, // for item 3
   ],
-  0.1
+  { offset: 0.1 }
 );
 
 // 3. Create a timeline.
@@ -740,16 +756,20 @@ myTimeline.play({ from: { opacity: 0, y: 20 } });
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `children` | `readonly AnimationNode<Groupable>[]` | An array of animation nodes to play. | — |
-| `offset` | `number` | Seconds between child starts, finite and `>= 0`. | — |
-| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. | `linear` |
-| `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
+| `offsetOrOptions` | `number \| StaggerOptions` | Options object `{ offset, timing?, id? }`, or seconds between child starts (1.x positional form). | — |
+| `timing` | `TimingFunction` | (Optional, 1.x) Inherited by child segments without their own timing. | `linear` |
+| `id` | `AnimationId` | (Optional, 1.x) Positional identifier for the animation node. | `undefined` |
 
 #### Type Definitions
 
 ```typescript
+interface StaggerOptions extends NodeOptions {
+  offset: number;
+}
+
 function stagger<const Children extends readonly AnimationNode<Groupable>[]>(
   children: Children,
-  offset: number,
+  offsetOrOptions: number | StaggerOptions,
   timing?: TimingFunction,
   id?: AnimationId
 ): StaggerNode<Children>;
@@ -804,8 +824,8 @@ myTimeline.play({ from: { scale: 1 } });
 | :--- | :--- | :--- | :--- |
 | `child` | `AnimationNode<G>` | The animation node to repeat. | — |
 | `loopCount` | `number` | The number of times to repeat the child node. | — |
-| `timing` | `TimingFunction` | (Optional) An easing function to apply to the entire loop's timeline. | `linear` |
-| `id` | `AnimationId` | (Optional) A unique identifier for the node. | `undefined` |
+| `timingOrOptions` | `TimingFunction \| NodeOptions` | (Optional) Options object `{ timing?: TimingFunction, id?: AnimationId }`, or an easing function (1.x positional form). | `undefined` |
+| `id` | `AnimationId` | (Optional, 1.x) Positional identifier for the node. | `undefined` |
 
 #### Type Definitions
 
@@ -813,7 +833,7 @@ myTimeline.play({ from: { scale: 1 } });
 function loop<G extends Groupable>(
     child: AnimationNode<G>,
     loopCount: number,
-    timing?: TimingFunction,
+    timingOrOptions?: TimingFunction | NodeOptions,
     id?: AnimationId
 ): LoopNode<G>;
 ```

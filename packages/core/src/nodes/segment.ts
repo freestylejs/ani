@@ -14,8 +14,12 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
     readonly type = 'SEGMENT'
     readonly props: SegmentNodeProps<G>
 
-    constructor(props: SegmentNodeProps<G>, id?: AnimationId) {
-        super(id)
+    constructor(
+        props: SegmentNodeProps<G> & { id?: AnimationId },
+        id?: AnimationId
+    ) {
+        const resolvedId = id !== undefined ? id : props.id
+        super(resolvedId)
         if (!Number.isFinite(props.duration) || props.duration < 0) {
             throw new RangeError(
                 `[SegmentNode] duration must be a finite number >= 0 (seconds), received ${props.duration}.`
@@ -45,11 +49,11 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
 /**
  * Single animation segment.
  *
- * @param props Animation config.
- * @param id Optional ID for the node.
+ * @param props Animation config with optional node ID.
+ * @param id Optional ID for the node (positional form, wins if both given).
  */
 export function ani<G extends Groupable>(
-    props: SegmentNodeProps<G>,
+    props: SegmentNodeProps<G> & { id?: AnimationId },
     id?: AnimationId
 ): SegmentNode<G> {
     return new SegmentNode(props, id)

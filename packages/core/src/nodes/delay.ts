@@ -4,13 +4,48 @@ import { SegmentNode } from './segment'
 type PreserveRecord = Record<string, any>
 
 /**
+ * Options for configuring a delay node.
+ */
+export interface DelayOptions {
+    /** Optional identifier for the node. */
+    id?: AnimationId
+}
+
+/**
  * Creates a pause in an animation sequence.
  * @param duration Duration of the delay in `seconds`.
- * @param id Optional ID for the node.
+ * @param idOrOptions Optional ID for the node, or an options object.
  */
 export function delay(
     duration: number,
-    id?: AnimationId
+    idOrOptions?: AnimationId | DelayOptions,
+    ...extra: unknown[]
 ): SegmentNode<PreserveRecord> {
-    return new SegmentNode<PreserveRecord>({ to: {}, duration }, id)
+    let resolvedId: AnimationId | undefined
+
+    if (typeof idOrOptions === 'object' && idOrOptions !== null) {
+        if (extra.length > 0) {
+            throw new TypeError(
+                '[delay] Cannot mix options object and positional arguments. Use either an options object or positional arguments.'
+            )
+        }
+        for (const key of Object.keys(idOrOptions)) {
+            if (key !== 'id') {
+                throw new TypeError(
+                    `[delay] Unknown option "${key}". Allowed option is "id".`
+                )
+            }
+        }
+        resolvedId = idOrOptions.id
+    } else if (typeof idOrOptions === 'string') {
+        resolvedId = idOrOptions
+    } else if (idOrOptions === undefined) {
+        resolvedId = undefined
+    } else {
+        throw new TypeError(
+            `[delay] Expected string ID or options object, received ${typeof idOrOptions}.`
+        )
+    }
+
+    return new SegmentNode<PreserveRecord>({ to: {}, duration }, resolvedId)
 }

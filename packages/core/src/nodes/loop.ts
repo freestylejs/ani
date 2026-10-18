@@ -1,7 +1,12 @@
 import type { Groupable } from '~/ani/core'
 import type { TimingFunction } from '~/timing'
 
-import type { AnimationId, AnimationNode } from './base'
+import {
+    type AnimationId,
+    type AnimationNode,
+    type NodeOptions,
+    parseNodeOptions,
+} from './base'
 import { CompositionNode, type CompositionPlan } from './composition'
 
 /**
@@ -17,10 +22,17 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
     constructor(
         child: AnimationNode<G>,
         loopCount: number,
-        timing?: TimingFunction,
-        id?: AnimationId
+        timingOrOptions?: TimingFunction | NodeOptions,
+        id?: AnimationId,
+        ...extra: unknown[]
     ) {
-        super([child], timing, id)
+        const { timing: resolvedTiming, id: resolvedId } = parseNodeOptions(
+            timingOrOptions,
+            id,
+            'loop',
+            extra.length > 0
+        )
+        super([child], resolvedTiming, resolvedId)
         // Non-finite counts would flatten an unbounded plan (OOM); use
         // `repeat: Infinity` on the timeline for endless playback.
         if (!Number.isInteger(loopCount) || loopCount < 0) {
@@ -56,14 +68,15 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
  *
  * @param child Target animation node to repeat.
  * @param loopCount Loop count.
- * @param timing Loop timing function.
- * @param id Optional ID for the node.
+ * @param timingOrOptions Loop timing function or options object.
+ * @param id Optional ID for the node (positional form).
  */
 export function loop<G extends Groupable>(
     child: AnimationNode<G>,
     loopCount: number,
-    timing?: TimingFunction,
-    id?: AnimationId
+    timingOrOptions?: TimingFunction | NodeOptions,
+    id?: AnimationId,
+    ...extra: unknown[]
 ): LoopNode<G> {
-    return new LoopNode(child, loopCount, timing, id)
+    return new LoopNode(child, loopCount, timingOrOptions, id, ...extra)
 }

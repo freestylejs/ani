@@ -1,7 +1,12 @@
 import type { Groupable, GroupableRecord } from '~/ani/core'
 import type { TimingFunction } from '~/timing'
 
-import type { AnimationId, AnimationNode } from './base'
+import {
+    type AnimationId,
+    type AnimationNode,
+    type NodeOptions,
+    parseNodeOptions,
+} from './base'
 import {
     type CompositionChildren,
     CompositionNode,
@@ -18,7 +23,18 @@ export class ParallelNode<
     readonly type = 'PARALLEL'
     readonly duration: number
 
-    constructor(children: Children, timing?: TimingFunction, id?: AnimationId) {
+    constructor(
+        children: Children,
+        timingOrOptions?: TimingFunction | NodeOptions,
+        id?: AnimationId,
+        ...extra: unknown[]
+    ) {
+        const { timing: resolvedTiming, id: resolvedId } = parseNodeOptions(
+            timingOrOptions,
+            id,
+            'parallel',
+            extra.length > 0
+        )
         // Record-shaped direct segments: when several write the same key the
         // later declaration wins (all start together). Overridden keys are
         // stripped from earlier segments. A segment that ends up with no key
@@ -87,7 +103,11 @@ export class ParallelNode<
 
         resolvedChildren.reverse()
 
-        super(resolvedChildren as unknown as Children, timing, id)
+        super(
+            resolvedChildren as unknown as Children,
+            resolvedTiming,
+            resolvedId
+        )
 
         // Plain loop: spreading into Math.max overflows the stack for large
         // child counts.
@@ -107,13 +127,15 @@ export class ParallelNode<
 
 /**
  * Parallel composition animation
- * @param timing Loop timing function.
- * @param id Optional ID for the node.
+ * @param children Parallel children nodes.
+ * @param timingOrOptions Loop timing function or options object.
+ * @param id Optional ID for the node (positional form).
  */
 export function parallel<const Children extends CompositionChildren>(
     children: Children,
-    timing?: TimingFunction,
-    id?: AnimationId
+    timingOrOptions?: TimingFunction | NodeOptions,
+    id?: AnimationId,
+    ...extra: unknown[]
 ): ParallelNode<Children> {
-    return new ParallelNode(children, timing, id)
+    return new ParallelNode(children, timingOrOptions, id, ...extra)
 }
