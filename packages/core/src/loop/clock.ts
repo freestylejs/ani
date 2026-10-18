@@ -36,6 +36,16 @@ export interface ClockTimingOptions {
     maxDeltaTime?: number | undefined
 }
 
+/**
+ * Page visibility source used to tell a suspension from ordinary jank.
+ * `Document` satisfies this shape, so injecting it in tests is trivial.
+ */
+export interface VisibilitySource {
+    readonly hidden: boolean
+    addEventListener(type: 'visibilitychange', listener: () => void): void
+    removeEventListener(type: 'visibilitychange', listener: () => void): void
+}
+
 export interface CreateClockOptions extends ClockTimingOptions {
     /**
      * Frame source. Resolved lazily from the environment when omitted
@@ -59,6 +69,14 @@ export interface CreateClockOptions extends ClockTimingOptions {
      * clock or other subscribers).
      */
     onError?: ((error: unknown) => void) | undefined
+    /**
+     * Treat any frame gap during which the document became hidden as a suspension
+     * (advances by one ordinary frame), whatever its length. `true` uses
+     * `globalThis.document` when it exists; pass an object to inject the source.
+     * `false` disables it and attaches no listener.
+     * @default true
+     */
+    visibility?: boolean | VisibilitySource | undefined
 }
 
 /**
@@ -96,6 +114,37 @@ function assertPositive(name: string, value: number): number {
     return value
 }
 
+function isVisibilitySource(value: unknown): value is VisibilitySource {
+    if (typeof value !== 'object' || value === null) return false
+    const source = value as VisibilitySource
+    return (
+        typeof source.hidden === 'boolean' &&
+        typeof source.addEventListener === 'function' &&
+        typeof source.removeEventListener === 'function'
+    )
+}
+
+// Validates the option eagerly; `undefined` keeps the default (`true`).
+function resolveVisibility(value: unknown): boolean | VisibilitySource {
+    if (value === undefined) return true
+    if (typeof value === 'boolean') return value
+    if (isVisibilitySource(value)) return value
+    throw new TypeError(
+        `[AnimationClock] visibility must be a boolean or an object with a boolean "hidden" and "addEventListener" / "removeEventListener" functions, received ${String(value)}.`
+    )
+}
+
+// `true` resolves the environment document lazily, so server rendering and
+// documents without event support are a silent no-op.
+function defaultVisibilitySource(): VisibilitySource | null {
+    const doc = (globalThis as { document?: VisibilitySource }).document
+    if (!doc) return null
+    return typeof doc.addEventListener === 'function' &&
+        typeof doc.removeEventListener === 'function'
+        ? doc
+        : null
+}
+
 function rethrowAsync(error: unknown): void {
     if (typeof queueMicrotask === 'function') {
         queueMicrotask(() => {
@@ -131,6 +180,14 @@ export class AnimationClock implements ManagedClock {
     // Latest ordinary frame gap: what a suspension advances by.
     private ordinaryFrame = DEFAULT_FRAME
     private readonly options: CreateClockOptions
+    private readonly visibility: boolean | VisibilitySource
+
+    // Page visibility: the listener exists only while the loop is armed and is
+    // created once per clock. `suspended` is sticky for one frame.
+    private visibilitySource: VisibilitySource | null = null
+    private visibilityAttached = false
+    private visibilityListener: (() => void) | null = null
+    private suspended = false
 
     private armed = false
     private ticking = false
@@ -187,6 +244,7 @@ export class AnimationClock implements ManagedClock {
     public constructor(options: CreateClockOptions | number = {}) {
         this.options =
             typeof options === 'number' ? { maxDeltaTime: options } : options
+        this.visibility = resolveVisibility(this.options.visibility)
         this.setTiming(this.options)
     }
 
@@ -248,6 +306,7 @@ export class AnimationClock implements ManagedClock {
         if (this.subscribers.size === 0 && !this.ticking) {
             this.cancelPending()
             this.armed = false
+            this.detachVisibility()
         }
     }
 
@@ -259,6 +318,51 @@ export class AnimationClock implements ManagedClock {
         this.joinedAt.clear()
         this.cancelPending()
         this.armed = false
+        this.detachVisibility()
+    }
+
+    /**
+     * Listens only while the loop is armed: `true` resolves the environment
+     * document, a broken or missing source is skipped silently. Attaching
+     * happens once per armed period, so re-arms never add a second listener.
+     */
+    private attachVisibility(): void {
+        if (this.visibilityAttached || this.visibility === false) return
+        const source =
+            this.visibility === true
+                ? defaultVisibilitySource()
+                : this.visibility
+        if (!source) return
+        this.visibilityAttached = true
+        this.visibilitySource = source
+        if (!this.visibilityListener) {
+            // One function per clock; it reads the source's state at event
+            // time, which is what makes only real hidden events suspend.
+            this.visibilityListener = () => {
+                if (this.visibilitySource?.hidden) this.suspended = true
+            }
+        }
+        try {
+            source.addEventListener('visibilitychange', this.visibilityListener)
+        } catch (error) {
+            this.report(error)
+        }
+    }
+
+    private detachVisibility(): void {
+        this.suspended = false
+        if (!this.visibilityAttached) return
+        this.visibilityAttached = false
+        const source = this.visibilitySource
+        if (!source || !this.visibilityListener) return
+        try {
+            source.removeEventListener(
+                'visibilitychange',
+                this.visibilityListener
+            )
+        } catch (error) {
+            this.report(error)
+        }
     }
 
     private resolveSource(): FrameSource | null {
@@ -331,6 +435,7 @@ export class AnimationClock implements ManagedClock {
         const callback = (timestamp: number) => this.tick(generation, timestamp)
         try {
             if (restartTime) this.lastTimestamp = this.now()
+            this.attachVisibility()
             this.frameId = source.owner
                 ? source.request.call(source.owner, callback)
                 : source.request(callback)
@@ -341,6 +446,7 @@ export class AnimationClock implements ManagedClock {
             // Frame source is broken: stay idle, a later subscribe retries.
             this.armed = false
             this.frameId = null
+            this.detachVisibility()
             this.report(error)
         }
     }
@@ -371,12 +477,18 @@ export class AnimationClock implements ManagedClock {
 
     /**
      * Elapsed seconds -> delta handed to subscribers (lag smoothing):
-     * negative / NaN -> 0; up to `lagThreshold` -> real time; a longer gap
-     * is a suspension -> one ordinary frame. Never above `maxDeltaTime`.
+     * negative / NaN -> 0; up to `lagThreshold` -> real time; a longer gap or
+     * a suspended frame -> one ordinary frame, never more than the elapsed
+     * time of the subscriber itself. Never above `maxDeltaTime`.
      */
-    private toDelta(seconds: number): number {
+    private toDelta(seconds: number, suspended: boolean): number {
         if (!(seconds > 0)) return 0
-        const delta = seconds > this.lagThreshold ? this.ordinaryFrame : seconds
+        let delta = seconds
+        if (suspended) {
+            delta = Math.min(this.ordinaryFrame, seconds)
+        } else if (seconds > this.lagThreshold) {
+            delta = this.ordinaryFrame
+        }
         return delta > this.maxDeltaTime ? this.maxDeltaTime : delta
     }
 
@@ -387,8 +499,10 @@ export class AnimationClock implements ManagedClock {
         this.ticking = true
 
         const elapsed = (timestamp - this.lastTimestamp) / 1000
-        const dt = this.toDelta(elapsed)
-        if (elapsed > 0 && elapsed <= ORDINARY_FRAME_LIMIT) {
+        const suspended = this.suspended
+        this.suspended = false
+        const dt = this.toDelta(elapsed, suspended)
+        if (!suspended && elapsed > 0 && elapsed <= ORDINARY_FRAME_LIMIT) {
             this.ordinaryFrame = elapsed
         }
         this.lastTimestamp = timestamp
@@ -408,7 +522,10 @@ export class AnimationClock implements ManagedClock {
                     const joined = this.joinedAt.get(subscriber)
                     if (joined !== undefined) {
                         this.joinedAt.delete(subscriber)
-                        delta = this.toDelta((timestamp - joined) / 1000)
+                        delta = this.toDelta(
+                            (timestamp - joined) / 1000,
+                            suspended
+                        )
                     }
                 }
                 try {
@@ -428,6 +545,8 @@ export class AnimationClock implements ManagedClock {
                 const source = this.resolveSource()
                 if (source) this.arm(source, false)
             }
+            // Anything but a live loop holds no visibility listener.
+            if (!this.armed) this.detachVisibility()
         }
     }
 }
