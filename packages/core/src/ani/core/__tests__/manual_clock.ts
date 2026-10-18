@@ -1,8 +1,8 @@
 import type { Animatable, AnimationClockInterface } from '~/loop'
 
 /**
- * Hand-driven clock: `tick(dt)` updates every subscriber once (snapshot, like
- * the real clock) and `size` exposes how many are subscribed.
+ * Hand-driven clock: `tick(dt)` updates, then commits, every subscriber once
+ * (snapshot, like the real clock) and `size` exposes how many are subscribed.
  */
 export class ManualClock implements AnimationClockInterface {
     private subscribers = new Set<Animatable>()
@@ -20,9 +20,9 @@ export class ManualClock implements AnimationClockInterface {
     }
 
     public tick(dt: number): void {
-        for (const subscriber of [...this.subscribers]) {
-            subscriber.update(dt)
-        }
+        const frame = [...this.subscribers]
+        for (const subscriber of frame) subscriber.update(dt)
+        for (const subscriber of frame) subscriber.commit?.()
     }
 
     /** `count` frames of `dt` seconds */

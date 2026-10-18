@@ -83,10 +83,12 @@ myTimeline.play({
 -   `pause()` only acts on `PLAYING`, `resume()` only on `PAUSED`.
 -   `seek(time)` clamps to `[0, duration]`, **pauses** a playing or ended timeline at that time and notifies once. It does nothing before the first `play()`.
 -   `reset()` returns to `IDLE`, clears the value and restores the base duration.
--   `dispose()` leaves the clock, drops all `onUpdate` callbacks and turns `play()` / `resume()` into no-ops. Idempotent.
+-   `dispose()` leaves the clock, drops all `onUpdate` callbacks and bindings and turns `play()` / `resume()` into no-ops. Idempotent.
 -   `play()` **throws synchronously** for malformed configs (missing `from` key for an animated property, array/record mismatch, record `timing` missing a property, non-finite `from` / `to` / `velocity`, negative or non-finite `delay` / duration). The timeline stays untouched.
 -   `play()` over a `PLAYING` timeline interrupts it and **inherits its velocity** unless `velocity` is given (pass `velocity: { x: 0 }` to start from rest).
 -   `getCurrentValue()` returns a frozen snapshot (or `null`); `getCurrentVelocity()` returns per-property velocity (zeros unless `PLAYING`, `null` before the first advanced frame).
+-   The clock runs each frame in phases. `update` only computes; bound styles are written and `onUpdate` callbacks run in the **commit** phase, after every timeline on the clock has computed. A frame notifies **once**: the frame a run ends notifies once with `ENDED` and the final value, and a frame that wraps a repeat notifies once with the post-wrap value. `play()`, `seek()` and `reset()` still notify synchronously.
+-   `bind(target, [{ resolver }])` writes the value to `target.style` (via `createStyleSheet`; `resolver` defaults to the run's `propertyResolver`) before the listeners of the same notification run, and only the declarations that changed since that binding's previous write. A timeline that already has a value writes it immediately. An invalid `target` (not an element or an object with a `style` object) throws a `TypeError` synchronously. The returned function unbinds (idempotent, styles are kept). Positional (array) values cannot be styled: the first write reports a `TypeError` asynchronously and drops the binding. A failing write is isolated per binding and reported asynchronously.
 -   All `onUpdate` callbacks of one notification receive the **same** `state` object (read-only). Errors thrown by callbacks are rethrown asynchronously and do not affect other callbacks.
 -   Same-property overlap: the most recently started segment produces the value (ties: later declaration); each segment's `from` is the value at its start.
 -   Per-frame cost depends on the number of animated properties, not on the number of segments.
@@ -109,7 +111,8 @@ myTimeline.play({
 | `reset([notify = true], [unsubscribeClock = true])` | Resets to `IDLE`. |
 | `seek(time)` | Jumps to a time (seconds) and pauses. |
 | `dispose()` | Stops for good and releases everything. |
-| `onUpdate(cb)` | Registers a callback for state and status updates. Returns an unsubscribe function. |
+| `bind(target, [options])` | Writes the value to `target.style` on every notification, changed declarations only. Returns an unbind function. |
+| `onUpdate(cb)` | Registers a callback for state and status updates (commit phase). Returns an unsubscribe function. |
 | `getCurrentValue()` | Frozen snapshot of the latest value, or `null`. |
 | `getCurrentVelocity()` | Per-property velocity, or `null`. |
 | `status` | `'IDLE' \| 'PLAYING' \| 'PAUSED' \| 'ENDED'`. |
@@ -152,6 +155,7 @@ class RafAniTimeline<G extends Groupable, Ctx = any> {
   seek(time: number): void;
   reset(notify?: boolean, unsubscribeClock?: boolean): void;
   dispose(): void;
+  bind(target: { style: CSSStyleDeclaration } | HTMLElement, options?: { resolver?: Resolver<Record<string, number>> }): () => void;
   onUpdate(callback: OnUpdateCallback<G>): () => void;
   getCurrentValue(): AniGroup<G> | null;
   getCurrentVelocity(): AniGroup<G> | null;

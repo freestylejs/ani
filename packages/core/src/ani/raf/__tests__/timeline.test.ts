@@ -9,7 +9,10 @@ const linear: TimingFunction = T.linear()
 
 // Mock the AnimationClock to have manual control over time
 vi.mock('~/loop/clock', () => {
-    const subscribers = new Set<{ update: (dt: number) => void }>()
+    const subscribers = new Set<{
+        update: (dt: number) => void
+        commit?: () => void
+    }>()
     return {
         AnimationClock: {
             create: () => ({
@@ -17,9 +20,9 @@ vi.mock('~/loop/clock', () => {
                 unsubscribe: (sub: any) => subscribers.delete(sub),
                 // Manual tick function for tests
                 tick: (dt: number) => {
-                    for (const sub of subscribers) {
-                        sub.update(dt)
-                    }
+                    const frame = [...subscribers]
+                    for (const sub of frame) sub.update(dt)
+                    for (const sub of frame) sub.commit?.()
                 },
             }),
         },
@@ -76,10 +79,10 @@ describe('Timeline Controller', () => {
             status: 'PLAYING',
         })
 
-        clock.tick(1) // End of second segment
-        expect(onUpdate).toHaveBeenCalledWith({
+        clock.tick(1) // End of second segment: one ENDED notification
+        expect(onUpdate).toHaveBeenLastCalledWith({
             state: [200],
-            status: 'PLAYING',
+            status: 'ENDED',
         })
     })
 
@@ -113,9 +116,9 @@ describe('Timeline Controller', () => {
         })
 
         clock.tick(0.5)
-        expect(onUpdate).toHaveBeenCalledWith({
+        expect(onUpdate).toHaveBeenLastCalledWith({
             state: { x: 200, y: 100 },
-            status: 'PLAYING',
+            status: 'ENDED',
         })
     })
 
@@ -587,12 +590,11 @@ describe('Timeline Controller', () => {
 
             line.play({ from: [0], repeat: 1 })
 
-            // End first run -> starts second run immediately.
+            // End first run -> starts second run immediately: one
+            // notification per frame, with the post-wrap value.
+            onUpdate.mockClear()
             clock.tick(1)
-            expect(onUpdate).toHaveBeenCalledWith({
-                state: [100],
-                status: 'PLAYING',
-            })
+            expect(onUpdate).toHaveBeenCalledTimes(1)
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [0],
                 status: 'PLAYING',
@@ -746,12 +748,10 @@ describe('Timeline Controller', () => {
             // Initial delay
             clock.tick(0.5)
 
-            // First run
+            // First run: the wrap frame notifies once, post-wrap
+            onUpdate.mockClear()
             clock.tick(1)
-            expect(onUpdate).toHaveBeenCalledWith({
-                state: [100],
-                status: 'PLAYING',
-            })
+            expect(onUpdate).toHaveBeenCalledTimes(1)
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [0],
                 status: 'PLAYING',
