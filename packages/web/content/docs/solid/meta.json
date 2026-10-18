@@ -1,4 +1,11 @@
 {
     "title": "Solid",
-    "pages": ["create-ani", "create-ani-ref", "create-ani-states"]
+    "pages": [
+        "create-ani",
+        "create-timeline",
+        "create-ani-ref",
+        "create-ani-group",
+        "create-ani-states",
+        "create-follow"
+    ]
 }

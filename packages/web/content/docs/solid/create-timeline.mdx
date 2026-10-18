@@ -1,0 +1,36 @@
+---
+title: createTimeline
+description: Creates a timeline, group or follower and disposes it with the owner.
+---
+
+`createTimeline` calls a factory once and disposes the returned object when the current owner is cleaned up. It works with every object that has a `dispose()`: `rafTimeline`, `rafGroup`, `follow`, `createStates`.
+
+### Example
+
+```tsx
+import { a, rafTimeline } from "@freestylejs/ani-core";
+import { createAniRef, createTimeline } from "@freestylejs/ani-solid";
+
+const Box = () => {
+  const timeline = createTimeline(() =>
+    rafTimeline(a.ani({ to: { opacity: 1 }, duration: 1 }))
+  );
+  const { ref } = createAniRef(timeline);
+  return <div ref={ref} onClick={() => timeline.play({ from: { opacity: 0 } })} />;
+};
+```
+
+### Usage & Concepts
+
+-   **Explicit ownership.** Whoever creates an object disposes it. The other primitives (`createAniRef`, `createAniGroup`, `createAni`) never dispose what they are given.
+-   **Re-running scopes.** Inside an effect, the previous object is disposed before the next one is created.
+-   **Failure.** A throwing factory throws synchronously.
+-   **SSR.** Creating a timeline does not touch a clock or the DOM.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `factory` | `() => T` | Creates the object. Called once, synchronously. |
+
+Returns the object the factory returned.
