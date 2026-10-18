@@ -1,9 +1,11 @@
 import { createStates, rafTimeline } from './ani/raf'
 import { webTimeline } from './ani/waapi'
+import { createClock } from './loop'
 import { ani, delay, loop, parallel, sequence, stagger } from './nodes'
 import { T } from './timing'
 
 export * from './ani'
+export * from './binding'
 export * from './binding_api'
 export * from './event'
 export * from './loop'
@@ -37,4 +39,8 @@ export const a = {
     sequence,
     stagger,
     createStates,
+    /**
+     * Create an independent animation clock (own frame loop).
+     */
+    createClock,
 } as const
