@@ -1,0 +1,34 @@
+{
+    "name": "@freestylejs/ani-codemod",
+    "author": "freestyle",
+    "version": "0.0.0",
+    "description": "Migrates code from ANI 1.x to ANI 2.",
+    "license": "MIT",
+    "type": "module",
+    "keywords": ["animation", "codemod", "migration"],
+    "sideEffects": false,
+    "private": false,
+    "publishConfig": {
+        "access": "public"
+    },
+    "files": ["dist"],
+    "bin": {
+        "ani-codemod": "./dist/cli.js"
+    },
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "default": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "ts:typecheck": "tsc --noEmit --skipLibCheck"
+    },
+    "dependencies": {
+        "typescript": "6.0.2"
+    }
+}
