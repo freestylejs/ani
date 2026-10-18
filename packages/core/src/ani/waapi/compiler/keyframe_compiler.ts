@@ -6,6 +6,7 @@ import type {
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { createStyleSheet, type Resolver } from '~/style'
 import { BezierTimingFunction, LinearTimingFunction } from '~/timing'
+import { END_TOLERANCE } from '~/utils/time/is_end'
 import { compileTiming } from './timing_compiler'
 
 export interface WebAniKeyframe extends Record<string, string | number | null> {
@@ -15,6 +16,10 @@ export interface WebAniKeyframe extends Record<string, string | number | null> {
 
 const FPS = 60
 const SAMPLE_RATE = 1 / FPS
+// inside the runtime's end tolerance: segments ending here count as finished
+const LIMIT_OFFSET = END_TOLERANCE / 2
+// smaller differences are the limit offset's doing, not a jump
+const JUMP_EPSILON = 1e-6
 
 type Interval = 'linear' | string | null
 
@@ -114,13 +119,24 @@ export function compileToKeyframes<G extends Groupable>(
         initialValues
     )
 
-    const styleAt = (time: number): Record<string, any> => {
-        runtime.evaluate(time, SAMPLE_RATE)
+    const styleOf = (values: ArrayLike<number>): Record<string, any> => {
         const state: Record<string, number> = {}
         for (let i = 0; i < keys.length; i++) {
-            state[keys[i]!] = runtime.values[i]!
+            state[keys[i]!] = values[i]!
         }
         return createStyleSheet(state, resolver)
+    }
+
+    const styleAt = (time: number): Record<string, any> => {
+        runtime.evaluate(time, SAMPLE_RATE)
+        return styleOf(runtime.values)
+    }
+
+    // Values just before `time`; the opening state when nothing precedes it.
+    const valuesBefore = (time: number): number[] => {
+        if (time <= 0) return initialValues.slice()
+        runtime.evaluate(time - LIMIT_OFFSET, SAMPLE_RATE)
+        return runtime.values.slice()
     }
 
     // 1. Calculate Duration from the Plan, not the Node
@@ -145,6 +161,16 @@ export function compileToKeyframes<G extends Groupable>(
     }
     const sortedTimes = Array.from(timePoints).sort((a, b) => a - b)
 
+    // A zero-length segment makes its properties jump at its start time.
+    const jumpTimes = new Set<number>()
+    for (const seg of plan) {
+        if (seg.node.duration !== 0) continue
+        const to = seg.node.props.to as Groupable
+        if (Array.isArray(to) || Object.keys(to).length > 0) {
+            jumpTimes.add(seg.startTime)
+        }
+    }
+
     // Segments by start, swept alongside the intervals so each interval only
     // looks at the segments that can still be active.
     const byStart = [...plan].sort(
@@ -157,11 +183,23 @@ export function compileToKeyframes<G extends Groupable>(
 
     for (let i = 0; i < sortedTimes.length; i++) {
         const currT = sortedTimes[i]!
-        const keyframe: WebAniKeyframe = {
-            offset: currT / duration,
-            ...styleAt(currT),
-        }
+        const offset = currT / duration
+        // left-hand limit first, then the post-jump value at the same offset
+        const before = jumpTimes.has(currT) ? valuesBefore(currT) : null
+        const keyframe: WebAniKeyframe = { offset, ...styleAt(currT) }
 
+        if (before !== null) {
+            // properties that do not jump keep their exact value
+            let jumps = false
+            for (let k = 0; k < before.length; k++) {
+                if (Math.abs(before[k]! - runtime.values[k]!) > JUMP_EPSILON) {
+                    jumps = true
+                } else {
+                    before[k] = runtime.values[k]!
+                }
+            }
+            if (jumps) keyframes.push({ offset, ...styleOf(before) })
+        }
         keyframes.push(keyframe)
 
         if (i < sortedTimes.length - 1) {

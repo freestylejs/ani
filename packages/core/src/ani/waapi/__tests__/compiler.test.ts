@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
 import type { AnimationNode } from '~/nodes'
 import { a } from '../../../index'
-import { compileToKeyframes } from '../compiler/keyframe_compiler'
+import {
+    compileToKeyframes,
+    type WebAniKeyframe,
+} from '../compiler/keyframe_compiler'
 
 describe('WebAni Compiler', () => {
     const constructExecutionPlan = (
@@ -336,5 +339,89 @@ describe('WebAni Compiler', () => {
 
         // Verify easing is linear for sampled frames
         expect(keyframes[5]!.easing).toBe('linear')
+    })
+
+    describe('zero-length segments', () => {
+        const x = (k: WebAniKeyframe) => String(k['transform'])
+        const from = { translateX: 0 }
+
+        it('emits left limit then post-jump value at the same offset', () => {
+            const node = a.sequence([
+                a.ani({ to: { translateX: 100 }, duration: 1 }),
+                a.ani({ to: { translateX: 0 }, duration: 0 }),
+            ])
+            const keyframes = compileToKeyframes(
+                constructExecutionPlan(node),
+                from
+            )
+
+            expect(keyframes.map((k) => k.offset)).toEqual([0, 1, 1])
+            expect(x(keyframes[1]!)).toBe('translateX(100px)')
+            expect(x(keyframes[2]!)).toBe('translateX(0px)')
+        })
+
+        it('starts a leading jump from the initial value', () => {
+            const node = a.sequence([
+                a.ani({ to: { translateX: 40 }, duration: 0 }),
+                a.ani({ to: { translateX: 100 }, duration: 1 }),
+            ])
+            const keyframes = compileToKeyframes(
+                constructExecutionPlan(node),
+                from
+            )
+
+            expect(keyframes.map((k) => k.offset)).toEqual([0, 0, 1])
+            expect(x(keyframes[0]!)).toBe('translateX(0px)')
+            expect(x(keyframes[1]!)).toBe('translateX(40px)')
+        })
+
+        it('collapses consecutive jumps at one time', () => {
+            const node = a.sequence([
+                a.ani({ to: { translateX: 100 }, duration: 1 }),
+                a.ani({ to: { translateX: 10 }, duration: 0 }),
+                a.ani({ to: { translateX: 20 }, duration: 0 }),
+                a.ani({ to: { translateX: 0 }, duration: 1 }),
+            ])
+            const keyframes = compileToKeyframes(
+                constructExecutionPlan(node),
+                from
+            )
+
+            expect(keyframes.map((k) => k.offset)).toEqual([0, 0.5, 0.5, 1])
+            expect(x(keyframes[1]!)).toBe('translateX(100px)')
+            expect(x(keyframes[2]!)).toBe('translateX(20px)')
+        })
+
+        it('keeps a delegated bezier on the interval before the jump', () => {
+            const node = a.sequence([
+                a.ani({
+                    to: { translateX: 100 },
+                    duration: 1,
+                    timing: a.timing.easeIn(),
+                }),
+                a.ani({ to: { translateX: 0 }, duration: 0 }),
+            ])
+            const keyframes = compileToKeyframes(
+                constructExecutionPlan(node),
+                from
+            )
+
+            expect(keyframes).toHaveLength(3)
+            expect(keyframes[0]!.easing).toMatch(/^cubic-bezier/)
+            expect(x(keyframes[1]!)).toBe('translateX(100px)')
+        })
+
+        it('does not duplicate a keyframe when the value is unchanged', () => {
+            const node = a.sequence([
+                a.ani({ to: { translateX: 100 }, duration: 1 }),
+                a.ani({ to: { translateX: 100 }, duration: 0 }),
+            ])
+            const keyframes = compileToKeyframes(
+                constructExecutionPlan(node),
+                from
+            )
+
+            expect(keyframes.map((k) => k.offset)).toEqual([0, 1])
+        })
     })
 })
