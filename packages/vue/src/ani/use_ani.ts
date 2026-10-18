@@ -1,30 +1,55 @@
 import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
-import { onBeforeUnmount, onMounted, type Ref, ref } from 'vue'
+import { createTimelineController } from '@freestylejs/ani-core'
+import {
+    computed,
+    onBeforeUnmount,
+    onMounted,
+    type Ref,
+    shallowRef,
+    toRaw,
+    unref,
+    watch,
+} from 'vue'
 
+/**
+ * Reactive ani animation composable.
+ *
+ * `timeline` may be a timeline or a ref of one; swaps are followed. The value
+ * is a `shallowRef`: each frame replaces it wholesale, nothing is proxied.
+ * Subscribes on mount only (SSR renders `initialValue`, retains nothing).
+ *
+ * @returns `[value, controller]`; the controller follows timeline swaps.
+ */
 export function useAni<G extends Groupable>(
-    timeline: RafAniTimeline<G>,
+    timeline: RafAniTimeline<G> | Ref<RafAniTimeline<G>>,
     initialValue: AniGroup<G>
 ): readonly [Ref<AniGroup<G>>, RafAniTimeline<G>] {
-    const value = ref(timeline.getCurrentValue() ?? initialValue) as Ref<
-        AniGroup<G>
-    >
-    let unsubscribe: () => void
+    const current = computed(() => toRaw(unref(timeline)))
+    const value = shallowRef<AniGroup<G>>(
+        current.value.getCurrentValue() ?? initialValue
+    )
+    let stop: (() => void) | undefined
 
     onMounted(() => {
-        // Sync immediate value on mount
-        const current = timeline.getCurrentValue() ?? initialValue
-        value.value = current
-
-        unsubscribe = timeline.onUpdate((newValue) => {
-            value.value = newValue.state
-        })
+        stop = watch(
+            current,
+            (tl, _, onCleanup) => {
+                // Sync immediate value
+                value.value = tl.getCurrentValue() ?? initialValue
+                onCleanup(
+                    tl.onUpdate((next) => {
+                        value.value = next.state
+                    })
+                )
+            },
+            { immediate: true, flush: 'sync' }
+        )
     })
 
-    onBeforeUnmount(() => {
-        if (unsubscribe) {
-            unsubscribe()
-        }
-    })
+    onBeforeUnmount(() => stop?.())
 
-    return [value, timeline]
+    return [
+        value as Ref<AniGroup<G>>,
+        createTimelineController<G>(() => current.value),
+    ]
 }

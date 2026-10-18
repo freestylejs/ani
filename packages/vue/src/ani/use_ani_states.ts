@@ -6,8 +6,8 @@ import {
     type StateProps,
 } from '@freestylejs/ani-core'
 import {
-    onBeforeUnmount,
-    onMounted,
+    getCurrentScope,
+    onScopeDispose,
     type Ref,
     readonly,
     ref,
@@ -15,6 +15,14 @@ import {
 } from 'vue'
 import { useAniRef } from './use_ani_ref'
 
+/**
+ * State-machine animation composable. `props` are read once, at setup.
+ *
+ * The composable owns the state controller and disposes it with its scope
+ * (component unmount), stopping any running timeline. `transitionTo` may be
+ * called at any time, including inside `setup()`: the timeline swap is
+ * subscribed synchronously and bound when the element mounts.
+ */
 export function useAniStates<
     const AnimationStates extends Record<string, any> & AnimationStateShape,
 >(
@@ -31,35 +39,33 @@ export function useAniStates<
     const timeline = shallowRef<GetTimeline<AnimationStates>>(
         statesController.timeline()
     )
+    const state = ref<keyof AnimationStates>(props.initial)
 
     const [elementRef] = useAniRef({
         timeline: timeline,
         initialValue: props.initialFrom,
     })
 
-    let unsubscribe: () => void
-    onMounted(() => {
-        unsubscribe = statesController.onTimelineChange((newTimeline) => {
-            timeline.value = newTimeline
-        })
+    statesController.onTimelineChange((newTimeline) => {
+        timeline.value = newTimeline
+        state.value = statesController.state()
     })
-    onBeforeUnmount(() => {
-        if (unsubscribe) unsubscribe()
-    })
-
-    const state = ref<keyof AnimationStates>(props.initial)
+    if (getCurrentScope()) {
+        onScopeDispose(() => statesController.dispose())
+    }
 
     const transitionTo: StateController<AnimationStates>['transitionTo'] = (
         newState,
         timelineConfig,
         canBeIntercepted
     ) => {
-        state.value = newState
+        // Controller first: it validates atomically and may reject.
         statesController.transitionTo(
             newState,
             timelineConfig,
             canBeIntercepted
         )
+        state.value = statesController.state()
     }
 
     return [
