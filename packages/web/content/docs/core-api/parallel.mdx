@@ -34,10 +34,26 @@ myTimeline.play({ from: { opacity: 0, scale: 1, x: 0, y: 0 } });
 
 Like `sequence`, `parallel` enforces that all children operate on a compatible data shape `G`. This allows you to safely compose animations for different properties.
 
+#### Animating the same property twice
+
+When two children animate the same property, the **later child wins** for the whole overlap, because they start together.
+
+-   Record-shaped direct `ani` children are resolved when the node is created: the overridden property is removed from the earlier child.
+-   A child left with no properties is **kept as a hold**. It still contributes its duration (and its position in `keyframes` / `durations` overrides), exactly like [`delay`](/en/docs/core-api/delay). A trailing `delay` counts toward the block duration.
+-   Array shapes and nested trees follow the timeline's general [overlap rule](/en/docs/core-api/dynamic_timeline): the most recently started segment produces the value, and each segment's `from` is the value at its start.
+
 #### Best Practices
 
 -   **Do** use `parallel` whenever you want two or more animations to happen simultaneously.
 -   **Don't** nest `parallel` blocks if a single one will suffice. `parallel([a, parallel([b, c])])` is the same as `parallel([a, b, c])`.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `children` | `AnimationNode[]` | Nodes that all start together. |
+| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
+| `id` | `string` | (Optional) Identifier of the node. |
 
 ### Related Components
 

@@ -1,0 +1,91 @@
+---
+title: clock (AnimationClock / createClock)
+description: The frame loop that drives timelines. Use the shared default clock, or create independent clocks for tests and isolated engines.
+---
+
+A **clock** calls `update(dt)` on every subscribed timeline once per animation frame. A timeline subscribes while it is `PLAYING` and unsubscribes when it pauses, ends, resets or is disposed.
+
+### Example
+
+```typescript
+import { a, createClock } from "@freestylejs/ani-core";
+
+// Independent clock that you drive yourself (tests, replays, workers).
+let now = 0;
+let pending: ((t: number) => void) | null = null;
+
+const clock = createClock({
+  requestFrame: (cb) => { pending = cb; return 1; },
+  cancelFrame: () => { pending = null; },
+  now: () => now,
+});
+
+const timeline = a.dynamicTimeline(a.ani({ to: { x: 100 }, duration: 1 }), clock);
+timeline.play({ from: { x: 0 } });
+
+now += 500;
+pending?.(now); // one frame, 500 ms later (dt is clamped, see below)
+console.log(clock.size); // 1 subscriber
+```
+
+### Usage & Concepts
+
+#### The default clock
+
+Timelines use one shared process-wide clock unless you pass another. It runs **one** `requestAnimationFrame` loop no matter how many timelines play, and it stops the loop when the last timeline leaves.
+
+```typescript
+import { AnimationClock } from "@freestylejs/ani-core";
+
+AnimationClock.create(0.05);  // apply a new maxDeltaTime to the shared clock
+AnimationClock.reset();       // dispose the shared clock (tests, hot reload)
+AnimationClock.create().size; // number of timelines currently driven
+```
+
+#### Guarantees
+
+-   **One pending frame at most.** A re-entrant `subscribe` / `unsubscribe` never creates a second loop.
+-   **Per-tick snapshot.** A timeline subscribed during a tick first updates on the **next** tick. One unsubscribed during a tick is not updated afterwards in that tick.
+-   **Progress since subscribe.** The first update of a new subscriber advances by the time elapsed since it subscribed, not by the time since the previous frame.
+-   **Error isolation.** A subscriber that throws does not stop the others or the next frame. The error goes to `onError` when given, otherwise it is rethrown asynchronously. The subscriber stays subscribed unless it unsubscribes itself.
+-   **Self-healing.** `subscribe` re-arms the loop when the environment dropped the pending frame (for example a fake rAF reinstalled). A pending frame older than one second is treated as lost.
+-   **No frame source, no work.** Without `requestAnimationFrame` (server rendering, plain workers) `subscribe` is a silent no-op and the subscriber is not retained. See [SSR](/en/docs/guides/ssr).
+
+#### `maxDeltaTime`: stability versus real time
+
+Each frame advances animations by at most `maxDeltaTime` seconds (default `0.1`).
+
+-   **Why:** after a long stall (hidden tab, debugger, heavy jank) physics stay stable and animations do not jump.
+-   **Trade-off:** animation time **dilates** under jank. A 5 s stall advances an animation by only 0.1 s, so wall-clock time and animation time diverge.
+-   **Real time:** pass `Infinity` to follow the wall clock exactly (animations catch up after stalls).
+-   An invalid value (zero, negative, `NaN`) throws a `RangeError`.
+
+### API Reference
+
+#### `createClock(options?)`
+
+Returns an independent clock (`AnimationClockInterface` plus a read-only `size`).
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `maxDeltaTime` | `number` | `0.1` | Upper bound of one frame's `dt` in seconds. `Infinity` is allowed. |
+| `requestFrame` | `(cb) => number` | `requestAnimationFrame` | Frame source. Resolved lazily at the first subscribe. |
+| `cancelFrame` | `(id) => void` | `cancelAnimationFrame` | Cancels a requested frame. |
+| `now` | `() => number` | `performance.now` | Time source in milliseconds, same domain as the frame timestamps. |
+| `onError` | `(error) => void` | async rethrow | Receives errors thrown by subscribers. |
+
+#### `AnimationClock`
+
+| Member | Description |
+| :--- | :--- |
+| `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` is applied even if the clock exists. |
+| `AnimationClock.configure(maxDeltaTime)` | Same as `create`, for clarity at configuration time. |
+| `AnimationClock.reset()` | Disposes the shared clock; the next `create()` starts clean. |
+| `clock.size` | Number of animatables currently subscribed. |
+| `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. |
+| `clock.dispose()` | Stops the loop and drops all subscribers. |
+
+### Related Components
+
+-   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - Subscribes to a clock while playing.
+-   [`Testing`](/en/docs/guides/testing) - Deterministic tests with a manual frame source.

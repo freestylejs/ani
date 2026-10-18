@@ -41,11 +41,27 @@ function handlePlay() {
 
 The `useAni` composable acts as a bridge between the `@freestylejs/ani-core` engine and Vue's reactivity system. It takes a `timeline` instance and an `initialValue`, returning a reactive Vue `ref` that is updated with the latest animation value, alongside the timeline's controller. Vue's reactivity system automatically tracks this `ref` and updates the component whenever its value changes.
 
+#### Behavior
+
+-   `timeline` may be a timeline or a `Ref` of one; swaps are followed.
+-   The value is a `shallowRef`: each frame replaces it as a whole, nothing is deeply proxied. Do not mutate it.
+-   The composable subscribes on mount and unsubscribes before unmount, so server rendering retains nothing. See [SSR](/en/docs/guides/ssr).
+-   The returned controller follows timeline swaps. The timeline you pass is never disposed.
+
 #### When to Use
 
 -   **Do** use `useAni` when you need the animated values to be part of Vue's reactive system.
 -   **Do** use it for animations that affect text content, attributes, or props.
 -   **Don't** use `useAni` for high-frequency style updates on a single element. For that, `useAniRef` is a better choice.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `timeline` | `RafAniTimeline<G> \| Ref<RafAniTimeline<G>>` | The timeline to read. |
+| `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
+
+Returns `readonly [value, controller]`: a `Ref<AniGroup<G>>` and the timeline controller.
 
 ### Related Components
 

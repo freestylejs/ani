@@ -10,15 +10,17 @@ This hook is a React-specific wrapper around the core `createStates` function. I
 ```tsx
 import { a } from "@freestylejs/ani-core";
 import { useAniStates } from "@freestylejs/ani-react";
-import { useMemo, useRef } from "react";
+import { useRef } from "react";
 
 const StateButton = () => {
     const ref = useRef<HTMLButtonElement>(null)
 
-    // 1. Define the animations for each state.
-    // Memoize this object to prevent re-creating the state machine on every render.
-    const animations = useMemo(
-        () => ({
+    // 1. Use the hook to create the state machine, passing the ref directly.
+    // It returns the current state info and a function to transition.
+    const [{ state }, transitionTo] = useAniStates(ref, {
+        initial: 'idle',
+        initialFrom: { opacity: 0.7, scale: 1 },
+        states: {
             idle: a.ani({
                 to: { scale: 1, opacity: 0.7 },
                 duration: 0.5,
@@ -26,30 +28,19 @@ const StateButton = () => {
             }),
             hover: a.ani({
                 to: { scale: 1.25, opacity: 1 },
-                duration: 1.5,
+                duration: 0.4,
                 timing: a.timing.linear(),
             }),
-        }),
-        []
-    )
-
-    // 2. Use the hook to create the state machine, passing the ref directly.
-    // It returns the current state info and a function to transition.
-    const [{ timeline }, transitionTo] = useAniStates(ref, {
-        initial: 'idle',
-        initialFrom: {
-            opacity: 0,
-            scale: 1,
         },
-        states: animations,
     })
 
     return (
         <button
             ref={ref}
+            data-state={state}
             onMouseEnter={() => transitionTo('hover')}
             onMouseLeave={() => transitionTo('idle')}
-            className="rounded-md scale-100 opacity-100 bg-blue-500 px-4 py-2 transition-all"
+            className="rounded-md bg-blue-500 px-4 py-2"
         >
             Hover Me
         </button>
@@ -63,11 +54,33 @@ const StateButton = () => {
 
 The `useAniStates` hook simplifies stateful animation logic in React. It manages the active animation state and its corresponding timeline, automatically handling seamless transitions between states. When you call `transitionTo`, it uses the current animation's value as the starting point for the next animation, ensuring smooth, interruptible effects.
 
+#### Lifecycle
+
+-   **Owns its controller.** The hook creates the state machine and **disposes it on unmount**, which stops any running timeline (even `repeat: Infinity`). In `StrictMode` the machine is recreated for the second mount.
+-   **Props are read once.** `states`, `initial`, `initialFrom` and `clock` are read on the first render only (like the initial value of `useState`). You do not need to memoize `states`. To start from different props, remount the component with a `key`.
+-   **Never misses a transition.** A transition issued before the hook subscribed (for example from a child component's mount effect) is picked up when it subscribes.
+-   **Stable `transitionTo`.** It keeps its identity across renders, so it is safe in dependency arrays. It validates first (an unknown state throws a `RangeError` and nothing changes), and `state` reflects what the machine actually did, including a rejected transition when `canBeIntercepted` is `false`. After unmount it does nothing.
+-   **Rendering.** `state` and `timeline` are React state, so changing state renders the component once per transition, not once per frame. The element is animated through `useAniRef`.
+
 #### When to Use
 
 -   **Do** use `useAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
--   **Do** combine `useAniStates` with `useAniRef` for high-performance style animations that react to state changes without causing re-renders.
--   **Don't** create the `states` object inside the render function without memoization, as this will create a new state machine on every render and lead to unexpected behavior.
+-   **Don't** use it for animations that are not state based. Use [`useAniRef`](/en/docs/react/use-ani-ref) with your own timeline.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `ref` | `RefObject<E \| null>` | Ref of the element to animate. |
+| `props` | `StateProps` | `initial`, `initialFrom`, `states` and optional `clock`. See [createStates](/en/docs/core-api/states). |
+
+Returns `readonly [{ state, timeline }, transitionTo]`.
+
+| Member | Description |
+| :--- | :--- |
+| `state` | The current state name. |
+| `timeline` | The active timeline. It changes on every transition. |
+| `transitionTo(name, config?, canBeIntercepted?)` | Switches state. |
 
 ### Related Components
 

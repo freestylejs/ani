@@ -39,11 +39,26 @@ const Counter = () => {
 
 The `createAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Solid's reactivity system. It takes an accessor function that returns a `timeline` instance and an `initialValue`. It returns a signal accessor and the timeline's controller, allowing you to read the animation's state within Solid's reactive graph.
 
+#### Behavior
+
+-   The returned controller follows `timeline` accessor changes and forwards every timeline member.
+-   When the accessor changes, the old timeline is unsubscribed and the new timeline's current value is applied immediately.
+-   The subscription is removed when the owner is disposed. The timeline you pass is never disposed.
+
 #### When to Use
 
 -   **Do** use `createAni` when the animated values need to be part of Solid's reactive system.
 -   **Do** use it for animations that affect text content, attributes, or props of other components.
 -   **Don't** use `createAni` for high-frequency style updates. Use `createAniRef` for those cases to avoid performance overhead.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `timeline` | `() => RafAniTimeline<G>` | Accessor of the timeline to read. |
+| `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
+
+Returns `readonly [value, controller]`: an accessor of the current `AniGroup<G>` and the timeline controller.
 
 ### Related Components
 

@@ -42,11 +42,26 @@ This primitive subscribes to a `timeline`'s state and exposes it as a readable S
 
 The `useAni` primitive acts as a bridge between the `@freestylejs/ani-core` engine and Svelte's reactivity model. It takes a `timeline` instance and an `initialValue`, returning a readable Svelte store that updates on every animation frame, along with the timeline's controller. You can auto-subscribe to the store's value using the `$` prefix.
 
+#### Behavior
+
+-   `timeline` may be a timeline or a `Readable` of one. Swaps are followed while the store has subscribers.
+-   The store subscribes to the timeline only while it has subscribers, so nothing is retained otherwise (also on the server).
+-   The returned controller follows timeline swaps. The timeline you pass is never disposed.
+
 #### When to Use
 
 -   **Do** use `useAni` when you need the animated values to be part of Svelte's reactive system.
 -   **Do** use it for animations that affect text content, attributes, or props.
 -   **Don't** use `useAni` for high-frequency style updates on a single element. For that, `useAniRef` is a better choice.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `timeline` | `RafAniTimeline<G> \| Readable<RafAniTimeline<G>>` | The timeline to read. |
+| `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
+
+Returns `readonly [store, controller]`: a `Readable<AniGroup<G>>` and the timeline controller.
 
 ### Related Components
 

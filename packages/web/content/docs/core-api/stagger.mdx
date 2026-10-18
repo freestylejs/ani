@@ -1,9 +1,9 @@
 ---
 title: stagger
-description: A composition node that plays child animations sequentially with a fixed delay between them.
+description: A composition node that starts each child animation a fixed offset after the previous one started.
 ---
 
-A `stagger` node is a composition that plays its child animations in sequence, but with a fixed delay between the start of each one.
+A `stagger` node is a composition that starts its children one after another, each `offset` seconds after the previous child **started**. Children overlap when `offset` is shorter than their duration.
 
 ### Example
 
@@ -28,7 +28,9 @@ const listEntrance = a.stagger(
 const myTimeline = a.dynamicTimeline(listEntrance);
 
 // 4. Play the animation.
-// Note: The `from` value applies to all three conceptual items.
+// All three children animate the same properties, so the most recently
+// started child drives the value (see the overlap rule below).
+// To animate separate elements, use one timeline per element.
 myTimeline.play({ from: { opacity: 0, y: 20 } });
 ```
 
@@ -36,12 +38,25 @@ myTimeline.play({ from: { opacity: 0, y: 20 } });
 
 #### Overview
 
-`stagger` is a specialized composition node for creating cascading or "domino" effects, typically used for lists of elements. It runs its child animations in order, but delays the start of each subsequent animation by a fixed `offset` time. It's essentially a `sequence` with a built-in, regular delay.
+`stagger` is a specialized composition node for creating cascading or "domino" effects, typically used for lists of elements. Child `i` starts at `i * offset`. Unlike `sequence`, a child does not wait for the previous one to finish.
+
+The total duration is the latest end among the children: child `i` ends at `i * offset + duration`. `offset` must be a finite number `>= 0` (seconds), otherwise a `RangeError` is thrown.
+
+Children that animate the same property follow the timeline's [overlap rule](/en/docs/core-api/dynamic_timeline): the most recently started child wins, and its `from` is the value at its start time.
 
 #### Best Practices
 
 -   **Do** use `stagger` for animating lists of items into or out of view.
 -   **Don't** use `stagger` if you need variable delays between animations; build a custom `sequence` with `delay` nodes instead.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `children` | `AnimationNode[]` | Nodes started one `offset` after another. |
+| `offset` | `number` | Seconds between starts, finite and `>= 0`. |
+| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
+| `id` | `string` | (Optional) Identifier of the node. |
 
 ### Related Components
 

@@ -12,18 +12,15 @@ import { a } from "@freestylejs/ani-core";
 import { createAniStates } from "@freestylejs/ani-solid";
 
 const StateButton = () => {
-  // 1. Define the animations for each state.
-  const animations = {
-    idle: a.ani({ to: { scale: 1, opacity: 0.7 }, duration: 0.5 }),
-    hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
-  };
-
-  // 2. Use the primitive to create the state machine. It returns the ref callback,
-  // reactive signals for state info, and a function to transition.
-  const [animationRef, { timeline }, transitionTo] = createAniStates({
+  // Use the primitive to create the state machine. It returns the ref callback,
+  // reactive accessors for state info, and a function to transition.
+  const [animationRef, { state }, transitionTo] = createAniStates({
     initial: "idle",
     initialFrom: { scale: 1, opacity: 0.7 },
-    states: animations,
+    states: {
+      idle: a.ani({ to: { scale: 1, opacity: 0.7 }, duration: 0.5 }),
+      hover: a.ani({ to: { scale: 1.1, opacity: 1 }, duration: 0.3 }),
+    },
   });
 
   return (
@@ -31,7 +28,7 @@ const StateButton = () => {
       ref={animationRef}
       onMouseEnter={() => transitionTo("hover")}
       onMouseLeave={() => transitionTo("idle")}
-      style={{ opacity: "0.7", scale: "1" }}
+      data-state={state()}
       class="rounded-md bg-blue-500 px-4 py-2 transition-all"
     >
       Hover Me
@@ -46,11 +43,32 @@ const StateButton = () => {
 
 The `createAniStates` primitive simplifies stateful animation logic in Solid. It manages the active animation state and its corresponding timeline, automatically handling seamless transitions. When you call `transitionTo`, it uses the current animation's value as the starting point for the next animation, ensuring smooth, interruptible effects.
 
+#### Lifecycle
+
+-   **Owns its controller.** The primitive creates the state machine and **disposes it when its owner is disposed**, which stops any running timeline (even `repeat: Infinity`).
+-   **Props are read once**, at setup. `states`, `initial`, `initialFrom` and `clock` are not tracked.
+-   **Atomic transitions.** `transitionTo` validates first (an unknown state throws a `RangeError` and nothing changes). The `state` accessor reflects what the machine actually did, including a transition rejected because `canBeIntercepted` is `false`.
+-   **Never misses a swap.** The primitive subscribes to timeline changes at setup, and `createAniRef` follows the `timeline` accessor.
+
 #### When to Use
 
 -   **Do** use `createAniStates` for components with a finite number of visual states, such as buttons, interactive cards, or navigation items.
--   **Do** combine `createAniStates` with `createAniRef` for high-performance style animations that react to state changes.
--   **Don't** create the `states` object inside a reactive computation without memoization, as this can lead to unexpected behavior.
+-   **Don't** use it for animations that are not state based. Use [`createAniRef`](/en/docs/solid/create-ani-ref) with your own timeline.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `props` | `StateProps` | `initial`, `initialFrom`, `states` and optional `clock`. See [createStates](/en/docs/core-api/states). |
+
+Returns `readonly [ref, { state, timeline }, transitionTo]`.
+
+| Member | Description |
+| :--- | :--- |
+| `ref` | Ref callback to attach to the element. |
+| `state()` | Accessor of the current state name. |
+| `timeline()` | Accessor of the active timeline. It changes on every transition. |
+| `transitionTo(name, config?, canBeIntercepted?)` | Switches state. |
 
 ### Related Components
 

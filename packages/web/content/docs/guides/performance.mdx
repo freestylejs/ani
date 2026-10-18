@@ -1,0 +1,86 @@
+---
+title: Large-scale usage
+description: Run thousands of animated elements, many mounts and unmounts, and long-lived apps without leaks or per-frame overhead.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Ani is built to drive many animations at once. This guide lists the choices that keep cost flat and memory bounded.
+
+### Write styles, do not re-render
+
+Every frame, a playing timeline computes new values. What happens next decides the cost.
+
+| Approach | Per frame work | Use for |
+| :--- | :--- | :--- |
+| `useAniRef` / `createAniRef` / Vue and Svelte `useAniRef` | Computes values and writes `element.style` directly. No framework render. | Styles of many elements |
+| `useAni` / `createAni` | Updates framework state, which re-renders what reads it. | Text, attributes or props driven by an animation |
+| [`webTimeline`](/en/docs/core-api/timeline) | None in JavaScript. The browser animates natively. | Simple transitions and endless loops |
+
+-   **Do** use the `*Ref` bindings for style animation, even for thousands of elements.
+-   **Don't** use `useAni` for transforms: one re-render per element per frame does not scale.
+
+### Share nodes, not timelines
+
+An animation tree is immutable and holds no values. Build it once and use it for every element.
+
+```typescript
+// module scope: created once
+const fadeIn = a.sequence([
+  a.ani({ to: { opacity: 1 }, duration: 0.3 }),
+  a.ani({ to: { translateY: 0 }, duration: 0.4 }),
+]);
+
+// one timeline per element, all sharing the same tree
+function Item() {
+  const timeline = useMemo(() => a.dynamicTimeline(fadeIn), []);
+  // ...
+}
+```
+
+-   One **timeline per element** when animations are independent. A timeline has one set of values, so elements bound to the same timeline always look identical.
+-   The WAAPI compilation cache is keyed by the shared root node, so many elements with the same `from` compile once.
+-   Reuse the same `propertyResolver` object to keep cache hits.
+
+### One clock
+
+All timelines use the shared [`AnimationClock`](/en/docs/core-api/clock) by default: **one** `requestAnimationFrame` loop for any number of timelines, stopped automatically when the last timeline leaves. Do not create a clock per component. Create your own clock only for isolation (tests, a separate engine).
+
+### Cost model
+
+-   **Per frame**, a timeline costs time proportional to the number of animated **properties**. It does not grow with the number of segments in the tree or with how many already finished.
+-   Subscribers of one timeline share **one** state object per frame (read-only), so extra listeners do not allocate extra state.
+-   `loop(child, n)` flattens `n` copies into the plan once. Use `repeat: Infinity` for endless animation.
+-   `play()` validates and compiles the tree (once per call). Avoid calling it every frame.
+
+On the project benchmark (Node, no DOM writes): the per-frame cost of a 1000-segment timeline late in the animation is 1.3x the cost early on (it was 61x), and 1000 timelines of 20 segments cost about 0.6 ms per frame (it was 6.8 ms). Compiling a 1000-segment tree to WAAPI keyframes takes about 2 ms (it was about 300 ms).
+
+### Ownership and disposal
+
+Whoever creates a timeline or state machine owns it and must release it.
+
+| Created by | Owner | Released by |
+| :--- | :--- | :--- |
+| `useAniStates` / `createAniStates` | The binding | Automatically on unmount / owner cleanup |
+| Timeline you pass to `useAniRef`, `useAni`, ... | You | You: call `timeline.dispose()` (the binding only **detaches**) |
+| `createStates(...)` in plain code | You | `states.dispose()` |
+| `rafTimeline(...)` in plain code | You | `timeline.dispose()` |
+| `onUpdate` callback | You | The returned unsubscribe function |
+
+-   A **playing** timeline stays on the clock until it ends, pauses, resets or is disposed. An endless animation (`repeat: Infinity`) runs forever if its owner forgets it.
+-   The bindings never dispose a timeline you gave them, because you may still use it elsewhere.
+-   Svelte: the state machine of `useAniStates` is disposed when the last element using the action is destroyed.
+
+### Keep the loop healthy
+
+-   An error in one `onUpdate` callback or timeline does not stop the loop. It is reported asynchronously (use the clock's `onError` to route it to your logger).
+-   Under jank, animations slow down instead of jumping (`maxDeltaTime`, 100 ms by default). Use `Infinity` for real-time semantics.
+-   During development, assert in a test that nothing leaks: `AnimationClock.create().size` must return to `0` after your views unmount. See [Testing](/en/docs/guides/testing).
+
+### Checklist
+
+-   Build trees at module scope or memoize them.
+-   Use `*Ref` bindings for styles, one timeline per element, shared trees.
+-   Dispose what you create; let the bindings dispose what they create.
+-   Prefer `webTimeline` for simple transitions that need no per-frame JavaScript.
+-   Test mount/unmount churn and check `clock.size`.

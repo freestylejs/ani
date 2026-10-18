@@ -1,0 +1,82 @@
+---
+title: Migrating to the hardened release
+description: Behavior changes and new APIs in the v1 hardening release, with what to change in your code.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+This release fixes correctness, lifecycle and performance problems. The public API only **grows**: nothing was removed or renamed. Some behavior changed where the old behavior was a defect. Check the lists below.
+
+### Behavior changes: engine
+
+| Before | Now | What to do |
+| :--- | :--- | :--- |
+| Overlapping segments on the same property used a moving `from`. | The segment that **started most recently** wins (ties: later declaration). Its `from` is the value **at its start**, captured once. | Review animations that animate one property in several overlapping segments. |
+| Bad configs could throw inside a frame, or produce `NaN`. | `play()` **throws synchronously** for a missing `from` key, array/record mismatch, a record `timing` missing a property, non-finite `from` / `to` / `velocity`, negative or non-finite `delay` or duration. The timeline stays untouched. | Wrap `play()` where input is untrusted. |
+| `getCurrentValue()` returned a live object. | A **frozen snapshot**, stable until the next frame. `from` is copied at `play()`. | Do not mutate returned values. Copy them if you need to. |
+| `dynamicSpring` integrated with the frame `dt`, kept instance state and ignored `duration`. | Fixed-substep integration (at most 1/120 s), independent of frame rate. Honours `tolerance`. State is per timeline, so one instance may be shared. The segment ends when settled **or at its duration**. `seek` re-simulates deterministically. A timeline of springs may end before its nominal duration. | Treat `duration` as an upper bound for `dynamicSpring`. |
+| `T.spring` mutated the options you passed and `c = 0` gave `NaN`. | `T.spring` and `T.dynamicSpring` validate `m > 0`, `k > 0`, `c >= 0` (`RangeError`), never modify your object, and `c = 0` works. | None. |
+| `pause()` and `resume()` could be called in any status. | `pause()` acts only on `PLAYING`, `resume()` only on `PAUSED`. `ENDED` is emitted **exactly once** per run. | None. |
+| `repeat` restarted at zero, so every repeat drifted by the frame overshoot. | The overshoot carries into the next run. | None. |
+| `onUpdate` subscribers each got their own state object. | All callbacks of one notification get the **same** state object (read-only). An error in a callback is reported asynchronously and does not affect other callbacks. | Do not mutate `state`. |
+| `play()` over a running animation restarted springs from rest. | It inherits the current velocity. | Pass `velocity: { x: 0 }` to start from rest. |
+| `seek()` before `play()` and `reset()` side effects were inconsistent. | `seek()` before `play()` does nothing. `reset()` restores the base `duration`. `getCurrentVelocity()` is zero unless `PLAYING`, `null` before the first advanced frame. | None. |
+| The end of an animation was detected with a loose tolerance. | `END_TOLERANCE = 1e-9` seconds. Very short segments (sub-millisecond) work. | None. |
+
+### Behavior changes: clock and nodes
+
+| Before | Now | What to do |
+| :--- | :--- | :--- |
+| The shared clock stopped for good if its pending frame was lost, or if one subscriber threw. | One loop with strict invariants: self-healing, error isolation, a subscriber added during a tick first updates on the next tick, and the first update advances by the time since subscribing. See [clock](/en/docs/core-api/clock). | None. |
+| Playing without `requestAnimationFrame` (server) threw `window is not defined`. | `subscribe` is a silent no-op and retains nothing. | None. See [SSR](/en/docs/guides/ssr). |
+| Subscriber errors could stop the loop. | They go to `createClock({ onError })` or are rethrown asynchronously. The loop continues. | Provide `onError` if you want to log them. |
+| `AnimationClock.create(maxDt)` ignored `maxDt` once the clock existed. An invalid `maxDeltaTime` was accepted. | It applies to the existing clock. Invalid values throw a `RangeError`. `maxDeltaTime` stays 0.1 s by default, which **dilates time under jank**. Pass `Infinity` for real time. | Choose deliberately. |
+| `loop(child, Infinity)` or a fractional count could build unbounded plans. | `loop()` needs a finite integer `>= 0`. | Use `repeat: Infinity` in `play()`. |
+| `ani()`, `delay()`, `stagger()` accepted invalid durations and offsets. | They throw a `RangeError` for negative or non-finite values. | Fix invalid inputs. |
+| `parallel` dropped fully-overridden segments and `delay` did not hold. | A segment whose properties are all overridden is kept as a **hold** (keeps its duration and its `keyframes` / `durations` slot). `delay` holds every property in record and array timelines, and a trailing `delay` counts toward the duration. | Review `keyframes` / `durations` arrays used with `parallel`. |
+
+### Behavior changes: state machines
+
+| Before | Now | What to do |
+| :--- | :--- | :--- |
+| `transitionTo` ignored `canBeIntercepted = false`. | While the current timeline is `PLAYING`, the transition is rejected and nothing changes. | Read `state()` after the call if you mirror it. |
+| An unknown state name left the machine half changed. | It throws a `RangeError` before changing anything. An invalid config is rolled back. | None. |
+| Replaced timelines were left alone. | They are **disposed**. A playing timeline's velocity is handed to the new one. After `timeline().reset()`, the last shown value is used as `from`. | Subscribe with `onTimelineChange`; do not keep old timelines. |
+| No way to stop a state machine. | `dispose()` disposes the timeline and clears subscribers. Later `transitionTo` does nothing. | Call it when the owner goes away. |
+
+### Behavior changes: bindings
+
+| Before | Now | What to do |
+| :--- | :--- | :--- |
+| `useAniStates` / `createAniStates` left a playing timeline on the clock after unmount. | The binding **disposes the controller it creates** on unmount or owner cleanup. | None. |
+| React / Vue missed a transition issued before they subscribed. | They subscribe synchronously (or resync after subscribing). | None. |
+| React `useAniRef` ignored an element that appeared later, and re-attached listeners every render when `events` was an inline object. | The element is bound whenever `ref.current` appears (checked on each render of the owner). Handlers are read at event time. The initial style is applied before paint. | None. |
+| React `transitionTo` changed identity every render. | It is stable. `useAniStates` and `useAni` read their props / `initialValue` on the **first render only**. | Remount with a `key` to change them. |
+| Controllers dropped `canBeIntercepted`, and did not expose `status`, `dispose`, `getCurrentVelocity`. | They forward every timeline member. | None. |
+| Solid's controller was evaluated once and went stale. | It follows the timeline accessor. | None. |
+| Svelte's action shared one element between nodes. | Each node has its own binding. `reset()` restyles all live nodes. | None. |
+| Vue and Svelte `useAni` took a fixed timeline. | They accept a ref / store of timelines and follow swaps. Vue's value is a `shallowRef`. | None. |
+| Custom properties (`--x`) and hyphenated keys were ignored when writing styles. | They are written with `setProperty`. | None. |
+| `solid-js` was a hard dependency of `@freestylejs/ani-solid`. | It is a **peer dependency** (`>=1.8.0`). | Make sure `solid-js` is installed in your app. |
+
+### New APIs
+
+-   `RafAniTimeline`: `status`, `dispose()`, `getCurrentVelocity()`, and `RafTimelineConfig.velocity`. The `TimelineStatus` type.
+-   `createClock(options)`, `AnimationClock.reset()`, `clock.size`. See [clock](/en/docs/core-api/clock).
+-   `StateController.dispose()`.
+-   Timing functions: the `stateful` flag and `context.state` / `context.velocity` (see [Custom Timing Functions](/en/docs/core-api/advanced/custom_timing_function)), and `BezierTimingFunction.ease(x)`.
+-   `TimelineBase<G, PlayArgs>` for engine authors.
+-   `createTimelineController` and `applyStyleSheet`, the shared helpers behind the bindings. See [Styles & Building Bindings](/en/docs/core-api/advanced/building-bindings).
+
+### Performance
+
+-   Per-frame cost no longer depends on the number of segments in the tree.
+-   WAAPI keyframes are cached per root node, `from` and resolver.
+-   Subscribers share one state object per frame.
+
+See [Large-scale usage](/en/docs/guides/performance) for numbers and recommendations.
+
+### Tooling for contributors
+
+-   `pnpm test` runs once (`vitest run`). Coverage thresholds are enforced by `pnpm test:coverage`.
+-   Binding tests run against core **source**, so they never need a fresh build.

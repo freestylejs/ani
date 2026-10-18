@@ -4,6 +4,8 @@ This API provides a declarative, compositional system for building complex, high
 
 The core principle is the separation of an animation's **structure** from its **values**. You can define a complex animation structure once and reuse it with different start and end values at runtime.
 
+Timelines and state machines are **owned by whoever creates them**: call `dispose()` when the owner goes away. Per-frame cost depends on the number of animated properties, not on the number of segments. See the docs guides on large-scale usage, testing and SSR.
+
 A key feature of this API is its **end-to-end type safety**. The entire animation node hierarchy is generic, ensuring that all animations within a single tree operate on the same data shape. This prevents a large class of runtime errors at compile time.
 
 ---
@@ -49,10 +51,11 @@ The `dynamicTimeline` is the execution engine. It takes a static animation tree 
 
 The `dynamicTimeline.play()` method accepts a configuration object that allows you to provide dynamic values at runtime. This is the primary mechanism for creating interactive animations.
 
--   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes. The number of keyframes must match the number of `ani` nodes.
--   `durations`: An array of `duration` values (in seconds) that override the original durations.
--   `repeat`: A number indicating how many times the animation should repeat. Use `Infinity` for an endless loop.
+-   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes. The number of keyframes must match the number of `ani` nodes (a `delay()` counts as one).
+-   `durations`: An array of `duration` values (in seconds) that override the original durations. The timeline `duration` reflects them; `reset()` restores the base duration.
+-   `repeat`: The number of additional runs. Use `Infinity` for an endless loop. Frame overshoot carries into the next run (no drift).
 -   `delay`: An initial delay in milliseconds before the animation starts.
+-   `velocity`: Initial per-property velocity (units per second) that seeds dynamic springs.
 
 ```typescript
 // 1. Define the structure. G is inferred as { y: number }.
@@ -74,56 +77,84 @@ myTimeline.play({
 });
 ```
 
+#### Lifecycle and guarantees
+
+-   `status` is `IDLE`, `PLAYING`, `PAUSED` or `ENDED`. `ENDED` is emitted exactly once per run.
+-   `pause()` only acts on `PLAYING`, `resume()` only on `PAUSED`.
+-   `seek(time)` clamps to `[0, duration]`, **pauses** a playing or ended timeline at that time and notifies once. It does nothing before the first `play()`.
+-   `reset()` returns to `IDLE`, clears the value and restores the base duration.
+-   `dispose()` leaves the clock, drops all `onUpdate` callbacks and turns `play()` / `resume()` into no-ops. Idempotent.
+-   `play()` **throws synchronously** for malformed configs (missing `from` key for an animated property, array/record mismatch, record `timing` missing a property, non-finite `from` / `to` / `velocity`, negative or non-finite `delay` / duration). The timeline stays untouched.
+-   `play()` over a `PLAYING` timeline interrupts it and **inherits its velocity** unless `velocity` is given (pass `velocity: { x: 0 }` to start from rest).
+-   `getCurrentValue()` returns a frozen snapshot (or `null`); `getCurrentVelocity()` returns per-property velocity (zeros unless `PLAYING`, `null` before the first advanced frame).
+-   All `onUpdate` callbacks of one notification receive the **same** `state` object (read-only). Errors thrown by callbacks are rethrown asynchronously and do not affect other callbacks.
+-   Same-property overlap: the most recently started segment produces the value (ties: later declaration); each segment's `from` is the value at its start.
+-   Per-frame cost depends on the number of animated properties, not on the number of segments.
+
 #### Best Practices
 
--   **Do** create one timeline per independent animation.
--   **Do** reuse timelines when you need to play the same animation structure with different starting values.
+-   **Do** create one timeline per independent animation and share the node tree between timelines.
+-   **Do** call `dispose()` for timelines you create when their owner goes away.
 -   **Don't** create a new timeline inside a render loop or frequently. Create it once and store it.
 
 ### API Reference
 
-#### Methods
+#### Methods and members
 
-| Method | Description |
+| Member | Description |
 | :--- | :--- |
-| `play(config, [canBeIntercepted])` | Starts the animation with a given configuration. |
-| `pause()` | Pauses the animation at its current state. |
-| `resume()` | Resumes a paused animation. |
-| `reset()` | Resets the animation to its initial state. |
-| `seek(time)` | Jumps to a specific time in the animation (in seconds). |
+| `play(config, [canBeIntercepted = true])` | Starts (or interrupts) the animation. |
+| `pause()` | Pauses a `PLAYING` timeline. |
+| `resume()` | Resumes a `PAUSED` timeline. |
+| `reset([notify = true], [unsubscribeClock = true])` | Resets to `IDLE`. |
+| `seek(time)` | Jumps to a time (seconds) and pauses. |
+| `dispose()` | Stops for good and releases everything. |
 | `onUpdate(cb)` | Registers a callback for state and status updates. Returns an unsubscribe function. |
+| `getCurrentValue()` | Frozen snapshot of the latest value, or `null`. |
+| `getCurrentVelocity()` | Per-property velocity, or `null`. |
+| `status` | `'IDLE' \| 'PLAYING' \| 'PAUSED' \| 'ENDED'`. |
+| `duration` | Total duration (seconds) of the current plan. |
+| `currentConfig` | Config of the current run, or `null`. |
 
 #### Type Definitions
 
 ```typescript
 // Factory Function
-function dynamicTimeline<G extends Groupable, Ctx = any>(rootNode: AnimationNode<G>, clock?: AnimationClockInterface): Timeline<G, Ctx>
+function rafTimeline<G extends Groupable, Ctx = any>(rootNode: AnimationNode<G>, clock?: AnimationClockInterface): RafAniTimeline<G, Ctx>
 
 // Main play configuration
-interface TimelineStartingConfig<G extends Groupable, Ctx = any> {
+interface RafTimelineConfig<G extends Groupable, Ctx = any> {
     from: AniGroup<G>;
     keyframes?: Array<G | 'keep'>;
     durations?: Array<number | 'keep'>;
-    repeat?: number; // e.g., Infinity
+    repeat?: number; // additional runs, e.g., Infinity
     delay?: number; // Delay in milliseconds before the animation starts
+    velocity?: Partial<G>; // units per second, seeds dynamic springs
     context?: Ctx;
     propertyResolver?: G extends AnimePrimitive ? never : Resolver<G>;
 }
 
+type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED';
+
 // onUpdate callback signature
 type OnUpdateCallback<G extends Groupable> = (current: {
-    state: AniGroup<G>;
-    status: 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED';
+    state: AniGroup<G>; // shared by all callbacks of one notification
+    status: TimelineStatus;
 }) => void;
 
-// Timeline Interface
-interface TimelineController<G extends Groupable, Ctx = any> {
-  play(config: TimelineStartingConfig<G, Ctx>, canBeIntercepted?: boolean): void;
+class RafAniTimeline<G extends Groupable, Ctx = any> {
+  readonly status: TimelineStatus;
+  readonly duration: number;
+  readonly currentConfig: RafTimelineConfig<G, Ctx> | null;
+  play(config: RafTimelineConfig<G, Ctx>, canBeIntercepted?: boolean): void;
   pause(): void;
   resume(): void;
   seek(time: number): void;
-  reset(): void;
+  reset(notify?: boolean, unsubscribeClock?: boolean): void;
+  dispose(): void;
   onUpdate(callback: OnUpdateCallback<G>): () => void;
+  getCurrentValue(): AniGroup<G> | null;
+  getCurrentVelocity(): AniGroup<G> | null;
 }
 ```
 
@@ -171,6 +202,8 @@ if (element) {
 
 Unlike `dynamicTimeline`, `timeline` does not emit `onUpdate` events because the animation state is managed by the browser's native engine.
 
+Compiled keyframes are cached per root node, `from` values and `propertyResolver` (plans with `keyframes` / `durations` overrides are not cached), so many elements sharing a tree compile once. One `timeline` drives one target: playing it on another element cancels the first animation. It needs the DOM (`KeyframeEffect`), so call it on the client only.
+
 #### Best Practices
 
 - **Do** use `timeline` for simple to moderately complex UI transitions that don't require per-frame JavaScript callbacks.
@@ -198,6 +231,10 @@ interface WebAniTimelineConfig<G extends Groupable> {
     from: G;
     repeat?: number;
     delay?: number; // milliseconds
+    keyframes?: Array<G | 'keep'>;
+    durations?: Array<number | 'keep'>;
+    propertyResolver?: Resolver<G>;
+    keyframeEffect?: Omit<KeyframeEffectOptions, 'duration' | 'iterations' | 'delay'>;
 }
 
 interface WebAniTimeline<G extends Groupable> {
@@ -249,9 +286,12 @@ myTimeline.play({ from: { x: 0 } });
 
 The `ani` function is the fundamental building block of the entire animation system. It represents a single, atomic "tween"—a transition from a starting state to a target `to` state over a specified `duration`. It is a "leaf" node in the animation tree, meaning it doesn't contain other animation nodes. All complex animations are built by composing these `ani` nodes inside "branch" nodes like `sequence` or `parallel`.
 
+`duration` must be a finite number `>= 0`, otherwise a `RangeError` is thrown. `timing` accepts one timing function, one per property (record shapes) or one per value (array shapes).
+
 #### Best Practices
 
 -   **Do** use `ani` for any individual tween.
+-   **Do** share one node (and tree) between many timelines. Nodes are immutable.
 -   **Don't** try to animate multiple, unrelated properties in a single `ani` call if they belong to different conceptual animations. Instead, use multiple `ani` nodes within a `parallel` block.
 
 ### API Reference
@@ -277,7 +317,7 @@ function ani<G extends Groupable>(props: SegmentNodeProps<G>, id?: AnimationId):
 
 ### Related Components
 
--   `timeline` - The controller required to run the animation.
+-   `dynamicTimeline` - The controller required to run the animation.
 -   `sequence` - To play multiple `ani` nodes one after another.
 -   `parallel` - To play multiple `ani` nodes at the same time.
 
@@ -308,12 +348,13 @@ myTimeline.play({ from: { opacity: 0, x: 0 } });
 
 #### Overview
 
-`delay` is a simple utility node that does nothing for a specified `duration`. Its primary purpose is to insert pauses within a `sequence` composition. It is a "leaf" node, similar to `ani`, but it does not affect any values.
+`delay` is a simple utility node that does nothing for a specified `duration`. Its primary purpose is to insert pauses within a `sequence` composition. It is a "leaf" node, similar to `ani`, but it does not change any values: it **holds every property** for its duration (record and array timelines). `duration` must be a finite number `>= 0`, otherwise a `RangeError` is thrown.
 
 #### Best Practices
 
 -   **Do** use `delay` inside a `sequence` to create a pause between two animations.
--   **Don't** use `delay` inside a `parallel` block, as it will have no effect on other parallel animations. It will simply extend the total duration of the `parallel` block if it is the longest item.
+-   **Do** use `delay` at the start of one branch of a `parallel` block to offset that branch.
+-   **Don't** expect `delay` inside a `parallel` block to pause the other branches. It only extends the total duration of the block when it is the longest item (a trailing `delay` counts).
 
 ### API Reference
 
@@ -438,6 +479,10 @@ myTimeline.play({ from: { opacity: 0, scale: 1, x: 0, y: 0 } });
 
 Like `sequence`, `parallel` enforces that all children operate on a compatible data shape `G`.
 
+#### Animating the same property twice
+
+When two children animate the same property, the later child wins. Record-shaped direct `ani` children are resolved when the node is created. A child left with no properties is **kept as a hold**: it still contributes its duration (and its slot in `keyframes` / `durations` overrides), like `delay`. Array shapes and nested trees follow the timeline's overlap rule (the most recently started segment wins; each `from` is the value at the segment start).
+
 #### Best Practices
 
 -   **Do** use `parallel` whenever you want two or more animations to happen simultaneously.
@@ -472,7 +517,7 @@ function parallel<const Children extends readonly AnimationNode<Groupable>[]>(
 
 ## `stagger`
 
-> **A composition node that plays child animations sequentially with a fixed delay between them.**
+> **A composition node that starts each child animation a fixed offset after the previous one started.**
 
 ### Example
 
@@ -490,14 +535,15 @@ const listEntrance = a.stagger(
     itemAnimation, // for item 2
     itemAnimation, // for item 3
   ],
-  { offset: 0.1 }
+  0.1
 );
 
 // 3. Create a timeline.
 const myTimeline = a.dynamicTimeline(listEntrance);
 
 // 4. Play the animation.
-// Note: The `from` value applies to all three conceptual items.
+// All three children animate the same properties, so the most recently
+// started child drives the value. Use one timeline per element for lists.
 myTimeline.play({ from: { opacity: 0, y: 20 } });
 ```
 
@@ -505,7 +551,7 @@ myTimeline.play({ from: { opacity: 0, y: 20 } });
 
 #### Overview
 
-`stagger` is a specialized composition node for creating cascading or "domino" effects, typically used for lists of elements. It runs its child animations in order, but delays the start of each subsequent animation by a fixed `offset` time. It's essentially a `sequence` with a built-in, regular delay.
+`stagger` is a specialized composition node for creating cascading or "domino" effects, typically used for lists of elements. Child `i` starts at `i * offset`; a child does not wait for the previous one to finish. The total duration is the latest child end (`i * offset + duration`). `offset` must be a finite number `>= 0` (seconds), otherwise a `RangeError` is thrown.
 
 #### Best Practices
 
@@ -519,20 +565,17 @@ myTimeline.play({ from: { opacity: 0, y: 20 } });
 | Name | Type | Description | Default |
 | :--- | :--- | :--- | :--- |
 | `children` | `readonly AnimationNode<Groupable>[]` | An array of animation nodes to play. | — |
-| `props` | `StaggerNodeProps` | An object containing the stagger configuration. | — |
+| `offset` | `number` | Seconds between child starts, finite and `>= 0`. | — |
+| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. | `linear` |
 | `id` | `AnimationId` | (Optional) A unique identifier for the animation node. | `undefined` |
 
 #### Type Definitions
 
 ```typescript
-interface StaggerNodeProps {
-  offset: number;
-  timing?: TimingFunction;
-};
-
 function stagger<const Children extends readonly AnimationNode<Groupable>[]>(
   children: Children,
-  props: StaggerNodeProps,
+  offset: number,
+  timing?: TimingFunction,
   id?: AnimationId
 ): StaggerNode<Children>;
 ```
@@ -576,7 +619,7 @@ myTimeline.play({ from: { scale: 1 } });
 #### Best Practices
 
 -   **Do** use `loop` for simple, repetitive animations like pulsing or bouncing.
--   **Don't** use `loop` for the main application loop. For continuous animations, use the `repeat: Infinity` option in the `timeline.play()` method, which is more efficient.
+-   **Don't** use `loop` for endless animations. `loopCount` must be a finite integer `>= 0` (anything else throws a `RangeError`); use `repeat: Infinity` in `play()` instead.
 
 ### API Reference
 
@@ -602,7 +645,7 @@ function loop<G extends Groupable>(
 
 ### Related Components
 
--   `timeline` - The `play` method's `repeat` option provides an alternative way to loop.
+-   `dynamicTimeline` - The `play` method's `repeat` option provides an alternative way to loop.
 -   `sequence` - Can be used to manually create loops, though `loop` is more concise.
 
 ---
@@ -650,9 +693,18 @@ Simulates a physical spring. This is great for creating bouncy, organic animatio
     -   `k`: Spring constant (stiffness)
     -   `c`: Damping constant (resistance)
 
+#### `ease()`, `easeIn()`, `easeOut()`, `easeInOut()`
+
+The standard CSS easing curves as `bezier` presets.
+
 #### `dynamicSpring(opt)`
 
-A more advanced spring simulation that is frame-rate independent and often produces more stable results, especially for interactive animations. It uses the same options as `spring`.
+A physically simulated spring (RK4 with fixed substeps of at most 1/120 s) for interactive animations. It uses the same options as `spring`.
+
+-   **Frame-rate independent:** the value depends on the time into the segment, not on the frame `dt`. `seek` re-simulates deterministically from the segment start.
+-   **Ends when settled or at the segment `duration`**, whichever comes first, and snaps to `to`. A timeline made only of springs may end before its nominal duration. `opt.tolerance` (default `1e-3`) sets the settling threshold.
+-   **State lives in the timeline** (per segment and property), so one instance can be shared. Playing over a running animation keeps the velocity; `play({ velocity })` seeds it.
+-   Options are validated: `m > 0`, `k > 0`, `c >= 0` (`RangeError`). `spring` also validates, never mutates the options object, and supports `c = 0`.
 
 ### API Reference
 
@@ -673,9 +725,26 @@ interface BezierTimingFunctionOpt {
 }
 
 interface SpringTimingFunctionOpt {
-  m: number; // Mass
-  k: number; // Spring constant
-  c: number; // Damping constant
+  m: number; // Mass (> 0)
+  k: number; // Spring constant (> 0)
+  c: number; // Damping constant (>= 0)
+  tolerance?: number; // settling threshold, default 1e-3
+}
+
+// Custom timing functions
+abstract class TimingFunction {
+  readonly stateful?: boolean; // true => the timeline provides `context.state`
+  abstract step(time: number, context: TimingFunctionContext): { value: number; endOfAnimation: boolean };
+}
+
+interface TimingFunctionContext {
+  dt: number;
+  from: number;
+  to: number;
+  duration: number;
+  tolerance?: number;
+  state?: Record<string, any>; // private per (timeline, segment, property); stateful timings only
+  velocity?: number;           // initial velocity (units/s) for stateful timings
 }
 ```
 
@@ -716,14 +785,27 @@ myStates.transitionTo('active');
 
 #### Overview
 
-`createStates` is a high-level utility for managing complex animation logic. It allows you to define a set of named animation trees and provides a simple API to transition between them. When you call `transitionTo`, it gracefully handles switching from the current animation timeline to the new one. This is ideal for UI components with multiple visual states (e.g., hover, active, disabled) or for character animations.
+`createStates` is a high-level utility for managing complex animation logic. It allows you to define a set of named animation trees and provides a simple API to transition between them. Each `transitionTo` creates a **new timeline** for the target state and plays it from the current value. This is ideal for UI components with multiple visual states (e.g., hover, active, disabled) or for character animations.
+
+The new state's `from` is, in order: `timelineConfig.from`, the current timeline's value, the last value the machine showed (it survives `timeline().reset()`), then `initialFrom`. A **playing** timeline hands its velocity to the new one (override with `timelineConfig.velocity`).
+
+#### Transition rules
+
+-   **Atomic:** an unknown state name throws a `RangeError` before anything changes. An invalid `timelineConfig` is rolled back (previous state and timeline are kept) and the error is rethrown.
+-   **`canBeIntercepted = false`:** if the current timeline is `PLAYING`, the transition is rejected and nothing changes.
+-   **Replaced timelines are disposed.** Do not keep references across transitions; use `onTimelineChange`.
 
 #### The Controller
 
-The `createStates` function returns a controller object with three main methods:
--   `timeline()`: Returns the currently active timeline instance. You can use this to subscribe to updates or control playback manually.
--   `transitionTo(newState, [config], [canBeIntercepted])`: Switches to a different animation state. You can optionally provide a timeline configuration object (similar to `play`) to customize the transition.
--   `onTimelineChange(callback)`: Registers a callback that fires whenever the active timeline changes (i.e., after a transition).
+| Member | Description |
+| :--- | :--- |
+| `timeline()` | The currently active timeline. |
+| `state()` | The current state name. |
+| `transitionTo(newState, [config], [canBeIntercepted])` | Switches state. `config` is `play()` options with an optional `from`. |
+| `onTimelineChange(callback)` | Called with the new timeline right **before** it starts playing. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
+| `dispose()` | Disposes the current timeline and clears `onTimelineChange` subscribers. Idempotent; afterwards `transitionTo` does nothing. |
+
+The controller owns its timelines: call `dispose()` when the owner goes away.
 
 ### API Reference
 
@@ -749,12 +831,14 @@ interface StateController<AnimationStates extends AnimationStateShape> {
     timeline: () => GetTimeline<AnimationStates>;
     transitionTo(
         newState: keyof AnimationStates,
-        timelineConfig?: TimelineStartingConfig<
+        timelineConfig?: Partial<RafTimelineConfig<
             ExtractAnimationNode<AnimationStates[keyof AnimationStates]>,
             any
-        >,
+        >>,
         canBeIntercepted?: boolean
     ): void;
+    state: () => keyof AnimationStates;
+    dispose(): void;
     onTimelineChange(
         callback: (newTimeline: GetTimeline<AnimationStates>) => void
     ): () => void;
@@ -767,7 +851,72 @@ function createStates<AnimationStates extends AnimationStateShape>(
 
 ### Related Components
 
--   `timeline` - The underlying controller for each state within the machine.
+-   `dynamicTimeline` - The underlying controller for each state within the machine.
+
+---
+
+## `clock` (`createClock` / `AnimationClock`)
+
+> **The frame loop that drives timelines.**
+
+### Example
+
+```typescript
+import { a, createClock } from "@freestylejs/ani-core";
+
+let now = 0;
+let pending: ((t: number) => void) | null = null;
+const clock = createClock({
+  requestFrame: (cb) => { pending = cb; return 1; },
+  cancelFrame: () => { pending = null; },
+  now: () => now,
+});
+
+const timeline = a.dynamicTimeline(a.ani({ to: { x: 100 }, duration: 1 }), clock);
+timeline.play({ from: { x: 0 } });
+now += 100;
+pending?.(now); // one frame
+```
+
+### Usage & Concepts
+
+By default timelines share one process-wide clock with a **single** `requestAnimationFrame` loop. A playing timeline subscribes; the loop stops when the last one leaves.
+
+-   At most one pending frame request; a re-entrant `subscribe` / `unsubscribe` never creates a second loop.
+-   A subscriber added during a tick first updates on the next tick; one unsubscribed during a tick is not updated afterwards. The first update advances by the time since it subscribed.
+-   A subscriber that throws does not stop the others or the next frame. The error goes to `onError` or is rethrown asynchronously.
+-   `subscribe` re-arms the loop if the environment dropped the pending frame (a pending frame older than 1 s is treated as lost).
+-   Without a frame source (SSR, plain workers) `subscribe` is a silent no-op and nothing is retained.
+-   `maxDeltaTime` (default 0.1 s) clamps each frame's `dt`. This keeps physics stable but **dilates time under jank**. `Infinity` follows the wall clock. Invalid values throw a `RangeError`.
+
+### API Reference
+
+| Member | Description |
+| :--- | :--- |
+| `createClock(options?)` | Independent clock: `maxDeltaTime`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
+| `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` applies to the existing clock. |
+| `AnimationClock.configure(maxDeltaTime)` | Reconfigures the shared clock. |
+| `AnimationClock.reset()` | Disposes the shared clock (test isolation, hot reload). |
+| `clock.size` | Number of subscribed animatables. |
+
+---
+
+## `createStyleSheet`, `applyStyleSheet`, `createTimelineController`
+
+> **The helpers behind the framework bindings.**
+
+-   `createStyleSheet(values, resolver?)` converts animation values to a style object: transform properties (`translateX`, `rotate`, `scale`, ...) are joined into one `transform`; length properties get `px`; anything else is passed through (`x` is **not** a transform shorthand, use `translateX`). A `propertyResolver` entry returns a custom `{ key, value }`.
+-   `applyStyleSheet(element, style)` writes a style object: camelCase keys by property assignment, `--custom` and hyphenated keys via `style.setProperty`.
+-   `createTimelineController(getTimeline, hooks?)` returns a stable facade that forwards every public member of the timeline to `getTimeline()` at call time (so it never goes stale when a state machine swaps timelines). `hooks.onPlay(config)` runs before each forwarded `play()`, `hooks.onReset()` after each `reset()`. `dispose()` is forwarded as is: bindings only call it on timelines they created.
+
+```typescript
+function createStyleSheet(values: Record<string, number>, resolver?: Resolver<Record<string, number>>): Record<string, any>;
+function applyStyleSheet(element: HTMLElement, style: Record<string, unknown>): void;
+function createTimelineController<G extends Groupable, Ctx = any>(
+  getTimeline: () => RafAniTimeline<G, Ctx>,
+  hooks?: { onPlay?: (config: RafTimelineConfig<G, Ctx>) => void; onReset?: () => void }
+): RafAniTimeline<G, Ctx>;
+```
 
 ---
 
@@ -838,10 +987,11 @@ eventManager.attach({
 | :--- | :--- |
 | `bind(el)` | Binds the manager to a DOM element. |
 | `setAnimeGetter(getter)` | Provides a function that returns the animation context (e.g., a timeline). |
-| `add(name, listener)` | Adds a listener for a specific event. |
-| `attach(handlers)` | Attaches a map of `onEventName` handlers. |
+| `add(name, listener, [options])` | Adds a listener for a specific event. Adding the same event again replaces the previous listener. |
+| `attach(handlers)` | Attaches a map of `onEventName` handlers (keys must start with `on`). |
+| `cleanupOne(name)` | Removes one listener (with the same capture flag it was added with). |
 | `cleanupAll()` | Removes all registered event listeners from the element. |
 
 ### Related Components
 
--   `timeline` - The typical animation context provided to the `EventManager`.
+-   `dynamicTimeline` - The typical animation context provided to the `EventManager`.

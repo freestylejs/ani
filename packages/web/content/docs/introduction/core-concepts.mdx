@@ -15,8 +15,8 @@ Every animation is a tree of **Animation Nodes**. This tree is a declarative blu
 
 There are two kinds of nodes:
 
--   **Leaf Nodes:** These are the simplest units. The most important is [`ani`](/docs/core-api/ani), which defines a single tween from a start value to an end value.
--   **Branch Nodes:** These are **composition** nodes that group other nodes together. They allow you to build complex animations from simple parts. Examples include [`sequence`](/docs/core-api/sequence), [`parallel`](/docs/core-api/parallel), and [`stagger`](/docs/core-api/stagger).
+-   **Leaf Nodes:** These are the simplest units. The most important is [`ani`](/en/docs/core-api/ani), which defines a single tween from a start value to an end value.
+-   **Branch Nodes:** These are **composition** nodes that group other nodes together. They allow you to build complex animations from simple parts. Examples include [`sequence`](/en/docs/core-api/sequence), [`parallel`](/en/docs/core-api/parallel), and [`stagger`](/en/docs/core-api/stagger).
 
 You build an animation by nesting these nodes. For example, the following tree describes an animation that fades in, then moves and rotates at the same time, and finally fades out.
 
@@ -33,13 +33,22 @@ You build an animation by nesting these nodes. For example, the following tree d
 
 ### The Timeline: The Execution Engine
 
-The **[`timeline`](/docs/core-api/timeline)** is the engine that brings the animation tree to life. It takes the root node of your tree and provides a controller to manage its playback.
+The **[`timeline`](/en/docs/core-api/timeline)** is the engine that brings the animation tree to life. It takes the root node of your tree and provides a controller to manage its playback.
 
--   It calculates the animation's state for each frame.
--   It is completely stateless with respect to the animation tree.
--   It exposes imperative controls like `play()`, `pause()`, and `seek()`.
+-   It calculates the animation's state for each frame from a [clock](/en/docs/core-api/clock).
+-   It never changes the animation tree: many timelines can share one tree.
+-   It exposes imperative controls like `play()`, `pause()`, `seek()` and `dispose()`.
+-   It reports its lifecycle through `status`: `IDLE`, `PLAYING`, `PAUSED` or `ENDED`.
 
 You create a `timeline` once for a given animation structure, and you can play it multiple times with different starting values or dynamic `keyframes`.
+
+### The Clock: One Frame Loop
+
+Playing timelines subscribe to a **clock**. By default all timelines share one process-wide clock with a single `requestAnimationFrame` loop. See [clock](/en/docs/core-api/clock).
+
+### Ownership
+
+Whoever creates a timeline or state machine owns it and releases it with `dispose()`. Playing timelines stay on the clock until they end or are disposed. See [Large-scale usage](/en/docs/guides/performance).
 
 ### End-to-End Type Safety
 

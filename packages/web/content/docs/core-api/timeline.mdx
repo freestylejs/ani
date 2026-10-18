@@ -72,10 +72,37 @@ Since `timeline` compiles to native `CSS` Keyframes, standard easing functions a
 | `linear()` | **Compiles** to `linear`. Recommended. |
 | `bezier()` | **Compiles** to `cubic-bezier(...)` when its segment maps 1:1 onto a keyframe interval; if adjacent segments subdivide the interval, it is **sampled** (60fps) so the curve is not restarted at split points. |
 | `spring()` | **Sampled(but can not be duration goes into `Infinity`)**. Compiles into high-density linear keyframes (60fps). |
-| `dynamicSpring()` | **Sampled**. Its internal integrator state is reset on every `play()`, so compilation is deterministic per run. |
-| *User Custom* | **Sampled**, provided the function is stateless (pure function of time). |
+| `dynamicSpring()` | **Sampled**. Sampling is a deterministic simulation from the segment start with no state shared between runs. A spring may settle before its nominal duration. |
+| *User Custom* | **Sampled**, provided the function is stateless (pure function of time) or declares `stateful` (see [Custom Timing Functions](/en/docs/core-api/advanced/custom_timing_function)). |
 
 > **Note:** Using `spring()`, `dynamicSpring()`, or subdivided `bezier()` timings with `timeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard `CSS` easing.
+
+#### Compilation cache
+
+Compiling a tree to keyframes is cached per **root node**, `from` values and `propertyResolver`. Playing the same tree again, or on many elements with the same `from`, reuses the compiled keyframes. Plans with `keyframes` or `durations` overrides, and array-shaped `from`, are not cached.
+
+-   **Do** build the tree once and share it between timelines.
+-   Reuse the same `propertyResolver` object between calls so the cache can hit.
+
+#### One timeline, one target
+
+A `webTimeline` drives one native animation. Calling `play(target)` again cancels the previous one. Create one timeline per element (they can share the same tree), and call `cancel()` / `reset()` when the element is removed. The animation uses `fill: 'forwards'`, so it keeps holding its final values until cancelled.
+
+#### Server rendering
+
+`webTimeline.play()` needs `KeyframeEffect` and `document.timeline`. Call it on the client only (for example in an effect or `onMount`). See [SSR](/en/docs/guides/ssr).
+
+### API Reference
+
+| Member | Description |
+| :--- | :--- |
+| `play(target, config)` | Compiles (or reuses cached keyframes) and plays on `target`. Returns the native `Animation` or `null` when there is nothing to animate. |
+| `pause()` / `resume()` | `resume()` only acts after `pause()`. |
+| `seek(time)` | Seconds, clamped to the duration. |
+| `reset()` / `cancel()` | Cancels the native animation. |
+| `nativeAnimation` | The current `Animation` or `null`. |
+
+`config` accepts `from`, `repeat`, `delay` (milliseconds), `keyframes`, `durations`, `propertyResolver` and `keyframeEffect` (extra `KeyframeEffect` options).
 
 ### Related Components
 

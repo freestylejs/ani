@@ -11,6 +11,7 @@
         "loop",
         "delay",
         "states",
+        "clock",
         "---Advanced---",
         "advanced"
     ]

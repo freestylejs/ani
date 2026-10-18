@@ -31,27 +31,32 @@ The library provides several ready-to-use timing functions accessible via `a.tim
 | Function        | Description                                                              |
 | :-------------- | :----------------------------------------------------------------------- |
 | `linear()`      | **A constant rate of change**. No acceleration or deceleration.              |
-| `bezier()`      | Defines a **cubic bezier curve** for classic easing effects (e.g., ease-in, ease-out). |
-| `spring()`      | A **duration-based**, **static spring model** for bouncy UI effects.         |
-| `dynamicSpring()` | A **dynamic-based**, **spring simulation** for interactive animations. |
+| `bezier(opt)`   | A **cubic bezier curve** for classic easing effects. |
+| `ease()`, `easeIn()`, `easeOut()`, `easeInOut()` | The standard CSS easing curves, as `bezier` presets. |
+| `spring(opt)`   | A **duration-based**, **closed-form spring** for bouncy UI effects. The whole oscillation is fitted into the segment duration. |
+| `dynamicSpring(opt)` | A **simulated spring** for interactive animations. It settles by physics, or at the segment duration, whichever comes first. |
+
+Spring options are `m` (mass), `k` (stiffness), `c` (damping) and an optional `tolerance`.
+
+-   `m > 0`, `k > 0` and `c >= 0` are required. Invalid values throw a `RangeError` when the function is created.
+-   The option object you pass is never modified. `c = 0` (undamped) is supported and finite.
 
 ---
 
 ### `spring` vs. `dynamicSpring`
 
-The library offers two types of spring functions, each designed for different scenarios. The key difference lies in how they handle time and physics.
+The library offers two spring functions for different scenarios.
 
 | Feature         | `spring`                       | `dynamicSpring`                           |
 | :-------------- | :--------------------------------------------------- | :--------------------------------------------------- |
 | **Purpose**    | **Static fixed** animation.        | **Interactive dynamic** animations.   |
-| **Duration**    | **Fixed**. | **Variable**. The animation ends when the spring settles. |
-| **Physics**     | **Static**.                            | **Dynamic** (internal velocity, displacement preserved.) |
-
-> Please do not use `dynamicSpring` for **static** animations.
+| **Duration**    | **Fixed**. The curve is fitted to the duration. | **Bounded**. Ends when the spring settles, or at the duration. |
+| **Physics**     | Closed-form curve of time.                            | Simulation with velocity. Can be seeded and retargeted with velocity. |
+| **Determinism** | Pure function of time.                                | Pure function of the segment time: independent of frame rate. |
 
 #### A. When to Use `spring`
 
-Use the `spring` timing function when you need a spring-like, bouncy effect that **must complete within a specific timeframe**. It's ideal for UI animations that need a fixed duration.
+Use the `spring` timing function when you need a spring-like, bouncy effect that **must complete within a specific timeframe**.
 
 -   **Situation Example:** Animate a modal window appearing on screen. You want it to have a slight "overshoot" bounce, but the entire animation must finish in exactly 400ms.
 
@@ -67,24 +72,34 @@ const modalAppear = a.ani({
 
 #### B. When to Use `dynamicSpring`
 
-Use the `dynamicSpring` timing function for animations that need to **react to user input or other dynamic conditions**. Its duration is determined by the physics, not a preset value.
+Use `dynamicSpring` for animations that **react to user input or other dynamic conditions**. It integrates the physics with fixed substeps (at most 1/120 s), so the result depends on the time into the segment, **not on the frame rate**.
 
--   **Situation Example:** Animate a draggable card that can be "flung." When the user releases the card, you want it to spring back to its original position with a momentum that depends on how fast it was thrown. The animation duration will feel natural, not fixed.
+-   The `duration` is an upper bound: the segment ends early when position and velocity are within `tolerance` of the target (default `1e-3`), and snaps to `to`. A timeline made only of springs may therefore end **before** its nominal `duration`.
+-   `seek(t)` is meaningful: the spring is re-simulated deterministically from the segment start.
+-   Playing over a running animation keeps the velocity, so retargeting is smooth. Pass `velocity` to `play()` to seed it explicitly (for example the pointer velocity after a drag).
+-   State lives inside the timeline, so one `dynamicSpring` instance can be shared by many segments, properties and timelines.
+
+-   **Situation Example:** A draggable card that can be "flung". On release it springs back with a momentum that depends on how fast it was thrown.
 
 ```typescript
 import { a } from "@freestylejs/ani-core";
 
 const cardReturn = a.ani({
   to: { x: 0, y: 0 },
-  // Duration is not the primary driver here; the physics are.
-  duration: 1,
+  duration: 2, // upper bound; usually settles earlier
   timing: a.timing.dynamicSpring({ m: 1, k: 200, c: 20 }),
 });
 
-// On mouse up, play the animation from the card's current position.
-// The animation will feel different depending on how far it was dragged.
-myTimeline.play({ from: { x: currentDragX, y: currentDragY } });
+const cardTimeline = a.dynamicTimeline(cardReturn);
+
+// On mouse up, play from the card's current position with the release velocity.
+cardTimeline.play({
+  from: { x: currentDragX, y: currentDragY },
+  velocity: { x: pointerVelocityX, y: pointerVelocityY },
+});
 ```
+
+> Use `spring` (not `dynamicSpring`) when you need a guaranteed fixed duration.
 
 -  **Dynamic ball** example
 

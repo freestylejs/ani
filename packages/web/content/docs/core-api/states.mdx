@@ -36,22 +36,63 @@ myStates.transitionTo('active');
 
 #### Overview
 
-`createStates` is ideal for UI components with multiple visual states (e.g., hover, active, disabled, selected) or complex character animations. When you call `transitionTo`, it intelligently retrieves the current animation's values and uses them as the `from` point for the new state's animation, ensuring graceful and seamless transitions rather than abrupt cuts.
+`createStates` is ideal for UI components with multiple visual states (e.g., hover, active, disabled, selected) or complex character animations. Each `transitionTo` creates a **new timeline** for the target state and plays it from the current value, so transitions are seamless instead of abrupt cuts.
+
+-   The `from` of the new state is, in order: `timelineConfig.from`, the current timeline's value, the last value the machine showed (it survives `timeline().reset()`), then `initialFrom`.
+-   When a timeline is **playing**, its velocity is handed to the new one (velocity-continuous retargeting for `dynamicSpring`). Pass `velocity` in `timelineConfig` to override it.
+
+#### Transition rules
+
+-   **Atomic.** An unknown state name throws a `RangeError` *before* anything changes. An invalid `timelineConfig` (for example a malformed `from`) is rolled back: the machine keeps its previous state and timeline, and the error is rethrown.
+-   **`canBeIntercepted = false`.** If the current timeline is `PLAYING`, the transition is rejected and nothing changes (state, timeline and listeners stay as they are). Check `state()` afterwards if you mirror the state elsewhere.
+-   **Replaced timelines are disposed.** After a transition the old timeline is dead (`dispose()`d). Do not keep a reference to `timeline()` across transitions: subscribe with `onTimelineChange` and re-subscribe to the new timeline.
 
 #### The Controller
 
-The `createStates` function returns a controller object with the following methods:
+The `createStates` function returns a controller object with the following members:
 
--   `timeline()`: Returns the currently active `timeline` instance. Use this to subscribe to updates or control playback manually (e.g., `myStates.timeline().pause()`).
--   `transitionTo(newState, [timelineConfig], [canBeIntercepted])`: Switches to a different animation state. You can optionally provide a `timelineConfig` object (similar to `timeline.play()`) to customize the transition's duration, keyframes, or repeat count. `canBeIntercepted` determines if the transition will occur even if the timeline is already playing.
--   `onTimelineChange(callback)`: Registers a callback that fires whenever the active timeline changes (i.e., after a `transitionTo` call). This is useful for reacting to global state changes managed by `createStates`.
+| Member | Description |
+| :--- | :--- |
+| `timeline()` | The currently active timeline. Use it to subscribe to updates or control playback. |
+| `state()` | The current state name. |
+| `transitionTo(newState, [timelineConfig], [canBeIntercepted])` | Switches state. `timelineConfig` is the same as [`play()`](/en/docs/core-api/dynamic_timeline) options except that `from` is optional. |
+| `onTimelineChange(callback)` | Called with the new timeline right **before** it starts playing, so listeners see its first update. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
+| `dispose()` | Disposes the current timeline and clears every `onTimelineChange` subscriber. Idempotent. Afterwards `transitionTo` does nothing. |
+
+```typescript
+let unsubscribe = () => {};
+
+const stop = myStates.onTimelineChange((timeline) => {
+  unsubscribe();
+  unsubscribe = timeline.onUpdate(({ state }) => render(state));
+});
+
+// when the owner goes away
+stop();
+unsubscribe();
+myStates.dispose();
+```
+
+#### Ownership
+
+The controller owns the timelines it creates. Call `dispose()` when it is no longer needed, otherwise a looping state keeps running on the clock. The framework bindings do this for you.
 
 #### Best Practices
 
 -   **Do** use `createStates` to manage distinct visual states of a component, especially when smooth transitions between states are required.
 -   **Do** provide a sensible `initialFrom` value that matches the component's initial appearance.
+-   **Do** call `dispose()` when the owner is destroyed.
 -   **Don't** manually manage multiple `timeline` instances and their transitions; `createStates` is designed to abstract this complexity.
 -   **Don't** create a new `createStates` instance frequently; it should be initialized once for a given set of states.
+
+### API Reference
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `initial` | `keyof States` | The initial state name. |
+| `initialFrom` | `AniGroup<G>` | Start values for the first transition. |
+| `states` | `Record<string, AnimationNode<G>>` | Named animation trees. |
+| `clock` | `AnimationClockInterface` | (Optional) Clock for every timeline created by the machine. |
 
 ### Related Components
 
