@@ -1,7 +1,7 @@
 'use client'
 
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
+import { useAniRef, useTimeline } from '@freestylejs/ani-react'
 import Link from 'fumadocs-core/link'
 import { Loader } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
@@ -10,17 +10,19 @@ const STRESS_DURATION = 1000 // ms to block thread
 
 export const performanceCode = `
 // 1. Standard JS Animation (Main Thread)
-const jsTimeline = a.timeline(
-    a.sequence([
-        a.ani({ 
-            to: { translateX: 200, rotate: 180, scale: 1.2 }, 
-            duration: 1 
-        }),
-        a.ani({ 
-            to: { translateX: 0, rotate: 0, scale: 1 }, 
-            duration: 1 
-        })
-    ])
+const jsTimeline = useTimeline(() =>
+    a.rafTimeline(
+        a.sequence([
+            a.ani({
+                to: { translateX: 200, rotate: 180, scale: 1.2 },
+                duration: 1
+            }),
+            a.ani({
+                to: { translateX: 0, rotate: 0, scale: 1 },
+                duration: 1
+            })
+        ])
+    )
 )
 
 // 2. Web Animation API (Compositor Thread)
@@ -37,18 +39,16 @@ const webAniTimeline = a.webTimeline(
     ])
 )
 
-const jsRef = useRef(null)
 const webRef = useRef(null)
 
-// Ref Controller
-const controller = useAniRef(jsRef, { 
-    timeline: jsTimeline,
+// Element ref: the timeline writes the element, no renders per frame
+const { ref: jsRef, style: jsStyle } = useAniRef(jsTimeline, {
     initialValue: { translateX: 0, rotate: 0, scale: 1 }
 })
 
 useEffect(() => {
     // Raf start
-    controller.play({
+    jsTimeline.play({
         from: { translateX: 0, rotate: 0, scale: 1 },
         repeat: Infinity 
     })
@@ -64,32 +64,28 @@ useEffect(() => {
 `
 
 export function PerformanceDemo() {
-    const jsRef = useRef<HTMLDivElement>(null)
     const webRef = useRef<HTMLDivElement>(null)
     const trackRef = useRef<HTMLDivElement>(null)
 
     // 1. JS Based
-    const jsTimeline = useMemo(
-        () =>
-            a.dynamicTimeline(
-                a.sequence(
-                    [
-                        a.ani({
-                            to: { translateX: 240, rotate: 180, scale: 1.2 },
-                            duration: 1,
-                        }),
-                        a.ani({
-                            to: { translateX: 0, rotate: 0, scale: 1 },
-                            duration: 1,
-                        }),
-                    ],
-                    a.timing.linear()
-                )
-            ),
-        []
+    const jsTimeline = useTimeline(() =>
+        a.rafTimeline(
+            a.sequence(
+                [
+                    a.ani({
+                        to: { translateX: 240, rotate: 180, scale: 1.2 },
+                        duration: 1,
+                    }),
+                    a.ani({
+                        to: { translateX: 0, rotate: 0, scale: 1 },
+                        duration: 1,
+                    }),
+                ],
+                a.timing.linear()
+            )
+        )
     )
-    const controller = useAniRef(jsRef, {
-        timeline: jsTimeline,
+    const { ref: jsRef, style: jsStyle } = useAniRef(jsTimeline, {
         initialValue: { translateX: 0, rotate: 0, scale: 1 },
     })
 
@@ -120,7 +116,7 @@ export function PerformanceDemo() {
 
             const trackSize = trackRef.current.offsetWidth
             // Auto play
-            controller.play({
+            jsTimeline.play({
                 from: { translateX: 0, rotate: 0, scale: 1 },
                 repeat: Infinity,
                 keyframes: [
@@ -145,11 +141,11 @@ export function PerformanceDemo() {
         window.addEventListener('resize', handleAnimation)
 
         return () => {
-            controller.pause()
+            jsTimeline.pause()
             webTimeline.pause()
             window.removeEventListener('resize', handleAnimation)
         }
-    }, [controller, webTimeline])
+    }, [jsTimeline, webTimeline])
 
     const blockMainThread = () => {
         const start = performance.now()
@@ -170,6 +166,7 @@ export function PerformanceDemo() {
                     <div className="relative h-3 w-full rounded-full bg-secondary/30">
                         <div
                             ref={jsRef}
+                            style={jsStyle}
                             className="-top-2.5 absolute size-8 rounded-lg bg-linear-to-br from-red-500 to-pink-600 shadow-lg dark:from-red-500 dark:to-pink-600"
                         />
                     </div>

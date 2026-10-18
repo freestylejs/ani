@@ -1,0 +1,59 @@
+---
+title: useAniGroup
+description: Animates a list of elements with one group, one ref per index, without React renders.
+---
+
+`useAniGroup` binds element `i` with `group.bindAt(i, element)`. One plan drives all elements through one clock subscription, each with its own offset.
+
+### Example
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { useAniGroup, useTimeline } from "@freestylejs/ani-react";
+
+const List = ({ items }: { items: string[] }) => {
+  const group = useTimeline(() =>
+    a.rafGroup(a.ani({ to: { opacity: 1 }, duration: 0.4 }), { stagger: 0.1 })
+  );
+  const { ref, style } = useAniGroup(group, { initialValue: { opacity: 0 } });
+
+  return (
+    <>
+      <button onClick={() => group.play({ from: { opacity: 0 }, count: items.length })}>
+        Reveal
+      </button>
+      <ul>
+        {items.map((item, index) => (
+          <li key={item} ref={ref(index)} style={style}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+};
+```
+
+### Lifecycle
+
+-   **One ref per index.** `ref(index)` returns the same function for the same index across renders, as long as `group` is the same.
+-   **Attach and detach.** An element binds at its index and receives that index's current value. Removing an element unbinds only its index.
+-   **Group changes.** A new `group` rebinds the current elements.
+-   **Stable `style`.** The same object for every element, computed from `initialValue` on the first render. `undefined` without `initialValue`.
+-   **Server rendering.** `style` is rendered into the HTML, nothing subscribes.
+-   **Ownership.** The hook never disposes the group you pass. Create it with [`useTimeline`](/en/docs/react/use-timeline).
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `group` | `RafGroup<G>` | The group that drives the elements. |
+| `options.initialValue` | `AniGroup<G>` | (Optional) Value of the initial inline `style`. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
+
+Returns `{ ref, style }` where `ref(index)` is an element ref.
+
+### Related Components
+
+-   [`useAniRef`](/en/docs/react/use-ani-ref) - One element, one timeline.
+-   [`useTimeline`](/en/docs/react/use-timeline) - Creates and disposes the group.

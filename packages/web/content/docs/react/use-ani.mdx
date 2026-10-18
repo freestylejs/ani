@@ -9,14 +9,12 @@ This hook subscribes to a `timeline`'s state and triggers a component re-render 
 
 ```tsx
 import { a } from "@freestylejs/ani-core";
-import { useAni } from "@freestylejs/ani-react";
-import { useMemo } from "react";
+import { useAni, useTimeline } from "@freestylejs/ani-react";
 
 const Counter = () => {
-  // 1. Define the animation and create a timeline instance.
-  const myTimeline = useMemo(
-    () => a.dynamicTimeline(a.ani({ to: { count: 100 }, duration: 5 })),
-    []
+  // 1. Own a timeline for the lifetime of the component.
+  const myTimeline = useTimeline(() =>
+    a.rafTimeline(a.ani({ to: { count: 100 }, duration: 5 }))
   );
 
   // 2. Use the hook to get the reactive value and the controller.

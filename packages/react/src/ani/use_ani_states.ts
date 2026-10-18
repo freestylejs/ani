@@ -1,101 +1,82 @@
-import {
-    type AnimationStateShape,
-    createStates,
-    type GetTimeline,
-    type StateController,
-    type StateProps,
+import type {
+    AnimationStateShape,
+    StateController,
+    StateProps,
 } from '@freestylejs/ani-core'
+import { createStates } from '@freestylejs/ani-core'
+import type { CSSProperties } from 'react'
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 import {
-    type RefObject,
-    useCallback,
-    useEffect,
-    useLayoutEffect,
-    useRef,
-    useState,
-} from 'react'
-import { useAniRef } from './use_ani_ref'
-
-const useIsoLayoutEffect =
-    typeof window === 'undefined' ? useEffect : useLayoutEffect
+    bindOptions,
+    createElementRef,
+    type ElementRef,
+    type StyleResolver,
+    useInitialStyle,
+    useLatest,
+} from './bind_ref'
+import { useOwned } from './owned'
 
 /**
  * State-machine animation hook.
  *
- * `props` are read once, when the component first renders (like `useState`'s
- * initial value): later changes to `states`, `initial`, `initialFrom` or
- * `clock` are ignored. Remount with a `key` to start from different props.
+ * `config` is read once, when the component first renders (like `useState`'s
+ * initial value): later changes are ignored. Remount with a `key` to start
+ * from different props.
  *
- * The hook owns the state controller: it is disposed on unmount (stopping any
- * running timeline). `transitionTo` is referentially stable.
+ * The hook owns the machine: it is disposed on unmount (stopping any running
+ * timeline). `ref` writes the machine's value to the element through
+ * `machine.bind`; `state` re-renders on transitions; `transitionTo` is stable.
+ *
+ * @param config - `createStates` props plus an optional style `resolver`.
  */
-export function useAniStates<
-    Element extends HTMLElement,
-    const AnimationStates extends AnimationStateShape,
->(ref: RefObject<Element | null>, props: StateProps<AnimationStates>) {
-    const propsRef = useRef(props)
-
-    // Re-created lazily if a previous run disposed it (StrictMode / Activity
-    // re-run effects on the same hook instance).
-    const holder = useRef<{
-        controller: StateController<AnimationStates>
-        disposed: boolean
-    } | null>(null)
-    const ensure = useCallback(() => {
-        if (!holder.current || holder.current.disposed) {
-            holder.current = {
-                controller: createStates(propsRef.current),
-                disposed: false,
-            }
-        }
-        return holder.current.controller
+export function useAniStates<const S extends AnimationStateShape>(
+    config: StateProps<S> & { resolver?: StyleResolver }
+): {
+    ref: ElementRef
+    style: CSSProperties | undefined
+    state: keyof S
+    transitionTo: StateController<S>['transitionTo']
+    machine: StateController<S>
+} {
+    const first = useRef(config)
+    const [machine, slot] = useOwned(() => {
+        const { resolver: _resolver, ...props } = first.current
+        return createStates<S>(props as StateProps<S>)
     }, [])
+    const resolver = useLatest(config.resolver)
 
-    const [timeline, setTimeline] = useState<GetTimeline<AnimationStates>>(() =>
-        ensure().timeline()
+    const style = useInitialStyle(
+        (first.current.initialValue ?? first.current.initialFrom) as Record<
+            string,
+            number
+        >,
+        first.current.resolver
     )
-    const [state, setState] = useState<keyof AnimationStates>(
-        propsRef.current.initial
+
+    const ref = useMemo(
+        () =>
+            createElementRef((element) =>
+                machine.bind(element, bindOptions(resolver.current))
+            ),
+        [machine, resolver]
     )
 
-    useAniRef(ref, {
-        timeline,
-        initialValue: (propsRef.current.initialValue ??
-            propsRef.current.initialFrom)!,
-    })
+    const subscribe = useCallback(
+        (onChange: () => void) => machine.onTransition(onChange),
+        [machine]
+    )
+    const state = useSyncExternalStore(subscribe, machine.state, machine.state)
 
-    // Subscribe, then resync: a transition issued before this effect ran
-    // (e.g. from a child's mount effect) would otherwise be missed.
-    useIsoLayoutEffect(() => {
-        const controller = ensure()
-        const entry = holder.current!
-        const unsubscribe = controller.onTimelineChange((next) => {
-            setTimeline(next)
-            setState(controller.state())
-        })
-        setTimeline(controller.timeline())
-        setState(controller.state())
-        return () => {
-            unsubscribe()
-            controller.dispose()
-            entry.disposed = true
-        }
-    }, [ensure])
-
-    const transitionTo: StateController<AnimationStates>['transitionTo'] =
-        useCallback((newState, timelineConfig, canBeIntercepted) => {
-            const entry = holder.current
-            // After unmount the controller is disposed: stay inert.
-            if (!entry || entry.disposed) return Promise.resolve('disposed')
-            // Controller first: it validates atomically and may reject
-            // (`canBeIntercepted`), so React state mirrors what happened.
-            const run = entry.controller.transitionTo(
+    // Reads the live machine, which StrictMode may have re-created.
+    const transitionTo: StateController<S>['transitionTo'] = useCallback(
+        (newState, timelineConfig, canBeIntercepted) =>
+            slot.current.value.transitionTo(
                 newState,
                 timelineConfig,
                 canBeIntercepted
-            )
-            setState(entry.controller.state())
-            return run
-        }, [])
+            ),
+        [slot]
+    )
 
-    return [{ state, timeline }, transitionTo] as const
+    return { ref, style, state, transitionTo, machine }
 }

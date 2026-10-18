@@ -1,38 +1,59 @@
 // @vitest-environment node
 
-import { a, rafTimeline } from '@freestylejs/ani-core'
-import { useRef } from 'react'
+import { a, rafGroup, rafTimeline } from '@freestylejs/ani-core'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { useAni } from '../ani/use_ani'
-import { useAniRef } from '../ani/use_ani_ref'
-import { useAniStates } from '../ani/use_ani_states'
+import {
+    useAni,
+    useAniGroup,
+    useAniRef,
+    useAniStates,
+    useFollow,
+    useTimeline,
+} from '../ani'
+import { createManualClock } from './clock'
+
+const node = () =>
+    a.ani({ to: { opacity: 1 }, duration: 1, timing: a.timing.linear() })
 
 describe('react SSR', () => {
     it('renders every hook without window/document and retains no subscriptions', () => {
         expect(typeof window).toBe('undefined')
-        const timeline = rafTimeline(a.ani({ to: { opacity: 1 }, duration: 1 }))
+        const m = createManualClock()
         function C() {
-            const ref = useRef<HTMLDivElement>(null)
+            const timeline = useTimeline(() => rafTimeline(node(), m.clock))
+            const group = useTimeline(() =>
+                rafGroup(node(), { clock: m.clock })
+            )
             const [v] = useAni(timeline, { opacity: 0.1 })
-            useAniRef(ref, {
-                timeline,
-                initialValue: { opacity: 0 },
-                events: { onClick: () => undefined },
+            const single = useAniRef(timeline, {
+                initialValue: { opacity: 0.2 },
             })
-            const [{ state }] = useAniStates(ref, {
+            const many = useAniGroup(group, { initialValue: { opacity: 0.3 } })
+            const { state, ...states } = useAniStates({
                 initial: 'idle',
-                initialFrom: { opacity: 0 },
-                states: {
-                    idle: a.ani({ to: { opacity: 0 }, duration: 1 }),
-                },
+                initialValue: { opacity: 0.4 },
+                states: { idle: node() },
+                clock: m.clock,
             })
+            const chaser = useFollow({ translateX: 5 }, { clock: m.clock })
             return (
-                <div ref={ref}>
-                    {state}:{v.opacity}
-                </div>
+                <main>
+                    <p>{v.opacity}</p>
+                    <i ref={single.ref} style={single.style} />
+                    <b ref={many.ref(0)} style={many.style} />
+                    <u ref={states.ref} style={states.style}>
+                        {state}
+                    </u>
+                    <s ref={chaser.ref} style={chaser.style} />
+                </main>
             )
         }
-        expect(renderToString(<C />)).toContain('idle')
+        const html = renderToString(<C />)
+        expect(html).toContain('<i style="opacity:0.2">')
+        expect(html).toContain('<b style="opacity:0.3">')
+        expect(html).toContain('<u style="opacity:0.4">idle</u>')
+        expect(html).toContain('<s style="transform:translateX(5px)">')
+        expect(m.clock.size).toBe(0)
     })
 })
