@@ -43,7 +43,7 @@ export function useAniStates<
 
     const [elementRef] = useAniRef({
         timeline: timeline,
-        initialValue: props.initialFrom,
+        initialValue: (props.initialValue ?? props.initialFrom)!,
     })
 
     statesController.onTimelineChange((newTimeline) => {
@@ -60,12 +60,13 @@ export function useAniStates<
         canBeIntercepted
     ) => {
         // Controller first: it validates atomically and may reject.
-        statesController.transitionTo(
+        const run = statesController.transitionTo(
             newState,
             timelineConfig,
             canBeIntercepted
         )
         state.value = statesController.state()
+        return run
     }
 
     return [

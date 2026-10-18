@@ -19,17 +19,15 @@ const animations = {
 // 2. Create a state machine controller with an initial state and initial values.
 const myStates = a.createStates({
   initial: 'inactive',
-  initialFrom: { scale: 1, opacity: 0.5 }, // The starting point for the first animation
+  initialValue: { scale: 1, opacity: 0.5 }, // The starting point for the first animation
   states: animations,
 });
 
-// 3. Listen for updates from the currently active timeline.
-myStates.timeline().onUpdate(({ state }) => {
-    console.log(state.scale);
-});
+// 3. Write the value to an element. The binding follows every transition.
+const unbind = myStates.bind(element);
 
 // 4. Transition to a new state. This will smoothly switch to the 'active' animation.
-myStates.transitionTo('active');
+const result = await myStates.transitionTo('active'); // 'ended'
 ```
 
 ### Usage & Concepts
@@ -38,14 +36,15 @@ myStates.transitionTo('active');
 
 `createStates` is ideal for UI components with multiple visual states (e.g., hover, active, disabled, selected) or complex character animations. Each `transitionTo` creates a **new timeline** for the target state and plays it from the current value, so transitions are seamless instead of abrupt cuts.
 
--   The `from` of the new state is, in order: `timelineConfig.from`, the current timeline's value, the last value the machine showed (it survives `timeline().reset()`), then `initialFrom`.
+-   The `from` of the new state is, in order: `timelineConfig.from`, the current timeline's value, the last value the machine showed (it survives `timeline().reset()`), then `initialValue`.
 -   When a timeline is **playing**, its velocity is handed to the new one (velocity-continuous retargeting for `dynamicSpring`). Pass `velocity` in `timelineConfig` to override it.
 
 #### Transition rules
 
 -   **Atomic.** An unknown state name throws a `RangeError` *before* anything changes. An invalid `timelineConfig` (for example a malformed `from`) is rolled back: the machine keeps its previous state and timeline, and the error is rethrown.
--   **`canBeIntercepted = false`.** If the current timeline is `PLAYING`, the transition is rejected and nothing changes (state, timeline and listeners stay as they are). Check `state()` afterwards if you mirror the state elsewhere.
--   **Replaced timelines are disposed.** After a transition the old timeline is dead (`dispose()`d). Do not keep a reference to `timeline()` across transitions: subscribe with `onTimelineChange` and re-subscribe to the new timeline.
+-   **`interrupt: false`.** If the current timeline is `PLAYING`, the transition is rejected, nothing changes (state, timeline and listeners stay as they are) and the promise resolves `'skipped'`. The legacy third argument `canBeIntercepted = false` does the same; `config.interrupt` wins over it.
+-   **The promise.** `transitionTo` returns the run of the new timeline and never rejects: `'ended'`, `'interrupted'` (another transition replaced it), `'skipped'`, `'reset'` or `'disposed'` (also after `dispose()`).
+-   **Replaced timelines are disposed.** After a transition the old timeline is dead (`dispose()`d), together with the bindings and listeners attached through the machine. Do not keep a reference to `timeline()` across transitions: use `bind`, `onUpdate` or `onTransition`, which follow the current timeline.
 
 #### The Controller
 
@@ -55,21 +54,21 @@ The `createStates` function returns a controller object with the following membe
 | :--- | :--- |
 | `timeline()` | The currently active timeline. Use it to subscribe to updates or control playback. |
 | `state()` | The current state name. |
-| `transitionTo(newState, [timelineConfig], [canBeIntercepted])` | Switches state. `timelineConfig` is the same as [`play()`](/en/docs/core-api/dynamic_timeline) options except that `from` is optional. |
-| `onTimelineChange(callback)` | Called with the new timeline right **before** it starts playing, so listeners see its first update. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
-| `dispose()` | Disposes the current timeline and clears every `onTimelineChange` subscriber. Idempotent. Afterwards `transitionTo` does nothing. |
+| `value` | The current timeline's value, else the last value the machine showed, else the initial value. Frozen. |
+| `transitionTo(newState, [timelineConfig], [canBeIntercepted])` | Switches state and returns `Promise<RunResult>`. `timelineConfig` is the same as [`play()`](/en/docs/core-api/dynamic_timeline) options except that `from` is optional. |
+| `bind(target, [{ resolver }])` | Writes the value to `target.style` on every notification of the current timeline, now and after every transition. Returns an unbind function that stops it for all future timelines. |
+| `onUpdate(callback)` | Receives the same `{ state, status }` frames as a timeline listener, from the current timeline and every later one. Returns an unsubscribe function. |
+| `onTransition(callback)` | Called with `(state, timeline)` right **before** the new timeline starts playing, so listeners see its first update. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
+| `onTimelineChange(callback)` | 1.x name of `onTransition`; the callback only receives the timeline. |
+| `dispose()` | Disposes the current timeline and clears every binding and subscriber. Idempotent. Afterwards `transitionTo` resolves `'disposed'`. |
 
 ```typescript
-let unsubscribe = () => {};
-
-const stop = myStates.onTimelineChange((timeline) => {
-  unsubscribe();
-  unsubscribe = timeline.onUpdate(({ state }) => render(state));
-});
+const unbind = myStates.bind(element);
+const stop = myStates.onUpdate(({ state }) => render(state));
 
 // when the owner goes away
+unbind();
 stop();
-unsubscribe();
 myStates.dispose();
 ```
 
@@ -80,7 +79,7 @@ The controller owns the timelines it creates. Call `dispose()` when it is no lon
 #### Best Practices
 
 -   **Do** use `createStates` to manage distinct visual states of a component, especially when smooth transitions between states are required.
--   **Do** provide a sensible `initialFrom` value that matches the component's initial appearance.
+-   **Do** provide a sensible `initialValue` that matches the component's initial appearance.
 -   **Do** call `dispose()` when the owner is destroyed.
 -   **Don't** manually manage multiple `timeline` instances and their transitions; `createStates` is designed to abstract this complexity.
 -   **Don't** create a new `createStates` instance frequently; it should be initialized once for a given set of states.
@@ -90,7 +89,8 @@ The controller owns the timelines it creates. Call `dispose()` when it is no lon
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `initial` | `keyof States` | The initial state name. |
-| `initialFrom` | `AniGroup<G>` | Start values for the first transition. |
+| `initialValue` | `AniGroup<G>` | Start values for the first transition. Exactly one of `initialValue` and `initialFrom` is required; both or neither throws a `TypeError`. |
+| `initialFrom` | `AniGroup<G>` | 1.x name of `initialValue`. |
 | `states` | `Record<string, AnimationNode<G>>` | Named animation trees. |
 | `clock` | `AnimationClockInterface` | (Optional) Clock for every timeline created by the machine. |
 

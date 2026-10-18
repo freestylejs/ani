@@ -923,17 +923,15 @@ const animations = {
 // 2. Create a state machine controller.
 const myStates = a.createStates({
   initial: 'inactive',
-  initialFrom: { scale: 1, opacity: 0.5 },
+  initialValue: { scale: 1, opacity: 0.5 },
   states: animations,
 });
 
-// 3. Listen for updates from the currently active timeline.
-myStates.timeline().onUpdate(({ state }) => {
-    console.log(state.scale);
-});
+// 3. Write the value to an element. The binding follows every transition.
+const unbind = myStates.bind(element);
 
 // 4. Transition to a new state. This will switch to the 'active' animation.
-myStates.transitionTo('active');
+const result = await myStates.transitionTo('active'); // 'ended'
 ```
 
 ### Usage & Concepts
@@ -942,13 +940,14 @@ myStates.transitionTo('active');
 
 `createStates` is a high-level utility for managing complex animation logic. It allows you to define a set of named animation trees and provides a simple API to transition between them. Each `transitionTo` creates a **new timeline** for the target state and plays it from the current value. This is ideal for UI components with multiple visual states (e.g., hover, active, disabled) or for character animations.
 
-The new state's `from` is, in order: `timelineConfig.from`, the current timeline's value, the last value the machine showed (it survives `timeline().reset()`), then `initialFrom`. A **playing** timeline hands its velocity to the new one (override with `timelineConfig.velocity`).
+The new state's `from` is, in order: `timelineConfig.from`, the current timeline's value, the last value the machine showed (it survives `timeline().reset()`), then `initialValue`. A **playing** timeline hands its velocity to the new one (override with `timelineConfig.velocity`).
 
 #### Transition rules
 
 -   **Atomic:** an unknown state name throws a `RangeError` before anything changes. An invalid `timelineConfig` is rolled back (previous state and timeline are kept) and the error is rethrown.
--   **`canBeIntercepted = false`:** if the current timeline is `PLAYING`, the transition is rejected and nothing changes.
--   **Replaced timelines are disposed.** Do not keep references across transitions; use `onTimelineChange`.
+-   **`interrupt: false`** (or the legacy third argument `canBeIntercepted = false`; `interrupt` wins): if the current timeline is `PLAYING`, the transition is rejected, nothing changes and the promise resolves `'skipped'`.
+-   **The promise** never rejects: `'ended'`, `'interrupted'` (another transition replaced it), `'skipped'`, `'reset'` or `'disposed'` (also after `dispose()`).
+-   **Replaced timelines are disposed**, with the bindings and listeners attached through the machine. Do not keep references across transitions; use `bind`, `onUpdate` or `onTransition`.
 
 #### The Controller
 
@@ -956,9 +955,13 @@ The new state's `from` is, in order: `timelineConfig.from`, the current timeline
 | :--- | :--- |
 | `timeline()` | The currently active timeline. |
 | `state()` | The current state name. |
-| `transitionTo(newState, [config], [canBeIntercepted])` | Switches state. `config` is `play()` options with an optional `from`. |
-| `onTimelineChange(callback)` | Called with the new timeline right **before** it starts playing. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
-| `dispose()` | Disposes the current timeline and clears `onTimelineChange` subscribers. Idempotent; afterwards `transitionTo` does nothing. |
+| `value` | Current timeline's value, else the last shown value, else the initial value. Frozen. |
+| `transitionTo(newState, [config], [canBeIntercepted])` | Switches state and returns `Promise<RunResult>`. `config` is `play()` options with an optional `from`. |
+| `bind(target, [{ resolver }])` | Writes the value to `target.style` for the current and every later timeline. Returns unbind. |
+| `onUpdate(callback)` | Receives `{ state, status }` frames of the current and every later timeline. Returns unsubscribe. |
+| `onTransition(callback)` | Called with `(state, timeline)` right **before** the new timeline starts playing. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
+| `onTimelineChange(callback)` | 1.x name of `onTransition`; receives only the timeline. |
+| `dispose()` | Disposes the current timeline and clears every binding and subscriber. Idempotent; afterwards `transitionTo` resolves `'disposed'`. |
 
 The controller owns its timelines: call `dispose()` when the owner goes away.
 
@@ -973,13 +976,15 @@ The controller owns its timelines: call `dispose()` when the owner goes away.
 #### Type Definitions
 
 ```typescript
-// Configuration object
-interface StateProps<AnimationStates extends AnimationStateShape> {
+// Configuration object: exactly one of `initialValue` and `initialFrom` (1.x name)
+type StateProps<AnimationStates extends AnimationStateShape> = {
     initial: keyof AnimationStates;
-    initialFrom: AniGroup<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>>;
     states: AnimationStates;
     clock?: AnimationClockInterface;
-}
+} & (
+    | { initialValue: AniGroup<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>> }
+    | { initialFrom: AniGroup<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>> }
+);
 
 // Returned controller
 interface StateController<AnimationStates extends AnimationStateShape> {
@@ -991,8 +996,14 @@ interface StateController<AnimationStates extends AnimationStateShape> {
             any
         >>,
         canBeIntercepted?: boolean
-    ): void;
+    ): Promise<RunResult>;
     state: () => keyof AnimationStates;
+    readonly value: AniGroup<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>>;
+    bind(target: { style: CSSStyleDeclaration } | HTMLElement, options?: BindOptions): () => void;
+    onUpdate(callback: (frame: { state: AniGroup<...>; status: TimelineStatus }) => void): () => void;
+    onTransition(
+        callback: (state: keyof AnimationStates, timeline: GetTimeline<AnimationStates>) => void
+    ): () => void;
     dispose(): void;
     onTimelineChange(
         callback: (newTimeline: GetTimeline<AnimationStates>) => void

@@ -41,7 +41,7 @@ export function createAniStates<
 
     const [ref] = createAniRef({
         timeline,
-        initialValue: props.initialFrom,
+        initialValue: (props.initialValue ?? props.initialFrom)!,
     })
 
     const transitionTo: StateController<AnimationStates>['transitionTo'] = (
@@ -50,12 +50,13 @@ export function createAniStates<
         canBeIntercepted
     ) => {
         // Controller first: it validates atomically and may reject.
-        statesController.transitionTo(
+        const run = statesController.transitionTo(
             newState,
             timelineConfig,
             canBeIntercepted
         )
         setState(() => statesController.state())
+        return run
     }
 
     return [ref, { state, timeline }, transitionTo] as const
