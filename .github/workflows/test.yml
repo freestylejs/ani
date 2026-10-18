@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-node@v4
         name: Setup Node.js
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -34,3 +34,36 @@ jobs:
       # biome check -> typecheck -> build -> tests with coverage thresholds
       - name: Verify
         run: pnpm test:ci
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout
+
+      - uses: pnpm/action-setup@v4
+        name: Setup PNPM
+        with:
+          # version comes from the `packageManager` field
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        name: Setup Node.js
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser benchmark (smoke)
+        run: pnpm bench:browser --smoke --out bench/browser/results/ci-smoke.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-bench-smoke
+          path: bench/browser/results/ci-smoke.json
