@@ -310,6 +310,41 @@ describe('COD: files', () => {
             `<script setup lang="ts" generic="T extends Array<string>">\nimport * as a from '@freestylejs/ani-core'\nconst t = a.waapiTimeline(n)\n</script>\n`
         )
     })
+
+    it('markdown: a syntax error in a code fence with an ANI import is located in the file', () => {
+        const source = `# Title\n\n@freestylejs/ani\n\n\`\`\`ts\nimport { a } from '@freestylejs/ani-core'\nconst = ;\n\`\`\`\n`
+        expect(() => transform(source, 'doc.md')).toThrow(/doc\.md:7:/)
+    })
+
+    it('markdown: snippets with invalid syntax but no ANI import are left unchanged', () => {
+        const source = `@freestylejs/ani\n\n\`\`\`ts\nconst x = [1, ...]\n\`\`\`\n\n\`\`\`ts\na.dynamicTimeline(n)\n\`\`\`\n`
+        const out = transform(source, 'doc.md').code
+        expect(out).toContain('const x = [1, ...]')
+        expect(out).toContain('a.rafTimeline(n)')
+    })
+
+    it('markdown: case-insensitive languages, indentation and empty fences', () => {
+        const source = `@freestylejs/ani\n  \`\`\`TypeScript\n  a.dynamicTimeline(n)\n  \`\`\`\n\`\`\`ts\n\`\`\`\n`
+        expect(transform(source, 'doc.md').code).toBe(
+            `@freestylejs/ani\n  \`\`\`TypeScript\n  a.rafTimeline(n)\n  \`\`\`\n\`\`\`ts\n\`\`\`\n`
+        )
+    })
+
+    it('markdown: a block with its own ANI import does not implicitly alias a', () => {
+        const source =
+            '@freestylejs/ani\n\n```ts\nimport * as ani from "@freestylejs/ani-core"\nconst a = other()\na.dynamicTimeline(n)\nani.dynamicTimeline(n)\n```\n'
+        const out = transform(source, 'x.md').code
+        expect(out).toContain('a.dynamicTimeline(n)')
+        expect(out).toContain('ani.rafTimeline(n)')
+    })
+
+    it('markdown: an empty fence does not swallow the following fence', () => {
+        const source =
+            '@freestylejs/ani\n\n```ts\n```\n\n```ts\na.dynamicTimeline(n)\n```\n'
+        expect(transform(source, 'x.md').code).toBe(
+            '@freestylejs/ani\n\n```ts\n```\n\n```ts\na.rafTimeline(n)\n```\n'
+        )
+    })
 })
 
 describe('COD: renamed imports are renamed everywhere', () => {

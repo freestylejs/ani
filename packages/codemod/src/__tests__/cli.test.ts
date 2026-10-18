@@ -39,8 +39,10 @@ describe('COD: collectFiles', () => {
             put('src/deep/c.vue', ''),
             put('src/d.svelte', ''),
             put('src/e.mjs', ''),
+            put('readme.md', ''),
+            put('docs/guide.mdx', ''),
         ]
-        put('readme.md', '')
+        put('notes.txt', '')
         put('node_modules/x/i.ts', '')
         put('dist/i.js', '')
         put('.git/i.js', '')

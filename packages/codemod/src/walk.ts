@@ -13,7 +13,10 @@ export function collectFiles(paths: string[]): string[] {
     const files = new Map<string, string>()
     const add = (file: string): void => {
         const key = resolve(file)
-        if (SUPPORTED_EXTENSIONS.includes(extname(file)) && !files.has(key))
+        if (
+            SUPPORTED_EXTENSIONS.includes(extname(file).toLowerCase()) &&
+            !files.has(key)
+        )
             files.set(key, file)
     }
     const walk = (dir: string): void => {
