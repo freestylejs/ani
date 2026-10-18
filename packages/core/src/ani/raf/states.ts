@@ -31,16 +31,25 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
 
     /**
      * Transition timeline animation into another state.
+     *
+     * The transition is atomic: an unknown state name throws before anything
+     * changes, and a failing `play` (invalid config) restores the previous
+     * timeline. When the previous timeline is still playing, its velocity is
+     * handed to the new one (unless `timelineConfig.velocity` is given).
+     *
      * @param newState transition target.
      *
      * @param timelineConfig animation play config.
-     * @param canBeIntercepted animation canBeIntercepted config.
+     * @param canBeIntercepted if `false` and the current timeline is playing,
+     * the transition is rejected and nothing changes. Defaults to `true`.
      */
     transitionTo(
         newState: keyof AnimationStates,
-        timelineConfig?: RafTimelineConfig<
-            ExtractAnimationNode<AnimationStates[keyof AnimationStates]>,
-            any
+        timelineConfig?: Partial<
+            RafTimelineConfig<
+                ExtractAnimationNode<AnimationStates[keyof AnimationStates]>,
+                any
+            >
         >,
         canBeIntercepted?: boolean
     ): void
@@ -53,6 +62,12 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
     onTimelineChange(
         callback: TimelineChangeCallback<AnimationStates>
     ): () => void
+
+    /**
+     * Releases the current timeline and every subscriber. Idempotent; later
+     * `transitionTo` calls are no-ops.
+     */
+    dispose(): void
 }
 
 export interface StateProps<AnimationStates extends AnimationStateShape> {
@@ -76,6 +91,17 @@ export interface StateProps<AnimationStates extends AnimationStateShape> {
     clock?: AnimationClockInterface
 }
 
+function copyGroup(group: Groupable | null): Groupable | null {
+    if (group === null) return null
+    return (Array.isArray(group) ? [...group] : { ...group }) as Groupable
+}
+
+function rethrowAsync(error: unknown): void {
+    queueMicrotask(() => {
+        throw error
+    })
+}
+
 /**
  * Creates a state machine controller for managing animations.
  *
@@ -91,11 +117,29 @@ export function createStates<AnimationStates extends AnimationStateShape>(
         config.states[State]!,
         config.clock
     )
+    let disposed = false
+
+    // Last value the machine showed. Survives `timeline().reset()`, which
+    // clears the timeline's own value. Only the reference is kept per frame:
+    // the engine hands out an immutable snapshot per update, and the
+    // defensive copy happens lazily in `transitionTo`.
+    let lastValue = null as Groupable | null
+    const track = (timeline: RafAniTimeline<Groupable>) => {
+        timeline.onUpdate(({ state, status }) => {
+            if (status === 'IDLE') return
+            lastValue = state as Groupable
+        })
+    }
+    track(Timeline)
 
     const subs = new Set<TimelineChangeCallback<AnimationStates>>()
     const notify = (timeline: GetTimeline<AnimationStates>) => {
-        for (const Sub of subs) {
-            Sub(timeline)
+        for (const Sub of [...subs]) {
+            try {
+                Sub(timeline)
+            } catch (error) {
+                rethrowAsync(error)
+            }
         }
     }
 
@@ -103,30 +147,75 @@ export function createStates<AnimationStates extends AnimationStateShape>(
         timeline: () => Timeline as unknown as GetTimeline<AnimationStates>,
         state: () => State,
         onTimelineChange(callback) {
+            if (disposed) return () => undefined
             subs.add(callback)
-            return () => subs.delete(callback)
+            return () => {
+                subs.delete(callback)
+            }
         },
         transitionTo(newState, timelineConfig, canBeIntercepted) {
-            const previousTimeline = Timeline
-            // new timeline
-            const from = (timelineConfig?.from ?? // 1. config
-                Timeline.getCurrentValue() ?? // 2. last value
-                config.initialFrom) as RafTimelineConfig<Groupable>['from'] // 3. initial value
+            if (disposed) return
+            if (!Object.hasOwn(config.states, newState as string)) {
+                throw new RangeError(
+                    `[createStates] Unknown state "${String(newState)}". Available states: ${Object.keys(config.states).join(', ')}.`
+                )
+            }
 
-            // Ensure old timeline resources are released before replacing.
-            previousTimeline.reset(false)
+            const previousTimeline = Timeline
+            const previousState = State
+            const wasPlaying = previousTimeline.status === 'PLAYING'
+
+            if (canBeIntercepted === false && wasPlaying) return
+
+            const from = (timelineConfig?.from ?? // 1. config
+                previousTimeline.getCurrentValue() ?? // 2. last value
+                copyGroup(lastValue) ?? // 3. last shown value (e.g. after reset())
+                config.initialFrom) as RafTimelineConfig<Groupable>['from'] // 4. initial value
+
+            const velocity =
+                timelineConfig?.velocity ??
+                (wasPlaying
+                    ? (previousTimeline.getCurrentVelocity() ?? undefined)
+                    : undefined)
+
+            const nextTimeline = rafTimeline(
+                config.states[newState]!,
+                config.clock
+            )
+            track(nextTimeline)
 
             State = newState
-            Timeline = rafTimeline(config.states[State]!, config.clock)
-            notify(Timeline as unknown as GetTimeline<AnimationStates>)
+            Timeline = nextTimeline
+            // Listeners attach before play so they observe its first update.
+            notify(nextTimeline as unknown as GetTimeline<AnimationStates>)
 
-            Timeline.play(
-                {
-                    ...timelineConfig,
-                    from,
-                },
-                canBeIntercepted
-            )
+            try {
+                nextTimeline.play(
+                    {
+                        ...timelineConfig,
+                        from,
+                        ...(velocity !== undefined && { velocity }),
+                    },
+                    canBeIntercepted
+                )
+            } catch (error) {
+                // Invalid config: keep the machine on the previous timeline.
+                nextTimeline.dispose()
+                State = previousState
+                Timeline = previousTimeline
+                notify(
+                    previousTimeline as unknown as GetTimeline<AnimationStates>
+                )
+                throw error
+            }
+
+            previousTimeline.dispose()
+        },
+        dispose() {
+            if (disposed) return
+            disposed = true
+            Timeline.dispose()
+            subs.clear()
         },
     }
 }
