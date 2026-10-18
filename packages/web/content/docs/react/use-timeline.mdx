@@ -1,0 +1,49 @@
+---
+title: useTimeline
+description: The owner primitive. Creates a timeline, group or any object with dispose() and disposes it with the component.
+---
+
+`useTimeline` creates an object once, returns the same instance on every render and disposes it when the component goes away. It is the primitive to own a `rafTimeline` or a `rafGroup` that the other hooks then drive elements with.
+
+### Example
+
+```tsx
+import { a } from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-react";
+
+const Box = () => {
+  const timeline = useTimeline(() =>
+    a.rafTimeline(a.ani({ to: { translateX: 300 }, duration: 1 }))
+  );
+  const { ref, style } = useAniRef(timeline, { initialValue: { translateX: 0 } });
+
+  return (
+    <>
+      <button onClick={() => timeline.play({ from: { translateX: 0 } })}>Play</button>
+      <div ref={ref} style={style} />
+    </>
+  );
+};
+```
+
+### Lifecycle
+
+-   **One instance.** `factory` runs on the first render. Every later render returns the same object.
+-   **Disposed on unmount.** `dispose()` is called once, which releases the clock subscription of a timeline.
+-   **Deps.** When `deps` change, the old object is disposed and `factory` creates a new one. Without `deps` the object lives as long as the component.
+-   **StrictMode.** React re-runs effects on the same instance in development. If the cleanup already disposed the object, `useTimeline` creates a fresh one and renders again with it, so the instance you hold is never a disposed one. Every instance that was created is disposed exactly once.
+-   **Server rendering.** `factory` runs, nothing is subscribed and nothing is disposed.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `factory` | `() => T` | Creates the object. `T` needs a `dispose()` method. |
+| `deps` | `DependencyList` | (Optional) Replaces the object when a dependency changes. |
+
+Returns the object `T`.
+
+### Related Components
+
+-   [`useAniRef`](/en/docs/react/use-ani-ref) - Drives one element with a timeline.
+-   [`useAniGroup`](/en/docs/react/use-ani-group) - Drives many elements with a group.

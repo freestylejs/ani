@@ -1,0 +1,49 @@
+---
+title: useFollow
+description: A hook that owns a spring follower. The element chases a target and keeps its velocity.
+---
+
+`useFollow` wraps the core `follow`. Setting a new target keeps the current velocity, so repeated input (a pointer, a scroll position) builds on where the motion is heading. The element is written through `follower.bind`, without React renders.
+
+### Example
+
+```tsx
+import { useFollow } from "@freestylejs/ani-react";
+
+const Chaser = () => {
+  const { ref, style, follower } = useFollow({ translateX: 0, translateY: 0 });
+
+  return (
+    <div
+      style={{ height: 400 }}
+      onPointerMove={(event) =>
+        follower.set({ translateX: event.clientX, translateY: event.clientY })
+      }
+    >
+      <div ref={ref} style={style} className="size-6 rounded-full bg-blue-500" />
+    </div>
+  );
+};
+```
+
+### Lifecycle
+
+-   **Owns its follower.** It is disposed on unmount, which releases the clock. In `StrictMode` it is re-created for the second mount.
+-   **Read once.** `initial` and `options` are read on the first render only. The returned `follower` is stable, except that StrictMode re-creates it once in development.
+-   **Attach and detach.** Attaching an element writes the follower's current value. Detaching or unmounting unbinds it.
+-   **Server rendering.** `style` is built from `initial` and rendered into the HTML. Nothing subscribes.
+
+### API Reference
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `initial` | `Record<string, number>` | Initial value. Its keys are fixed. |
+| `options.spring` | `{ m, k, c, tolerance? }` | (Optional) Spring constants. |
+| `options.clock` | `AnimationClockInterface` | (Optional) Clock that drives the follower. |
+| `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
+
+Returns `{ ref, style, follower }`. See [`follow`](/en/docs/core-api/follow) for `set`, `jump`, `target` and `value`.
+
+### Related Components
+
+-   [`useAniRef`](/en/docs/react/use-ani-ref) - For timelines.

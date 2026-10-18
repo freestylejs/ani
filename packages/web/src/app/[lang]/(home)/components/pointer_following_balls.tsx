@@ -1,13 +1,64 @@
 'use client'
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
-import { useCallback, useMemo, useRef } from 'react'
+import { useAniRef, useTimeline } from '@freestylejs/ani-react'
+import { useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
 const BALL_SIZE = 25
 const THROTTLE_DELAY = 32
 
 const colors = ['#4285F4', '#DB4437', '#F4B400', '#0F9D58', '#4285F4']
+
+type BallTimeline = ReturnType<typeof createBallTimeline>
+
+const createBallTimeline = () =>
+    a.rafTimeline(
+        a.ani({
+            to: { translateX: 0, translateY: 0, scale: 1 },
+            duration: 200,
+            timing: {
+                translateX: a.timing.dynamicSpring({
+                    m: 2,
+                    k: 100,
+                    c: 12,
+                }),
+                translateY: a.timing.dynamicSpring({
+                    m: 2,
+                    k: 100,
+                    c: 12,
+                }),
+                scale: a.timing.dynamicSpring({
+                    m: 1,
+                    k: 100,
+                    c: 15,
+                }),
+            },
+        })
+    )
+
+const Ball = ({
+    timeline,
+    color,
+}: {
+    timeline: BallTimeline
+    color: string
+}) => {
+    const { ref } = useAniRef(timeline)
+
+    return (
+        <div
+            ref={ref}
+            className="absolute rounded-full"
+            style={{
+                width: BALL_SIZE,
+                height: BALL_SIZE,
+                backgroundColor: color,
+                left: -BALL_SIZE / 2,
+                top: -BALL_SIZE / 2,
+            }}
+        />
+    )
+}
 
 export const PointerFollowingBalls = ({
     ballCount,
@@ -17,43 +68,14 @@ export const PointerFollowingBalls = ({
     className?: string
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
-    const ballRefs = Array.from({ length: ballCount }, () =>
-        useRef<HTMLDivElement>(null)
-    )
 
-    const timelines = useMemo(() => {
-        return Array.from({ length: ballCount }, (_, i) =>
-            a.dynamicTimeline(
-                a.ani({
-                    to: { translateX: 0, translateY: 0, scale: 1 },
-                    duration: 200,
-                    timing: {
-                        translateX: a.timing.dynamicSpring({
-                            m: 2,
-                            k: 100,
-                            c: 12,
-                        }),
-                        translateY: a.timing.dynamicSpring({
-                            m: 2,
-                            k: 100,
-                            c: 12,
-                        }),
-                        scale: a.timing.dynamicSpring({
-                            m: 1,
-                            k: 100,
-                            c: 15,
-                        }),
-                    },
-                })
-            )
-        )
-    }, [])
-
-    const controllers = ballRefs.map((ref, i) =>
-        useAniRef(ref, {
-            timeline: timelines[i],
-        })
-    )
+    const timelines = useTimeline(() => {
+        const items = Array.from({ length: ballCount }, createBallTimeline)
+        return {
+            items,
+            dispose: () => items.forEach((item) => item.dispose()),
+        }
+    }, [ballCount]).items
 
     const throttleTimeout = useRef<NodeJS.Timeout | null>(null)
     const latestEventRef = useRef<React.MouseEvent<HTMLDivElement> | null>(null)
@@ -66,15 +88,14 @@ export const PointerFollowingBalls = ({
             const x = e.clientX - rect.left
             const y = e.clientY - rect.top
 
-            const numItems = controllers.length
+            const numItems = timelines.length
             const size = Math.ceil(Math.sqrt(numItems))
 
             const spacing = BALL_SIZE * 1.25
             const offset = ((size - 1) * spacing) / 2
 
-            controllers.forEach((controller, i) => {
-                const t = timelines[i]
-                const curr = t.getCurrentValue() ?? {
+            timelines.forEach((timeline, i) => {
+                const curr = timeline.value ?? {
                     translateX: 0,
                     translateY: 0,
                     scale: 1,
@@ -85,7 +106,7 @@ export const PointerFollowingBalls = ({
                 const targetX = x + col * spacing - offset
                 const targetY = y + row * spacing - offset
 
-                controller.play({
+                timeline.play({
                     from: curr,
                     delay: i,
                     keyframes: [
@@ -94,7 +115,7 @@ export const PointerFollowingBalls = ({
                 })
             })
         },
-        [controllers, timelines] // Dependencies for the callback
+        [timelines] // Dependencies for the callback
     )
 
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -114,15 +135,14 @@ export const PointerFollowingBalls = ({
     }
 
     const handlePointerDown = () => {
-        controllers.forEach((controller, i) => {
-            const t = timelines[i]
-            const curr = t.getCurrentValue() ?? {
+        timelines.forEach((timeline) => {
+            const curr = timeline.value ?? {
                 translateX: 0,
                 translateY: 0,
                 scale: 1,
             }
 
-            controller.play({
+            timeline.play({
                 from: curr,
                 keyframes: [{ ...curr, scale: 0.5 }],
             })
@@ -144,18 +164,11 @@ export const PointerFollowingBalls = ({
                 <p>The balls will follow you.</p>
             </div>
 
-            {ballRefs.map((ref, i) => (
-                <div
+            {timelines.map((timeline, i) => (
+                <Ball
                     key={i}
-                    ref={ref}
-                    className="absolute rounded-full"
-                    style={{
-                        width: BALL_SIZE,
-                        height: BALL_SIZE,
-                        backgroundColor: colors[i % colors.length],
-                        left: -BALL_SIZE / 2,
-                        top: -BALL_SIZE / 2,
-                    }}
+                    timeline={timeline}
+                    color={colors[i % colors.length]}
                 />
             ))}
         </div>
@@ -163,46 +176,61 @@ export const PointerFollowingBalls = ({
 }
 
 export const pointerFollowingCode = `
+const createBallTimeline = () =>
+    a.rafTimeline(
+        a.ani({
+            to: { translateX: 0, translateY: 0, scale: 1 },
+            duration: 200,
+            timing: {
+                translateX: a.timing.dynamicSpring({
+                    m: 2,
+                    k: 100,
+                    c: 12,
+                }),
+                translateY: a.timing.dynamicSpring({
+                    m: 2,
+                    k: 100,
+                    c: 12,
+                }),
+                scale: a.timing.dynamicSpring({
+                    m: 1,
+                    k: 100,
+                    c: 15,
+                }),
+            },
+        })
+    )
+
+// One ref per ball: the timeline writes the element, React never renders per frame.
+const Ball = ({ timeline, color }) => {
+    const { ref } = useAniRef(timeline)
+
+    return (
+        <div
+            ref={ref}
+            className="absolute"
+            style={{
+                width: BALL_SIZE,
+                height: BALL_SIZE,
+                backgroundColor: color,
+                left: -BALL_SIZE / 2,
+                top: -BALL_SIZE / 2,
+            }}
+        />
+    )
+}
 
 export const PointerFollowingBalls = () => {
     const containerRef = useRef<HTMLDivElement>(null)
-    const ballRefs = Array.from({ length: NUM_BALLS }, () =>
-        useRef<HTMLDivElement>(null)
-    )
 
-    const timelines = useMemo(() => {
-        return Array.from({ length: NUM_BALLS }, (_, i) =>
-            a.timeline(
-                a.ani({
-                    to: { translateX: 0, translateY: 0, scale: 1 },
-                    duration: 200,
-                    timing: {
-                        translateX: a.timing.dynamicSpring({
-                            m: 2,
-                            k: 100,
-                            c: 12,
-                        }),
-                        translateY: a.timing.dynamicSpring({
-                            m: 2,
-                            k: 100,
-                            c: 12,
-                        }),
-                        scale: a.timing.dynamicSpring({
-                            m: 1,
-                            k: 100,
-                            c: 15,
-                        }),
-                    },
-                })
-            )
-        )
-    }, [])
-
-    const controllers = ballRefs.map((ref, i) =>
-        useAniRef(ref, {
-            timeline: timelines[i],
-        })
-    )
+    // The component owns the timelines and disposes them on unmount.
+    const timelines = useTimeline(() => {
+        const items = Array.from({ length: NUM_BALLS }, createBallTimeline)
+        return {
+            items,
+            dispose: () => items.forEach((item) => item.dispose()),
+        }
+    }, [NUM_BALLS]).items
 
     const throttleTimeout = useRef<NodeJS.Timeout | null>(null)
     const latestEventRef = useRef<React.MouseEvent<HTMLDivElement> | null>(null)
@@ -215,15 +243,14 @@ export const PointerFollowingBalls = () => {
             const x = e.clientX - rect.left
             const y = e.clientY - rect.top
 
-            const numItems = controllers.length
+            const numItems = timelines.length
             const size = Math.ceil(Math.sqrt(numItems))
 
             const spacing = BALL_SIZE * 1.25
             const offset = ((size - 1) * spacing) / 2
 
-            controllers.forEach((controller, i) => {
-                const t = timelines[i]
-                const curr = t.getCurrentValue() ?? {
+            timelines.forEach((timeline, i) => {
+                const curr = timeline.value ?? {
                     translateX: 0,
                     translateY: 0,
                     scale: 1,
@@ -234,7 +261,7 @@ export const PointerFollowingBalls = () => {
                 const targetX = x + col * spacing - offset
                 const targetY = y + row * spacing - offset
 
-                controller.play({
+                timeline.play({
                     from: curr,
                     delay: i,
                     keyframes: [
@@ -243,7 +270,7 @@ export const PointerFollowingBalls = () => {
                 })
             })
         },
-        [controllers, timelines]
+        [timelines]
     )
 
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -263,15 +290,14 @@ export const PointerFollowingBalls = () => {
     }
 
     const handlePointerDown = () => {
-        controllers.forEach((controller, i) => {
-            const t = timelines[i]
-            const curr = t.getCurrentValue() ?? {
+        timelines.forEach((timeline) => {
+            const curr = timeline.value ?? {
                 translateX: 0,
                 translateY: 0,
                 scale: 1,
             }
 
-            controller.play({
+            timeline.play({
                 from: curr,
                 keyframes: [{ ...curr, scale: 0.5 }],
             })
@@ -284,18 +310,11 @@ export const PointerFollowingBalls = () => {
             onPointerMove={handleMouseMove}
             onPointerDown={handlePointerDown}
         >
-            {ballRefs.map((ref, i) => (
-                <div
+            {timelines.map((timeline, i) => (
+                <Ball
                     key={i}
-                    ref={ref}
-                    className="absolute"
-                    style={{
-                        width: BALL_SIZE,
-                        height: BALL_SIZE,
-                        backgroundColor: colors[i % colors.length],
-                        left: -BALL_SIZE / 2,
-                        top: -BALL_SIZE / 2,
-                    }}
+                    timeline={timeline}
+                    color={colors[i % colors.length]}
                 />
             ))}
         </div>

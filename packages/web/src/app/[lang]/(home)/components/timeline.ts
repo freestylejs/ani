@@ -1,9 +1,9 @@
 import { a } from '@freestylejs/ani-core'
-import { useAniRef } from '@freestylejs/ani-react'
+import { useTimeline } from '@freestylejs/ani-react'
 import { useEffect } from 'react'
 
-export const timeline = {
-    appear: a.dynamicTimeline(
+const createAppear = () =>
+    a.rafTimeline(
         a.sequence(
             [
                 a.ani({
@@ -17,22 +17,25 @@ export const timeline = {
             ],
             a.timing.spring({ m: 1, k: 200, c: 10 })
         )
-    ),
-}
+    )
 
 export const useAppear = <T extends HTMLElement>(
     ref: React.RefObject<T | null>
 ) => {
-    const c = useAniRef(ref, { timeline: timeline.appear })
+    const appear = useTimeline(createAppear)
+
     useEffect(() => {
-        if (!ref.current) {
+        const element = ref.current
+        if (!element) {
             return
         }
 
-        c.play({ from: { opacity: 0, scale: 0 } })
+        const unbind = appear.bind(element)
+        void appear.play({ from: { opacity: 0, scale: 0 } })
 
         return () => {
-            c.reset()
+            unbind()
+            appear.reset()
         }
-    }, [])
+    }, [appear, ref])
 }
