@@ -40,6 +40,50 @@ export interface TimelineCommonConfig<G extends Groupable> {
 }
 
 /**
+ * What a timeline does when the user prefers reduced motion.
+ *
+ * - `'jump'`: every run completes at once in its end state.
+ * - `{ maxDuration }`: a run longer than `maxDuration` seconds plays faster so
+ *   that it takes `maxDuration`; shorter runs are untouched.
+ * - `'ignore'`: the preference is not honored (essential motion).
+ */
+export type ReducedMotionPolicy = 'jump' | 'ignore' | { maxDuration: number }
+
+/**
+ * Validates a policy at construction; `undefined` is the default `'jump'`.
+ */
+export function resolveReducedMotionPolicy(
+    policy: unknown
+): ReducedMotionPolicy {
+    if (policy === undefined || policy === 'jump') return 'jump'
+    if (policy === 'ignore') return 'ignore'
+    if (typeof policy === 'object' && policy !== null) {
+        const maxDuration = (policy as { maxDuration?: unknown }).maxDuration
+        if (
+            typeof maxDuration !== 'number' ||
+            !Number.isFinite(maxDuration) ||
+            maxDuration <= 0
+        ) {
+            throw new RangeError(
+                `[Timeline] \`reducedMotion.maxDuration\` must be a finite number > 0 (seconds), received ${String(maxDuration)}.`
+            )
+        }
+        return { maxDuration }
+    }
+    throw new TypeError(
+        `[Timeline] \`reducedMotion\` must be 'jump', 'ignore' or { maxDuration }, received ${String(policy)}.`
+    )
+}
+
+/**
+ * Whether the `clock` reports a reduced-motion preference. A clock that does
+ * not know the preference (a custom one) reports `false`.
+ */
+export function prefersReducedMotion(clock: object): boolean {
+    return (clock as { reducedMotion?: unknown }).reducedMotion === true
+}
+
+/**
  * Normalize repeat count as "additional iterations after first play".
  */
 export function normalizeRepeatCount(repeat?: number): number {

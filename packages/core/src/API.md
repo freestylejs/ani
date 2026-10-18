@@ -1011,13 +1011,13 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 
 | Member | Description |
 | :--- | :--- |
-| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `timeScale`, `visibility`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
+| `createClock(options?)` | Independent clock: `lagThreshold`, `maxDeltaTime`, `timeScale`, `visibility`, `reducedMotion`, `requestFrame`, `cancelFrame`, `now`, `onError`. Returns a clock with a read-only `size`. |
 | `VisibilitySource` | `{ readonly hidden: boolean; addEventListener('visibilitychange', listener): void; removeEventListener('visibilitychange', listener): void }`. What `visibility: true` resolves to (`globalThis.document`); inject your own in tests. |
 | `defaultClock` | The process-wide shared clock instance (creating it touches neither the DOM nor `requestAnimationFrame`). |
 | `AnimationClock.create(maxDeltaTime?)` | Returns `defaultClock`. A given `maxDeltaTime` applies to it. |
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`, `{ lagThreshold?, maxDeltaTime? }` sets either atomically. |
 | `AnimationClock.reset()` | Disposes `defaultClock` and restores its defaults (timing options, `timeScale` 1, not paused); the instance stays the same (test isolation, hot reload). |
-| `createManualClock(options?)` | `@freestylejs/ani-core/testing`, not in the root entry. A real clock driven by hand: `{ clock, now, pending, frame(ms = 16), frames(count, ms), advance(ms), drop(), setHidden(hidden) }`. Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError`, `visibility` (default `true`; `false` makes `setHidden` throw `TypeError`). |
+| `createManualClock(options?)` | `@freestylejs/ani-core/testing`, not in the root entry. A real clock driven by hand: `{ clock, now, pending, frame(ms = 16), frames(count, ms), advance(ms), drop(), setHidden(hidden), setReducedMotion(on) }`. Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError`, `visibility` (default `true`; `false` makes `setHidden` throw `TypeError`), `reducedMotion` (default `false`). |
 | `resetDefaultClock()` | `@freestylejs/ani-core/testing`. Same as `AnimationClock.reset()`. |
 | `clock.size` | Number of subscribed animatables. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
@@ -1025,6 +1025,38 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 | `clock.pause()` / `clock.resume()` / `clock.paused` | Stop the frame loop keeping subscribers / restart it without the paused gap / whether it is paused. |
 | `AniError` code `ANI_SUBSCRIBER_QUARANTINED` | Reported when a subscriber is unsubscribed after 3 consecutive failing ticks; `cause` is its last error. |
 | `Animatable` | `{ read?(): void; update(dt: number): void; commit?(): void }`. |
+
+---
+
+## Reduced motion
+
+> **Animations honor `prefers-reduced-motion` by default.**
+
+The clock owns the preference (`createClock({ reducedMotion })`, read-only `clock.reducedMotion`); each timeline applies a policy.
+
+```typescript
+import { a } from "@freestylejs/ani-core";
+
+const t = a.rafTimeline(node); // 'jump' (default)
+const capped = a.rafTimeline(node, { reducedMotion: { maxDuration: 0.2 } });
+const essential = a.rafTimeline(node, { reducedMotion: "ignore" });
+```
+
+-   `reducedMotion` on a clock: `'system'` (default; lazily follows `matchMedia('(prefers-reduced-motion: reduce)')`, `false` without `matchMedia`), a boolean to force it, or an object with a boolean `matches` (a `MediaQueryList`) as an injected live source. Anything else throws a `TypeError`. `AnimationClock.reset()` keeps the source.
+-   Policy `ReducedMotionPolicy = 'jump' | 'ignore' | { maxDuration: number }`, per timeline, validated at construction (`maxDuration` must be finite and > 0, else `RangeError`).
+-   The preference is read **once at the start of each `play()`**: a change affects the next run, never a running one.
+-   RAF `'jump'` (default): `play()` validates as usual, then the run completes at once. The value is the end state (the plan at its duration; with `repeat`, the end of the last run; `repeat: Infinity` ends after one run), the status is `ENDED`, bound targets are written, listeners are notified once with `ENDED` and the promise resolves `'ended'`. The clock is not subscribed.
+-   RAF `{ maxDuration }`: a run longer than `maxDuration` plays `duration / maxDuration` times faster (springs included); `duration` still reports the plan's. Shorter runs are untouched.
+-   WAAPI (`waapiTimeline(node, { reducedMotion, clock })`; `clock` only provides the preference, default `defaultClock`): `'jump'` creates the animations and `finish()`es them at once (`ENDED`, `'ended'`; an endless run ends after one), `{ maxDuration }` sets `playbackRate` to `duration / maxDuration` when longer.
+-   `'ignore'` keeps the normal behavior; use it for essential motion (progress indicators).
+-   Tests: `createManualClock({ reducedMotion })` and `setReducedMotion(on)` flip the preference.
+
+| Member | Description |
+| :--- | :--- |
+| `ReducedMotionPolicy` | `'jump' \| 'ignore' \| { maxDuration: number }`. |
+| `RafTimelineOptions.reducedMotion` / `WaapiTimelineOptions.reducedMotion` | Policy, default `'jump'`. |
+| `clock.reducedMotion` | Current effective preference (read-only boolean). |
+| `ReducedMotionSource` | `{ readonly matches: boolean }`, what an injected `reducedMotion` object satisfies. |
 
 ---
 

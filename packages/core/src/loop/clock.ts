@@ -89,6 +89,22 @@ export interface CreateClockOptions extends ClockTimingOptions {
      * @default true
      */
     visibility?: boolean | VisibilitySource | undefined
+    /**
+     * The user's reduced-motion preference, exposed as `clock.reducedMotion`
+     * and honored by timelines. `'system'` follows
+     * `(prefers-reduced-motion: reduce)` (created on first read, read live);
+     * without `matchMedia` it is `false`. A boolean forces it; an object
+     * with a boolean `matches` (a `MediaQueryList`) is an injected source.
+     * @default 'system'
+     */
+    reducedMotion?: 'system' | boolean | ReducedMotionSource | undefined
+}
+
+/**
+ * Live reduced-motion source. A `MediaQueryList` satisfies it.
+ */
+export interface ReducedMotionSource {
+    readonly matches: boolean
 }
 
 /**
@@ -96,6 +112,11 @@ export interface CreateClockOptions extends ClockTimingOptions {
  */
 export type ManagedClock = AnimationClockInterface & {
     readonly size: number
+    /**
+     * Whether the user prefers reduced motion right now (see the
+     * `reducedMotion` option).
+     */
+    readonly reducedMotion: boolean
     /**
      * Queues `fn` for the read phase of the next frame (arms the loop when
      * idle). Runs once; a no-op without a frame source.
@@ -202,6 +223,28 @@ function defaultVisibilitySource(): VisibilitySource | null {
         : null
 }
 
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+
+function isReducedMotionSource(value: unknown): value is ReducedMotionSource {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        typeof (value as ReducedMotionSource).matches === 'boolean'
+    )
+}
+
+// Validates the option eagerly; `undefined` keeps the default (`'system'`).
+function resolveReducedMotion(
+    value: unknown
+): 'system' | boolean | ReducedMotionSource {
+    if (value === undefined || value === 'system') return 'system'
+    if (typeof value === 'boolean') return value
+    if (isReducedMotionSource(value)) return value
+    throw new TypeError(
+        `[AnimationClock] reducedMotion must be 'system', a boolean or an object with a boolean "matches", received ${String(value)}.`
+    )
+}
+
 function rethrowAsync(error: unknown): void {
     if (typeof queueMicrotask === 'function') {
         queueMicrotask(() => {
@@ -255,6 +298,12 @@ export class AnimationClock implements ManagedClock {
     private ordinaryFrame = DEFAULT_FRAME
     private readonly options: CreateClockOptions
     private readonly visibility: boolean | VisibilitySource
+    private readonly reducedMotionOption:
+        | 'system'
+        | boolean
+        | ReducedMotionSource
+    // Created once, on the first read of the 'system' preference.
+    private systemQuery: ReducedMotionSource | null = null
 
     // Page visibility: the listener exists only while the loop is armed and is
     // created once per clock. `suspended` is sticky for one frame.
@@ -320,6 +369,9 @@ export class AnimationClock implements ManagedClock {
         this.options =
             typeof options === 'number' ? { maxDeltaTime: options } : options
         this.visibility = resolveVisibility(this.options.visibility)
+        this.reducedMotionOption = resolveReducedMotion(
+            this.options.reducedMotion
+        )
         if (this.options.timeScale !== undefined) {
             this.scale = assertTimeScale(this.options.timeScale)
         }
@@ -348,6 +400,22 @@ export class AnimationClock implements ManagedClock {
      */
     public get size(): number {
         return this.subscribers.size
+    }
+
+    public get reducedMotion(): boolean {
+        const option = this.reducedMotionOption
+        if (typeof option === 'boolean') return option
+        if (option !== 'system') return option.matches
+        if (this.systemQuery === null) {
+            const matchMedia = (
+                globalThis as {
+                    matchMedia?: (query: string) => ReducedMotionSource | null
+                }
+            ).matchMedia
+            if (typeof matchMedia !== 'function') return false
+            this.systemQuery = matchMedia.call(globalThis, REDUCED_MOTION_QUERY)
+        }
+        return this.systemQuery?.matches === true
     }
 
     public get timeScale(): number {
