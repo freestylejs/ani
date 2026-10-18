@@ -35,12 +35,14 @@ console.log(clock.size); // 1 subscriber
 Timelines use one shared process-wide clock unless you pass another. It runs **one** `requestAnimationFrame` loop no matter how many timelines play, and it stops the loop when the last timeline leaves.
 
 ```typescript
-import { AnimationClock } from "@freestylejs/ani-core";
+import { AnimationClock, defaultClock } from "@freestylejs/ani-core";
 
 AnimationClock.configure({ lagThreshold: 1 }); // tune the shared clock's time model
-AnimationClock.reset();       // dispose the shared clock (tests, hot reload)
-AnimationClock.create().size; // number of timelines currently driven
+AnimationClock.reset();  // dispose it and restore its defaults (tests, hot reload)
+defaultClock.size;       // number of timelines currently driven
 ```
+
+`defaultClock` is the shared instance; `AnimationClock.create()` returns the same object. For tests, [`createManualClock`](/en/docs/guides/testing) from `@freestylejs/ani-core/testing` builds a clock you drive by hand.
 
 #### Guarantees
 
@@ -148,9 +150,10 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size` 
 
 | Member | Description |
 | :--- | :--- |
-| `AnimationClock.create(maxDeltaTime?)` | The shared clock. A given `maxDeltaTime` is applied even if the clock exists. |
+| `defaultClock` | The process-wide shared clock instance. Creating it touches neither the DOM nor `requestAnimationFrame`. |
+| `AnimationClock.create(maxDeltaTime?)` | Returns `defaultClock`. A given `maxDeltaTime` is applied to it. |
 | `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`; `{ lagThreshold?, maxDeltaTime? }` sets either (validated before anything changes). |
-| `AnimationClock.reset()` | Disposes the shared clock; the next `create()` starts clean. |
+| `AnimationClock.reset()` | Disposes `defaultClock` and restores its defaults (timing options, `timeScale` 1, not paused). The instance stays the same. |
 | `clock.size` | Number of animatables currently subscribed. |
 | `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. An `Animatable` is `{ read?(), update(dt), commit?() }`. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |

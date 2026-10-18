@@ -603,10 +603,14 @@ describe('createClock', () => {
         expect(animatable.update).not.toHaveBeenCalled()
     })
 
-    it('reset() on the default clock gives a fresh instance', () => {
-        const first = AnimationClock.create()
+    it('reset() keeps the default clock instance and restores its defaults', () => {
+        const first = AnimationClock.create(0.01)
+        first.timeScale = 2
+        first.subscribe({ update: vi.fn() })
         AnimationClock.reset()
-        expect(AnimationClock.create()).not.toBe(first)
+        expect(AnimationClock.create()).toBe(first)
+        expect(first.size).toBe(0)
+        expect(first.timeScale).toBe(1)
         AnimationClock.reset()
     })
 })
