@@ -20,12 +20,18 @@ export interface SpringTimingFunctionOpt {
     tolerance?: number
 }
 export class SpringTimingFunction extends TimingFunction {
-    public constructor(public readonly opt: SpringTimingFunctionOpt) {
+    public readonly opt: SpringTimingFunctionOpt
+
+    public constructor(opt: SpringTimingFunctionOpt) {
         super()
-        if (!this.opt.tolerance) {
-            const DEFAULT_TOLERANCE = 1e-3 as const
-            this.opt.tolerance = DEFAULT_TOLERANCE
+        if (!(opt.m > 0) || !(opt.k > 0) || !(opt.c >= 0)) {
+            throw new RangeError(
+                `[SpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${opt.m}, k=${opt.k}, c=${opt.c}.`
+            )
         }
+        const DEFAULT_TOLERANCE = 1e-3 as const
+        // own copy: never mutate (or alias) the caller's option object
+        this.opt = { ...opt, tolerance: opt.tolerance || DEFAULT_TOLERANCE }
     }
 
     public step(
@@ -47,6 +53,16 @@ export class SpringTimingFunction extends TimingFunction {
 
         const wN = Math.sqrt(k / m)
         const zetta = c / (2 * Math.sqrt(m * k))
+
+        if (zetta === 0) {
+            // Undamped: never settles, so the settling-time scaling below is
+            // undefined (Infinity * 0 = NaN at time 0). Run in natural time
+            // and end with the segment duration.
+            return {
+                value: d0 * Math.cos(wN * time) + context.to,
+                endOfAnimation: time >= context.duration,
+            }
+        }
 
         if (zetta < 1) {
             // under-damped system

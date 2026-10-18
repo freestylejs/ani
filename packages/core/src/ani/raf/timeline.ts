@@ -1,21 +1,18 @@
-import type { AniGroup, AnimePrimitive, Groupable } from '~/ani/core'
+import type { AniGroup, Groupable } from '~/ani/core'
 import {
     normalizeRepeatCount,
     TimelineBase,
     type TimelineCommonConfig,
 } from '~/ani/core'
+import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
+import { resolveGroup } from '~/ani/core/resolver'
 import {
     type Animatable,
     AnimationClock,
     type AnimationClockInterface,
 } from '~/loop'
 import type { AnimationNode } from '~/nodes'
-import { isEndOfAnimation } from '~/utils/time'
-import {
-    resolveGroup,
-    resolvePlanState,
-    resolveStateToGroup,
-} from '../core/resolver'
+import { END_TOLERANCE } from '~/utils/time'
 
 export interface RafTimelineConfig<G extends Groupable, Ctx = any>
     extends TimelineCommonConfig<G> {
@@ -23,13 +20,23 @@ export interface RafTimelineConfig<G extends Groupable, Ctx = any>
      * Custom context definition during animation cycle.
      */
     context?: Ctx
+    /**
+     * Initial velocity per value, in units per second (same shape as `from`;
+     * record velocities may be partial). Seeds stateful timings such as
+     * `dynamicSpring`; ignored by stateless timings.
+     *
+     * Playing over a running animation without this option continues from
+     * `getCurrentVelocity()` automatically.
+     */
+    velocity?: Partial<G>
 }
 
-type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED'
+export type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED'
 
 export type OnUpdateCallback<G extends Groupable> = (current: {
     /**
-     * Current animation state
+     * Current animation state. Shared (same object) by every callback of one
+     * notification: treat it as read-only.
      */
     state: AniGroup<G>
     /**
@@ -38,8 +45,21 @@ export type OnUpdateCallback<G extends Groupable> = (current: {
     status: TimelineStatus
 }) => void
 
+function reportAsync(error: unknown): void {
+    queueMicrotask(() => {
+        throw error
+    })
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value)
+}
+
 export class RafAniTimeline<G extends Groupable, Ctx = any>
-    extends TimelineBase<G>
+    extends TimelineBase<
+        G,
+        [config: RafTimelineConfig<G, Ctx>, canBeIntercepted?: boolean]
+    >
     // Raf clock
     implements Animatable
 {
@@ -48,22 +68,35 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
     private _masterTime = 0
     private _delay = 0
     private _status: TimelineStatus = 'IDLE'
+    private _disposed = false
+    /** Bumped on every play/reset so re-entrant callbacks can be detected. */
+    private _runId = 0
 
     private _currentConfig: RafTimelineConfig<G, Ctx> | null = null
     public get currentConfig() {
         return this._currentConfig
     }
 
-    private _state: AnimePrimitive = []
-    private _initialState: AnimePrimitive = []
-    private _remainingRepeats: number = 0
+    /** Current lifecycle status. */
+    public get status(): TimelineStatus {
+        return this._status
+    }
 
-    private _propertyKeyMap: Map<string, number> | null = null
+    private _runtime: PlanRuntime | null = null
+    private _keys: readonly string[] | null = null
+    private _remainingRepeats: number = 0
     private _onUpdateCallbacks = new Set<OnUpdateCallback<G>>()
 
-    // Cached resolved group for referentially stable getCurrentValue()
+    private _lastDt = 0
+    private _advanced = false
+
+    // Cached group, shared with the onUpdate subscribers of one notification
+    // and referentially stable for getCurrentValue() until the next frame.
     private _cachedGroup: AniGroup<G> | null = null
     private _groupDirty = true
+    // frozen copy handed out by getCurrentValue()
+    private _snapshot: AniGroup<G> | null = null
+    private _snapshotDirty = true
 
     constructor(rootNode: AnimationNode<G>, clock?: AnimationClockInterface) {
         super(rootNode)
@@ -74,72 +107,87 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this.seek = this.seek.bind(this)
         this.resume = this.resume.bind(this)
         this.reset = this.reset.bind(this)
+        this.dispose = this.dispose.bind(this)
     }
 
-    public getCurrentValue(): AniGroup<G> | null {
-        if (this._state.length === 0) return null
+    private _buildGroup(values: readonly number[]): Groupable {
+        const keys = this._keys
+        if (!keys) return values.slice()
+        // A plain keyed-store loop benchmarked as fast as every CSP-safe
+        // template/clone alternative (and as code generation, which is banned).
+        const group: Record<string, number> = {}
+        for (let i = 0; i < keys.length; i++) {
+            group[keys[i]!] = values[i]!
+        }
+        return group
+    }
+
+    private _group(): AniGroup<G> {
         if (!this._groupDirty && this._cachedGroup !== null) {
             return this._cachedGroup
         }
-        this._cachedGroup = resolveStateToGroup(
-            this._state,
-            this._propertyKeyMap
+        const runtime = this._runtime
+        this._cachedGroup = (
+            runtime ? this._buildGroup(runtime.values) : []
         ) as AniGroup<G>
         this._groupDirty = false
         return this._cachedGroup
     }
 
-    private _calculateStateAtTime(
-        targetTime: number,
-        dt: number = 0
-    ): AnimePrimitive {
-        if (this._initialState.length === 0 || !this._currentExecutionPlan) {
-            return []
+    /**
+     * Latest value, `null` before the first `play()` (and after `reset()`).
+     * The returned object is a frozen snapshot, stable until the next frame;
+     * it never aliases engine internals or the `from` passed to `play()`.
+     */
+    public getCurrentValue(): AniGroup<G> | null {
+        const runtime = this._runtime
+        if (!runtime || runtime.values.length === 0) return null
+        if (this._snapshotDirty || this._snapshot === null) {
+            this._snapshot = Object.freeze(
+                this._buildGroup(runtime.values)
+            ) as AniGroup<G>
+            this._snapshotDirty = false
         }
-
-        return resolvePlanState(
-            this._currentExecutionPlan,
-            this._initialState,
-            this._propertyKeyMap, // Using the class property directly
-            targetTime,
-            dt
-        )
+        return this._snapshot
     }
 
-    private _resolveRuntimeState(config: RafTimelineConfig<G, Ctx>): void {
-        this._currentExecutionPlan = this._resolveExecutionPlan(
-            config.keyframes,
-            config.durations
-        )
-
-        const { keyMap, values } = resolveGroup(config.from)
-        this._propertyKeyMap = keyMap
-        this._state = values
-        this._initialState = values
-        this._masterTime = 0
-        this._groupDirty = true
-    }
-
-    private _restartForRepeat(): void {
-        if (!this._currentConfig) {
-            return
+    /**
+     * Per-value velocity in units/second: the integrator velocity for stateful
+     * timings (dynamic springs), else the finite difference of the last
+     * advanced frame. Zero unless the timeline is `PLAYING`. `null` until a
+     * frame has advanced since `play()` / `seek()`.
+     */
+    public getCurrentVelocity(): AniGroup<G> | null {
+        const runtime = this._runtime
+        if (!runtime || !this._advanced) return null
+        const count = runtime.values.length
+        const out = new Array<number>(count)
+        const moving = this._status === 'PLAYING'
+        for (let i = 0; i < count; i++) {
+            if (!moving) {
+                out[i] = 0
+                continue
+            }
+            const v = runtime.velocities[i]!
+            out[i] = Number.isNaN(v)
+                ? this._lastDt > 0
+                    ? (runtime.values[i]! - runtime.previous[i]!) / this._lastDt
+                    : 0
+                : v
         }
-
-        this._delay = 0
-        this._resolveRuntimeState(this._currentConfig)
-        this._status = 'PLAYING'
-        this.notify()
+        return this._buildGroup(out) as AniGroup<G>
     }
 
-    private notify(): void {
-        for (const subscriber of this._onUpdateCallbacks) {
-            subscriber({
-                state: resolveStateToGroup(
-                    this._state,
-                    this._propertyKeyMap
-                ) as AniGroup<G>,
-                status: this._status,
-            })
+    private _notify(): void {
+        const callbacks = this._onUpdateCallbacks
+        if (callbacks.size === 0) return
+        const payload = { state: this._group(), status: this._status }
+        for (const callback of callbacks) {
+            try {
+                callback(payload)
+            } catch (error) {
+                reportAsync(error)
+            }
         }
     }
 
@@ -147,7 +195,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
      * @private Internal clock subscription callback.
      */
     update(dt: number): void {
-        if (this._status !== 'PLAYING') return
+        if (this._status !== 'PLAYING' || !this._runtime) return
 
         if (this._delay > 0) {
             this._delay -= dt
@@ -159,32 +207,160 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             }
         }
 
-        this._masterTime += dt
-        if (this._masterTime >= this.duration) this._masterTime = this.duration
+        this._advance(dt)
+    }
 
-        this._state = this._calculateStateAtTime(this._masterTime, dt)
+    private _advance(dt: number): void {
+        const runtime = this._runtime!
+        const duration = this.duration
+        let time = this._masterTime + dt
+        let overshoot = 0
+        if (time >= duration - END_TOLERANCE) {
+            overshoot = time > duration ? time - duration : 0
+            time = duration
+        }
+        this._masterTime = time
+
+        runtime.evaluate(time, dt)
+        this._lastDt = dt
+        if (dt > 0) this._advanced = true
         this._groupDirty = true
-        this.notify()
+        this._snapshotDirty = true
 
-        if (isEndOfAnimation(this._masterTime, this.duration)) {
-            if (
-                this._remainingRepeats === Infinity ||
-                this._remainingRepeats > 0
-            ) {
-                if (this._remainingRepeats !== Infinity) {
-                    this._remainingRepeats -= 1
-                }
-                this._restartForRepeat()
-            } else {
-                this._status = 'ENDED'
-                this._clock.unsubscribe(this)
-                this.notify()
-            }
+        const runId = this._runId
+        this._notify()
+        // a subscriber may have replaced / paused / reset this run
+        if (runId !== this._runId || this._status !== 'PLAYING') return
+
+        const reachedEnd = time >= duration - END_TOLERANCE
+        if (reachedEnd || runtime.finished) {
+            this._completeRun(reachedEnd ? overshoot : 0)
         }
     }
 
     /**
+     * A run reached its end: start the next repeat (carrying the frame
+     * overshoot over, so repeats do not drift) or finish exactly once.
+     */
+    private _completeRun(overshoot: number): void {
+        const runtime = this._runtime!
+        const duration = this.duration
+        let carry = overshoot
+
+        for (;;) {
+            if (
+                this._remainingRepeats !== Infinity &&
+                this._remainingRepeats <= 0
+            ) {
+                this._status = 'ENDED'
+                this._clock.unsubscribe(this)
+                this._groupDirty = true
+                this._snapshotDirty = true
+                this._notify()
+                return
+            }
+            if (this._remainingRepeats !== Infinity) this._remainingRepeats -= 1
+
+            runtime.reset()
+            this._masterTime = 0
+            this._advanced = false
+            this._groupDirty = true
+            this._snapshotDirty = true
+
+            if (carry <= 0 || duration <= 0) {
+                this._notify()
+                return
+            }
+            if (carry >= duration) {
+                // the whole repeat elapsed within this single frame
+                carry -= duration
+                this._masterTime = duration
+                runtime.evaluate(duration, 0)
+                continue
+            }
+            this._masterTime = carry
+            runtime.evaluate(carry, carry)
+            this._notify()
+            return
+        }
+    }
+
+    /** Validates `velocity` and aligns it with the `from` layout. */
+    private _resolveVelocitySeed(
+        velocity: unknown,
+        keys: readonly string[] | null,
+        count: number
+    ): number[] | null {
+        if (velocity === undefined || velocity === null) return null
+        if (typeof velocity !== 'object') {
+            throw new TypeError(
+                '[Timeline] `velocity` must be an array or record shaped like `from`.'
+            )
+        }
+        const seed = new Array<number>(count).fill(0)
+        const source = velocity as Record<string, unknown>
+        if (keys === null) {
+            if (!Array.isArray(velocity)) {
+                throw new TypeError(
+                    '[Timeline] `velocity` must be an array when `from` is an array.'
+                )
+            }
+        } else if (Array.isArray(velocity)) {
+            throw new TypeError(
+                '[Timeline] `velocity` must be a record when `from` is a record.'
+            )
+        }
+        for (let i = 0; i < count; i++) {
+            const value = source[keys ? keys[i]! : i]
+            if (value === undefined) continue
+            if (!isFiniteNumber(value)) {
+                throw new TypeError(
+                    `[Timeline] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
+                )
+            }
+            seed[i] = value
+        }
+        return seed
+    }
+
+    /**
+     * Interrupt seed: current velocity re-expressed in the new `from` layout.
+     */
+    private _inheritVelocity(
+        keys: readonly string[] | null,
+        count: number
+    ): number[] | null {
+        if (this._status !== 'PLAYING') return null
+        const current = this.getCurrentVelocity() as
+            | Record<string, number>
+            | number[]
+            | null
+        if (current === null) return null
+        if ((keys === null) !== Array.isArray(current)) return null
+        const seed = new Array<number>(count).fill(0)
+        for (let i = 0; i < count; i++) {
+            const value = (current as Record<string | number, number>)[
+                keys ? keys[i]! : i
+            ]
+            if (isFiniteNumber(value)) seed[i] = value
+        }
+        return seed
+    }
+
+    /**
      * Plays animation.
+     *
+     * Malformed input (shape mismatches between `from` / segments / `timing`,
+     * non-finite numbers, bad overrides) throws synchronously from here and
+     * leaves the timeline untouched; nothing can throw later inside the clock.
+     *
+     * Playing over a `PLAYING` timeline interrupts it. Velocity carries over
+     * (see `velocity`), so stateful springs retarget without a visible kink.
+     *
+     * The run ends at `duration`, or earlier once every value is held by
+     * dynamic springs that have settled (segments with a non-physics timing,
+     * and `delay()`, always run to their scheduled end).
+     *
      * @param config {@link https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame RequestAnimationFrame API} based config.
      * @param canBeIntercepted if `true` animation can be intercepted even if already animation started.
      */
@@ -192,73 +368,174 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         config: RafTimelineConfig<G, Ctx>,
         canBeIntercepted: boolean = true
     ): void {
+        if (this._disposed) return
         if (this._status === 'PLAYING' && !canBeIntercepted) return
-        this.reset(false, true)
 
+        // ---- validate & prepare (no state is touched until this succeeds)
+        const from = config.from as unknown
+        if (typeof from !== 'object' || from === null) {
+            throw new TypeError(
+                '[Timeline] `from` must be an array or a record of numbers.'
+            )
+        }
+        const { keyMap, values } = resolveGroup(config.from)
+        for (let i = 0; i < values.length; i++) {
+            if (!isFiniteNumber(values[i])) {
+                const name = keyMap ? [...keyMap.keys()][i] : `[${i}]`
+                throw new TypeError(
+                    `[Timeline] \`from\` ${keyMap ? `"${name}"` : name} must be a finite number, received ${values[i]}.`
+                )
+            }
+        }
+        const delayMs = config.delay ?? 0
+        if (!Number.isFinite(delayMs) || delayMs < 0) {
+            throw new RangeError(
+                `[Timeline] \`delay\` must be a finite number >= 0 (ms), received ${delayMs}.`
+            )
+        }
+
+        const keys = keyMap ? [...keyMap.keys()] : null
+        if (keys?.includes('__proto__')) {
+            throw new TypeError(
+                '[Timeline] `__proto__` can not be used as an animated property name.'
+            )
+        }
+        const { plan, duration } = this._buildExecutionPlan(
+            config.keyframes,
+            config.durations
+        )
+        const compiled = compilePlan(plan, keys, values.length)
+        const seed =
+            config.velocity === undefined
+                ? this._inheritVelocity(keys, values.length)
+                : this._resolveVelocitySeed(
+                      config.velocity,
+                      keys,
+                      values.length
+                  )
+        const runtime = new PlanRuntime(compiled, values as number[], seed)
+
+        // ---- commit
+        this._runId++
         this._currentConfig = config
+        this._currentExecutionPlan = plan
+        this._commitDuration(duration)
         this._remainingRepeats = normalizeRepeatCount(config.repeat)
-        this._delay = (this._currentConfig.delay ?? 0) * 1e-3
-
-        // >> Resolve Dynamic Plan via Base Class <<
-        this._resolveRuntimeState(config)
-
+        this._delay = delayMs * 1e-3
+        this._keys = keys
+        this._runtime = runtime
+        this._lastDt = 0
+        this._advanced = false
+        this._masterTime = 0
+        this._groupDirty = true
+        this._snapshotDirty = true
         this._status = 'PLAYING'
         this._clock.subscribe(this)
-        this.notify()
+        this._notify()
     }
 
+    /**
+     * Pauses a `PLAYING` timeline (no-op in any other status).
+     */
     public pause(): void {
+        if (this._status !== 'PLAYING') return
         this._status = 'PAUSED'
         this._clock.unsubscribe(this)
     }
 
+    /**
+     * Resumes a `PAUSED` timeline (no-op in any other status).
+     */
     public resume(): void {
-        if (this._status !== 'PAUSED') return
+        if (this._disposed || this._status !== 'PAUSED' || !this._runtime) {
+            return
+        }
         this._status = 'PLAYING'
         this._clock.subscribe(this)
     }
 
+    /**
+     * Back to `IDLE`: stops the run, clears the value and drops `durations`
+     * overrides (`duration` returns to the node's own).
+     */
     public reset(
         notify: boolean = true,
         unsubscribeClock: boolean = true
     ): void {
+        this._runId++
         this._status = 'IDLE'
         this._currentConfig = null
         this._masterTime = 0
         this._delay = 0
-        this._state = []
-        this._initialState = []
-        this._propertyKeyMap = null
+        this._runtime = null
+        this._keys = null
         this._currentExecutionPlan = null
+        this._restoreDuration()
+        this._lastDt = 0
+        this._advanced = false
         this._cachedGroup = null
         this._groupDirty = true
+        this._snapshotDirty = true
         if (unsubscribeClock) {
             this._clock.unsubscribe(this)
         }
         this._remainingRepeats = 0
-        if (notify) this.notify()
+        if (notify) this._notify()
     }
 
+    /**
+     * Stops the timeline for good: leaves the clock, drops every `onUpdate`
+     * callback and turns `play()` / `resume()` into no-ops. Idempotent.
+     */
+    public dispose(): void {
+        if (this._disposed) return
+        this._disposed = true
+        this.reset(false, true)
+        this._onUpdateCallbacks.clear()
+    }
+
+    /**
+     * Jumps to `targetTime` (seconds, clamped to `[0, duration]`).
+     *
+     * Seeking is a time-domain override: a `PLAYING` or `ENDED` timeline
+     * becomes `PAUSED` at the new time (call `resume()` to continue from
+     * there), any pending start `delay` is dropped, and subscribers are
+     * notified once. Physics timings are re-simulated from their segment start,
+     * so the result is deterministic. No-op before the first `play()`.
+     */
     public seek(targetTime: number): void {
+        const runtime = this._runtime
+        if (!runtime) return
+        if (typeof targetTime !== 'number' || Number.isNaN(targetTime)) {
+            throw new RangeError(
+                `[Timeline] seek time must be a number, received ${targetTime}.`
+            )
+        }
         if (this._status === 'PLAYING' || this._status === 'ENDED') {
-            this.pause()
+            this._status = 'PAUSED'
+            this._clock.unsubscribe(this)
         }
         const seekTime = Math.max(0, Math.min(targetTime, this.duration))
-        // Seeking is an explicit time-domain override: any pending start
-        // delay must not re-apply when playback resumes.
         this._delay = 0
         this._masterTime = seekTime
-        this._state = this._calculateStateAtTime(seekTime, 0)
+        runtime.evaluate(seekTime, 0)
+        this._advanced = false
         this._groupDirty = true
-        this.notify()
+        this._snapshotDirty = true
+        this._notify()
     }
 
     /**
      * When timeline updates, subscribes on update callback.
+     *
+     * Every callback of one notification receives the same `state` object. A
+     * throwing callback does not affect the others nor the timeline; its
+     * error is rethrown asynchronously.
      * @param callback Subscription callback.
      * @returns Unsubscribe.
      */
     public onUpdate(callback: OnUpdateCallback<G>): () => void {
+        if (this._disposed) return () => undefined
         this._onUpdateCallbacks.add(callback)
         return () => {
             this._onUpdateCallbacks.delete(callback)

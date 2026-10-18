@@ -1,12 +1,10 @@
-import { calculateSegmentState } from '~/ani/core'
 import type {
     AnimePrimitive,
     ExecutionPlan,
     Groupable,
     GroupableRecord,
-    SegmentDefinition,
 } from '~/ani/core/interface/core_types'
-import { T, TimingFunction } from '~/timing'
+import { evaluatePlanAt } from './plan_runtime'
 
 export function resolveGroup(group: Groupable): {
     keyMap: Map<string, number> | null
@@ -36,6 +34,10 @@ export function resolveStateToGroup(
     return group
 }
 
+/**
+ * Resolves the state of `plan` at `targetTime` (one-shot, uncached runtime).
+ * The live engine keeps a `PlanRuntime` instead; this is for ad-hoc sampling.
+ */
 export function resolvePlanState(
     plan: ExecutionPlan<any>,
     initialValues: AnimePrimitive,
@@ -43,76 +45,11 @@ export function resolvePlanState(
     targetTime: number,
     dt: number = 0
 ): number[] {
-    const nextState: number[] = [...initialValues]
-    let stateAtLastStartTime: number[] = [...initialValues]
-
-    for (const segment of plan) {
-        // Skip future
-        if (targetTime < segment.startTime) {
-            continue
-        }
-
-        // Snapshot state at segment start
-        stateAtLastStartTime = [...nextState]
-
-        const { keyMap: segKeyMap, values: toValues } = resolveGroup(
-            segment.node.props.to
-        )
-
-        const isRecordAni = keyMap !== null
-
-        let fromValues: number[] = []
-        const timings: Array<TimingFunction> = []
-        const t = segment.node.props.timing
-        const isRecordTiming = t && !(t instanceof TimingFunction)
-
-        if (isRecordAni) {
-            // Record/Object-based animation
-            for (const key of segKeyMap!.keys()) {
-                const index = keyMap!.get(key)!
-                fromValues.push(stateAtLastStartTime[index]!)
-
-                if (isRecordTiming) {
-                    timings.push((t as Record<string, TimingFunction>)[key]!)
-                }
-            }
-        } else {
-            // Array-based animation
-            fromValues = stateAtLastStartTime
-        }
-
-        const localTime = targetTime - segment.startTime
-        const segmentDef: SegmentDefinition = {
-            from: fromValues,
-            to: toValues,
-            duration: segment.node.duration,
-            // default fallback = linear
-            timing: isRecordAni && isRecordTiming ? timings : (t ?? T.linear()),
-        }
-
-        // Completed segments must not keep consuming delta time, otherwise
-        // stateful integrators (dynamic springs) advance on foreign clocks.
-        const activeDt = localTime < segment.node.duration ? dt : 0
-
-        const result = calculateSegmentState(localTime, segmentDef, activeDt)
-
-        const finalValues = result.isComplete ? toValues : result.values
-
-        if (isRecordAni) {
-            let i = 0
-            for (const key of segKeyMap!.keys()) {
-                const stateIndex = keyMap!.get(key)
-                if (stateIndex !== undefined && stateIndex !== -1) {
-                    nextState[stateIndex] = finalValues[i]!
-                }
-                i++
-            }
-        } else {
-            for (let i = 0; i < finalValues.length; i++) {
-                nextState[i] = finalValues[i]!
-            }
-        }
-    }
-
-    return nextState
+    return evaluatePlanAt(
+        plan,
+        initialValues,
+        keyMap ? [...keyMap.keys()] : null,
+        targetTime,
+        dt
+    )
 }

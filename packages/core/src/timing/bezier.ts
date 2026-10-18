@@ -150,6 +150,22 @@ export class BezierTimingFunction extends TimingFunction {
         return guessT
     }
 
+    /**
+     * Eased progress for normalized time `x` in `[0, 1]`.
+     */
+    public ease(x: number): number {
+        // If linear (p2.x=p2.y, p3.x=p3.y), skip solving.
+        // Otherwise solve x(t) = time for t.
+        if (
+            this.opt.p2.x === this.opt.p2.y &&
+            this.opt.p3.x === this.opt.p3.y
+        ) {
+            return x
+        }
+        // Solve for t given x, then calculate y(t)
+        return this.calcBezier(this.getTForX(x), this.opt.p2.y, this.opt.p3.y)
+    }
+
     public step(
         time: number,
         context: TimingFunctionContext
@@ -161,21 +177,7 @@ export class BezierTimingFunction extends TimingFunction {
 
         // Normalize time [0, 1]
         const x = Math.max(0, Math.min(time / duration, 1))
-        let easedT = x
-
-        // If linear (p2.x=p2.y, p3.x=p3.y), skip solving.
-        // Otherwise solve x(t) = time for t.
-        if (
-            this.opt.p2.x !== this.opt.p2.y ||
-            this.opt.p3.x !== this.opt.p3.y
-        ) {
-            // Solve for t given x
-            const t = this.getTForX(x)
-            // Calculate y(t)
-            easedT = this.calcBezier(t, this.opt.p2.y, this.opt.p3.y)
-        }
-
-        const value = from + (to - from) * easedT
+        const value = from + (to - from) * this.ease(x)
         const endOfAnimation = time >= duration
 
         return {

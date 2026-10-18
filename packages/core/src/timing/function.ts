@@ -19,8 +19,36 @@ export interface TimingFunctionContext {
      * animation end tolerance
      */
     tolerance?: number
+    /**
+     * Mutable slot owned by the timeline's plan runtime: one object per
+     * (timeline, segment, property), only provided when the timing function
+     * declares `stateful = true`. Stateful timings keep their integrator state
+     * here instead of on the instance, so one instance can safely be shared by
+     * several segments, properties, loop iterations and timelines.
+     *
+     * A timing may publish `state.velocity` (units/second at the queried time)
+     * for velocity-continuous retargeting.
+     */
+    state?: TimingState | undefined
+    /**
+     * Initial velocity (units/second) to seed a stateful timing with when its
+     * state is (re)initialized. Ignored by stateless timings.
+     */
+    velocity?: number | undefined
 }
+
+export type TimingState = Record<string, any>
+
 export abstract class TimingFunction {
+    /**
+     * Declare `true` for timings that integrate over time (physics).
+     * The runtime then passes a private `context.state` per (timeline,
+     * segment, property) and must be able to call `step` with arbitrary,
+     * non-monotonic `time` (seek): re-derive from `state` deterministically.
+     * Stateless timings (the default) are pure functions of `time`.
+     */
+    public readonly stateful?: boolean
+
     /**
      * Step function
      * @param time Current time
