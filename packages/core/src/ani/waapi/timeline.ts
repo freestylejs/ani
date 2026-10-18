@@ -8,6 +8,31 @@ import type { AnimationNode } from '~/nodes'
 import type { Resolver } from '~/style'
 import { compileToKeyframes, type WebAniKeyframe } from './compiler'
 
+interface CachedKeyframes {
+    keys: string[]
+    values: number[]
+    resolver: Resolver<Record<string, number>> | undefined
+    keyframes: WebAniKeyframe[]
+}
+
+const MAX_CACHE_ENTRIES = 8
+// Compiled keyframes depend only on (plan, from, resolver) and the plan is a
+// pure function of the root node, so every timeline built over the same node
+// (e.g. one per element) shares the work. Plans with runtime overrides are not
+// cached.
+const keyframeCache = new WeakMap<object, CachedKeyframes[]>()
+
+function sameFrom(entry: CachedKeyframes, from: Record<string, number>) {
+    const keys = Object.keys(from)
+    if (keys.length !== entry.keys.length) return false
+    for (let i = 0; i < keys.length; i++) {
+        if (keys[i] !== entry.keys[i] || from[keys[i]!] !== entry.values[i]) {
+            return false
+        }
+    }
+    return true
+}
+
 export interface WebAniTimelineConfig<G extends Groupable>
     extends TimelineCommonConfig<G> {
     /**
@@ -21,7 +46,10 @@ export interface WebAniTimelineConfig<G extends Groupable>
     >
 }
 
-export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
+export class WebAniTimeline<G extends Groupable> extends TimelineBase<
+    G,
+    [target: Element, config: WebAniTimelineConfig<G>]
+> {
     private _animation: Animation | null = null
     private _keyframes: WebAniKeyframe[] = []
     private _delayMs: number = 0
@@ -40,20 +68,19 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
         target: Element,
         config: WebAniTimelineConfig<G>
     ): Animation | null {
+        // never leave a previous animation running behind a failed/empty play
         if (this._animation) {
             this._animation.cancel()
+            this._animation = null
         }
+        this._paused = false
 
         this._currentExecutionPlan = this._resolveExecutionPlan(
             config.keyframes,
             config.durations
         )
 
-        this._keyframes = compileToKeyframes(
-            this._currentExecutionPlan,
-            config.from,
-            config.propertyResolver as Resolver<Record<string, number>>
-        )
+        this._keyframes = this._compile(config)
 
         if (this._keyframes.length === 0) {
             return null
@@ -84,6 +111,42 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<G> {
         this._animation = new Animation(effect, document.timeline)
         this._animation.play()
         return this._animation
+    }
+
+    private _compile(config: WebAniTimelineConfig<G>): WebAniKeyframe[] {
+        const plan = this._currentExecutionPlan!
+        const resolver = config.propertyResolver as
+            | Resolver<Record<string, number>>
+            | undefined
+        const cacheable =
+            !config.keyframes &&
+            !config.durations &&
+            !Array.isArray(config.from)
+
+        if (cacheable) {
+            const entries = keyframeCache.get(this.rootNode)
+            const from = config.from as Record<string, number>
+            const hit = entries?.find(
+                (entry) => entry.resolver === resolver && sameFrom(entry, from)
+            )
+            if (hit) return hit.keyframes
+        }
+
+        const keyframes = compileToKeyframes(plan, config.from, resolver)
+
+        if (cacheable) {
+            const from = config.from as Record<string, number>
+            const entries = keyframeCache.get(this.rootNode) ?? []
+            if (entries.length >= MAX_CACHE_ENTRIES) entries.shift()
+            entries.push({
+                keys: Object.keys(from),
+                values: Object.values(from),
+                resolver,
+                keyframes,
+            })
+            keyframeCache.set(this.rootNode, entries)
+        }
+        return keyframes
     }
 
     public pause(): void {
