@@ -12,7 +12,7 @@ Animations depend on time and `requestAnimationFrame`. Replace both with a clock
 ```typescript
 import { createClock } from "@freestylejs/ani-core";
 
-export function createManualClock(options: { maxDeltaTime?: number } = {}) {
+export function createManualClock(options: { lagThreshold?: number } = {}) {
   let nextId = 1;
   let time = 1000;
   const pending = new Map<number, (timestamp: number) => void>();
@@ -71,7 +71,7 @@ it("reaches the target and leaves the clock", () => {
 });
 ```
 
--   Keep frames at or below `maxDeltaTime` (0.1 s), or pass `maxDeltaTime: Infinity`.
+-   Frames up to the clock's `lagThreshold` (0.5 s) advance by their full duration. A longer `frame(ms)` simulates a suspension and advances by one ordinary frame; pass `lagThreshold: Infinity` to drive arbitrary jumps in wall-clock time.
 -   Pass `clock` to `createStates`, and to timelines created by your code, so nothing touches the shared clock.
 
 ### Reset the shared clock

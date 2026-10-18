@@ -26,14 +26,15 @@ Correctness, lifecycle and performance hardening of the core engine. The public 
 - `play()` on a `PLAYING` timeline inherits its current velocity (velocity-continuous retargeting). Pass `velocity: { x: 0 }` to start from rest. `getCurrentVelocity()` returns zeros unless `PLAYING`.
 - A timeline made only of `dynamicSpring` segments may end before its nominal duration once everything has settled; a spring segment ends when settled or at its duration, whichever comes first.
 - `createStates`: replaced timelines are disposed (use `onTimelineChange`, do not keep old timelines); the playing timeline's velocity is handed to the next one; after `timeline().reset()` the last shown value is used as `from`; `onTimelineChange` subscriber errors are rethrown asynchronously.
-- `AnimationClock.create(maxDeltaTime)` applies to an already existing clock; an invalid `maxDeltaTime` throws a `RangeError`. The default stays 0.1 s, which dilates animation time under jank; pass `Infinity` for real time.
+- Frame time uses lag smoothing instead of a 0.1 s cap: a gap up to `lagThreshold` (default 0.5 s) advances animations by the real elapsed time, so jank no longer slows them down and RAF timelines stay in sync with WAAPI, CSS and timers; a longer gap (hidden tab, debugger, sleep) advances by one ordinary frame, so animations resume instead of jumping. `lagThreshold: Infinity` gives pure wall-clock time. `maxDeltaTime` is now an optional hard cap (unlimited by default); `AnimationClock.configure(0.1)` restores the old behavior.
+- `AnimationClock.create(maxDeltaTime)` applies to an already existing clock; `AnimationClock.configure` also accepts `{ lagThreshold, maxDeltaTime }`; invalid values throw a `RangeError` before anything changes.
 - `AniRefContext` is typed on the stricter `play()` signature of the timeline.
 - `module` in `package.json` points at the file that ships (`./dist/index.js`).
 
 ## New APIs
 
 - `RafAniTimeline`: `status`, `dispose()`, `getCurrentVelocity()`; `RafTimelineConfig.velocity`; `TimelineStatus`.
-- `createClock(options)` (independent clocks with a manual frame source for tests), `AnimationClock.reset()`, `clock.size`.
+- `createClock(options)` (independent clocks with a manual frame source for tests), `AnimationClock.reset()`, `clock.size`; clock option `lagThreshold` and type `ClockTimingOptions`; `AnimationClock.configure({ lagThreshold, maxDeltaTime })`.
 - `StateController.dispose()`.
 - Timing: `TimingFunction.stateful`, `TimingFunctionContext.state` / `velocity`, `BezierTimingFunction.ease()`.
 - `TimelineBase<G, PlayArgs>`.
