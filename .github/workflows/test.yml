@@ -38,6 +38,9 @@ jobs:
       - name: Bundle size
         run: node bench/size/run.ts
 
+      - name: Soak (smoke)
+        run: node --expose-gc bench/soak/run.ts --smoke --seed 1
+
   browser:
     runs-on: ubuntu-latest
     steps:
