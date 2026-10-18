@@ -21,8 +21,6 @@ const TransformFunctionMap = {
 
 type TransformPropertiesLiteral = keyof typeof TransformFunctionMap
 
-const TransformProperties = new Set(Object.keys(TransformFunctionMap))
-
 type PxPropertiesLiteral =
     | 'width'
     | 'height'
@@ -43,7 +41,25 @@ type PxPropertiesLiteral =
     | 'borderWidth'
     | 'borderRadius'
 
-const PxProperties = new Set([
+type UnitlessPropertiesLiteral =
+    | 'opacity'
+    | 'zIndex'
+    | 'lineHeight'
+    | 'fontWeight'
+
+export type StylesheetSupportedLiteral =
+    | TransformPropertiesLiteral
+    | PxPropertiesLiteral
+    | UnitlessPropertiesLiteral
+
+export type Resolver<T> = {
+    [Key in keyof T]?: (target: T[keyof T]) => {
+        key: string
+        value: string | number
+    }
+}
+
+const PX_KEYS = [
     'width',
     'height',
     'margin',
@@ -62,41 +78,42 @@ const PxProperties = new Set([
     'bottom',
     'borderWidth',
     'borderRadius',
-])
-
-type UnitlessPropertiesLiteral =
-    | 'opacity'
-    | 'zIndex'
-    | 'lineHeight'
-    | 'fontWeight'
-
-const UnitlessProperties = new Set([
-    'opacity',
-    'zIndex',
-    'lineHeight',
-    'fontWeight',
-])
-
-export type StylesheetSupportedLiteral =
-    | TransformPropertiesLiteral
-    | PxPropertiesLiteral
-    | UnitlessPropertiesLiteral
-
-export type Resolver<T> = {
-    [Key in keyof T]?: (target: T[keyof T]) => {
-        key: string
-        value: string | number
-    }
-}
+] as const
 
 type StylesheetValueTarget = Record<string, number>
+
+interface TransformKind {
+    // `fn(` and `unit)` pre-joined so a part is built with two concatenations
+    readonly open: string
+    readonly close: string
+}
+
+/** Sentinel: value is written as `<n>px`. */
+const PX = Symbol('px')
+
+/**
+ * One lookup classifies a key: transform function, px length, or (absent)
+ * unitless / pass-through. Null prototype: keys like `constructor` must not
+ * hit `Object.prototype`.
+ */
+const KEY_KIND: Record<string, TransformKind | typeof PX> = Object.create(null)
+
+for (const [key, def] of Object.entries(TransformFunctionMap)) {
+    KEY_KIND[key] = {
+        open: `${def.fn}(`,
+        close: 'unit' in def ? `${def.unit})` : ')',
+    }
+}
+for (const key of PX_KEYS) {
+    KEY_KIND[key] = PX
+}
 
 export function createStyleSheet(
     animeStyleValue: StylesheetValueTarget,
     resolver?: Resolver<StylesheetValueTarget>
 ): Record<string, any> {
     const styleAccumulator: Record<string, any> = {}
-    const CssTransformParts: Array<string> = []
+    let transform = ''
 
     for (const key in animeStyleValue) {
         if (!Object.hasOwn(animeStyleValue, key)) {
@@ -118,38 +135,28 @@ export function createStyleSheet(
             continue
         }
 
-        // Transform
-        if (TransformProperties.has(key)) {
-            const res = TransformFunctionMap[key as TransformPropertiesLiteral]
+        const kind = KEY_KIND[key]
 
-            const transformPart =
-                'unit' in res
-                    ? `${res.fn}(${value}${res.unit})`
-                    : `${res.fn}(${value})`
-
-            CssTransformParts.push(transformPart)
+        // Transform (parts are joined with a single space, in key order)
+        if (kind !== undefined && kind !== PX) {
+            const part = `${kind.open}${value}${kind.close}`
+            transform = transform === '' ? part : `${transform} ${part}`
             continue
         }
 
         // PX
-        if (PxProperties.has(key)) {
+        if (kind === PX) {
             styleAccumulator[key] = `${value}px`
             continue
         }
 
-        // Unitless
-        if (UnitlessProperties.has(key)) {
-            styleAccumulator[key] = value
-            continue
-        }
-
-        // Fallback
+        // Unitless & fallback
         styleAccumulator[key] = value
     }
 
     // Combine Transform Syntax
-    if (CssTransformParts.length > 0) {
-        styleAccumulator['transform'] = CssTransformParts.join(' ')
+    if (transform !== '') {
+        styleAccumulator['transform'] = transform
     }
 
     return styleAccumulator
