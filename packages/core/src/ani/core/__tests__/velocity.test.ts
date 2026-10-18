@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { rafTimeline } from '~/ani/raf/timeline'
-import { ani } from '~/nodes'
+import { ani, parallel } from '~/nodes'
 import { T } from '~/timing'
 import { ManualClock } from './manual_clock'
 
@@ -70,6 +70,34 @@ describe('velocity seeding', () => {
             return line.getCurrentValue()!.x!
         }
         // from === to: only an initial velocity makes it move
+        expect(run()).toBe(0)
+        expect(run({ x: 500 })).toBeGreaterThan(5)
+    })
+
+    it('seeds every opening segment, not only the first declared one', () => {
+        // Both children start at t=0; the later declaration wins the lane.
+        // `from === to`, so only the seed can move the winning segment.
+        const run = (velocity?: { x: number }) => {
+            const clock = new ManualClock()
+            const line = rafTimeline(
+                parallel([
+                    ani({
+                        to: { x: 0 },
+                        duration: 5,
+                        timing: T.dynamicSpring({ m: 1, k: 50, c: 5 }),
+                    }),
+                    ani({
+                        to: { x: 0 },
+                        duration: 5,
+                        timing: T.dynamicSpring({ m: 1, k: 100, c: 10 }),
+                    }),
+                ]),
+                clock
+            )
+            line.play({ from: { x: 0 }, ...(velocity && { velocity }) })
+            clock.run(6)
+            return line.getCurrentValue()!.x!
+        }
         expect(run()).toBe(0)
         expect(run({ x: 500 })).toBeGreaterThan(5)
     })
