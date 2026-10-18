@@ -1,7 +1,7 @@
 /**
  * Identifies a misuse error so callers can react to it programmatically.
  */
-export type AniErrorCode = 'ANI_CODEC_MISMATCH'
+export type AniErrorCode = 'ANI_CODEC_MISMATCH' | 'ANI_SUBSCRIBER_QUARANTINED'
 
 /**
  * Error thrown by ani helpers for loud, synchronous misuse.
@@ -13,8 +13,8 @@ export class AniError extends Error {
     readonly code: AniErrorCode
     readonly docs: string
 
-    constructor(code: AniErrorCode, message: string) {
-        super(`[${code}] ${message}`)
+    constructor(code: AniErrorCode, message: string, options?: ErrorOptions) {
+        super(`[${code}] ${message}`, options)
         this.name = 'AniError'
         this.code = code
         this.docs = `https://ani.freestylejs.dev/docs/errors#${code.toLowerCase()}`

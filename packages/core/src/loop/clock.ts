@@ -1,3 +1,5 @@
+import { AniError } from '../error/ani_error'
+
 export interface Animatable {
     /** Read phase: measure layout or sample inputs. Must not write the DOM. */
     read?(): void
@@ -52,6 +54,12 @@ export interface VisibilitySource {
 
 export interface CreateClockOptions extends ClockTimingOptions {
     /**
+     * Multiplier of every delta handed to subscribers: `0` freezes animation
+     * time, `0.5` is half speed, `2` double speed. Finite and >= 0.
+     * @default 1
+     */
+    timeScale?: number | undefined
+    /**
      * Frame source. Resolved lazily from the environment when omitted
      * (`window.requestAnimationFrame`, then `globalThis.requestAnimationFrame`).
      */
@@ -94,6 +102,27 @@ export type ManagedClock = AnimationClockInterface & {
      */
     read(fn: () => void): void
     /**
+     * Multiplier of every delta handed to `update` (finite, >= 0, default 1).
+     * `0` freezes animation time while frames keep running. Takes effect from
+     * the next frame; an invalid value throws a `RangeError` and changes
+     * nothing.
+     */
+    timeScale: number
+    /**
+     * Whether the frame loop is paused with `pause()`.
+     */
+    readonly paused: boolean
+    /**
+     * Stops the frame loop but keeps every subscriber and queued read.
+     * Idempotent.
+     */
+    pause(): void
+    /**
+     * Restarts a paused loop with a fresh time base, so the paused gap is
+     * never applied. Idempotent; a no-op when not paused.
+     */
+    resume(): void
+    /**
      * Stops the frame loop and drops every subscriber and queued read.
      */
     dispose(): void
@@ -106,6 +135,12 @@ const DEFAULT_LAG_THRESHOLD = 1 / 2
  */
 const ORDINARY_FRAME_LIMIT = 1 / 20
 const DEFAULT_FRAME = 1 / 60
+/**
+ * Consecutive failing ticks after which a subscriber is unsubscribed.
+ */
+const QUARANTINE_AFTER = 3
+// Marks "did not throw this tick" in the per-tick failure slots.
+const NO_ERROR = Symbol('no-error')
 /**
  * A pending frame older than this (ms) is considered possibly dropped by the
  * environment and is re-armed on the next `subscribe`.
@@ -122,6 +157,15 @@ function assertPositive(name: string, value: number): number {
     if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
         throw new RangeError(
             `[AnimationClock] ${name} must be a positive number (Infinity allowed), received ${value}.`
+        )
+    }
+    return value
+}
+
+function assertTimeScale(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+        throw new RangeError(
+            `[AnimationClock] timeScale must be a finite number >= 0, received ${String(value)}.`
         )
     }
     return value
@@ -198,7 +242,13 @@ export class AnimationClock implements ManagedClock {
     // Subscribe time of animatables that joined while the loop was already
     // running; their first update only advances by the time since joining.
     private readonly joinedAt: Map<Animatable, number> = new Map()
+    // Parallel to `snapshot`: the last error thrown this tick, or NO_ERROR.
+    private readonly failures: unknown[] = []
+    // Consecutive failing ticks per subscriber; touched only on errors.
+    private readonly strikes: Map<Animatable, number> = new Map()
 
+    private scale = 1
+    private isPaused = false
     private maxDeltaTime = Infinity
     private lagThreshold = DEFAULT_LAG_THRESHOLD
     // Latest ordinary frame gap: what a suspension advances by.
@@ -269,6 +319,9 @@ export class AnimationClock implements ManagedClock {
         this.options =
             typeof options === 'number' ? { maxDeltaTime: options } : options
         this.visibility = resolveVisibility(this.options.visibility)
+        if (this.options.timeScale !== undefined) {
+            this.scale = assertTimeScale(this.options.timeScale)
+        }
         this.setTiming(this.options)
     }
 
@@ -294,6 +347,39 @@ export class AnimationClock implements ManagedClock {
      */
     public get size(): number {
         return this.subscribers.size
+    }
+
+    public get timeScale(): number {
+        return this.scale
+    }
+
+    public set timeScale(value: number) {
+        this.scale = assertTimeScale(value)
+    }
+
+    public get paused(): boolean {
+        return this.isPaused
+    }
+
+    public pause(): void {
+        if (this.isPaused) return
+        this.isPaused = true
+        // A running tick holds no pending frame and skips re-arming itself.
+        if (this.ticking) return
+        this.cancelPending()
+        this.armed = false
+        this.detachVisibility()
+    }
+
+    public resume(): void {
+        if (!this.isPaused) return
+        this.isPaused = false
+        // The restarted time base covers the paused gap from here on.
+        this.joinedAt.clear()
+        if (this.ticking) return
+        if (this.subscribers.size === 0 && this.readCount === 0) return
+        const source = this.resolveSource()
+        if (source) this.arm(source, true)
     }
 
     public subscribe(animatable: Animatable): void {
@@ -326,7 +412,7 @@ export class AnimationClock implements ManagedClock {
 
     private ensureArmed(source: FrameSource): void {
         // A running tick re-arms itself once it finishes.
-        if (this.ticking) return
+        if (this.ticking || this.isPaused) return
 
         if (!this.armed) {
             this.arm(source, true)
@@ -341,6 +427,7 @@ export class AnimationClock implements ManagedClock {
     public unsubscribe(animatable: Animatable): void {
         this.subscribers.delete(animatable)
         this.joinedAt.delete(animatable)
+        this.strikes.delete(animatable)
         // During a tick the loop decides after all updates ran, so that an
         // unsubscribe + subscribe pair never spawns a second loop.
         if (
@@ -360,6 +447,8 @@ export class AnimationClock implements ManagedClock {
     public dispose(): void {
         this.subscribers.clear()
         this.joinedAt.clear()
+        this.strikes.clear()
+        this.isPaused = false
         for (let i = 0; i < this.readCount; i++) this.readQueue[i] = undefined
         for (let i = 0; i < this.readRunningCount; i++) {
             this.readRunning[i] = undefined
@@ -541,6 +630,34 @@ export class AnimationClock implements ManagedClock {
         return delta > this.maxDeltaTime ? this.maxDeltaTime : delta
     }
 
+    // Counts consecutive failing ticks; the third one quarantines the subscriber.
+    private settleStrikes(count: number): void {
+        const { snapshot, failures, strikes } = this
+        for (let i = 0; i < count; i++) {
+            const subscriber = snapshot[i]!
+            // unsubscribed meanwhile: its count is already gone
+            if (!this.subscribers.has(subscriber)) continue
+            const error = failures[i]
+            if (error === NO_ERROR) {
+                if (strikes.size > 0) strikes.delete(subscriber)
+                continue
+            }
+            const failed = (strikes.get(subscriber) ?? 0) + 1
+            if (failed < QUARANTINE_AFTER) {
+                strikes.set(subscriber, failed)
+                continue
+            }
+            this.unsubscribe(subscriber)
+            this.report(
+                new AniError(
+                    'ANI_SUBSCRIBER_QUARANTINED',
+                    `A subscriber threw in ${QUARANTINE_AFTER} consecutive ticks and was unsubscribed.`,
+                    { cause: error }
+                )
+            )
+        }
+    }
+
     private tick(generation: number, timestamp: number): void {
         if (generation !== this.generation || !this.armed) return
 
@@ -550,7 +667,8 @@ export class AnimationClock implements ManagedClock {
         const elapsed = (timestamp - this.lastTimestamp) / 1000
         const suspended = this.suspended
         this.suspended = false
-        const dt = this.toDelta(elapsed, suspended)
+        const scale = this.scale
+        const dt = this.toDelta(elapsed, suspended) * scale
         if (!suspended && elapsed > 0 && elapsed <= ORDINARY_FRAME_LIMIT) {
             this.ordinaryFrame = elapsed
         }
@@ -558,9 +676,11 @@ export class AnimationClock implements ManagedClock {
 
         const snapshot = this.snapshot
         const updated = this.updated
+        const failures = this.failures
         let count = 0
         for (const subscriber of this.subscribers) {
             snapshot[count] = subscriber
+            failures[count] = NO_ERROR
             updated[count++] = false
         }
 
@@ -589,6 +709,7 @@ export class AnimationClock implements ManagedClock {
                 try {
                     subscriber.read()
                 } catch (error) {
+                    failures[i] = error
                     this.report(error)
                 }
             }
@@ -602,16 +723,18 @@ export class AnimationClock implements ManagedClock {
                     const joined = this.joinedAt.get(subscriber)
                     if (joined !== undefined) {
                         this.joinedAt.delete(subscriber)
-                        delta = this.toDelta(
-                            (timestamp - joined) / 1000,
-                            suspended
-                        )
+                        delta =
+                            this.toDelta(
+                                (timestamp - joined) / 1000,
+                                suspended
+                            ) * scale
                     }
                 }
                 updated[i] = true
                 try {
                     subscriber.update(delta)
                 } catch (error) {
+                    failures[i] = error
                     this.report(error)
                 }
             }
@@ -623,14 +746,18 @@ export class AnimationClock implements ManagedClock {
                 try {
                     subscriber.commit()
                 } catch (error) {
+                    failures[i] = error
                     this.report(error)
                 }
             }
+
+            this.settleStrikes(count)
         } finally {
             // Clear the slots (no retention) but keep the capacity:
             // `length = 0` drops the backing store, re-allocated every frame.
             for (let i = 0; i < count; i++) {
                 snapshot[i] = undefined
+                failures[i] = NO_ERROR
                 updated[i] = false
             }
             for (let i = 0; i < readCount; i++) reads[i] = undefined
@@ -638,7 +765,10 @@ export class AnimationClock implements ManagedClock {
             this.ticking = false
             this.armed = false
 
-            if (this.subscribers.size > 0 || this.readCount > 0) {
+            if (
+                !this.isPaused &&
+                (this.subscribers.size > 0 || this.readCount > 0)
+            ) {
                 const source = this.resolveSource()
                 if (source) this.arm(source, false)
             }
