@@ -1,5 +1,5 @@
 import type { Groupable } from '~/ani/core'
-import type { RafAniTimeline, RafTimelineConfig } from '~/ani/raf'
+import type { RafAniTimeline, RafTimeline, RafTimelineConfig } from '~/ani/raf'
 
 /**
  * Every public member of `T`, required. Used with `satisfies` so that adding
@@ -29,8 +29,19 @@ export interface TimelineControllerHooks<G extends Groupable, Ctx = any> {
  */
 export function createTimelineController<G extends Groupable, Ctx = any>(
     getTimeline: () => RafAniTimeline<G, Ctx>,
+    hooks?: TimelineControllerHooks<G, Ctx>
+): RafAniTimeline<G, Ctx>
+export function createTimelineController<G extends Groupable>(
+    getTimeline: () => RafTimeline<G>,
+    hooks?: TimelineControllerHooks<G>
+): RafTimeline<G>
+export function createTimelineController<G extends Groupable, Ctx = any>(
+    getTimelineOrV2: () => RafAniTimeline<G, Ctx> | RafTimeline<G>,
     hooks: TimelineControllerHooks<G, Ctx> = {}
 ): RafAniTimeline<G, Ctx> {
+    // The V2 overload only types the result as `RafTimeline`; the forwarded
+    // 1.x members are reached only through the `RafAniTimeline` overload.
+    const getTimeline = getTimelineOrV2 as () => RafAniTimeline<G, Ctx>
     const forwarded = {
         get duration() {
             return getTimeline().duration
@@ -41,9 +52,18 @@ export function createTimelineController<G extends Groupable, Ctx = any>(
         get currentConfig() {
             return getTimeline().currentConfig
         },
+        get config() {
+            return getTimeline().config
+        },
+        get value() {
+            return getTimeline().value
+        },
+        get velocity() {
+            return getTimeline().velocity
+        },
         play: (config, canBeIntercepted) => {
             hooks.onPlay?.(config)
-            getTimeline().play(config, canBeIntercepted)
+            return getTimeline().play(config, canBeIntercepted)
         },
         update: (dt) => getTimeline().update(dt),
         seek: (time) => getTimeline().seek(time),

@@ -105,7 +105,7 @@ myTimeline.play({
 
 | Member | Description |
 | :--- | :--- |
-| `play(config, [canBeIntercepted = true])` | Starts (or interrupts) the animation. |
+| `play(config)` | Starts (or interrupts) the animation. Returns a `Promise<RunResult>` that never rejects and resolves once per run: `'ended'` (repeats included), `'interrupted'` (another `play()` replaced it), `'skipped'` (`interrupt: false` on a `PLAYING` timeline), `'reset'` (`reset()`), `'disposed'` (`dispose()`, or `play()` after it). An invalid config throws synchronously and creates no promise. |
 | `pause()` | Pauses a `PLAYING` timeline. |
 | `resume()` | Resumes a `PAUSED` timeline. |
 | `reset([notify = true], [unsubscribeClock = true])` | Resets to `IDLE`. |
@@ -113,17 +113,26 @@ myTimeline.play({
 | `dispose()` | Stops for good and releases everything. |
 | `bind(target, [options])` | Writes the value to `target.style` on every notification, changed declarations only. Returns an unbind function. |
 | `onUpdate(cb)` | Registers a callback for state and status updates (commit phase). Returns an unsubscribe function. |
-| `getCurrentValue()` | Frozen snapshot of the latest value, or `null`. |
-| `getCurrentVelocity()` | Per-property velocity, or `null`. |
+| `value` | Frozen snapshot of the latest value, or `null`. |
+| `velocity` | Per-property velocity, or `null`. |
+| `config` | Config of the current run, or `null`. |
 | `status` | `'IDLE' \| 'PLAYING' \| 'PAUSED' \| 'ENDED'`. |
 | `duration` | Total duration (seconds) of the current plan. |
-| `currentConfig` | Config of the current run, or `null`. |
+| `getCurrentValue()` | 1.x, removed in 2.0 by the codemod. Use `value`. |
+| `getCurrentVelocity()` | 1.x, removed in 2.0 by the codemod. Use `velocity`. |
+| `currentConfig` | 1.x, removed in 2.0 by the codemod. Use `config`. |
+| `play(config, canBeIntercepted)` | 1.x second argument, removed in 2.0 by the codemod. Use `interrupt` in the config; `interrupt` wins when both are given. |
+
+`isRafTimeline(value)` is a type guard that is `true` for a `RafAniTimeline` and for the facade returned by `createTimelineController`.
 
 #### Type Definitions
 
 ```typescript
 // Factory Function
-function rafTimeline<G extends Groupable, Ctx = any>(rootNode: AnimationNode<G>, clock?: AnimationClockInterface): RafAniTimeline<G, Ctx>
+function rafTimeline<G extends Groupable, Ctx = any>(
+    rootNode: AnimationNode<G>,
+    clockOrOptions?: AnimationClockInterface | { clock?: AnimationClockInterface } // a bare clock is 1.x
+): RafAniTimeline<G, Ctx>
 
 // Main play configuration
 interface RafTimelineConfig<G extends Groupable, Ctx = any> {
@@ -133,6 +142,7 @@ interface RafTimelineConfig<G extends Groupable, Ctx = any> {
     repeat?: number; // additional runs, e.g., Infinity
     delay?: number; // Delay in milliseconds before the animation starts
     velocity?: Partial<G>; // units per second, seeds dynamic springs
+    interrupt?: boolean; // default true; false: do nothing on a PLAYING timeline and resolve 'skipped'
     context?: Ctx;
     propertyResolver?: G extends AnimePrimitive ? never : Resolver<G>;
 }
@@ -145,11 +155,30 @@ type OnUpdateCallback<G extends Groupable> = (current: {
     status: TimelineStatus;
 }) => void;
 
-class RafAniTimeline<G extends Groupable, Ctx = any> {
+type RunResult = 'ended' | 'interrupted' | 'skipped' | 'reset' | 'disposed';
+
+interface RafTimeline<G extends Groupable> {
   readonly status: TimelineStatus;
   readonly duration: number;
+  readonly config: RafTimelineConfig<G> | null;
+  readonly value: AniGroup<G> | null;
+  readonly velocity: AniGroup<G> | null;
+  play(config: RafTimelineConfig<G>): Promise<RunResult>;
+  pause(): void;
+  resume(): void;
+  seek(time: number): void;
+  reset(notify?: boolean, unsubscribeClock?: boolean): void;
+  dispose(): void;
+  bind(target: { style: CSSStyleDeclaration } | HTMLElement, options?: { resolver?: Resolver<Record<string, number>> }): () => void;
+  onUpdate(callback: OnUpdateCallback<G>): () => void;
+}
+
+function isRafTimeline(value: unknown): value is RafTimeline<Groupable>;
+
+// implements RafTimeline<G>; the members below are the 1.x ones, removed in 2.0 by the codemod
+class RafAniTimeline<G extends Groupable, Ctx = any> {
   readonly currentConfig: RafTimelineConfig<G, Ctx> | null;
-  play(config: RafTimelineConfig<G, Ctx>, canBeIntercepted?: boolean): void;
+  play(config: RafTimelineConfig<G, Ctx>, canBeIntercepted?: boolean): Promise<RunResult>;
   pause(): void;
   resume(): void;
   seek(time: number): void;
