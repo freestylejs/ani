@@ -33,9 +33,14 @@ const SCRIPT_KINDS = new Map<string, ts.ScriptKind>([
     ['.jsx', ts.ScriptKind.JSX],
 ])
 const SFC_EXTENSIONS = ['.vue', '.svelte']
+const MARKDOWN_EXTENSIONS = ['.md', '.mdx']
 
 /** File extensions `transform` understands. */
-export const SUPPORTED_EXTENSIONS = [...SCRIPT_KINDS.keys(), ...SFC_EXTENSIONS]
+export const SUPPORTED_EXTENSIONS = [
+    ...SCRIPT_KINDS.keys(),
+    ...SFC_EXTENSIONS,
+    ...MARKDOWN_EXTENSIONS,
+]
 
 // Attribute values may contain `>` (e.g. `generic="T extends Array<string>"`).
 const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`
@@ -99,6 +104,80 @@ function transformBlocks(
     return { code: code + source.slice(cursor), warnings }
 }
 
+// Fenced code blocks: 3+ backticks or tildes, optional indentation, info string.
+const FENCE_BLOCK =
+    /^([ \t]*)(`{3,}|~{3,})([^\r\n]*)\r?\n((?:[\s\S]*?\r?\n)??)[ \t]*(?:\2`*|\2~*)[ \t]*(?=\r?\n|$)/gm
+
+function getFenceScriptKind(info: string): ts.ScriptKind | undefined {
+    const trimmed = info.trimStart()
+    const match = trimmed.match(
+        /^(typescript|javascript|tsx|jsx|ts|js)(?![a-zA-Z0-9_-])/i
+    )
+    if (!match || !match[1]) return undefined
+    const lang = match[1].toLowerCase()
+    switch (lang) {
+        case 'ts':
+        case 'typescript':
+            return ts.ScriptKind.TS
+        case 'tsx':
+            return ts.ScriptKind.TSX
+        case 'js':
+        case 'javascript':
+            return ts.ScriptKind.JS
+        case 'jsx':
+            return ts.ScriptKind.JSX
+        default:
+            return undefined
+    }
+}
+
+/** Transforms the content of every eligible code fence, keeping the rest. */
+function transformMarkdown(
+    source: string,
+    fileName: string
+): { code: string; warnings: RawWarning[] } {
+    let code = ''
+    let cursor = 0
+    const warnings: RawWarning[] = []
+    for (const match of source.matchAll(FENCE_BLOCK)) {
+        const [, indent = '', fence = '', info = '', content = ''] = match
+        const kind = getFenceScriptKind(info)
+        if (kind === undefined) continue
+        const openLineLen =
+            indent.length +
+            fence.length +
+            info.length +
+            (source.startsWith(
+                '\r\n',
+                match.index + indent.length + fence.length + info.length
+            )
+                ? 2
+                : 1)
+        const start = match.index + openLineLen
+        const ext =
+            kind === ts.ScriptKind.TSX
+                ? '.tsx'
+                : kind === ts.ScriptKind.JSX
+                  ? '.jsx'
+                  : kind === ts.ScriptKind.JS
+                    ? '.js'
+                    : '.ts'
+        try {
+            const result = transformScript(content, `${fileName}${ext}`, kind, {
+                implicitAni: true,
+            })
+            code += source.slice(cursor, start) + result.code
+            cursor = start + content.length
+            for (const w of result.warnings)
+                warnings.push({ ...w, pos: w.pos + start })
+        } catch (error) {
+            if (!(error instanceof ParseError)) throw error
+            throw locate(fileName, source, start + error.pos, error.message)
+        }
+    }
+    return { code: code + source.slice(cursor), warnings }
+}
+
 function transformFile(
     source: string,
     fileName: string
@@ -106,6 +185,8 @@ function transformFile(
     const extension = extname(fileName).toLowerCase()
     if (SFC_EXTENSIONS.includes(extension))
         return transformBlocks(source, fileName)
+    if (MARKDOWN_EXTENSIONS.includes(extension))
+        return transformMarkdown(source, fileName)
     const kind = SCRIPT_KINDS.get(extension) ?? ts.ScriptKind.TS
     try {
         return transformScript(source, fileName, kind)

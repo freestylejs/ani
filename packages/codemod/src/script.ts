@@ -272,7 +272,7 @@ function processConfig(
             warn(
                 ctx,
                 'property-resolver',
-                'Remove `propertyResolver` from this config and register the resolver where the timeline is created.',
+                'Move `propertyResolver` out of the play config: pass it as `bind(element, { resolver })`.',
                 call
             )
         } else if (engine === 'raf' && name === 'context') {
@@ -758,14 +758,19 @@ function rewriteImports(
 
 /** True when the text may contain an ANI import (cheap pre-check). */
 export function mentionsAni(source: string): boolean {
-    return source.includes('@freestylejs/ani-')
+    return source.includes('@freestylejs/ani')
+}
+
+export interface TransformScriptOptions {
+    implicitAni?: boolean
 }
 
 /** Transforms one script (a whole `.ts` / `.js` file or a script block). */
 export function transformScript(
     source: string,
     fileName: string,
-    kind: ts.ScriptKind
+    kind: ts.ScriptKind,
+    options?: TransformScriptOptions
 ): { code: string; warnings: RawWarning[] } {
     const sf = ts.createSourceFile(
         fileName,
@@ -775,7 +780,8 @@ export function transformScript(
         kind
     )
     const imports = aniImports(sf)
-    if (imports.length === 0) return { code: source, warnings: [] }
+    if (imports.length === 0 && !options?.implicitAni)
+        return { code: source, warnings: [] }
 
     const syntax = (
         sf as unknown as {
@@ -783,6 +789,7 @@ export function transformScript(
         }
     ).parseDiagnostics[0]
     if (syntax) {
+        if (imports.length === 0) return { code: source, warnings: [] }
         const reason = ts.flattenDiagnosticMessageText(syntax.messageText, '\n')
         throw new ParseError(reason, syntax.start)
     }
@@ -800,6 +807,7 @@ export function transformScript(
         clockHandled: new Set(),
         clockUsed: false,
     }
+    if (options?.implicitAni && imports.length === 0) ctx.aliases.add('a')
     collectBindings(ctx, imports)
     visit(ctx, sf)
     rewriteImports(ctx, imports)

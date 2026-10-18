@@ -8,14 +8,14 @@ Migrates code from ANI 1.x to ANI 2. Call sites that can be rewritten safely are
 npx @freestylejs/ani-codemod [--dry] <file-or-dir>...
 ```
 
-- Directories are walked recursively (`node_modules`, `dist`, `.git` and `.next` are skipped). Supported files: `.ts .mts .cts .tsx .js .mjs .cjs .jsx .vue .svelte`.
+- Directories are walked recursively (`node_modules`, `dist`, `.git` and `.next` are skipped). Supported files: `.ts .mts .cts .tsx .js .mjs .cjs .jsx .vue .svelte .md .mdx`.
 - `--dry` prints the warnings and the summary without writing any file.
 - Each warning is printed as `file:line:column [rule] message`, followed by `N files changed, M warnings`.
 - Exit code `0`, or `1` on a usage, IO or syntax error (other files are still processed).
 
 **Run the codemod once, on 1.x code, and commit before you do.** It is idempotent except for the `delay` conversion below: it cannot tell seconds that were already converted from milliseconds, so a second run divides again.
 
-Only files that import `@freestylejs/ani-core` or `@freestylejs/ani-{react,vue,solid,svelte}` are touched. Edits are made at the exact source positions, so untouched code, comments and formatting stay identical. In `.vue` and `.svelte` files only the content of `<script>` blocks is transformed (each block on its own; templates are not).
+Files are touched only if they mention `@freestylejs/ani`. Code files (`.ts`, `.js`, etc.) and SFC `<script>` blocks must have an import from `@freestylejs/ani-core` or `@freestylejs/ani-{react,vue,solid,svelte}`. In `.md` and `.mdx` files, fenced code blocks with matching language tags (`ts`, `tsx`, `js`, `jsx`, `typescript`, `javascript`) are transformed once the file mentions `@freestylejs/ani` anywhere, treating identifier `a` as the ANI namespace across blocks even without local imports. Code snippets without an ANI import that contain invalid syntax (such as pseudo-code) are left unchanged. Edits are made at the exact source positions, so untouched code, comments and formatting stay identical. In `.vue` and `.svelte` files only the content of `<script>` blocks is transformed (each block on its own; templates are not).
 
 Node-builder rewrites (`sequence`, `ani`, ...) apply only to ANI's functions: `a.<name>(...)` where `a` is bound by the ANI import, or a bare `<name>(...)` imported by name from `@freestylejs/ani-core`. Member rewrites (`play`, `reset`, `getCurrentValue`, ...) apply to any receiver in such a file.
 
@@ -61,7 +61,7 @@ Nothing is changed silently: whatever the codemod cannot decide is left as it wa
 | --- | --- | --- |
 | `ambiguous-play` | A `play` / `transitionTo` call whose arguments do not match a known 1.x shape (for example `t.play(x, y)`). | Decide whether it is RAF or WAAPI: for RAF pass `{ ...config, interrupt }`, for WAAPI pass `(target, config)`. |
 | `reset-arguments` | `reset` was called with arguments; they were removed. | Check that the removed arguments are not needed any more. |
-| `property-resolver` | A RAF `play` / `transitionTo` config has `propertyResolver`. | Remove it from the config and set the resolver where the timeline is created. |
+| `property-resolver` | A RAF `play` / `transitionTo` config has `propertyResolver`. | Move `propertyResolver` out of the play config: pass it as `bind(element, { resolver })`. |
 | `context-removed` | A RAF config has `context`. | Remove it and pass the values through the timeline or its nodes. |
 | `clock-reset` | `AnimationClock.reset()` has no equivalent. | Dispose the clocks and timelines you created instead. |
 | `clock-create` | `AnimationClock.create(maxDeltaTime)` was called with an argument; the call was left as it was. | Use `defaultClock.configure({ maxDeltaTime })`, or create a clock with `createClock`. |
