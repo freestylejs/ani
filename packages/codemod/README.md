@@ -49,7 +49,7 @@ Notes:
 
 - `delay`: number literals are divided exactly; other expressions become `expr / 1000`, parenthesized unless they are an identifier or a property access. Only object literals written inline in the `play` / `transitionTo` call are converted; a config held in a variable must be converted by hand.
 - `play` is told apart by its arguments. The WAAPI form is two arguments whose second is an object literal (`play(el, { ... })`); the RAF form is `play(config)` or `play(config, true | false)`.
-- `AnimationClock.configure(x)` is wrapped as `{ maxDeltaTime: x }` only when `x` is a numeric literal; any other argument is passed through unchanged, because ANI 2 accepts the same union.
+- `AnimationClock.configure(x)` is wrapped as `{ maxDeltaTime: x }` only when `x` is a numeric literal; an object literal is passed through unchanged. Any other argument is passed through with a warning (`clock-configure-argument`), because ANI 2 accepts only `{ lagThreshold, maxDeltaTime }`.
 - The `AnimationClock` import specifier is replaced by `defaultClock`, and kept only while other references to it remain.
 - Renamed named imports (`webTimeline`, `timeline`, `dynamicTimeline`) are renamed at every reference, including values, `typeof`, shorthand properties and `export { ... }` (the exported name is kept with `as`). References inside a scope that declares the same name (a parameter or local variable) are left alone.
 
@@ -65,6 +65,7 @@ Nothing is changed silently: whatever the codemod cannot decide is left as it wa
 | `context-removed` | A RAF config has `context`. | Remove it and pass the values through the timeline or its nodes. |
 | `clock-reset` | `AnimationClock.reset()` has no equivalent. | Dispose the clocks and timelines you created instead. |
 | `clock-create` | `AnimationClock.create(maxDeltaTime)` was called with an argument; the call was left as it was. | Use `defaultClock.configure({ maxDeltaTime })`, or create a clock with `createClock`. |
+| `clock-configure-argument` | `AnimationClock.configure(...)` was called with an argument that is neither a numeric literal nor an object literal. | If the value is a number, pass `{ maxDeltaTime: value }`; `configure` takes `{ lagThreshold, maxDeltaTime }` in ANI 2. |
 | `react-use-ani-ref` | `useAniRef(ref, props)` changed signature. | Update the call to the ANI 2 signature by hand. |
 
 A file with a syntax error that imports ANI is not modified; the error is printed with its position and the exit code is `1`.

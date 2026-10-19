@@ -19,7 +19,7 @@ The [codemod](https://www.npmjs.com/package/@freestylejs/ani-codemod) rewrites e
 npx @freestylejs/ani-codemod src
 ```
 
-Pass every directory that contains ANI code. Directories are walked recursively (`node_modules`, `dist`, `.git` and `.next` are skipped). The codemod handles `.ts`, `.tsx`, `.js`, `.jsx`, `.vue`, `.svelte`, `.md` and `.mdx` files.
+Pass every directory that contains ANI code. Directories are walked recursively (`node_modules`, `dist`, `.git` and `.next` are skipped). The codemod handles `.ts`, `.mts`, `.cts`, `.tsx`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.vue`, `.svelte`, `.md` and `.mdx` files.
 
 <Callout type="warn">
     **Commit before you run it, and run it once.** The codemod cannot tell seconds that were already converted from milliseconds, so a second run divides every `delay` again.
@@ -47,6 +47,7 @@ Nothing is changed silently: whatever the codemod cannot decide is left as it wa
 | `context-removed` | [Context removed](#context-removed) |
 | `clock-reset` | [Clock reset](#clock-reset) |
 | `clock-create` | [Clock create](#clock-create) |
+| `clock-configure-argument` | [Clock configure argument](#clock-configure-argument) |
 | `react-use-ani-ref` | [React useAniRef](#react-useaniref) |
 
 ### Type-check next
@@ -218,6 +219,10 @@ export const ownClock = createClock({ maxDeltaTime: 0.1 })
 ```
 
 `configure` takes an options object. A bare number is a type error, and in untyped code it changes nothing.
+
+### Clock configure argument
+
+`clock-configure-argument` marks `AnimationClock.configure(...)` called with an argument that is neither a numeric literal nor an object literal. In ANI 2, `configure` takes `{ lagThreshold, maxDeltaTime }`. If the value is a number, pass `{ maxDeltaTime: value }`.
 
 ### React useAniRef
 
