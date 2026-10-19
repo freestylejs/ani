@@ -54,9 +54,11 @@ Children that animate the same property follow the timeline's [overlap rule](/en
 | Name | Type | Description |
 | :--- | :--- | :--- |
 | `children` | `AnimationNode[]` | Nodes started one `offset` after another. |
-| `offset` | `number` | Seconds between starts, finite and `>= 0`. |
-| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
-| `id` | `string` | (Optional) Identifier of the node. |
+| `options.offset` | `number` | Seconds between starts, finite and `>= 0`. Required. |
+| `options.timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
+| `options.id` | `string` | (Optional) Identifier of the node. |
+
+The second argument is an options object: `a.stagger(children, { offset, timing, id })`. A bare number or any extra argument throws a `TypeError`.
 
 ### Related Components
 

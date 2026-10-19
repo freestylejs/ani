@@ -52,8 +52,10 @@ When two children animate the same property, the **later child wins** for the wh
 | Name | Type | Description |
 | :--- | :--- | :--- |
 | `children` | `AnimationNode[]` | Nodes that all start together. |
-| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
-| `id` | `string` | (Optional) Identifier of the node. |
+| `options.timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
+| `options.id` | `string` | (Optional) Identifier of the node. |
+
+The second argument is an options object: `a.parallel(children, { timing, id })`. A bare timing function or any extra argument throws a `TypeError`.
 
 ### Related Components
 

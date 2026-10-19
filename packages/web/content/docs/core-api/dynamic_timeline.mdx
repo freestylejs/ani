@@ -67,6 +67,12 @@ The timeline separates the animation definition (the node tree) from its executi
 `bind(target, options?)` writes the timeline's value to `target.style` (an element or any `{ style }`) on every notification, so you do not need an `onUpdate` callback just to set styles.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const myTimeline = a.rafTimeline(a.ani({ to: { x: 100 }, duration: 1 }));
+const element = document.createElement("div");
+const other = document.createElement("div");
+
 const unbind = myTimeline.bind(element)
 // optional: decide which declaration a value becomes
 myTimeline.bind(other, {
@@ -133,7 +139,10 @@ An invalid config still throws synchronously before anything changes; no promise
 `drive(progress, config)` makes the time follow an external progress value (scroll position, a scrubbed gesture) instead of the clock. It starts a run from `config.from` (`keyframes` and `durations` are honored; `repeat`, `delay` and `velocity` are ignored) and replaces the current run, so a pending `play()` promise resolves `'interrupted'`.
 
 ```ts
-const reveal = rafTimeline(a.ani({ to: { opacity: 1, translateY: 0 }, duration: 1 }))
+import * as a from "@freestylejs/ani-core";
+
+const hero = document.querySelector<HTMLElement>(".hero")!
+const reveal = a.rafTimeline(a.ani({ to: { opacity: 1, translateY: 0 }, duration: 1 }))
 reveal.bind(hero)
 const stop = reveal.drive(() => Math.min(1, window.scrollY / 400), { from: { opacity: 0, translateY: 40 } })
 ```
@@ -145,6 +154,25 @@ const stop = reveal.drive(() => Math.min(1, window.scrollY / 400), { from: { opa
 -   Reduced motion does not apply: the user controls the motion.
 -   The returned function stops driving (idempotent): the timeline leaves the clock and becomes `PAUSED` at the current time, and `resume()` plays forward from there. `play()`, `seek()`, `reset()` and `dispose()` stop driving too.
 -   Invalid `config`, or a `progress` that is not a function, throws synchronously and changes nothing.
+
+#### Reduced motion
+
+`rafTimeline` honors `prefers-reduced-motion` by default. With the preference on, the policy `'jump'` completes every run at once: the value is the end state, bound targets are written, listeners are notified once with `ENDED` and the promise resolves `'ended'`. The clock is not subscribed. The preference is read **once at the start of each `play()`**.
+
+-   `reducedMotion: { maxDuration }` plays a longer run faster instead; `duration` still reports the plan's.
+-   `reducedMotion: 'ignore'` keeps the normal behavior, for essential motion.
+-   `drive()` is not affected: the user controls the motion.
+
+```typescript
+import * as a from "@freestylejs/ani-core";
+
+const progress = a.rafTimeline(
+  a.ani({ to: { width: 100 }, duration: 1 }),
+  { reducedMotion: "ignore" }
+);
+```
+
+See [Reduced motion](/en/docs/guides/reduced-motion).
 
 #### Same-property overlap
 
@@ -167,7 +195,8 @@ When several segments animate the same property at overlapping times (`parallel`
 | Name | Type | Description |
 | :--- | :--- | :--- |
 | `rootNode` | `AnimationNode<G>` | Root of the animation tree. |
-| `options` | `{ clock?: AnimationClockInterface }` | (Optional) `clock` drives the timeline and defaults to the shared [`defaultClock`](/en/docs/core-api/clock). A bare clock in place of the options object throws a `TypeError`: pass `{ clock }`. |
+| `options.clock` | `AnimationClockInterface` | (Optional) Drives the timeline. Defaults to the shared [`defaultClock`](/en/docs/core-api/clock). A bare clock in place of the options object throws a `TypeError`: pass `{ clock }`. |
+| `options.reducedMotion` | `'jump' \| 'ignore' \| { maxDuration: number }` | (Optional) Policy while the user prefers reduced motion. Default `'jump'`. |
 
 #### `play(config)`
 
@@ -199,32 +228,35 @@ When several segments animate the same property at overlapping times (`parallel`
 
 #### Type Definitions
 
-```typescript
-type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED';
+```text
+type TimelineStatus = 'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED'
 
 type OnUpdateCallback<G extends Groupable> = (current: {
-  state: AniGroup<G>;   // shared by all callbacks of one notification
-  status: TimelineStatus;
-}) => void;
+  state: AniGroup<G>   // shared by all callbacks of one notification
+  status: TimelineStatus
+}) => void
 
 interface RafTimelineConfig<G extends Groupable> {
-  from: G;
-  repeat?: number;
-  delay?: number; // seconds
-  keyframes?: Array<G | 'keep'>;
-  durations?: Array<number | 'keep'>;
-  velocity?: Partial<G>;
-  interrupt?: boolean; // default true
+  from: AniGroup<G>
+  repeat?: number
+  delay?: number // seconds
+  keyframes?: Array<G | 'keep'>
+  durations?: Array<number | 'keep'>
+  velocity?: Partial<G>
+  interrupt?: boolean // default true
 }
 
-type RunResult = 'ended' | 'interrupted' | 'skipped' | 'reset' | 'disposed';
+type RunResult = 'ended' | 'interrupted' | 'skipped' | 'reset' | 'disposed'
 
 function rafTimeline<G extends Groupable>(
   rootNode: AnimationNode<G>,
-  options?: { clock?: AnimationClockInterface }
-): RafTimeline<G>;
+  options?: {
+    clock?: AnimationClockInterface
+    reducedMotion?: 'jump' | 'ignore' | { maxDuration: number }
+  }
+): RafTimeline<G>
 
-function isRafTimeline(value: unknown): value is RafTimeline<Groupable>;
+function isRafTimeline(value: unknown): value is RafTimeline<Groupable>
 ```
 
 ### Related Components

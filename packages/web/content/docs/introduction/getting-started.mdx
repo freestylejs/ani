@@ -57,17 +57,21 @@ const MyAnimatedComponent = () => {
 export default MyAnimatedComponent;
 ```
 
+<Callout>
+    Upgrading from ANI 1.x? Run the codemod and read [Migrating from 1.x](/en/docs/guides/migration-v2).
+</Callout>
+
 ---
 
 ## How It Works
 
-The library is built on a few simple ideas. The example above demonstrates the core workflow:
+The example above demonstrates the core workflow. Each step has its own heading below.
 
 <Steps>
 <Step>
-### 1. Installation
+### Install the packages
 
-First, install the `core` library and the `bindings` for your chosen framework.
+Install the `core` library and the `bindings` for your chosen framework.
 
 <Tabs items={['npm', 'pnpm', 'yarn']} defaultValue="npm" groupId="package-manager">
   <Tab value="npm">
@@ -114,50 +118,89 @@ First, install the `core` library and the `bindings` for your chosen framework.
     </Tabs>
 </Callout>
 
+Each binding lists its framework as a **peer dependency**, so the framework must be installed in your app:
+
+| Package | Peer dependency |
+| :--- | :--- |
+| `@freestylejs/ani-react` | `react` `>=18.0.0` |
+| `@freestylejs/ani-vue` | `vue` `>=3.0.0` |
+| `@freestylejs/ani-solid` | `solid-js` `>=1.8.0` |
+| `@freestylejs/ani-svelte` | `svelte` `>=4.0.0` |
+
 </Step>
 <Step>
-### 2. Define a Structure
+### Define a structure
 
 You define an animation's structure using **composition nodes** like `sequence`, `parallel`, and `ani`. This structure is a blueprint for the animation—it describes *what* should happen, but it doesn't hold any live values.
 
 ```ts
+import * as a from "@freestylejs/ani-core";
+
 // This structure is a reusable blueprint.
 const myAnimation = a.sequence([
   a.ani({ to: { translateX: 500 }, duration: 0.8 }),
   a.ani({ to: { translateX: 0 }, duration: 1.2 }),
 ]);
 ```
+
+Every duration, delay and offset is in **seconds**.
 </Step>
 <Step>
-### 3. Create a Timeline
+### Create a timeline
 
-The **`timeline`** is the engine that runs your animation structure. You create a timeline from your structure, and it gives you a `controller` to manage playback.
+The **timeline** is the engine that runs your animation structure. Create a [`rafTimeline`](/en/docs/core-api/dynamic_timeline) from your structure, and it gives you a controller to manage playback. Use a [`waapiTimeline`](/en/docs/core-api/timeline) instead when the browser's native engine should run the animation.
 
 ```ts
+import * as a from "@freestylejs/ani-core";
+
+const myAnimation = a.sequence([
+  a.ani({ to: { translateX: 500 }, duration: 0.8 }),
+  a.ani({ to: { translateX: 0 }, duration: 1.2 }),
+]);
+
 // The timeline is the controller for the blueprint.
 const myTimeline = a.rafTimeline(myAnimation);
 ```
 </Step>
 <Step>
-### 4. Connect to UI & Play
+### Connect to the UI and play
 
-Finally, you use a framework-specific primitive (like `useAniRef` for React) to connect the `timeline` to a DOM element. You then use the timeline's `play` method to start the animation, providing a `from` value to set the starting point.
+Use a framework-specific primitive (like `useAniRef` for React) to connect the timeline to a DOM element. Call the timeline's `play` method to start the animation, with a `from` value for the starting point.
 
 ```tsx
-// Connect the timeline to a ref...
-const { ref, style } = useAniRef(myTimeline, { initialValue: { translateX: 0 } });
+import * as a from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-react";
 
-// ...and play it on demand.
-myTimeline.play({ from: { translateX: 0 } });
+export function Box() {
+  const myTimeline = useTimeline(() =>
+    a.rafTimeline(a.ani({ to: { translateX: 500 }, duration: 0.8 }))
+  );
+
+  // Connect the timeline to an element...
+  const { ref, style } = useAniRef(myTimeline, { initialValue: { translateX: 0 } });
+
+  // ...and play it on demand.
+  return (
+    <div
+      ref={ref}
+      style={style}
+      onClick={() => myTimeline.play({ from: { translateX: 0 } })}
+    />
+  );
+}
 ```
 </Step>
 </Steps>
 
 ## Ownership
 
--   You create timelines, so you own them. Call `timeline.dispose()` when their owner goes away. The bindings only **detach** from timelines you pass in.
--   Bindings that create their own state machine (`useAniStates`, `createAniStates`) dispose it automatically.
+-   You create timelines, so you own them. Call `timeline.dispose()` when their owner goes away, or create them with `useTimeline` (`createTimeline`) so the component disposes them. The bindings only **detach** from timelines you pass in.
+-   Bindings that create their own state machine (`useAniStates`, `createAniStates`) or follower (`useFollow`, `createFollow`) dispose it automatically.
 -   Property names such as `translateX`, `rotate`, `scale` and `opacity` map to CSS (see [styles](/en/docs/core-api/advanced/building-bindings)). A name like `x` is not a CSS property: it is written as a style key `x`.
+
+## Reduced motion
+
+Animations honor the operating system's **reduce motion** setting by default: a timeline jumps to its end state instead of animating. Mark essential motion with `reducedMotion: 'ignore'`. See [Reduced motion](/en/docs/guides/reduced-motion).
 
 ## Next Steps
 
@@ -166,3 +209,4 @@ You've successfully created your first animation! Now you're ready to dive deepe
 -   Read **[Large-scale usage](/en/docs/guides/performance)** before animating many elements.
 -   Explore the **[Core Concepts](/en/docs/introduction/core-concepts)** to understand the foundational ideas of the library.
 -   Jump into the **[Core API](/en/docs/core-api/dynamic_timeline)** documentation to see all the available animation primitives.
+-   Test your animations deterministically with the **[Testing](/en/docs/guides/testing)** guide.

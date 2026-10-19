@@ -13,11 +13,11 @@ import { createClock } from "@freestylejs/ani-core";
 
 // Independent clock that you drive yourself (tests, replays, workers).
 let now = 0;
-let pending: ((t: number) => void) | null = null;
+const queue: Array<(t: number) => void> = [];
 
 const clock = createClock({
-  requestFrame: (cb) => { pending = cb; return 1; },
-  cancelFrame: () => { pending = null; },
+  requestFrame: (cb) => { queue.push(cb); return 1; },
+  cancelFrame: () => { queue.length = 0; },
   now: () => now,
 });
 
@@ -25,7 +25,7 @@ const timeline = a.rafTimeline(a.ani({ to: { x: 100 }, duration: 1 }), { clock }
 timeline.play({ from: { x: 0 } });
 
 now += 500;
-pending?.(now); // one frame, 500 ms later (dt is clamped, see below)
+queue.shift()?.(now); // one frame, 500 ms later (a gap up to lagThreshold applies in full)
 console.log(clock.size); // 1 subscriber
 ```
 
@@ -59,7 +59,9 @@ defaultClock.size;                           // number of timelines currently dr
 A subscriber implements `update` and may add `read` and `commit`. The rule: **read in `read`, compute in `update`, write in `commit`.**
 
 ```typescript
-clock.subscribe({
+import { defaultClock } from "@freestylejs/ani-core";
+
+defaultClock.subscribe({
   read() { /* measure layout, sample inputs; no DOM writes */ },
   update(dt) { /* advance by dt seconds and compute; no DOM access */ },
   commit() { /* write this frame's results to the DOM */ },
@@ -79,6 +81,8 @@ A subscriber with only `update` keeps working unchanged. `clock.read(fn)` arms a
 `timeScale` (default `1`) multiplies every delta handed to subscribers, after lag smoothing and `maxDeltaTime`, including the first delta of a subscriber that joined a running loop. Use it for slow motion, fast forward or a global freeze.
 
 ```typescript
+import { createClock } from "@freestylejs/ani-core";
+
 const clock = createClock({ timeScale: 0.5 }); // half speed
 clock.timeScale = 2;  // double speed from the next frame
 clock.timeScale = 0;  // freeze: frames keep running, timelines stay PLAYING with dt = 0
@@ -100,6 +104,8 @@ Unlike `timeScale = 0`, a paused clock requests no frames at all.
 A subscriber whose `read`, `update` or `commit` throws in **3 consecutive ticks** is unsubscribed so a broken animation cannot report forever. Each of the three errors goes to `onError` as usual, followed by one extra `AniError` with code `ANI_SUBSCRIBER_QUARANTINED` whose `cause` is the last error.
 
 ```typescript
+import { AniError, createClock } from "@freestylejs/ani-core";
+
 createClock({
   onError(error) {
     if (error instanceof AniError && error.code === "ANI_SUBSCRIBER_QUARANTINED") {
@@ -144,6 +150,7 @@ Returns an independent `Clock` (`AnimationClockInterface` plus a read-only `size
 | `requestFrame` | `(cb) => number` | `requestAnimationFrame` | Frame source. Resolved lazily at the first subscribe. |
 | `cancelFrame` | `(id) => void` | `cancelAnimationFrame` | Cancels a requested frame. |
 | `now` | `() => number` | `performance.now` | Time source in milliseconds, same domain as the frame timestamps. |
+| `reducedMotion` | `'system' \| boolean \| { matches: boolean }` | `'system'` | The reduced-motion preference timelines read at `play()`. `'system'` follows `matchMedia('(prefers-reduced-motion: reduce)')` (`false` without `matchMedia`); a boolean forces it; an object with a boolean `matches` (a `MediaQueryList`) is read live. Anything else throws a `TypeError`. See [Reduced motion](/en/docs/guides/reduced-motion). |
 | `onError` | `(error) => void` | async rethrow | Receives errors thrown by subscribers. |
 
 #### `Clock`
@@ -156,6 +163,7 @@ Returns an independent `Clock` (`AnimationClockInterface` plus a read-only `size
 | `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. An `Animatable` is `{ read?(), update(dt), commit?() }`. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
 | `clock.timeScale` | Get / set the delta multiplier. Throws `RangeError` for values that are not finite or are negative. |
+| `clock.reducedMotion` | Read-only boolean: the current effective reduced-motion preference. |
 | `clock.paused` | `true` after `pause()` until `resume()` or `dispose()`. |
 | `clock.pause()` / `clock.resume()` | Stop the loop keeping subscribers / restart it without applying the paused gap. Idempotent. |
 | `clock.dispose()` | Stops the loop and drops all subscribers and queued `read` callbacks. |

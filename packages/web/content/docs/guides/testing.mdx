@@ -26,7 +26,13 @@ const manual = createManualClock(); // time starts at 1000 ms
 | `drop()` | Lose the pending frame request, as a browser may. |
 | `setHidden(hidden)` | Flip the injected visibility source and fire `visibilitychange`. Throws `TypeError` with `visibility: false`. |
 
-Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError` (all forwarded to `createClock`) and `visibility` (default `true`, the manual clock injects its own source).
+Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError` (all forwarded to `createClock`), `visibility` (default `true`, the manual clock injects its own source) and `reducedMotion` (default `false`).
+
+| Member | Description |
+| :--- | :--- |
+| `setReducedMotion(on)` | Flip the injected reduced-motion preference. It is read at the start of each `play()`. |
+
+Time is in **milliseconds** on the manual clock (`now`, `frame(ms)`) because it feeds the frame source; timelines still receive their `dt` in seconds.
 
 ### Test a timeline
 
@@ -85,11 +91,33 @@ The same call is useful to tear down the shared clock on hot module reload.
 -   Assert on `element.style` after calling `manual.frame()`.
 -   For server rendering, run in the `node` environment and render. See [SSR](/en/docs/guides/ssr).
 
+### Test reduced motion
+
+The manual clock starts with the preference off, so existing timings hold. Turn it on to test the `'jump'` policy. See [Reduced motion](/en/docs/guides/reduced-motion#testing).
+
+```typescript
+import * as a from "@freestylejs/ani-core";
+import { createManualClock } from "@freestylejs/ani-core/testing";
+import { expect, it } from "vitest";
+
+it("completes at once when reduced motion is on", async () => {
+  const manual = createManualClock({ reducedMotion: true });
+  const timeline = a.rafTimeline(a.ani({ to: { x: 1 }, duration: 1 }), {
+    clock: manual.clock,
+  });
+
+  await expect(timeline.play({ from: { x: 0 } })).resolves.toBe("ended");
+  expect(manual.clock.size).toBe(0);
+});
+```
+
 ### Test errors
 
 Callback errors are reported asynchronously. In a test, give the clock an `onError` to capture errors thrown by subscribers, and stub `queueMicrotask` to capture errors thrown by `onUpdate` callbacks:
 
 ```typescript
+import { createManualClock } from "@freestylejs/ani-core/testing";
+
 const errors: unknown[] = [];
 const manual = createManualClock({ onError: (error) => errors.push(error) });
 ```

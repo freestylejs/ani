@@ -9,9 +9,8 @@ The animation library is designed to be extensible. You can create custom animat
 
 To create a custom timing function, extend `TimingFunction` and implement its `step` method.
 
-```typescript
-import { TimingFunction, TimingFunctionContext } from '@freestylejs/ani-core';
-
+```text
+// exported by '@freestylejs/ani-core'
 export abstract class TimingFunction {
   /** Declare `true` for timings that integrate over time (physics). */
   public readonly stateful?: boolean;
@@ -86,6 +85,8 @@ A stateful timing must:
 -   Optionally publish `state.velocity` (units per second). The timeline reads it for `velocity` and velocity-continuous retargeting.
 
 ```typescript
+import { TimingFunction, type TimingFunctionContext } from "@freestylejs/ani-core";
+
 class Follow extends TimingFunction {
   public override readonly stateful = true;
 

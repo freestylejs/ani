@@ -39,6 +39,13 @@ Targets with the same offset and the same `from` values (and the same start velo
 #### Playing
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const group = a.rafGroup(
+  a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.4 }),
+  { stagger: 0.05 }
+);
+
 group.play({
   from: (index) => ({ opacity: 0, translateY: index * 4 }), // or a constant
   count: 20,        // default: length of array bindings (bindAt never sets it)
@@ -72,6 +79,13 @@ group.play({
 `bind(targets, options?)` writes element `i` of `targets` (an array or a `NodeList`) with target `i`.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const group = a.rafGroup(
+  a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.4 })
+);
+const elements = document.querySelectorAll<HTMLElement>(".card");
+
 const unbind = group.bind(elements, {
   resolver: { translateY: (v) => ({ key: "top", value: `${v}px` }) },
 });
@@ -86,6 +100,14 @@ const unbind = group.bind(elements, {
 Framework bindings attach list items one element at a time (e.g. per-item refs mounting at different times) using `bindAt`:
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const group = a.rafGroup(
+  a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.4 })
+);
+const index = 0;
+const element = document.createElement("li");
+
 // Bind a single item element to target index
 const unbindItem = group.bindAt(index, element, {
   resolver: { translateY: (v) => ({ key: "top", value: `${v}px` }) },
@@ -98,6 +120,12 @@ const unbindItem = group.bindAt(index, element, {
 #### Listening
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const group = a.rafGroup(
+  a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.4 })
+);
+
 const off = group.onUpdate(({ states, status }) => {
   // one frozen state per target
 });
@@ -108,9 +136,13 @@ const third = group.valueAt(2); // frozen snapshot, null out of range
 -   Building `states` is skipped when there are no listeners.
 -   A listener that resets or replays the group stops the remaining notifications of that frame. Listener errors are isolated and rethrown asynchronously.
 
+#### Reduced motion
+
+`rafGroup` does not read the reduced-motion preference: a group plays as you describe it. Gate it yourself where the motion is decorative, for example by skipping `play()` and showing the end state, or use a [`rafTimeline`](/en/docs/core-api/dynamic_timeline), which jumps by default. See [Reduced motion](/en/docs/guides/reduced-motion).
+
 ### API Reference
 
-```typescript
+```text
 function rafGroup<G extends Groupable>(
   node: AnimationNode<G>,
   options?: {

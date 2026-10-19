@@ -1,6 +1,6 @@
 ---
-title: waapiTimeline (WebAPI)
-description:  The main controller that runs an animation, manages its state, and controls its playback. Powered by the Web Animations API.
+title: waapiTimeline (Web Animations API)
+description:  The controller that runs an animation tree with the browser's native Web Animations API, manages its state and controls its playback.
 ---
 
 `waapiTimeline` compiles your declarative animation tree into native browser keyframes and plays them using `Element.animate()`. 
@@ -34,11 +34,13 @@ if (element) {
 
 #### Overview
 
-Unlike the standard `rafTimeline` which runs frame-by-frame via JavaScript, `waapiTimeline` uses the browser's native animation engine. This offers significant performance benefits, especially for continuous animations (loops) or on lower-end devices.
+Unlike [`rafTimeline`](/en/docs/core-api/dynamic_timeline), which runs frame-by-frame via JavaScript, `waapiTimeline` uses the browser's native animation engine. This offers significant performance benefits, especially for continuous animations (loops) or on lower-end devices.
 
-> Runs natively using web [`AnimationAPI`](https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API), `timeline` does not emit `onUpdate` events.
+> Runs natively using the web [`Animation API`](https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API), so `waapiTimeline` does not emit `onUpdate` events. It reports `onStatus` changes and run results instead.
 > 
-> State management is handled entirely by the browser's `CSSOM` calculations.
+> The browser's engine drives the animation. The plan value is available through `value` and `valueAt(index)`.
+
+`isWaapiTimeline(value)` is a type guard that is `true` for a timeline made by `waapiTimeline`.
 
 #### Key Differences from `rafTimeline`
 
@@ -46,36 +48,32 @@ Unlike the standard `rafTimeline` which runs frame-by-frame via JavaScript, `waa
 | :--- | :--- | :--- |
 | **Engine** | JavaScript `requestAnimationFrame` | Browser `Element.animate()` |
 | **Performance** | Good, but blocked by main thread | **Excellent**, often compositor-threaded |
-| **Events** | `onUpdate` for every frame | No frame updates |
+| **Events** | `onUpdate` for every frame | `onStatus` for status changes |
 | **Properties** | **Any numeric property** | **`CSS` properties only** |
+| **Targets** | Bind elements with `bind()` | `play()` takes one element or a list |
+| **Velocity on interruption** | Carries over | Position only |
+
+Both engines share the run results, the validation of the config and the reduced motion policy.
 
 #### Best Practices
 
-- **Do** use `timeline` for purely visual UI transitions (fades, slides, scaling) and infinite background loops.
+- **Do** use `waapiTimeline` for purely visual UI transitions (fades, slides, scaling) and infinite background loops.
 - **Do** use standard `CSS` property names like `translateX` instead of shorthands like `x` to ensure compatibility.
-- **Don't** use `timeline` if you need to sync non-DOM elements (like Canvas or WebGL) or if you need to react to value changes every frame.
-
-#### Limitation 1: Internal Value Can not be accessed.
-
-> Use [`rafTimeline`](/en/docs/core-api/dynamic_timeline), if you should access internal animation value directly.
-
-`timeline` uses `WebAnimationAPI` so we can not access value directly, which is managed by browser internal logics. 
-
-But you can access animation values via [`getAnimations`](https://developer.mozilla.org/en-US/docs/Web/API/Element/getAnimations) api, but it is not recommended approach.
+- **Don't** use `waapiTimeline` if you need to sync non-DOM elements (like Canvas or WebGL) or if you need to react to value changes every frame.
 
 #### Timing Functions
 
-Since `timeline` compiles to native `CSS` Keyframes, standard easing functions are compiled directly to `CSS` strings, while complex physics-based timings are **sampled** into a series of linear keyframes.
+Since `waapiTimeline` compiles to native `CSS` Keyframes, standard easing functions are compiled directly to `CSS` strings, while complex physics-based timings are **sampled** into a series of linear keyframes.
 
 | Timing Function | Compilation Behavior |
 | :--- | :--- |
 | `linear()` | **Compiles** to `linear`. Recommended. |
 | `bezier()` | **Compiles** to `cubic-bezier(...)` when its segment maps 1:1 onto a keyframe interval; if adjacent segments subdivide the interval, it is **sampled** (60fps) so the curve is not restarted at split points. |
-| `spring()` | **Sampled(but can not be duration goes into `Infinity`)**. Compiles into high-density linear keyframes (60fps). |
+| `spring()` | **Sampled**. Compiles into high-density linear keyframes (60fps). |
 | `dynamicSpring()` | **Sampled**. Sampling is a deterministic simulation from the segment start with no state shared between runs. A spring may settle before its nominal duration. |
 | *User Custom* | **Sampled**, provided the function is stateless (pure function of time) or declares `stateful` (see [Custom Timing Functions](/en/docs/core-api/advanced/custom_timing_function)). |
 
-> **Note:** Using `spring()`, `dynamicSpring()`, or subdivided `bezier()` timings with `timeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard `CSS` easing.
+> **Note:** Using `spring()`, `dynamicSpring()`, or subdivided `bezier()` timings with `waapiTimeline` will generate a larger number of keyframes to approximate the curve. This is generally performant but significantly more verbose than standard `CSS` easing.
 
 #### Compilation cache
 
@@ -89,6 +87,12 @@ Compiling a tree to keyframes is cached per **root node**, `from` values and `re
 `play()` accepts one element or a list of elements. Every target gets its own native `Animation` (`timeline.animations`), started `delay` seconds from now plus a per-target `stagger` offset:
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const timeline = a.waapiTimeline(
+    a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.4 })
+);
+
 const run = timeline.play(document.querySelectorAll('.card'), {
     from: { opacity: 0, translateY: 20 },
     delay: 0.2,
@@ -122,11 +126,38 @@ Playing again while the timeline is running commits the current styles of every 
 
 `timeline.value` (target 0) and `timeline.valueAt(index)` return the value of a target, computed from the plan at that animation's `currentTime` (minus its delay, wrapped for repeats, clamped to one run). Computed styles are never parsed. They are `null` without a run or for an index that does not exist. Options in `effect` that change the playhead mapping (`direction`, `easing`, `iterationStart`) are not reflected.
 
+#### Reduced motion
+
+`waapiTimeline` honors `prefers-reduced-motion` by default. With the preference on, the policy `'jump'` creates the animations and finishes them at once (status `ENDED`, result `'ended'`), and `{ maxDuration }` raises each animation's `playbackRate` for runs longer than `maxDuration`. Pass `reducedMotion: 'ignore'` for essential motion. `clock` only provides the preference and defaults to the shared clock. See [Reduced motion](/en/docs/guides/reduced-motion).
+
+```typescript
+import * as a from "@freestylejs/ani-core";
+
+const spinner = a.waapiTimeline(
+    a.loop(a.ani({ to: { rotate: 360 }, duration: 1 }), Infinity),
+    { reducedMotion: "ignore" }
+);
+```
+
+#### Endless loops
+
+Only a root `loop(child, Infinity)` is supported: the child is compiled once and played with `iterations: Infinity`. Any other tree with an endless loop throws a `RangeError` from `play()` that points to the RAF engine. See [loop](/en/docs/core-api/loop).
+
 #### Server rendering
 
 `waapiTimeline(...).play()` needs `KeyframeEffect` and `document.timeline`. Call it on the client only (for example in an effect or `onMount`). See [SSR](/en/docs/guides/ssr).
 
 ### API Reference
+
+#### `waapiTimeline(rootNode, options?)`
+
+| Name | Type | Description |
+| :--- | :--- | :--- |
+| `rootNode` | `AnimationNode<G>` | Root of the animation tree. |
+| `options.reducedMotion` | `'jump' \| 'ignore' \| { maxDuration: number }` | (Optional) Policy while the preference is on. Default `'jump'`. |
+| `options.clock` | `{ readonly reducedMotion: boolean }` | (Optional) Provides the preference. Defaults to the shared [`defaultClock`](/en/docs/core-api/clock). |
+
+#### Members
 
 | Member | Description |
 | :--- | :--- |
@@ -142,7 +173,19 @@ Playing again while the timeline is running commits the current styles of every 
 | `animations` | The native `Animation` of every target. |
 | `value` / `valueAt(index)` | Plan value of a target, or `null`. |
 
-`config` accepts `from` (a record, or a function of the target index), `repeat`, `delay` (**seconds**), `stagger` (seconds, a number or `(index, count) => seconds`), `keyframes`, `durations`, `resolver`, `effect` (extra `KeyframeEffect` options) and `interrupt` (default `true`; `false` resolves `'skipped'` while running).
+#### `play(targets, config)`
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `from` | `G \| ((index: number) => G)` | Start values: a record of CSS properties, or a function of the target index. |
+| `repeat` | `number` | Additional runs. `Infinity` loops forever. |
+| `delay` | `number` | **Seconds** before the run starts (finite and `>= 0`). |
+| `stagger` | `number \| ((index: number, count: number) => number)` | Seconds of start offset per target. |
+| `keyframes` | `Array<G \| 'keep'>` | Override each `ani` node's `to`. |
+| `durations` | `Array<number \| 'keep'>` | Override each `ani` node's duration (seconds). |
+| `resolver` | `Resolver<Record<string, number>>` | Maps values to style declarations. |
+| `effect` | `KeyframeEffectOptions` without `duration`, `iterations` and `delay` | Extra `KeyframeEffect` options. |
+| `interrupt` | `boolean` | Default `true`; `false` resolves `'skipped'` while running. |
 
 Invalid input (array `from`, negative or non-finite `delay` / stagger offsets, no target) throws synchronously before anything is touched.
 
@@ -151,3 +194,4 @@ Invalid input (array `from`, negative or non-finite `delay` / stagger offsets, n
 -   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The standard JavaScript-based controller.
 -   [`ani`](/en/docs/core-api/ani) - The building block for animations.
 -   [`Dynamic Animations`](/en/docs/core-api/advanced/dynamic-animations) - For creating interactive animations.
+-   [Reduced motion](/en/docs/guides/reduced-motion) - Policies and testing.

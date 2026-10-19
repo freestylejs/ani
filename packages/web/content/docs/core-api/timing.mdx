@@ -94,6 +94,12 @@ const cardReturn = a.ani({
 
 const cardTimeline = a.rafTimeline(cardReturn);
 
+// Values measured while the card was dragged (pixels, pixels per second).
+const currentDragX = 120;
+const currentDragY = 40;
+const pointerVelocityX = 900;
+const pointerVelocityY = -300;
+
 // On mouse up, play from the card's current position with the release velocity.
 cardTimeline.play({
   from: { x: currentDragX, y: currentDragY },

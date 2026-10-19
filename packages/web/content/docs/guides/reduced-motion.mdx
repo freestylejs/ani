@@ -3,7 +3,7 @@ title: Reduced motion
 description: Ani honors prefers-reduced-motion by default. Pick a policy per timeline and test it deterministically.
 ---
 
-Some people get sick from large movement. They turn on **reduce motion** in their operating system, and browsers report it as `prefers-reduced-motion: reduce`. Ani honors it by default, for `rafTimeline` and `waapiTimeline`.
+Some people get sick from large movement. They turn on **reduce motion** in their operating system, and browsers report it as `prefers-reduced-motion: reduce`. Ani honors it by default, for `rafTimeline`, `waapiTimeline` and the timelines that `createStates` creates. `rafGroup`, `follow` and `drive()` do not read the preference: the user controls a `drive()` run, and a group or follower is yours to gate.
 
 ### The default
 
@@ -35,6 +35,10 @@ Set a policy with the `reducedMotion` option. It only matters while the preferen
 | `'ignore'` | Unchanged behavior. |
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const node = a.ani({ to: { opacity: 1 }, duration: 1 });
+
 // Keep a short, gentle transition instead of an instant change.
 const panel = a.rafTimeline(node, { reducedMotion: { maxDuration: 0.2 } });
 
@@ -46,6 +50,9 @@ const panel = a.rafTimeline(node, { reducedMotion: { maxDuration: 0.2 } });
 On `waapiTimeline` the same options apply, and `clock` only provides the preference (it defaults to the shared clock):
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const node = a.ani({ to: { opacity: 1 }, duration: 1 });
 const line = a.waapiTimeline(node, { reducedMotion: "jump" });
 ```
 
@@ -56,22 +63,30 @@ const line = a.waapiTimeline(node, { reducedMotion: "jump" });
 Reduced motion is about decorative movement. Keep `'ignore'` for motion that carries information: a progress indicator, a loading spinner that proves the app is alive, a timer, a drag that follows the pointer.
 
 ```typescript
-const progress = a.rafTimeline(node, { reducedMotion: "ignore" });
+import * as a from "@freestylejs/ani-core";
+
+const spinner = a.rafTimeline(
+  a.ani({ to: { rotate: 360 }, duration: 1 }),
+  { reducedMotion: "ignore" }
+);
 ```
+
+`createStates` has no policy option: its timelines use `'jump'`. To change that for a state machine, give it a clock whose preference you control (see below).
 
 ### Choosing the preference source
 
-Pass `reducedMotion` to `createClock` to override the system value:
+Pass `reducedMotion` to `createClock` to override the system value. Timelines and machines that use that clock (`{ clock }`) follow it:
 
 ```typescript
 import { createClock } from "@freestylejs/ani-core";
 
 createClock({ reducedMotion: "system" }); // default
 createClock({ reducedMotion: true }); // force on, e.g. an in-app setting
+createClock({ reducedMotion: false }); // never reduce, whatever the system says
 createClock({ reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)") });
 ```
 
-An object with a boolean `matches` is read live. `clock.reducedMotion` returns the current effective value.
+An object with a boolean `matches` is read live. `clock.reducedMotion` returns the current effective value. A custom clock that has no `reducedMotion` member reports `false`.
 
 ### Testing
 
@@ -83,6 +98,7 @@ import { createManualClock } from "@freestylejs/ani-core/testing";
 import { expect, it } from "vitest";
 
 it("jumps when reduced motion is on", async () => {
+  const node = a.ani({ to: { opacity: 1 }, duration: 1 });
   const manual = createManualClock();
   const timeline = a.rafTimeline(node, { clock: manual.clock });
 

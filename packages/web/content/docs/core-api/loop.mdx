@@ -27,6 +27,13 @@ myTimeline.play({ from: { scale: 1 } });
 Endless:
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const pulse = a.sequence([
+    a.ani({ to: { scale: 1.2 }, duration: 0.5 }),
+    a.ani({ to: { scale: 1 }, duration: 0.5 }),
+]);
+
 const heartbeat = a.rafTimeline(a.loop(pulse, Infinity));
 heartbeat.play({ from: { scale: 1 } }); // pending until reset() / dispose()
 ```
@@ -37,9 +44,13 @@ heartbeat.play({ from: { scale: 1 } }); // pending until reset() / dispose()
 
 `loop` is a composition node that takes a single child animation and repeats it a set number of times. The total duration of the `loop` node is the duration of its child multiplied by the loop count. This is a convenient alternative to manually creating a long `sequence` of identical animations.
 
-An optional third `timing` argument applies a timing function to the looped child segments (only where the child does not define its own timing):
+An optional third argument is an options object, `{ timing, id }`. Its `timing` applies a timing function to the looped child segments (only where the child does not define its own timing). A bare timing function in that position throws a `TypeError`.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const pulse = a.ani({ to: { scale: 1.2 }, duration: 0.5 });
+
 // Loop with an ease applied to every repetition.
 const easedLoop = a.loop(pulse, 3, { timing: a.timing.ease() });
 ```
@@ -71,11 +82,14 @@ A finite loop that shares a property with another segment running at the same ti
 The `keyframes` and `durations` options of `play()` hold one entry per `ani` / `delay` node **as written in the tree**. The child of a loop counts once, whatever the count (also `0` and `Infinity`), and its entry applies to every iteration:
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
 const looped = a.loop(a.ani({ to: { x: 100 }, duration: 1 }), 3);
+const timeline = a.rafTimeline(looped);
 timeline.play({ from: { x: 0 }, keyframes: [{ x: 50 }] }); // 50 in every iteration
 ```
 
-Before 2.0 every iteration had its own entry. A `durations` entry that makes a segment run past the end of its iteration cuts it off at the next one; a finite loop is then written out, and an endless one throws a `RangeError` from `play()`.
+A `durations` entry that makes a segment run past the end of its iteration cuts it off at the next one; a finite loop is then written out, and an endless one throws a `RangeError` from `play()`.
 
 #### Best Practices
 
@@ -89,8 +103,8 @@ Before 2.0 every iteration had its own entry. A `durations` entry that makes a s
 | :--- | :--- | :--- |
 | `child` | `AnimationNode<G>` | The node to repeat. |
 | `loopCount` | `number` | Integer `>= 0`, or `Infinity`. |
-| `timing` | `TimingFunction` | (Optional) Applied to child segments without their own timing. |
-| `id` | `string` | (Optional) Identifier of the node. |
+| `options.timing` | `TimingFunction` | (Optional) Applied to child segments without their own timing. |
+| `options.id` | `string` | (Optional) Identifier of the node. |
 
 ### Related Components
 
