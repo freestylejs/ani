@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ManualClock } from '~/ani/core/__tests__/manual_clock'
-import { ani } from '~/nodes'
+import { ani, loop } from '~/nodes'
 import { T } from '~/timing'
 import { rafGroup } from '../group'
 
@@ -212,5 +212,35 @@ describe('rafGroup', () => {
         writes.length = 0
         clock.tick(0.5)
         expect(writes).toEqual([0])
+    })
+
+    it('throws RangeError naming count and bindAt when count is omitted without array bindings', () => {
+        const clock = new ManualClock()
+        const group = rafGroup(tree(), { clock })
+        const el = { style: {} as CSSStyleDeclaration }
+        group.bindAt(0, el)
+        let error: unknown
+        try {
+            group.play({ from: { x: 0 } })
+        } catch (e) {
+            error = e
+        }
+        expect(error).toBeInstanceOf(RangeError)
+        expect((error as Error).message).toMatch(/count/)
+        expect((error as Error).message).toMatch(/bindAt/)
+    })
+
+    it('rejects seek(Infinity) on an endless group and allows seek(Infinity) on a finite group', () => {
+        const clock = new ManualClock()
+        const endless = rafGroup(loop(tree(), Infinity), { clock })
+        endless.play({ from: { x: 0 }, count: 2 })
+        expect(() => endless.seek(Infinity)).toThrow(RangeError)
+        expect(() => endless.seek(10)).not.toThrow()
+        expect(endless.status).toBe('PAUSED')
+
+        const finite = rafGroup(tree(2), { clock })
+        finite.play({ from: { x: 0 }, count: 2 })
+        expect(() => finite.seek(Infinity)).not.toThrow()
+        expect(finite.status).toBe('PAUSED')
     })
 })

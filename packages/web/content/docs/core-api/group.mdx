@@ -41,14 +41,14 @@ Targets with the same offset and the same `from` values (and the same start velo
 ```typescript
 group.play({
   from: (index) => ({ opacity: 0, translateY: index * 4 }), // or a constant
-  count: 20,        // default: number of bound targets
+  count: 20,        // default: length of array bindings (bindAt never sets it)
   repeat: 1,        // repeats the whole group run, offsets included
   delay: 0.2,       // SECONDS
   velocity: { translateY: 0 },
 });
 ```
 
--   `count` defaults to the number of bound elements. It is **required** (a positive integer) when nothing is bound.
+-   `count` defaults to the length of live array bindings (`bind(targets)`); `bindAt` bindings never set the count.
 -   `delay` is in **seconds** (unlike `rafTimeline`, which uses milliseconds).
 -   `play()` returns a promise that resolves **exactly once** per run with a `RunResult`: `'ended'` when the last target finished (after repeats), `'interrupted'` when another `play()` replaces the run, `'reset'` on `reset()`, `'disposed'` on `dispose()`.
 -   `play()` over a `PLAYING` group starts a new run from the config's `from` (there is no implicit current value). Each target **inherits its own current velocity** unless `velocity` is given, so groups of springs retarget without a kink.
