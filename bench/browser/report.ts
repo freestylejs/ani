@@ -107,11 +107,18 @@ export function formatDerived(derived: readonly DerivedMetrics[]): string {
     const body = derived.map((entry) => [
         String(entry.n),
         formatNumber(entry.groupGain, 2, false),
+        formatNumber(entry.rafReadStyleRecalcsPerFrame, 2, false),
+        formatNumber(entry.rafThrashStyleRecalcsPerFrame, 2, false),
         formatNumber(entry.rafReadLayoutsPerFrame, 2, false),
-        formatNumber(entry.rafThrashLayoutsPerFrame, 2, false),
     ])
     return renderTable(
-        ['n', 'groupGain', 'raf-read lay/f', 'raf-thrash lay/f'],
+        [
+            'n',
+            'groupGain',
+            'raf-read sty/f',
+            'raf-thrash sty/f',
+            'raf-read lay/f',
+        ],
         body
     )
 }
