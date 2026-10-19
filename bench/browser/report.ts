@@ -1,3 +1,4 @@
+import type { DerivedMetrics } from './budget.ts'
 import type { RunMetrics } from './stats.ts'
 
 /** One scenario × N result, already reduced to the median of its repeats. */
@@ -24,6 +25,8 @@ export interface BenchMeta {
 export interface BenchReport {
     meta: BenchMeta
     results: ResultRow[]
+    /** Metrics derived across scenarios, per element count. */
+    derived?: DerivedMetrics[]
 }
 
 interface MetricColumn {
@@ -97,6 +100,20 @@ function renderTable(
             )
             .join('  ')
     return [renderRow(header), ...rows.map(renderRow)].join('\n')
+}
+
+/** Fixed-width table of the derived metrics, `-` where a scenario was not run. */
+export function formatDerived(derived: readonly DerivedMetrics[]): string {
+    const body = derived.map((entry) => [
+        String(entry.n),
+        formatNumber(entry.groupGain, 2, false),
+        formatNumber(entry.rafReadLayoutsPerFrame, 2, false),
+        formatNumber(entry.rafThrashLayoutsPerFrame, 2, false),
+    ])
+    return renderTable(
+        ['n', 'groupGain', 'raf-read lay/f', 'raf-thrash lay/f'],
+        body
+    )
 }
 
 function headerCells(): string[] {

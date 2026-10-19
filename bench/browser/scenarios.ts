@@ -31,6 +31,12 @@ export interface RafTimelineHandle {
     dispose(): void
 }
 
+export interface RafGroupHandle {
+    bindAt(index: number, target: HTMLElement): () => void
+    play(config: { from: StyleState; count: number; repeat: number }): unknown
+    dispose(): void
+}
+
 export interface WaapiTimelineHandle {
     play(target: Element, config: { from: StyleState; repeat: number }): unknown
     reset(): void
@@ -45,8 +51,10 @@ export interface AniRuntime {
     }): AniNode
     sequence(children: readonly AniNode[]): AniNode
     rafTimeline(node: AniNode): RafTimelineHandle
+    rafGroup(node: AniNode): RafGroupHandle
     waapiTimeline(node: AniNode): WaapiTimelineHandle
     timing: { linear(): AniTimingFunction }
+    defaultClock: { read(fn: () => void): void }
 }
 
 /** State shared inside the page between scenario setup and teardown. */
@@ -80,6 +88,8 @@ export type ScenarioName =
     | 'raf-deep'
     | 'waapi'
     | 'raf-thrash'
+    | 'raf-group'
+    | 'raf-read'
 
 export interface ScenarioDefinition {
     name: ScenarioName
@@ -256,6 +266,63 @@ export const rafThrash: ScenarioSetup = ({ n }) => {
     return { setupMs }
 }
 
+/** One `rafGroup` drives all N elements, each bound with `bindAt(i, el)`. */
+export const rafGroup: ScenarioSetup = ({ n }) => {
+    const a = window.__ani
+    const elements = window.__bench.build(n)
+    const node = a.ani({
+        to: { translateX: 200, opacity: 1 },
+        duration: 2,
+        timing: a.timing.linear(),
+    })
+    const startedAt = performance.now()
+    const group = a.rafGroup(node)
+    elements.forEach((element, index) => {
+        group.bindAt(index, element)
+    })
+    group.play({
+        from: { translateX: 0, opacity: 0.2 },
+        count: n,
+        repeat: Infinity,
+    })
+    const setupMs = performance.now() - startedAt
+    window.__bench.stops.push(() => group.dispose())
+    return { setupMs }
+}
+
+/** Like `raf-timelines`, but every update reads layout in the read phase. */
+export const rafRead: ScenarioSetup = ({ n }) => {
+    const a = window.__ani
+    const clock = a.defaultClock
+    const elements = window.__bench.build(n)
+    const node = a.ani({
+        to: { translateX: 200, opacity: 1 },
+        duration: 2,
+        timing: a.timing.linear(),
+    })
+    const startedAt = performance.now()
+    const timelines = elements.map((element) => {
+        const timeline = a.rafTimeline(node)
+        timeline.bind(element)
+        timeline.onUpdate(() => {
+            // Queued for the read phase of the next frame, before any write.
+            clock.read(() => {
+                void element.offsetWidth
+            })
+        })
+        timeline.play({
+            from: { translateX: 0, opacity: 0.2 },
+            repeat: Infinity,
+        })
+        return timeline
+    })
+    const setupMs = performance.now() - startedAt
+    window.__bench.stops.push(() => {
+        for (const timeline of timelines) timeline.dispose()
+    })
+    return { setupMs }
+}
+
 /** Every scenario, in report order. */
 export const SCENARIOS: readonly ScenarioDefinition[] = [
     { name: 'raf-timelines', setup: rafTimelines },
@@ -263,4 +330,6 @@ export const SCENARIOS: readonly ScenarioDefinition[] = [
     { name: 'raf-deep', setup: rafDeep },
     { name: 'waapi', setup: waapi },
     { name: 'raf-thrash', setup: rafThrash },
+    { name: 'raf-group', setup: rafGroup },
+    { name: 'raf-read', setup: rafRead },
 ]

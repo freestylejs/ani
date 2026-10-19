@@ -28,6 +28,7 @@
         "reset": "pnpm reset:dist && pnpm reset:modules",
         "img:compress": "chmod +x ./scripts/img_compress.sh && ./scripts/img_compress.sh",
         "bench:browser": "pnpm --filter @freestylejs/ani-core build && node bench/browser/run.ts",
+        "bench:check": "pnpm --filter @freestylejs/ani-core build && node bench/browser/run.ts --check",
         "size": "pnpm --filter @freestylejs/ani-core build && node bench/size/run.ts",
         "soak": "pnpm --filter @freestylejs/ani-core build && node --expose-gc bench/soak/run.ts",
         "pkg:init": "pnpm test:ci && changeset",
