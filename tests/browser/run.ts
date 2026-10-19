@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { build } from 'esbuild'
 import {
     type Browser,
     type BrowserContext,
@@ -60,6 +61,7 @@ interface Pattern {
 
 interface Options {
     patterns: Pattern[]
+    filters: string[]
     headed: boolean
     list: boolean
 }
@@ -74,6 +76,10 @@ interface Outcome {
 
 function writeOut(message: string): void {
     process.stdout.write(`${message}\n`)
+}
+
+function writeStderr(message: string): void {
+    process.stderr.write(`${message}\n`)
 }
 
 function describeError(error: unknown): string {
@@ -98,6 +104,7 @@ function parsePattern(glob: string): Pattern {
 
 function parseOptions(argv: readonly string[]): Options {
     const patterns: Pattern[] = []
+    const filters: string[] = []
     let headed = false
     let list = false
     for (let i = 0; i < argv.length; i++) {
@@ -108,6 +115,7 @@ function parseOptions(argv: readonly string[]): Options {
                 if (value === undefined || value.startsWith('--')) {
                     throw new UsageError('--case requires a value')
                 }
+                filters.push(value)
                 patterns.push(parsePattern(value))
                 i += 1
                 break
@@ -125,7 +133,7 @@ function parseOptions(argv: readonly string[]): Options {
                 throw new UsageError(`unknown option "${arg}"`)
         }
     }
-    return { patterns, headed, list }
+    return { patterns, filters, headed, list }
 }
 
 function pageHtml(markup: string): string {
@@ -375,8 +383,56 @@ function report(id: string, outcome: Outcome): void {
     }
 }
 
+async function findCases(name: ModuleName): Promise<string[]> {
+    const result = await build({
+        entryPoints: [
+            fileURLToPath(new URL(`./cases/${name}.ts`, import.meta.url)),
+        ],
+        bundle: false,
+        metafile: true,
+        write: false,
+        logLevel: 'silent',
+    })
+    const output = Object.values(result.metafile?.outputs ?? {})[0]
+    return (output?.exports ?? []).filter(
+        (key) => key !== 'pageOptions' && key !== 'knownFailures'
+    )
+}
+
 async function main(): Promise<number> {
     const options = parseOptions(process.argv.slice(2))
+    const wanted = (moduleName: string, caseName: string) =>
+        options.patterns.length === 0 ||
+        options.patterns.some(
+            (pattern) =>
+                pattern.module.test(moduleName) && pattern.name.test(caseName)
+        )
+
+    const selectedCases: string[] = []
+    for (const name of MODULES) {
+        if (
+            options.patterns.length > 0 &&
+            !options.patterns.some((pattern) => pattern.module.test(name))
+        ) {
+            continue
+        }
+        const cases = await findCases(name)
+        for (const caseName of cases) {
+            if (wanted(name, caseName)) {
+                selectedCases.push(`${name}:${caseName}`)
+            }
+        }
+    }
+
+    if (selectedCases.length === 0) {
+        const filters =
+            options.filters.length > 0
+                ? options.filters.join(', ')
+                : 'the filters'
+        writeStderr(`no case matches ${filters}`)
+        return 1
+    }
+
     const browser = await chromium.launch({
         headless: !options.headed,
         args: [
@@ -389,17 +445,7 @@ async function main(): Promise<number> {
     const started = performance.now()
     try {
         for (const name of MODULES) {
-            const wanted = (caseName: string) =>
-                options.patterns.length === 0 ||
-                options.patterns.some(
-                    (pattern) =>
-                        pattern.module.test(name) && pattern.name.test(caseName)
-                )
-            // Skip the bundling and the browser for modules nothing selects.
-            if (
-                options.patterns.length > 0 &&
-                !options.patterns.some((pattern) => pattern.module.test(name))
-            ) {
+            if (!selectedCases.some((id) => id.startsWith(`${name}:`))) {
                 continue
             }
 
@@ -418,7 +464,7 @@ async function main(): Promise<number> {
             }
             for (const caseName of module.cases) {
                 const id = `${name}:${caseName}`
-                if (!wanted(caseName)) continue
+                if (!wanted(name, caseName)) continue
                 if (options.list) {
                     const known = module.knownFailures[caseName]
                     writeOut(known === undefined ? id : `${id} (known failure)`)

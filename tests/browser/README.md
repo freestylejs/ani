@@ -27,6 +27,7 @@ pnpm test:browser --headed             # show the browser window
 
 `--case <glob>` is repeatable; `*` and `?` are the wildcards, and a glob
 without a colon matches the case name in every module (`--case B1`).
+A filter that matches no cases prints `no case matches <the filters>` to stderr and exits `1` (also with `--list`).
 
 One line per case, then a summary. The exit code is `1` when any case fails.
 
