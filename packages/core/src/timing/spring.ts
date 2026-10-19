@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import { TimingFunction, type TimingFunctionContext } from './function'
 
 export interface SpringTimingFunctionOpt {
@@ -25,7 +26,9 @@ export class SpringTimingFunction extends TimingFunction {
     public constructor(opt: SpringTimingFunctionOpt) {
         super()
         if (!(opt.m > 0) || !(opt.k > 0) || !(opt.c >= 0)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_NODE',
                 `[SpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${opt.m}, k=${opt.k}, c=${opt.c}.`
             )
         }

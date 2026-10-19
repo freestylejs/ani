@@ -1,3 +1,5 @@
+import { createAniError } from '~/error'
+
 export interface StyleWriter {
     /** Writes the declarations of `style` that changed since this writer's previous write. */
     write(style: Readonly<Record<string, unknown>>): void
@@ -14,7 +16,9 @@ export function createStyleWriter(
 ): StyleWriter {
     const style = (target as { style?: unknown } | null | undefined)?.style
     if (typeof style !== 'object' || style === null) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_OPTIONS',
             '[StyleWriter] target must be an element or an object with a `style` object.'
         )
     }

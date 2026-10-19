@@ -54,7 +54,7 @@ export {
 export type { TimelineControllerHooks } from './binding'
 export { createTimelineController } from './binding'
 export type { AniErrorCode } from './error'
-export { AniError } from './error'
+export { AniError, createAniError, isAniError } from './error'
 export type {
     Animatable,
     AnimationClockInterface,

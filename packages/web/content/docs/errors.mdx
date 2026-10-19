@@ -1,0 +1,125 @@
+---
+title: Errors
+description: Every error ANI throws or reports carries a stable code and a link to this page.
+---
+
+Every error ANI throws or reports is an ANI error: it has a stable `code`, a `docs` URL that points at the section of this page for that code, and a message that starts with `[CODE] `.
+
+ANI errors stay native. A wrong type is a `TypeError`, a value out of range is a `RangeError`, so `instanceof TypeError` and `instanceof RangeError` checks keep working. The code is carried on the error object.
+
+```typescript
+import { AniError, isAniError } from "@freestylejs/ani-core";
+
+try {
+  timeline.play({ from: { x: Number.NaN } });
+} catch (error) {
+  if (error instanceof AniError) {
+    console.log(error.code); // "ANI_INVALID_CONFIG"
+    console.log(error.docs); // "https://ani.freestylejs.dev/docs/errors#ani_invalid_config"
+  }
+}
+```
+
+| Member | Description |
+| :--- | :--- |
+| `error instanceof AniError` | `true` for every ANI error, including the native `TypeError` / `RangeError` instances ANI throws. |
+| `isAniError(value)` | Type guard: `value is Error & { code: AniErrorCode; docs: string }`. `false` for plain errors, non-errors and look-alikes with an unknown code. |
+| `error.code` | One of the `AniErrorCode` values below. Switch on the code, never on the message. |
+| `error.docs` | `https://ani.freestylejs.dev/docs/errors#<code in lowercase>`. |
+
+Invalid input throws synchronously and the call changes nothing. A failure inside a frame never throws into the clock; it is reported and the other animations keep running.
+
+Binding authors can make an ANI error of a native class with `createAniError(Kind, code, message)`, where `Kind` is `TypeError`, `RangeError` or `Error`.
+
+## ANI_INVALID_NODE
+
+Thrown while building a node: a bad `duration`, `offset` or loop `count`, a `to` that is not an array or a record of finite numbers, an invalid timing function, an unknown option key, or an options value that can not be used.
+
+Fix the value the message names. Durations and offsets are finite numbers `>= 0` in seconds; a loop count is a non-negative integer or `Infinity`.
+
+```typescript
+a.ani({ to: { x: 1 }, duration: -1 }); // RangeError: [ANI_INVALID_NODE] ...
+```
+
+## ANI_UNREACHABLE_NODE
+
+Thrown for a node that can never run: a child after an endless loop in a `sequence`, an endless loop that shares a property with another animation, or an endless tree that is not the root of a `waapiTimeline`.
+
+Put the endless child last, run it in a `parallel`, animate its properties elsewhere, or give the loop a finite count.
+
+```typescript
+a.sequence([a.loop(node, Infinity), other]); // RangeError: [ANI_UNREACHABLE_NODE] ...
+```
+
+## ANI_INVALID_CONFIG
+
+Thrown by `play`, `drive`, `seek` and group `play` when the config or an argument is wrong: a missing or mismatched `from`, a shape that does not match the nodes, a non-finite number, a bad `delay`, `count`, `keyframes`, `durations`, `stagger` or `velocity`, or a seek time that is not a number.
+
+Nothing changes when it is thrown. Correct the config and call again.
+
+```typescript
+timeline.play({ from: { x: 0 }, delay: -1 }); // RangeError: [ANI_INVALID_CONFIG] ...
+```
+
+## ANI_UNKNOWN_STATE
+
+Thrown by `transitionTo` with a name that is not a state, and by `createStates` when `initial` is not one of `states`.
+
+Use one of the state names the message lists.
+
+```typescript
+const machine = a.createStates({
+  initial: "idle",
+  initialValue: { x: 0 },
+  states: { idle: node },
+});
+machine.transitionTo("nope"); // RangeError: [ANI_UNKNOWN_STATE] ...
+```
+
+## ANI_INVALID_OPTIONS
+
+Thrown by factories and bindings for wrong options: `createClock` and `clock.configure` values, `rafTimeline`, `rafGroup`, `follow` and `waapiTimeline` options, a `reducedMotion` policy, a `bind` or `bindAt` target or index, and the arguments of the framework binding primitives.
+
+Pass the type and range the message asks for.
+
+```typescript
+a.createClock({ lagThreshold: -1 }); // RangeError: [ANI_INVALID_OPTIONS] ...
+```
+
+## ANI_REMOVED_API
+
+Thrown for a 1.x call shape that no longer exists: positional node arguments, a clock in place of the options object, extra arguments to `play`, `reset` or `transitionTo`, `initialFrom`, `context` and `propertyResolver`.
+
+The message names the 2.0 form. See the [migration guide](/en/docs/guides/migration-v1).
+
+```typescript
+a.sequence([node], timing); // TypeError: [ANI_REMOVED_API] ... use { timing } instead
+```
+
+## ANI_CODEC_MISMATCH
+
+Thrown by a value codec given input it can not parse or encode: a malformed color, an unknown color space or unit, or a vector of the wrong length.
+
+Pass a value in the format the codec describes. The message shows the offending value.
+
+```typescript
+import { color } from "@freestylejs/ani-core/values";
+
+color.encode("not a color"); // AniError: [ANI_CODEC_MISMATCH] ...
+```
+
+## ANI_SUBSCRIBER_QUARANTINED
+
+Reported to the clock's `onError`, never thrown from a call, when a subscriber's `read`, `update` or `commit` throws in three consecutive ticks. The subscriber is unsubscribed. Each error is still reported, followed by this one with the last error as its `cause`.
+
+Fix the error in `cause`. The clock and its other subscribers are not affected.
+
+```typescript
+const clock = a.createClock({
+  onError: (error) => {
+    if (isAniError(error) && error.code === "ANI_SUBSCRIBER_QUARANTINED") {
+      console.warn(error.cause);
+    }
+  },
+});
+```

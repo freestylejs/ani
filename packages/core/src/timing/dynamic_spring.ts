@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import { TimingFunction, type TimingFunctionContext } from './function'
 
 import type { SpringTimingFunctionOpt } from './spring'
@@ -52,7 +53,9 @@ export class DynamicSpringTimingFunction extends TimingFunction {
         super()
         const { m, k, c } = opt
         if (!(m > 0) || !(k > 0) || !(c >= 0)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_NODE',
                 `[DynamicSpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${m}, k=${k}, c=${c}.`
             )
         }

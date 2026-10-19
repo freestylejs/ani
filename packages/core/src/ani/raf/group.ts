@@ -2,6 +2,7 @@ import type { AniGroup, Groupable, RunResult } from '~/ani/core'
 import { normalizeRepeatCount, TimelineBase } from '~/ani/core'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { resolveGroup } from '~/ani/core/resolver'
+import { createAniError } from '~/error'
 import {
     type Animatable,
     type AnimationClockInterface,
@@ -205,7 +206,9 @@ function isFiniteNumber(value: unknown): value is number {
 
 function checkOffset(offset: unknown, index: number): number {
     if (!isFiniteNumber(offset) || offset < 0) {
-        throw new RangeError(
+        throw createAniError(
+            RangeError,
+            'ANI_INVALID_CONFIG',
             `[Group] \`stagger\` must be a finite number >= 0 (seconds), received ${offset} for target ${index}.`
         )
     }
@@ -223,21 +226,27 @@ function readFrom(
     index: number
 ): number[] {
     if (typeof from !== 'object' || from === null) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             `[Group] \`from\` must be an array or a record of numbers (target ${index}).`
         )
     }
     const values = new Array<number>(laneCount)
     if (keys === null) {
         if (!Array.isArray(from) || from.length !== laneCount) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 `[Group] \`from\` of target ${index} must be an array of ${laneCount} numbers like the first target.`
             )
         }
         for (let i = 0; i < laneCount; i++) {
             const value = from[i]
             if (!isFiniteNumber(value)) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[Group] \`from\` [${i}] must be a finite number, received ${value} (target ${index}).`
                 )
             }
@@ -247,7 +256,9 @@ function readFrom(
     }
     const record = from as Record<string, unknown>
     if (Array.isArray(from) || Object.keys(record).length !== laneCount) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             `[Group] \`from\` of target ${index} must be a record with the keys of the first target.`
         )
     }
@@ -256,7 +267,9 @@ function readFrom(
             ? record[keys[i]!]
             : undefined
         if (!isFiniteNumber(value)) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 `[Group] \`from\` "${keys[i]}" must be a finite number, received ${value} (target ${index}).`
             )
         }
@@ -272,17 +285,23 @@ function resolveVelocitySeed(
     count: number
 ): SeedInfo {
     if (velocity === null || typeof velocity !== 'object') {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             '[Group] `velocity` must be an array or record shaped like `from`.'
         )
     }
     if (keys === null && !Array.isArray(velocity)) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             '[Group] `velocity` must be an array when `from` is an array.'
         )
     }
     if (keys !== null && Array.isArray(velocity)) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             '[Group] `velocity` must be a record when `from` is a record.'
         )
     }
@@ -292,7 +311,9 @@ function resolveVelocitySeed(
         const value = source[keys ? keys[i]! : i]
         if (value === undefined) continue
         if (!isFiniteNumber(value)) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 `[Group] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
             )
         }
@@ -381,7 +402,9 @@ class RafAniGroup<G extends Groupable>
     private _resolveCount(requested: number | undefined): number {
         if (requested !== undefined) {
             if (!Number.isInteger(requested) || requested <= 0) {
-                throw new RangeError(
+                throw createAniError(
+                    RangeError,
+                    'ANI_INVALID_CONFIG',
                     `[Group] \`count\` must be a positive integer, received ${requested}.`
                 )
             }
@@ -389,7 +412,9 @@ class RafAniGroup<G extends Groupable>
         }
         const bound = this._boundCount()
         if (bound === 0) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 '[Group] `count` is required when no array of targets is bound; `bindAt` bindings do not set the count.'
             )
         }
@@ -464,12 +489,18 @@ class RafAniGroup<G extends Groupable>
 
     private _prepare(config: RafGroupPlayConfig<G>): Prepared {
         if (typeof config !== 'object' || config === null) {
-            throw new TypeError('[Group] `play()` needs a config object.')
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
+                '[Group] `play()` needs a config object.'
+            )
         }
         const count = this._resolveCount(config.count)
         const delay = config.delay ?? 0
         if (!Number.isFinite(delay) || delay < 0) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 `[Group] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
             )
         }
@@ -482,14 +513,18 @@ class RafAniGroup<G extends Groupable>
                 : null
         const first = fromOf ? fromOf(0) : source
         if (typeof first !== 'object' || first === null) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 '[Group] `from` must be an array or a record of numbers (or a function returning one).'
             )
         }
         const { keyMap, values: firstValues } = resolveGroup(first as Groupable)
         const keys = keyMap ? [...keyMap.keys()] : null
         if (keys?.includes('__proto__')) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 '[Group] `__proto__` can not be used as an animated property name.'
             )
         }
@@ -774,7 +809,9 @@ class RafAniGroup<G extends Groupable>
     private _dropArrayBinding(binding: Binding): void {
         this._bindings.delete(binding)
         reportAsync(
-            new TypeError(
+            createAniError(
+                TypeError,
+                'ANI_INVALID_OPTIONS',
                 '[Group] `bind()` can only style record values; positional (array) values have no style property.'
             )
         )
@@ -981,12 +1018,16 @@ class RafAniGroup<G extends Groupable>
         const run = this._run
         if (!run) return
         if (typeof time !== 'number' || Number.isNaN(time)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 `[Group] seek time must be a number, received ${time}.`
             )
         }
         if (time === Infinity && !Number.isFinite(run.duration)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 '[Group] seek time must be finite: an endless group has no end to seek to.'
             )
         }
@@ -1070,7 +1111,9 @@ class RafAniGroup<G extends Groupable>
         options?: RafGroupBindOptions
     ): () => void {
         if (!Number.isInteger(index) || index < 0 || index > MAX_INDEX) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_OPTIONS',
                 `[Group] \`index\` must be a non-negative integer, received ${index}.`
             )
         }

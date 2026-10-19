@@ -1,4 +1,8 @@
-import type { Groupable, RafGroup } from '@freestylejs/ani-core'
+import {
+    createAniError,
+    type Groupable,
+    type RafGroup,
+} from '@freestylejs/ani-core'
 import {
     type ComputedRef,
     computed,
@@ -41,7 +45,9 @@ export function useAniGroup<G extends Groupable>(
 
     const refAt = (index: number) => {
         if (!Number.isInteger(index) || index < 0 || index > MAX_INDEX) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_OPTIONS',
                 `[useAniGroup] \`index\` must be a non-negative integer, received ${index}.`
             )
         }

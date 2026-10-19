@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import {
     type Coord,
     TimingFunction,
@@ -37,7 +38,9 @@ export class BezierTimingFunction extends TimingFunction {
             !(this.opt.p2.x >= 0 && this.opt.p2.x <= 1) ||
             !(this.opt.p3.x >= 0 && this.opt.p3.x <= 1)
         ) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_NODE',
                 '[BezierTimingFunction] control point x values must be within [0, 1].'
             )
         }

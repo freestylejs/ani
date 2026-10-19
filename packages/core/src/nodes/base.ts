@@ -1,4 +1,5 @@
 import type { ExecutionPlan, Groupable } from '~/ani/core'
+import { createAniError } from '~/error'
 import { TimingFunction } from '~/timing'
 import type { Footprint } from './footprint'
 
@@ -36,7 +37,9 @@ export function assertNoExtraArguments(
     extra: readonly unknown[]
 ): void {
     if (extra.length > 0) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_REMOVED_API',
             `[${caller}] Unexpected extra argument. Pass everything in one options object: ${form}.`
         )
     }
@@ -59,13 +62,17 @@ export function parseNodeOptions(
         options === null ||
         isTimingFunction(options)
     ) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_REMOVED_API',
             `[${caller}] Expected an options object, received ${isTimingFunction(options) ? 'a timing function' : typeof options}. Use ${form}.`
         )
     }
     for (const key of Object.keys(options)) {
         if (key !== 'timing' && key !== 'id') {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_NODE',
                 `[${caller}] Unknown option "${key}". Allowed options are "timing" and "id".`
             )
         }

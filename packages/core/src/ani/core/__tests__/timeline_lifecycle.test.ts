@@ -195,10 +195,9 @@ describe('play() validation', () => {
         expect(() => a.line.play({ from: { x: Number.NaN } })).toThrow(
             TypeError
         )
-        const b = makeLine(
+        expect(() =>
             ani({ to: { x: Number.POSITIVE_INFINITY }, duration: 1 })
-        )
-        expect(() => b.line.play({ from: { x: 0 } })).toThrow(TypeError)
+        ).toThrow(TypeError)
     })
 
     it('rejects negative duration overrides and delays', () => {
