@@ -31,8 +31,10 @@ export interface RafGroupPlayConfig<G extends Groupable> {
      */
     from: G | ((index: number) => G)
     /**
-     * Number of targets. Defaults to the number of bound targets; required
-     * (a positive integer) when nothing is bound.
+     * Number of targets. Defaults to the length of live array bindings
+     * (`bind(targets)`); `bindAt` bindings never set the count. Pass `count`
+     * when you bind with `bindAt`. Required (a positive integer) when no array
+     * of targets is bound.
      */
     count?: number
     /**
@@ -388,7 +390,7 @@ class RafAniGroup<G extends Groupable>
         const bound = this._boundCount()
         if (bound === 0) {
             throw new RangeError(
-                '[Group] `count` is required (a positive integer) when no targets are bound.'
+                '[Group] `count` is required when no array of targets is bound; `bindAt` bindings do not set the count.'
             )
         }
         return bound
