@@ -48,15 +48,22 @@ on success and `1` on any page error or bad invocation; page errors and
 | `raf-shared` | one `rafTimeline` bound to all N elements, one `bind(el)` each (upper bound for a future group) |
 | `raf-deep` | like `raf-timelines`, but each tree is a 20-segment `sequence` with the same total motion |
 | `waapi` | one `waapiTimeline` per element played through `play(el, config)` |
-| `raf-thrash` | like `raf-timelines`, but each `onUpdate` reads `el.offsetWidth` right after the bound write (forced layouts) |
+| `raf-thrash` | like `raf-timelines`, but each `onUpdate` reads `el.offsetWidth` right after the bound write (forced style recalculations) |
 | `raf-group` | one `rafGroup` whose N targets are bound with `bindAt(i, el)` (`count: N`) |
 | `raf-read` | like `raf-timelines`, plus a per-element `onUpdate` that schedules `clock.read(() => el.offsetWidth)` (layout reads in the read phase) |
 
 `raf-thrash` is the negative control for `raf-read`: it reads layout directly
 in `onUpdate`, after the bound write. Both read `offsetWidth`; only the phase
-differs. Note that `transform` and `opacity` never dirty layout, so the forced
-work of `raf-thrash` shows up as style recalculations (`sty/f` of N per frame),
-not in `lay/f`.
+differs. Because the scenarios animate only `transform` and `opacity` (compositor
+properties that never dirty layout geometry), `LayoutCount` stays 0 even when
+reading `offsetWidth` right after writing: layout is not invalidated, so the
+gate cannot fail on layout count. What reading `offsetWidth` against dirty styles
+does force is a synchronous style recalculation per element. Forced style
+recalculations (`RecalcStyleCount` / `sty/f`), not layouts, are therefore the
+right signal for detecting frame thrashing on transform and opacity writes.
+Reading in the clock's read phase batches reads before writes, keeping `raf-read`
+to ~1 style recalc per frame (the browser's own rendering pass), while `raf-thrash`
+forces ~N recalculations per frame.
 
 Each scenario builds N absolutely positioned `div`s and animates `translateX`
 0→200 and `opacity` 0.2→1, linear, 2s, `repeat: Infinity`; RAF scenarios write
@@ -95,8 +102,9 @@ per N:
 | Column | Meaning |
 | :--- | :--- |
 | `groupGain` | median `tick p95` of `raf-timelines` divided by that of `raf-group` |
-| `raf-read lay/f` | CDP layouts per frame of `raf-read` |
-| `raf-thrash lay/f` | CDP layouts per frame of `raf-thrash` |
+| `raf-read sty/f` | CDP style recalculations per frame of `raf-read` |
+| `raf-thrash sty/f` | CDP style recalculations per frame of `raf-thrash` |
+| `raf-read lay/f` | CDP layouts per frame of `raf-read` (informational) |
 
 A value is `-` when the scenarios it needs were not run.
 
@@ -109,7 +117,7 @@ A value is `-` when the scenarios it needs were not run.
 | `rafTimelinesP95Ms` | maximum `tick p95` of `raf-timelines` (ms) |
 | `rafGroupP95Ms` | maximum `tick p95` of `raf-group` (ms) |
 | `minGroupGain` | minimum `groupGain` |
-| `maxRafReadLayoutsPerFrame` | maximum `lay/f` of `raf-read` |
+| `maxRafReadStyleRecalcsPerFrame` | maximum `sty/f` of `raf-read` |
 
 ```sh
 pnpm bench:check                           # build core, run the budget scenarios, exit 1 on a miss
@@ -121,9 +129,11 @@ with the default repeats, prints one `ok` / `FAIL` line per budget and names
 the failed ones. A budget whose value could not be measured fails.
 `--update-budget` runs the same set and writes `budget.json`: the two p95
 budgets are the measured median × 1.25 rounded up to 0.1 ms, `minGroupGain` is
-`3` and `maxRafReadLayoutsPerFrame` is `1.05`. The last two are the release
-gates, not measurements, so a re-baseline never loosens them. Neither flag can
-be combined with `--scenario`, `--n` or `--smoke`.
+`3` and `maxRafReadStyleRecalcsPerFrame` is `1.05`. The last two are the release
+gates, not measurements, so a re-baseline never loosens them. If any page error
+occurs during the run, `--update-budget` refuses to write `budget.json`, prints
+the error count, and exits 1 so broken runs cannot pollute the budget file on
+disk. Neither flag can be combined with `--scenario`, `--n` or `--smoke`.
 
 The budgets are absolute times, so they only mean something on the machine that
 produced them. Run `--update-budget` on the release machine and commit the

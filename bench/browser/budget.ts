@@ -10,8 +10,8 @@ export interface Budget {
     rafGroupP95Ms: number
     /** Minimum `groupGain`: `raf-timelines` p95 over `raf-group` p95. */
     minGroupGain: number
-    /** Maximum layouts per frame of `raf-read`. */
-    maxRafReadLayoutsPerFrame: number
+    /** Maximum style recalcs per frame of `raf-read`. */
+    maxRafReadStyleRecalcsPerFrame: number
 }
 
 /** Metrics derived from several scenarios at one element count. */
@@ -19,10 +19,12 @@ export interface DerivedMetrics {
     n: number
     /** Median script p95 of `raf-timelines` over that of `raf-group`. */
     groupGain: number
+    /** CDP style recalculations per frame of `raf-read`. */
+    rafReadStyleRecalcsPerFrame: number
+    /** CDP style recalculations per frame of `raf-thrash`. */
+    rafThrashStyleRecalcsPerFrame: number
     /** CDP layouts per frame of `raf-read`. */
     rafReadLayoutsPerFrame: number
-    /** CDP layouts per frame of `raf-thrash`. */
-    rafThrashLayoutsPerFrame: number
 }
 
 export interface BudgetCheck {
@@ -42,8 +44,8 @@ export const BUDGET_SCENARIOS: readonly string[] = [
 export const BUDGET_N = 5000
 /** The spec's group gate: `rafGroup` at least this much faster. */
 export const MIN_GROUP_GAIN = 3
-/** One layout per frame is the browser's own; the 5% is measurement slack. */
-export const MAX_READ_LAYOUTS_PER_FRAME = 1.05
+/** One recalc per frame is the browser's own; the 5% is measurement slack. */
+export const MAX_READ_STYLE_RECALCS_PER_FRAME = 1.05
 /** Headroom applied to a measured p95 when a budget is written. */
 export const BUDGET_HEADROOM = 1.25
 
@@ -70,11 +72,14 @@ export function deriveMetrics(rows: readonly ResultRow[]): DerivedMetrics[] {
                 timelines && group
                     ? timelines.metrics.tickP95 / group.metrics.tickP95
                     : Number.NaN,
+            rafReadStyleRecalcsPerFrame:
+                find(rows, 'raf-read', n)?.metrics.styleRecalcsPerFrame ??
+                Number.NaN,
+            rafThrashStyleRecalcsPerFrame:
+                find(rows, 'raf-thrash', n)?.metrics.styleRecalcsPerFrame ??
+                Number.NaN,
             rafReadLayoutsPerFrame:
                 find(rows, 'raf-read', n)?.metrics.layoutsPerFrame ??
-                Number.NaN,
-            rafThrashLayoutsPerFrame:
-                find(rows, 'raf-thrash', n)?.metrics.layoutsPerFrame ??
                 Number.NaN,
         }
     })
@@ -102,7 +107,7 @@ export function createBudget(rows: readonly ResultRow[], n: number): Budget {
             measured(rows, 'raf-group', n).metrics.tickP95 * BUDGET_HEADROOM
         ),
         minGroupGain: MIN_GROUP_GAIN,
-        maxRafReadLayoutsPerFrame: MAX_READ_LAYOUTS_PER_FRAME,
+        maxRafReadStyleRecalcsPerFrame: MAX_READ_STYLE_RECALCS_PER_FRAME,
     }
 }
 
@@ -114,7 +119,7 @@ function isBudget(value: unknown): value is Budget {
         typeof candidate.rafTimelinesP95Ms === 'number' &&
         typeof candidate.rafGroupP95Ms === 'number' &&
         typeof candidate.minGroupGain === 'number' &&
-        typeof candidate.maxRafReadLayoutsPerFrame === 'number'
+        typeof candidate.maxRafReadStyleRecalcsPerFrame === 'number'
     )
 }
 
@@ -123,7 +128,7 @@ export function parseBudget(text: string): Budget {
     const parsed: unknown = JSON.parse(text)
     if (!isBudget(parsed)) {
         throw new Error(
-            'invalid budget JSON: expected { n, rafTimelinesP95Ms, rafGroupP95Ms, minGroupGain, maxRafReadLayoutsPerFrame }'
+            'invalid budget JSON: expected { n, rafTimelinesP95Ms, rafGroupP95Ms, minGroupGain, maxRafReadStyleRecalcsPerFrame }'
         )
     }
     return parsed
@@ -181,9 +186,9 @@ export function checkBudget(
             'x'
         ),
         limit(
-            'raf-read layouts per frame',
-            derived?.rafReadLayoutsPerFrame ?? Number.NaN,
-            budget.maxRafReadLayoutsPerFrame,
+            'raf-read style recalcs per frame',
+            derived?.rafReadStyleRecalcsPerFrame ?? Number.NaN,
+            budget.maxRafReadStyleRecalcsPerFrame,
             'max',
             ''
         ),

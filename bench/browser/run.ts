@@ -419,6 +419,12 @@ async function runBenchmark(): Promise<number> {
             budgetOk = printChecks(checkBudget(rows, budget))
         }
         if (options.mode === 'update-budget') {
+            if (errorCount > 0) {
+                writeStderr(
+                    `cannot update budget: run reported ${errorCount} page error${errorCount === 1 ? '' : 's'}`
+                )
+                return 1
+            }
             writeFileSync(
                 BUDGET_FILE,
                 stringifyBudget(createBudget(rows, BUDGET_N))
