@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { rafTimeline } from '@freestylejs/ani-core'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { useAni } from '../ani/use_ani'
@@ -17,7 +18,7 @@ describe('react useAni', () => {
 
     it('renders initial value, then every frame value, and unsubscribes on unmount', async () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const subs = trackSubscriptions(timeline)
         function C() {
             const [v] = useAni(timeline, { opacity: 0.1 })
@@ -38,8 +39,8 @@ describe('react useAni', () => {
 
     it('follows timeline identity changes', async () => {
         const m = createManualClock()
-        const first = rafTimeline(node(), m.clock)
-        const second = rafTimeline(node(), m.clock)
+        const first = rafTimeline(node(), { clock: m.clock })
+        const second = rafTimeline(node(), { clock: m.clock })
         const firstSubs = trackSubscriptions(first)
         const secondSubs = trackSubscriptions(second)
         second.play({ from: { opacity: 0.8 } })
@@ -63,7 +64,7 @@ describe('react useAni', () => {
 
     it('is balanced under StrictMode and across 1000 mount cycles', async () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const subs = trackSubscriptions(timeline)
         function C() {
             const [v] = useAni(timeline, { opacity: 0 })

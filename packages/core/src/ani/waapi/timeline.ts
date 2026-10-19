@@ -42,7 +42,7 @@ function sameFrom(entry: CachedKeyframes, from: Record<string, number>) {
     return true
 }
 
-/** Options of {@link webTimeline} (`waapiTimeline`). */
+/** Options of {@link waapiTimeline}. */
 export interface WaapiTimelineOptions {
     /**
      * What a `play()` does while the user prefers reduced motion. `'jump'`
@@ -690,9 +690,14 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
  * @param rootNode Root animation node.
  * @param options Reduced-motion policy and the clock providing the preference.
  */
-export function webTimeline<G extends Groupable>(
+export function waapiTimeline<G extends Groupable>(
     rootNode: AnimationNode<G>,
     options?: WaapiTimelineOptions
 ): WebAniTimeline<G> {
     return new WebAniTimeline(rootNode, options)
 }
+
+/**
+ * @deprecated Use {@link waapiTimeline}.
+ */
+export const webTimeline = waapiTimeline

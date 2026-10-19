@@ -136,7 +136,7 @@ Returns `{ action: Action<HTMLElement, number>, style: string | undefined }`.
 
 -   The machine (`createStates`) is owned: disposed in `onDestroy`. Afterwards `transitionTo` resolves `'disposed'`.
 -   The action binds the machine (`machine.bind`), so it follows every timeline swap; destroy unbinds only.
--   `style` is the CSS declaration string of `initialValue` (or the 1.x `initialFrom`).
+-   `style` is the CSS declaration string of `initialValue`.
 -   `state` is a store that mirrors the machine, also for a direct `machine.transitionTo`.
 -   `transitionTo` is atomic: an unknown state throws a `RangeError` and changes nothing.
 

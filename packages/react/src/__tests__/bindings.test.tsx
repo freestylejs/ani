@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, rafGroup, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { rafGroup, rafTimeline } from '@freestylejs/ani-core'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
@@ -28,7 +29,9 @@ describe('react bindings', () => {
     it('useTimeline: unmount releases the clock; 1000 mount cycles stay balanced', async () => {
         const m = createManualClock()
         function C() {
-            const timeline = useTimeline(() => rafTimeline(node(), m.clock))
+            const timeline = useTimeline(() =>
+                rafTimeline(node(), { clock: m.clock })
+            )
             timeline.play({ from: { opacity: 0 } })
             return null
         }
@@ -48,7 +51,7 @@ describe('react bindings', () => {
 
     it('useAniRef: the resolver of the latest render is used when an element attaches', async () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         function C({ show, resolver }: { show: boolean; resolver?: object }) {
             const { ref } = useAniRef(timeline, resolver ? { resolver } : {})
             return show ? <div ref={ref} /> : null
@@ -138,12 +141,12 @@ describe('react bindings', () => {
         await view.unmount()
     })
 
-    it('useAniStates: accepts the initialFrom alias and a resolver on the initial style', async () => {
+    it('useAniStates: applies a resolver on the initial style', async () => {
         const m = createManualClock()
         function C() {
             const { ref, style } = useAniStates({
                 initial: 'idle',
-                initialFrom: { opacity: 0.5 },
+                initialValue: { opacity: 0.5 },
                 states: { idle: node(0) },
                 clock: m.clock,
                 resolver: widthResolver,

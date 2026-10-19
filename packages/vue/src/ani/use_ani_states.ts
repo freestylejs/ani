@@ -45,10 +45,7 @@ export function useAniStates<const S extends AnimationStateShape>(
     const binder = createElementBinder((target) =>
         machine.bind(target, withResolver(config.resolver))
     )
-    const initial = (config.initialValue ?? config.initialFrom) as Record<
-        string,
-        number
-    >
+    const initial = config.initialValue as Record<string, number>
     const style = computed(() => createStyleSheet(initial, config.resolver))
 
     if (getCurrentScope()) {

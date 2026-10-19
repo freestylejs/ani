@@ -8,7 +8,7 @@ A `loop` node is a composition that repeats a single child animation node a set 
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define an animation that pulses an element's scale.
 const pulse = a.sequence([
@@ -20,14 +20,14 @@ const pulse = a.sequence([
 const loopedPulse = a.loop(pulse, 3);
 
 // 3. Create and play the timeline.
-const myTimeline = a.dynamicTimeline(loopedPulse);
+const myTimeline = a.rafTimeline(loopedPulse);
 myTimeline.play({ from: { scale: 1 } });
 ```
 
 Endless:
 
 ```typescript
-const heartbeat = a.dynamicTimeline(a.loop(pulse, Infinity));
+const heartbeat = a.rafTimeline(a.loop(pulse, Infinity));
 heartbeat.play({ from: { scale: 1 } }); // pending until reset() / dispose()
 ```
 
@@ -41,7 +41,7 @@ An optional third `timing` argument applies a timing function to the looped chil
 
 ```typescript
 // Loop with an ease applied to every repetition.
-const easedLoop = a.loop(pulse, 3, a.timing.ease());
+const easedLoop = a.loop(pulse, 3, { timing: a.timing.ease() });
 ```
 
 #### Validation

@@ -27,7 +27,7 @@ export function useAni<G extends Groupable>(
     )
 
     const getSnapshot = useCallback((): AniGroup<G> => {
-        return timeline.getCurrentValue() ?? initial.current
+        return timeline.value ?? initial.current
     }, [timeline])
 
     const value = useSyncExternalStore(

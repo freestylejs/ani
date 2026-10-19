@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, type RafAniTimeline, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { type RafAniTimeline, rafTimeline } from '@freestylejs/ani-core'
 import { get, writable } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
 import { useAni } from '../ani/use_ani'
@@ -12,8 +13,8 @@ const node = () =>
 describe('svelte useAni', () => {
     it('emits frame values, follows store swaps and retains nothing without subscribers', () => {
         const m = createManualClock()
-        const first = rafTimeline(node(), m.clock)
-        const second = rafTimeline(node(), m.clock)
+        const first = rafTimeline(node(), { clock: m.clock })
+        const second = rafTimeline(node(), { clock: m.clock })
         const firstSubs = trackSubscriptions(first)
         const secondSubs = trackSubscriptions(second)
         second.play({ from: { opacity: 0.8 } })
@@ -34,7 +35,7 @@ describe('svelte useAni', () => {
         source.set(second)
         expect(firstSubs.live).toBe(0)
         expect(secondSubs.live).toBe(1)
-        expect(seen.at(-1)).toBe(second.getCurrentValue()?.opacity)
+        expect(seen.at(-1)).toBe(second.value?.opacity)
 
         unsubscribe()
         expect(secondSubs.live).toBe(0)
@@ -44,7 +45,7 @@ describe('svelte useAni', () => {
 
     it('does not grow subscriptions over 1000 subscribe cycles', () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const subs = trackSubscriptions(timeline)
         const [store] = useAni(timeline, { opacity: 0 })
         for (let i = 0; i < 1000; i++) store.subscribe(() => undefined)()

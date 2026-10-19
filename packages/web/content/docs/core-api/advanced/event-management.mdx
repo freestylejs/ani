@@ -10,11 +10,12 @@ The `EventManager` simplifies creating interactive animations that respond to us
 ### Example
 
 ```typescript
-import { a, EventManager } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { EventManager } from "@freestylejs/ani-core";
 
 // 1. Define an animation and timeline.
 const myAnimation = a.ani({ to: { x: 500 }, duration: 1 });
-const myTimeline = a.dynamicTimeline(myAnimation);
+const myTimeline = a.rafTimeline(myAnimation);
 
 // 2. Define the events you want to listen for.
 const supportedEvents = ["mousedown", "mouseup"] as const;

@@ -10,7 +10,7 @@ Some people get sick from large movement. They turn on **reduce motion** in thei
 When the preference is on, a timeline **jumps**: `play()` validates as usual, then the run completes at once.
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 const timeline = a.rafTimeline(
   a.ani({ to: { opacity: 1 }, duration: 1 }),
@@ -78,7 +78,7 @@ An object with a boolean `matches` is read live. `clock.reducedMotion` returns t
 `createManualClock` takes `reducedMotion` (default `false`) and exposes `setReducedMotion`:
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { createManualClock } from "@freestylejs/ani-core/testing";
 import { expect, it } from "vitest";
 
@@ -89,7 +89,7 @@ it("jumps when reduced motion is on", async () => {
   manual.setReducedMotion(true);
 
   await expect(timeline.play({ from: { opacity: 0 } })).resolves.toBe("ended");
-  expect(timeline.getCurrentValue()).toEqual({ opacity: 1 });
+  expect(timeline.value).toEqual({ opacity: 1 });
   expect(manual.clock.size).toBe(0);
 });
 ```

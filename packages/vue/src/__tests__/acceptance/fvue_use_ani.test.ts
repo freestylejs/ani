@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, createClock, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { createClock, rafTimeline } from '@freestylejs/ani-core'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
     createApp,

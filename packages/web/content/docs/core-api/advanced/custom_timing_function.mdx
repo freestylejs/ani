@@ -50,7 +50,8 @@ The `step` method is called for each property being animated. It returns the val
 This example snaps the value to its `to` position and ends.
 
 ```typescript
-import { a, TimingFunction, TimingFunctionContext } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { TimingFunction, TimingFunctionContext } from "@freestylejs/ani-core";
 
 class SnapTo extends TimingFunction {
   public step(time: number, context: TimingFunctionContext) {
@@ -64,7 +65,7 @@ const myAnimation = a.ani({
   timing: new SnapTo(),
 });
 
-const myTimeline = a.dynamicTimeline(myAnimation);
+const myTimeline = a.rafTimeline(myAnimation);
 myTimeline.onUpdate(({ state }) => {
   console.log(state.x); // 500 on the first frame
 });

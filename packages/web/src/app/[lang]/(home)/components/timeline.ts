@@ -1,4 +1,4 @@
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useTimeline } from '@freestylejs/ani-react'
 import { useEffect } from 'react'
 
@@ -15,7 +15,7 @@ const createAppear = () =>
                     to: { scale: 1, opacity: 1 },
                 }),
             ],
-            a.timing.spring({ m: 1, k: 200, c: 10 })
+            { timing: a.timing.spring({ m: 1, k: 200, c: 10 }) }
         )
     )
 

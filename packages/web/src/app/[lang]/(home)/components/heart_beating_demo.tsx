@@ -1,6 +1,7 @@
 // 'use client'
 
-// import { a, type Groupable, type RafAniTimeline } from '@freestylejs/ani-core'
+// import * as a from '@freestylejs/ani-core'
+// import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
 // import { useEffect, useRef } from 'react'
 
 // // --- Constants ---
@@ -85,7 +86,7 @@
 //                             totalDuration - activeDuration - delay
 //                         )
 
-//                         const timeline = a.dynamicTimeline(
+//                         const timeline = a.rafTimeline(
 //                             a.parallel([
 //                                 a.sequence([
 //                                     a.delay(delay),
@@ -213,7 +214,8 @@
 
 // 'use client'
 
-// import { a, type Groupable, type RafAniTimeline } from '@freestylejs/ani-core'
+// import * as a from '@freestylejs/ani-core'
+// import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
 // import { useEffect, useRef } from 'react'
 
 // const GRID_SIZE = 65
@@ -299,7 +301,7 @@
 //                             totalDuration - activeDuration - delay
 //                         )
 
-//                         const timeline = a.dynamicTimeline(
+//                         const timeline = a.rafTimeline(
 //                             a.parallel([
 //                                 a.sequence([
 //                                     a.delay(delay),
@@ -515,7 +517,8 @@
 
 'use client'
 
-import { a, type Groupable, type RafAniTimeline } from '@freestylejs/ani-core'
+import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useEffect, useRef } from 'react'
 
 const GRID_SIZE = 100
@@ -748,7 +751,7 @@ export const HeartBeatingDemo = () => {
                             totalDuration - activeDuration - delay
                         )
 
-                        const timeline = a.dynamicTimeline(
+                        const timeline = a.rafTimeline(
                             a.parallel([
                                 a.sequence([
                                     a.delay(delay),
@@ -949,7 +952,8 @@ export const HeartBeatingDemo = () => {
 export const heartBeatingCode = `
 // WebGL for high performance rendering
 
-import { a, type Groupable, type RafAniTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
 import { useEffect, useRef } from 'react'
 
 const GRID_SIZE = 100
@@ -1179,7 +1183,7 @@ export const HeartBeatingDemo = () => {
                             totalDuration - activeDuration - delay
                         )
 
-                        const timeline = a.dynamicTimeline(
+                        const timeline = a.rafTimeline(
                             a.parallel([
                                 a.sequence([
                                     a.delay(delay),

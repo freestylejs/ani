@@ -1,10 +1,10 @@
-import {
-    a,
-    type Follower,
-    type RafAniTimeline,
-    type RafGroup,
-    type StateController,
+import type {
+    Follower,
+    RafAniTimeline,
+    RafGroup,
+    StateController,
 } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import type { Action } from 'svelte/action'
 import type { Readable } from 'svelte/store'
 import { describe, expectTypeOf, it } from 'vitest'

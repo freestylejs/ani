@@ -44,7 +44,7 @@ on success and `1` on any page error or bad invocation; page errors and
 | `raf-timelines` | one `rafTimeline` per element, `onUpdate` writes its own element (today's pattern) |
 | `raf-shared` | one `rafTimeline` whose `onUpdate` writes all N elements (upper bound for a future group) |
 | `raf-deep` | like `raf-timelines`, but each tree is a 20-segment `sequence` with the same total motion |
-| `waapi` | one `webTimeline` per element played through `play(el, config)` |
+| `waapi` | one `waapiTimeline` per element played through `play(el, config)` |
 | `raf-thrash` | like `raf-timelines`, but each `onUpdate` reads `el.offsetWidth` before writing (forced layouts) |
 
 Each scenario builds N absolutely positioned `div`s and animates `translateX`

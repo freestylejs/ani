@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { rafTimeline } from '@freestylejs/ani-core'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
     createApp,
@@ -23,8 +24,8 @@ describe('vue useAni', () => {
 
     it('renders each frame value, follows timeline swaps and unsubscribes on unmount', async () => {
         const m = createManualClock()
-        const first = rafTimeline(node(), m.clock)
-        const second = rafTimeline(node(), m.clock)
+        const first = rafTimeline(node(), { clock: m.clock })
+        const second = rafTimeline(node(), { clock: m.clock })
         const firstSubs = trackSubscriptions(first)
         const secondSubs = trackSubscriptions(second)
         second.play({ from: { opacity: 0.8 } })
@@ -53,7 +54,7 @@ describe('vue useAni', () => {
         current.value = second
         await nextTick()
         expect(container.textContent).toBe(
-            (second.getCurrentValue()?.opacity ?? 0).toFixed(2)
+            (second.value?.opacity ?? 0).toFixed(2)
         )
         expect(firstSubs.live).toBe(0)
         expect(secondSubs.live).toBe(1)
@@ -64,7 +65,7 @@ describe('vue useAni', () => {
 
     it('keeps per-frame values unproxied (shallow state)', async () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         let value!: { value: { opacity: number } }
         const app = createApp(
             defineComponent({
@@ -84,7 +85,7 @@ describe('vue useAni', () => {
 
     it('does not grow subscriptions over 1000 mount cycles', async () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const subs = trackSubscriptions(timeline)
         const Comp = defineComponent({
             setup() {

@@ -1,4 +1,4 @@
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import {
     useAniGroup,
     useAniRef,

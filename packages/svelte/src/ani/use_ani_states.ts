@@ -43,10 +43,7 @@ export function useAniStates<const S extends AnimationStateShape>(
 
     return {
         action,
-        style: toStyleString(
-            (config.initialValue ?? config.initialFrom) as object,
-            resolver
-        ),
+        style: toStyleString(config.initialValue as object, resolver),
         state,
         transitionTo: machine.transitionTo,
         machine,

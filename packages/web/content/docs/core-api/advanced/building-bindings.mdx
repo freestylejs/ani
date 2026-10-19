@@ -24,15 +24,15 @@ All transform functions are joined in key order into **one** `transform` string.
 
 #### Custom `propertyResolver`
 
-Pass `propertyResolver` to `play()` to control the style key and value of a property. The returned key may be a CSS custom property (`--progress`) or a hyphenated name.
+Pass a `resolver` to `bind()` to control the style key and value of a property. The returned key may be a CSS custom property (`--progress`) or a hyphenated name.
 
 ```typescript
-timeline.play({
-  from: { progress: 0 },
-  propertyResolver: {
-    progress: (value) => ({ key: "--progress", value: `${value}%` }),
-  },
-});
+const resolver = {
+  progress: (value) => ({ key: "--progress", value: `${value}%` }),
+};
+
+timeline.bind(element, { resolver });
+timeline.play({ from: { progress: 0 } });
 ```
 
 ### Writing styles: `applyStyleSheet`
@@ -46,7 +46,7 @@ timeline.play({
 import { applyStyleSheet, createStyleSheet } from "@freestylejs/ani-core";
 
 const unsubscribe = timeline.onUpdate(({ state }) => {
-  applyStyleSheet(element, createStyleSheet(state, timeline.currentConfig?.propertyResolver));
+  applyStyleSheet(element, createStyleSheet(state, resolver));
 });
 ```
 

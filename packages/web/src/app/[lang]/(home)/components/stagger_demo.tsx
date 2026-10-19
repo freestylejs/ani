@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
 
@@ -20,7 +20,7 @@ export const StaggerDemo = () => {
                 k: 500,
                 c: 10,
             })
-            return a.timeline(
+            return a.waapiTimeline(
                 a.stagger(
                     [
                         a.ani({
@@ -39,7 +39,7 @@ export const StaggerDemo = () => {
                             timing: spring,
                         }),
                     ],
-                    1
+                    { offset: 1 }
                 )
             )
         })
@@ -51,7 +51,7 @@ export const StaggerDemo = () => {
             if (ref?.current) {
                 timeline.play(ref.current, {
                     from: { translateX: 0, translateY: 0 },
-                    delay: i * 50,
+                    delay: (i * 50) / 1000,
                 })
             }
         })
@@ -125,7 +125,7 @@ export const StaggerDemo = () => {
             if (ref?.current) {
                 timeline.play(ref.current, {
                     from: { translateX: 0, translateY: 0 },
-                    delay: i * 50,
+                    delay: (i * 50) / 1000,
                 })
             }
         })

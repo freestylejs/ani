@@ -8,7 +8,8 @@ The engine animates numbers only. A **codec** turns a display value into a numbe
 ### Example
 
 ```typescript
-import { a, rafTimeline } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafTimeline } from "@freestylejs/ani-core";
 import { color } from "@freestylejs/ani-core/values";
 
 const tint = rafTimeline(a.ani({ to: color.encode("#ff3366"), duration: 0.4 }));

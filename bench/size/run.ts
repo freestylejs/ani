@@ -42,15 +42,6 @@ const sizePlugin: Plugin = {
             { filter: /^(testing|@freestylejs\/ani-core\/testing)$/ },
             () => ({ path: TESTING_DIST })
         )
-        buildContext.onLoad({ filter: /index\.js$/ }, (args) => {
-            if (args.path === CORE_DIST) {
-                let code = readFileSync(args.path, 'utf8')
-                code +=
-                    '\nexport { ani, sequence, parallel, stagger, webTimeline as waapiTimeline, T as timing };'
-                return { contents: code, loader: 'js' }
-            }
-            return undefined
-        })
     },
 }
 

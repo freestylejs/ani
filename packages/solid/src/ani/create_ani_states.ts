@@ -35,7 +35,7 @@ export function createAniStates<const S extends AnimationStateShape>(
 
     const attach = createBinder(() => machine, false)
     const style = createInitialStyle(
-        (config.initialValue ?? config.initialFrom) as Record<string, number>,
+        config.initialValue as Record<string, number>,
         resolver
     )
 
@@ -43,8 +43,8 @@ export function createAniStates<const S extends AnimationStateShape>(
         ref: (element) => attach((m) => m.bind(element, bindOptions(resolver))),
         style: () => style,
         state,
-        transitionTo: (newState, timelineConfig, canBeIntercepted) =>
-            machine.transitionTo(newState, timelineConfig, canBeIntercepted),
+        transitionTo: (newState, timelineConfig) =>
+            machine.transitionTo(newState, timelineConfig),
         machine,
     }
 }

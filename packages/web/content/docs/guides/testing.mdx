@@ -31,7 +31,7 @@ Options: `lagThreshold`, `maxDeltaTime`, `timeScale`, `onError` (all forwarded t
 ### Test a timeline
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { createManualClock } from "@freestylejs/ani-core/testing";
 import { expect, it } from "vitest";
 
@@ -39,12 +39,12 @@ it("reaches the target and leaves the clock", () => {
   const manual = createManualClock();
   const timeline = a.rafTimeline(
     a.ani({ to: { x: 100 }, duration: 1, timing: a.timing.linear() }),
-    manual.clock
+    { clock: manual.clock }
   );
 
   timeline.play({ from: { x: 0 } });
   manual.frames(5, 100); // dt = 0.1 s each
-  expect(timeline.getCurrentValue()).toEqual({ x: 50 });
+  expect(timeline.value).toEqual({ x: 50 });
   expect(timeline.status).toBe("PLAYING");
 
   manual.frames(10, 100);

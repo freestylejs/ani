@@ -8,7 +8,7 @@ This primitive wraps the core `createStates` function. It is designed for compon
 ### Example
 
 ```tsx
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { createAniStates } from "@freestylejs/ani-solid";
 
 const StateButton = () => {
@@ -63,7 +63,7 @@ Returns `{ ref, style, state, transitionTo, machine }`.
 | `ref` | Ref callback to attach to the element. |
 | `style()` | Initial inline style of `initialValue` (kebab-case keys). |
 | `state()` | Accessor of the current state name. |
-| `transitionTo(name, config?, canBeIntercepted?)` | Switches state. Returns the run's `Promise<RunResult>`. |
+| `transitionTo(name, config?)` | Switches state. Returns the run's `Promise<RunResult>`. |
 | `machine` | The core `StateController` (`timeline()`, `value`, `onTransition`, `dispose()`, ...). |
 
 ### Related Components

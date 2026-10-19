@@ -6,6 +6,10 @@ The core principle is the separation of an animation's **structure** from its **
 
 Timelines and state machines are **owned by whoever creates them**: call `dispose()` when the owner goes away. Per-frame cost depends on the number of animated properties, not on the number of segments. See the docs guides on large-scale usage, testing and SSR.
 
+**Imports.** The recommended import is the namespace, `import * as a from '@freestylejs/ani-core'`: every builder and engine is reachable as `a.<name>` (`a.ani`, `a.sequence`, `a.rafTimeline`, `a.waapiTimeline`, `a.timing`, `a.createClock`, ...). The same names are also named exports of the root entry: the node builders `ani`, `delay`, `loop`, `parallel`, `sequence`, `stagger` (with their public types), `waapiTimeline` and `timing`. The 1.x `a` object, `T` (= `timing`) and `webTimeline` (= `waapiTimeline`) still exist but are deprecated.
+
+**Units.** Every duration, delay and offset in the API is in **seconds**, including the RAF `delay` of `play()` / `transitionTo()`.
+
 A key feature of this API is its **end-to-end type safety**. The entire animation node hierarchy is generic, ensuring that all animations within a single tree operate on the same data shape. This prevents a large class of runtime errors at compile time.
 
 ---
@@ -54,7 +58,7 @@ The `dynamicTimeline.play()` method accepts a configuration object that allows y
 -   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes. The number of keyframes must match the number of `ani` nodes (a `delay()` counts as one). Entries address the nodes **as written in the tree**, ordered by start time: the child of a `loop` is one entry, whatever the loop count, and it applies to every iteration.
 -   `durations`: An array of `duration` values (in seconds) that override the original durations. The timeline `duration` reflects them; `reset()` restores the base duration.
 -   `repeat`: The number of additional runs. Use `Infinity` for an endless loop. Frame overshoot carries into the next run (no drift).
--   `delay`: An initial delay in milliseconds before the animation starts.
+-   `delay`: An initial delay in **seconds** before the animation starts (finite and `>= 0`, otherwise `play()` throws a `RangeError`). It equals a `delay` node of the same length in front of the tree. Before 2.0 this was milliseconds.
 -   `velocity`: Initial per-property velocity (units per second) that seeds dynamic springs.
 
 ```typescript
@@ -73,7 +77,7 @@ myTimeline.play({
     { y: 0 },   // This becomes the 'to' for the second ani()
   ],
   repeat: 2, // Repeat the whole animation twice
-  delay: 500, // Wait 500ms before starting
+  delay: 0.5, // Wait 0.5 seconds before starting
 });
 ```
 
@@ -159,7 +163,7 @@ interface RafTimelineConfig<G extends Groupable, Ctx = any> {
     keyframes?: Array<G | 'keep'>;
     durations?: Array<number | 'keep'>;
     repeat?: number; // additional runs, e.g., Infinity
-    delay?: number; // Delay in milliseconds before the animation starts
+    delay?: number; // Delay in seconds before the animation starts
     velocity?: Partial<G>; // units per second, seeds dynamic springs
     interrupt?: boolean; // default true; false: do nothing on a PLAYING timeline and resolve 'skipped'
     context?: Ctx;
@@ -304,7 +308,9 @@ window.addEventListener('keydown', () => void scroll.set({ y: scroll.target.y + 
 
 ---
 
-## `timeline` (`waapiTimeline` / `webTimeline`)
+## `waapiTimeline` (`webTimeline`)
+
+`waapiTimeline` is the primary name of the WAAPI factory (a named export, also `a.waapiTimeline`). `webTimeline` is the 1.x alias of the same function.
 
 > **A high-performance, browser-native timeline powered by the Web Animations API (WAAPI).**
 
@@ -868,7 +874,9 @@ function loop<G extends Groupable>(
 
 ---
 
-## `a.timing`
+## `timing` (`a.timing`)
+
+`timing` is a named export of the root entry (`import { timing } from '@freestylejs/ani-core'`, or `a.timing` through the namespace). It holds the presets `linear`, `bezier`, `spring`, `dynamicSpring`, `ease`, `easeIn`, `easeOut` and `easeInOut`. `T` is the 1.x alias of the same object.
 
 > **A collection of functions that control the rate of change of an animation over time.**
 
@@ -1019,7 +1027,7 @@ The new state's `from` is, in order: `timelineConfig.from`, the current timeline
 | `timeline()` | The currently active timeline. |
 | `state()` | The current state name. |
 | `value` | Current timeline's value, else the last shown value, else the initial value. Frozen. |
-| `transitionTo(newState, [config], [canBeIntercepted])` | Switches state and returns `Promise<RunResult>`. `config` is `play()` options with an optional `from`. |
+| `transitionTo(newState, [config], [canBeIntercepted])` | Switches state and returns `Promise<RunResult>`. `config` is `play()` options with an optional `from`; its `delay` is in seconds. |
 | `bind(target, [{ resolver }])` | Writes the value to `target.style` for the current and every later timeline. Returns unbind. |
 | `onUpdate(callback)` | Receives `{ state, status }` frames of the current and every later timeline. Returns unsubscribe. |
 | `onTransition(callback)` | Called with `(state, timeline)` right **before** the new timeline starts playing. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
@@ -1138,6 +1146,7 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 | `resetDefaultClock()` | `@freestylejs/ani-core/testing`. Same as `AnimationClock.reset()`. |
 | `clock.size` | Number of subscribed animatables. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
+| `clock.configure({ lagThreshold?, maxDeltaTime? })` | Reconfigures the timing of any clock (`defaultClock`, `createClock()`, `createManualClock().clock`) with the same validation as the constructor options. Atomic: an invalid field throws a `RangeError` and changes nothing. |
 | `clock.timeScale` | Get / set the delta multiplier (finite, >= 0, default 1). Throws `RangeError` otherwise. |
 | `clock.pause()` / `clock.resume()` / `clock.paused` | Stop the frame loop keeping subscribers / restart it without the paused gap / whether it is paused. |
 | `AniError` code `ANI_SUBSCRIBER_QUARANTINED` | Reported when a subscriber is unsubscribed after 3 consecutive failing ticks; `cause` is its last error. |

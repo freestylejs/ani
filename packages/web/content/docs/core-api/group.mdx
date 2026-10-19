@@ -8,7 +8,7 @@ description: Drives N targets from one animation tree with a single clock subscr
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 const cards = a.rafGroup(
   a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.35 }),
@@ -48,8 +48,8 @@ group.play({
 });
 ```
 
--   `count` defaults to the length of live array bindings (`bind(targets)`); `bindAt` bindings never set the count.
--   `delay` is in **seconds** (unlike `rafTimeline`, which uses milliseconds).
+-   `count` defaults to the length of live array bindings (`bind(targets)`); `bindAt` bindings never set the count. It is **required** (a positive integer) when no array of targets is bound.
+-   `delay` is in **seconds** (finite and `>= 0`), like on `rafTimeline`.
 -   `play()` returns a promise that resolves **exactly once** per run with a `RunResult`: `'ended'` when the last target finished (after repeats), `'interrupted'` when another `play()` replaces the run, `'reset'` on `reset()`, `'disposed'` on `dispose()`.
 -   `play()` over a `PLAYING` group starts a new run from the config's `from` (there is no implicit current value). Each target **inherits its own current velocity** unless `velocity` is given, so groups of springs retarget without a kink.
 -   Malformed input throws synchronously and leaves the group untouched: no targets and no `count`, a `count` that is not a positive integer, a negative or non-finite `delay` or offset, a `from` whose shape does not match the tree or the first target, non-finite values, `keyframes` / `durations` of the wrong length.

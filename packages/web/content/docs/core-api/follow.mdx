@@ -10,7 +10,7 @@ description: A spring-driven value that keeps its velocity when the target chang
 Keyboard paging: every press moves the target by one page, relative to where the motion is **heading**, not where it currently is.
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 const list = document.querySelector<HTMLElement>(".list")!;
 const scroll = a.follow({ y: 0 });

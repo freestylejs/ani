@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
 
@@ -10,7 +10,7 @@ export const SequenceDemo = () => {
     useAppear(ref)
 
     const myTimeline = useMemo(() => {
-        return a.timeline(
+        return a.waapiTimeline(
             a.sequence(
                 [
                     a.ani({
@@ -59,7 +59,7 @@ export const SequenceDemo = () => {
                         duration: 0.5,
                     }),
                 ],
-                a.timing.spring({ m: 1, k: 120, c: 15 })
+                { timing: a.timing.spring({ m: 1, k: 120, c: 15 }) }
             )
         )
     }, [])

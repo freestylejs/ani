@@ -8,7 +8,7 @@ A `stagger` node is a composition that starts its children one after another, ea
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define the animation for a single list item.
 const itemAnimation = a.ani({ to: { opacity: 1, y: 0 }, duration: 0.5 });
@@ -21,11 +21,11 @@ const listEntrance = a.stagger(
     itemAnimation, // for item 2
     itemAnimation, // for item 3
   ],
-  0.1
+  { offset: 0.1 }
 );
 
 // 3. Create a timeline.
-const myTimeline = a.dynamicTimeline(listEntrance);
+const myTimeline = a.rafTimeline(listEntrance);
 
 // 4. Play the animation.
 // All three children animate the same properties, so the most recently

@@ -1,5 +1,5 @@
 import { createStates, follow, rafGroup, rafTimeline } from './ani/raf'
-import { webTimeline } from './ani/waapi'
+import { waapiTimeline, webTimeline } from './ani/waapi'
 import { createClock } from './loop'
 import { ani, delay, loop, parallel, sequence, stagger } from './nodes'
 import { T } from './timing'
@@ -10,6 +10,7 @@ export * from './binding_api'
 export * from './error'
 export * from './event'
 export * from './loop'
+export * from './nodes'
 export * from './style'
 export * from './timing'
 
@@ -34,7 +35,7 @@ export const a = {
      * Create a value that chases a target with a spring, keeping its velocity.
      */
     follow,
-    waapiTimeline: webTimeline,
+    waapiTimeline,
     /**
      * Create animation segment.
      */

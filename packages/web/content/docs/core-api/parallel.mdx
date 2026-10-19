@@ -8,7 +8,7 @@ A `parallel` node is a composition that plays all of its child animations at the
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define two animations with different durations.
 const fadeIn = a.ani({ to: { opacity: 1, scale: 1.2 }, duration: 0.5 });
@@ -18,7 +18,7 @@ const move = a.ani({ to: { x: 100, y: 50 }, duration: 0.8 });
 const popIn = a.parallel([fadeIn, move]);
 
 // 3. Create a timeline. The total duration will be that of the longest child (0.8s).
-const myTimeline = a.dynamicTimeline(popIn);
+const myTimeline = a.rafTimeline(popIn);
 
 // 4. Play the animation.
 myTimeline.play({ from: { opacity: 0, scale: 1, x: 0, y: 0 } });

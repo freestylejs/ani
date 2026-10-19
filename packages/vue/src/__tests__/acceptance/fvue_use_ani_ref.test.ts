@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
+import * as a from '@freestylejs/ani-core'
 import {
-    a,
     createClock,
     createStyleSheet,
     type RafAniTimeline,

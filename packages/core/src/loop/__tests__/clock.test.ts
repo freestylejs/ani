@@ -171,6 +171,41 @@ describe('createClock', () => {
         expect(clock.size).toBe(1)
     })
 
+    describe('configure', () => {
+        const record = () => {
+            const { driver, clock } = make({ lagThreshold: Infinity })
+            const dts: number[] = []
+            clock.subscribe({ update: (dt) => dts.push(dt) })
+            return { driver, clock, dts }
+        }
+
+        it('applies maxDeltaTime and lagThreshold from the next frame', () => {
+            const { driver, clock, dts } = record()
+            driver.frame(16)
+            clock.configure({ maxDeltaTime: 0.05 })
+            driver.frame(200)
+            clock.configure({ lagThreshold: 0.1 })
+            driver.frame(2000)
+            expect(dts[1]).toBeCloseTo(0.05)
+            // a gap above the threshold advances by one ordinary frame
+            expect(dts[2]).toBeCloseTo(0.016)
+        })
+
+        it('is atomic: an invalid field changes nothing', () => {
+            const { driver, clock, dts } = record()
+            clock.configure({ maxDeltaTime: 0.05 })
+            expect(() =>
+                clock.configure({ lagThreshold: 0.2, maxDeltaTime: -1 })
+            ).toThrow()
+            expect(() =>
+                clock.configure({ lagThreshold: Number.NaN })
+            ).toThrow()
+            driver.frame(16)
+            driver.frame(1000)
+            expect(dts[1]).toBeCloseTo(0.05)
+        })
+    })
+
     describe('lag smoothing (frame gap -> animation time)', () => {
         const record = (options: Parameters<typeof createClock>[0] = {}) => {
             const { driver, clock } = make(options)

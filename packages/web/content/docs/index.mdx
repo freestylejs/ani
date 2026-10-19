@@ -24,7 +24,7 @@ Let's start with some animation keyframes. As you can see above this is kind tri
 But using ani, you can create this animation tree easily.
 
 ```ts
-import { a } from "@freestylejs/ani-core"
+import * as a from "@freestylejs/ani-core"
 
 const animationTree = a.loop(
   a.stagger(
@@ -51,7 +51,7 @@ const animationTree = a.loop(
           ]),
       ]),
     ],
-    0.75, // Offset: the second group starts 0.75s after the first one started
+    { offset: 0.75 }, // Offset: the second group starts 0.75s after the first one started
   ),
   3 // Loop: Repeat the entire sequence 3 times
 )
@@ -60,7 +60,7 @@ const animationTree = a.loop(
 Yes, after this part you can create static animation keyframes using `timeline`.
 
 ```ts
-const timeline = a.timeline(animationTree)
+const timeline = a.waapiTimeline(animationTree)
 
 // You can now, have full control of animation tree.
 

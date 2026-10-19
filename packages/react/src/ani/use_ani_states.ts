@@ -46,10 +46,7 @@ export function useAniStates<const S extends AnimationStateShape>(
     const resolver = useLatest(config.resolver)
 
     const style = useInitialStyle(
-        (first.current.initialValue ?? first.current.initialFrom) as Record<
-            string,
-            number
-        >,
+        first.current.initialValue as Record<string, number>,
         first.current.resolver
     )
 
@@ -69,12 +66,8 @@ export function useAniStates<const S extends AnimationStateShape>(
 
     // Reads the live machine, which StrictMode may have re-created.
     const transitionTo: StateController<S>['transitionTo'] = useCallback(
-        (newState, timelineConfig, canBeIntercepted) =>
-            slot.current.value.transitionTo(
-                newState,
-                timelineConfig,
-                canBeIntercepted
-            ),
+        (newState, timelineConfig) =>
+            slot.current.value.transitionTo(newState, timelineConfig),
         [slot]
     )
 

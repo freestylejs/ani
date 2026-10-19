@@ -23,13 +23,13 @@ export function createAni<G extends Groupable>(
     const current: Accessor<RafAniTimeline<G>> =
         typeof timeline === 'function' ? timeline : () => timeline
     const [value, setValue] = createSignal<AniGroup<G>>(
-        untrack(current).getCurrentValue() ?? initialValue
+        untrack(current).value ?? initialValue
     )
 
     createEffect(() => {
         const tl = current()
         // Sync immediate value
-        const latest = tl.getCurrentValue() ?? initialValue
+        const latest = tl.value ?? initialValue
         setValue(() => latest)
 
         const unsubscribe = tl.onUpdate((val) => {

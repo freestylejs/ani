@@ -1,5 +1,5 @@
 'use client'
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useAniRef, useTimeline } from '@freestylejs/ani-react'
 import { useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
@@ -108,7 +108,7 @@ export const PointerFollowingBalls = ({
 
                 timeline.play({
                     from: curr,
-                    delay: i,
+                    delay: i / 1000,
                     keyframes: [
                         { translateX: targetX, translateY: targetY, scale: 1 },
                     ],
@@ -263,7 +263,7 @@ export const PointerFollowingBalls = () => {
 
                 timeline.play({
                     from: curr,
-                    delay: i,
+                    delay: i / 1000,
                     keyframes: [
                         { translateX: targetX, translateY: targetY, scale: 1 },
                     ],
