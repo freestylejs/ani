@@ -1,77 +1,52 @@
 import { describe, expect, it } from 'vitest'
-import { rafTimeline } from '~/ani/raf'
-import { webTimeline } from '~/ani/waapi'
 import * as core from '~/index'
-import { a } from '~/index'
+import * as a from '~/index'
 
-// Names exported by v0 (before the hardening release). The public API may only
-// grow: removing or renaming any of these is a breaking change.
-const V0_EXPORTS = [
-    'AnimationClock',
+// Names the public API keeps from before the V2 surface. The removed 1.x names
+// are covered by the `mig3b_surface` acceptance test.
+const KEPT_EXPORTS = [
     'BezierTimingFunction',
     'DynamicSpringTimingFunction',
-    'EventManager',
     'LinearTimingFunction',
-    'RafAniTimeline',
     'SpringTimingFunction',
-    'T',
-    'TimelineBase',
     'TimingFunction',
-    'WebAniTimeline',
-    'a',
-    'calculateSegmentState',
     'compileToKeyframes',
     'createStates',
     'createStyleSheet',
     'normalizeRepeatCount',
     'rafTimeline',
     'toIterationCount',
-    'webTimeline',
+    'waapiTimeline',
 ]
 
-const V0_NAMESPACE = [
+const NAMESPACE = [
     'ani',
+    'createClock',
     'createStates',
     'delay',
-    'dynamicTimeline',
     'loop',
     'parallel',
     'rafTimeline',
     'sequence',
     'stagger',
-    'timeline',
     'timing',
     'waapiTimeline',
-    'webTimeline',
 ]
 
-describe('public api aliases', () => {
-    it('should expose explicit timeline engine aliases', () => {
-        expect(a.dynamicTimeline).toBe(rafTimeline)
-        expect(a.timeline).toBe(webTimeline)
-        expect(a.rafTimeline).toBe(rafTimeline)
-        expect(a.waapiTimeline).toBe(webTimeline)
-        expect(a.webTimeline).toBe(webTimeline)
-    })
-})
-
 describe('public api surface', () => {
-    it('keeps every v0 export (additive-only)', () => {
-        expect(Object.keys(core)).toEqual(expect.arrayContaining(V0_EXPORTS))
-        expect(Object.keys(a)).toEqual(expect.arrayContaining(V0_NAMESPACE))
+    it('keeps the exports that are not part of the 1.x removal', () => {
+        expect(Object.keys(core)).toEqual(expect.arrayContaining(KEPT_EXPORTS))
+        expect(Object.keys(a)).toEqual(expect.arrayContaining(NAMESPACE))
     })
 
-    it('exposes the clock factory additively', () => {
+    it('exposes the clock factory', () => {
         expect(typeof core.createClock).toBe('function')
         expect(a.createClock).toBe(core.createClock)
-        expect(typeof core.AnimationClock.create).toBe('function')
-        expect(typeof core.AnimationClock.configure).toBe('function')
-        expect(typeof core.AnimationClock.reset).toBe('function')
     })
 
     it('exposes the shared binding helpers', () => {
         expect(typeof core.createTimelineController).toBe('function')
-        expect(typeof core.applyStyleSheet).toBe('function')
+        expect(typeof core.createStyleSheet).toBe('function')
     })
 
     it('createClock returns an independent clock with a size', () => {
@@ -80,7 +55,7 @@ describe('public api surface', () => {
             cancelFrame: () => undefined,
             now: () => 0,
         })
-        expect(clock).not.toBe(core.AnimationClock.create())
+        expect(clock).not.toBe(core.defaultClock)
         expect(clock.size).toBe(0)
         expect(typeof clock.subscribe).toBe('function')
         expect(typeof clock.unsubscribe).toBe('function')
@@ -89,7 +64,7 @@ describe('public api surface', () => {
     it('createStates controllers expose dispose()', () => {
         const controller = a.createStates({
             initial: 'idle',
-            initialFrom: { x: 0 },
+            initialValue: { x: 0 },
             states: { idle: a.ani({ to: { x: 1 }, duration: 1 }) },
             clock: core.createClock({
                 requestFrame: () => 1,
@@ -100,7 +75,7 @@ describe('public api surface', () => {
         expect(Object.keys(controller).sort()).toEqual(
             expect.arrayContaining([
                 'dispose',
-                'onTimelineChange',
+                'onTransition',
                 'state',
                 'timeline',
                 'transitionTo',

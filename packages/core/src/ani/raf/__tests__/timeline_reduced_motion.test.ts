@@ -1,26 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { ani } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { createManualClock } from '../../../testing'
-import { RafAniTimeline, rafTimeline } from '../timeline'
+import { rafTimeline } from '../timeline'
 
-const linear = T.linear()
+const linear = timing.linear()
 const node = (duration = 1) => ani({ to: { x: 100 }, duration, timing: linear })
 const spring = () =>
     ani({
         to: { x: 100 },
         duration: 2,
-        timing: T.dynamicSpring({ m: 1, k: 100, c: 10 }),
+        timing: timing.dynamicSpring({ m: 1, k: 100, c: 10 }),
     })
 
-describe('RafAniTimeline reduced motion', () => {
+describe('rafTimeline reduced motion', () => {
     it('jump ends a spring run at its target', async () => {
         const m = createManualClock({ reducedMotion: true })
         const t = rafTimeline<{ x: number }>(spring(), { clock: m.clock })
 
         await expect(t.play({ from: { x: 0 } })).resolves.toBe('ended')
 
-        expect(t.getCurrentValue()).toEqual({ x: 100 })
+        expect(t.value).toEqual({ x: 100 })
         expect(m.clock.size).toBe(0)
     })
 
@@ -32,7 +32,7 @@ describe('RafAniTimeline reduced motion', () => {
             'ended'
         )
 
-        expect(t.getCurrentValue()).toEqual({ x: 100 })
+        expect(t.value).toEqual({ x: 100 })
         expect(m.pending).toBe(0)
     })
 
@@ -42,7 +42,7 @@ describe('RafAniTimeline reduced motion', () => {
 
         await t.play({ from: { x: 0 }, keyframes: [{ x: 7 }], durations: [3] })
 
-        expect(t.getCurrentValue()).toEqual({ x: 7 })
+        expect(t.value).toEqual({ x: 7 })
         expect(t.duration).toBe(3)
     })
 
@@ -84,7 +84,7 @@ describe('RafAniTimeline reduced motion', () => {
         const stiff = ani({
             to: { x: 800 },
             duration: 2,
-            timing: T.dynamicSpring({ m: 1, k: 100, c: 10 }),
+            timing: timing.dynamicSpring({ m: 1, k: 100, c: 10 }),
         })
         const make = () => {
             const m = createManualClock({
@@ -105,7 +105,7 @@ describe('RafAniTimeline reduced motion', () => {
             control.m.frame(16)
         }
         interrupted.line.play({
-            from: { x: interrupted.line.getCurrentValue()!.x },
+            from: { x: interrupted.line.value!.x },
         })
 
         let max = 0
@@ -114,10 +114,7 @@ describe('RafAniTimeline reduced motion', () => {
             control.m.frame(16)
             max = Math.max(
                 max,
-                Math.abs(
-                    interrupted.line.getCurrentValue()!.x -
-                        control.line.getCurrentValue()!.x
-                )
+                Math.abs(interrupted.line.value!.x - control.line.value!.x)
             )
         }
         expect(max).toBeLessThanOrEqual(1e-3)
@@ -131,7 +128,7 @@ describe('RafAniTimeline reduced motion', () => {
         const slow = ani({
             to: { x: 100 },
             duration: 2,
-            timing: T.dynamicSpring({ m: 1, k: 0.001, c: 0.001 }),
+            timing: timing.dynamicSpring({ m: 1, k: 0.001, c: 0.001 }),
         })
         const t = rafTimeline<{ x: number }>(slow, {
             clock: m.clock,
@@ -140,7 +137,7 @@ describe('RafAniTimeline reduced motion', () => {
         t.play({ from: { x: 0 }, velocity: { x: 100 } })
         m.frame(16)
 
-        expect(t.getCurrentVelocity()!.x).toBeCloseTo(100, -1)
+        expect(t.velocity!.x).toBeCloseTo(100, -1)
     })
 
     it('maxDuration scales the velocity seen by an interrupting play', () => {
@@ -156,7 +153,7 @@ describe('RafAniTimeline reduced motion', () => {
         m.frame(100)
 
         // 100 units per plan second, 2x faster: 200 units per second
-        expect(t.getCurrentVelocity()!.x).toBeCloseTo(200, 5)
+        expect(t.velocity!.x).toBeCloseTo(200, 5)
     })
 
     it('maxDuration speeds a spring run up (larger dt) without changing duration', async () => {
@@ -183,7 +180,7 @@ describe('RafAniTimeline reduced motion', () => {
             subscribe: (animatable: unknown) => subscribed.push(animatable),
             unsubscribe: () => undefined,
         }
-        const t = new RafAniTimeline<{ x: number }>(node(), { clock })
+        const t = rafTimeline<{ x: number }>(node(), { clock })
 
         t.play({ from: { x: 0 } })
 

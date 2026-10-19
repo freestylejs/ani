@@ -4,8 +4,8 @@ import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { resolveGroup } from '~/ani/core/resolver'
 import {
     type Animatable,
-    AnimationClock,
     type AnimationClockInterface,
+    defaultClock,
 } from '~/loop'
 import type { AnimationNode } from '~/nodes'
 import { createStyleSheet, type Resolver } from '~/style/create_sheet'
@@ -302,7 +302,7 @@ function resolveVelocitySeed(
 }
 
 class RafAniGroup<G extends Groupable>
-    extends TimelineBase<G, [config: RafGroupPlayConfig<G>]>
+    extends TimelineBase<G>
     implements RafGroup<G>, Animatable
 {
     private readonly _clock: AnimationClockInterface
@@ -340,7 +340,7 @@ class RafAniGroup<G extends Groupable>
         const stagger = options.stagger ?? 0
         if (typeof stagger !== 'function') checkOffset(stagger, 0)
         this._stagger = stagger
-        this._clock = options.clock ?? AnimationClock.create()
+        this._clock = options.clock ?? defaultClock
         this._planDuration = this._buildExecutionPlan().duration
 
         this.play = this.play.bind(this)

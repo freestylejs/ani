@@ -61,12 +61,12 @@ describe('P3: boundaries', () => {
             const outcome = planOutcome(plan, from)
 
             const clock = new ManualClock()
-            const line = rafTimeline(node, clock)
+            const line = rafTimeline(node, { clock })
             line.play({ from })
             line.seek(0)
             for (const key of keys) {
                 if (outcome.zeroStartKeys.has(key)) continue
-                const actual = line.getCurrentValue()![key]!
+                const actual = line.value![key]!
                 // a dynamic spring already at rest snaps to `to`, which is
                 // within its settling tolerance of `from`
                 let tolerance = outcome.settledAtStartKeys.has(key)
@@ -89,7 +89,7 @@ describe('P3: boundaries', () => {
             )
             expect(clock.size, caseMessage(seed, 'clock subscriptions')).toBe(0)
 
-            const final = snapshot(line.getCurrentValue()!)
+            const final = snapshot(line.value!)
             for (const key of keys) {
                 expect(
                     final[key]!,

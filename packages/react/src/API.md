@@ -40,9 +40,9 @@ const timeline = useTimeline(() =>
 
 ```ts
 function useAni<G>(
-    timeline: RafAniTimeline<G>,
+    timeline: RafTimeline<G>,
     initialValue: AniGroup<G>
-): readonly [AniGroup<G>, RafAniTimeline<G>]
+): readonly [AniGroup<G>, RafTimeline<G>]
 ```
 
 Subscribes to `timeline` (with `useSyncExternalStore`) and re-renders on every update. `initialValue` is read on the first render only: it is the value shown until the timeline has one, and the value rendered on the server. The controller is stable per `timeline`. The hook never disposes the timeline. For high-frequency style updates use `useAniRef`.

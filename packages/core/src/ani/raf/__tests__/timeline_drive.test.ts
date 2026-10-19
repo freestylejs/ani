@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { ani } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { createManualClock } from '../../../testing'
 import { isRafTimeline, rafTimeline } from '../timeline'
 
-const node = () => ani({ to: { x: 100 }, duration: 2, timing: T.linear() })
+const node = () => ani({ to: { x: 100 }, duration: 2, timing: timing.linear() })
 
-describe('RafAniTimeline.drive', () => {
+describe('rafTimeline.drive', () => {
     it('validates velocity like play()', () => {
         const manual = createManualClock({ lagThreshold: Infinity })
-        const t = rafTimeline<{ x: number }>(node(), manual.clock)
+        const t = rafTimeline<{ x: number }>(node(), { clock: manual.clock })
 
         for (const velocity of [{ x: Number.NaN }, 5, []]) {
             const config = {
@@ -26,7 +26,7 @@ describe('RafAniTimeline.drive', () => {
 
     it('reports zero velocity after an unchanged first frame', () => {
         const manual = createManualClock({ lagThreshold: Infinity })
-        const t = rafTimeline<{ x: number }>(node(), manual.clock)
+        const t = rafTimeline<{ x: number }>(node(), { clock: manual.clock })
         t.drive(() => 0, { from: { x: 0 } })
 
         manual.frame(100)
@@ -36,7 +36,7 @@ describe('RafAniTimeline.drive', () => {
 
     it('isRafTimeline requires drive on a facade', () => {
         const manual = createManualClock({ lagThreshold: Infinity })
-        const t = rafTimeline<{ x: number }>(node(), manual.clock)
+        const t = rafTimeline<{ x: number }>(node(), { clock: manual.clock })
         const facade = {
             status: t.status,
             duration: t.duration,

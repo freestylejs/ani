@@ -1,4 +1,4 @@
-import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import type { AniGroup, Groupable, RafTimeline } from '@freestylejs/ani-core'
 import { createTimelineController } from '@freestylejs/ani-core'
 import {
     type Accessor,
@@ -17,10 +17,10 @@ import {
  * @returns `[valueAccessor, controller]`; the controller follows swaps.
  */
 export function createAni<G extends Groupable>(
-    timeline: RafAniTimeline<G> | Accessor<RafAniTimeline<G>>,
+    timeline: RafTimeline<G> | Accessor<RafTimeline<G>>,
     initialValue: AniGroup<G>
-): readonly [Accessor<AniGroup<G>>, RafAniTimeline<G>] {
-    const current: Accessor<RafAniTimeline<G>> =
+): readonly [Accessor<AniGroup<G>>, RafTimeline<G>] {
+    const current: Accessor<RafTimeline<G>> =
         typeof timeline === 'function' ? timeline : () => timeline
     const [value, setValue] = createSignal<AniGroup<G>>(
         untrack(current).value ?? initialValue

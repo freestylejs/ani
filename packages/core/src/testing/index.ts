@@ -1,7 +1,7 @@
 import {
-    AnimationClock,
+    type Clock,
     createClock,
-    type ManagedClock,
+    resetDefaultClock,
     type VisibilitySource,
 } from '../loop/clock'
 
@@ -32,7 +32,7 @@ export interface ManualClockOptions {
  */
 export interface ManualClock {
     /** A real clock from `createClock`, the same code path as production. */
-    readonly clock: ManagedClock
+    readonly clock: Clock
     /** Current time in ms, starts at 1000. */
     readonly now: number
     /** Queued frame requests (0 or 1 for a healthy clock). */
@@ -135,10 +135,4 @@ export function createManualClock(
     return manual
 }
 
-/**
- * Disposes the shared default clock and restores its defaults; the instance
- * stays valid. Same as `AnimationClock.reset()`.
- */
-export function resetDefaultClock(): void {
-    AnimationClock.reset()
-}
+export { resetDefaultClock }

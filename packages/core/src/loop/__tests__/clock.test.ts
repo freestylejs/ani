@@ -1,26 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rafTimeline } from '~/ani/raf/timeline'
 import { ani } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import type { Animatable } from '../clock'
-import { AnimationClock, createClock } from '../clock'
+import { createClock, defaultClock, resetDefaultClock } from '../clock'
 import { createFrameDriver } from './frame_driver'
 
-describe('AnimationClock', () => {
+describe('defaultClock', () => {
     beforeEach(() => {
-        AnimationClock.reset()
+        resetDefaultClock()
     })
 
     afterEach(() => {
-        AnimationClock.reset()
+        resetDefaultClock()
         vi.unstubAllGlobals()
-    })
-
-    it('should return singleton instance from create()', () => {
-        const first = AnimationClock.create()
-        const second = AnimationClock.create()
-
-        expect(first).toBe(second)
     })
 
     it('should update maxDeltaTime via configure()', () => {
@@ -40,10 +33,9 @@ describe('AnimationClock', () => {
             now: () => 0,
         })
 
-        const clock = AnimationClock.create(0.1)
-        AnimationClock.configure(0.01)
+        defaultClock.configure({ maxDeltaTime: 0.01 })
 
-        clock.subscribe({
+        defaultClock.subscribe({
             update: (dt) => updates.push(dt),
         })
 
@@ -63,7 +55,7 @@ describe('AnimationClock', () => {
             now: () => 0,
         })
 
-        const clock = AnimationClock.create()
+        const clock = defaultClock
         const first: Animatable = { update: vi.fn() }
         const second: Animatable = { update: vi.fn() }
 
@@ -78,7 +70,7 @@ describe('AnimationClock', () => {
         expect(cancelAnimationFrame).toHaveBeenCalledTimes(1)
     })
 
-    it('[configure] create(maxDt) on an existing clock applies instead of being ignored', () => {
+    it('[configure] configuring again applies the latest value', () => {
         const driver = createFrameDriver()
         vi.stubGlobal('window', {
             requestAnimationFrame: driver.requestFrame,
@@ -87,9 +79,9 @@ describe('AnimationClock', () => {
         vi.stubGlobal('performance', { now: driver.now })
         const dts: number[] = []
 
-        const clock = AnimationClock.create(0.1)
-        expect(AnimationClock.create(0.2)).toBe(clock)
-        clock.subscribe({ update: (dt) => dts.push(dt) })
+        defaultClock.configure({ maxDeltaTime: 0.1 })
+        defaultClock.configure({ maxDeltaTime: 0.2 })
+        defaultClock.subscribe({ update: (dt) => dts.push(dt) })
         driver.frame(300)
 
         expect(dts).toEqual([0.2])
@@ -104,11 +96,11 @@ describe('AnimationClock', () => {
         vi.stubGlobal('performance', { now: driver.now })
         const dts: number[] = []
 
-        const clock = AnimationClock.configure({ lagThreshold: 2 })
+        defaultClock.configure({ lagThreshold: 2 })
         expect(() =>
-            AnimationClock.configure({ lagThreshold: 0.25, maxDeltaTime: -1 })
+            defaultClock.configure({ lagThreshold: 0.25, maxDeltaTime: -1 })
         ).toThrow(RangeError)
-        clock.subscribe({ update: (dt) => dts.push(dt) })
+        defaultClock.subscribe({ update: (dt) => dts.push(dt) })
         driver.frame(1500)
 
         // lagThreshold stayed 2 (the rejected call changed nothing)
@@ -120,7 +112,9 @@ describe('AnimationClock', () => {
         expect(() => createClock({ maxDeltaTime: Number.NaN })).toThrow(
             RangeError
         )
-        expect(() => AnimationClock.configure(-1)).toThrow(RangeError)
+        expect(() => defaultClock.configure({ maxDeltaTime: -1 })).toThrow(
+            RangeError
+        )
         expect(() => createClock({ lagThreshold: 0 })).toThrow(RangeError)
         expect(() => createClock({ lagThreshold: Number.NaN })).toThrow(
             RangeError
@@ -156,7 +150,7 @@ describe('createClock', () => {
 
         expect(updatesA).toHaveBeenCalledTimes(1)
         expect(updatesB).not.toHaveBeenCalled()
-        expect(a.clock).not.toBe(AnimationClock.create())
+        expect(a.clock).not.toBe(defaultClock)
     })
 
     it('reports its size', () => {
@@ -332,8 +326,8 @@ describe('createClock', () => {
         let calls = 0
         const link = (i: number) => {
             const line = rafTimeline(
-                ani({ to: { x: 1 }, duration: 0.05, timing: T.linear() }),
-                clock
+                ani({ to: { x: 1 }, duration: 0.05, timing: timing.linear() }),
+                { clock }
             )
             line.onUpdate(({ status }) => {
                 calls++
@@ -525,15 +519,15 @@ describe('createClock', () => {
         vi.stubGlobal('queueMicrotask', () => undefined)
         const { driver, clock } = make({ onError: () => undefined })
         const bad = rafTimeline(
-            ani({ to: { x: 1 }, duration: 1, timing: T.linear() }),
-            clock
+            ani({ to: { x: 1 }, duration: 1, timing: timing.linear() }),
+            { clock }
         )
         bad.onUpdate(() => {
             throw new Error('ui bug')
         })
         const good = rafTimeline(
-            ani({ to: { x: 100 }, duration: 1, timing: T.linear() }),
-            clock
+            ani({ to: { x: 100 }, duration: 1, timing: timing.linear() }),
+            { clock }
         )
         good.play({ from: { x: 0 } })
         try {
@@ -544,7 +538,7 @@ describe('createClock', () => {
 
         for (let i = 0; i < 5; i++) driver.frame(100)
 
-        expect((good.getCurrentValue() as { x: number }).x).toBeCloseTo(50)
+        expect((good.value as { x: number }).x).toBeCloseTo(50)
     })
 
     it('[V1] recovers when the environment dropped the pending frame', () => {
@@ -565,7 +559,7 @@ describe('createClock', () => {
     })
 
     it('[V1] default clock restarts after the window / rAF stub is replaced', () => {
-        AnimationClock.reset()
+        resetDefaultClock()
         const stubWindow = () => {
             const driver = createFrameDriver()
             vi.stubGlobal('window', {
@@ -575,7 +569,7 @@ describe('createClock', () => {
             vi.stubGlobal('performance', { now: driver.now })
             return driver
         }
-        const clock = AnimationClock.create()
+        const clock = defaultClock
         const stale: Animatable = { update: vi.fn() }
         const first = stubWindow()
         clock.subscribe(stale)
@@ -589,7 +583,7 @@ describe('createClock', () => {
 
         expect(fresh.update).toHaveBeenCalledTimes(1)
         expect(stale.update).toHaveBeenCalledTimes(1)
-        AnimationClock.reset()
+        resetDefaultClock()
     })
 
     it('[H3] without a frame source subscribe neither throws nor retains', () => {
@@ -606,12 +600,12 @@ describe('createClock', () => {
     it('[H3] timeline.play() is safe without a frame source', () => {
         vi.stubGlobal('window', undefined)
         vi.stubGlobal('requestAnimationFrame', undefined)
-        AnimationClock.reset()
+        resetDefaultClock()
         const line = rafTimeline(
-            ani({ to: { x: 1 }, duration: 1, timing: T.linear() })
+            ani({ to: { x: 1 }, duration: 1, timing: timing.linear() })
         )
         expect(() => line.play({ from: { x: 0 } })).not.toThrow()
-        expect(AnimationClock.create().size).toBe(0)
+        expect(defaultClock.size).toBe(0)
     })
 
     it('[H3] uses globalThis.requestAnimationFrame when there is no window (worker)', () => {
@@ -631,21 +625,22 @@ describe('createClock', () => {
         const { driver, clock } = make()
         const animatable: Animatable = { update: vi.fn() }
         clock.subscribe(animatable)
-        ;(clock as AnimationClock).dispose()
+        clock.dispose()
         expect(driver.pending).toBe(0)
         expect(clock.size).toBe(0)
         driver.frame()
         expect(animatable.update).not.toHaveBeenCalled()
     })
 
-    it('reset() keeps the default clock instance and restores its defaults', () => {
-        const first = AnimationClock.create(0.01)
+    it('resetDefaultClock() keeps the default clock instance and restores its defaults', () => {
+        const first = defaultClock
+        first.configure({ maxDeltaTime: 0.01 })
         first.timeScale = 2
         first.subscribe({ update: vi.fn() })
-        AnimationClock.reset()
-        expect(AnimationClock.create()).toBe(first)
+        resetDefaultClock()
+        expect(defaultClock).toBe(first)
         expect(first.size).toBe(0)
         expect(first.timeScale).toBe(1)
-        AnimationClock.reset()
+        resetDefaultClock()
     })
 })

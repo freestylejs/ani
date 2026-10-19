@@ -1,8 +1,8 @@
 import * as a from '@freestylejs/ani-core'
 import {
     type Follower,
-    type RafAniTimeline,
     type RafGroup,
+    type RafTimeline,
     rafGroup,
     rafTimeline,
 } from '@freestylejs/ani-core'
@@ -25,12 +25,12 @@ type Element_ = Element | ComponentPublicInstance | null
 describe('vue public types', () => {
     it('composables keep the group type end to end', () => {
         const check = (
-            timelineRef: Ref<RafAniTimeline<G>>,
+            timelineRef: Ref<RafTimeline<G>>,
             groupRef: Ref<RafGroup<G>>
         ) => {
             const timeline = rafTimeline(node)
             expectTypeOf(useAni(timeline, { x: 0 })).toEqualTypeOf<
-                readonly [Ref<G>, RafAniTimeline<G>]
+                readonly [Ref<G>, RafTimeline<G>]
             >()
             // a ref of a timeline is accepted too
             useAni(timelineRef, { x: 0 })
@@ -59,7 +59,7 @@ describe('vue public types', () => {
             expectTypeOf(follower).toEqualTypeOf<Follower<{ x: number }>>()
 
             expectTypeOf(useTimeline(() => timeline)).toEqualTypeOf<
-                RafAniTimeline<G>
+                RafTimeline<G>
             >()
             // @ts-expect-error the factory must return something disposable
             useTimeline(() => ({}))

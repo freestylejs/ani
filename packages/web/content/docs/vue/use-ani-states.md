@@ -9,7 +9,7 @@ This composable is a Vue wrapper around the core `createStates` function. It is 
 
 ```vue
 <script setup>
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { useAniStates } from "@freestylejs/ani-vue";
 
 const { ref, style, state, transitionTo } = useAniStates({

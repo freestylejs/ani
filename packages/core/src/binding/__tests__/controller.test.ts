@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { type RafAniTimeline, rafTimeline } from '~/ani/raf'
+import { type RafTimeline, rafTimeline } from '~/ani/raf'
 import { createClock } from '~/loop'
 import { ani } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { createTimelineController, type TimelineMembers } from '../controller'
-import { applyStyleSheet } from '../style'
 
 const make = () => {
     let frame: ((timestamp: number) => void) | undefined
@@ -20,8 +19,8 @@ const make = () => {
     })
     const line = () =>
         rafTimeline(
-            ani({ to: { x: 100 }, duration: 1, timing: T.linear() }),
-            clock
+            ani({ to: { x: 100 }, duration: 1, timing: timing.linear() }),
+            { clock }
         )
     const advance = (ms: number) => {
         time += ms
@@ -42,27 +41,27 @@ describe('createTimelineController', () => {
 
         controller.play({ from: { x: 0 } })
         advance(500)
-        expect(first.getCurrentValue()).toEqual({ x: 50 })
-        expect(controller.getCurrentValue()).toEqual({ x: 50 })
+        expect(first.value).toEqual({ x: 50 })
+        expect(controller.value).toEqual({ x: 50 })
         expect(controller.status).toBe('PLAYING')
         expect(controller.duration).toBe(1)
-        expect(controller.currentConfig).toBe(first.currentConfig)
+        expect(controller.config).toBe(first.config)
 
         // swap: same controller object now drives `second`
         current = second
         expect(controller.status).toBe('IDLE')
-        expect(controller.getCurrentValue()).toBeNull()
+        expect(controller.value).toBeNull()
         controller.play({ from: { x: 0 } })
         advance(250)
-        expect(second.getCurrentValue()).toEqual({ x: 25 })
-        expect(controller.getCurrentVelocity()).toEqual({ x: 100 })
+        expect(second.value).toEqual({ x: 25 })
+        expect(controller.velocity).toEqual({ x: 100 })
 
         controller.pause()
         expect(second.status).toBe('PAUSED')
         controller.resume()
         expect(second.status).toBe('PLAYING')
         controller.seek(0.5)
-        expect(controller.getCurrentValue()).toEqual({ x: 50 })
+        expect(controller.value).toEqual({ x: 50 })
 
         const seen: unknown[] = []
         const off = controller.onUpdate(({ state }) => seen.push(state))
@@ -113,17 +112,41 @@ describe('createTimelineController', () => {
         expect(() => target.seek(0.5)).not.toThrow()
     })
 
-    it('forwards update() and the canBeIntercepted flag', () => {
-        const { line } = make()
+    it('forwards the interrupt flag of the config', async () => {
+        const { line, advance } = make()
         const target = line()
         const controller = createTimelineController(() => target)
         controller.play({ from: { x: 0 } })
-        controller.update(0.5)
-        expect(target.getCurrentValue()).toEqual({ x: 50 })
+        advance(500)
+        expect(target.value).toEqual({ x: 50 })
 
-        controller.play({ from: { x: 0 } }, false)
+        const skipped = controller.play({ from: { x: 0 }, interrupt: false })
+        await expect(skipped).resolves.toBe('skipped')
         // rejected: still the earlier run
-        expect(target.getCurrentValue()).toEqual({ x: 50 })
+        expect(target.value).toEqual({ x: 50 })
+    })
+
+    it('forwards extra arguments so that the timeline throws, hooks untouched', () => {
+        const { line } = make()
+        const target = line()
+        const onPlay = vi.fn()
+        const onReset = vi.fn()
+        const controller = createTimelineController(() => target, {
+            onPlay,
+            onReset,
+        })
+        const play = controller.play as (...args: unknown[]) => unknown
+        const reset = controller.reset as (...args: unknown[]) => unknown
+
+        expect(() => play({ from: { x: 0 } }, false)).toThrow(TypeError)
+        expect(() => play({ from: { x: 0 }, context: 1 })).toThrow(TypeError)
+        expect(() => play({ from: { x: 0 }, propertyResolver: {} })).toThrow(
+            TypeError
+        )
+        expect(() => reset(true)).toThrow(TypeError)
+        expect(target.status).toBe('IDLE')
+        expect(onPlay).not.toHaveBeenCalled()
+        expect(onReset).not.toHaveBeenCalled()
     })
 
     it('runs the hooks around play and reset', () => {
@@ -148,8 +171,8 @@ describe('createTimelineController', () => {
 })
 
 describe('compile-time exhaustiveness', () => {
-    it('requires every public RafAniTimeline member to be forwarded', () => {
-        type Members = TimelineMembers<RafAniTimeline<{ x: number }>>
+    it('requires every public RafTimeline member to be forwarded', () => {
+        type Members = TimelineMembers<RafTimeline<{ x: number }>>
         // The controller's literal is checked with `satisfies Members`: a
         // literal that lacks any public member must not type-check.
         // @ts-expect-error - only one of the public members is present
@@ -160,59 +183,25 @@ describe('compile-time exhaustiveness', () => {
         const keys: Required[] = [
             'duration',
             'status',
-            'currentConfig',
+            'config',
+            'value',
+            'velocity',
             'play',
-            'update',
+            'drive',
             'seek',
             'pause',
             'resume',
             'reset',
             'dispose',
+            'bind',
             'onUpdate',
-            'getCurrentValue',
-            'getCurrentVelocity',
         ]
-        // Fails to compile when RafAniTimeline gains a public member that is
+        // Fails to compile when RafTimeline gains a public member that is
         // not listed here (and therefore not forwarded by the controller).
         const exhaustive: Exclude<Required, (typeof keys)[number]> extends never
             ? true
             : false = true
         expect(exhaustive).toBe(true)
         expect(new Set(keys).size).toBe(keys.length)
-    })
-})
-
-describe('applyStyleSheet', () => {
-    const fakeElement = () => {
-        const props: Record<string, unknown> = {}
-        const setProperty = vi.fn((key: string, value: string) => {
-            props[key] = value
-        })
-        return {
-            element: {
-                style: { ...props, setProperty },
-            } as unknown as HTMLElement,
-            style: (el: HTMLElement) =>
-                el.style as unknown as Record<string, unknown>,
-            setProperty,
-        }
-    }
-
-    it('assigns camelCase keys as properties', () => {
-        const { element, style, setProperty } = fakeElement()
-        applyStyleSheet(element, { opacity: 0.5, transform: 'scale(2)' })
-        expect(style(element).opacity).toBe(0.5)
-        expect(style(element).transform).toBe('scale(2)')
-        expect(setProperty).not.toHaveBeenCalled()
-    })
-
-    it('routes --custom and hyphenated keys through setProperty', () => {
-        const { element, setProperty } = fakeElement()
-        applyStyleSheet(element, {
-            '--progress': 0.25,
-            'background-color': 'red',
-        })
-        expect(setProperty).toHaveBeenCalledWith('--progress', '0.25')
-        expect(setProperty).toHaveBeenCalledWith('background-color', 'red')
     })
 })

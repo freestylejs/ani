@@ -1,9 +1,8 @@
 import type { Groupable, GroupableRecord } from '~/ani/core'
-import type { TimingFunction } from '~/timing'
 
 import {
-    type AnimationId,
     type AnimationNode,
+    assertNoExtraArguments,
     type NodeOptions,
     parseNodeOptions,
 } from './base'
@@ -19,6 +18,8 @@ import {
 } from './footprint'
 import { SegmentNode } from './segment'
 
+const PARALLEL_FORM = '`parallel(children, { timing, id })`'
+
 /**
  * Composition node that runs all of its children at the same time.
  */
@@ -29,17 +30,11 @@ export class ParallelNode<
     readonly duration: number
     readonly footprint: Footprint
 
-    constructor(
-        children: Children,
-        timingOrOptions?: TimingFunction | NodeOptions,
-        id?: AnimationId,
-        ...extra: unknown[]
-    ) {
+    constructor(children: Children, options?: NodeOptions) {
         const { timing: resolvedTiming, id: resolvedId } = parseNodeOptions(
-            timingOrOptions,
-            id,
+            options,
             'parallel',
-            extra.length > 0
+            PARALLEL_FORM
         )
         // Record-shaped direct segments: when several write the same key the
         // later declaration wins (all start together). Overridden keys are
@@ -141,14 +136,17 @@ export class ParallelNode<
 /**
  * Parallel composition animation
  * @param children Parallel children nodes.
- * @param timingOrOptions Loop timing function or options object.
- * @param id Optional ID for the node (positional form).
+ * @param options `{ timing, id }`: timing inherited by children without their own, optional node ID.
  */
 export function parallel<const Children extends CompositionChildren>(
     children: Children,
-    timingOrOptions?: TimingFunction | NodeOptions,
-    id?: AnimationId,
+    options?: NodeOptions
+): ParallelNode<Children>
+export function parallel<const Children extends CompositionChildren>(
+    children: Children,
+    options?: NodeOptions,
     ...extra: unknown[]
 ): ParallelNode<Children> {
-    return new ParallelNode(children, timingOrOptions, id, ...extra)
+    assertNoExtraArguments('parallel', PARALLEL_FORM, extra)
+    return new ParallelNode(children, options)
 }

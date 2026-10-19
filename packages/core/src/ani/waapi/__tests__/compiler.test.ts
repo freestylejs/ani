@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
 import type { AnimationNode } from '~/nodes'
-import { a } from '../../../index'
+import * as a from '../../../index'
 import {
     compileToKeyframes,
     type WebAniKeyframe,
@@ -184,7 +184,7 @@ describe('WebAni Compiler', () => {
                 a.ani({ to: { translateX: 100 }, duration: 1 }),
                 a.ani({ to: { translateX: 200 }, duration: 1 }),
             ],
-            0.5
+            { offset: 0.5 }
         )
         const initialFrom = { translateX: 0 }
 

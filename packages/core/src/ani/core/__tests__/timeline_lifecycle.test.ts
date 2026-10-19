@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { rafTimeline } from '~/ani/raf/timeline'
 import { ani, delay, parallel, sequence } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { ManualClock } from './manual_clock'
 
-const linear = T.linear()
+const linear = timing.linear()
 
 describe('status / pause / resume / ENDED', () => {
     it('exposes the lifecycle through `status`', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         expect(line.status).toBe('IDLE')
         line.play({ from: [0] })
@@ -31,7 +31,7 @@ describe('status / pause / resume / ENDED', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         const statuses: string[] = []
         line.onUpdate(({ status }) => statuses.push(status))
@@ -50,7 +50,7 @@ describe('status / pause / resume / ENDED', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         line.pause()
         line.resume()
@@ -62,7 +62,7 @@ describe('status / pause / resume / ENDED', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
@@ -88,34 +88,34 @@ describe('repeat', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         line.play({ from: [0], repeat: Infinity })
         clock.tick(0.4)
         clock.tick(0.4)
         clock.tick(0.4) // 1.2s: 0.2s into the 2nd iteration
-        expect(line.getCurrentValue()![0]).toBeCloseTo(20)
+        expect(line.value![0]).toBeCloseTo(20)
         clock.run(7, 0.4) // 4.0s total
-        expect(line.getCurrentValue()![0]).toBeCloseTo(0)
+        expect(line.value![0]).toBeCloseTo(0)
         clock.tick(0.3)
-        expect(line.getCurrentValue()![0]).toBeCloseTo(30)
+        expect(line.value![0]).toBeCloseTo(30)
     })
 
     it('skips whole repeats elapsed within one frame and still ends once', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         const statuses: string[] = []
         line.onUpdate(({ status }) => statuses.push(status))
         line.play({ from: [0], repeat: 2 })
         clock.tick(2.5) // 3 runs in total (0-3s): 2.5s lands in the 3rd
         expect(line.status).toBe('PLAYING')
-        expect(line.getCurrentValue()![0]).toBeCloseTo(50)
+        expect(line.value![0]).toBeCloseTo(50)
         clock.tick(10)
         expect(line.status).toBe('ENDED')
-        expect(line.getCurrentValue()).toEqual([100])
+        expect(line.value).toEqual([100])
         expect(statuses.filter((s) => s === 'ENDED')).toHaveLength(1)
     })
 })
@@ -137,7 +137,7 @@ describe('onUpdate error isolation', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         const boom = new Error('subscriber bug')
         const healthy = vi.fn()
@@ -154,7 +154,7 @@ describe('onUpdate error isolation', () => {
         })
         clock.tick(0.5)
         expect(line.status).toBe('ENDED')
-        expect(line.getCurrentValue()).toEqual([100])
+        expect(line.value).toEqual([100])
         expect(reported.length).toBeGreaterThan(0)
         expect(reported.every((error) => error === boom)).toBe(true)
     })
@@ -163,7 +163,7 @@ describe('onUpdate error isolation', () => {
 describe('play() validation', () => {
     const makeLine = (node: Parameters<typeof rafTimeline>[0]) => {
         const clock = new ManualClock()
-        return { clock, line: rafTimeline(node as never, clock) }
+        return { clock, line: rafTimeline(node as never, { clock }) }
     }
 
     it('rejects a record timing that misses an animated key', () => {
@@ -220,7 +220,7 @@ describe('play() validation', () => {
         expect(() => line.play({ from: { x: Number.NaN } })).toThrow(TypeError)
         expect(line.status).toBe('PLAYING')
         clock.tick(0.25)
-        expect(line.getCurrentValue()).toEqual({ x: 50 })
+        expect(line.value).toEqual({ x: 50 })
     })
 
     it('never throws from inside a clock tick for malformed timing', () => {
@@ -245,21 +245,21 @@ describe('documented edge semantics', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
         line.seek(0.5)
         expect(onUpdate).not.toHaveBeenCalled()
         expect(line.status).toBe('IDLE')
-        expect(line.getCurrentValue()).toBeNull()
+        expect(line.value).toBeNull()
     })
 
     it('reset() restores the node duration after a durations override', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         line.play({ from: [0], durations: [5] })
         expect(line.duration).toBe(5)
@@ -267,26 +267,26 @@ describe('documented edge semantics', () => {
         expect(line.duration).toBe(1)
     })
 
-    it('getCurrentVelocity() is zero after the timeline ended', () => {
+    it('velocity is zero after the timeline ended', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             ani({ to: [100], duration: 1, timing: linear }),
-            clock
+            { clock }
         )
         line.play({ from: [0] })
         clock.tick(0.5)
-        expect(line.getCurrentVelocity()![0]).toBeCloseTo(100)
+        expect(line.velocity![0]).toBeCloseTo(100)
         clock.tick(0.5)
         expect(line.status).toBe('ENDED')
-        expect(line.getCurrentVelocity()).toEqual([0])
+        expect(line.velocity).toEqual([0])
     })
 
     it('only held-by-settling-spring timelines end early; delay() keeps its time', () => {
-        const spring = () => T.dynamicSpring({ m: 1, k: 100, c: 20 })
+        const spring = () => timing.dynamicSpring({ m: 1, k: 100, c: 20 })
         const clock = new ManualClock()
         const early = rafTimeline(
             ani({ to: { x: 10 }, duration: 100, timing: spring() }),
-            clock
+            { clock }
         )
         early.play({ from: { x: 0 } })
         clock.run(60 * 10)
@@ -298,7 +298,7 @@ describe('documented edge semantics', () => {
                 ani({ to: { x: 10 }, duration: 100, timing: spring() }),
                 delay(30),
             ]),
-            tailClock
+            { clock: tailClock }
         )
         tail.play({ from: { x: 0 } })
         tailClock.run(60 * 10)

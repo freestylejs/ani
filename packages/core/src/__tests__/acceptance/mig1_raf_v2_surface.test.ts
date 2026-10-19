@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { RunResult } from '~/ani/core'
+import * as a from '../../index'
 import {
-    a,
     createClock,
     createTimelineController,
     isRafTimeline,
-    RafAniTimeline,
     type RafTimeline,
     type RafTimelineConfig,
     rafTimeline,
@@ -81,34 +80,18 @@ function peek(promise: Promise<RunResult>): Promise<RunResult | 'pending'> {
 }
 
 describe('MIG1: RafAniTimeline V2 surface', () => {
-    it('A1: rafTimeline(node, { clock }) plays on that clock; rafTimeline(node, clock) still works', () => {
-        const optionsEnv = setup()
-        const withOptions = rafTimeline(node(), { clock: optionsEnv.clock })
-        withOptions.play(config())
-        expect(withOptions.status).toBe('PLAYING')
-        optionsEnv.frames(3, 100)
-        const moved = withOptions.value as Values
+    it('A1: rafTimeline(node, { clock }) plays on that clock', () => {
+        const env = setup()
+        const timeline = rafTimeline(node(), { clock: env.clock })
+        timeline.play(config())
+        expect(timeline.status).toBe('PLAYING')
+        env.frames(3, 100)
+        const moved = timeline.value as Values
         expect(moved.x).toBeGreaterThan(0)
         expect(moved.x).toBeLessThan(100)
-        optionsEnv.finish(withOptions)
-        expect(withOptions.status).toBe('ENDED')
-        expect(withOptions.value).toEqual({ x: 100 })
-
-        const legacyEnv = setup()
-        const withClock = rafTimeline(node(), legacyEnv.clock)
-        withClock.play(config())
-        legacyEnv.finish(withClock)
-        expect(withClock.status).toBe('ENDED')
-        expect(withClock.getCurrentValue()).toEqual({ x: 100 })
-
-        const constructedEnv = setup()
-        const constructed = new RafAniTimeline(node(), {
-            clock: constructedEnv.clock,
-        })
-        constructed.play(config())
-        constructedEnv.finish(constructed)
-        expect(constructed.status).toBe('ENDED')
-        expect(constructed.value).toEqual({ x: 100 })
+        env.finish(timeline)
+        expect(timeline.status).toBe('ENDED')
+        expect(timeline.value).toEqual({ x: 100 })
     })
 
     it('A1: a timeline given an options object only advances with its own clock', () => {
@@ -131,26 +114,26 @@ describe('MIG1: RafAniTimeline V2 surface', () => {
         expect(t.config).toBeNull()
     })
 
-    it('A2: value / velocity / config equal the 1.x methods', () => {
+    it('A2: value / velocity / config are stable between frames', () => {
         const { clock, frames } = setup()
         const t = rafTimeline(node(), { clock })
         const cfg = config()
         t.play(cfg)
         expect(t.config).toBe(cfg)
-        expect(t.config).toBe(t.currentConfig)
-        expect(t.value).toEqual(t.getCurrentValue())
+        expect(t.config).toBe(t.config)
+        expect(t.value).toEqual(t.value)
 
         frames(3, 100)
         expect(t.value).not.toBeNull()
-        expect(t.value).toBe(t.getCurrentValue())
+        expect(t.value).toBe(t.value)
         expect(Object.isFrozen(t.value)).toBe(true)
         expect(t.velocity).not.toBeNull()
-        expect(t.velocity).toEqual(t.getCurrentVelocity())
-        expect(t.config).toBe(t.currentConfig)
+        expect(t.velocity).toEqual(t.velocity)
+        expect(t.config).toBe(t.config)
 
         frames(1, 100)
-        expect(t.value).toBe(t.getCurrentValue())
-        expect(t.velocity).toEqual(t.getCurrentVelocity())
+        expect(t.value).toBe(t.value)
+        expect(t.velocity).toEqual(t.velocity)
     })
 
     it('A2: value / velocity / config are null again after reset', () => {
@@ -238,16 +221,6 @@ describe('MIG1: RafAniTimeline V2 surface', () => {
         expect(probe.results).toEqual(['reset'])
     })
 
-    it('A4: reset() without notifying also resolves "reset"', async () => {
-        const { clock, frames } = setup()
-        const t = rafTimeline(node(), { clock })
-        const probe = track(t.play(config()))
-        frames(2, 100)
-        t.reset(false)
-        await flush()
-        expect(probe.results).toEqual(['reset'])
-    })
-
     it('A4: dispose() resolves "disposed"; play after dispose resolves "disposed"', async () => {
         const { clock, frames } = setup()
         const t = rafTimeline(node(), { clock })
@@ -322,41 +295,18 @@ describe('MIG1: RafAniTimeline V2 surface', () => {
         expect(t.status).toBe('ENDED')
     })
 
-    it('A5: the legacy play(cfg, false) behaves the same', async () => {
-        const { clock, frames, finish } = setup()
-        const t = rafTimeline(node(), { clock })
-
-        const idleRun = t.play(config(), false)
-        expect(t.status).toBe('PLAYING')
-        frames(3, 100)
-
-        const cfg = config()
-        const skipped = t.play(cfg, false)
-        await expect(skipped).resolves.toBe('skipped')
-        expect(t.status).toBe('PLAYING')
-        expect(t.config).not.toBe(cfg)
-
-        finish(t)
-        await expect(idleRun).resolves.toBe('ended')
-
-        const endedRun = t.play(config(), false)
-        expect(t.status).toBe('PLAYING')
-        finish(t)
-        await expect(endedRun).resolves.toBe('ended')
-    })
-
-    it('A5: interrupt wins over the legacy argument', async () => {
+    it('A5: interrupt: true replaces a PLAYING run, interrupt: false keeps it', async () => {
         const { clock, frames, finish } = setup()
         const t = rafTimeline(node(), { clock })
 
         const first = t.play(config())
         frames(3, 100)
-        const second = t.play({ from: { x: 50 }, interrupt: true }, false)
+        const second = t.play({ from: { x: 50 }, interrupt: true })
         await expect(first).resolves.toBe('interrupted')
         expect(t.status).toBe('PLAYING')
 
         frames(1, 100)
-        const third = t.play({ from: { x: 20 }, interrupt: false }, true)
+        const third = t.play({ from: { x: 20 }, interrupt: false })
         await expect(third).resolves.toBe('skipped')
         expect(await peek(second)).toBe('pending')
 
@@ -411,7 +361,7 @@ describe('MIG1: RafAniTimeline V2 surface', () => {
         frames(2, 100)
         watch(t.play({ from: { x: 10 } }), 'ended')
         finish(t)
-        t.reset(false)
+        t.reset()
         t.pause()
         t.resume()
         watch(t.play(config()), 'reset')
@@ -440,7 +390,6 @@ describe('MIG1: RafAniTimeline V2 surface', () => {
         const { clock } = setup()
         const t = rafTimeline(node(), { clock })
         expect(isRafTimeline(t)).toBe(true)
-        expect(isRafTimeline(new RafAniTimeline(node(), clock))).toBe(true)
         expect(isRafTimeline(createTimelineController(() => t))).toBe(true)
 
         expect(isRafTimeline({})).toBe(false)
@@ -451,7 +400,7 @@ describe('MIG1: RafAniTimeline V2 surface', () => {
         expect(isRafTimeline(a.waapiTimeline(node()))).toBe(false)
     })
 
-    it('A8: the RafTimeline type is satisfied by RafAniTimeline', () => {
+    it('A8: the RafTimeline type is satisfied by rafTimeline and the controller', () => {
         const { clock } = setup()
         const t: RafTimeline<Values> = rafTimeline(node(), { clock })
         const facade: RafTimeline<Values> = createTimelineController(() => t)

@@ -30,7 +30,7 @@ function playSchedule(
     schedule: Schedule
 ): AnimationRecord[] {
     const { clock, frame } = createManualClock()
-    const line = rafTimeline(node, clock)
+    const line = rafTimeline(node, { clock })
     line.play({ from })
     const out: AnimationRecord[] = []
     let elapsed = 0
@@ -41,7 +41,7 @@ function playSchedule(
             frame(step * 1000)
             elapsed += step
         }
-        out.push(snapshot(line.getCurrentValue()!))
+        out.push(snapshot(line.value!))
     }
     return out
 }
@@ -52,11 +52,11 @@ function seekAt(
     times: readonly number[]
 ): AnimationRecord[] {
     const { clock } = createManualClock()
-    const line = rafTimeline(node, clock)
+    const line = rafTimeline(node, { clock })
     line.play({ from })
     return times.map((time) => {
         line.seek(time)
-        return snapshot(line.getCurrentValue()!)
+        return snapshot(line.value!)
     })
 }
 

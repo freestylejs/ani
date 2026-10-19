@@ -15,7 +15,7 @@ Every frame, a playing timeline computes new values. What happens next decides t
 | :--- | :--- | :--- |
 | `useAniRef` / `createAniRef` / Vue and Svelte `useAniRef` | Computes values and writes `element.style` directly. No framework render. | Styles of many elements |
 | `useAni` / `createAni` | Updates framework state, which re-renders what reads it. | Text, attributes or props driven by an animation |
-| [`webTimeline`](/en/docs/core-api/timeline) | None in JavaScript. The browser animates natively. | Simple transitions and endless loops |
+| [`waapiTimeline`](/en/docs/core-api/timeline) | None in JavaScript. The browser animates natively. | Simple transitions and endless loops |
 
 -   **Do** use the `*Ref` bindings for style animation, even for thousands of elements.
 -   **Don't** use `useAni` for transforms: one re-render per element per frame does not scale.
@@ -33,18 +33,18 @@ const fadeIn = a.sequence([
 
 // one timeline per element, all sharing the same tree
 function Item() {
-  const timeline = useMemo(() => a.dynamicTimeline(fadeIn), []);
+  const timeline = useMemo(() => a.rafTimeline(fadeIn), []);
   // ...
 }
 ```
 
 -   One **timeline per element** when animations are independent. A timeline has one set of values, so elements bound to the same timeline always look identical.
 -   The WAAPI compilation cache is keyed by the shared root node, so many elements with the same `from` compile once.
--   Reuse the same `propertyResolver` object to keep cache hits.
+-   Reuse the same `resolver` object to keep cache hits.
 
 ### One clock
 
-All timelines use the shared [`AnimationClock`](/en/docs/core-api/clock) by default: **one** `requestAnimationFrame` loop for any number of timelines, stopped automatically when the last timeline leaves. Do not create a clock per component. Create your own clock only for isolation (tests, a separate engine).
+All timelines use the shared [`defaultClock`](/en/docs/core-api/clock) by default: **one** `requestAnimationFrame` loop for any number of timelines, stopped automatically when the last timeline leaves. Do not create a clock per component. Create your own clock only for isolation (tests, a separate engine).
 
 ### Cost model
 
@@ -75,12 +75,12 @@ Whoever creates a timeline or state machine owns it and must release it.
 
 -   An error in one `onUpdate` callback or timeline does not stop the loop. It is reported asynchronously (use the clock's `onError` to route it to your logger).
 -   Under jank (frames up to 0.5 s) animations stay on the wall clock; after a suspension (hidden tab) they resume instead of jumping. See [lag smoothing](/en/docs/core-api/clock).
--   During development, assert in a test that nothing leaks: `AnimationClock.create().size` must return to `0` after your views unmount. See [Testing](/en/docs/guides/testing).
+-   During development, assert in a test that nothing leaks: `defaultClock.size` must return to `0` after your views unmount. See [Testing](/en/docs/guides/testing).
 
 ### Checklist
 
 -   Build trees at module scope or memoize them.
 -   Use `*Ref` bindings for styles, one timeline per element, shared trees.
 -   Dispose what you create; let the bindings dispose what they create.
--   Prefer `webTimeline` for simple transitions that need no per-frame JavaScript.
+-   Prefer `waapiTimeline` for simple transitions that need no per-frame JavaScript.
 -   Test mount/unmount churn and check `clock.size`.

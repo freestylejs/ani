@@ -8,8 +8,6 @@ import type {
     WithLiteralRecord,
 } from '~/utils/types'
 
-export type { Footprint } from '~/nodes/footprint'
-
 /**
  * Animatable target values
  */
@@ -49,21 +47,9 @@ export type ExecutionPlan<G extends Groupable> = Array<ExecutionSegment<G>>
 
 export type AnimePrimitive = readonly number[]
 
-export interface SegmentDefinition {
-    from: AnimePrimitive
-    to: AnimePrimitive
-    duration: number
-    timing: SegmentTiming
-}
-
 export type SegmentTiming<G extends Groupable = Groupable> =
     G extends AnimePrimitive
         ? readonly TimingFunction[] | TimingFunction
         : G extends GroupableRecord
           ? Record<keyof G, TimingFunction> | TimingFunction
           : never
-
-export interface SegmentState {
-    values: AnimePrimitive
-    isComplete: boolean
-}

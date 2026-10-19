@@ -40,7 +40,7 @@ const Cursor = () => {
 | :--- | :--- | :--- |
 | `initial` | `Record<string, number>` | Initial value; `style()` is its inline style. |
 | `options.spring` | `{ m, k, c }` | (Optional) Spring parameters. |
-| `options.clock` | `ManagedClock` | (Optional) Clock to run on. |
+| `options.clock` | `AnimationClockInterface` | (Optional) Clock to run on. |
 | `options.resolver` | `Resolver<Record<string, number>>` | (Optional) Maps values to style declarations. |
 
 Returns `{ ref, style, follower }`; `follower` is the core `Follower` (`set`, `jump`, `target`, `value`, `bind`, `onUpdate`, `dispose`).

@@ -9,7 +9,8 @@ A `rafGroup` drives N targets from one plan through one clock subscription. `use
 
 ```svelte
 <script>
-  import { a, rafGroup } from '@freestylejs/ani-core';
+  import * as a from '@freestylejs/ani-core';
+  import { rafGroup } from '@freestylejs/ani-core';
   import { useAniGroup, useTimeline } from '@freestylejs/ani-svelte';
 
   const items = ['a', 'b', 'c'];

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { AniError, a, createClock, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { AniError, createClock, rafTimeline } from '../../index'
 
 /**
  * Clock fed by an injected frame source: only `frame()` / `advance()` move
@@ -49,13 +50,13 @@ type Setup = ReturnType<typeof setup>
 function measure(s: Setup) {
     const t = rafTimeline(
         a.ani({ to: { x: 100 }, duration: 10, timing: a.timing.linear() }),
-        s.clock
+        { clock: s.clock }
     )
     t.play({ from: { x: 0 } })
     return t
 }
 
-const x = (t: ReturnType<typeof measure>) => t.getCurrentValue()!.x
+const x = (t: ReturnType<typeof measure>) => t.value!.x
 
 describe('CLK: timeScale', () => {
     it('A1: timeScale scales the advance, from the next frame on', () => {

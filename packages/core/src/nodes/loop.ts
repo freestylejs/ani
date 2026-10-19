@@ -1,15 +1,16 @@
 import type { ExecutionSegment, Groupable } from '~/ani/core'
 import { type PlanLoop, planStateOf } from '~/ani/core/plan_state'
-import type { TimingFunction } from '~/timing'
 
 import {
-    type AnimationId,
     type AnimationNode,
+    assertNoExtraArguments,
     type NodeOptions,
     parseNodeOptions,
 } from './base'
 import { CompositionNode, type CompositionPlan } from './composition'
 import { type Footprint, loopFootprint } from './footprint'
+
+const LOOP_FORM = '`loop(child, count, { timing, id })`'
 
 /** Iterations written out before the plan repeats the last one. */
 const UNROLLED = 3
@@ -31,15 +32,12 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
     constructor(
         child: AnimationNode<G>,
         loopCount: number,
-        timingOrOptions?: TimingFunction | NodeOptions,
-        id?: AnimationId,
-        ...extra: unknown[]
+        options?: NodeOptions
     ) {
         const { timing: resolvedTiming, id: resolvedId } = parseNodeOptions(
-            timingOrOptions,
-            id,
+            options,
             'loop',
-            extra.length > 0
+            LOOP_FORM
         )
         super([child], resolvedTiming, resolvedId)
         if (
@@ -121,15 +119,19 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
  *
  * @param child Target animation node to repeat.
  * @param loopCount Loop count: an integer >= 0, or `Infinity` to repeat forever.
- * @param timingOrOptions Loop timing function or options object.
- * @param id Optional ID for the node (positional form).
+ * @param options `{ timing, id }`: timing inherited by the child's segments without their own, optional node ID.
  */
 export function loop<G extends Groupable>(
     child: AnimationNode<G>,
     loopCount: number,
-    timingOrOptions?: TimingFunction | NodeOptions,
-    id?: AnimationId,
+    options?: NodeOptions
+): LoopNode<G>
+export function loop<G extends Groupable>(
+    child: AnimationNode<G>,
+    loopCount: number,
+    options?: NodeOptions,
     ...extra: unknown[]
 ): LoopNode<G> {
-    return new LoopNode(child, loopCount, timingOrOptions, id, ...extra)
+    assertNoExtraArguments('loop', LOOP_FORM, extra)
+    return new LoopNode(child, loopCount, options)
 }

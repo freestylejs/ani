@@ -4,7 +4,7 @@ import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
 import { rafTimeline } from '~/ani/raf/timeline'
 import { compileToKeyframes } from '~/ani/waapi/compiler'
 import { ani, sequence } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 
 // Found by the A4 property tests (seed 10764340): a zero-length segment makes
 // the value jump; the compiled keyframes ramped across the jump instead.
@@ -55,11 +55,11 @@ function agree(
             `easing ${k.easing}`
         ).toBe(true)
     }
-    const line = rafTimeline(node, new ManualClock())
+    const line = rafTimeline(node, { clock: new ManualClock() })
     line.play({ from })
     for (const t of times) {
         line.seek(t)
-        const raf = line.getCurrentValue()!.y!
+        const raf = line.value!.y!
         const waapi = sample(keyframes, t / duration, 'y')
         expect(
             Math.abs(waapi - raf),
@@ -72,8 +72,8 @@ function agree(
 describe('FX2: zero-length segments compile to a jump', () => {
     it('A1: a trailing zero-length segment', () => {
         const node = sequence([
-            ani({ to: { y: 100 }, duration: 1, timing: T.linear() }),
-            ani({ to: { y: 0 }, duration: 0, timing: T.linear() }),
+            ani({ to: { y: 100 }, duration: 1, timing: timing.linear() }),
+            ani({ to: { y: 0 }, duration: 0, timing: timing.linear() }),
         ])
         const keyframes = agree(node, { y: 0 }, [0, 0.25, 0.5, 0.999])
         const last = keyframes[keyframes.length - 1]!
@@ -83,27 +83,27 @@ describe('FX2: zero-length segments compile to a jump', () => {
 
     it('A2: a zero-length segment in the middle', () => {
         const node = sequence([
-            ani({ to: { y: 100 }, duration: 1, timing: T.linear() }),
-            ani({ to: { y: 0 }, duration: 0, timing: T.linear() }),
-            ani({ to: { y: 50 }, duration: 1, timing: T.linear() }),
+            ani({ to: { y: 100 }, duration: 1, timing: timing.linear() }),
+            ani({ to: { y: 0 }, duration: 0, timing: timing.linear() }),
+            ani({ to: { y: 50 }, duration: 1, timing: timing.linear() }),
         ])
         agree(node, { y: 0 }, [0.5, 0.999, 1, 1.001, 1.5, 2])
     })
 
     it('A3: a leading zero-length segment', () => {
         const node = sequence([
-            ani({ to: { y: 40 }, duration: 0, timing: T.linear() }),
-            ani({ to: { y: 100 }, duration: 1, timing: T.linear() }),
+            ani({ to: { y: 40 }, duration: 0, timing: timing.linear() }),
+            ani({ to: { y: 100 }, duration: 1, timing: timing.linear() }),
         ])
         agree(node, { y: 0 }, [0, 0.5, 1])
     })
 
     it('A4: offsets never decrease and stay within [0, 1]', () => {
         const node = sequence([
-            ani({ to: { y: 100 }, duration: 0.5, timing: T.linear() }),
-            ani({ to: { y: 10 }, duration: 0, timing: T.linear() }),
-            ani({ to: { y: 20 }, duration: 0, timing: T.linear() }),
-            ani({ to: { y: 0 }, duration: 0.5, timing: T.linear() }),
+            ani({ to: { y: 100 }, duration: 0.5, timing: timing.linear() }),
+            ani({ to: { y: 10 }, duration: 0, timing: timing.linear() }),
+            ani({ to: { y: 20 }, duration: 0, timing: timing.linear() }),
+            ani({ to: { y: 0 }, duration: 0.5, timing: timing.linear() }),
         ])
         const keyframes = compileToKeyframes(planOf(node), { y: 0 })
         for (let i = 0; i < keyframes.length; i++) {

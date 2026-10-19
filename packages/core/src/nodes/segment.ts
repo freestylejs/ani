@@ -21,7 +21,7 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
         props: SegmentNodeProps<G> & { id?: AnimationId },
         id?: AnimationId
     ) {
-        const resolvedId = id !== undefined ? id : props.id
+        const resolvedId = id === undefined ? props.id : id
         super(resolvedId)
         if (!Number.isFinite(props.duration) || props.duration < 0) {
             throw new RangeError(
@@ -58,11 +58,18 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
  * Single animation segment.
  *
  * @param props Animation config with optional node ID.
- * @param id Optional ID for the node (positional form, wins if both given).
  */
 export function ani<G extends Groupable>(
+    props: SegmentNodeProps<G> & { id?: AnimationId }
+): SegmentNode<G>
+export function ani<G extends Groupable>(
     props: SegmentNodeProps<G> & { id?: AnimationId },
-    id?: AnimationId
+    ...extra: unknown[]
 ): SegmentNode<G> {
-    return new SegmentNode(props, id)
+    if (extra.length > 0) {
+        throw new TypeError(
+            '[ani] Unexpected extra argument. Pass the id in the props: `ani({ to, duration, id })`.'
+        )
+    }
+    return new SegmentNode(props)
 }

@@ -3,7 +3,7 @@ import type { ExecutionPlan, Groupable } from '~/ani/core'
 import { buildPlan } from '~/ani/core/plan_builder'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { type AnimationNode, ani, loop, sequence } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import type { AnimationRecord, TreeOptions } from './gen'
 import { caseMessage, generateTree, mulberry32, type Rng } from './gen'
 import { planDuration } from './helpers'
@@ -131,12 +131,12 @@ describe('P7: periodic loops equal their flattened form', () => {
                     ani({
                         to: { x: 300, y: -200 },
                         duration: rng.range(0.1, 0.6),
-                        timing: T.ease(),
+                        timing: timing.ease(),
                     }),
                     ani({
                         to: { x: -400, y: 500 },
                         duration: rng.range(0.1, 0.7),
-                        timing: T.easeInOut(),
+                        timing: timing.easeInOut(),
                     }),
                 ]),
                 count

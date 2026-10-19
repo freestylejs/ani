@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { a, rafTimeline, type TimingFunction } from '../../index'
+import * as a from '../../index'
+import { rafTimeline, type TimingFunction } from '../../index'
 import { createManualClock } from '../../testing'
 
 type Curve = { p2: { x: number; y: number }; p3: { x: number; y: number } }

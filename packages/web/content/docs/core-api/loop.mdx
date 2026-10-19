@@ -63,7 +63,7 @@ A finite loop that shares a property with another segment running at the same ti
 -   **Shared properties:** an endless loop owns its properties from its start on. `parallel([loop(a, Infinity), b])` where both animate `x` throws a `RangeError` that names the property. The same tree with a finite count works.
 -   A timeline with an infinite duration never ends: there is no `ENDED` notification, `play()` resolves only when the run is interrupted, `reset()` or disposed, and `repeat` is ignored. `seek(t)` accepts any finite `t >= 0`; `drive()` needs a finite duration and throws a `RangeError`.
 -   **Reduced motion:** `'jump'` shows every finite part completed and each endless loop at the end of its first iteration, and holds that state (`PAUSED`). `{ maxDuration }` does not apply to an infinite run.
--   **WAAPI:** only a root `loop(child, Infinity)` is supported; the child is compiled once and played with `iterations: Infinity`. Any other tree with an endless loop throws a `RangeError` from `waapiTimeline(...).play()`; use the RAF engine (`dynamicTimeline` / `rafTimeline`) for it.
+-   **WAAPI:** only a root `loop(child, Infinity)` is supported; the child is compiled once and played with `iterations: Infinity`. Any other tree with an endless loop throws a `RangeError` from `waapiTimeline(...).play()`; use the RAF engine (`rafTimeline`) for it.
 -   `rafGroup` offsets work as usual.
 
 #### Overrides: one slot per node as written
@@ -94,5 +94,5 @@ Before 2.0 every iteration had its own entry. A `durations` entry that makes a s
 
 ### Related Components
 
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The `play` method's `repeat` option repeats the whole timeline.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The `play` method's `repeat` option repeats the whole timeline.
 -   [`sequence`](/en/docs/core-api/sequence) - Can be used to manually create loops, though `loop` is more concise.

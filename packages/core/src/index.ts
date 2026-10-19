@@ -1,56 +1,105 @@
-import { createStates, follow, rafGroup, rafTimeline } from './ani/raf'
-import { waapiTimeline, webTimeline } from './ani/waapi'
-import { createClock } from './loop'
-import { ani, delay, loop, parallel, sequence, stagger } from './nodes'
-import { T } from './timing'
-
-export * from './ani'
-export * from './binding'
-export * from './binding_api'
-export * from './error'
-export * from './event'
-export * from './loop'
-export * from './nodes'
-export * from './style'
-export * from './timing'
-
-export const a = {
-    timing: T,
-
-    /**
-     * @deprecated Use `rafTimeline` alias for explicit engine naming.
-     */
-    dynamicTimeline: rafTimeline,
-    /**
-     * @deprecated Use `waapiTimeline` alias for explicit engine naming.
-     */
-    timeline: webTimeline,
-    webTimeline,
-    rafTimeline,
-    /**
-     * Create a group: one plan drives N targets through one clock subscription.
-     */
-    rafGroup,
-    /**
-     * Create a value that chases a target with a spring, keeping its velocity.
-     */
-    follow,
-    waapiTimeline,
-    /**
-     * Create animation segment.
-     */
-    ani,
-    /**
-     * Add delay
-     */
-    delay,
-    loop,
-    parallel,
-    sequence,
-    stagger,
+export type {
+    AniGroup,
+    AnimePrimitive,
+    Groupable,
+    GroupableRecord,
+    GroupableRecordKey,
+    ReducedMotionPolicy,
+    RunResult,
+    SegmentTiming,
+    TimelineCommonConfig,
+} from './ani/core'
+export { normalizeRepeatCount, toIterationCount } from './ani/core'
+export type {
+    AnimationStateShape,
+    BindOptions,
+    Follower,
+    FollowFrame,
+    FollowOptions,
+    FollowSetOptions,
+    FollowSpring,
+    FollowStatus,
+    GetTimeline,
+    OnUpdateCallback,
+    RafGroup,
+    RafGroupBindOptions,
+    RafGroupFrame,
+    RafGroupOptions,
+    RafGroupPlayConfig,
+    RafTimeline,
+    RafTimelineConfig,
+    RafTimelineOptions,
+    StateController,
+    StateProps,
+    TimelineStatus,
+} from './ani/raf'
+export {
     createStates,
-    /**
-     * Create an independent animation clock (own frame loop).
-     */
-    createClock,
-} as const
+    follow,
+    isRafTimeline,
+    rafGroup,
+    rafTimeline,
+} from './ani/raf'
+export type {
+    WaapiPlayConfig,
+    WaapiTimeline,
+    WaapiTimelineOptions,
+    WebAniKeyframe,
+} from './ani/waapi'
+export {
+    compileToKeyframes,
+    isWaapiTimeline,
+    waapiTimeline,
+} from './ani/waapi'
+export type { TimelineControllerHooks } from './binding'
+export { createTimelineController } from './binding'
+export type { AniErrorCode } from './error'
+export { AniError } from './error'
+export type {
+    Animatable,
+    AnimationClockInterface,
+    Clock,
+    ClockTimingOptions,
+    CreateClockOptions,
+    ReducedMotionSource,
+    VisibilitySource,
+} from './loop'
+export { createClock, defaultClock } from './loop'
+export type {
+    AnimationDuration,
+    AnimationId,
+    AnimationNodeType,
+    CompositionChildren,
+    DelayOptions,
+    ExtractAnimationNode,
+    NodeOptions,
+    SegmentNodeProps,
+    StaggerOptions,
+} from './nodes'
+export { ani, delay, loop, parallel, sequence, stagger } from './nodes'
+export type {
+    AnimationNode,
+    CompositionNode,
+    LoopNode,
+    ParallelNode,
+    SegmentNode,
+    SequenceNode,
+    StaggerNode,
+} from './nodes/node_types'
+export type { Resolver, StylesheetSupportedLiteral } from './style'
+export { createStyleSheet } from './style'
+export type {
+    BezierTimingFunctionOpt,
+    Coord,
+    SpringTimingFunctionOpt,
+    TimingFunctionContext,
+    TimingState,
+} from './timing'
+export {
+    BezierTimingFunction,
+    DynamicSpringTimingFunction,
+    LinearTimingFunction,
+    SpringTimingFunction,
+    TimingFunction,
+    timing,
+} from './timing'

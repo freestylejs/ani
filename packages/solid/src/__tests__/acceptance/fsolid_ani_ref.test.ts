@@ -3,7 +3,7 @@
 import * as a from '@freestylejs/ani-core'
 import {
     createClock,
-    type RafAniTimeline,
+    type RafTimeline,
     type Resolver,
     rafTimeline,
 } from '@freestylejs/ani-core'
@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as solid from '../../index'
 
 type Values = { opacity: number; borderRadius: number }
-type Timeline = RafAniTimeline<Values>
+type Timeline = RafTimeline<Values>
 type Style = Record<string, string | number> | undefined
 interface Bound {
     ref: (element: HTMLElement) => void

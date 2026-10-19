@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { RunResult } from '~/ani/core'
-import { a, createClock, createStates } from '../../index'
+import * as a from '../../index'
+import { createClock, createStates } from '../../index'
 
 type Values = { translateX: number }
 type StateName = 'idle' | 'active'
@@ -8,7 +9,6 @@ type Frame = { state: Values; status: string }
 interface Timeline {
     status: string
     value: Values | null
-    getCurrentValue(): Values | null
     reset(): void
     bind(target: { style: CSSStyleDeclaration }): () => void
     onUpdate(callback: (frame: Frame) => void): () => void
@@ -21,8 +21,7 @@ interface Machine {
     readonly value: Values
     transitionTo(
         state: string,
-        config?: { interrupt?: boolean; from?: Values },
-        canBeIntercepted?: boolean
+        config?: { interrupt?: boolean; from?: Values }
     ): Promise<RunResult>
     bind(
         target: { style: CSSStyleDeclaration },
@@ -37,7 +36,6 @@ interface Machine {
     onTransition(
         listener: (state: StateName, timeline: Timeline) => void
     ): () => void
-    onTimelineChange(listener: (timeline: Timeline) => void): () => void
     dispose(): void
 }
 
@@ -146,33 +144,25 @@ function make(
 }
 
 describe('ST: createStates V2 surface', () => {
-    it('A1: initialValue works like initialFrom', () => {
-        const viaValue = setup()
-        const viaFrom = setup()
-        const m1 = make(viaValue.clock, { initialValue: { translateX: 20 } })
-        const m2 = make(viaFrom.clock, { initialFrom: { translateX: 20 } })
+    it('A1: the first transition starts from initialValue', () => {
+        const env = setup()
+        const machine = make(env.clock, { initialValue: { translateX: 20 } })
 
-        void m1.transitionTo('active')
-        void m2.transitionTo('active')
-        viaValue.frame(500)
-        viaFrom.frame(500)
+        expect(machine.value).toEqual({ translateX: 20 })
+        void machine.transitionTo('active')
+        env.frame(500)
 
-        expect(m1.timeline().value).toEqual({ translateX: 60 })
-        expect(m2.timeline().value).toEqual({ translateX: 60 })
-        expect(m1.value).toEqual(m2.value)
+        expect(machine.timeline().value).toEqual({ translateX: 60 })
     })
 
-    it('A1: both initialValue and initialFrom throw a TypeError', () => {
+    it('A1: initialFrom throws a TypeError naming initialValue', () => {
         const { clock } = setup()
-        expect(() =>
-            make(clock, {
-                initialValue: { translateX: 0 },
-                initialFrom: { translateX: 0 },
-            })
-        ).toThrow(TypeError)
+        expect(() => make(clock, { initialFrom: { translateX: 0 } })).toThrow(
+            /initialValue/
+        )
     })
 
-    it('A1: neither initialValue nor initialFrom throws a TypeError', () => {
+    it('A1: a missing initialValue throws a TypeError', () => {
         const { clock } = setup()
         expect(() => make(clock, {})).toThrow(TypeError)
     })
@@ -222,36 +212,18 @@ describe('ST: createStates V2 surface', () => {
         expect(await first).toBe('ended')
     })
 
-    it('A2: the legacy third argument false while playing resolves "skipped"', async () => {
+    it('A2: interrupt: true replaces a playing transition, interrupt: false keeps it', async () => {
         const { clock, frame, finish } = setup()
         const machine = make(clock)
 
         const first = machine.transitionTo('active')
         frame(500)
-        const timeline = machine.timeline()
-        const skipped = machine.transitionTo('idle', undefined, false)
-
-        expect(await skipped).toBe('skipped')
-        expect(machine.state()).toBe('active')
-        expect(machine.timeline()).toBe(timeline)
-        finish()
-        expect(await first).toBe('ended')
-    })
-
-    it('A2: config.interrupt wins over the legacy third argument', async () => {
-        const { clock, frame, finish } = setup()
-        const machine = make(clock)
-
-        const first = machine.transitionTo('active')
-        frame(500)
-        // interrupt: true beats legacy false
-        const second = machine.transitionTo('idle', { interrupt: true }, false)
+        const second = machine.transitionTo('idle', { interrupt: true })
         expect(await first).toBe('interrupted')
         expect(machine.state()).toBe('idle')
 
         frame(100)
-        // interrupt: false beats legacy true
-        const third = machine.transitionTo('active', { interrupt: false }, true)
+        const third = machine.transitionTo('active', { interrupt: false })
         expect(await third).toBe('skipped')
         expect(machine.state()).toBe('idle')
         finish()
@@ -573,23 +545,6 @@ describe('ST: createStates V2 surface', () => {
         off()
         void machine.transitionTo('idle')
         expect(seen).toEqual(['active'])
-    })
-
-    it('A6: onTimelineChange still works', () => {
-        const { clock } = setup()
-        const machine = make(clock)
-        const timelines: Timeline[] = []
-        const off = machine.onTimelineChange((timeline) => {
-            timelines.push(timeline)
-        })
-
-        void machine.transitionTo('active')
-        expect(timelines).toHaveLength(1)
-        expect(timelines[0]).toBe(machine.timeline())
-
-        off()
-        void machine.transitionTo('idle')
-        expect(timelines).toHaveLength(1)
     })
 
     it('A7: 1000 alternating transitions leak no subscription or binding', async () => {

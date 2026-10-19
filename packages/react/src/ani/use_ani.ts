@@ -1,4 +1,4 @@
-import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import type { AniGroup, Groupable, RafTimeline } from '@freestylejs/ani-core'
 import { createTimelineController } from '@freestylejs/ani-core'
 import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
 
@@ -15,9 +15,9 @@ import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react'
  * @returns `[value, controller]`; the controller is stable per `timeline`.
  */
 export function useAni<G extends Groupable>(
-    timeline: RafAniTimeline<G>,
+    timeline: RafTimeline<G>,
     initialValue: AniGroup<G>
-): readonly [AniGroup<G>, RafAniTimeline<G>] {
+): readonly [AniGroup<G>, RafTimeline<G>] {
     const initial = useRef(initialValue)
 
     const subscribe = useCallback(

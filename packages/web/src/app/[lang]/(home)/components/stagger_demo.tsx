@@ -92,7 +92,7 @@ export const StaggerDemo = () => {
                 k: 500,
                 c: 10,
             })
-            return a.timeline(
+            return a.waapiTimeline(
                 a.stagger(
                     [
                         a.ani({

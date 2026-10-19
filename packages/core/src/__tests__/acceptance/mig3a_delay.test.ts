@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { a, createStates, type RunResult, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { createStates, type RunResult, rafTimeline } from '../../index'
 import { createManualClock } from '../../testing'
 
 const linear = a.timing.linear()

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ExecutionPlan } from '~/ani/core'
 import { ManualClock } from '~/ani/core/__tests__/manual_clock'
 import { planLoops } from '~/ani/core/plan_state'
-import { type RafAniTimeline, rafTimeline } from '~/ani/raf/timeline'
+import { type RafTimeline, rafTimeline } from '~/ani/raf/timeline'
 import { compileToKeyframes, type WebAniKeyframe } from '~/ani/waapi/compiler'
 import { ani, sequence } from '~/nodes'
 import {
@@ -10,8 +10,8 @@ import {
     DynamicSpringTimingFunction,
     LinearTimingFunction,
     SpringTimingFunction,
-    T,
     TimingFunction,
+    timing,
 } from '~/timing'
 import { END_TOLERANCE } from '~/utils/time'
 import type { AnimationRecord } from './gen'
@@ -84,7 +84,7 @@ const CURVATURE_MARGIN = 2
 
 type Plan = ExecutionPlan<AnimationRecord>
 type Segment = Plan[number]
-type Line = RafAniTimeline<AnimationRecord>
+type Line = RafTimeline<AnimationRecord>
 
 type IntervalKind = 'exact' | 'sampled'
 
@@ -187,7 +187,7 @@ function buildCase(seed: number, options: TreeOptions = DEFAULT_TREES): Case {
     const { node, keys, from } = generateTree(rng, options)
     const plan = sortedPlan(node)
     const duration = planDuration(plan)
-    const line = rafTimeline(node, new ManualClock())
+    const line = rafTimeline(node, { clock: new ManualClock() })
     line.play({ from })
     return {
         seed,
@@ -203,7 +203,7 @@ function buildCase(seed: number, options: TreeOptions = DEFAULT_TREES): Case {
 
 function valuesAt(line: Line, time: number): AnimationRecord {
     line.seek(time)
-    return snapshot(line.getCurrentValue()!)
+    return snapshot(line.value!)
 }
 
 /**
@@ -515,7 +515,9 @@ describe('P4: RAF/WAAPI agreement', { timeout: 20_000 }, () => {
         let folded = 0
         for (let i = 0; i < CASES; i++) {
             const c = buildCase(BASE_SEED + 7000 + i)
-            if (planLoops(c.line['_baseExecutionPlan'] as object).length > 0) {
+            const base = (c.line as unknown as { _baseExecutionPlan: object })
+                ._baseExecutionPlan
+            if (planLoops(base).length > 0) {
                 folded++
             }
             checkKeyframes(c, groupByOffset(c.keyframes, c.duration))
@@ -554,25 +556,25 @@ describe('P4: RAF/WAAPI agreement', { timeout: 20_000 }, () => {
         // 52/100 of the property loop): a sequence whose second child has
         // duration 0, so RAF ramps to 100 and drops to 0 exactly at t=1.
         const node = sequence([
-            ani({ to: { y: 100 }, duration: 1, timing: T.linear() }),
-            ani({ to: { y: 0 }, duration: 0, timing: T.linear() }),
+            ani({ to: { y: 100 }, duration: 1, timing: timing.linear() }),
+            ani({ to: { y: 0 }, duration: 0, timing: timing.linear() }),
         ])
         const from = { y: 0 }
         const plan = sortedPlan(node)
         const duration = planDuration(plan)
         const keyframes = compileToKeyframes(plan, from)
-        const line = rafTimeline(node, new ManualClock())
+        const line = rafTimeline(node, { clock: new ManualClock() })
         line.play({ from })
 
         line.seek(0.5)
         expect(
-            snapshot(line.getCurrentValue()!).y,
+            snapshot(line.value!).y,
             'seed=10764340 RAF holds the ramp'
         ).toBeCloseTo(50, 9)
 
         for (const time of [0.5, 1 - 1e-6, 1]) {
             line.seek(time)
-            const raf = snapshot(line.getCurrentValue()!).y!
+            const raf = snapshot(line.value!).y!
             const waapi = referenceValueAt(keyframes, duration, time, 'y')
             expect(
                 Math.abs(waapi - raf),

@@ -2,32 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rafTimeline } from '~/ani/raf/timeline'
 import { compileToKeyframes } from '~/ani/waapi/compiler'
 import { resolveStateAt } from '~/ani/waapi/compiler/resolver'
-import { EventManager } from '~/event'
-import { AnimationClock } from '~/loop/clock'
+import { defaultClock, resetDefaultClock } from '~/loop/clock'
 import { ani, loop, parallel, sequence, stagger } from '~/nodes'
-import { BezierTimingFunction, T } from '~/timing'
+import { BezierTimingFunction, timing } from '~/timing'
 import { DynamicSpringTimingFunction } from '~/timing/dynamic_spring'
-
-class MockElement {
-    private listeners = new Map<string, Set<EventListener>>()
-    public addEventListener(
-        eventName: string,
-        listener: EventListenerOrEventListenerObject
-    ): void {
-        if (!this.listeners.has(eventName))
-            this.listeners.set(eventName, new Set())
-        this.listeners.get(eventName)!.add(listener as EventListener)
-    }
-    public removeEventListener(
-        eventName: string,
-        listener: EventListenerOrEventListenerObject
-    ): void {
-        this.listeners.get(eventName)?.delete(listener as EventListener)
-    }
-    public count(eventName: string): number {
-        return this.listeners.get(eventName)?.size ?? 0
-    }
-}
 
 describe('[Publish Gate] Regression Suite', () => {
     let rafCallbacks: Array<(ts: number) => void>
@@ -42,7 +20,7 @@ describe('[Publish Gate] Regression Suite', () => {
     }
 
     beforeEach(() => {
-        AnimationClock.reset()
+        resetDefaultClock()
         rafCallbacks = []
         now = 0
         rafSpy = vi.fn((cb: (ts: number) => void) => {
@@ -57,37 +35,18 @@ describe('[Publish Gate] Regression Suite', () => {
     })
 
     afterEach(() => {
-        AnimationClock.reset()
+        resetDefaultClock()
         vi.unstubAllGlobals()
     })
 
-    it('[L6-1] getEvtKey normalizes camelCase DOM events to lowercase', () => {
-        expect(EventManager.getEvtKey('onKeyDown')).toBe('keydown')
-        expect(EventManager.getEvtKey('onTransitionEnd')).toBe('transitionend')
-        expect(EventManager.getEvtKey('onCompositionStart')).toBe(
-            'compositionstart'
-        )
-    })
-
-    it('[L6-2] re-adding same event replaces previous listener', () => {
-        const manager = new EventManager(['click'] as const)
-        const element = new MockElement()
-        manager.bind(element as unknown as HTMLElement)
-        manager.setAnimeGetter(() => ({}))
-        manager.add('click', () => {
-            //
-        })
-        manager.add('click', () => {
-            //
-        })
-        expect(element.count('click')).toBe(1)
-    })
-
     it('[L2-1] loop propagates its timing into constructed segments', () => {
-        const ease = T.bezier({ p2: { x: 0.3, y: 0 }, p3: { x: 0.7, y: 1 } })
+        const ease = timing.bezier({
+            p2: { x: 0.3, y: 0 },
+            p3: { x: 0.7, y: 1 },
+        })
         const root = sequence([
             ani({ to: [1], duration: 1 }),
-            loop(ani({ to: [10], duration: 1 }), 2, ease),
+            loop(ani({ to: [10], duration: 1 }), 2, { timing: ease }),
         ])
         const plan: any[] = []
         root.construct(plan, 0)
@@ -98,7 +57,7 @@ describe('[Publish Gate] Regression Suite', () => {
     })
 
     it('[L3-1/L4A-6] durations override updates effective duration -> ENDED', () => {
-        const root = ani({ to: [100], duration: 1, timing: T.linear() })
+        const root = ani({ to: [100], duration: 1, timing: timing.linear() })
         const line = rafTimeline(root)
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
@@ -124,11 +83,11 @@ describe('[Publish Gate] Regression Suite', () => {
         tick(3000)
         // settle first run
         for (let i = 0; i < 40; i++) tick(16)
-        const endedValue = line.getCurrentValue()
+        const endedValue = line.value
 
         line.play({ from: [0] })
         tick(16)
-        const restartValue = line.getCurrentValue()
+        const restartValue = line.value
 
         expect(endedValue).not.toBeNull()
         expect(Math.abs(restartValue![0]! - 0)).toBeLessThan(
@@ -139,10 +98,10 @@ describe('[Publish Gate] Regression Suite', () => {
     it('[L4B-1] split bezier intervals are sampled, not re-eased', () => {
         const root = stagger(
             [
-                ani({ to: { x: 100 }, duration: 1, timing: T.ease() }),
+                ani({ to: { x: 100 }, duration: 1, timing: timing.ease() }),
                 ani({ to: { x: 200 }, duration: 1 }),
             ],
-            0.5
+            { offset: 0.5 }
         )
         const plan: any[] = []
         root.construct(plan as never, 0)
@@ -175,7 +134,7 @@ describe('[Publish Gate] Regression Suite', () => {
     })
 
     it('[L4A-1] clock stops rescheduling rAF after last subscriber self-unsubscribes', () => {
-        const clock = AnimationClock.create()
+        const clock = defaultClock
         const animatable = {
             update: () => clock.unsubscribe(animatable),
         }
@@ -187,14 +146,14 @@ describe('[Publish Gate] Regression Suite', () => {
 
     it('[L4A-2] one failing animation never stops the shared clock', () => {
         vi.stubGlobal('queueMicrotask', () => undefined)
-        const clock = AnimationClock.create()
+        const clock = defaultClock
         const bad = {
             update: () => {
                 throw new Error('bad animation')
             },
         }
         const good = rafTimeline(
-            ani({ to: { x: 100 }, duration: 1, timing: T.linear() })
+            ani({ to: { x: 100 }, duration: 1, timing: timing.linear() })
         )
         good.play({ from: { x: 0 } })
         clock.subscribe(bad)
@@ -202,21 +161,21 @@ describe('[Publish Gate] Regression Suite', () => {
         expect(() => tick(100)).not.toThrow()
         tick(100)
         expect(rafCallbacks.length).toBe(1)
-        expect((good.getCurrentValue() as { x: number }).x).toBeCloseTo(20)
+        expect((good.value as { x: number }).x).toBeCloseTo(20)
     })
 
     it('[L4A-3] seek bypasses pending delay on resume', () => {
-        const root = ani({ to: [100], duration: 1, timing: T.linear() })
+        const root = ani({ to: [100], duration: 1, timing: timing.linear() })
         const line = rafTimeline(root)
         line.play({ from: [0], delay: 1 })
         line.seek(0.5)
         line.resume()
         tick(100)
-        expect(line.getCurrentValue()).toEqual([60])
+        expect(line.value).toEqual([60])
     })
 
     it('[L5-1/2] spring endOfAnimation works for negative/zero targets', () => {
-        const critical = T.spring({ m: 1, k: 1, c: 2 })
+        const critical = timing.spring({ m: 1, k: 1, c: 2 })
         const resultCritical = critical.step(7, {
             dt: 0,
             from: 0,
@@ -225,7 +184,7 @@ describe('[Publish Gate] Regression Suite', () => {
         })
         expect(resultCritical.endOfAnimation).toBe(true)
 
-        const over = T.spring({ m: 1, k: 1, c: 4 })
+        const over = timing.spring({ m: 1, k: 1, c: 4 })
         const resultOver = over.step(7, {
             dt: 0,
             from: 0,
@@ -236,7 +195,7 @@ describe('[Publish Gate] Regression Suite', () => {
     })
 
     it('[L5-4] under-damped spring endOfAnimation is sticky past settling time', () => {
-        const spring = T.spring({ m: 1, k: 1, c: 0.5 })
+        const spring = timing.spring({ m: 1, k: 1, c: 0.5 })
         // zeta=0.25 -> settlingTime ~= 27.63 (natural time). With duration=30
         // the scaled clock reaches settling at t=30.
         const before = spring.step(25, {
@@ -277,7 +236,7 @@ describe('[Publish Gate] Regression Suite', () => {
     it('[L2-4] stagger duration covers longest child span', () => {
         const root = stagger(
             [ani({ to: [1], duration: 10 }), ani({ to: [1], duration: 1 })],
-            0.5
+            { offset: 0.5 }
         )
         expect(root.duration).toBe(10)
     })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { delay } from '../delay'
 import { loop } from '../loop'
 import { parallel } from '../parallel'
@@ -7,8 +7,11 @@ import { ani } from '../segment'
 import { sequence } from '../sequence'
 import { stagger } from '../stagger'
 
+type Loose = (...args: unknown[]) => unknown
+const loose = (fn: unknown) => fn as Loose
+
 describe('node options-object form unit tests', () => {
-    const ease = T.ease()
+    const ease = timing.ease()
     const leaf = () => ani({ to: { x: 10 }, duration: 1 })
 
     describe('ani', () => {
@@ -18,13 +21,10 @@ describe('node options-object form unit tests', () => {
             expect('id' in node.props).toBe(false)
         })
 
-        it('gives precedence to positional id over props id', () => {
-            const node = ani(
-                { to: { x: 1 }, duration: 1, id: 'props-id' },
-                'positional-id'
-            )
-            expect(node.id).toBe('positional-id')
-            expect('id' in node.props).toBe(false)
+        it('throws TypeError naming the props id for an extra argument', () => {
+            expect(() =>
+                loose(ani)({ to: { x: 1 }, duration: 1 }, 'id')
+            ).toThrow(/id/)
         })
     })
 
@@ -35,17 +35,17 @@ describe('node options-object form unit tests', () => {
             expect(d.duration).toBe(0.5)
         })
 
-        it('supports positional id', () => {
-            const d = delay(0.5, 'd-pos')
-            expect(d.id).toBe('d-pos')
+        it('has no id without options', () => {
+            expect(delay(0.5).id).toBeUndefined()
         })
 
         it('throws TypeError on unknown option keys', () => {
             expect(() => delay(1, { foo: 'bar' } as never)).toThrow(/foo/)
         })
 
-        it('throws TypeError when mixing options and positional arguments', () => {
-            expect(() => delay(1, { id: 'a' }, 'extra' as never)).toThrow(
+        it('throws TypeError for a positional id or extra arguments', () => {
+            expect(() => loose(delay)(1, 'id')).toThrow(TypeError)
+            expect(() => loose(delay)(1, { id: 'a' }, 'extra')).toThrow(
                 TypeError
             )
         })
@@ -63,26 +63,15 @@ describe('node options-object form unit tests', () => {
             expect(l.id).toBe('l')
         })
 
-        it('supports positional timing and id', () => {
-            const s = sequence([leaf()], ease, 's')
-            expect(s.id).toBe('s')
+        it('accepts an id without timing', () => {
+            const s = sequence([leaf()], { id: 's-id' })
+            expect(s.id).toBe('s-id')
 
-            const p = parallel([leaf()], ease, 'p')
-            expect(p.id).toBe('p')
+            const p = parallel([leaf()], { id: 'p-id' })
+            expect(p.id).toBe('p-id')
 
-            const l = loop(leaf(), 2, ease, 'l')
-            expect(l.id).toBe('l')
-        })
-
-        it('supports positional id with undefined timing', () => {
-            const s = sequence([leaf()], undefined, 's-pos')
-            expect(s.id).toBe('s-pos')
-
-            const p = parallel([leaf()], undefined, 'p-pos')
-            expect(p.id).toBe('p-pos')
-
-            const l = loop(leaf(), 2, undefined, 'l-pos')
-            expect(l.id).toBe('l-pos')
+            const l = loop(leaf(), 2, { id: 'l-id' })
+            expect(l.id).toBe('l-id')
         })
 
         it('throws TypeError on unknown option keys', () => {
@@ -95,16 +84,30 @@ describe('node options-object form unit tests', () => {
             expect(() => loop(leaf(), 2, { bad: true } as never)).toThrow(/bad/)
         })
 
-        it('throws TypeError when mixing options and positional arguments', () => {
-            expect(() =>
-                sequence([leaf()], { timing: ease }, 'pos-id' as never)
-            ).toThrow(TypeError)
-            expect(() =>
-                parallel([leaf()], { id: 'p' }, 'pos-id' as never)
-            ).toThrow(TypeError)
-            expect(() =>
-                loop(leaf(), 2, { timing: ease }, 'pos-id' as never)
-            ).toThrow(TypeError)
+        it('throws TypeError naming the options form for a positional timing', () => {
+            expect(() => loose(sequence)([leaf()], ease)).toThrow(
+                /sequence\(children, \{ timing, id \}\)/
+            )
+            expect(() => loose(parallel)([leaf()], ease)).toThrow(
+                /parallel\(children, \{ timing, id \}\)/
+            )
+            expect(() => loose(loop)(leaf(), 2, ease)).toThrow(
+                /loop\(child, count, \{ timing, id \}\)/
+            )
+        })
+
+        it('throws TypeError for extra arguments and non-object options', () => {
+            expect(() => loose(sequence)([leaf()], undefined, 'id')).toThrow(
+                TypeError
+            )
+            expect(() => loose(parallel)([leaf()], { id: 'p' }, 'x')).toThrow(
+                TypeError
+            )
+            expect(() => loose(loop)(leaf(), 2, { id: 'l' }, 'x')).toThrow(
+                TypeError
+            )
+            expect(() => loose(sequence)([leaf()], 'id')).toThrow(TypeError)
+            expect(() => loose(sequence)([leaf()], null)).toThrow(TypeError)
         })
     })
 
@@ -119,20 +122,17 @@ describe('node options-object form unit tests', () => {
             expect(st.offset).toBe(0.2)
         })
 
-        it('accepts positional offset, timing, and id', () => {
-            const st = stagger([leaf(), leaf()], 0.2, ease, 'st-pos')
-            expect(st.id).toBe('st-pos')
-            expect(st.offset).toBe(0.2)
-        })
-
         it('throws RangeError for missing or invalid offset in options', () => {
+            expect(() => stagger([leaf()], { offset: {} as never })).toThrow(
+                RangeError
+            )
             expect(() => stagger([leaf()], {} as never)).toThrow(RangeError)
             expect(() => stagger([leaf()], { offset: -0.5 })).toThrow(
                 RangeError
             )
-            expect(() =>
-                stagger([leaf()], { offset: Number.NaN } as never)
-            ).toThrow(RangeError)
+            expect(() => stagger([leaf()], { offset: Number.NaN })).toThrow(
+                RangeError
+            )
         })
 
         it('throws TypeError for unknown option keys in stagger', () => {
@@ -141,12 +141,15 @@ describe('node options-object form unit tests', () => {
             ).toThrow(/unknownKey/)
         })
 
-        it('throws TypeError when mixing options and positional arguments in stagger', () => {
+        it('throws TypeError naming the options form for a positional offset', () => {
+            expect(() => loose(stagger)([leaf()], 0.1)).toThrow(
+                /stagger\(children, \{ offset, timing, id \}\)/
+            )
+            expect(() => loose(stagger)([leaf()], 0.1, ease, 'id')).toThrow(
+                TypeError
+            )
             expect(() =>
-                stagger([leaf()], { offset: 0.1 }, ease as never)
-            ).toThrow(TypeError)
-            expect(() =>
-                stagger([leaf()], { offset: 0.1 }, undefined, 'pos-id' as never)
+                loose(stagger)([leaf()], { offset: 0.1 }, 'x')
             ).toThrow(TypeError)
         })
     })

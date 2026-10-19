@@ -1,42 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AnimationClock } from '~/loop/clock'
+import { ManualClock } from '~/ani/core/__tests__/manual_clock'
 import { type AnimationNode, ani, parallel, sequence, stagger } from '~/nodes'
-import { T, type TimingFunction } from '~/timing'
+import { type TimingFunction, timing } from '~/timing'
 import { rafTimeline } from '../timeline'
 
 // A simple linear timing function for predictable tests
-const linear: TimingFunction = T.linear()
-
-// Mock the AnimationClock to have manual control over time
-vi.mock('~/loop/clock', () => {
-    const subscribers = new Set<{
-        update: (dt: number) => void
-        commit?: () => void
-    }>()
-    return {
-        AnimationClock: {
-            create: () => ({
-                subscribe: (sub: any) => subscribers.add(sub),
-                unsubscribe: (sub: any) => subscribers.delete(sub),
-                // Manual tick function for tests
-                tick: (dt: number) => {
-                    const frame = [...subscribers]
-                    for (const sub of frame) sub.update(dt)
-                    for (const sub of frame) sub.commit?.()
-                },
-            }),
-        },
-    }
-})
+const linear: TimingFunction = timing.linear()
 
 describe('Timeline Controller', () => {
-    let clock: any
+    // Hand-driven clock: `clock.tick(dt)` advances every subscriber
+    let clock: ManualClock
 
     beforeEach(() => {
-        vi.clearAllMocks()
-        // Reset the mock clock before each test
-        const MockClock = AnimationClock.create()
-        clock = MockClock
+        clock = new ManualClock()
     })
 
     it('should correctly calculate total duration upon creation', () => {
@@ -57,7 +33,7 @@ describe('Timeline Controller', () => {
             ani({ to: [100], duration: 1, timing: linear }),
             ani({ to: [200], duration: 1, timing: linear }),
         ])
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -97,7 +73,7 @@ describe('Timeline Controller', () => {
         ])
 
         // >> x = 200 / y = 100 wins
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate((a) => {
             onUpdate(a)
@@ -128,9 +104,9 @@ describe('Timeline Controller', () => {
                 ani({ to: [100], duration: 1, timing: linear }), // 0s -> 1s
                 ani({ to: [200], duration: 1, timing: linear }), // 0.75s -> 1.75s
             ],
-            0.75
+            { offset: 0.75 }
         )
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate((arg) => {
             onUpdate(arg)
@@ -167,7 +143,7 @@ describe('Timeline Controller', () => {
 
     it('should pause and resume correctly', () => {
         const root = ani({ to: [100], duration: 2, timing: linear })
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -195,7 +171,7 @@ describe('Timeline Controller', () => {
             ani({ to: [100], duration: 1, timing: linear }),
             ani({ to: [0], duration: 1, timing: linear }),
         ])
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -222,7 +198,7 @@ describe('Timeline Controller', () => {
 
     it('should resume correctly after a seek', () => {
         const root = ani({ to: [100], duration: 2, timing: linear })
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -247,7 +223,7 @@ describe('Timeline Controller', () => {
             ani({ to: { y: 200 }, duration: 0, timing: linear }), // Jumps instantly
             ani({ to: { y: 200 }, duration: 1, timing: linear }),
         ])
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate((a) => {
             onUpdate(a)
@@ -285,7 +261,7 @@ describe('Timeline Controller', () => {
             ani({ to: { z: 300 }, duration: 1, timing: linear }),
         ])
 
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -313,7 +289,7 @@ describe('Timeline Controller', () => {
                 ani({ to: { y: 100 }, duration: 1, timing: linear }),
             ]),
         ])
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -344,14 +320,14 @@ describe('Timeline Controller', () => {
                     }),
                     ani({ to: { b: 20 }, duration: 0.5, timing: linear }),
                 ],
-                0.2
+                { offset: 0.2 }
             ),
             parallel([
                 ani({ to: { a: 0, b: 0 }, duration: 1, timing: linear }),
                 ani({ to: { b: 0 }, duration: 1, timing: linear }),
             ]),
         ])
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -376,11 +352,11 @@ describe('Timeline Controller', () => {
         const root = sequence([
             ani({ to: [100], duration: 1, timing: linear }),
             parallel([]),
-            stagger([], 0.1),
+            stagger([], { offset: 0.1 }),
             sequence([]),
             ani({ to: [200], duration: 1, timing: linear }),
         ])
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -401,7 +377,7 @@ describe('Timeline Controller', () => {
 
     it('should reset and play again with a different from state', () => {
         const root = ani({ to: [100], duration: 1, timing: linear })
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         const onUpdate = vi.fn()
         line.onUpdate(onUpdate)
 
@@ -427,7 +403,7 @@ describe('Timeline Controller', () => {
 
     it('should not have transitionTo method for non-state nodes', () => {
         const root = ani({ to: { x: 1 }, duration: 1 })
-        const line = rafTimeline(root, clock)
+        const line = rafTimeline(root, { clock })
         // @ts-expect-error transitionTo should not exist
         expect(line.transitionTo).toBeUndefined()
     })
@@ -435,7 +411,7 @@ describe('Timeline Controller', () => {
     describe('`ENDED` state behavior', () => {
         it('should have status "ENDED" and hold the final state upon completion', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -453,21 +429,21 @@ describe('Timeline Controller', () => {
             expect(onUpdate).toHaveBeenCalledTimes(callCount)
         })
 
-        it('should return the final state via getCurrentValue() after ending', () => {
+        it('should return the final state as value after ending', () => {
             const root = ani({ to: { x: 50 }, duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
 
-            expect(line.getCurrentValue()).toBeNull()
+            expect(line.value).toBeNull()
 
             line.play({ from: { x: 0 } })
             clock.tick(1)
 
-            expect(line.getCurrentValue()).toEqual({ x: 50 })
+            expect(line.value).toEqual({ x: 50 })
         })
 
         it('should allow seeking after the timeline has ended', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -487,7 +463,7 @@ describe('Timeline Controller', () => {
 
         it('should allow playing a new animation after the previous one has ended', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -520,7 +496,7 @@ describe('Timeline Controller', () => {
                 ani({ to: { x: 100 }, duration: 1, timing: linear }),
                 ani({ to: { x: 200 }, duration: 1, timing: linear }),
             ])
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -547,7 +523,7 @@ describe('Timeline Controller', () => {
                 ani({ to: { x: 100 }, duration: 1 }),
                 ani({ to: { x: 200 }, duration: 1 }),
             ])
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
 
             const playWithWrongKeyframes = () => {
                 line.play({
@@ -563,7 +539,7 @@ describe('Timeline Controller', () => {
 
         it('should end immediately when duration is overridden to zero', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -584,7 +560,7 @@ describe('Timeline Controller', () => {
     describe('Repeat Behavior', () => {
         it('should treat repeat as additional runs after the first play', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -612,7 +588,7 @@ describe('Timeline Controller', () => {
     describe('Delay Behavior', () => {
         it('should delay the start of the animation', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -654,7 +630,7 @@ describe('Timeline Controller', () => {
 
         it('should handle a delay of zero correctly', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -667,7 +643,7 @@ describe('Timeline Controller', () => {
 
         it('should pause and resume during the delay period', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -695,7 +671,7 @@ describe('Timeline Controller', () => {
 
         it('should reset correctly during the delay period', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -716,7 +692,7 @@ describe('Timeline Controller', () => {
 
         it('should bypass the delay when seeking', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
@@ -739,7 +715,7 @@ describe('Timeline Controller', () => {
 
         it('should only apply the delay on the first run, not on repetitions', () => {
             const root = ani({ to: [100], duration: 1, timing: linear })
-            const line = rafTimeline(root, clock)
+            const line = rafTimeline(root, { clock })
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 

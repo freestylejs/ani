@@ -151,7 +151,7 @@ export function segmentCount(node: NodeSpec): number {
         case 'delay':
             return 1
         case 'loop':
-            return node.count * segmentCount(node.child)
+            return segmentCount(node.child)
         default:
             return node.children.reduce((sum, c) => sum + segmentCount(c), 0)
     }

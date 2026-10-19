@@ -23,12 +23,12 @@ function seekInOrder(
     times: readonly number[],
     order: readonly number[]
 ): Snapshots {
-    const line = rafTimeline(node, new ManualClock())
+    const line = rafTimeline(node, { clock: new ManualClock() })
     line.play({ from })
     const out: Snapshots = {}
     for (const index of order) {
         line.seek(times[index]!)
-        out[index] = snapshot(line.getCurrentValue()!)
+        out[index] = snapshot(line.value!)
     }
     return out
 }
@@ -55,10 +55,10 @@ describe('P1: seek determinism', () => {
             const descending = seekInOrder(node, from, times, descendingOrder)
             const fresh: Snapshots = {}
             for (let j = 0; j < times.length; j++) {
-                const line = rafTimeline(node, new ManualClock())
+                const line = rafTimeline(node, { clock: new ManualClock() })
                 line.play({ from })
                 line.seek(times[j]!)
-                fresh[j] = snapshot(line.getCurrentValue()!)
+                fresh[j] = snapshot(line.value!)
             }
 
             for (let j = 0; j < times.length; j++) {

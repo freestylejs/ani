@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { ManualClock } from '~/ani/core/__tests__/manual_clock'
 import { ani, loop } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { rafGroup } from '../group'
 
-const linear = T.linear()
+const linear = timing.linear()
 const tree = (duration = 1) => ani({ to: { x: 100 }, duration, timing: linear })
 
 function xs(group: ReturnType<typeof rafGroup<{ x: number }>>): number[] {
@@ -64,7 +64,7 @@ describe('rafGroup', () => {
             ani({
                 to: { x: 100 },
                 duration: 30,
-                timing: T.dynamicSpring({ m: 1, k: 170, c: 26 }),
+                timing: timing.dynamicSpring({ m: 1, k: 170, c: 26 }),
             }),
             { clock, stagger: 0.1 }
         )
@@ -95,7 +95,7 @@ describe('rafGroup', () => {
 
     it('does not inherit velocity from targets that already finished', () => {
         const clock = new ManualClock()
-        const spring = T.dynamicSpring({ m: 1, k: 100, c: 10 })
+        const spring = timing.dynamicSpring({ m: 1, k: 100, c: 10 })
         const node = ani({ to: { x: 800 }, duration: 2, timing: spring })
         const group = rafGroup(node, { clock, stagger: 0.5 })
         group.play({ from: { x: 0 }, count: 2 })

@@ -55,7 +55,7 @@ The `createAni` primitive acts as a bridge between the `@freestylejs/ani-core` e
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Accessor<RafAniTimeline<G>>` | Timeline to read, or an accessor of one. |
+| `timeline` | `RafTimeline<G> \| Accessor<RafTimeline<G>>` | Timeline to read, or an accessor of one. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
 Returns `readonly [value, controller]`: an accessor of the current `AniGroup<G>` and the timeline controller.

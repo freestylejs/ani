@@ -92,7 +92,7 @@ const SequenceDemo = () => {
     const ref = useRef<HTMLDivElement>(null)
 
     const myTimeline = useMemo(() => {
-        return a.timeline(
+        return a.waapiTimeline(
             a.sequence(
                 [
                     a.ani({
@@ -141,7 +141,7 @@ const SequenceDemo = () => {
                         duration: 0.5,
                     }),
                 ],
-                a.timing.spring({ m: 1, k: 120, c: 15 })
+                { timing: a.timing.spring({ m: 1, k: 120, c: 15 }) }
             )
         )
     }, [])

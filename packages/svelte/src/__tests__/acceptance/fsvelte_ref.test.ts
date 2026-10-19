@@ -2,8 +2,8 @@
 
 import * as a from '@freestylejs/ani-core'
 import {
-    type RafAniTimeline,
     type RafGroup,
+    type RafTimeline,
     rafGroup,
     rafTimeline,
 } from '@freestylejs/ani-core'
@@ -16,9 +16,7 @@ import { useAniGroup, useAniRef } from '../../index'
 
 const scope = vi.hoisted(() => ({ destroyers: [] as Array<() => void> }))
 const bypass = vi.hoisted(() => ({
-    applyStyleSheet: vi.fn(),
     createTimelineController: vi.fn(),
-    EventManager: vi.fn(),
 }))
 
 vi.mock('svelte', async (importOriginal) => ({
@@ -28,30 +26,19 @@ vi.mock('svelte', async (importOriginal) => ({
     },
 }))
 
-// Pass-through spies: the binding must style through `bind` / `bindAt` only.
+// Pass-through spy: the binding must style through `bind` / `bindAt`, not a
+// controller.
 vi.mock('@freestylejs/ani-core', async (importOriginal) => {
     const original =
         await importOriginal<typeof import('@freestylejs/ani-core')>()
     return {
         ...original,
-        applyStyleSheet: (
-            ...args: Parameters<typeof original.applyStyleSheet>
-        ) => {
-            bypass.applyStyleSheet()
-            return original.applyStyleSheet(...args)
-        },
         createTimelineController: (
             ...args: Parameters<typeof original.createTimelineController>
         ) => {
             bypass.createTimelineController()
             return original.createTimelineController(...args)
         },
-        EventManager: new Proxy(original.EventManager, {
-            construct(target, args, newTarget) {
-                bypass.EventManager()
-                return Reflect.construct(target, args, newTarget)
-            },
-        }),
     }
 })
 
@@ -101,9 +88,7 @@ const opacityOf = (el: HTMLElement) => Number(el.style.opacity)
 describe('FSVELTE: useAniRef', () => {
     beforeEach(() => {
         scope.destroyers.length = 0
-        bypass.applyStyleSheet.mockClear()
         bypass.createTimelineController.mockClear()
-        bypass.EventManager.mockClear()
     })
     afterEach(() => {
         document.body.innerHTML = ''
@@ -283,7 +268,7 @@ describe('FSVELTE: useAniRef', () => {
         const t1 = rafTimeline(node(), { clock: first.clock })
         const t2 = rafTimeline(node(), { clock: second.clock })
         t2.play({ from: { opacity: 0.6 } })
-        const store = writable<RafAniTimeline<{ opacity: number }>>(t1)
+        const store = writable<RafTimeline<{ opacity: number }>>(t1)
         const { action } = useAniRef(store, { initialValue: { opacity: 0 } })
         const n1 = makeEl()
         const n2 = makeEl()
@@ -311,7 +296,7 @@ describe('FSVELTE: useAniRef', () => {
         const m = clockOf()
         const t1 = rafTimeline(node(), { clock: m.clock })
         const t2 = rafTimeline(node(), { clock: m.clock })
-        const store = writable<RafAniTimeline<{ opacity: number }>>(t1)
+        const store = writable<RafTimeline<{ opacity: number }>>(t1)
         let live = 0
         const watched = {
             subscribe: (run: Parameters<typeof store.subscribe>[0]) => {
@@ -374,7 +359,7 @@ describe('FSVELTE: useAniRef', () => {
         listeners.restore()
     })
 
-    it('R16: writes go through core only (no applyStyleSheet, controller or event manager)', () => {
+    it('R16: writes go through core only (no controller)', () => {
         const m = clockOf()
         const timeline = rafTimeline(node(), { clock: m.clock })
         const { action } = useAniRef(timeline, {
@@ -396,9 +381,7 @@ describe('FSVELTE: useAniRef', () => {
         m.frames(3, 100)
         gbinding.destroy()
 
-        expect(bypass.applyStyleSheet).not.toHaveBeenCalled()
         expect(bypass.createTimelineController).not.toHaveBeenCalled()
-        expect(bypass.EventManager).not.toHaveBeenCalled()
     })
 })
 

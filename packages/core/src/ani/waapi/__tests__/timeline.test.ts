@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rafTimeline } from '~/ani/raf'
 import { ani } from '~/nodes'
-import { webTimeline } from '../timeline'
+import { isWaapiTimeline, waapiTimeline } from '../timeline'
 
 interface MockEffect {
     target: Element
@@ -67,7 +68,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should interpret repeat as additional iterations', () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
             repeat: 2,
@@ -77,7 +78,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should forward effect options to KeyframeEffect', () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
             effect: {
@@ -91,7 +92,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should apply resolver while compiling keyframes', () => {
-        const timeline = webTimeline(ani({ to: { x: 100 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { x: 100 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { x: 0 },
             resolver: {
@@ -112,8 +113,34 @@ describe('WebAniTimeline', () => {
         expect(last!.x).toBeUndefined()
     })
 
+    it('isWaapiTimeline accepts a timeline and an object with the same surface', () => {
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const facade = {
+            status: timeline.status,
+            duration: timeline.duration,
+            animations: timeline.animations,
+            value: timeline.value,
+            play: timeline.play,
+            pause: timeline.pause,
+            resume: timeline.resume,
+            seek: timeline.seek,
+            finish: timeline.finish,
+            cancel: timeline.cancel,
+            reset: timeline.reset,
+            dispose: timeline.dispose,
+            valueAt: timeline.valueAt,
+            onStatus: timeline.onStatus,
+        }
+        expect(isWaapiTimeline(timeline)).toBe(true)
+        expect(isWaapiTimeline(facade)).toBe(true)
+        expect(isWaapiTimeline({ ...facade, finish: undefined })).toBe(false)
+        expect(
+            isWaapiTimeline(rafTimeline(ani({ to: [1], duration: 1 })))
+        ).toBe(false)
+    })
+
     it('should expose cancel alias with reset behavior', () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
         })
@@ -127,7 +154,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should pause, resume and seek every target keeping its delay', () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 2 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 2 }))
         const targets = [{}, {}] as Element[]
         timeline.play(targets, { from: { opacity: 0 }, stagger: 0.5 })
 
@@ -152,7 +179,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should leave finished targets alone on pause and resume', () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play([{}, {}] as Element[], {
             from: { opacity: 0 },
             stagger: 0.5,
@@ -169,7 +196,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should not start a run from a listener notified during dispose', async () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         const element = {} as Element
         timeline.play(element, { from: { opacity: 0 } })
         let replay: Promise<string> | null = null
@@ -190,7 +217,7 @@ describe('WebAniTimeline', () => {
         vi.stubGlobal('queueMicrotask', (task: () => void) => {
             deferred.push(task)
         })
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         const seen: string[] = []
         timeline.onStatus(() => {
             throw new Error('listener failed')
@@ -208,7 +235,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should commit and cancel the held animations of an ended run', async () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         const element = {} as Element
         const first = timeline.play(element, { from: { opacity: 0 } })
         timeline.finish()
@@ -220,7 +247,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('should refuse to finish an endless run', () => {
-        const timeline = webTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { opacity: 1 }, duration: 1 }))
         timeline.play({} as Element, {
             from: { opacity: 0 },
             repeat: Infinity,

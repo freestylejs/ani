@@ -1,7 +1,7 @@
 import * as a from '@freestylejs/ani-core'
 import {
-    type RafAniTimeline,
     type RafGroup,
+    type RafTimeline,
     rafGroup,
     rafTimeline,
 } from '@freestylejs/ani-core'
@@ -24,14 +24,14 @@ describe('solid public types', () => {
         const check = () => {
             const timeline = rafTimeline(node)
             expectTypeOf(createAni(() => timeline, { x: 0 })).toEqualTypeOf<
-                readonly [() => G, RafAniTimeline<G>]
+                readonly [() => G, RafTimeline<G>]
             >()
             expectTypeOf(createAni(timeline, { x: 0 })[1]).toEqualTypeOf<
-                RafAniTimeline<G>
+                RafTimeline<G>
             >()
 
             const owned = createTimeline(() => rafTimeline(node))
-            expectTypeOf(owned).toEqualTypeOf<RafAniTimeline<G>>()
+            expectTypeOf(owned).toEqualTypeOf<RafTimeline<G>>()
 
             const single = createAniRef(timeline, { initialValue: { x: 0 } })
             expectTypeOf(single.style).toEqualTypeOf<Style>()

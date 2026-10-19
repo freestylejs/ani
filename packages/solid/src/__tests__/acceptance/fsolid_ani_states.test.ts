@@ -2,8 +2,8 @@
 
 import * as a from '@freestylejs/ani-core'
 import {
+    type Clock,
     createClock,
-    type ManagedClock,
     type Resolver,
     type RunResult,
 } from '@freestylejs/ani-core'
@@ -25,8 +25,7 @@ interface Machine {
     readonly value: Values
     transitionTo(
         state: string,
-        config?: { interrupt?: boolean; from?: Values },
-        canBeIntercepted?: boolean
+        config?: { interrupt?: boolean; from?: Values }
     ): Promise<RunResult>
     timeline(): { readonly value: Values | null; readonly status: string }
     dispose(): void
@@ -42,7 +41,7 @@ type Config = {
     initial: StateName
     initialValue: Values
     states: Record<StateName, ReturnType<typeof a.ani>>
-    clock: ManagedClock
+    clock: Clock
     resolver?: Resolver<Record<string, number>>
 }
 

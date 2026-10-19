@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as root from '../../index'
-import { a, type FollowOptions, follow, type RunResult } from '../../index'
+import * as a from '../../index'
+import { type FollowOptions, follow, type RunResult } from '../../index'
 import { createManualClock, type ManualClock } from '../../testing'
 
 type Y = { y: number }

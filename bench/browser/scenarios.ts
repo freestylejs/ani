@@ -23,6 +23,7 @@ interface AniTimingFunction {
 }
 
 export interface RafTimelineHandle {
+    bind(target: HTMLElement): () => void
     onUpdate(
         callback: (payload: { state: StyleState; status: string }) => void
     ): () => void
@@ -37,19 +38,15 @@ export interface WaapiTimelineHandle {
 
 /** The subset of the ANI module namespace the scenarios use. */
 export interface AniRuntime {
-    a: {
-        ani(props: {
-            to: StyleState
-            duration: number
-            timing: AniTimingFunction
-        }): AniNode
-        sequence(children: readonly AniNode[]): AniNode
-        rafTimeline(node: AniNode): RafTimelineHandle
-        waapiTimeline(node: AniNode): WaapiTimelineHandle
-        timing: { linear(): AniTimingFunction }
-    }
-    createStyleSheet(state: StyleState): Record<string, unknown>
-    applyStyleSheet(element: HTMLElement, style: Record<string, unknown>): void
+    ani(props: {
+        to: StyleState
+        duration: number
+        timing: AniTimingFunction
+    }): AniNode
+    sequence(children: readonly AniNode[]): AniNode
+    rafTimeline(node: AniNode): RafTimelineHandle
+    waapiTimeline(node: AniNode): WaapiTimelineHandle
+    timing: { linear(): AniTimingFunction }
 }
 
 /** State shared inside the page between scenario setup and teardown. */
@@ -127,7 +124,7 @@ export const stopAll: () => void = () => {
 
 /** One `rafTimeline` per element (today's pattern). */
 export const rafTimelines: ScenarioSetup = ({ n }) => {
-    const { a, createStyleSheet, applyStyleSheet } = window.__ani
+    const a = window.__ani
     const elements = window.__bench.build(n)
     const node = a.ani({
         to: { translateX: 200, opacity: 1 },
@@ -137,9 +134,7 @@ export const rafTimelines: ScenarioSetup = ({ n }) => {
     const startedAt = performance.now()
     const timelines = elements.map((element) => {
         const timeline = a.rafTimeline(node)
-        timeline.onUpdate(({ state }) => {
-            applyStyleSheet(element, createStyleSheet(state))
-        })
+        timeline.bind(element)
         timeline.play({
             from: { translateX: 0, opacity: 0.2 },
             repeat: Infinity,
@@ -155,7 +150,7 @@ export const rafTimelines: ScenarioSetup = ({ n }) => {
 
 /** One `rafTimeline` whose update writes every element (future group). */
 export const rafShared: ScenarioSetup = ({ n }) => {
-    const { a, createStyleSheet, applyStyleSheet } = window.__ani
+    const a = window.__ani
     const elements = window.__bench.build(n)
     const node = a.ani({
         to: { translateX: 200, opacity: 1 },
@@ -164,10 +159,7 @@ export const rafShared: ScenarioSetup = ({ n }) => {
     })
     const timeline = a.rafTimeline(node)
     const startedAt = performance.now()
-    timeline.onUpdate(({ state }) => {
-        const style = createStyleSheet(state)
-        for (const element of elements) applyStyleSheet(element, style)
-    })
+    for (const element of elements) timeline.bind(element)
     timeline.play({ from: { translateX: 0, opacity: 0.2 }, repeat: Infinity })
     const setupMs = performance.now() - startedAt
     window.__bench.stops.push(() => timeline.dispose())
@@ -176,7 +168,7 @@ export const rafShared: ScenarioSetup = ({ n }) => {
 
 /** One timeline per element over a 20-segment sequence (same total motion). */
 export const rafDeep: ScenarioSetup = ({ n }) => {
-    const { a, createStyleSheet, applyStyleSheet } = window.__ani
+    const a = window.__ani
     const elements = window.__bench.build(n)
     const segmentCount = 20
     const segments = []
@@ -196,9 +188,7 @@ export const rafDeep: ScenarioSetup = ({ n }) => {
     const startedAt = performance.now()
     const timelines = elements.map((element) => {
         const timeline = a.rafTimeline(node)
-        timeline.onUpdate(({ state }) => {
-            applyStyleSheet(element, createStyleSheet(state))
-        })
+        timeline.bind(element)
         timeline.play({
             from: { translateX: 0, opacity: 0.2 },
             repeat: Infinity,
@@ -214,7 +204,7 @@ export const rafDeep: ScenarioSetup = ({ n }) => {
 
 /** One `waapiTimeline` per element, played natively through WAAPI. */
 export const waapi: ScenarioSetup = ({ n }) => {
-    const { a } = window.__ani
+    const a = window.__ani
     const elements = window.__bench.build(n)
     const node = a.ani({
         to: { translateX: 200, opacity: 1 },
@@ -237,7 +227,7 @@ export const waapi: ScenarioSetup = ({ n }) => {
 
 /** Like `raf-timelines`, but every update forces a synchronous layout. */
 export const rafThrash: ScenarioSetup = ({ n }) => {
-    const { a, createStyleSheet, applyStyleSheet } = window.__ani
+    const a = window.__ani
     const elements = window.__bench.build(n)
     const node = a.ani({
         to: { translateX: 200, opacity: 1 },
@@ -247,10 +237,11 @@ export const rafThrash: ScenarioSetup = ({ n }) => {
     const startedAt = performance.now()
     const timelines = elements.map((element) => {
         const timeline = a.rafTimeline(node)
-        timeline.onUpdate(({ state }) => {
-            // Reading forces a layout the V2 commit phase must remove.
+        timeline.bind(element)
+        timeline.onUpdate(() => {
+            // The bound write is already pending: reading forces a layout
+            // the V2 commit phase must remove.
             void element.offsetWidth
-            applyStyleSheet(element, createStyleSheet(state))
         })
         timeline.play({
             from: { translateX: 0, opacity: 0.2 },

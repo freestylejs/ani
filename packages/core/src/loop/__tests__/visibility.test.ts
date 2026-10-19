@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Animatable, AnimationClock } from '../clock'
+import type { Animatable } from '../clock'
 import { createClock } from '../clock'
 import { createFrameDriver } from './frame_driver'
 
@@ -141,7 +141,7 @@ describe('clock visibility (M3)', () => {
         })
         clock.subscribe({ update: () => undefined })
 
-        expect(() => (clock as AnimationClock).dispose()).not.toThrow()
+        expect(() => clock.dispose()).not.toThrow()
         expect(errors).toEqual([failure])
         expect(clock.size).toBe(0)
     })
@@ -152,7 +152,7 @@ describe('clock visibility (M3)', () => {
         clock.subscribe({ update: () => undefined })
         probe.setHidden(true)
 
-        ;(clock as AnimationClock).dispose()
+        clock.dispose()
         const dts: number[] = []
         clock.subscribe({ update: (dt) => dts.push(dt) })
         driver.frame(40)

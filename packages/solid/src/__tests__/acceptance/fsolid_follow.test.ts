@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 import {
+    type Clock,
     createClock,
     type Follower,
     type FollowOptions,
-    type ManagedClock,
     type Resolver,
 } from '@freestylejs/ani-core'
 import { type Accessor, createRoot, getOwner, runWithOwner } from 'solid-js'
@@ -33,7 +33,7 @@ function makeClock() {
     let time = 1000
     let nextId = 1
     const queue = new Map<number, (timestamp: number) => void>()
-    const clock: ManagedClock = createClock({
+    const clock: Clock = createClock({
         lagThreshold: Infinity,
         requestFrame: (callback) => {
             const id = nextId++

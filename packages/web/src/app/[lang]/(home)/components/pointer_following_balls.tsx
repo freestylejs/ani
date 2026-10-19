@@ -159,7 +159,7 @@ export const PointerFollowingBalls = ({
                 'glass-3 group relative h-full min-h-52 w-full cursor-pointer rounded-xl border border-transparent border-dashed transition-colors duration-200 hover:border-zinc-200 hover:bg-zinc-50 dark:hover:border-zinc-800 hover:dark:bg-transparent'
             )}
         >
-            <div className="-translate-x-1/2 -translate-y-1/2 absolute top-1/2 left-1/2 text-center text-gray-500 opacity-100 transition-opacity duration-300 group-hover:opacity-50 dark:text-gray-400">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center text-gray-500 opacity-100 transition-opacity duration-300 group-hover:opacity-50 dark:text-gray-400">
                 <p className="font-semibold text-lg">Move your mouse</p>
                 <p>The balls will follow you.</p>
             </div>

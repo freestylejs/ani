@@ -1,14 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { BezierTimingFunction, T } from '~/timing'
+import { type BezierTimingFunction, timing } from '~/timing'
 
 const PRESETS: [string, BezierTimingFunction][] = [
-    ['ease', T.ease()],
-    ['easeIn', T.easeIn()],
-    ['easeOut', T.easeOut()],
-    ['easeInOut', T.easeInOut()],
-    ['custom', T.bezier({ p2: { x: 0.2, y: 0.9 }, p3: { x: 0.7, y: 0.3 } })],
-    ['flat start', T.bezier({ p2: { x: 0, y: 0.5 }, p3: { x: 1, y: 0.5 } })],
-    ['steep', T.bezier({ p2: { x: 0.9, y: 0 }, p3: { x: 1, y: 0.1 } })],
+    ['ease', timing.ease()],
+    ['easeIn', timing.easeIn()],
+    ['easeOut', timing.easeOut()],
+    ['easeInOut', timing.easeInOut()],
+    [
+        'custom',
+        timing.bezier({ p2: { x: 0.2, y: 0.9 }, p3: { x: 0.7, y: 0.3 } }),
+    ],
+    [
+        'flat start',
+        timing.bezier({ p2: { x: 0, y: 0.5 }, p3: { x: 1, y: 0.5 } }),
+    ],
+    ['steep', timing.bezier({ p2: { x: 0.9, y: 0 }, p3: { x: 1, y: 0.1 } })],
 ]
 
 describe('BezierTimingFunction.ease', () => {
@@ -41,7 +47,7 @@ describe('BezierTimingFunction.ease', () => {
     })
 
     it('is the identity for a linear bezier', () => {
-        const linear = T.bezier({
+        const linear = timing.bezier({
             p2: { x: 0.25, y: 0.25 },
             p3: { x: 0.75, y: 0.75 },
         })
@@ -49,19 +55,19 @@ describe('BezierTimingFunction.ease', () => {
     })
 
     it('step eases the segment', () => {
-        const timing = T.easeInOut()
-        const { value, endOfAnimation } = timing.step(0.5, {
+        const easeInOut = timing.easeInOut()
+        const { value, endOfAnimation } = easeInOut.step(0.5, {
             duration: 1,
             from: 10,
             to: 20,
-        } as Parameters<typeof timing.step>[1])
+        } as Parameters<typeof easeInOut.step>[1])
         expect(value).toBeCloseTo(15, 12)
         expect(endOfAnimation).toBe(false)
     })
 
     it('rejects control point x outside [0, 1]', () => {
         expect(() =>
-            T.bezier({ p2: { x: 1.1, y: 0 }, p3: { x: 0.5, y: 1 } })
+            timing.bezier({ p2: { x: 1.1, y: 0 }, p3: { x: 0.5, y: 1 } })
         ).toThrow(RangeError)
     })
 })

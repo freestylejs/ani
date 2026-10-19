@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { a } from '../../../index'
+import * as a from '../../../index'
 import { compileTiming } from '../compiler/timing_compiler'
 
 describe('Timing Compiler', () => {

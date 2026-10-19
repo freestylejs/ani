@@ -121,7 +121,7 @@ async function loadCore(): Promise<CoreModules> {
     try {
         const index = await import(new URL('index.js', dist).href)
         const testing = await import(new URL('testing.js', dist).href)
-        return { a: index.a, createManualClock: testing.createManualClock }
+        return { a: index, createManualClock: testing.createManualClock }
     } catch (error) {
         process.stderr.write(
             `Cannot load the built core (${error instanceof Error ? error.message : String(error)}).\nBuild it first: pnpm --filter @freestylejs/ani-core build\n`

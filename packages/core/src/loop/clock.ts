@@ -108,9 +108,10 @@ export interface ReducedMotionSource {
 }
 
 /**
- * Clock that exposes how many animatables it currently drives.
+ * A frame clock: what `createClock`, `defaultClock` and `createManualClock`
+ * hand out. It also exposes how many animatables it currently drives.
  */
-export type ManagedClock = AnimationClockInterface & {
+export type Clock = AnimationClockInterface & {
     readonly size: number
     /**
      * Whether the user prefers reduced motion right now (see the
@@ -183,7 +184,7 @@ interface FrameSource {
 function assertPositive(name: string, value: number): number {
     if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
         throw new RangeError(
-            `[AnimationClock] ${name} must be a positive number (Infinity allowed), received ${value}.`
+            `[Clock] ${name} must be a positive number (Infinity allowed), received ${value}.`
         )
     }
     return value
@@ -192,7 +193,7 @@ function assertPositive(name: string, value: number): number {
 function assertTimeScale(value: unknown): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
         throw new RangeError(
-            `[AnimationClock] timeScale must be a finite number >= 0, received ${String(value)}.`
+            `[Clock] timeScale must be a finite number >= 0, received ${String(value)}.`
         )
     }
     return value
@@ -214,7 +215,7 @@ function resolveVisibility(value: unknown): boolean | VisibilitySource {
     if (typeof value === 'boolean') return value
     if (isVisibilitySource(value)) return value
     throw new TypeError(
-        `[AnimationClock] visibility must be a boolean or an object with a boolean "hidden" and "addEventListener" / "removeEventListener" functions, received ${String(value)}.`
+        `[Clock] visibility must be a boolean or an object with a boolean "hidden" and "addEventListener" / "removeEventListener" functions, received ${String(value)}.`
     )
 }
 
@@ -247,7 +248,7 @@ function resolveReducedMotion(
     if (typeof value === 'boolean') return value
     if (isReducedMotionSource(value)) return value
     throw new TypeError(
-        `[AnimationClock] reducedMotion must be 'system', a boolean or an object with a boolean "matches", received ${String(value)}.`
+        `[Clock] reducedMotion must be 'system', a boolean or an object with a boolean "matches", received ${String(value)}.`
     )
 }
 
@@ -277,7 +278,7 @@ function rethrowAsync(error: unknown): void {
  * - subscribing always (re)starts the loop when no live frame is pending;
  * - without a frame source (SSR, plain workers) subscribing is a no-op.
  */
-export class AnimationClock implements ManagedClock {
+class AnimationClock implements Clock {
     private readonly subscribers: Set<Animatable> = new Set()
     // Reused per-tick snapshot, avoids a per-frame allocation.
     private readonly snapshot: (Animatable | undefined)[] = []
@@ -327,53 +328,8 @@ export class AnimationClock implements ManagedClock {
     private armedAt = 0
     private lastTimestamp = 0
 
-    /**
-     * Process-wide default clock, same as {@link defaultClock}.
-     * @param maxDeltaTime when given, it is applied to the default clock as a
-     * hard per-frame cap. Unlimited by default.
-     */
-    public static create(maxDeltaTime?: number): AnimationClock {
-        if (maxDeltaTime !== undefined) {
-            defaultClock.setTiming({ maxDeltaTime })
-        }
-        return defaultClock
-    }
-
-    /**
-     * Reconfigure the default clock (created if needed). A number sets
-     * `maxDeltaTime`; an object sets any of `lagThreshold` / `maxDeltaTime`.
-     */
-    public static configure(
-        timing: number | ClockTimingOptions
-    ): AnimationClock {
-        const clock = AnimationClock.create()
-        clock.setTiming(
-            typeof timing === 'number' ? { maxDeltaTime: timing } : timing
-        )
-        return clock
-    }
-
-    /**
-     * Disposes {@link defaultClock} (stops its frame loop and drops its
-     * subscribers) and restores its defaults: timing options, `timeScale` 1,
-     * not paused. The instance stays the same, so references remain valid.
-     * Intended for test isolation and hot-reload teardown.
-     */
-    public static reset(): void {
-        const clock = defaultClock
-        clock.dispose()
-        clock.scale = 1
-        clock.maxDeltaTime = Infinity
-        clock.lagThreshold = DEFAULT_LAG_THRESHOLD
-        clock.ordinaryFrame = DEFAULT_FRAME
-    }
-
-    /**
-     * Prefer {@link createClock} / {@link AnimationClock.create}.
-     */
-    public constructor(options: CreateClockOptions | number = {}) {
-        this.options =
-            typeof options === 'number' ? { maxDeltaTime: options } : options
+    public constructor(options: CreateClockOptions = {}) {
+        this.options = options
         this.visibility = resolveVisibility(this.options.visibility)
         this.reducedMotionOption = resolveReducedMotion(
             this.options.reducedMotion
@@ -381,7 +337,7 @@ export class AnimationClock implements ManagedClock {
         if (this.options.timeScale !== undefined) {
             this.scale = assertTimeScale(this.options.timeScale)
         }
-        this.setTiming(this.options)
+        this.configure(this.options)
     }
 
     /**
@@ -389,15 +345,7 @@ export class AnimationClock implements ManagedClock {
      * every field is validated first, and an invalid one throws and changes
      * nothing.
      */
-    public configure(timing: ClockTimingOptions): void {
-        this.setTiming(timing)
-    }
-
-    // Validates everything before applying anything.
-    private setTiming({
-        lagThreshold,
-        maxDeltaTime,
-    }: ClockTimingOptions): void {
+    public configure({ lagThreshold, maxDeltaTime }: ClockTimingOptions): void {
         const lag =
             lagThreshold === undefined
                 ? this.lagThreshold
@@ -541,6 +489,18 @@ export class AnimationClock implements ManagedClock {
         this.cancelPending()
         this.armed = false
         this.detachVisibility()
+    }
+
+    /**
+     * @private Internal: `dispose()` plus the defaults (timing options,
+     * `timeScale` 1, not paused), for `resetDefaultClock`.
+     */
+    restoreDefaults(): void {
+        this.dispose()
+        this.scale = 1
+        this.maxDeltaTime = Infinity
+        this.lagThreshold = DEFAULT_LAG_THRESHOLD
+        this.ordinaryFrame = DEFAULT_FRAME
     }
 
     /**
@@ -868,7 +828,7 @@ export class AnimationClock implements ManagedClock {
  * animations manually in tests (custom `requestFrame`) or use pure
  * wall-clock semantics (`lagThreshold: Infinity`).
  */
-export function createClock(options: CreateClockOptions = {}): ManagedClock {
+export function createClock(options: CreateClockOptions = {}): Clock {
     return new AnimationClock(options)
 }
 
@@ -877,4 +837,15 @@ export function createClock(options: CreateClockOptions = {}): ManagedClock {
  * when no clock is given. Creating it touches neither the DOM nor
  * `requestAnimationFrame`; the frame source resolves when the loop starts.
  */
-export const defaultClock: AnimationClock = new AnimationClock()
+export const defaultClock: Clock = new AnimationClock()
+const sharedClock = defaultClock as AnimationClock
+
+/**
+ * Disposes {@link defaultClock} (stops its frame loop and drops its
+ * subscribers) and restores its defaults: timing options, `timeScale` 1, not
+ * paused. The instance stays the same, so references remain valid. Intended
+ * for test isolation and hot-reload teardown.
+ */
+export function resetDefaultClock(): void {
+    sharedClock.restoreDefaults()
+}

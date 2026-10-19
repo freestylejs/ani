@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { rafTimeline } from '~/ani/raf/timeline'
 import { ani, delay, parallel, sequence, stagger } from '~/nodes'
-import { T, TimingFunction, type TimingFunctionContext } from '~/timing'
+import { TimingFunction, type TimingFunctionContext, timing } from '~/timing'
 import { isEndOfAnimation } from '~/utils/time'
 import { ManualClock } from './manual_clock'
 
@@ -22,42 +22,42 @@ describe('same-key overlap rule', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             parallel([
-                ani({ to: { x: 100 }, duration: 2, timing: T.linear() }),
+                ani({ to: { x: 100 }, duration: 2, timing: timing.linear() }),
                 sequence([
                     delay(1),
-                    ani({ to: { x: 0 }, duration: 1, timing: T.linear() }),
+                    ani({ to: { x: 0 }, duration: 1, timing: timing.linear() }),
                 ]),
             ]),
-            clock
+            { clock }
         )
         line.play({ from: { x: 0 } })
 
         // first segment alone until the second one starts: 50 at t=1
         line.seek(1)
-        expect(line.getCurrentValue()).toEqual({ x: 50 })
+        expect(line.value).toEqual({ x: 50 })
         // second segment interpolates 50 -> 0 (fixed `from`, not the moving 75)
         line.seek(1.5)
-        expect(line.getCurrentValue()).toEqual({ x: 25 })
+        expect(line.value).toEqual({ x: 25 })
         // the first segment is still "active" but was overridden
         line.seek(2)
-        expect(line.getCurrentValue()).toEqual({ x: 0 })
+        expect(line.value).toEqual({ x: 0 })
     })
 
     it('ties go to the later declaration in array timelines', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             parallel([
-                ani({ to: [100], duration: 1, timing: T.linear() }),
-                ani({ to: [200], duration: 1, timing: T.linear() }),
+                ani({ to: [100], duration: 1, timing: timing.linear() }),
+                ani({ to: [200], duration: 1, timing: timing.linear() }),
             ]),
-            clock
+            { clock }
         )
         line.play({ from: [0] })
         line.seek(0.5)
         // the 2nd segment starts at 0 from 0 (not from the 1st one's progress)
-        expect(line.getCurrentValue()).toEqual([100])
+        expect(line.value).toEqual([100])
         line.seek(1)
-        expect(line.getCurrentValue()).toEqual([200])
+        expect(line.value).toEqual([200])
     })
 
     it('resolves nested overlaps per key, independent of other keys', () => {
@@ -68,18 +68,18 @@ describe('same-key overlap rule', () => {
                     ani({
                         to: { x: 100, y: 10 },
                         duration: 1,
-                        timing: T.linear(),
+                        timing: timing.linear(),
                     }),
-                    ani({ to: { x: 0 }, duration: 1, timing: T.linear() }),
+                    ani({ to: { x: 0 }, duration: 1, timing: timing.linear() }),
                 ],
-                0.5
+                { offset: 0.5 }
             ),
-            clock
+            { clock }
         )
         line.play({ from: { x: 0, y: 0 } })
         line.seek(1)
         // x: 2nd segment from 50 (value at 0.5) to 0 at 1.5 => 25; y untouched by it
-        expect(line.getCurrentValue()).toEqual({ x: 25, y: 10 })
+        expect(line.value).toEqual({ x: 25, y: 10 })
     })
 })
 
@@ -88,17 +88,17 @@ describe('delay()', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
             sequence([
-                ani({ to: [100], duration: 1, timing: T.linear() }),
+                ani({ to: [100], duration: 1, timing: timing.linear() }),
                 delay(1),
-                ani({ to: [200], duration: 1, timing: T.linear() }),
+                ani({ to: [200], duration: 1, timing: timing.linear() }),
             ]),
-            clock
+            { clock }
         )
         line.play({ from: [0] })
         expect(() => clock.tick(1.5)).not.toThrow()
-        expect(line.getCurrentValue()).toEqual([100])
+        expect(line.value).toEqual([100])
         clock.tick(1)
-        expect(line.getCurrentValue()).toEqual([150])
+        expect(line.value).toEqual([150])
     })
 })
 
@@ -112,7 +112,7 @@ describe('evaluation cost', () => {
                     ani({ to: { x: i + 1 }, duration: 1, timing })
                 )
             ),
-            clock
+            { clock }
         )
         line.play({ from: { x: 0 } })
         line.seek(99.5)
@@ -121,7 +121,7 @@ describe('evaluation cost', () => {
         clock.tick(0.1)
         // only the running segment is stepped (old engine: all 100)
         expect(timing.calls).toBeLessThanOrEqual(1)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(99.6)
+        expect(line.value!.x).toBeCloseTo(99.6)
     })
 })
 
@@ -129,8 +129,8 @@ describe('notifications and snapshots', () => {
     it('hands the very same state object to every subscriber', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
-            ani({ to: { x: 100 }, duration: 1, timing: T.linear() }),
-            clock
+            ani({ to: { x: 100 }, duration: 1, timing: timing.linear() }),
+            { clock }
         )
         const seen: object[][] = [[], []]
         line.onUpdate(({ state }) => seen[0]!.push(state))
@@ -142,15 +142,15 @@ describe('notifications and snapshots', () => {
         expect(seen[0]![0]).not.toBe(seen[0]![1])
     })
 
-    it('getCurrentValue is a frozen snapshot that never aliases `from`', () => {
+    it('value is a frozen snapshot that never aliases `from`', () => {
         const clock = new ManualClock()
         const line = rafTimeline(
-            ani({ to: [100], duration: 1, timing: T.linear() }),
-            clock
+            ani({ to: [100], duration: 1, timing: timing.linear() }),
+            { clock }
         )
         const from = [0]
         line.play({ from })
-        const snapshot = line.getCurrentValue()!
+        const snapshot = line.value!
         expect(snapshot).not.toBe(from)
         expect(() => {
             ;(snapshot as number[])[0] = 999
@@ -158,9 +158,9 @@ describe('notifications and snapshots', () => {
         // mutating the caller's `from` after play() cannot disturb the run
         from[0] = 999
         clock.tick(0.5)
-        expect(line.getCurrentValue()).toEqual([50])
+        expect(line.value).toEqual([50])
         // stable between frames, new object after a frame
-        expect(line.getCurrentValue()).toBe(line.getCurrentValue())
+        expect(line.value).toBe(line.value)
     })
 })
 
@@ -171,12 +171,12 @@ describe('end-of-animation tolerance', () => {
 
         const clock = new ManualClock()
         const line = rafTimeline(
-            ani({ to: [100], duration: 0.0005, timing: T.linear() }),
-            clock
+            ani({ to: [100], duration: 0.0005, timing: timing.linear() }),
+            { clock }
         )
         line.play({ from: [0] })
         line.seek(0.00025)
-        expect(line.getCurrentValue()![0]).toBeCloseTo(50)
+        expect(line.value![0]).toBeCloseTo(50)
     })
 })
 
@@ -186,8 +186,8 @@ describe('state objects', () => {
         const to = Object.fromEntries(keys.map((k, i) => [k, (i + 1) * 10]))
         const clock = new ManualClock()
         const line = rafTimeline(
-            ani({ to, duration: 1, timing: T.linear() }),
-            clock
+            ani({ to, duration: 1, timing: timing.linear() }),
+            { clock }
         )
         const seen: Array<Record<string, number>> = []
         line.onUpdate(({ state }) => {
@@ -216,10 +216,9 @@ describe('state objects', () => {
     })
 
     it('rejects __proto__ as a property name', () => {
-        const line = rafTimeline(
-            ani({ to: { x: 1 }, duration: 1 }),
-            new ManualClock()
-        )
+        const line = rafTimeline(ani({ to: { x: 1 }, duration: 1 }), {
+            clock: new ManualClock(),
+        })
         const from = JSON.parse('{"__proto__": 0}')
         expect(() => line.play({ from })).toThrow(TypeError)
     })

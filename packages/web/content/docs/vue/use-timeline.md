@@ -9,7 +9,8 @@ The owner primitive. It runs a factory once and disposes whatever the factory re
 
 ```vue
 <script setup>
-import { a, rafTimeline } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafTimeline } from "@freestylejs/ani-core";
 import { useAniRef, useTimeline } from "@freestylejs/ani-vue";
 
 // Created once, disposed when the component unmounts.

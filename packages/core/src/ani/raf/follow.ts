@@ -2,7 +2,7 @@ import type { RunResult } from '~/ani/core'
 import type { AnimationClockInterface } from '~/loop'
 import { ani } from '~/nodes'
 import type { Resolver } from '~/style/create_sheet'
-import { T } from '~/timing'
+import { timing as presets } from '~/timing'
 import { RafAniTimeline } from './timeline'
 
 /** Spring constants of a {@link follow}er, validated like `dynamicSpring`. */
@@ -163,7 +163,7 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
             zeros[key] = 0
         }
         const spring = options.spring ?? DEFAULT_SPRING
-        const timing = T.dynamicSpring({ ...spring })
+        const timing = presets.dynamicSpring({ ...spring })
 
         this._keys = keys
         this._initial = Object.freeze(start) as Readonly<G>
