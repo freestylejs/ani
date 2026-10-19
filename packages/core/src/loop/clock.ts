@@ -175,13 +175,35 @@ const NO_ERROR = Symbol('no-error')
  */
 const STALE_FRAME_MS = 1000
 
+const CONFIGURE_ALLOWED_KEYS = new Set(['lagThreshold', 'maxDeltaTime'])
+
+const CREATE_CLOCK_ALLOWED_KEYS = new Set([
+    'lagThreshold',
+    'maxDeltaTime',
+    'timeScale',
+    'requestFrame',
+    'cancelFrame',
+    'now',
+    'onError',
+    'visibility',
+    'reducedMotion',
+])
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false
+    }
+    const proto = Object.getPrototypeOf(value)
+    return proto === Object.prototype || proto === null
+}
+
 interface FrameSource {
     owner: unknown
     request: (callback: (timestamp: number) => void) => number
     cancel: ((id: number) => void) | undefined
 }
 
-function assertPositive(name: string, value: number): number {
+function assertPositive(name: string, value: unknown): number {
     if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
         throw createAniError(
             RangeError,
@@ -345,7 +367,14 @@ class AnimationClock implements Clock {
         if (this.options.timeScale !== undefined) {
             this.scale = assertTimeScale(this.options.timeScale)
         }
-        this.configure(this.options)
+        const timing: ClockTimingOptions = {}
+        if (this.options.lagThreshold !== undefined) {
+            timing.lagThreshold = this.options.lagThreshold
+        }
+        if (this.options.maxDeltaTime !== undefined) {
+            timing.maxDeltaTime = this.options.maxDeltaTime
+        }
+        this.configure(timing)
     }
 
     /**
@@ -353,15 +382,44 @@ class AnimationClock implements Clock {
      * every field is validated first, and an invalid one throws and changes
      * nothing.
      */
-    public configure({ lagThreshold, maxDeltaTime }: ClockTimingOptions): void {
+    public configure(timing: ClockTimingOptions): void {
+        if (!isPlainObject(timing)) {
+            if (typeof timing === 'number') {
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
+                    `[Clock] configure() takes { lagThreshold, maxDeltaTime }. Did you mean { maxDeltaTime: ${timing} }?`
+                )
+            }
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_OPTIONS',
+                `[Clock] configure() takes { lagThreshold, maxDeltaTime }, received ${
+                    Array.isArray(timing)
+                        ? 'an array'
+                        : timing === null
+                          ? 'null'
+                          : typeof timing
+                }.`
+            )
+        }
+        for (const key of Object.keys(timing)) {
+            if (!CONFIGURE_ALLOWED_KEYS.has(key)) {
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
+                    `[Clock] configure() received unknown option "${key}". configure takes { lagThreshold, maxDeltaTime }.`
+                )
+            }
+        }
         const lag =
-            lagThreshold === undefined
+            timing.lagThreshold === undefined
                 ? this.lagThreshold
-                : assertPositive('lagThreshold', lagThreshold)
+                : assertPositive('lagThreshold', timing.lagThreshold)
         const max =
-            maxDeltaTime === undefined
+            timing.maxDeltaTime === undefined
                 ? this.maxDeltaTime
-                : assertPositive('maxDeltaTime', maxDeltaTime)
+                : assertPositive('maxDeltaTime', timing.maxDeltaTime)
         this.lagThreshold = lag
         this.maxDeltaTime = max
     }
@@ -836,8 +894,32 @@ class AnimationClock implements Clock {
  * animations manually in tests (custom `requestFrame`) or use pure
  * wall-clock semantics (`lagThreshold: Infinity`).
  */
-export function createClock(options: CreateClockOptions = {}): Clock {
-    return new AnimationClock(options)
+export function createClock(options?: CreateClockOptions): Clock {
+    if (options !== undefined) {
+        if (!isPlainObject(options)) {
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_OPTIONS',
+                `[createClock] Expected an options object, received ${
+                    Array.isArray(options)
+                        ? 'an array'
+                        : options === null
+                          ? 'null'
+                          : typeof options
+                }.`
+            )
+        }
+        for (const key of Object.keys(options)) {
+            if (!CREATE_CLOCK_ALLOWED_KEYS.has(key)) {
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
+                    `[createClock] Unknown option "${key}". Allowed options are ${[...CREATE_CLOCK_ALLOWED_KEYS].map((k) => `"${k}"`).join(', ')}.`
+                )
+            }
+        }
+    }
+    return new AnimationClock(options ?? {})
 }
 
 /**

@@ -134,6 +134,7 @@ The gap between two frames is turned into animation time with one rule:
 -   **Hard cap:** `maxDeltaTime` (unlimited by default) caps every delta. A finite value dilates animation time whenever a frame is slower; only set it deliberately.
 -   The first update of a timeline that joined a running loop follows the same rule, measured from its `play()`.
 -   Invalid values (zero, negative, `NaN`) throw a `RangeError`.
+-   Non-objects and unknown keys passed to `configure` or `createClock` throw `ANI_INVALID_OPTIONS` synchronously.
 
 ### API Reference
 

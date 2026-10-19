@@ -120,6 +120,40 @@ describe('defaultClock', () => {
             RangeError
         )
     })
+
+    it('[configure] validates options loudly and atomically', () => {
+        const loose = (fn: unknown) => fn as (arg: unknown) => unknown
+        for (const arg of [0.05, 'bad', true, [], null, undefined]) {
+            expect(() =>
+                loose(defaultClock.configure.bind(defaultClock))(arg)
+            ).toThrow(TypeError)
+        }
+        try {
+            loose(defaultClock.configure.bind(defaultClock))(0.05)
+        } catch (error) {
+            expect((error as Error).message).toMatch(/maxDeltaTime: 0\.05/)
+        }
+
+        defaultClock.configure({ maxDeltaTime: 0.05 })
+        expect(() =>
+            loose(defaultClock.configure.bind(defaultClock))({
+                maxDeltaTime: 0.1,
+                unknownKey: true,
+            })
+        ).toThrow(/unknownKey/)
+
+        // Atomic: maxDeltaTime remains 0.05
+        const driver = createFrameDriver()
+        vi.stubGlobal('window', {
+            requestAnimationFrame: driver.requestFrame,
+            cancelAnimationFrame: driver.cancelFrame,
+        })
+        vi.stubGlobal('performance', { now: driver.now })
+        const dts: number[] = []
+        defaultClock.subscribe({ update: (dt) => dts.push(dt) })
+        driver.frame(200)
+        expect(dts).toEqual([0.05])
+    })
 })
 
 describe('createClock', () => {
@@ -642,5 +676,18 @@ describe('createClock', () => {
         expect(first.size).toBe(0)
         expect(first.timeScale).toBe(1)
         resetDefaultClock()
+    })
+
+    it('rejects unknown keys and non-objects loudly', () => {
+        const loose = (fn: unknown) => fn as (arg: unknown) => unknown
+        expect(() => createClock()).not.toThrow()
+        expect(() => createClock(undefined)).not.toThrow()
+        expect(() => createClock({})).not.toThrow()
+        for (const arg of ['string', 123, true, [], null]) {
+            expect(() => loose(createClock)(arg)).toThrow(TypeError)
+        }
+        expect(() => loose(createClock)({ unknownOpt: 1 })).toThrow(
+            /unknownOpt/
+        )
     })
 })

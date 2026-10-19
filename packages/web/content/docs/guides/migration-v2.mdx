@@ -218,7 +218,7 @@ defaultClock.configure({ maxDeltaTime: 0.1 })
 export const ownClock = createClock({ maxDeltaTime: 0.1 })
 ```
 
-`configure` takes an options object. A bare number is a type error, and in untyped code it changes nothing.
+`configure` takes an options object. A bare number is a type error, and in untyped code it throws `ANI_INVALID_OPTIONS`.
 
 ### Clock configure argument
 
