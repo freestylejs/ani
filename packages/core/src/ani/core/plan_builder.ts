@@ -1,3 +1,4 @@
+import { type AniErrorCode, createAniError } from '~/error'
 import type { AnimationNode } from '~/nodes'
 import { propertiesOf } from '~/nodes/footprint'
 import { END_TOLERANCE } from '~/utils/time'
@@ -139,8 +140,10 @@ export function overruns(loop: PlanLoop): boolean {
     return false
 }
 
-function endlessError(reason: string): RangeError {
-    return new RangeError(
+function endlessError(code: AniErrorCode, reason: string): RangeError {
+    return createAniError(
+        RangeError,
+        code,
         `[Timeline] An endless loop ${reason}. Give the loop a finite count, or animate the property elsewhere.`
     )
 }
@@ -159,7 +162,10 @@ function unfoldable(
         const name = overlapsOutside(loop, index)
         if (name === null) continue
         if (loop.count === Infinity) {
-            throw endlessError(`overlaps another animation of "${name}"`)
+            throw endlessError(
+                'ANI_UNREACHABLE_NODE',
+                `overlaps another animation of "${name}"`
+            )
         }
         bad.push(loop)
     }
@@ -243,6 +249,7 @@ export function unstableLoops(
         if (!overruns(loop)) continue
         if (loop.count === Infinity) {
             throw endlessError(
+                'ANI_INVALID_CONFIG',
                 'would overrun its iteration with the given `durations`: an iteration must end by the time the next one starts'
             )
         }

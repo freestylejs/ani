@@ -1,3 +1,4 @@
+import { createAniError } from '../error'
 import {
     type Clock,
     createClock,
@@ -121,7 +122,9 @@ export function createManualClock(
         },
         setHidden(value) {
             if (!visibility) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
                     '[createManualClock] setHidden is unavailable: visibility is disabled (visibility: false).'
                 )
             }

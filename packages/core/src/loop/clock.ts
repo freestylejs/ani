@@ -1,4 +1,4 @@
-import { AniError } from '../error/ani_error'
+import { AniError, createAniError } from '../error/ani_error'
 
 export interface Animatable {
     /** Read phase: measure layout or sample inputs. Must not write the DOM. */
@@ -183,7 +183,9 @@ interface FrameSource {
 
 function assertPositive(name: string, value: number): number {
     if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
-        throw new RangeError(
+        throw createAniError(
+            RangeError,
+            'ANI_INVALID_OPTIONS',
             `[Clock] ${name} must be a positive number (Infinity allowed), received ${value}.`
         )
     }
@@ -192,7 +194,9 @@ function assertPositive(name: string, value: number): number {
 
 function assertTimeScale(value: unknown): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-        throw new RangeError(
+        throw createAniError(
+            RangeError,
+            'ANI_INVALID_OPTIONS',
             `[Clock] timeScale must be a finite number >= 0, received ${String(value)}.`
         )
     }
@@ -214,7 +218,9 @@ function resolveVisibility(value: unknown): boolean | VisibilitySource {
     if (value === undefined) return true
     if (typeof value === 'boolean') return value
     if (isVisibilitySource(value)) return value
-    throw new TypeError(
+    throw createAniError(
+        TypeError,
+        'ANI_INVALID_OPTIONS',
         `[Clock] visibility must be a boolean or an object with a boolean "hidden" and "addEventListener" / "removeEventListener" functions, received ${String(value)}.`
     )
 }
@@ -247,7 +253,9 @@ function resolveReducedMotion(
     if (value === undefined || value === 'system') return 'system'
     if (typeof value === 'boolean') return value
     if (isReducedMotionSource(value)) return value
-    throw new TypeError(
+    throw createAniError(
+        TypeError,
+        'ANI_INVALID_OPTIONS',
         `[Clock] reducedMotion must be 'system', a boolean or an object with a boolean "matches", received ${String(value)}.`
     )
 }

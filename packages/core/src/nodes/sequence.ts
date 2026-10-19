@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import {
     assertNoExtraArguments,
     type NodeOptions,
@@ -35,7 +36,9 @@ export class SequenceNode<
         for (let i = 0; i < children.length; i++) {
             const child = children[i]!
             if (endless >= 0) {
-                throw new RangeError(
+                throw createAniError(
+                    RangeError,
+                    'ANI_UNREACHABLE_NODE',
                     `[sequence] Child #${i} is unreachable: child #${endless} never ends because it contains an endless loop. Put the endless child last, or run it in a parallel.`
                 )
             }

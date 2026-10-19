@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import {
     BezierTimingFunction,
     LinearTimingFunction,
@@ -24,7 +25,9 @@ export function compileTiming(
     if (timing instanceof BezierTimingFunction) {
         const { p2, p3 } = timing.opt
         if (!(p2.x >= 0 && p2.x <= 1) || !(p3.x >= 0 && p3.x <= 1)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_NODE',
                 '[compileTiming] cubic-bezier x values must be within [0, 1] per the CSS spec.'
             )
         }

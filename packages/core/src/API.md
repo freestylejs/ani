@@ -1196,3 +1196,38 @@ function createTimelineController<G extends Groupable>(
   hooks?: { onPlay?: (config: RafTimelineConfig<G>) => void; onReset?: () => void }
 ): RafTimeline<G>;
 ```
+
+---
+
+## Errors
+
+> **Every error ani throws or reports is an ani error: a stable `code` and a docs URL.**
+
+-   Errors stay native: a wrong type is a `TypeError`, a value out of range a `RangeError`. Each carries `code` and `docs` (`https://ani.freestylejs.dev/docs/errors#<code in lowercase>`), and its message starts with `[CODE] `.
+-   `error instanceof AniError` is true for every ani error, including those native instances. `isAniError(value)` is the type guard `value is Error & { code: AniErrorCode; docs: string }`; it is false for plain errors, non-errors and look-alikes with an unknown code.
+-   `createAniError(Kind, code, message, options?)` makes such an error (`Kind` is `TypeError`, `RangeError` or `Error`). It is for binding authors; application code does not need it.
+-   Invalid input throws synchronously and changes nothing. Failures inside a frame are reported to the clock, never thrown into it.
+
+| Code | Class | Meaning |
+| :--- | :--- | :--- |
+| `ANI_INVALID_NODE` | `TypeError` / `RangeError` | A bad duration, offset, count, timing, props or children when building a node. |
+| `ANI_UNREACHABLE_NODE` | `RangeError` | A node that can never run: a child after an endless loop, an endless loop sharing a property, an endless tree that is not the root of a WAAPI timeline. |
+| `ANI_INVALID_CONFIG` | `TypeError` / `RangeError` | A wrong `play` / `drive` / `seek` / group `play` config or argument (`from`, shape, non-finite number, `delay`, `count`, `keyframes`, `durations`, `velocity`, seek time). |
+| `ANI_UNKNOWN_STATE` | `RangeError` | `transitionTo` with a name that is not a state; `createStates` with an `initial` that is not a state. |
+| `ANI_INVALID_OPTIONS` | `TypeError` / `RangeError` | Wrong factory or clock options, `reducedMotion` policy, `bind` / `bindAt` target, index or resolver, or binding primitive arguments. |
+| `ANI_REMOVED_API` | `TypeError` | A 1.x call shape; the message names the 2.0 form. |
+| `ANI_CODEC_MISMATCH` | `AniError` | A value codec can not parse or encode its input. |
+| `ANI_SUBSCRIBER_QUARANTINED` | `AniError` | Reported once a clock subscriber failed in 3 consecutive ticks. |
+
+```typescript
+type AniErrorCode =
+  | 'ANI_INVALID_NODE' | 'ANI_UNREACHABLE_NODE' | 'ANI_INVALID_CONFIG' | 'ANI_UNKNOWN_STATE'
+  | 'ANI_INVALID_OPTIONS' | 'ANI_REMOVED_API' | 'ANI_CODEC_MISMATCH' | 'ANI_SUBSCRIBER_QUARANTINED';
+function isAniError(value: unknown): value is Error & { code: AniErrorCode; docs: string };
+function createAniError<E extends Error>(
+  Kind: new (message?: string, options?: ErrorOptions) => E,
+  code: AniErrorCode,
+  message: string,
+  options?: ErrorOptions
+): E & { code: AniErrorCode; docs: string };
+```

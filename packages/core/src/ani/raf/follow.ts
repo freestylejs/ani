@@ -1,4 +1,5 @@
 import type { RunResult } from '~/ani/core'
+import { createAniError } from '~/error'
 import type { AnimationClockInterface } from '~/loop'
 import { ani } from '~/nodes'
 import type { Resolver } from '~/style/create_sheet'
@@ -140,7 +141,9 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
             initial === null ||
             Array.isArray(initial)
         ) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_OPTIONS',
                 `[follow] \`initial\` must be a record of numbers, received ${describe(initial)}.`
             )
         }
@@ -149,13 +152,17 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
         const zeros: Record<string, number> = {}
         for (const key of keys) {
             if (key === '__proto__') {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
                     '[follow] `__proto__` can not be used as a property name.'
                 )
             }
             const value = (initial as Record<string, unknown>)[key]
             if (typeof value !== 'number' || !Number.isFinite(value)) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
                     `[follow] \`initial\` "${key}" must be a finite number, received ${String(value)}.`
                 )
             }
@@ -344,7 +351,9 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
             input === null ||
             Array.isArray(input)
         ) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 `[follow] \`${method}()\` ${what} must be a record of numbers, received ${describe(input)}.`
             )
         }
@@ -352,13 +361,17 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
         const record = input as Record<string, unknown>
         for (const key of Object.keys(record)) {
             if (!this._keys.includes(key)) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[follow] \`${method}()\` received unknown key "${key}"; keys are fixed by \`initial\` (${this._keys.join(', ')}).`
                 )
             }
             const entry = record[key]
             if (typeof entry !== 'number' || !Number.isFinite(entry)) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[follow] \`${method}()\` ${what} "${key}" must be a finite number, received ${String(entry)}.`
                 )
             }

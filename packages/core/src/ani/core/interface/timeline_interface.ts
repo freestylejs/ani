@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import { type AnimationNode, SegmentNode, type SegmentNodeProps } from '~/nodes'
 import { type BuiltPlan, buildPlan, unstableLoops } from '../plan_builder'
 import { loopEnds, type PlanLoop, planStateOf } from '../plan_state'
@@ -54,13 +55,17 @@ export function resolveReducedMotionPolicy(
             !Number.isFinite(maxDuration) ||
             maxDuration <= 0
         ) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_OPTIONS',
                 `[Timeline] \`reducedMotion.maxDuration\` must be a finite number > 0 (seconds), received ${String(maxDuration)}.`
             )
         }
         return { maxDuration }
     }
-    throw new TypeError(
+    throw createAniError(
+        TypeError,
+        'ANI_INVALID_OPTIONS',
         `[Timeline] \`reducedMotion\` must be 'jump', 'ignore' or { maxDuration }, received ${String(policy)}.`
     )
 }
@@ -191,12 +196,16 @@ export abstract class TimelineBase<G extends Groupable> {
 
         const { slotCount } = this._base
         if (keyframes && keyframes.length !== slotCount) {
-            throw new Error(
+            throw createAniError(
+                Error,
+                'ANI_INVALID_CONFIG',
                 `[Timeline] Keyframe mismatch: Expected ${slotCount}, received ${keyframes.length}.`
             )
         }
         if (durations && durations.length !== slotCount) {
-            throw new Error(
+            throw createAniError(
+                Error,
+                'ANI_INVALID_CONFIG',
                 `[Timeline] Duration mismatch: Expected ${slotCount}, received ${durations.length}.`
             )
         }

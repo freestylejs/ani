@@ -9,6 +9,7 @@ import {
 } from '~/ani/core'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { resolveGroup } from '~/ani/core/resolver'
+import { createAniError } from '~/error'
 import {
     type Animatable,
     type AnimationClockInterface,
@@ -145,7 +146,9 @@ function clamp01(value: number): number {
 }
 
 function badProgressError(value: unknown): RangeError {
-    return new RangeError(
+    return createAniError(
+        RangeError,
+        'ANI_INVALID_CONFIG',
         `[Timeline] \`drive\` progress must be a finite number, received ${String(value)}.`
     )
 }
@@ -182,12 +185,16 @@ export function isRafTimeline(value: unknown): value is RafTimeline<Groupable> {
 export function assertConfigKeys(config: object): void {
     const keys = config as { context?: unknown; propertyResolver?: unknown }
     if (keys.context !== undefined) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_REMOVED_API',
             '[Timeline] `context` was removed: it was never read. Pass values through the timeline or its nodes.'
         )
     }
     if (keys.propertyResolver !== undefined) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_REMOVED_API',
             '[Timeline] `propertyResolver` was removed from the play config. Pass it to `bind`: `timeline.bind(element, { resolver })`.'
         )
     }
@@ -321,12 +328,16 @@ export class RafAniTimeline<G extends Groupable>
         super(rootNode)
         if (options !== undefined) {
             if (typeof options !== 'object' || options === null) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_REMOVED_API',
                     `[rafTimeline] Expected an options object, received ${typeof options}. Use \`rafTimeline(node, { clock })\`.`
                 )
             }
             if ('subscribe' in options) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_REMOVED_API',
                     '[rafTimeline] The second argument is an options object, not a clock. Use `rafTimeline(node, { clock })`.'
                 )
             }
@@ -396,7 +407,9 @@ export class RafAniTimeline<G extends Groupable>
         try {
             if (Array.isArray(group)) {
                 this._bindings.delete(binding)
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
                     '[Timeline] `bind()` can only style record values; positional (array) values have no style property.'
                 )
             }
@@ -605,7 +618,9 @@ export class RafAniTimeline<G extends Groupable>
     ): number[] | null {
         if (velocity === undefined || velocity === null) return null
         if (typeof velocity !== 'object') {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 '[Timeline] `velocity` must be an array or record shaped like `from`.'
             )
         }
@@ -613,12 +628,16 @@ export class RafAniTimeline<G extends Groupable>
         const source = velocity as Record<string, unknown>
         if (keys === null) {
             if (!Array.isArray(velocity)) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     '[Timeline] `velocity` must be an array when `from` is an array.'
                 )
             }
         } else if (Array.isArray(velocity)) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 '[Timeline] `velocity` must be a record when `from` is a record.'
             )
         }
@@ -626,7 +645,9 @@ export class RafAniTimeline<G extends Groupable>
             const value = source[keys ? keys[i]! : i]
             if (value === undefined) continue
             if (!isFiniteNumber(value)) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[Timeline] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
                 )
             }
@@ -663,7 +684,9 @@ export class RafAniTimeline<G extends Groupable>
     private _prepare(config: RafTimelineConfig<G>) {
         const from = config.from as unknown
         if (typeof from !== 'object' || from === null) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 '[Timeline] `from` must be an array or a record of numbers.'
             )
         }
@@ -671,21 +694,27 @@ export class RafAniTimeline<G extends Groupable>
         for (let i = 0; i < values.length; i++) {
             if (!isFiniteNumber(values[i])) {
                 const name = keyMap ? [...keyMap.keys()][i] : `[${i}]`
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[Timeline] \`from\` ${keyMap ? `"${name}"` : name} must be a finite number, received ${values[i]}.`
                 )
             }
         }
         const delay = config.delay ?? 0
         if (!Number.isFinite(delay) || delay < 0) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 `[Timeline] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
             )
         }
 
         const keys = keyMap ? [...keyMap.keys()] : null
         if (keys?.includes('__proto__')) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 '[Timeline] `__proto__` can not be used as an animated property name.'
             )
         }
@@ -724,7 +753,9 @@ export class RafAniTimeline<G extends Groupable>
         ...extra: unknown[]
     ): Promise<RunResult> {
         if (extra.length > 0) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_REMOVED_API',
                 '[Timeline] `play()` takes one argument. Pass `interrupt` in the config: `play({ ...config, interrupt })`.'
             )
         }
@@ -821,13 +852,17 @@ export class RafAniTimeline<G extends Groupable>
     ): () => void {
         assertConfigKeys(config)
         if (typeof progress !== 'function') {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 `[Timeline] \`progress\` must be a function, received ${typeof progress}.`
             )
         }
         const { keys, values, plan, duration, compiled } = this._prepare(config)
         if (!Number.isFinite(duration)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 '[Timeline] `drive` maps progress onto the duration, which is endless for a tree with `loop(child, Infinity)`.'
             )
         }
@@ -937,7 +972,9 @@ export class RafAniTimeline<G extends Groupable>
      */
     public reset(...extra: unknown[]): void {
         if (extra.length > 0) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_REMOVED_API',
                 '[Timeline] `reset()` takes no arguments. To drop the subscribers too, use `dispose()`.'
             )
         }
@@ -992,12 +1029,16 @@ export class RafAniTimeline<G extends Groupable>
         const runtime = this._runtime
         if (!runtime) return
         if (typeof targetTime !== 'number' || Number.isNaN(targetTime)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 `[Timeline] seek time must be a number, received ${targetTime}.`
             )
         }
         if (targetTime === Infinity && !Number.isFinite(this.duration)) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_CONFIG',
                 '[Timeline] seek time must be finite: an endless timeline has no end to seek to.'
             )
         }

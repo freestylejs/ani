@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import {
     BezierTimingFunction,
     LinearTimingFunction,
@@ -99,7 +100,9 @@ function pickTiming(
     if (isRecord) {
         const t = (timing as Record<string, unknown>)[key!]
         if (!isTimingFunction(t)) {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_CONFIG',
                 `[Timeline] segment #${segmentIndex}: \`timing\` has no TimingFunction for animated property "${key}".`
             )
         }
@@ -107,7 +110,9 @@ function pickTiming(
     }
     const t = Array.isArray(timing) ? timing[index] : undefined
     if (!isTimingFunction(t)) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             `[Timeline] segment #${segmentIndex}: \`timing\` has no TimingFunction for animated value [${index}].`
         )
     }
@@ -290,7 +295,9 @@ export function compilePlan(
         const node = segments[s]!.node
         const duration = node.duration
         if (!Number.isFinite(duration) || duration < 0) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_NODE',
                 `[Timeline] segment #${s}: duration must be a finite number >= 0, received ${duration}.`
             )
         }
@@ -300,12 +307,16 @@ export function compilePlan(
 
         if (Array.isArray(to)) {
             if (keys !== null) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[Timeline] segment #${s}: array \`to\` can not animate a record \`from\`.`
                 )
             }
             if (to.length !== laneCount) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[Timeline] segment #${s}: \`to\` has ${to.length} values but \`from\` has ${laneCount}.`
                 )
             }
@@ -318,7 +329,9 @@ export function compilePlan(
             const names = Object.keys(record)
             if (laneMap === null) {
                 if (names.length > 0) {
-                    throw new TypeError(
+                    throw createAniError(
+                        TypeError,
+                        'ANI_INVALID_CONFIG',
                         `[Timeline] segment #${s}: record \`to\` can not animate an array \`from\`.`
                     )
                 }
@@ -326,7 +339,9 @@ export function compilePlan(
                 for (const name of names) {
                     const lane = laneMap.get(name)
                     if (lane === undefined) {
-                        throw new TypeError(
+                        throw createAniError(
+                            TypeError,
+                            'ANI_INVALID_CONFIG',
                             `[Timeline] segment #${s}: property "${name}" is animated but missing from \`from\`.`
                         )
                     }
@@ -338,7 +353,9 @@ export function compilePlan(
 
         for (let j = 0; j < tos.length; j++) {
             if (!Number.isFinite(tos[j])) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_CONFIG',
                     `[Timeline] segment #${s}: \`to\` ${describe(keys, lanes[j]!)} must be a finite number, received ${tos[j]}.`
                 )
             }

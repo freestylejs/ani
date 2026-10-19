@@ -1,3 +1,4 @@
+import { createAniError } from '~/error'
 import type { TimingFunction } from '~/timing'
 import {
     type AnimationId,
@@ -31,20 +32,26 @@ function parseStaggerOptions(options: StaggerOptions): {
     id?: AnimationId | undefined
 } {
     if (typeof options !== 'object' || options === null) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_REMOVED_API',
             `[stagger] Expected an options object, received ${typeof options}. Use ${STAGGER_FORM}.`
         )
     }
     for (const key of Object.keys(options)) {
         if (key !== 'offset' && key !== 'timing' && key !== 'id') {
-            throw new TypeError(
+            throw createAniError(
+                TypeError,
+                'ANI_INVALID_NODE',
                 `[stagger] Unknown option "${key}". Allowed options are "offset", "timing", and "id".`
             )
         }
     }
     const { offset } = options
     if (typeof offset !== 'number' || !Number.isFinite(offset) || offset < 0) {
-        throw new RangeError(
+        throw createAniError(
+            RangeError,
+            'ANI_INVALID_NODE',
             `[stagger] offset must be a finite number >= 0 (seconds), received ${offset}.`
         )
     }

@@ -1,5 +1,6 @@
 import type { ExecutionSegment, Groupable } from '~/ani/core'
 import { type PlanLoop, planStateOf } from '~/ani/core/plan_state'
+import { createAniError } from '~/error'
 
 import {
     type AnimationNode,
@@ -44,7 +45,9 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
             loopCount !== Infinity &&
             (!Number.isInteger(loopCount) || loopCount < 0)
         ) {
-            throw new RangeError(
+            throw createAniError(
+                RangeError,
+                'ANI_INVALID_NODE',
                 `[loop] loopCount must be a finite integer >= 0 or Infinity, received ${String(loopCount)}.`
             )
         }

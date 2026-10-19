@@ -1,4 +1,5 @@
 import type { AniGroup, Groupable, RunResult } from '~/ani/core'
+import { createAniError } from '~/error'
 import type { AnimationClockInterface } from '~/loop'
 import type { AnimationNode, ExtractAnimationNode } from '~/nodes'
 import {
@@ -157,12 +158,25 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     config: StateProps<AnimationStates>
 ): StateController<AnimationStates> {
     if ((config as { initialFrom?: unknown }).initialFrom !== undefined) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_REMOVED_API',
             '[createStates] `initialFrom` was renamed `initialValue`.'
         )
     }
     if (config.initialValue === undefined) {
-        throw new TypeError('[createStates] `initialValue` is required.')
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_OPTIONS',
+            '[createStates] `initialValue` is required.'
+        )
+    }
+    if (!Object.hasOwn(config.states, config.initial as string)) {
+        throw createAniError(
+            RangeError,
+            'ANI_UNKNOWN_STATE',
+            `[createStates] Unknown initial state "${String(config.initial)}". Available states: ${Object.keys(config.states).join(', ')}.`
+        )
     }
     const initialValue = Object.freeze(
         copyGroup(config.initialValue as Groupable)
@@ -262,13 +276,17 @@ export function createStates<AnimationStates extends AnimationStateShape>(
         onTransition,
         transitionTo(newState, timelineConfig, ...extra: unknown[]) {
             if (extra.length > 0) {
-                throw new TypeError(
+                throw createAniError(
+                    TypeError,
+                    'ANI_REMOVED_API',
                     '[createStates] `transitionTo` takes two arguments. Pass `interrupt` in the config: `transitionTo(state, { ...config, interrupt })`.'
                 )
             }
             if (disposed) return Promise.resolve('disposed')
             if (!Object.hasOwn(config.states, newState as string)) {
-                throw new RangeError(
+                throw createAniError(
+                    RangeError,
+                    'ANI_UNKNOWN_STATE',
                     `[createStates] Unknown state "${String(newState)}". Available states: ${Object.keys(config.states).join(', ')}.`
                 )
             }

@@ -4,6 +4,7 @@ import type {
     Groupable,
 } from '~/ani/core/interface/core_types'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
+import { createAniError } from '~/error'
 import { createStyleSheet, type Resolver } from '~/style'
 import { BezierTimingFunction, LinearTimingFunction } from '~/timing'
 import { END_TOLERANCE } from '~/utils/time/is_end'
@@ -101,7 +102,9 @@ export function compileToKeyframes<G extends Groupable>(
     resolver?: Resolver<Record<string, number>>
 ): WebAniKeyframe[] {
     if (Array.isArray(initialFrom)) {
-        throw new TypeError(
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_CONFIG',
             '[compileToKeyframes] WAAPI backend requires record-shaped values (CSS property names). Received an array; use the RAF engine for positional values.'
         )
     }

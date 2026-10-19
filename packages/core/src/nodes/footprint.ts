@@ -1,4 +1,5 @@
 import type { Groupable } from '~/ani/core'
+import { createAniError } from '~/error'
 import { END_TOLERANCE } from '~/utils/time'
 
 /**
@@ -124,7 +125,9 @@ export function assertNoEndlessOverlap(
             const others = entry.index === index ? entry.other : entry.end
             // sums of durations differ by an ulp: touching is not overlapping
             if (others > offset + start + END_TOLERANCE) {
-                throw new RangeError(
+                throw createAniError(
+                    RangeError,
+                    'ANI_UNREACHABLE_NODE',
                     `[${caller}] An endless loop and another animation both write "${name}" at the same time. An endless loop owns its properties from its start on: animate "${name}" in only one of them, or give the loop a finite count.`
                 )
             }
