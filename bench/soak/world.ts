@@ -56,8 +56,8 @@ interface ListenerRec {
     id: number
     seed: number
     calls: number
+    frameCalls: number
     n: number
-    lastFrame: number
     probe: boolean
     dead: boolean
     off: Unsubscribe
@@ -151,6 +151,8 @@ export class World {
     private openRecs = 0
     private readonly settled: Rec[] = []
     private disposedSubject: Subject | null = null
+    private nonInterruptingSubjectId: number | null = null
+    private inFrame = false
     private thrown = 0
     private surfaced = 0
 
@@ -327,15 +329,23 @@ export class World {
             id,
             seed,
             calls: 0,
+            frameCalls: 0,
             n: 0,
-            lastFrame: -1,
             probe,
             dead: false,
             off: () => undefined,
         }
         l.off = sub.obj.onUpdate(() => {
             l.calls++
-            l.lastFrame = this.frameNo
+            if (this.inFrame) {
+                l.frameCalls++
+                if (l.frameCalls > 1) {
+                    this.fail(
+                        'I4 containment',
+                        `listener ${l.id} of #${sub.id} (${sub.type}) was called a second time in frame ${this.frameNo}`
+                    )
+                }
+            }
             if (l.dead) {
                 this.fail(
                     'I5 disposal',
@@ -399,6 +409,7 @@ export class World {
         this.stats[op.k] = (this.stats[op.k] ?? 0) + 1
         this.remember(op)
         this.disposedSubject = null
+        this.nonInterruptingSubjectId = null
         try {
             this.run(op)
         } catch (error) {
@@ -474,6 +485,9 @@ export class World {
         if (sub.type === 'timeline') {
             const timeline = sub.obj as TimelineHandle
             const wasPlaying = timeline.status === 'PLAYING'
+            if (!op.interrupt && wasPlaying) {
+                this.nonInterruptingSubjectId = sub.id
+            }
             const promise = timeline.play({
                 from: { ...op.from },
                 repeat: op.repeat,
@@ -515,6 +529,9 @@ export class World {
         if (sub.type !== 'states') return
         const states = sub.obj as StatesHandle
         const wasPlaying = states.timeline().status === 'PLAYING'
+        if (!op.interrupt && wasPlaying) {
+            this.nonInterruptingSubjectId = sub.id
+        }
         const keyframes = this.copyKeyframes(op.keyframes)
         const promise = states.transitionTo(`st${op.to}`, {
             repeat: op.repeat,
@@ -621,6 +638,9 @@ export class World {
         this.frameNo++
         for (const type of Object.keys(this.byType) as SubjectType[]) {
             for (const sub of this.byType[type]) {
+                for (const l of sub.listeners.values()) {
+                    l.frameCalls = 0
+                }
                 const playing = this.statusOf(sub) === 'PLAYING'
                 sub.playingBefore = playing
                 sub.expectNotify = playing
@@ -631,7 +651,12 @@ export class World {
                 }
             }
         }
-        this.manual.frame(FRAME_MS)
+        this.inFrame = true
+        try {
+            this.manual.frame(FRAME_MS)
+        } finally {
+            this.inFrame = false
+        }
     }
 
     // ---- after an op
@@ -645,6 +670,20 @@ export class World {
             await new Promise<void>((resolve) => setImmediate(resolve))
         }
         for (const rec of this.settled) this.checkSettled(rec, op)
+        if (this.nonInterruptingSubjectId !== null) {
+            const skipped = this.settled.some(
+                (r) =>
+                    r.createdSeq === this.seq &&
+                    r.sid === this.nonInterruptingSubjectId &&
+                    r.result === 'skipped'
+            )
+            if (!skipped) {
+                this.fail(
+                    'I1 settle once',
+                    `${op.k} with interrupt: false on PLAYING #${this.nonInterruptingSubjectId} must settle 'skipped'`
+                )
+            }
+        }
         this.settled.length = 0
         const gone = this.disposedSubject
         if (gone !== null && gone.pending.size > 0) {
@@ -679,13 +718,25 @@ export class World {
                                   (op.k === 'set' || op.k === 'add')))
                 break
             case 'interrupted':
+                if (
+                    sameSubject &&
+                    !atCreation &&
+                    this.nonInterruptingSubjectId === rec.sid
+                ) {
+                    this.fail(
+                        'I1 settle once',
+                        `the running run of #${rec.sid} settled 'interrupted' during an interrupt: false call on a PLAYING object`
+                    )
+                    return
+                }
                 legal = sameSubject && !atCreation && INTERRUPTERS.has(op.k)
                 break
             case 'skipped':
                 legal =
                     atCreation &&
                     (op.k === 'play' || op.k === 'transition') &&
-                    !op.interrupt
+                    !op.interrupt &&
+                    this.nonInterruptingSubjectId === rec.sid
                 break
             case 'reset':
                 legal = sameSubject && !atCreation && op.k === 'reset'
@@ -710,7 +761,8 @@ export class World {
         let subscribed = 0
         for (const type of Object.keys(this.byType) as SubjectType[]) {
             for (const sub of this.byType[type]) {
-                if (this.statusOf(sub) === 'PLAYING') subscribed++
+                const isPlaying = this.statusOf(sub) === 'PLAYING'
+                if (isPlaying) subscribed++
                 this.checkValues(sub)
                 this.checkTargets(sub)
                 if (sub.expectNotify) this.checkListeners(sub)
@@ -781,10 +833,12 @@ export class World {
 
     private checkListeners(sub: Subject): void {
         for (const l of sub.listeners.values()) {
-            if (l.lastFrame !== this.frameNo) {
+            if (l.frameCalls !== 1) {
                 this.fail(
                     'I4 containment',
-                    `listener ${l.id} of #${sub.id} (${sub.type}) was not called in frame ${this.frameNo} although the object was PLAYING`
+                    l.frameCalls === 0
+                        ? `listener ${l.id} of #${sub.id} (${sub.type}) was not called in frame ${this.frameNo} although the object was PLAYING`
+                        : `listener ${l.id} of #${sub.id} (${sub.type}) was called a second time in frame ${this.frameNo}`
                 )
                 return
             }

@@ -186,10 +186,10 @@ async function main(): Promise<number> {
         out(
             `heap ${heaps.length}/${config.checkpoints} frame ${frames} ${megabytes(heap)} (${drift >= 0 ? '+' : ''}${drift.toFixed(1)}%)`
         )
-        if (Math.abs(heap - first) > HEAP_TOLERANCE * first) {
+        if (heap - first > HEAP_TOLERANCE * first) {
             world.fail(
                 'I6 memory',
-                `heap at checkpoint ${heaps.length} is ${megabytes(heap)}, ${drift.toFixed(1)}% from the first checkpoint (${megabytes(first)}) with ${world.population} live objects; the limit is ${HEAP_TOLERANCE * 100}%`
+                `heap at checkpoint ${heaps.length} is ${megabytes(heap)}, +${drift.toFixed(1)}% above the first checkpoint (${megabytes(first)}) with ${world.population} live objects; the limit is +${HEAP_TOLERANCE * 100}%`
             )
         }
     }
