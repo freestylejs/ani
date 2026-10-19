@@ -46,7 +46,7 @@ const result = await myStates.transitionTo('active'); // 'ended'
 -   **`interrupt: false`.** If the current timeline is `PLAYING`, the transition is rejected, nothing changes (state, timeline and listeners stay as they are) and the promise resolves `'skipped'`. `transitionTo` takes the state and one config: a third argument throws a `TypeError`.
 -   **The promise.** `transitionTo` returns the run of the new timeline and never rejects: `'ended'`, `'interrupted'` (another transition replaced it), `'skipped'`, `'reset'` or `'disposed'` (also after `dispose()`).
 -   **Seconds.** The `delay` of a `timelineConfig` is in seconds, like on `play()`.
--   **Reduced motion.** The timelines of a machine use the default policy `'jump'`. To change that, pass a `clock` whose `reducedMotion` you control. See [Reduced motion](/en/docs/guides/reduced-motion).
+-   **Reduced motion.** Pass `reducedMotion` to `createStates` to set the policy for every timeline the machine creates (`'jump'` by default, `'ignore'`, or `{ maxDuration: seconds }`). See [Reduced motion](/en/docs/guides/reduced-motion).
 -   **Replaced timelines are disposed.** After a transition the old timeline is dead (`dispose()`d), together with the bindings and listeners attached through the machine. Do not keep a reference to `timeline()` across transitions: use `bind`, `onUpdate` or `onTransition`, which follow the current timeline.
 
 #### The Controller
@@ -103,6 +103,7 @@ The controller owns the timelines it creates. Call `dispose()` when it is no lon
 | `initialValue` | `AniGroup<G>` | Start values for the first transition. Required; a missing one throws a `TypeError`. |
 | `states` | `Record<string, AnimationNode<G>>` | Named animation trees. |
 | `clock` | `AnimationClockInterface` | (Optional) Clock for every timeline created by the machine. |
+| `reducedMotion` | `ReducedMotionPolicy` | (Optional) Policy forwarded to every state's timeline: `'jump'` (default), `'ignore'`, or `{ maxDuration }`. |
 
 ### Related Components
 

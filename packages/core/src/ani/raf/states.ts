@@ -1,4 +1,9 @@
-import type { AniGroup, Groupable, RunResult } from '~/ani/core'
+import type {
+    AniGroup,
+    Groupable,
+    ReducedMotionPolicy,
+    RunResult,
+} from '~/ani/core'
 import { createAniError } from '~/error'
 import type { AnimationClockInterface } from '~/loop'
 import type { AnimationNode, ExtractAnimationNode } from '~/nodes'
@@ -118,6 +123,12 @@ interface StateBaseProps<AnimationStates extends AnimationStateShape> {
      * Custom timeline clock
      */
     clock?: AnimationClockInterface
+    /**
+     * What a timeline does when the user prefers reduced motion. Forwarded
+     * to every state's timeline.
+     * @default 'jump'
+     */
+    reducedMotion?: ReducedMotionPolicy
 }
 
 /**
@@ -185,6 +196,7 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     let State: keyof AnimationStates = config.initial
     let Timeline: RafTimeline<Groupable> = rafTimeline(config.states[State]!, {
         clock: config.clock,
+        reducedMotion: config.reducedMotion,
     })
     let disposed = false
 
@@ -320,6 +332,7 @@ export function createStates<AnimationStates extends AnimationStateShape>(
 
             const nextTimeline = rafTimeline(config.states[newState]!, {
                 clock: config.clock,
+                reducedMotion: config.reducedMotion,
             })
             track(nextTimeline)
 

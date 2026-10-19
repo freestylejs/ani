@@ -282,4 +282,39 @@ describe('redirect inside onTransition keeps velocity', () => {
 
         expect(redirected.states.value).toEqual(direct.states.value)
     })
+
+    it('rejects malformed reducedMotion at construction', () => {
+        const clock = new MockClock()
+        expect(() =>
+            createStates({
+                initial: 'closed',
+                initialValue: { x: 0 },
+                states: {
+                    closed: ani({ to: { x: 0 }, duration: 1 }),
+                    open: ani({ to: { x: 100 }, duration: 1 }),
+                },
+                clock,
+                reducedMotion: 'bogus' as never,
+            })
+        ).toThrow(/reducedMotion/)
+    })
+
+    it('forwards reducedMotion option to all state transitions', async () => {
+        const clock = Object.assign(new MockClock(), { reducedMotion: true })
+        const machine = createStates({
+            initial: 'closed',
+            initialValue: { x: 0 },
+            states: {
+                closed: ani({ to: { x: 0 }, duration: 1 }),
+                open: ani({ to: { x: 100 }, duration: 1 }),
+            },
+            clock,
+            reducedMotion: 'jump',
+        })
+
+        const run = machine.transitionTo('open')
+        expect(await run).toBe('ended')
+        expect(machine.value).toEqual({ x: 100 })
+        expect(machine.timeline().status).toBe('ENDED')
+    })
 })

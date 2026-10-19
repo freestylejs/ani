@@ -3,11 +3,11 @@ title: Reduced motion
 description: Ani honors prefers-reduced-motion by default. Pick a policy per timeline and test it deterministically.
 ---
 
-Some people get sick from large movement. They turn on **reduce motion** in their operating system, and browsers report it as `prefers-reduced-motion: reduce`. Ani honors it by default, for `rafTimeline`, `waapiTimeline` and the timelines that `createStates` creates. `rafGroup`, `follow` and `drive()` do not read the preference: the user controls a `drive()` run, and a group or follower is yours to gate.
+Some people get sick from large movement. They turn on **reduce motion** in their operating system, and browsers report it as `prefers-reduced-motion: reduce`. Ani honors it by default for every timeline type: `rafTimeline`, `waapiTimeline`, `rafGroup`, `follow` and the timelines that `createStates` creates. Only `drive()` does not read the preference: the user controls a driven run directly.
 
 ### The default
 
-When the preference is on, a timeline **jumps**: `play()` validates as usual, then the run completes at once.
+When the preference is on, animations **jump** by default: `play()` or `set()` validates as usual, then the run completes at its final values.
 
 ```typescript
 import * as a from "@freestylejs/ani-core";
@@ -20,17 +20,38 @@ const result = await timeline.play({ from: { opacity: 0 } });
 // result === 'ended', timeline.status === 'ENDED', value is { opacity: 1 }
 ```
 
-Bound targets are written, `onUpdate` listeners are notified once with `ENDED`, and the clock is never subscribed. With `repeat`, the value is the end of the last run; with `repeat: Infinity`, the end of one run.
+Bound targets are written, `onUpdate` listeners are notified once, and the clock is never subscribed (or unsubscribed immediately). With `repeat`, the value is the end of the last run; with `repeat: Infinity`, the end of one run.
 
-The preference comes from the clock: by default it follows `matchMedia('(prefers-reduced-motion: reduce)')` live (and is `false` where `matchMedia` does not exist, such as on the server). It is read **once at the start of each `play()`**, so a change affects the next run and never one that is already running.
+The preference comes from the clock: by default it follows `matchMedia('(prefers-reduced-motion: reduce)')` live (and is `false` where `matchMedia` does not exist, such as on the server). It is read **once when the run starts** (`play()`, `set()`, `transitionTo()`), so a change affects the next run and never one that is already running.
+
+### Timeline types and options
+
+Set a policy with the `reducedMotion` option on each timeline type:
+
+-   **`rafTimeline(node, { reducedMotion? })`**:
+    -   `'jump'` (default): completes at once in its end state and resolves `'ended'`. Endless runs pause at the end of their first iteration.
+    -   `{ maxDuration }`: a run longer than `maxDuration` seconds plays faster so it takes `maxDuration`.
+    -   `'ignore'`: animates normally.
+-   **`waapiTimeline(node, { reducedMotion? })`**:
+    -   `'jump'` (default): finishes immediately.
+    -   `{ maxDuration }`: raises `playbackRate` to `duration / maxDuration`.
+    -   `'ignore'`: animates normally.
+-   **`rafGroup(node, { reducedMotion? })`**:
+    -   `'jump'` (default): finishes every target (stagger included) in one frame at its final values and resolves `'ended'`. Endless runs pause at the end of their first iteration.
+    -   `{ maxDuration }`: compresses the whole group run, stagger included, to at most `maxDuration` seconds.
+    -   `'ignore'`: animates normally.
+-   **`follow(initial, { reducedMotion? })`**:
+    -   `'jump'` (default): while reduced motion is on, `set()` reaches the target on the next frame with zero velocity, notifies once, and resolves `'ended'`.
+    -   `'ignore'`: springs toward the target normally.
+    -   `{ maxDuration }` is rejected (`TypeError`, a spring has no duration).
+-   **`createStates({ states, ..., reducedMotion? })`**:
+    -   Forwarded to every state's timeline (`'jump'` default, `{ maxDuration }`, `'ignore'`).
 
 ### Policies
 
-Set a policy with the `reducedMotion` option. It only matters while the preference is on.
-
 | Policy | Behavior |
 | :--- | :--- |
-| `'jump'` (default) | Every run completes at once in its end state. |
+| `'jump'` (default) | Every run completes at once in its end state (on the next frame for `follow`). |
 | `{ maxDuration }` | A run longer than `maxDuration` seconds plays faster so it takes `maxDuration`. Shorter runs are untouched. |
 | `'ignore'` | Unchanged behavior. |
 
@@ -70,8 +91,6 @@ const spinner = a.rafTimeline(
   { reducedMotion: "ignore" }
 );
 ```
-
-`createStates` has no policy option: its timelines use `'jump'`. To change that for a state machine, give it a clock whose preference you control (see below).
 
 ### Choosing the preference source
 

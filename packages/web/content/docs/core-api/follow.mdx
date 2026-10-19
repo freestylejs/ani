@@ -79,7 +79,15 @@ element.addEventListener("pointerup", () => {
 -   `onUpdate` listeners get one `{ state, status }` frame per clock frame while moving (commit phase), plus the synchronous notification of `jump`.
 -   `dispose()` stops the motion and drops bindings and listeners. Later `set` calls resolve `'disposed'`, `jump` does nothing. It is idempotent.
 
-`follow` does not read the reduced-motion preference. The motion follows your input, so gate it yourself if it is decorative. See [Reduced motion](/en/docs/guides/reduced-motion).
+#### Reduced motion
+
+`follow` takes `reducedMotion?: 'jump' | 'ignore'` (default `'jump'`). The preference is read from the clock when `set()` is called:
+
+-   `'jump'` (default): while reduced motion is reported, `set()` reaches the target on the next frame with zero velocity, notifies once with `IDLE`, and resolves `'ended'`.
+-   `'ignore'`: animates normally with the spring.
+-   `{ maxDuration }` is rejected (`TypeError`, code `ANI_INVALID_OPTIONS`: a spring has no duration).
+
+See [Reduced motion](/en/docs/guides/reduced-motion).
 
 ### API Reference
 
@@ -89,6 +97,7 @@ function follow<G extends Record<string, number>>(
   options?: {
     spring?: { m: number; k: number; c: number; tolerance?: number }; // { m: 1, k: 170, c: 26 }
     clock?: AnimationClockInterface;
+    reducedMotion?: 'jump' | 'ignore'; // default 'jump'
   }
 ): Follower<G>;
 
