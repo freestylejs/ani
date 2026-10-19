@@ -50,7 +50,7 @@ const easedLoop = a.loop(pulse, 3, a.timing.ease());
 
 #### The count does not cost anything
 
-A loop is represented once, not `count` times. The first iteration starts from the value the animated properties have where the loop starts; every later iteration starts from the end state of the previous one, which is the same for all of them. So seeking anywhere inside `loop(child, 1_000_000)` costs the same as seeking in the first iteration, building it takes as long as `loop(child, 2)`, and the values are those of the same tree written as a `sequence` of copies (dynamic springs restart in every iteration), to floating-point precision, `bezier` / `ease*` timings included.
+A loop is represented once, not `count` times. The first iteration starts from the value the animated properties have where the loop starts; every later iteration starts from the end state of the previous one, which is the same for all of them. So seeking anywhere inside `loop(child, 1_000_000)` costs the same as seeking in the first iteration, building it takes as long as `loop(child, 2)`, and the values are those of the same tree written as a `sequence` of copies (dynamic springs restart in every iteration), to 1e-9 (absolute, scaled by the distance travelled), whatever the timing, `bezier` / `ease*` included.
 
 A finite loop that shares a property with another segment running at the same time (`parallel([loop(a, 3), b])` where both animate `x`) is written out as copies instead. The values are the same; the plan grows with the count.
 

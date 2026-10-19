@@ -9,17 +9,25 @@ export interface BezierTimingFunctionOpt {
     p3: Coord
 }
 
-// Newton-Raphson constants
-const NEWTON_ITERATIONS = 4
+// Solver constants
+const NEWTON_ITERATIONS = 8
 const NEWTON_MIN_SLOPE = 0.001
-const SUBDIVISION_PRECISION = 0.0000001
-const SUBDIVISION_MAX_ITERATIONS = 10
+/** Newton stops once a step is smaller than this (in t). */
+const T_PRECISION = 1e-14
+const BISECTION_MAX_ITERATIONS = 60
 
 const SAMPLE_TABLE_SIZE = 11
 const SAMPLE_STEP_SIZE = 1.0 / (SAMPLE_TABLE_SIZE - 1.0)
 
 export class BezierTimingFunction extends TimingFunction {
-    private sampleValues: Float32Array | null = null
+    private sampleValues: Float64Array | null = null
+    // coefficients of c(t) = ((a * t + b) * t + c) * t, per axis
+    private readonly ax: number
+    private readonly bx: number
+    private readonly cx: number
+    private readonly ay: number
+    private readonly by: number
+    private readonly cy: number
 
     public constructor(public readonly opt: { p2: Coord; p3: Coord }) {
         super()
@@ -33,121 +41,76 @@ export class BezierTimingFunction extends TimingFunction {
                 '[BezierTimingFunction] control point x values must be within [0, 1].'
             )
         }
+        const { p2, p3 } = this.opt
+        this.ax = 1 - 3 * p3.x + 3 * p2.x
+        this.bx = 3 * p3.x - 6 * p2.x
+        this.cx = 3 * p2.x
+        this.ay = 1 - 3 * p3.y + 3 * p2.y
+        this.by = 3 * p3.y - 6 * p2.y
+        this.cy = 3 * p2.y
         // Pre-calculate sample table
-        if (
-            this.opt.p2.x !== this.opt.p2.y ||
-            this.opt.p3.x !== this.opt.p3.y
-        ) {
-            this.sampleValues = new Float32Array(SAMPLE_TABLE_SIZE)
+        if (p2.x !== p2.y || p3.x !== p3.y) {
+            this.sampleValues = new Float64Array(SAMPLE_TABLE_SIZE)
             for (let i = 0; i < SAMPLE_TABLE_SIZE; ++i) {
-                this.sampleValues[i] = this.calcBezier(
-                    i * SAMPLE_STEP_SIZE,
-                    this.opt.p2.x,
-                    this.opt.p3.x
-                )
+                this.sampleValues[i] = this.calcX(i * SAMPLE_STEP_SIZE)
             }
         }
     }
 
-    private calcBezier(t: number, a1: number, a2: number): number {
-        return (
-            ((1 - 3 * a2 + 3 * a1) * t + (3 * a2 - 6 * a1)) * t * t + 3 * a1 * t
-        )
+    private calcX(t: number): number {
+        return ((this.ax * t + this.bx) * t + this.cx) * t
     }
 
-    private getSlope(t: number, a1: number, a2: number): number {
-        return (
-            3 * (1 - 3 * a2 + 3 * a1) * t * t +
-            2 * (3 * a2 - 6 * a1) * t +
-            3 * a1
-        )
+    private getSlope(t: number): number {
+        return (3 * this.ax * t + 2 * this.bx) * t + this.cx
     }
 
+    /**
+     * Solves x(t) = x to near machine precision: Newton-Raphson from an
+     * interpolated guess, inside a bracket that every evaluation narrows.
+     * Bisection takes over when the slope is small or a step leaves the
+     * bracket.
+     */
     private getTForX(x: number): number {
-        const mX1 = this.opt.p2.x
-        const mX2 = this.opt.p3.x
-
-        let intervalStart = 0.0
-        let currentSample = 1
-
+        const samples = this.sampleValues!
         const lastSample = SAMPLE_TABLE_SIZE - 1
 
-        for (
-            ;
-            currentSample !== lastSample &&
-            this.sampleValues![currentSample]! <= x;
+        let currentSample = 1
+        while (currentSample !== lastSample && samples[currentSample]! <= x) {
             ++currentSample
-        ) {
-            intervalStart += SAMPLE_STEP_SIZE
         }
         --currentSample
+        let low = currentSample * SAMPLE_STEP_SIZE
+        let high = low + SAMPLE_STEP_SIZE
 
         // Interpolate to provide an initial guess for t
         const dist =
-            (x - this.sampleValues![currentSample]!) /
-            (this.sampleValues![currentSample + 1]! -
-                this.sampleValues![currentSample]!)
-        const guessForT = intervalStart + dist * SAMPLE_STEP_SIZE
+            (x - samples[currentSample]!) /
+            (samples[currentSample + 1]! - samples[currentSample]!)
+        let t = low + dist * SAMPLE_STEP_SIZE
+        if (!(t > low && t < high)) t = (low + high) / 2
 
-        const initialSlope = this.getSlope(guessForT, mX1, mX2)
-        if (initialSlope >= NEWTON_MIN_SLOPE) {
-            return this.newtonRaphsonIterate(x, guessForT, mX1, mX2)
-        }
-        if (initialSlope === 0.0) {
-            return guessForT
-        }
-        return this.binarySubdivide(
-            x,
-            intervalStart,
-            intervalStart + SAMPLE_STEP_SIZE,
-            mX1,
-            mX2
-        )
-    }
-
-    private binarySubdivide(
-        aX: number,
-        aA: number,
-        aB: number,
-        mX1: number,
-        mX2: number
-    ): number {
-        let currentX: number
-        let currentT: number
-        let i = 0
-        let currentA = aA
-        let currentB = aB
-        do {
-            currentT = currentA + (currentB - currentA) / 2.0
-            currentX = this.calcBezier(currentT, mX1, mX2) - aX
-            if (currentX > 0.0) {
-                currentB = currentT
-            } else {
-                currentA = currentT
-            }
-        } while (
-            Math.abs(currentX) > SUBDIVISION_PRECISION &&
-            ++i < SUBDIVISION_MAX_ITERATIONS
-        )
-        return currentT
-    }
-
-    private newtonRaphsonIterate(
-        aX: number,
-        aGuessT: number,
-        mX1: number,
-        mX2: number
-    ): number {
-        let guessT = aGuessT
         for (let i = 0; i < NEWTON_ITERATIONS; ++i) {
-            const currentSlope = this.getSlope(guessT, mX1, mX2)
-            if (currentSlope === 0.0) {
-                return guessT
-            }
-            const currentX = this.calcBezier(guessT, mX1, mX2) - aX
-            guessT -= currentX / currentSlope
+            const residual = this.calcX(t) - x
+            if (residual === 0.0) return t
+            if (residual > 0.0) high = t
+            else low = t
+            const slope = this.getSlope(t)
+            if (slope < NEWTON_MIN_SLOPE) break
+            const next = t - residual / slope
+            if (!(next > low && next < high)) break
+            const step = Math.abs(next - t)
+            t = next
+            if (step < T_PRECISION) return t
         }
-        return guessT
+
+        for (let i = 0; i < BISECTION_MAX_ITERATIONS; ++i) {
+            if (high - low < T_PRECISION) break
+            t = (low + high) / 2
+            if (this.calcX(t) > x) high = t
+            else low = t
+        }
+        return (low + high) / 2
     }
 
     /**
@@ -162,8 +125,11 @@ export class BezierTimingFunction extends TimingFunction {
         ) {
             return x
         }
+        if (x <= 0) return 0
+        if (x >= 1) return 1
         // Solve for t given x, then calculate y(t)
-        return this.calcBezier(this.getTForX(x), this.opt.p2.y, this.opt.p3.y)
+        const t = this.getTForX(x)
+        return ((this.ay * t + this.by) * t + this.cy) * t
     }
 
     public step(

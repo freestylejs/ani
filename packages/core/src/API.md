@@ -815,7 +815,7 @@ myTimeline.play({ from: { scale: 1 } });
 
 #### Cost does not depend on the count
 
-A loop is represented once in the plan, not `count` times: the first iteration starts from the value the animated properties have where the loop starts, every later one from the end state of the previous iteration, which is the same for all of them. Seeking anywhere costs the same as seeking in the first iteration, and `loop(child, 1e6)` builds as fast as `loop(child, 2)`. Values equal those of the same tree written as a `sequence` of copies (dynamic springs restart in every iteration), to floating-point precision (1e-9), `bezier` / `ease*` timings included.
+A loop is represented once in the plan, not `count` times: the first iteration starts from the value the animated properties have where the loop starts, every later one from the end state of the previous iteration, which is the same for all of them. Seeking anywhere costs the same as seeking in the first iteration, and `loop(child, 1e6)` builds as fast as `loop(child, 2)`. Values equal those of the same tree written as a `sequence` of copies (dynamic springs restart in every iteration), to 1e-9 (absolute, scaled by the distance travelled), whatever the timing, `bezier` / `ease*` included.
 
 A finite loop that shares a property with another segment running while the loop runs (for example `parallel([loop(a, 3), b])` where both animate `x`) is written out as copies instead, with identical values; the plan then grows with the count.
 
