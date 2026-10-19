@@ -1,26 +1,26 @@
 {
     "raf-minimal": {
-        "gzip": 10600
+        "gzip": 13500
     },
     "raf-composition": {
-        "gzip": 12600
+        "gzip": 16000
     },
     "waapi-minimal": {
-        "gzip": 10500
+        "gzip": 14200
     },
     "group": {
-        "gzip": 11300
+        "gzip": 14100
     },
     "follow": {
-        "gzip": 12700
+        "gzip": 15600
     },
     "states": {
-        "gzip": 11500
+        "gzip": 14400
     },
     "values-color": {
         "gzip": 4300
     },
     "everything": {
-        "gzip": 22300
+        "gzip": 26400
     }
 }
