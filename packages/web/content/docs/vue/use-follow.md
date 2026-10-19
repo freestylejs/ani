@@ -8,7 +8,7 @@ This composable creates a core `follow` value and binds an element to it. `follo
 ### Example
 
 ```vue
-<script setup>
+<script setup lang="ts">
 import { useFollow } from "@freestylejs/ani-vue";
 
 const { ref, style, follower } = useFollow(
@@ -16,7 +16,7 @@ const { ref, style, follower } = useFollow(
   { spring: { m: 1, k: 170, c: 26 } }
 );
 
-const onMove = (event) =>
+const onMove = (event: PointerEvent) =>
   follower.set({ translateX: event.clientX, translateY: event.clientY });
 </script>
 

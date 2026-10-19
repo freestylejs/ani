@@ -51,7 +51,7 @@ This primitive writes animation styles directly to a DOM element using the `use:
 -   **One action, many nodes.** The returned action can be applied to several nodes; each keeps its own binding.
 -   **Resolver.** `options.resolver` shapes both the `style` string and the writes (custom properties such as `--x` included).
 -   **Ownership.** The action never disposes the timeline you pass. Use [`useTimeline`](/en/docs/svelte/use-timeline) to create it.
--   **Removed.** The `events` / `cleanupEvents` options and the `[action, controller]` tuple are gone.
+-   **Events.** There is no `events` option. Attach handlers with Svelte (`on:click`) and call the timeline.
 
 #### When to Use
 

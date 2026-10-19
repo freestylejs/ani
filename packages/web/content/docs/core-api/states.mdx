@@ -24,6 +24,7 @@ const myStates = a.createStates({
 });
 
 // 3. Write the value to an element. The binding follows every transition.
+const element = document.createElement("div");
 const unbind = myStates.bind(element);
 
 // 4. Transition to a new state. This will smoothly switch to the 'active' animation.
@@ -44,6 +45,8 @@ const result = await myStates.transitionTo('active'); // 'ended'
 -   **Atomic.** An unknown state name throws a `RangeError` *before* anything changes. An invalid `timelineConfig` (for example a malformed `from`) is rolled back: the machine keeps its previous state and timeline, and the error is rethrown.
 -   **`interrupt: false`.** If the current timeline is `PLAYING`, the transition is rejected, nothing changes (state, timeline and listeners stay as they are) and the promise resolves `'skipped'`. `transitionTo` takes the state and one config: a third argument throws a `TypeError`.
 -   **The promise.** `transitionTo` returns the run of the new timeline and never rejects: `'ended'`, `'interrupted'` (another transition replaced it), `'skipped'`, `'reset'` or `'disposed'` (also after `dispose()`).
+-   **Seconds.** The `delay` of a `timelineConfig` is in seconds, like on `play()`.
+-   **Reduced motion.** The timelines of a machine use the default policy `'jump'`. To change that, pass a `clock` whose `reducedMotion` you control. See [Reduced motion](/en/docs/guides/reduced-motion).
 -   **Replaced timelines are disposed.** After a transition the old timeline is dead (`dispose()`d), together with the bindings and listeners attached through the machine. Do not keep a reference to `timeline()` across transitions: use `bind`, `onUpdate` or `onTransition`, which follow the current timeline.
 
 #### The Controller
@@ -62,8 +65,17 @@ The `createStates` function returns a controller object with the following membe
 | `dispose()` | Disposes the current timeline and clears every binding and subscriber. Idempotent. Afterwards `transitionTo` resolves `'disposed'`. |
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const myStates = a.createStates({
+  initial: "idle",
+  initialValue: { opacity: 0 },
+  states: { idle: a.ani({ to: { opacity: 0 }, duration: 0.2 }) },
+});
+const element = document.createElement("div");
+
 const unbind = myStates.bind(element);
-const stop = myStates.onUpdate(({ state }) => render(state));
+const stop = myStates.onUpdate(({ state }) => console.log(state.opacity));
 
 // when the owner goes away
 unbind();

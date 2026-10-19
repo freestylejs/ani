@@ -47,6 +47,8 @@ The `ani` function is a **"leaf" node in the animation tree**, meaning it doesn'
 `timing` accepts one [timing function](/en/docs/core-api/timing) for all properties. Record shapes also accept one function per property (every animated property needs one), and array shapes accept an array with one function per value.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
 a.ani({
   to: { x: 100, opacity: 1 },
   duration: 1,
@@ -70,7 +72,7 @@ a.ani({
 | `props.to` | `G` | Target values. Its shape (record or array) defines the animated properties. |
 | `props.duration` | `number` | Seconds, finite and `>= 0`. |
 | `props.timing` | `TimingFunction` or per-property functions | Defaults to `linear()`. |
-| `id` | `string` | (Optional) Identifier of the node. |
+| `props.id` | `string` | (Optional) Identifier of the node. `ani` takes one argument: a second argument throws a `TypeError`. |
 
 ### Related Components
 

@@ -30,16 +30,38 @@ window.addEventListener("keydown", (event) => {
 Drag and release: follow the pointer with `jump`, then fling with the release velocity.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+
+const element = document.createElement("div");
 const card = a.follow({ x: 0 });
 card.bind(element, {
   resolver: { x: (v) => ({ key: "transform", value: `translateX(${v}px)` }) },
 });
 
+let dragging = false;
+let startX = 0;
+let lastX = 0;
+let lastTime = 0;
+let pointerVelocity = 0; // px per second
+
+element.addEventListener("pointerdown", (event) => {
+  dragging = true;
+  startX = event.clientX;
+  lastX = event.clientX;
+  lastTime = event.timeStamp;
+});
+
 element.addEventListener("pointermove", (event) => {
-  if (dragging) card.jump({ x: event.clientX - startX });
+  if (!dragging) return;
+  const dt = (event.timeStamp - lastTime) / 1000;
+  if (dt > 0) pointerVelocity = (event.clientX - lastX) / dt;
+  lastX = event.clientX;
+  lastTime = event.timeStamp;
+  card.jump({ x: event.clientX - startX });
 });
 
 element.addEventListener("pointerup", () => {
+  dragging = false;
   // spring home, starting at the speed of the pointer
   void card.set({ x: 0 }, { velocity: { x: pointerVelocity } });
 });
@@ -57,9 +79,11 @@ element.addEventListener("pointerup", () => {
 -   `onUpdate` listeners get one `{ state, status }` frame per clock frame while moving (commit phase), plus the synchronous notification of `jump`.
 -   `dispose()` stops the motion and drops bindings and listeners. Later `set` calls resolve `'disposed'`, `jump` does nothing. It is idempotent.
 
+`follow` does not read the reduced-motion preference. The motion follows your input, so gate it yourself if it is decorative. See [Reduced motion](/en/docs/guides/reduced-motion).
+
 ### API Reference
 
-```typescript
+```text
 function follow<G extends Record<string, number>>(
   initial: G,
   options?: {

@@ -13,18 +13,22 @@ Every frame, a playing timeline computes new values. What happens next decides t
 
 | Approach | Per frame work | Use for |
 | :--- | :--- | :--- |
-| `useAniRef` / `createAniRef` / Vue and Svelte `useAniRef` | Computes values and writes `element.style` directly. No framework render. | Styles of many elements |
+| `useAniRef` / `createAniRef` / Vue and Svelte `useAniRef` | Computes values and writes `element.style` directly in the commit phase. No framework render. | Styles of one element |
+| `useAniGroup` / `createAniGroup` / Vue and Svelte `useAniGroup` | One plan and one clock subscription for the whole list, written per element. No framework render. | Styles of many elements |
 | `useAni` / `createAni` | Updates framework state, which re-renders what reads it. | Text, attributes or props driven by an animation |
 | [`waapiTimeline`](/en/docs/core-api/timeline) | None in JavaScript. The browser animates natively. | Simple transitions and endless loops |
 
--   **Do** use the `*Ref` bindings for style animation, even for thousands of elements.
+-   **Do** use the `*Ref` and `*Group` bindings for style animation, even for thousands of elements.
 -   **Don't** use `useAni` for transforms: one re-render per element per frame does not scale.
 
 ### Share nodes, not timelines
 
 An animation tree is immutable and holds no values. Build it once and use it for every element.
 
-```typescript
+```tsx
+import * as a from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-react";
+
 // module scope: created once
 const fadeIn = a.sequence([
   a.ani({ to: { opacity: 1 }, duration: 0.3 }),
@@ -33,12 +37,16 @@ const fadeIn = a.sequence([
 
 // one timeline per element, all sharing the same tree
 function Item() {
-  const timeline = useMemo(() => a.rafTimeline(fadeIn), []);
-  // ...
+  const timeline = useTimeline(() => a.rafTimeline(fadeIn));
+  const { ref, style } = useAniRef(timeline, {
+    initialValue: { opacity: 0, translateY: 20 },
+  });
+  return <li ref={ref} style={style} />;
 }
 ```
 
 -   One **timeline per element** when animations are independent. A timeline has one set of values, so elements bound to the same timeline always look identical.
+-   For a list that plays one tree on every item, use one [`rafGroup`](/en/docs/core-api/group): a single clock subscription and a single plan compilation, with a per-item offset.
 -   The WAAPI compilation cache is keyed by the shared root node, so many elements with the same `from` compile once.
 -   Reuse the same `resolver` object to keep cache hits.
 
@@ -50,10 +58,11 @@ All timelines use the shared [`defaultClock`](/en/docs/core-api/clock) by defaul
 
 -   **Per frame**, a timeline costs time proportional to the number of animated **properties**. It does not grow with the number of segments in the tree or with how many already finished.
 -   Subscribers of one timeline share **one** state object per frame (read-only), so extra listeners do not allocate extra state.
--   `loop(child, n)` flattens `n` copies into the plan once. Use `repeat: Infinity` for endless animation.
+-   `loop(child, n)` is represented once in the plan, so its cost does not depend on `n`. Use `loop(child, Infinity)` or `repeat: Infinity` for endless animation.
 -   `play()` validates and compiles the tree (once per call). Avoid calling it every frame.
+-   A [`rafGroup`](/en/docs/core-api/group) evaluates targets with the same offset and `from` values once, so N identical targets cost one evaluation plus N writes.
 
-On the project benchmark (Node, no DOM writes): the per-frame cost of a 1000-segment timeline late in the animation is 1.3x the cost early on (it was 61x), and 1000 timelines of 20 segments cost about 0.6 ms per frame (it was 6.8 ms). Compiling a 1000-segment tree to WAAPI keyframes takes about 2 ms (it was about 300 ms).
+On the project benchmark (Node, no DOM writes): the per-frame cost of a 1000-segment timeline late in the animation is 1.3x the cost early on, and 1000 timelines of 20 segments cost about 0.6 ms per frame. Compiling a 1000-segment tree to WAAPI keyframes takes about 2 ms.
 
 ### Ownership and disposal
 
@@ -61,15 +70,17 @@ Whoever creates a timeline or state machine owns it and must release it.
 
 | Created by | Owner | Released by |
 | :--- | :--- | :--- |
-| `useAniStates` / `createAniStates` | The binding | Automatically on unmount / owner cleanup |
-| Timeline you pass to `useAniRef`, `useAni`, ... | You | You: call `timeline.dispose()` (the binding only **detaches**) |
-| `createStates(...)` in plain code | You | `states.dispose()` |
+| `useTimeline` / `createTimeline` | The binding | Automatically on unmount / owner cleanup |
+| `useAniStates` / `createAniStates`, `useFollow` / `createFollow` | The binding | Automatically on unmount / owner cleanup |
+| Timeline or group you pass to `useAniRef`, `useAni`, `useAniGroup`, ... | You | You: call `dispose()` (the binding only **detaches**), or create it with `useTimeline` |
+| `createStates(...)`, `follow(...)`, `rafGroup(...)` in plain code | You | `dispose()` |
 | `rafTimeline(...)` in plain code | You | `timeline.dispose()` |
+| `bind(...)` | You | The returned unbind function |
 | `onUpdate` callback | You | The returned unsubscribe function |
 
 -   A **playing** timeline stays on the clock until it ends, pauses, resets or is disposed. An endless animation (`repeat: Infinity`) runs forever if its owner forgets it.
 -   The bindings never dispose a timeline you gave them, because you may still use it elsewhere.
--   Svelte: the state machine of `useAniStates` is disposed when the last element using the action is destroyed.
+-   Svelte: `useTimeline`, `useAniStates` and `useFollow` dispose what they create in `onDestroy`.
 
 ### Keep the loop healthy
 
@@ -80,7 +91,7 @@ Whoever creates a timeline or state machine owns it and must release it.
 ### Checklist
 
 -   Build trees at module scope or memoize them.
--   Use `*Ref` bindings for styles, one timeline per element, shared trees.
+-   Use `*Ref` bindings for styles, one timeline per independent element, one `rafGroup` for lists, shared trees.
 -   Dispose what you create; let the bindings dispose what they create.
 -   Prefer `waapiTimeline` for simple transitions that need no per-frame JavaScript.
 -   Test mount/unmount churn and check `clock.size`.

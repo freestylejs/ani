@@ -1,8 +1,8 @@
 {
     "title": "Core API",
     "pages": [
-        "timeline",
         "dynamic_timeline",
+        "timeline",
         "group",
         "follow",
         "ani",

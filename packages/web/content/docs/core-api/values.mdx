@@ -12,6 +12,7 @@ import * as a from "@freestylejs/ani-core";
 import { rafTimeline } from "@freestylejs/ani-core";
 import { color } from "@freestylejs/ani-core/values";
 
+const swatch = document.createElement("div");
 const tint = rafTimeline(a.ani({ to: color.encode("#ff3366"), duration: 0.4 }));
 tint.onUpdate(({ state }) => { swatch.style.backgroundColor = color.decode(state); });
 tint.play({ from: color.encode("rgb(51 85 255)") });

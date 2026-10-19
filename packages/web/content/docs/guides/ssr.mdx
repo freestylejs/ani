@@ -1,6 +1,6 @@
 ---
 title: Server rendering (SSR)
-description: What runs on the server, what does not, and how to avoid unstyled flashes.
+description: What runs on the server, what does not, and how the initial style reaches the first paint.
 ---
 
 Ani can be imported and rendered on the server without a DOM. Nothing animates there, and nothing leaks.
@@ -10,7 +10,8 @@ Ani can be imported and rendered on the server without a DOM. Nothing animates t
 -   **Importing** any package. No module touches `window` or `document` at import time.
 -   **Creating** animation trees, timelines, `createStates` machines and clocks.
 -   **Calling `play()` and `transitionTo()`.** The shared clock finds no frame source (`requestAnimationFrame`) and `subscribe` becomes a **silent no-op**: it does not throw and does **not retain** the timeline. The timeline holds its starting value but never advances.
--   **Rendering with the bindings.** `useAni`, `useAniRef`, `useAniStates` (and the Solid, Vue and Svelte equivalents) render with their initial values. They subscribe to timelines only after mount, so a server-rendered tree retains no subscriptions.
+-   **Rendering with the bindings.** `useAni`, `useAniRef`, `useAniGroup`, `useAniStates` and `useFollow` (and the Solid, Vue and Svelte equivalents) render with their initial values. They subscribe to timelines only after mount, so a server-rendered tree retains no subscriptions.
+-   **Reduced motion.** Without `matchMedia` the preference is off on the server. See [Reduced motion](/en/docs/guides/reduced-motion).
 
 ### What needs the browser
 
@@ -19,16 +20,40 @@ Ani can be imported and rendered on the server without a DOM. Nothing animates t
 
 ### Initial styles and hydration
 
-`useAniRef` and its equivalents apply `initialValue` to the element **after it mounts** (in a layout effect for React, before paint). The server HTML does not contain that style, so the first server-rendered paint shows the unstyled element until hydration.
-
-To avoid a flash, also write the starting style in your markup:
+The element bindings (`useAniRef`, `useAniGroup`, `useAniStates`, `useFollow` and their equivalents) return a `style` built from the initial value (`initialValue`, or `initial` for `useFollow`). **Render it on the element**, and the server HTML already contains the starting style, so the first paint shows the initial value instead of an unstyled element.
 
 ```tsx
-<div ref={ref} style={{ opacity: 0, transform: "translateY(20px)" }} />
+import * as a from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-react";
+
+export function Card() {
+  const timeline = useTimeline(() =>
+    a.rafTimeline(
+      a.ani({ to: { opacity: 1, translateY: 0 }, duration: 0.4 })
+    )
+  );
+  const { ref, style } = useAniRef(timeline, {
+    initialValue: { opacity: 0, translateY: 20 },
+  });
+
+  // `style` is rendered on the server: opacity 0 and translateY(20px)
+  return <div ref={ref} style={style} />;
+}
 ```
+
+After mount, `ref` binds the element to the timeline, and the core writes every frame. The client renders the same `style`, so hydration does not mismatch, and re-rendering never resets an animated style.
+
+-   **Vue:** `:style="style"`. **Solid:** `style={style()}`. **Svelte:** `{style}`, a CSS declaration string.
+-   Without `initialValue`, `style` is `undefined` and the server renders no animated style.
+-   Without a binding, build the same object with `createStyleSheet(values, resolver?)`. See [Styles & Building Bindings](/en/docs/core-api/advanced/building-bindings).
 
 ### Rules for your own code
 
 -   Do not call `play()` during render. Start animations in an effect, `onMounted` or `onMount`.
 -   Do not rely on animation callbacks (`onUpdate`) firing on the server.
 -   Test your components in a `node` environment to catch accidental DOM access. See [Testing](/en/docs/guides/testing).
+
+### Related Components
+
+-   [`clock`](/en/docs/core-api/clock) - Why `subscribe` is a no-op without a frame source.
+-   [Testing](/en/docs/guides/testing) - Run the same components deterministically.

@@ -13,7 +13,11 @@ import { BlocksIcon, ShieldCheckIcon, ZapIcon, BoxesIcon, RocketIcon, BookOpenIc
 
 The core philosophy is to **separate an animation's declarative structure from its imperative execution**.
 
-You define a complex animation *once* as a **static tree**, and then use a controller to play it many times with different runtime values.
+You define a complex animation *once* as a **static tree**, and then use a timeline to play it many times with different runtime values.
+
+<Callout>
+  Upgrading from ANI 1.x? Run the codemod and read [Migrating from 1.x](/en/docs/guides/migration-v2).
+</Callout>
 
 ### What is Animation Tree?
 
@@ -55,27 +59,27 @@ const animationTree = a.loop(
   ),
   3 // Loop: Repeat the entire sequence 3 times
 )
-```
 
-Yes, after this part you can create static animation keyframes using `timeline`.
-
-```ts
+// The tree describes the motion. A timeline plays it.
+// `waapiTimeline` compiles the tree to native browser keyframes.
 const timeline = a.waapiTimeline(animationTree)
-
-// You can now, have full control of animation tree.
+const targetElement = document.createElement("div")
 
 timeline.play(targetElement, {
   from: {
     translateX: 0,
     translateY: 0,
     rotate: 0,
-  } // set start values.
+    skewX: 0,
+  }, // start values: every animated property needs one
 })
 ```
 
+The tree holds no state, so one tree can drive many timelines. Use [`waapiTimeline`](/en/docs/core-api/timeline) for native playback and [`rafTimeline`](/en/docs/core-api/dynamic_timeline) when you need the value on every frame.
+
 ## Small Bundle Size, but Powerful.
 
-The whole core library (every export, bundled and minified with esbuild) is about **11 kB gzipped** and the package is tree-shakeable (`sideEffects: false`). Check the current size of any release on [bundlephobia](https://bundlephobia.com/package/@freestylejs/ani-core).
+The package is tree-shakeable (`sideEffects: false`), and CI enforces size budgets on minified, gzipped bundles: a minimal `rafTimeline` (`ani` and `rafTimeline`) stays under **13.5 kB** and the entire root entry under **26.4 kB**. You pay only for what you import. Check the current size of any release on [bundlephobia](https://bundlephobia.com/package/@freestylejs/ani-core).
 
 ## Built for Scale
 

@@ -3,34 +3,27 @@ title: Dynamic Animations
 description: Create interactive animations with runtime values using keyframes, durations, and repeat.
 ---
 
-The primary mechanism for creating interactive animations is to provide dynamic values to the `rafTimeline.play()` method. This allows you to override the static values defined in your `ani` nodes at runtime.
+The primary mechanism for creating interactive animations is to provide dynamic values to the [`rafTimeline`](/en/docs/core-api/dynamic_timeline) `play()` method. This allows you to override the static values defined in your `ani` nodes at runtime. [`waapiTimeline`](/en/docs/core-api/timeline) and [`rafGroup`](/en/docs/core-api/group) accept the same `keyframes`, `durations`, `repeat`, `delay` and `velocity` (WAAPI has no `velocity`).
 
 ### API Definition
 
 The `play` method's configuration object accepts several properties for dynamic animations.
 
-```typescript
-rafTimeline.play(config: {
-  from: G;
-  keyframes?: Array<G | 'keep'>;
-  durations?: Array<number | 'keep'>;
-  repeat?: number;
-  delay?: number;
-  velocity?: Partial<G>;
-});
-```
-
--   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes.
--   `durations`: An array of `duration` values (in seconds) that override the original durations. Overridden durations are reflected in the segment schedule and the timeline's total `duration`, so playback ends when the shortened (or extended) plan completes. `reset()` restores the base duration.
--   `repeat`: The number of additional runs. Use `Infinity` for an endless loop.
--   `delay`: Seconds to wait before the first frame (finite and `>= 0`).
--   `velocity`: Initial velocity per property (units per second) for [`dynamicSpring`](/en/docs/core-api/timing). Without it, interrupting a playing timeline continues from its current velocity.
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `from` | `AniGroup<G>` | Start values. Every animated property needs one. |
+| `keyframes` | `Array<G \| 'keep'>` | An array of `to` values that override the ones defined in the `ani` nodes. |
+| `durations` | `Array<number \| 'keep'>` | An array of `duration` values (in **seconds**) that override the original durations. Overridden durations are reflected in the segment schedule and the timeline's total `duration`, so playback ends when the shortened (or extended) plan completes. `reset()` restores the base duration. |
+| `repeat` | `number` | The number of additional runs. Use `Infinity` for an endless loop. |
+| `delay` | `number` | **Seconds** to wait before the first frame (finite and `>= 0`). |
+| `velocity` | `Partial<G>` | Initial velocity per property (units per second) for [`dynamicSpring`](/en/docs/core-api/timing). Without it, interrupting a playing timeline continues from its current velocity. |
+| `interrupt` | `boolean` | Default `true`. With `false`, a `PLAYING` timeline is left untouched and the promise resolves `'skipped'`. |
 
 ### How it Works
 
 When you call `play` with a `keyframes` or `durations` array, the library ignores the corresponding static values in your `ani` nodes. Instead, it maps the values from the array to each `ani` node in the order they appear in the animation tree.
 
-**The number of items in the arrays must exactly match the number of `ani` nodes in your animation structure.** A mismatch throws from `play()`. Use the string `'keep'` to skip an override for a specific node. A `delay()` counts as one node, and so does a segment that [`parallel`](/en/docs/core-api/parallel) kept as a hold.
+**The number of items in the arrays must exactly match the number of `ani` nodes in your animation structure.** A mismatch throws from `play()`. Use the string `'keep'` to skip an override for a specific node. A `delay()` counts as one node, and so does a segment that [`parallel`](/en/docs/core-api/parallel) kept as a hold. The child of a [`loop`](/en/docs/core-api/loop#overrides-one-slot-per-node-as-written) counts once, whatever the loop count.
 
 ### Example Usage
 

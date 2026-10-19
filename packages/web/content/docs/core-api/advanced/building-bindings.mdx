@@ -22,16 +22,28 @@ All transform functions are joined in key order into **one** `transform` string.
 
 > A property such as `x` is **not** a transform shorthand: it is passed through as a style key named `x`. Use `translateX`, or map it with a resolver.
 
+```typescript
+import { createStyleSheet } from "@freestylejs/ani-core";
+
+const style = createStyleSheet({ translateX: 100, opacity: 0.5 });
+// { transform: 'translateX(100px)', opacity: 0.5 }
+```
+
 #### Custom `resolver`
 
 Pass a `resolver` to `bind()` to control the style key and value of a property. The returned key may be a CSS custom property (`--progress`) or a hyphenated name.
 
 ```typescript
-const resolver = {
-  progress: (value) => ({ key: "--progress", value: `${value}%` }),
-};
+import * as a from "@freestylejs/ani-core";
 
-timeline.bind(element, { resolver });
+const timeline = a.rafTimeline(a.ani({ to: { progress: 100 }, duration: 1 }));
+const element = document.createElement("div");
+
+timeline.bind(element, {
+  resolver: {
+    progress: (value) => ({ key: "--progress", value: `${value}%` }),
+  },
+});
 timeline.play({ from: { progress: 0 } });
 ```
 
@@ -42,8 +54,17 @@ timeline.play({ from: { progress: 0 } });
 -   camelCase keys (`opacity`, `transform`) are assigned as properties.
 -   `--custom` and hyphenated keys (`--progress`, `background-color`) go through `style.setProperty`. Plain property assignment silently ignores them.
 
+The same method exists on every animated object: `rafGroup` has `bind(targets)` and `bindAt(index, target)`, `createStates` and `follow` have `bind(target)`. Each returns an unbind function.
+
 ```typescript
-const unbind = timeline.bind(element, { resolver });
+import * as a from "@freestylejs/ani-core";
+
+const timeline = a.rafTimeline(a.ani({ to: { opacity: 1 }, duration: 1 }));
+const element = document.createElement("div");
+
+const unbind = timeline.bind(element);
+// when the owner goes away
+unbind();
 ```
 
 `createStyleSheet(values, resolver?)` is the pure part: use it where nothing can be bound yet, for example to render the first paint on the server.
@@ -53,26 +74,32 @@ const unbind = timeline.bind(element, { resolver });
 State machines replace their timeline on every transition. `createTimelineController(getTimeline, hooks?)` returns a facade that forwards **every** public member of the timeline to whichever timeline `getTimeline()` returns *at call time*, so references handed to your users never go stale.
 
 ```typescript
-import { createStates, createTimelineController } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
-const states = createStates({ /* ... */ });
-const controller = createTimelineController(() => states.timeline(), {
-  onPlay: (config) => remember(config.from), // runs before each forwarded play()
-  onReset: () => restoreInitialStyle(),      // runs after each forwarded reset()
+const states = a.createStates({
+  initial: "idle",
+  initialValue: { opacity: 0 },
+  states: { idle: a.ani({ to: { opacity: 1 }, duration: 0.2 }) },
+});
+
+const controller = a.createTimelineController(() => states.timeline(), {
+  onPlay: (config) => console.log(config.from), // runs before each forwarded play()
+  onReset: () => console.log("reset"), // runs after each forwarded reset()
 });
 
 controller.play({ from: { opacity: 0 } }); // plays on the current timeline
 ```
 
--   The facade is compile-time exhaustive: adding a public member to the timeline without forwarding it fails type checking of the library.
+-   `isRafTimeline(controller)` is `true` for the facade.
 -   `dispose()` is forwarded as is. A binding must only call it on timelines it created itself.
 
 ### Binding checklist
 
--   **Subscribe synchronously** to timeline changes, then resync from `states.timeline()`, so a transition issued before the subscription is not missed.
--   **Dispose what you create** (state controllers, timelines), and only **detach** from what the user passes in.
--   **Never write to the DOM on the server.** Subscribe after mount. See [SSR](/en/docs/guides/ssr).
--   **Write styles directly** (`bind`) instead of re-rendering per frame. See [large-scale usage](/en/docs/guides/performance).
+-   **Write styles with `bind`** (`bindAt` for list items, `machine.bind`, `follower.bind`) instead of re-rendering per frame. See [large-scale usage](/en/docs/guides/performance).
+-   **Follow timeline swaps with the machine**: `machine.bind` and `machine.onUpdate` already follow every transition, and `machine.onTransition` tells you when the timeline changes.
+-   **Dispose what you create** (state machines, timelines, followers), and only **detach** from what the user passes in.
+-   **Render the initial style on the server** with `createStyleSheet`, and **never write to the DOM on the server**. Subscribe after mount. See [SSR](/en/docs/guides/ssr).
+-   **Leave events to the framework.** Core has no event layer: the user attaches handlers with the framework's own syntax and calls the timeline.
 
 ### Related Components
 

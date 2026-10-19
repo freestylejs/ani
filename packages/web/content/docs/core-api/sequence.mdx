@@ -47,8 +47,10 @@ myTimeline.play({ from: { opacity: 0, x: 50 } });
 | Name | Type | Description |
 | :--- | :--- | :--- |
 | `children` | `AnimationNode[]` | Nodes played in order. All share one data shape. |
-| `timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
-| `id` | `string` | (Optional) Identifier of the node. |
+| `options.timing` | `TimingFunction` | (Optional) Inherited by child segments without their own timing. |
+| `options.id` | `string` | (Optional) Identifier of the node. |
+
+The second argument is an options object: `a.sequence(children, { timing, id })`. A bare timing function or any extra argument throws a `TypeError`.
 
 ### Related Components
 

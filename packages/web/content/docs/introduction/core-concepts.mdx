@@ -7,7 +7,15 @@ import { File, Folder, Files } from "fumadocs-ui/components/files";
 
 **The core philosophy is to separate an animation's declarative structure from its imperative execution.**
 
-This separation is what makes animations in FreestyleJS Ani reusable, type-safe, and easy to reason about. You define a complex animation *once* as a static tree, and then use a controller to play it many times with different runtime values.
+This separation is what makes animations in FreestyleJS Ani reusable, type-safe, and easy to reason about. You define a complex animation *once* as a static tree, and then use a timeline to play it many times with different runtime values.
+
+Ani has three layers:
+
+| Layer | What it is | Where it lives |
+| :--- | :--- | :--- |
+| **Description** | Immutable node trees and timing functions. No state, no time, no DOM. | [`ani`](/en/docs/core-api/ani), [`sequence`](/en/docs/core-api/sequence), [`timing`](/en/docs/core-api/timing) |
+| **Time** | One clock runs the frame loop and hands every subscriber a delta in seconds. | [`clock`](/en/docs/core-api/clock) |
+| **Realization** | Engines and bindings turn a tree into values and DOM writes. | [`rafTimeline`](/en/docs/core-api/dynamic_timeline), [`waapiTimeline`](/en/docs/core-api/timeline), the framework bindings |
 
 ### The Animation Tree: A Declarative Blueprint
 
@@ -16,7 +24,7 @@ Every animation is a tree of **Animation Nodes**. This tree is a declarative blu
 There are two kinds of nodes:
 
 -   **Leaf Nodes:** These are the simplest units. The most important is [`ani`](/en/docs/core-api/ani), which defines a single tween from a start value to an end value.
--   **Branch Nodes:** These are **composition** nodes that group other nodes together. They allow you to build complex animations from simple parts. Examples include [`sequence`](/en/docs/core-api/sequence), [`parallel`](/en/docs/core-api/parallel), and [`stagger`](/en/docs/core-api/stagger).
+-   **Branch Nodes:** These are **composition** nodes that group other nodes together. They allow you to build complex animations from simple parts. Examples include [`sequence`](/en/docs/core-api/sequence), [`parallel`](/en/docs/core-api/parallel), [`stagger`](/en/docs/core-api/stagger) and [`loop`](/en/docs/core-api/loop).
 
 You build an animation by nesting these nodes. For example, the following tree describes an animation that fades in, then moves and rotates at the same time, and finally fades out.
 
@@ -33,18 +41,32 @@ You build an animation by nesting these nodes. For example, the following tree d
 
 ### The Timeline: The Execution Engine
 
-The **[`timeline`](/en/docs/core-api/timeline)** is the engine that brings the animation tree to life. It takes the root node of your tree and provides a controller to manage its playback.
+A **timeline** is the engine that brings the animation tree to life. It takes the root node of your tree and provides a controller to manage its playback. Ani has two engines with one shared semantics:
 
--   It calculates the animation's state for each frame from a [clock](/en/docs/core-api/clock).
--   It never changes the animation tree: many timelines can share one tree.
+| Engine | Runs | Use for |
+| :--- | :--- | :--- |
+| [`rafTimeline`](/en/docs/core-api/dynamic_timeline) | In JavaScript, frame by frame. | Any numeric property, per-frame values, springs that keep their velocity. |
+| [`waapiTimeline`](/en/docs/core-api/timeline) | In the browser, with the Web Animations API. | CSS properties, simple transitions and endless loops. |
+
+-   `rafTimeline` calculates the animation's state for each frame from a [clock](/en/docs/core-api/clock).
+-   A timeline never changes the animation tree: many timelines can share one tree.
 -   It exposes imperative controls like `play()`, `pause()`, `seek()` and `dispose()`.
+-   `play()` returns a promise that never rejects and resolves once per run: `'ended'`, `'interrupted'`, `'skipped'`, `'reset'` or `'disposed'`.
 -   It reports its lifecycle through `status`: `IDLE`, `PLAYING`, `PAUSED` or `ENDED`.
 
-You create a `timeline` once for a given animation structure, and you can play it multiple times with different starting values or dynamic `keyframes`.
+You create a timeline once for a given animation structure, and you can play it multiple times with different starting values or dynamic `keyframes`. To animate a list, use a [`rafGroup`](/en/docs/core-api/group): one tree drives N targets through one clock subscription.
 
 ### The Clock: One Frame Loop
 
-Playing timelines subscribe to a **clock**. By default all timelines share one process-wide clock with a single `requestAnimationFrame` loop. See [clock](/en/docs/core-api/clock).
+Playing timelines subscribe to a **clock**. By default all timelines share one process-wide clock with a single `requestAnimationFrame` loop. Each frame runs three phases over all subscribers: **read**, **update** (compute only) and **commit** (write the DOM and notify listeners). Every timeline on a clock sees the same frame time. See [clock](/en/docs/core-api/clock).
+
+### Time is in seconds
+
+Every duration, delay and offset in the API is in **seconds**, including the `delay` of `play()`.
+
+### Reduced Motion
+
+Animations honor the `prefers-reduced-motion` setting by default: a timeline jumps to its end state. Opt out per timeline for essential motion. See [Reduced motion](/en/docs/guides/reduced-motion).
 
 ### Ownership
 
@@ -55,6 +77,8 @@ Whoever creates a timeline or state machine owns it and releases it with `dispos
 A key feature of the library is its **strong generic type system**. When you create the first `ani` node in a tree with a specific data shape (e.g., `{ x: number, opacity: number }`), the TypeScript compiler enforces that all subsequent nodes in that same tree operate on a compatible shape.
 
 ```ts
+import * as a from "@freestylejs/ani-core";
+
 // The shape { x: number } is inferred from the first `ani` node.
 const myAnimation = a.sequence([
     a.ani({ to: { x: 100 }, duration: 1 }),
@@ -63,10 +87,10 @@ const myAnimation = a.sequence([
 ]);
 ```
 
-This catches a large class of runtime errors at compile time, making your animations more robust and easier to refactor with confidence.
+This catches a large class of runtime errors at compile time, making your animations more robust and easier to refactor with confidence. Input that the types cannot check, such as a negative duration or a missing `from` key, throws synchronously with a clear message, never later inside a frame.
 
 ### Best Practices
 
--   **Define Once, Play Many Times:** Treat animation trees as static, reusable definitions. Create them once (e.g., in a `useMemo` hook or as a constant) and use the `timeline` controller to play them with different `from` values.
+-   **Define Once, Play Many Times:** Treat animation trees as static, reusable definitions. Create them once (e.g., as a module constant) and use a timeline to play them with different `from` values.
 -   **Embrace Composition:** Build complex effects by combining simple, single-purpose nodes. A fade and a move should be two separate `ani` nodes inside a `parallel` block, not one giant `ani` node.
 -   **Separate Concerns:** Keep your animation definitions separate from your component logic. This makes both easier to read, test, and maintain.
