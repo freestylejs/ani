@@ -497,7 +497,8 @@ function mutateSamples(
     })
 }
 
-describe('P4: RAF/WAAPI agreement', () => {
+// 100 generated trees: ~1 s alone, several times that on a loaded CI runner
+describe('P4: RAF/WAAPI agreement', { timeout: 20_000 }, () => {
     it('matches at keyframes and inside intervals (100 record trees)', () => {
         for (let i = 0; i < CASES; i++) {
             const c = buildCase(BASE_SEED + i)
