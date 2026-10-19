@@ -11,47 +11,41 @@ import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
 This example uses React and the `useAniRef` hook for a high-performance animation that updates the DOM directly.
 
 ```tsx
-import { a } from "@freestylejs/ani-core";
-import { useAniRef } from "@freestylejs/ani-react";
-import { useMemo, useRef } from "react";
+import * as a from "@freestylejs/ani-core";
+import { useAniRef, useTimeline } from "@freestylejs/ani-react";
 
 const MyAnimatedComponent = () => {
-  // 1. Create a ref to attach to the DOM element you want to animate.
-  const ref = useRef<HTMLDivElement>(null);
-
-  // 2. Define the animation's timeline.
-  const myTimeline = useMemo(
-    () =>
-      a.dynamicTimeline(
-        // Animation structure.
-        // >> move   to translateX: 500
-        // >> return to translateX: 0
-        a.sequence([
-          a.ani({ to: { translateX: 500 }, duration: 0.8 }),
-          a.ani({ to: { translateX: 0 }, duration: 1.2 }),
-        ]),
-      ),
-    []
+  // 1. Define the animation's timeline. The component owns it.
+  const myTimeline = useTimeline(() =>
+    a.rafTimeline(
+      // Animation structure.
+      // >> move   to translateX: 500
+      // >> return to translateX: 0
+      a.sequence([
+        a.ani({ to: { translateX: 500 }, duration: 0.8 }),
+        a.ani({ to: { translateX: 0 }, duration: 1.2 }),
+      ]),
+    )
   );
 
-  // 3. Connect the timeline to the ref.
-  const controller = useAniRef(ref, {
-    timeline: myTimeline,
+  // 2. Connect the timeline to an element.
+  const { ref, style } = useAniRef(myTimeline, {
     initialValue: { translateX: 0 }, // Set the initial animation value.
   });
 
   return (
     <>
 
-      {/* 4. Attach the ref to your element. */}
+      {/* 3. Attach the ref and the initial style to your element. */}
       <div
         ref={ref}
+        style={style}
         className="h-20 w-20 rounded-lg bg-blue-500"
       />
 
-      {/* 5. Use the controller to play the animation. */}
+      {/* 4. Use the timeline to play the animation. */}
       <button
-        onClick={() => controller.play({ from: { translateX: 0 } })}
+        onClick={() => myTimeline.play({ from: { translateX: 0 } })}
       >
         Play
       </button>
@@ -141,20 +135,20 @@ The **`timeline`** is the engine that runs your animation structure. You create 
 
 ```ts
 // The timeline is the controller for the blueprint.
-const myTimeline = a.dynamicTimeline(myAnimation);
+const myTimeline = a.rafTimeline(myAnimation);
 ```
 </Step>
 <Step>
 ### 4. Connect to UI & Play
 
-Finally, you use a framework-specific primitive (like `useAniRef` for React) to connect the `timeline` to a DOM element. You then use the `controller`'s `play` method to start the animation, providing a `from` value to set the starting point.
+Finally, you use a framework-specific primitive (like `useAniRef` for React) to connect the `timeline` to a DOM element. You then use the timeline's `play` method to start the animation, providing a `from` value to set the starting point.
 
 ```tsx
 // Connect the timeline to a ref...
-const controller = useAniRef(ref, { timeline: myTimeline });
+const { ref, style } = useAniRef(myTimeline, { initialValue: { translateX: 0 } });
 
 // ...and play it on demand.
-controller.play({ from: { translateX: 0 } });
+myTimeline.play({ from: { translateX: 0 } });
 ```
 </Step>
 </Steps>

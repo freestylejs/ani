@@ -10,14 +10,14 @@ It represents a single, atomic "tween"—a transition from a starting state to a
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define a simple animation that moves an object on the x-axis.
 const moveRight = a.ani({ to: { x: 100 }, duration: 0.5 });
 
 // 2. Create a timeline to control the animation.
 // The data shape `{ x: number }` is inferred from the `ani` node.
-const myTimeline = a.dynamicTimeline(moveRight);
+const myTimeline = a.rafTimeline(moveRight);
 
 // 3. Listen for updates to apply the animated values.
 myTimeline.onUpdate(({ state }) => {

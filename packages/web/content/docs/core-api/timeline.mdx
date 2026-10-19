@@ -9,7 +9,7 @@ This allows animations to run on the compositor thread (where possible), resulti
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define the animation structure.
 const myAnimation = a.sequence([
@@ -18,7 +18,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 2. Create a web-native timeline.
-const timeline = a.timeline(myAnimation);
+const timeline = a.waapiTimeline(myAnimation);
 
 // 3. Play on a specific DOM element.
 const element = document.getElementById("box");

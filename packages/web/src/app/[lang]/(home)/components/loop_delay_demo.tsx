@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
 
@@ -15,10 +15,10 @@ export const LoopDelayDemo = () => {
                 a.ani({ to: { scale: 1.5, opacity: 0.5 }, duration: 0.25 }),
                 a.ani({ to: { scale: 1, opacity: 1 }, duration: 0.35 }),
             ],
-            a.timing.spring({ m: 1, k: 200, c: 12 })
+            { timing: a.timing.spring({ m: 1, k: 200, c: 12 }) }
         )
 
-        return a.timeline(
+        return a.waapiTimeline(
             a.sequence(
                 [
                     a.ani({
@@ -32,7 +32,7 @@ export const LoopDelayDemo = () => {
                         duration: 0.5,
                     }),
                 ],
-                a.timing.spring({ m: 1, k: 200, c: 12 })
+                { timing: a.timing.spring({ m: 1, k: 200, c: 12 }) }
             )
         )
     }, [])
@@ -67,7 +67,7 @@ const LoopDelayDemo = () => {
             a.timing.spring({ m: 1, k: 200, c: 12 })
         )
 
-        return a.webTimeline(
+        return a.waapiTimeline(
             a.sequence(
                 [
                     a.ani({

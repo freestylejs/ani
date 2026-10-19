@@ -8,14 +8,14 @@ This primitive subscribes to a `timeline`'s state and updates a SolidJS signal o
 ### Example
 
 ```tsx
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { createAni } from "@freestylejs/ani-solid";
 import { createMemo } from "solid-js";
 
 const Counter = () => {
   // 1. Define the animation and create a timeline instance within a memo.
   const myTimeline = createMemo(() =>
-    a.dynamicTimeline(a.ani({ to: { count: 100 }, duration: 5 }))
+    a.rafTimeline(a.ani({ to: { count: 100 }, duration: 5 }))
   );
 
   // 2. Use the primitive to get the reactive value accessor and the controller.

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, type RafAniTimeline, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { type RafAniTimeline, rafTimeline } from '@freestylejs/ani-core'
 import { createRoot, createSignal } from 'solid-js'
 import { describe, expect, it } from 'vitest'
 import { createAni } from '../ani/create_ani'
@@ -12,8 +13,8 @@ const node = () =>
 describe('solid createAni', () => {
     it('tracks frames, follows accessor swaps with a never-stale controller, and unsubscribes on dispose', () => {
         const m = createManualClock()
-        const first = rafTimeline(node(), m.clock)
-        const second = rafTimeline(node(), m.clock)
+        const first = rafTimeline(node(), { clock: m.clock })
+        const second = rafTimeline(node(), { clock: m.clock })
         const firstSubs = trackSubscriptions(first)
         const secondSubs = trackSubscriptions(second)
         const [current, setCurrent] =
@@ -36,7 +37,7 @@ describe('solid createAni', () => {
         expect(firstSubs.live).toBe(0)
         expect(secondSubs.live).toBe(1)
         controller.play({ from: { opacity: 0.2 } })
-        expect(second.getCurrentValue()).toEqual({ opacity: 0.2 })
+        expect(second.value).toEqual({ opacity: 0.2 })
         expect(value().opacity).toBe(0.2)
         dispose()
         expect(secondSubs.live).toBe(0)
@@ -44,7 +45,7 @@ describe('solid createAni', () => {
 
     it('does not grow subscriptions over 1000 cycles', () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const subs = trackSubscriptions(timeline)
         for (let i = 0; i < 1000; i++) {
             createRoot((d) => {

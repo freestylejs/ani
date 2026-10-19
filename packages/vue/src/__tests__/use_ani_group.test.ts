@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, createClock, rafGroup } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { createClock, rafGroup } from '@freestylejs/ani-core'
 import { describe, expect, it } from 'vitest'
 import { createManualClockWith } from '../../../core/src/__tests__/integration/harness'
 import { useAniGroup } from '../index'

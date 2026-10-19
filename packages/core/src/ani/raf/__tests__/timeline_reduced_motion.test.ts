@@ -28,7 +28,7 @@ describe('RafAniTimeline reduced motion', () => {
         const m = createManualClock({ reducedMotion: true })
         const t = rafTimeline<{ x: number }>(node(), { clock: m.clock })
 
-        await expect(t.play({ from: { x: 0 }, delay: 5000 })).resolves.toBe(
+        await expect(t.play({ from: { x: 0 }, delay: 5 })).resolves.toBe(
             'ended'
         )
 

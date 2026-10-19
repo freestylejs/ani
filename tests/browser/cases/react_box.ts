@@ -1,8 +1,5 @@
-import {
-    a,
-    type RafTimeline,
-    type ReducedMotionPolicy,
-} from '@freestylejs/ani-core'
+import type { RafTimeline, ReducedMotionPolicy } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useAniRef, useTimeline } from '@freestylejs/ani-react'
 import { createElement, useEffect } from 'react'
 import { INITIAL, type Pose, type PoseNode, pose } from './fixtures.ts'

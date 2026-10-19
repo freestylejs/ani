@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, createClock, follow, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { createClock, follow, rafTimeline } from '@freestylejs/ani-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, effectScope, h, nextTick, ref } from 'vue'
 import { createManualClockWith } from '../../../../core/src/__tests__/integration/harness'

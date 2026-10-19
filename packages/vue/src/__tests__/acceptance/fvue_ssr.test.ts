@@ -1,6 +1,7 @@
 // @vitest-environment node
 
-import { a, createClock, rafGroup, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { createClock, rafGroup, rafTimeline } from '@freestylejs/ani-core'
 import { renderToString } from '@vue/server-renderer'
 import { describe, expect, it } from 'vitest'
 import { createSSRApp, defineComponent, h } from 'vue'

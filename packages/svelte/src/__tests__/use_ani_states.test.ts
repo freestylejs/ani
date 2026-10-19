@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { describe, expect, it, vi } from 'vitest'
 import { useAniStates } from '../ani/use_ani_states'
 import { createManualClock } from './clock'
@@ -11,11 +11,11 @@ vi.mock('svelte', async (importOriginal) => ({
 }))
 
 describe('svelte useAniStates', () => {
-    it('renders the 1.x initialFrom as the initial style too', () => {
+    it('renders initialValue as the initial style', () => {
         const m = createManualClock({ lagThreshold: Infinity })
         const { style } = useAniStates({
             initial: 'idle',
-            initialFrom: { opacity: 0.5 },
+            initialValue: { opacity: 0.5 },
             states: {
                 idle: a.ani({ to: { opacity: 0 }, duration: 1 }),
             },

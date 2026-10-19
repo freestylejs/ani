@@ -8,7 +8,8 @@ A **clock** calls `update(dt)` on every subscribed timeline once per animation f
 ### Example
 
 ```typescript
-import { a, createClock } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { createClock } from "@freestylejs/ani-core";
 
 // Independent clock that you drive yourself (tests, replays, workers).
 let now = 0;
@@ -20,7 +21,7 @@ const clock = createClock({
   now: () => now,
 });
 
-const timeline = a.dynamicTimeline(a.ani({ to: { x: 100 }, duration: 1 }), clock);
+const timeline = a.rafTimeline(a.ani({ to: { x: 100 }, duration: 1 }), { clock: clock });
 timeline.play({ from: { x: 0 } });
 
 now += 500;
@@ -35,14 +36,13 @@ console.log(clock.size); // 1 subscriber
 Timelines use one shared process-wide clock unless you pass another. It runs **one** `requestAnimationFrame` loop no matter how many timelines play, and it stops the loop when the last timeline leaves.
 
 ```typescript
-import { AnimationClock, defaultClock } from "@freestylejs/ani-core";
+import { defaultClock } from "@freestylejs/ani-core";
 
-AnimationClock.configure({ lagThreshold: 1 }); // tune the shared clock's time model
-AnimationClock.reset();  // dispose it and restore its defaults (tests, hot reload)
-defaultClock.size;       // number of timelines currently driven
+defaultClock.configure({ lagThreshold: 1 }); // tune the shared clock's time model
+defaultClock.size;                           // number of timelines currently driven
 ```
 
-`defaultClock` is the shared instance; `AnimationClock.create()` returns the same object. For tests, [`createManualClock`](/en/docs/guides/testing) from `@freestylejs/ani-core/testing` builds a clock you drive by hand.
+`defaultClock` is the shared instance. Dispose the timelines you create instead of resetting it. For tests, [`createManualClock`](/en/docs/guides/testing) from `@freestylejs/ani-core/testing` builds a clock you drive by hand.
 
 #### Guarantees
 

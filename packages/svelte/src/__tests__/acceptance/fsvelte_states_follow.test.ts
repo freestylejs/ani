@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, follow } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { follow } from '@freestylejs/ani-core'
 import type { Action, ActionReturn } from 'svelte/action'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -195,7 +196,7 @@ describe('FSVELTE: useAniStates', () => {
         const { m, result } = setupStates()
         result.transitionTo('active', { from: { opacity: 0 } })
         m.frame(100)
-        const rejected = result.transitionTo('idle', undefined, false)
+        const rejected = result.transitionTo('idle', { interrupt: false })
         await expect(rejected).resolves.toBe('skipped')
         expect(get(result.state)).toBe('active')
     })

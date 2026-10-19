@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import type { PointerEvent } from 'react'
 import { useMemo, useRef } from 'react'
 import { useAppear } from './timeline'
@@ -13,7 +13,7 @@ export const DynamicDemo = () => {
 
     const controller = useMemo(
         () =>
-            a.timeline(
+            a.waapiTimeline(
                 a.ani({
                     to: { translateX: 0, translateY: 0 },
                     duration: 0.5,
@@ -73,7 +73,7 @@ export const DynamicDemo = () => {
 
     const timeline = useMemo(
         () =>
-            a.webTimeline(
+            a.waapiTimeline(
                 a.ani({
                     to: { translateX: 0, translateY: 0 },
                     duration: 0.5,

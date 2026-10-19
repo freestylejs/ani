@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { a, createClock, createStyleSheet } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { createClock, createStyleSheet } from '@freestylejs/ani-core'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
     type ComponentPublicInstance,

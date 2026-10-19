@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
+import * as a from '@freestylejs/ani-core'
 import {
     type AnimationStateShape,
-    a,
     createClock,
     createStyleSheet,
     type Follower,
@@ -343,7 +343,9 @@ describe('FREACT: useTimeline', () => {
         const m = manualClock()
         let timeline!: ReturnType<typeof rafTimeline<Opacity>>
         function C() {
-            timeline = useTimeline(() => rafTimeline(node(), m.clock))
+            timeline = useTimeline(() =>
+                rafTimeline(node(), { clock: m.clock })
+            )
             const { ref, style } = useAniRef(timeline, {
                 initialValue: { opacity: 0.25 },
             })
@@ -374,7 +376,9 @@ describe('FREACT: useTimeline', () => {
         const m = manualClock()
         let timeline!: ReturnType<typeof rafTimeline<Opacity>>
         function C() {
-            timeline = useTimeline(() => rafTimeline(node(), m.clock))
+            timeline = useTimeline(() =>
+                rafTimeline(node(), { clock: m.clock })
+            )
             return null
         }
         const view = await mount(createElement(C))
@@ -392,7 +396,7 @@ describe('FREACT: useTimeline', () => {
 describe('FREACT: useAni (unchanged)', () => {
     it('A6: re-renders with the timeline value, returns a stable controller and never disposes', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const dispose = vi.spyOn(timeline, 'dispose')
         const controllers: unknown[] = []
         function C() {
@@ -449,7 +453,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B1: binds the element: frames write its style without re-rendering the owner', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const track = trackBind(timeline)
         let renders = 0
         const view = await mount(
@@ -470,7 +474,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B2: style is undefined without initialValue and the stable initial style with it', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const styles: Array<CSSProperties | undefined> = []
         const view = await mount(
             createElement(Single, {
@@ -506,7 +510,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B2: initialValue goes through the resolver', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         let style: CSSProperties | undefined
         const view = await mount(
             createElement(Single, {
@@ -532,7 +536,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B3: the ref callback is stable across renders of the same timeline', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const refs: ElementRef[] = []
         const view = await mount(
             createElement(Single, {
@@ -562,7 +566,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B4: detaching the element unbinds it, attaching another binds that one', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const track = trackBind(timeline)
         const view = await mount(createElement(Single, { timeline }))
         const first = byId(view.container, 'el')
@@ -596,7 +600,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B5: unmount unbinds and never disposes the timeline it was given', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const dispose = vi.spyOn(timeline, 'dispose')
         const track = trackBind(timeline)
         const view = await mount(createElement(Single, { timeline }))
@@ -608,8 +612,8 @@ describe('FREACT: useAniRef', () => {
 
     it('B6: a new timeline rebinds the current element', async () => {
         const m = manualClock()
-        const t1 = rafTimeline(node(1), m.clock)
-        const t2 = rafTimeline(node(0.5), m.clock)
+        const t1 = rafTimeline(node(1), { clock: m.clock })
+        const t2 = rafTimeline(node(0.5), { clock: m.clock })
         const track1 = trackBind(t1)
         const track2 = trackBind(t2)
         const view = await mount(createElement(Single, { timeline: t1 }))
@@ -637,8 +641,8 @@ describe('FREACT: useAniRef', () => {
 
     it('B6: rebinding to a timeline that already has a value writes it at once', async () => {
         const m = manualClock()
-        const t1 = rafTimeline(node(), m.clock)
-        const t2 = rafTimeline(node(), m.clock)
+        const t1 = rafTimeline(node(), { clock: m.clock })
+        const t2 = rafTimeline(node(), { clock: m.clock })
         const view = await mount(createElement(Single, { timeline: t1 }))
         const el = byId(view.container, 'el')
 
@@ -654,7 +658,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B7: binds an element rendered by a child component that mounts later', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const track = trackBind(timeline)
         function Child(props: { show: boolean; target: ElementRef }) {
             return props.show
@@ -687,7 +691,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B8: re-rendering the owner does not reset an animated style', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const view = await mount(
             createElement(Single, {
                 timeline,
@@ -714,7 +718,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B9: stays bound exactly once under StrictMode', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const track = trackBind(timeline)
         const view = await mount(createElement(Single, { timeline }), {
             strict: true,
@@ -732,7 +736,7 @@ describe('FREACT: useAniRef', () => {
 
     it('B10: the events / cleanupEvents options are gone: no listener is added to the element', async () => {
         const m = manualClock()
-        const timeline = rafTimeline(node(), m.clock)
+        const timeline = rafTimeline(node(), { clock: m.clock })
         const handler = vi.fn()
         const added: string[] = []
         const proto = HTMLElement.prototype

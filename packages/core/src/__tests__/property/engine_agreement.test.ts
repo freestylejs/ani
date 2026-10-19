@@ -509,7 +509,7 @@ describe('P4: RAF/WAAPI agreement', { timeout: 20_000 }, () => {
                 caseMessage(c.seed, worst.detail)
             ).toBeLessThanOrEqual(1)
         }
-    })
+    }, 20_000)
 
     it('matches on loops the RAF engine represents once (100 record trees)', () => {
         let folded = 0

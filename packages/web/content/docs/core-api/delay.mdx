@@ -8,7 +8,7 @@ The `delay` function is a simple utility node that creates a pause in an animati
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define an animation that fades in, waits, and then moves.
 const myAnimation = a.sequence([
@@ -18,7 +18,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 3. Create and play the timeline.
-const myTimeline = a.dynamicTimeline(myAnimation);
+const myTimeline = a.rafTimeline(myAnimation);
 myTimeline.play({ from: { opacity: 0, x: 0 } });
 ```
 

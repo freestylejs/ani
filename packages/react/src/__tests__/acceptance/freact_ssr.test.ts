@@ -1,8 +1,8 @@
 // @vitest-environment node
 
+import * as a from '@freestylejs/ani-core'
 import {
     type AnimationStateShape,
-    a,
     createClock,
     type Follower,
     type FollowOptions,
@@ -90,7 +90,7 @@ describe('FREACT: server rendering', () => {
         expect(typeof window).toBe('undefined')
         expect(typeof document).toBe('undefined')
         const { clock, requestFrame } = silentClock()
-        const factory = vi.fn(() => rafTimeline(node(), clock))
+        const factory = vi.fn(() => rafTimeline(node(), { clock: clock }))
 
         function C() {
             const timeline = useTimeline(factory)
@@ -161,7 +161,9 @@ describe('FREACT: server rendering', () => {
     it('F2: without initialValue nothing is rendered into style', () => {
         const { clock } = silentClock()
         function C() {
-            const timeline = useTimeline(() => rafTimeline(node(), clock))
+            const timeline = useTimeline(() =>
+                rafTimeline(node(), { clock: clock })
+            )
             const group = useTimeline(() => rafGroup(node(), { clock }))
             const single = useAniRef(timeline)
             const many = useAniGroup(group)

@@ -18,27 +18,24 @@ export function useAni<G extends Groupable>(
     const getTimeline = (): RafAniTimeline<G> =>
         isReadable<RafAniTimeline<G>>(timeline) ? get(timeline) : timeline
 
-    const store = readable(
-        getTimeline().getCurrentValue() ?? initialValue,
-        (set) => {
-            let unsubscribeUpdate: (() => void) | undefined
-            const bind = (tl: RafAniTimeline<G>) => {
-                unsubscribeUpdate?.()
-                // Sync immediate value
-                set(tl.getCurrentValue() ?? initialValue)
-                unsubscribeUpdate = tl.onUpdate((e) => set(e.state))
-            }
-
-            const unsubscribeStore = isReadable<RafAniTimeline<G>>(timeline)
-                ? timeline.subscribe(bind)
-                : (bind(timeline), undefined)
-
-            return () => {
-                unsubscribeUpdate?.()
-                unsubscribeStore?.()
-            }
+    const store = readable(getTimeline().value ?? initialValue, (set) => {
+        let unsubscribeUpdate: (() => void) | undefined
+        const bind = (tl: RafAniTimeline<G>) => {
+            unsubscribeUpdate?.()
+            // Sync immediate value
+            set(tl.value ?? initialValue)
+            unsubscribeUpdate = tl.onUpdate((e) => set(e.state))
         }
-    )
+
+        const unsubscribeStore = isReadable<RafAniTimeline<G>>(timeline)
+            ? timeline.subscribe(bind)
+            : (bind(timeline), undefined)
+
+        return () => {
+            unsubscribeUpdate?.()
+            unsubscribeStore?.()
+        }
+    })
 
     return [store, getTimeline()]
 }

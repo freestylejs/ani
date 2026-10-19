@@ -208,7 +208,7 @@ describe('[Publish Gate] Regression Suite', () => {
     it('[L4A-3] seek bypasses pending delay on resume', () => {
         const root = ani({ to: [100], duration: 1, timing: T.linear() })
         const line = rafTimeline(root)
-        line.play({ from: [0], delay: 1000 })
+        line.play({ from: [0], delay: 1 })
         line.seek(0.5)
         line.resume()
         tick(100)

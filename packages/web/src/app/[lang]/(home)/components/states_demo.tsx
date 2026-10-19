@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useAniStates } from '@freestylejs/ani-react'
 import { useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
@@ -44,7 +44,7 @@ export const StatesDemo = () => {
                                 duration: 0.5,
                             }),
                         ],
-                        a.timing.linear()
+                        { timing: a.timing.linear() }
                     ),
                     a.sequence(
                         [
@@ -57,7 +57,7 @@ export const StatesDemo = () => {
                                 duration: 0.5,
                             }),
                         ],
-                        Spring
+                        { timing: Spring }
                     ),
                 ]),
                 3
@@ -70,7 +70,7 @@ export const StatesDemo = () => {
                     }),
                     a.ani({ to: { scale: 1 }, duration: 0.3 }),
                 ],
-                Spring
+                { timing: Spring }
             ),
         },
     })

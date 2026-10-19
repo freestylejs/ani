@@ -1,5 +1,5 @@
+import * as a from '@freestylejs/ani-core'
 import {
-    a,
     type RafAniTimeline,
     type RafGroup,
     rafGroup,

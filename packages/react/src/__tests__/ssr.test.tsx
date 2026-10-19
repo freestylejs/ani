@@ -1,6 +1,7 @@
 // @vitest-environment node
 
-import { a, rafGroup, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { rafGroup, rafTimeline } from '@freestylejs/ani-core'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import {
@@ -21,7 +22,9 @@ describe('react SSR', () => {
         expect(typeof window).toBe('undefined')
         const m = createManualClock()
         function C() {
-            const timeline = useTimeline(() => rafTimeline(node(), m.clock))
+            const timeline = useTimeline(() =>
+                rafTimeline(node(), { clock: m.clock })
+            )
             const group = useTimeline(() =>
                 rafGroup(node(), { clock: m.clock })
             )

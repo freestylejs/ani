@@ -691,10 +691,10 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
                 )
             }
         }
-        const delayMs = config.delay ?? 0
-        if (!Number.isFinite(delayMs) || delayMs < 0) {
+        const delay = config.delay ?? 0
+        if (!Number.isFinite(delay) || delay < 0) {
             throw new RangeError(
-                `[Timeline] \`delay\` must be a finite number >= 0 (ms), received ${delayMs}.`
+                `[Timeline] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
             )
         }
 
@@ -709,7 +709,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
             config.durations
         )
         const compiled = compilePlan(plan, keys, values.length)
-        return { keys, values, delayMs, plan, duration, compiled }
+        return { keys, values, delay, plan, duration, compiled }
     }
 
     /**
@@ -745,7 +745,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         }
 
         // ---- validate & prepare (no state is touched until this succeeds)
-        const { keys, values, delayMs, plan, duration, compiled } =
+        const { keys, values, delay, plan, duration, compiled } =
             this._prepare(config)
         const policy = this._reducedMotion
         const reduced = policy !== 'ignore' && prefersReducedMotion(this._clock)
@@ -786,7 +786,7 @@ export class RafAniTimeline<G extends Groupable, Ctx = any>
         this._currentExecutionPlan = plan
         this._commitDuration(duration)
         this._remainingRepeats = normalizeRepeatCount(config.repeat)
-        this._delay = delayMs * 1e-3
+        this._delay = delay
         this._keys = keys
         this._runtime = runtime
         this._lastDt = 0

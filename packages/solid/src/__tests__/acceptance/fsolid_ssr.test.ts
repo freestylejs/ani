@@ -1,7 +1,7 @@
 // @vitest-environment node
 
+import * as a from '@freestylejs/ani-core'
 import {
-    a,
     createClock,
     type Follower,
     type ManagedClock,

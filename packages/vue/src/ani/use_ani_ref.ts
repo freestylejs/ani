@@ -1,8 +1,8 @@
-import {
-    type AniGroup,
-    type Groupable,
-    type RafTimeline,
-    type Resolver,
+import type {
+    AniGroup,
+    Groupable,
+    RafTimeline,
+    Resolver,
 } from '@freestylejs/ani-core'
 import {
     type ComputedRef,

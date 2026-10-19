@@ -1,4 +1,5 @@
-import { a, defaultClock } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { defaultClock } from '@freestylejs/ani-core'
 import { expectEqual, frames, host, nextFrame } from './assert.ts'
 
 export const pageOptions = {}

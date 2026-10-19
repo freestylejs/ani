@@ -25,9 +25,7 @@ export function useAni<G extends Groupable>(
     initialValue: AniGroup<G>
 ): readonly [Ref<AniGroup<G>>, RafAniTimeline<G>] {
     const current = computed(() => toRaw(unref(timeline)))
-    const value = shallowRef<AniGroup<G>>(
-        current.value.getCurrentValue() ?? initialValue
-    )
+    const value = shallowRef<AniGroup<G>>(current.value.value ?? initialValue)
     let stop: (() => void) | undefined
 
     onMounted(() => {
@@ -35,7 +33,7 @@ export function useAni<G extends Groupable>(
             current,
             (tl, _, onCleanup) => {
                 // Sync immediate value
-                value.value = tl.getCurrentValue() ?? initialValue
+                value.value = tl.value ?? initialValue
                 onCleanup(
                     tl.onUpdate((next) => {
                         value.value = next.state

@@ -45,7 +45,7 @@ export interface AniRuntime {
         }): AniNode
         sequence(children: readonly AniNode[]): AniNode
         rafTimeline(node: AniNode): RafTimelineHandle
-        webTimeline(node: AniNode): WaapiTimelineHandle
+        waapiTimeline(node: AniNode): WaapiTimelineHandle
         timing: { linear(): AniTimingFunction }
     }
     createStyleSheet(state: StyleState): Record<string, unknown>
@@ -212,7 +212,7 @@ export const rafDeep: ScenarioSetup = ({ n }) => {
     return { setupMs }
 }
 
-/** One `webTimeline` per element, played natively through WAAPI. */
+/** One `waapiTimeline` per element, played natively through WAAPI. */
 export const waapi: ScenarioSetup = ({ n }) => {
     const { a } = window.__ani
     const elements = window.__bench.build(n)
@@ -224,7 +224,7 @@ export const waapi: ScenarioSetup = ({ n }) => {
     const config = { from: { translateX: 0, opacity: 0.2 }, repeat: Infinity }
     const startedAt = performance.now()
     const timelines = elements.map((element) => {
-        const timeline = a.webTimeline(node)
+        const timeline = a.waapiTimeline(node)
         timeline.play(element, config)
         return timeline
     })

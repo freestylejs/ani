@@ -492,7 +492,7 @@ export class World {
                 from: { ...op.from },
                 repeat: op.repeat,
                 interrupt: op.interrupt,
-                delay: op.delay,
+                delay: op.delay * 1e-3,
                 ...(keyframes && { keyframes }),
             })
             if (!(wasPlaying && !op.interrupt)) {
@@ -536,7 +536,7 @@ export class World {
         const promise = states.transitionTo(`st${op.to}`, {
             repeat: op.repeat,
             interrupt: op.interrupt,
-            delay: op.delay,
+            delay: op.delay * 1e-3,
             ...(op.from && { from: { ...op.from } }),
             ...(keyframes && { keyframes }),
         })

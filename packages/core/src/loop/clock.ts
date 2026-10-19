@@ -134,6 +134,12 @@ export type ManagedClock = AnimationClockInterface & {
      */
     readonly paused: boolean
     /**
+     * Reconfigure frame timing (`lagThreshold` / `maxDeltaTime`). Atomic:
+     * every field is validated first, and an invalid one throws and changes
+     * nothing.
+     */
+    configure(timing: ClockTimingOptions): void
+    /**
      * Stops the frame loop but keeps every subscriber and queued read.
      * Idempotent.
      */
@@ -376,6 +382,15 @@ export class AnimationClock implements ManagedClock {
             this.scale = assertTimeScale(this.options.timeScale)
         }
         this.setTiming(this.options)
+    }
+
+    /**
+     * Reconfigure frame timing (`lagThreshold` / `maxDeltaTime`). Atomic:
+     * every field is validated first, and an invalid one throws and changes
+     * nothing.
+     */
+    public configure(timing: ClockTimingOptions): void {
+        this.setTiming(timing)
     }
 
     // Validates everything before applying anything.

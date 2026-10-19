@@ -19,7 +19,7 @@ export interface TimelineCommonConfig<G extends Groupable> {
      */
     repeat?: number
     /**
-     * Initial delay before animation starts (ms).
+     * Initial delay before animation starts (seconds).
      */
     delay?: number
     /**

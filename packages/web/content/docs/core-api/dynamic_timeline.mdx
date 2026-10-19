@@ -10,7 +10,7 @@ The `dynamicTimeline` (alias `rafTimeline`) is the execution engine for any anim
 ### Example
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define the animation structure.
 // TypeScript infers the data shape `G` as { opacity: number, x: number }
@@ -20,7 +20,7 @@ const myAnimation = a.sequence([
 ]);
 
 // 2. Create a reusable timeline instance from the structure.
-const myTimeline = a.dynamicTimeline(myAnimation);
+const myTimeline = a.rafTimeline(myAnimation);
 
 // 3. Listen for updates to apply the animated values to your UI.
 const unsubscribe = myTimeline.onUpdate(({ state, status }) => {
@@ -125,7 +125,7 @@ An invalid config still throws synchronously before anything changes; no promise
 #### Repeat, delay and time
 
 -   `repeat` is the number of **additional** runs (`Infinity` for endless). The frame overshoot at the end of a run is carried into the next one, so repeats do not drift.
--   `delay` is in **milliseconds** and holds the animation before the first frame.
+-   `delay` is in **seconds** (finite and `>= 0`) and holds the animation before the first frame.
 -   Progress per frame follows the clock's lag smoothing: real elapsed time up to 0.5 s, one ordinary frame after a longer suspension. See [clock](/en/docs/core-api/clock).
 -   An animation is considered finished within `1e-9` seconds of its end (`END_TOLERANCE`).
 
@@ -176,7 +176,7 @@ When several segments animate the same property at overlapping times (`parallel`
 | :--- | :--- | :--- |
 | `from` | `AniGroup<G>` | Start values. Every animated property must be present. Copied at `play()`. |
 | `repeat` | `number` | Additional runs. `Infinity` loops forever. |
-| `delay` | `number` | Milliseconds to wait before starting. |
+| `delay` | `number` | Seconds to wait before starting (finite and `>= 0`). |
 | `keyframes` | `Array<G \| 'keep'>` | Override each `ani` node's `to`. See [Dynamic Animations](/en/docs/core-api/advanced/dynamic-animations). |
 | `durations` | `Array<number \| 'keep'>` | Override each `ani` node's duration (seconds). |
 | `velocity` | `Partial<G>` | Initial velocity (units per second) that seeds dynamic springs. |
@@ -216,7 +216,7 @@ type OnUpdateCallback<G extends Groupable> = (current: {
 interface RafTimelineConfig<G extends Groupable, Ctx = any> {
   from: G;
   repeat?: number;
-  delay?: number; // ms
+  delay?: number; // seconds
   keyframes?: Array<G | 'keep'>;
   durations?: Array<number | 'keep'>;
   velocity?: Partial<G>;

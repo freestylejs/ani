@@ -616,7 +616,7 @@ describe('Timeline Controller', () => {
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
-            line.play({ from: [0], delay: 0.5 * 1e3 })
+            line.play({ from: [0], delay: 0.5 })
 
             // Initial state should be set immediately
             expect(onUpdate).toHaveBeenCalledWith({
@@ -658,7 +658,7 @@ describe('Timeline Controller', () => {
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
-            line.play({ from: [0], delay: 0 * 1e3 }), clock.tick(0.5)
+            line.play({ from: [0], delay: 0 }), clock.tick(0.5)
             expect(onUpdate).toHaveBeenLastCalledWith({
                 state: [50],
                 status: 'PLAYING',
@@ -671,7 +671,7 @@ describe('Timeline Controller', () => {
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
-            line.play({ from: [0], delay: 1 * 1e3 })
+            line.play({ from: [0], delay: 1 })
 
             clock.tick(0.5) // Halfway through delay
             line.pause()
@@ -699,7 +699,7 @@ describe('Timeline Controller', () => {
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
-            line.play({ from: [0], delay: 1 * 1e3 })
+            line.play({ from: [0], delay: 1 })
             clock.tick(0.5)
 
             line.reset()
@@ -720,7 +720,7 @@ describe('Timeline Controller', () => {
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
-            line.play({ from: [0], delay: 1 * 1e3 })
+            line.play({ from: [0], delay: 1 })
             line.seek(0.5)
 
             expect(onUpdate).toHaveBeenLastCalledWith({
@@ -743,7 +743,7 @@ describe('Timeline Controller', () => {
             const onUpdate = vi.fn()
             line.onUpdate(onUpdate)
 
-            line.play({ from: [0], delay: 0.5 * 1e3, repeat: 1 })
+            line.play({ from: [0], delay: 0.5, repeat: 1 })
 
             // Initial delay
             clock.tick(0.5)

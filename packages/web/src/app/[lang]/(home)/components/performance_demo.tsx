@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { useAniRef, useTimeline } from '@freestylejs/ani-react'
 import Link from 'fumadocs-core/link'
 import { Loader } from 'lucide-react'
@@ -26,7 +26,7 @@ const jsTimeline = useTimeline(() =>
 )
 
 // 2. Web Animation API (Compositor Thread)
-const webAniTimeline = a.webTimeline(
+const webAniTimeline = a.waapiTimeline(
     a.sequence([
         a.ani({ 
             to: { translateX: 200, rotate: 180, scale: 1.2 }, 
@@ -81,7 +81,7 @@ export function PerformanceDemo() {
                         duration: 1,
                     }),
                 ],
-                a.timing.linear()
+                { timing: a.timing.linear() }
             )
         )
     )
@@ -90,9 +90,9 @@ export function PerformanceDemo() {
     })
 
     // 2. Web Ani Based
-    const webTimeline = useMemo(
+    const waapiLine = useMemo(
         () =>
-            a.timeline(
+            a.waapiTimeline(
                 a.sequence(
                     [
                         a.ani({
@@ -104,7 +104,7 @@ export function PerformanceDemo() {
                             duration: 1,
                         }),
                     ],
-                    a.timing.linear()
+                    { timing: a.timing.linear() }
                 )
             ),
         []
@@ -125,7 +125,7 @@ export function PerformanceDemo() {
                 ],
             })
             if (webRef.current) {
-                webTimeline.play(webRef.current, {
+                waapiLine.play(webRef.current, {
                     from: { translateX: 0, rotate: 0, scale: 1 },
                     repeat: Infinity,
                     keyframes: [
@@ -142,10 +142,10 @@ export function PerformanceDemo() {
 
         return () => {
             jsTimeline.pause()
-            webTimeline.pause()
+            waapiLine.pause()
             window.removeEventListener('resize', handleAnimation)
         }
-    }, [jsTimeline, webTimeline])
+    }, [jsTimeline, waapiLine])
 
     const blockMainThread = () => {
         const start = performance.now()

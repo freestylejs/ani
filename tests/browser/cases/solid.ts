@@ -1,4 +1,5 @@
-import { a, type ReducedMotionPolicy } from '@freestylejs/ani-core'
+import type { ReducedMotionPolicy } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import {
     createAniGroup,
     createAniRef,

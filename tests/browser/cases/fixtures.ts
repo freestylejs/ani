@@ -6,7 +6,7 @@ import type {
     RunResult,
     StateProps,
 } from '@freestylejs/ani-core'
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 
 // Type aliases, not interfaces: core's `Groupable` needs an index signature.
 

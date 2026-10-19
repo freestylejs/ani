@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core/index'
+import * as a from '@freestylejs/ani-core/index'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { rand } from '@/lib/math/rand'
@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils/index'
 
 const Spring = a.timing.spring({ m: 1, k: 1.5, c: 2 })
 
-const glowTimeline = a.timeline(
+const glowTimeline = a.waapiTimeline(
     a.parallel([
         // 3s sequence
         a.sequence(
@@ -38,7 +38,7 @@ const glowTimeline = a.timeline(
                 }),
             ],
 
-            Spring
+            { timing: Spring }
         ),
     ])
 )

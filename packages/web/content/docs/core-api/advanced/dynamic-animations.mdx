@@ -23,7 +23,7 @@ dynamicTimeline.play(config: {
 -   `keyframes`: An array of `to` values that override the ones defined in the `ani` nodes.
 -   `durations`: An array of `duration` values (in seconds) that override the original durations. Overridden durations are reflected in the segment schedule and the timeline's total `duration`, so playback ends when the shortened (or extended) plan completes. `reset()` restores the base duration.
 -   `repeat`: The number of additional runs. Use `Infinity` for an endless loop.
--   `delay`: Milliseconds to wait before the first frame.
+-   `delay`: Seconds to wait before the first frame (finite and `>= 0`).
 -   `velocity`: Initial velocity per property (units per second) for [`dynamicSpring`](/en/docs/core-api/timing). Without it, interrupting a playing timeline continues from its current velocity.
 
 ### How it Works
@@ -37,7 +37,7 @@ When you call `play` with a `keyframes` or `durations` array, the library ignore
 This example creates a "spring back" effect where an element animates past its origin and then settles back. The start and end points are determined at runtime.
 
 ```typescript
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 
 // 1. Define the structure. The `to` values here are placeholders.
 const recoverAnimation = a.sequence([
@@ -45,7 +45,7 @@ const recoverAnimation = a.sequence([
   a.ani({ to: { y: 0 }, duration: 0.5 }),   // Settle stage
 ]);
 
-const myTimeline = a.dynamicTimeline(recoverAnimation);
+const myTimeline = a.rafTimeline(recoverAnimation);
 
 // 2. On user interaction, get dynamic start/end values.
 const releasePosition = { y: 200 };

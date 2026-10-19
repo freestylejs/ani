@@ -1,6 +1,6 @@
 'use client'
 
-import { a } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
 import { DM_Serif_Display } from 'next/font/google'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -15,7 +15,7 @@ const dmSerif = DM_Serif_Display({
     subsets: ['latin'],
 })
 
-const controller = a.timeline(
+const controller = a.waapiTimeline(
     a.sequence(
         [
             a.ani({
@@ -23,7 +23,7 @@ const controller = a.timeline(
                 duration: 1.5,
             }),
         ],
-        a.timing.spring({ m: 1, k: 100, c: 20 })
+        { timing: a.timing.spring({ m: 1, k: 100, c: 20 }) }
     )
 )
 

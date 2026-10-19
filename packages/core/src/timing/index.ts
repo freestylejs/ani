@@ -10,9 +10,9 @@ import { LinearTimingFunction } from './linear'
 import { SpringTimingFunction, type SpringTimingFunctionOpt } from './spring'
 
 /**
- * Core timing functions
+ * Core timing function presets.
  */
-export const T = {
+export const timing = {
     /**
      * Creates a new Bezier timing function instance.
      *
@@ -77,3 +77,8 @@ export const T = {
             p3: { x: 0.58, y: 1.0 },
         }),
 } as const
+
+/**
+ * @deprecated Use {@link timing}.
+ */
+export const T = timing

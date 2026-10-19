@@ -1,6 +1,7 @@
 // @vitest-environment node
 
-import { a, rafGroup, rafTimeline } from '@freestylejs/ani-core'
+import * as a from '@freestylejs/ani-core'
+import { rafGroup, rafTimeline } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../../core/src/testing'
 import * as api from '../../index'
