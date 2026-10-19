@@ -5,9 +5,20 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type Browser, type CDPSession, chromium, type Route } from 'playwright'
 import {
+    BUDGET_N,
+    BUDGET_SCENARIOS,
+    type BudgetCheck,
+    checkBudget,
+    createBudget,
+    deriveMetrics,
+    parseBudget,
+    stringifyBudget,
+} from './budget.ts'
+import {
     type BenchMeta,
     type BenchReport,
     formatDeltaTable,
+    formatDerived,
     formatResults,
     parseReport,
     type ResultRow,
@@ -32,6 +43,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const PAGE_URL = 'http://ani.bench/page.html'
 const PAGE_ROUTE = 'http://ani.bench/**'
 const DEFAULT_OUT = join(REPO_ROOT, 'bench/browser/results/latest.json')
+const BUDGET_FILE = join(REPO_ROOT, 'bench/browser/budget.json')
 const DEFAULT_NS = [1000, 5000]
 const DEFAULT_REPEATS = 3
 const DEFAULT_WARM_UP_MS = 1000
@@ -52,6 +64,13 @@ Options:
   --out <file>        JSON output path (default: bench/browser/results/latest.json)
   --compare <file>    print per-metric deltas against a previous JSON report
   --smoke             fast run: n=50, 0.2s warm-up, 0.5s measure, 1 repeat
+  --check             run the budget scenarios at n=5000 and exit 1 if a
+                      budget in bench/browser/budget.json fails
+  --update-budget     run the budget scenarios at n=5000 and rewrite
+                      bench/browser/budget.json from the result
+
+--check and --update-budget cannot be combined with each other, --scenario,
+--n or --smoke.
 
 Scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
 `
@@ -59,6 +78,7 @@ Scenarios: ${SCENARIOS.map((scenario) => scenario.name).join(', ')}
 class UsageError extends Error {}
 
 interface Options {
+    mode: 'run' | 'check' | 'update-budget'
     scenarios: readonly ScenarioDefinition[]
     ns: readonly number[]
     repeats: number
@@ -94,6 +114,8 @@ function parseOptions(argv: readonly string[]): Options {
     let out: string | null = null
     let compare: string | null = null
     let smoke = false
+    let check = false
+    let updateBudget = false
 
     const nextValue = (index: number, flag: string): string => {
         const value = argv[index + 1]
@@ -136,6 +158,12 @@ function parseOptions(argv: readonly string[]): Options {
             case '--smoke':
                 smoke = true
                 break
+            case '--check':
+                check = true
+                break
+            case '--update-budget':
+                updateBudget = true
+                break
             case '--help':
             case '-h':
                 throw new UsageError('')
@@ -144,19 +172,32 @@ function parseOptions(argv: readonly string[]): Options {
         }
     }
 
-    const scenarios =
-        scenarioNames.length === 0
-            ? SCENARIOS
-            : [...new Set(scenarioNames)].map(findScenario)
+    const budgetMode = check || updateBudget
+    if (check && updateBudget) {
+        throw new UsageError('--check and --update-budget are exclusive')
+    }
+    if (budgetMode && (scenarioNames.length > 0 || ns.length > 0 || smoke)) {
+        throw new UsageError(
+            '--check and --update-budget run a fixed set; drop --scenario, --n and --smoke'
+        )
+    }
+
+    const scenarios = budgetMode
+        ? BUDGET_SCENARIOS.map(findScenario)
+        : scenarioNames.length === 0
+          ? SCENARIOS
+          : [...new Set(scenarioNames)].map(findScenario)
 
     return {
+        mode: check ? 'check' : updateBudget ? 'update-budget' : 'run',
         scenarios,
-        ns:
-            ns.length === 0
-                ? smoke
-                    ? [SMOKE_N]
-                    : DEFAULT_NS
-                : [...new Set(ns)],
+        ns: budgetMode
+            ? [BUDGET_N]
+            : ns.length === 0
+              ? smoke
+                  ? [SMOKE_N]
+                  : DEFAULT_NS
+              : [...new Set(ns)],
         repeats: repeats ?? (smoke ? 1 : DEFAULT_REPEATS),
         warmUpMs: smoke ? SMOKE_WARM_UP_MS : DEFAULT_WARM_UP_MS,
         measureMs: smoke ? SMOKE_MEASURE_MS : DEFAULT_MEASURE_MS,
@@ -174,9 +215,11 @@ async function serveRoute(route: Route): Promise<void> {
         })
         return
     }
-    if (pathname === '/core/index.js') {
+    // `index.js` imports shared chunks (`chunk-*.js`) from the same directory.
+    const file = /^\/core\/(index|chunk-[\w-]+)\.js$/.exec(pathname)
+    if (file) {
         await route.fulfill({
-            path: join(REPO_ROOT, 'packages/core/dist/index.js'),
+            path: join(REPO_ROOT, `packages/core/dist/${file[1]}.js`),
             contentType: 'text/javascript',
         })
         return
@@ -319,11 +362,27 @@ async function collect(
     return { rows, errorCount }
 }
 
+function printChecks(checks: readonly BudgetCheck[]): boolean {
+    for (const check of checks) process.stdout.write(`${check.message}\n`)
+    const failed = checks.filter((check) => !check.ok)
+    process.stdout.write(
+        failed.length === 0
+            ? '\nbudget ok\n'
+            : `\nbudget FAILED: ${failed.map((check) => check.name).join(', ')}\n`
+    )
+    return failed.length === 0
+}
+
 async function runBenchmark(): Promise<number> {
     const options = parseOptions(process.argv.slice(2))
     const baseline = options.compare
         ? parseReport(readFileSync(options.compare, 'utf8'))
         : null
+    // Read first so a missing or malformed budget fails before the long run.
+    const budget =
+        options.mode === 'check'
+            ? parseBudget(readFileSync(BUDGET_FILE, 'utf8'))
+            : null
 
     const browser = await chromium.launch({
         headless: true,
@@ -335,13 +394,16 @@ async function runBenchmark(): Promise<number> {
     })
     try {
         const { rows, errorCount } = await collect(browser, options)
+        const derived = deriveMetrics(rows)
         const report: BenchReport = {
             meta: buildMeta(browser),
             results: rows,
+            derived,
         }
         mkdirSync(dirname(options.out), { recursive: true })
         writeFileSync(options.out, stringifyReport(report))
         process.stdout.write(`\n${formatResults(rows)}\n`)
+        process.stdout.write(`\n${formatDerived(derived)}\n`)
         if (baseline) {
             process.stdout.write(
                 `\ndelta vs ${options.compare}\n` +
@@ -351,7 +413,19 @@ async function runBenchmark(): Promise<number> {
         process.stdout.write(
             `\nwrote ${options.out} (${errorCount} page errors)\n`
         )
-        return errorCount === 0 ? 0 : 1
+        let budgetOk = true
+        if (budget) {
+            process.stdout.write('\n')
+            budgetOk = printChecks(checkBudget(rows, budget))
+        }
+        if (options.mode === 'update-budget') {
+            writeFileSync(
+                BUDGET_FILE,
+                stringifyBudget(createBudget(rows, BUDGET_N))
+            )
+            process.stdout.write(`\nwrote ${BUDGET_FILE}\n`)
+        }
+        return errorCount === 0 && budgetOk ? 0 : 1
     } finally {
         await browser.close()
     }

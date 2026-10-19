@@ -1,0 +1,7 @@
+{
+    "n": 5000,
+    "rafTimelinesP95Ms": 19.9,
+    "rafGroupP95Ms": 8.9,
+    "minGroupGain": 3,
+    "maxRafReadLayoutsPerFrame": 1.05
+}
