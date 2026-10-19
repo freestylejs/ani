@@ -1,5 +1,9 @@
 import type { TimingFunction } from '~/timing'
-import type { AnimationId, NodeOptions } from './base'
+import {
+    type AnimationId,
+    assertNoExtraArguments,
+    type NodeOptions,
+} from './base'
 import {
     type CompositionChildren,
     CompositionNode,
@@ -19,57 +23,32 @@ export interface StaggerOptions extends NodeOptions {
     offset: number
 }
 
-function parseStaggerArgs(
-    offsetOrOptions: number | StaggerOptions,
-    timing: TimingFunction | undefined,
-    id: AnimationId | undefined,
-    extraPositional?: boolean
-): {
+const STAGGER_FORM = '`stagger(children, { offset, timing, id })`'
+
+function parseStaggerOptions(options: StaggerOptions): {
     offset: number
     timing?: TimingFunction | undefined
     id?: AnimationId | undefined
 } {
-    if (typeof offsetOrOptions === 'object' && offsetOrOptions !== null) {
-        if (timing !== undefined || id !== undefined || extraPositional) {
+    if (typeof options !== 'object' || options === null) {
+        throw new TypeError(
+            `[stagger] Expected an options object, received ${typeof options}. Use ${STAGGER_FORM}.`
+        )
+    }
+    for (const key of Object.keys(options)) {
+        if (key !== 'offset' && key !== 'timing' && key !== 'id') {
             throw new TypeError(
-                '[stagger] Cannot mix options object and positional arguments. Use either an options object or positional arguments.'
+                `[stagger] Unknown option "${key}". Allowed options are "offset", "timing", and "id".`
             )
-        }
-        for (const key of Object.keys(offsetOrOptions)) {
-            if (key !== 'offset' && key !== 'timing' && key !== 'id') {
-                throw new TypeError(
-                    `[stagger] Unknown option "${key}". Allowed options are "offset", "timing", and "id".`
-                )
-            }
-        }
-        const offset = (offsetOrOptions as StaggerOptions).offset
-        if (
-            typeof offset !== 'number' ||
-            !Number.isFinite(offset) ||
-            offset < 0
-        ) {
-            throw new RangeError(
-                `[stagger] offset must be a finite number >= 0 (seconds), received ${offset}.`
-            )
-        }
-        return {
-            offset,
-            timing: (offsetOrOptions as StaggerOptions).timing,
-            id: (offsetOrOptions as StaggerOptions).id,
         }
     }
-
-    const offset = offsetOrOptions as number
+    const { offset } = options
     if (typeof offset !== 'number' || !Number.isFinite(offset) || offset < 0) {
         throw new RangeError(
             `[stagger] offset must be a finite number >= 0 (seconds), received ${offset}.`
         )
     }
-    return {
-        offset,
-        timing,
-        id,
-    }
+    return { offset, timing: options.timing, id: options.id }
 }
 
 /**
@@ -83,18 +62,12 @@ export class StaggerNode<
     readonly offset: number
     readonly footprint: Footprint
 
-    constructor(
-        children: Children,
-        offsetOrOptions: number | StaggerOptions,
-        timing?: TimingFunction,
-        id?: AnimationId,
-        ...extra: unknown[]
-    ) {
+    constructor(children: Children, options: StaggerOptions) {
         const {
             offset: resolvedOffset,
             timing: resolvedTiming,
             id: resolvedId,
-        } = parseStaggerArgs(offsetOrOptions, timing, id, extra.length > 0)
+        } = parseStaggerOptions(options)
 
         super(children, resolvedTiming, resolvedId)
 
@@ -129,16 +102,17 @@ export class StaggerNode<
 /**
  * Stagger composition animation
  * @param children Stagger children nodes.
- * @param offsetOrOptions Children animation offset, in seconds, or options object.
- * @param timing Loop timing function (positional form).
- * @param id Optional ID for the node (positional form).
+ * @param options `{ offset, timing, id }`: offset between child start times in seconds, timing inherited by children without their own, optional node ID.
  */
 export function stagger<const Children extends CompositionChildren>(
     children: Children,
-    offsetOrOptions: number | StaggerOptions,
-    timing?: TimingFunction,
-    id?: AnimationId,
+    options: StaggerOptions
+): StaggerNode<Children>
+export function stagger<const Children extends CompositionChildren>(
+    children: Children,
+    options: StaggerOptions,
     ...extra: unknown[]
 ): StaggerNode<Children> {
-    return new StaggerNode(children, offsetOrOptions, timing, id, ...extra)
+    assertNoExtraArguments('stagger', STAGGER_FORM, extra)
+    return new StaggerNode(children, options)
 }

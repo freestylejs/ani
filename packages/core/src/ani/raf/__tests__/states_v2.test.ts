@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Animatable, AnimationClockInterface } from '~/loop'
 import { ani } from '~/nodes'
-import { T } from '~/timing'
+import { timing } from '~/timing'
 import { createStates } from '../states'
 
 class MockClock implements AnimationClockInterface {
@@ -28,9 +28,9 @@ const machine = () => {
         initial: 'closed',
         initialValue: { x: 0 },
         states: {
-            closed: ani({ to: { x: 0 }, duration: 1, timing: T.linear() }),
-            open: ani({ to: { x: 100 }, duration: 1, timing: T.linear() }),
-            half: ani({ to: { x: 50 }, duration: 1, timing: T.linear() }),
+            closed: ani({ to: { x: 0 }, duration: 1, timing: timing.linear() }),
+            open: ani({ to: { x: 100 }, duration: 1, timing: timing.linear() }),
+            half: ani({ to: { x: 50 }, duration: 1, timing: timing.linear() }),
         },
         clock,
     })
@@ -242,13 +242,17 @@ describe('redirect inside onTransition keeps velocity', () => {
                 moving: ani({
                     to: { x: 100 },
                     duration: 1,
-                    timing: T.linear(),
+                    timing: timing.linear(),
                 }),
-                other: ani({ to: { x: 10 }, duration: 1, timing: T.linear() }),
+                other: ani({
+                    to: { x: 10 },
+                    duration: 1,
+                    timing: timing.linear(),
+                }),
                 settle: ani({
                     to: { x: 50 },
                     duration: 2,
-                    timing: T.dynamicSpring({ m: 1, k: 100, c: 20 }),
+                    timing: timing.dynamicSpring({ m: 1, k: 100, c: 20 }),
                 }),
             },
             clock,

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import * as a from '@freestylejs/ani-core'
-import { type RafAniTimeline, rafTimeline } from '@freestylejs/ani-core'
+import { type RafTimeline, rafTimeline } from '@freestylejs/ani-core'
 import { get, writable } from 'svelte/store'
 import { describe, expect, it } from 'vitest'
 import { useAni } from '../ani/use_ani'
@@ -18,7 +18,7 @@ describe('svelte useAni', () => {
         const firstSubs = trackSubscriptions(first)
         const secondSubs = trackSubscriptions(second)
         second.play({ from: { opacity: 0.8 } })
-        const source = writable<RafAniTimeline<{ opacity: number }>>(first)
+        const source = writable<RafTimeline<{ opacity: number }>>(first)
         const [store, returned] = useAni(source, { opacity: 0.1 })
         expect(returned).toBe(first)
 

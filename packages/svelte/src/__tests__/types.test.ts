@@ -1,7 +1,7 @@
 import type {
     Follower,
-    RafAniTimeline,
     RafGroup,
+    RafTimeline,
     StateController,
 } from '@freestylejs/ani-core'
 import * as a from '@freestylejs/ani-core'
@@ -22,11 +22,11 @@ const node = a.ani({ to: { x: 1 }, duration: 1 })
 describe('svelte public types', () => {
     it('stores/actions keep the group type end to end', () => {
         const check = (
-            source: Readable<RafAniTimeline<G>>,
+            source: Readable<RafTimeline<G>>,
             groups: Readable<RafGroup<G>>
         ) => {
             const timeline = useTimeline(() => a.rafTimeline(node))
-            expectTypeOf(timeline).toEqualTypeOf<RafAniTimeline<G>>()
+            expectTypeOf(timeline).toEqualTypeOf<RafTimeline<G>>()
             expectTypeOf(useAni(timeline, { x: 0 })[0]).toEqualTypeOf<
                 Readable<G>
             >()

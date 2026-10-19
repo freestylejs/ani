@@ -18,7 +18,8 @@ function useTimeline<T extends { dispose(): void }>(factory: () => T): T
 
 ```vue
 <script setup>
-import { a, rafTimeline } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafTimeline } from "@freestylejs/ani-core";
 import { useTimeline } from "@freestylejs/ani-vue";
 
 const timeline = useTimeline(() =>
@@ -43,7 +44,8 @@ This composable subscribes to a `timeline`'s state and updates a Vue `ref` on ea
 
 ```vue
 <script setup>
-import { a, rafTimeline } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafTimeline } from "@freestylejs/ani-core";
 import { useAni } from "@freestylejs/ani-vue";
 
 // 1. Define the animation structure and create a timeline.
@@ -80,7 +82,7 @@ function handlePlay() {
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Ref<RafAniTimeline<G>>` | The timeline to read. |
+| `timeline` | `RafTimeline<G> \| Ref<RafTimeline<G>>` | The timeline to read. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
 Returns `readonly [value, controller]`: a `Ref<AniGroup<G>>` and the timeline controller.
@@ -103,7 +105,8 @@ function useAniRef<G>(
 
 ```vue
 <script setup>
-import { a, rafTimeline } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafTimeline } from "@freestylejs/ani-core";
 import { useAniRef, useTimeline } from "@freestylejs/ani-vue";
 
 const timeline = useTimeline(() =>
@@ -169,7 +172,7 @@ function useAniStates<const S extends AnimationStateShape>(
 
 ```vue
 <script setup>
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { useAniStates } from "@freestylejs/ani-vue";
 
 const { ref, style, state, transitionTo } = useAniStates({

@@ -3,7 +3,7 @@
 import * as a from '@freestylejs/ani-core'
 import {
     createClock,
-    type RafAniTimeline,
+    type RafTimeline,
     rafTimeline,
 } from '@freestylejs/ani-core'
 import { type Accessor, createRoot, createSignal } from 'solid-js'
@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import * as solid from '../../index'
 
 type Values = { opacity: number }
-type Timeline = RafAniTimeline<Values>
+type Timeline = RafTimeline<Values>
 
 const { createAni } = solid as unknown as {
     createAni(

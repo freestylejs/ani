@@ -1,7 +1,7 @@
 // 'use client'
 
 // import * as a from '@freestylejs/ani-core'
-// import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+// import type { Groupable, RafTimeline } from '@freestylejs/ani-core'
 // import { useEffect, useRef } from 'react'
 
 // // --- Constants ---
@@ -32,7 +32,7 @@
 // export const HeartBeatingDemo = () => {
 //     const canvasRef = useRef<HTMLCanvasElement>(null)
 
-//     const timelinesRef = useRef<RafAniTimeline<Groupable>[]>([])
+//     const timelinesRef = useRef<RafTimeline<Groupable>[]>([])
 //     const particlesRef = useRef<ParticleState[]>([])
 
 //     useEffect(() => {
@@ -215,7 +215,7 @@
 // 'use client'
 
 // import * as a from '@freestylejs/ani-core'
-// import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+// import type { Groupable, RafTimeline } from '@freestylejs/ani-core'
 // import { useEffect, useRef } from 'react'
 
 // const GRID_SIZE = 65
@@ -251,7 +251,7 @@
 
 // export const HeartBeatingDemo = () => {
 //     const canvasRef = useRef<HTMLCanvasElement>(null)
-//     const timelinesRef = useRef<RafAniTimeline<Groupable>[]>([])
+//     const timelinesRef = useRef<RafTimeline<Groupable>[]>([])
 //     const particlesRef = useRef<ParticleState[]>([])
 
 //     const ripplesRef = useRef<Ripple[]>([])
@@ -517,7 +517,7 @@
 
 'use client'
 
-import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import type { Groupable, RafTimeline } from '@freestylejs/ani-core'
 import * as a from '@freestylejs/ani-core'
 import { useEffect, useRef } from 'react'
 
@@ -667,7 +667,7 @@ interface Ripple {
 
 export const HeartBeatingDemo = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
-    const timelinesRef = useRef<RafAniTimeline<Groupable>[]>([])
+    const timelinesRef = useRef<RafTimeline<Groupable>[]>([])
 
     // State refs
     const particlesRef = useRef<ParticleState[]>([])
@@ -953,7 +953,7 @@ export const heartBeatingCode = `
 // WebGL for high performance rendering
 
 import * as a from '@freestylejs/ani-core'
-import type { Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import type { Groupable, RafTimeline } from '@freestylejs/ani-core'
 import { useEffect, useRef } from 'react'
 
 const GRID_SIZE = 100
@@ -1100,7 +1100,7 @@ interface Ripple {
 
 export const HeartBeatingDemo = () => {
     const canvasRef = useRef<HTMLCanvasElement>(null)
-    const timelinesRef = useRef<RafAniTimeline<Groupable>[]>([])
+    const timelinesRef = useRef<RafTimeline<Groupable>[]>([])
 
     // State refs
     const particlesRef = useRef<ParticleState[]>([])

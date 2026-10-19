@@ -1,15 +1,15 @@
 import { describe, expectTypeOf, it } from 'vitest'
+import * as a from '../../index'
 import {
-    type AniRefContext,
-    type AniRefProps,
-    a,
+    type Clock,
     createClock,
     type GetTimeline,
-    type ManagedClock,
-    type RafAniTimeline,
+    type RafTimeline,
     rafTimeline,
     type StateController,
     type StateProps,
+    type WaapiTimeline,
+    waapiTimeline,
 } from '../../index'
 
 const node = a.ani({ to: { x: 1, y: 2 }, duration: 1 })
@@ -19,18 +19,18 @@ const node = a.ani({ to: { x: 1, y: 2 }, duration: 1 })
 describe('public types', () => {
     it('rafTimeline infers the animated group', () => {
         const timeline = rafTimeline(node)
-        expectTypeOf(timeline).toExtend<
-            RafAniTimeline<{ x: number; y: number }>
+        expectTypeOf(timeline).toEqualTypeOf<
+            RafTimeline<{ x: number; y: number }>
         >()
         expectTypeOf(timeline.status).toEqualTypeOf<
             'IDLE' | 'PLAYING' | 'PAUSED' | 'ENDED'
         >()
         expectTypeOf(timeline.dispose).toEqualTypeOf<() => void>()
-        expectTypeOf(timeline.getCurrentValue()).toEqualTypeOf<{
+        expectTypeOf(timeline.value).toEqualTypeOf<{
             x: number
             y: number
         } | null>()
-        expectTypeOf(timeline.getCurrentVelocity()).toEqualTypeOf<{
+        expectTypeOf(timeline.velocity).toEqualTypeOf<{
             x: number
             y: number
         } | null>()
@@ -46,7 +46,7 @@ describe('public types', () => {
     it('play() config is keyed by the animated group', () => {
         const timeline = rafTimeline(node)
         const play = () => {
-            timeline.play({ from: { x: 0, y: 0 } }, false)
+            timeline.play({ from: { x: 0, y: 0 }, interrupt: false })
             timeline.play({ from: { x: 0, y: 0 }, velocity: { x: 3 } })
             // @ts-expect-error unknown key in `from`
             timeline.play({ from: { x: 0, z: 0 } })
@@ -56,15 +56,22 @@ describe('public types', () => {
         void play
     })
 
-    it('createClock returns a managed clock', () => {
-        expectTypeOf(createClock()).toEqualTypeOf<ManagedClock>()
+    it('waapiTimeline returns the WaapiTimeline interface', () => {
+        expectTypeOf(waapiTimeline(node)).toEqualTypeOf<
+            WaapiTimeline<{ x: number; y: number }>
+        >()
+    })
+
+    it('createClock returns a clock', () => {
+        expectTypeOf(createClock()).toEqualTypeOf<Clock>()
+        expectTypeOf(a.defaultClock).toEqualTypeOf<Clock>()
         expectTypeOf(createClock().size).toEqualTypeOf<number>()
     })
 
     it('createStates narrows state names and exposes dispose', () => {
         const states = a.createStates({
             initial: 'idle',
-            initialFrom: { x: 0, y: 0 },
+            initialValue: { x: 0, y: 0 },
             states: {
                 idle: a.ani({ to: { x: 0, y: 0 }, duration: 1 }),
                 active: a.ani({ to: { x: 1, y: 1 }, duration: 1 }),
@@ -73,7 +80,7 @@ describe('public types', () => {
         expectTypeOf(states.state()).toEqualTypeOf<'idle' | 'active'>()
         expectTypeOf(states.dispose).toEqualTypeOf<() => void>()
         expectTypeOf(states.timeline()).toExtend<
-            RafAniTimeline<{ x: number; y: number }, any>
+            RafTimeline<{ x: number; y: number }>
         >()
         const invalid = () => {
             // @ts-expect-error unknown state name
@@ -82,21 +89,14 @@ describe('public types', () => {
         void invalid
     })
 
-    it('binding prop types', () => {
+    it('state machine types', () => {
         type G = { x: number }
-        expectTypeOf<
-            AniRefProps<RafAniTimeline<G>, G>['timeline']
-        >().toEqualTypeOf<RafAniTimeline<G>>()
-        expectTypeOf<
-            AniRefProps<RafAniTimeline<G>, G, true>['timeline']
-        >().toEqualTypeOf<() => RafAniTimeline<G>>()
-        expectTypeOf<AniRefContext<G>['current']>().toEqualTypeOf<G | null>()
         expectTypeOf<
             StateProps<{ a: ReturnType<typeof a.ani<G>> }>['initial']
         >().toEqualTypeOf<'a'>()
         expectTypeOf<
             GetTimeline<{ a: ReturnType<typeof a.ani<G>> }>
-        >().toExtend<RafAniTimeline<G, any>>()
+        >().toEqualTypeOf<RafTimeline<G>>()
         expectTypeOf<
             StateController<{ a: ReturnType<typeof a.ani<G>> }>
         >().toHaveProperty('dispose')

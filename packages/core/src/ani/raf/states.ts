@@ -3,21 +3,16 @@ import type { AnimationClockInterface } from '~/loop'
 import type { AnimationNode, ExtractAnimationNode } from '~/nodes'
 import {
     type BindOptions,
-    type RafAniTimeline,
+    type RafTimeline,
     type RafTimelineConfig,
     rafTimeline,
 } from './timeline'
 
 export type AnimationStateShape = Record<string, AnimationNode<Groupable>>
 
-export type GetTimeline<State extends AnimationStateShape> = RafAniTimeline<
-    ExtractAnimationNode<State[keyof State]>,
-    any
+export type GetTimeline<State extends AnimationStateShape> = RafTimeline<
+    ExtractAnimationNode<State[keyof State]>
 >
-
-type TimelineChangeCallback<AnimationStates extends AnimationStateShape> = (
-    timeline: GetTimeline<AnimationStates>
-) => void
 
 type TransitionCallback<AnimationStates extends AnimationStateShape> = (
     state: keyof AnimationStates,
@@ -27,7 +22,7 @@ type TransitionCallback<AnimationStates extends AnimationStateShape> = (
 type StateUpdateCallback<AnimationStates extends AnimationStateShape> =
     Parameters<GetTimeline<AnimationStates>['onUpdate']>[0]
 
-type BindTarget = Parameters<RafAniTimeline<Groupable>['bind']>[0]
+type BindTarget = Parameters<RafTimeline<Groupable>['bind']>[0]
 
 export interface StateController<AnimationStates extends AnimationStateShape> {
     /**
@@ -48,13 +43,13 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
      * timeline. When the previous timeline is still playing, its velocity is
      * handed to the new one (unless `timelineConfig.velocity` is given).
      *
+     * With `timelineConfig.interrupt` set to `false` and the current timeline
+     * playing, the transition is rejected and nothing changes. A third
+     * argument throws a `TypeError`.
+     *
      * @param newState transition target.
      *
      * @param timelineConfig animation play config.
-     * @param canBeIntercepted 1.x, removed in 2.0 by the codemod: use
-     * `timelineConfig.interrupt`, which wins over this argument. If `false`
-     * and the current timeline is playing, the transition is rejected and
-     * nothing changes. Defaults to `true`.
      * @returns The run of the new timeline. Never rejects: `'ended'`,
      * `'interrupted'` (replaced by another transition), `'skipped'` (rejected),
      * `'reset'` or `'disposed'` (also after `dispose()`).
@@ -63,11 +58,9 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
         newState: keyof AnimationStates,
         timelineConfig?: Partial<
             RafTimelineConfig<
-                ExtractAnimationNode<AnimationStates[keyof AnimationStates]>,
-                any
+                ExtractAnimationNode<AnimationStates[keyof AnimationStates]>
             >
-        >,
-        canBeIntercepted?: boolean
+        >
     ): Promise<RunResult>
 
     /**
@@ -101,15 +94,6 @@ export interface StateController<AnimationStates extends AnimationStateShape> {
     onTransition(callback: TransitionCallback<AnimationStates>): () => void
 
     /**
-     * Subscribe to timeline changes. Same as `onTransition` without the state.
-     * @param callback
-     * @returns unsubscribe function
-     */
-    onTimelineChange(
-        callback: TimelineChangeCallback<AnimationStates>
-    ): () => void
-
-    /**
      * Releases the current timeline, its bindings and every subscriber.
      * Idempotent; later `transitionTo` calls resolve `'disposed'`.
      */
@@ -136,30 +120,18 @@ interface StateBaseProps<AnimationStates extends AnimationStateShape> {
 }
 
 /**
- * Exactly one of `initialValue` and `initialFrom` must be given; both or
- * neither throws a `TypeError` from `createStates`.
+ * Props of `createStates`. A missing `initialValue` throws a `TypeError`.
  */
 export type StateProps<AnimationStates extends AnimationStateShape> =
-    StateBaseProps<AnimationStates> &
-        (
-            | {
-                  /**
-                   * Initial animation `from` value.
-                   */
-                  initialValue: InitialGroup<AnimationStates>
-                  initialFrom?: never
-              }
-            | {
-                  /**
-                   * 1.x, removed in 2.0 by the codemod: use `initialValue`.
-                   */
-                  initialFrom: InitialGroup<AnimationStates>
-                  initialValue?: never
-              }
-        )
+    StateBaseProps<AnimationStates> & {
+        /**
+         * Initial animation `from` value.
+         */
+        initialValue: InitialGroup<AnimationStates>
+    }
 
 interface Subscription {
-    attach(timeline: RafAniTimeline<Groupable>): () => void
+    attach(timeline: RafTimeline<Groupable>): () => void
     detach: () => void
 }
 
@@ -184,23 +156,22 @@ function rethrowAsync(error: unknown): void {
 export function createStates<AnimationStates extends AnimationStateShape>(
     config: StateProps<AnimationStates>
 ): StateController<AnimationStates> {
-    if (
-        (config.initialValue === undefined) ===
-        (config.initialFrom === undefined)
-    ) {
+    if ((config as { initialFrom?: unknown }).initialFrom !== undefined) {
         throw new TypeError(
-            '[createStates] Pass exactly one of `initialValue` and `initialFrom`.'
+            '[createStates] `initialFrom` was renamed `initialValue`.'
         )
     }
+    if (config.initialValue === undefined) {
+        throw new TypeError('[createStates] `initialValue` is required.')
+    }
     const initialValue = Object.freeze(
-        copyGroup((config.initialValue ?? config.initialFrom) as Groupable)
+        copyGroup(config.initialValue as Groupable)
     ) as Groupable
 
     let State: keyof AnimationStates = config.initial
-    let Timeline: RafAniTimeline<Groupable> = rafTimeline(
-        config.states[State]!,
-        config.clock
-    )
+    let Timeline: RafTimeline<Groupable> = rafTimeline(config.states[State]!, {
+        clock: config.clock,
+    })
     let disposed = false
 
     // Last value the machine showed. Survives `timeline().reset()`, which
@@ -208,7 +179,7 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     // the engine hands out an immutable snapshot per update, and the
     // defensive copy happens lazily in `transitionTo`.
     let lastValue = null as Groupable | null
-    const track = (timeline: RafAniTimeline<Groupable>) => {
+    const track = (timeline: RafTimeline<Groupable>) => {
         timeline.onUpdate(({ state, status }) => {
             if (status === 'IDLE') return
             lastValue = state as Groupable
@@ -219,7 +190,7 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     const subs = new Set<TransitionCallback<AnimationStates>>()
     const notify = (
         state: keyof AnimationStates,
-        timeline: RafAniTimeline<Groupable>
+        timeline: RafTimeline<Groupable>
     ) => {
         for (const Sub of [...subs]) {
             try {
@@ -259,14 +230,14 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     // The run returned by the latest `transitionTo`, settled as `'interrupted'`
     // when the next transition replaces it while still running.
     let lastRun: {
-        timeline: RafAniTimeline<Groupable>
+        timeline: RafTimeline<Groupable>
         settle: (result: RunResult) => void
     } | null = null
 
     // What the timeline announced to `onTransition` listeners replaces, for
     // transitions those listeners start.
     let handover: {
-        timeline: RafAniTimeline<Groupable>
+        timeline: RafTimeline<Groupable>
         from: RafTimelineConfig<Groupable>['from']
         velocity: RafTimelineConfig<Groupable>['velocity']
     } | null = null
@@ -289,9 +260,12 @@ export function createStates<AnimationStates extends AnimationStateShape>(
                 )
             ),
         onTransition,
-        onTimelineChange: (callback) =>
-            onTransition((_, timeline) => callback(timeline)),
-        transitionTo(newState, timelineConfig, canBeIntercepted) {
+        transitionTo(newState, timelineConfig, ...extra: unknown[]) {
+            if (extra.length > 0) {
+                throw new TypeError(
+                    '[createStates] `transitionTo` takes two arguments. Pass `interrupt` in the config: `transitionTo(state, { ...config, interrupt })`.'
+                )
+            }
             if (disposed) return Promise.resolve('disposed')
             if (!Object.hasOwn(config.states, newState as string)) {
                 throw new RangeError(
@@ -303,8 +277,7 @@ export function createStates<AnimationStates extends AnimationStateShape>(
             const previousState = State
             const wasPlaying = previousTimeline.status === 'PLAYING'
 
-            const interrupt =
-                timelineConfig?.interrupt ?? canBeIntercepted ?? true
+            const interrupt = timelineConfig?.interrupt ?? true
             if (!interrupt && wasPlaying) return Promise.resolve('skipped')
 
             // A transition started by an `onTransition` listener replaces a
@@ -314,23 +287,22 @@ export function createStates<AnimationStates extends AnimationStateShape>(
 
             const carriedFrom =
                 inherited?.from ?? // 1. predecessor of a redirected transition
-                previousTimeline.getCurrentValue() ?? // 2. last value
+                previousTimeline.value ?? // 2. last value
                 copyGroup(lastValue) ?? // 3. last shown value (e.g. after reset())
                 initialValue // 4. initial value
             const carriedVelocity = inherited
                 ? inherited.velocity
                 : wasPlaying
-                  ? (previousTimeline.getCurrentVelocity() ?? undefined)
+                  ? (previousTimeline.velocity ?? undefined)
                   : undefined
 
             const from = (timelineConfig?.from ??
                 carriedFrom) as RafTimelineConfig<Groupable>['from']
             const velocity = timelineConfig?.velocity ?? carriedVelocity
 
-            const nextTimeline = rafTimeline(
-                config.states[newState]!,
-                config.clock
-            )
+            const nextTimeline = rafTimeline(config.states[newState]!, {
+                clock: config.clock,
+            })
             track(nextTimeline)
 
             State = newState

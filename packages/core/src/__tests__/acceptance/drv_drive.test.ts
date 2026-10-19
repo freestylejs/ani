@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { RunResult } from '~/ani/core'
+import * as a from '../../index'
 import {
-    a,
     createTimelineController,
-    type RafAniTimeline,
+    type RafTimeline,
     type RafTimelineConfig,
     rafTimeline,
 } from '../../index'
@@ -76,7 +76,7 @@ function setup(options: { reducedMotion: boolean } = { reducedMotion: false }) {
         lagThreshold: Infinity,
         reducedMotion: options.reducedMotion,
     })
-    const timeline = rafTimeline(node(), manual.clock)
+    const timeline = rafTimeline(node(), { clock: manual.clock })
     const element = fakeElement()
     timeline.bind(element, { resolver: toCustomProperty })
     const notifications: { x: number; status: string }[] = []
@@ -100,8 +100,8 @@ function setup(options: { reducedMotion: boolean } = { reducedMotion: false }) {
     return { manual, timeline, element, notifications, progress }
 }
 
-function x(timeline: RafAniTimeline<Values>): number {
-    return (timeline.getCurrentValue() as Values).x
+function x(timeline: RafTimeline<Values>): number {
+    return (timeline.value as Values).x
 }
 
 function track(promise: Promise<RunResult>) {
@@ -201,7 +201,7 @@ describe('DRV: timeline.drive(progress, config)', () => {
         progress.value = 0.5
         manual.frame()
         expect(x(timeline)).toBe(50)
-        expect(timeline.getCurrentValue()).toEqual({ x: 50 })
+        expect(timeline.value).toEqual({ x: 50 })
     })
 
     it('A1: repeat and delay are ignored for a driven run', () => {
@@ -469,7 +469,7 @@ describe('DRV: timeline.drive(progress, config)', () => {
         progress.value = 0.9
         manual.frames(3)
         expect(progress.calls).toBe(calls)
-        expect(timeline.getCurrentValue()).toBeNull()
+        expect(timeline.value).toBeNull()
 
         stop()
         expect(timeline.status).toBe('IDLE')

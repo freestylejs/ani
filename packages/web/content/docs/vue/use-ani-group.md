@@ -9,7 +9,8 @@ This composable binds a list of elements to a `rafGroup`. Element `i` is written
 
 ```vue
 <script setup>
-import { a, rafGroup } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafGroup } from "@freestylejs/ani-core";
 import { useAniGroup, useTimeline } from "@freestylejs/ani-vue";
 
 const group = useTimeline(() =>

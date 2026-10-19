@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import * as a from '../../index'
 import {
-    type AnimationClock,
-    a,
+    type Clock,
     createClock,
     rafTimeline,
     type VisibilitySource,
@@ -63,34 +63,34 @@ function setup(options: Record<string, unknown> = {}) {
 describe('M3: visibility-aware lag smoothing', () => {
     it('A1: a frame hidden for 300 ms suspends even below lagThreshold', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(16)
         s.frame(16)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.32, 5)
+        expect(t.value!.x).toBeCloseTo(0.32, 5)
 
         s.setHidden(true)
         s.advance(300)
         s.setHidden(false)
         s.frame(16)
         // 316 ms of wall time, but only one ordinary frame of animation time
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.48, 5)
+        expect(t.value!.x).toBeCloseTo(0.48, 5)
     })
 
     it('A2: without visibility events the same 316 ms gap applies in full', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(16)
         s.frame(16)
         s.advance(300)
         s.frame(16)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(3.48, 5)
+        expect(t.value!.x).toBeCloseTo(3.48, 5)
     })
 
     it('A3: visibility: false ignores the events and attaches no listener', () => {
         const s = setup({ visibility: false })
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         expect(s.listeners.size).toBe(0)
 
@@ -102,12 +102,12 @@ describe('M3: visibility-aware lag smoothing', () => {
         expect(s.listeners.size).toBe(0)
         s.frame(16)
         expect(s.listeners.size).toBe(0)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(3.48, 5)
+        expect(t.value!.x).toBeCloseTo(3.48, 5)
     })
 
     it('A4: hidden then visible before the next frame still suspends it', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(16)
         s.frame(16)
@@ -117,12 +117,12 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.setHidden(false)
         s.frame(16)
         // 26 ms of wall time, one 16 ms ordinary frame of animation time
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.48, 5)
+        expect(t.value!.x).toBeCloseTo(0.48, 5)
     })
 
     it('A5: the suspended flag clears after the frame', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(16)
         s.frame(16)
@@ -130,16 +130,16 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.advance(300)
         s.setHidden(false)
         s.frame(16)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.48, 5)
+        expect(t.value!.x).toBeCloseTo(0.48, 5)
 
         s.frame(30)
         // real elapsed time again: 30 ms, not another ordinary frame
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.78, 5)
+        expect(t.value!.x).toBeCloseTo(0.78, 5)
     })
 
     it('A6: the ordinary frame is not polluted by a suspension', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(20)
         s.frame(20)
@@ -147,10 +147,10 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.advance(300)
         s.setHidden(false)
         s.frame(20)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.6, 5)
+        expect(t.value!.x).toBeCloseTo(0.6, 5)
 
         s.frame(30)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.9, 5)
+        expect(t.value!.x).toBeCloseTo(0.9, 5)
 
         // a later long suspension advances by the latest ordinary 30 ms
         // frame, never by the 320 ms gap nor by a suspended frame's gap
@@ -158,17 +158,17 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.advance(300)
         s.setHidden(false)
         s.frame(10)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(1.2, 5)
+        expect(t.value!.x).toBeCloseTo(1.2, 5)
         // and a suspended frame never advances more than its real 6 ms
         s.setHidden(true)
         s.setHidden(false)
         s.frame(6)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(1.26, 5)
+        expect(t.value!.x).toBeCloseTo(1.26, 5)
     })
 
     it('A7: maxDeltaTime still caps the suspended frame delta', () => {
         const s = setup({ maxDeltaTime: 0.01 })
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(16)
         s.frame(16)
@@ -176,12 +176,12 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.advance(300)
         s.setHidden(false)
         s.frame(16)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.3, 5)
+        expect(t.value!.x).toBeCloseTo(0.3, 5)
     })
 
     it('A8: the listener follows the armed frame loop', () => {
         const s = setup()
-        const t = rafTimeline(node(0.2), s.clock)
+        const t = rafTimeline(node(0.2), { clock: s.clock })
         expect(s.listeners.size).toBe(0)
 
         t.play({ from: { x: 0 } })
@@ -207,14 +207,14 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.frame(16)
         expect(s.listeners.size).toBe(1)
 
-        const clock = s.clock as AnimationClock
+        const clock = s.clock as Clock
         clock.dispose()
         expect(s.listeners.size).toBe(0)
     })
 
     it('A9: a hidden event while the clock is idle has no effect later', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         s.setHidden(true)
         expect(s.listeners.size).toBe(0)
 
@@ -222,18 +222,18 @@ describe('M3: visibility-aware lag smoothing', () => {
         s.advance(300)
         s.frame(16)
         // the first frame measures the real elapsed time since play()
-        expect(t.getCurrentValue()!.x).toBeCloseTo(3.16, 5)
+        expect(t.value!.x).toBeCloseTo(3.16, 5)
     })
 
     it('A10: hidden at tick time without an event does not suspend', () => {
         const s = setup()
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.doc.hidden = true
         s.frame(16)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(0.16, 5)
+        expect(t.value!.x).toBeCloseTo(0.16, 5)
         s.frame(100)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(1.16, 5)
+        expect(t.value!.x).toBeCloseTo(1.16, 5)
     })
 
     it('A11: invalid visibility values throw a TypeError mentioning visibility', () => {
@@ -286,27 +286,27 @@ describe('M3: visibility-aware lag smoothing', () => {
                 removeEventListener: () => undefined,
             },
         })
-        const t = rafTimeline(node(0.05), s.clock)
+        const t = rafTimeline(node(0.05), { clock: s.clock })
         t.play({ from: { x: 0 } })
         expect(errors).toContain(failure)
         expect(t.status).toBe('PLAYING')
 
         for (let i = 0; i < 4; i++) s.frame(16)
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()!.x).toBeCloseTo(100, 5)
+        expect(t.value!.x).toBeCloseTo(100, 5)
     })
 
     it('A13: no document global and visibility omitted is a silent no-op', () => {
         expect((globalThis as { document?: unknown }).document).toBeUndefined()
         const s = setup({ visibility: undefined })
-        const t = rafTimeline(node(10), s.clock)
+        const t = rafTimeline(node(10), { clock: s.clock })
         t.play({ from: { x: 0 } })
         s.frame(16)
         s.frame(16)
         s.advance(300)
         s.frame(16)
         expect(t.status).toBe('PLAYING')
-        expect(t.getCurrentValue()!.x).toBeCloseTo(3.48, 5)
+        expect(t.value!.x).toBeCloseTo(3.48, 5)
         expect(s.listeners.size).toBe(0)
     })
 })

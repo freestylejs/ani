@@ -1,7 +1,8 @@
 // @vitest-environment node
 
 import { describe, expect, it } from 'vitest'
-import { AnimationClock, a, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { defaultClock, rafTimeline } from '../../index'
 
 describe('core without a DOM (SSR / plain Node)', () => {
     it('has no window, document or requestAnimationFrame', () => {
@@ -15,12 +16,12 @@ describe('core without a DOM (SSR / plain Node)', () => {
             a.ani({ to: { x: 100 }, duration: 1, timing: a.timing.linear() })
         )
         expect(() => timeline.play({ from: { x: 0 } })).not.toThrow()
-        expect(timeline.getCurrentValue()).toEqual({ x: 0 })
-        expect(AnimationClock.create().size).toBe(0)
+        expect(timeline.value).toEqual({ x: 0 })
+        expect(defaultClock.size).toBe(0)
 
         const states = a.createStates({
             initial: 'idle',
-            initialFrom: { x: 0 },
+            initialValue: { x: 0 },
             states: {
                 idle: a.ani({ to: { x: 0 }, duration: 1 }),
                 active: a.ani({ to: { x: 1 }, duration: 1 }),
@@ -29,6 +30,6 @@ describe('core without a DOM (SSR / plain Node)', () => {
         expect(() => states.transitionTo('active')).not.toThrow()
         expect(states.state()).toBe('active')
         expect(() => states.dispose()).not.toThrow()
-        expect(AnimationClock.create().size).toBe(0)
+        expect(defaultClock.size).toBe(0)
     })
 })

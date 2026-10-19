@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { a, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { rafTimeline } from '../../index'
 import { createManualClock } from './manual_clock'
 
 const linear = a.timing.linear()
@@ -27,7 +28,7 @@ afterEach(() => {
 describe('real clock + real timelines', () => {
     it('chains a new run from inside the ENDED notification (same timeline)', () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(0.25), m.clock)
+        const timeline = rafTimeline(node(0.25), { clock: m.clock })
         const endedRuns: number[] = []
         let runs = 0
         timeline.onUpdate(({ status }) => {
@@ -46,7 +47,7 @@ describe('real clock + real timelines', () => {
 
     it('a chaining listener sees the nested play() notification and later listeners still get ENDED', () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(0.1), m.clock)
+        const timeline = rafTimeline(node(0.1), { clock: m.clock })
         let chained = false
         const first: string[] = []
         const second: string[] = []
@@ -71,8 +72,8 @@ describe('real clock + real timelines', () => {
 
     it('chains a different timeline from ENDED and the clock drains afterwards', () => {
         const m = createManualClock()
-        const first = rafTimeline(node(0.25), m.clock)
-        const second = rafTimeline(node(0.25), m.clock)
+        const first = rafTimeline(node(0.25), { clock: m.clock })
+        const second = rafTimeline(node(0.25), { clock: m.clock })
         first.onUpdate(({ status }) => {
             if (status === 'ENDED') second.play({ from: { x: 0 } })
         })
@@ -80,13 +81,13 @@ describe('real clock + real timelines', () => {
         m.frames(20, 100)
         expect(first.status).toBe('ENDED')
         expect(second.status).toBe('ENDED')
-        expect(second.getCurrentValue()).toEqual({ x: 100 })
+        expect(second.value).toEqual({ x: 100 })
         expect(m.clock.size).toBe(0)
     })
 
     it('emits ENDED exactly once per run', () => {
         const m = createManualClock()
-        const timeline = rafTimeline(node(0.25), m.clock)
+        const timeline = rafTimeline(node(0.25), { clock: m.clock })
         let ended = 0
         timeline.onUpdate(({ status }) => {
             if (status === 'ENDED') ended++
@@ -98,8 +99,8 @@ describe('real clock + real timelines', () => {
 
     it('a throwing onUpdate callback does not stop siblings, other timelines or the clock', () => {
         const m = createManualClock()
-        const bad = rafTimeline(node(10), m.clock)
-        const good = rafTimeline(node(10), m.clock)
+        const bad = rafTimeline(node(10), { clock: m.clock })
+        const good = rafTimeline(node(10), { clock: m.clock })
         const sibling = vi.fn()
         let armed = false
         bad.onUpdate(() => {
@@ -121,10 +122,10 @@ describe('real clock + real timelines', () => {
         expect(sibling.mock.calls.length - siblingBefore).toBe(5)
         expect(m.pending).toBe(1)
         // the clock still accepts and drives new timelines
-        const fresh = rafTimeline(node(10), m.clock)
+        const fresh = rafTimeline(node(10), { clock: m.clock })
         fresh.play({ from: { x: 0 } })
         m.frames(2, 100)
-        expect(fresh.getCurrentValue()!.x).toBeGreaterThan(0)
+        expect(fresh.value!.x).toBeGreaterThan(0)
     })
 
     it('a throwing subscriber is isolated and reported through onError', () => {
@@ -146,57 +147,59 @@ describe('real clock + real timelines', () => {
 
     it('recovers when the environment silently drops a queued frame', () => {
         const m = createManualClock()
-        const survivor = rafTimeline(node(10), m.clock)
+        const survivor = rafTimeline(node(10), { clock: m.clock })
         survivor.play({ from: { x: 0 } })
         m.frames(2, 100)
-        const before = survivor.getCurrentValue()!.x
+        const before = survivor.value!.x
 
         m.drop() // e.g. frame lost across a visibility change
         m.advance(5000)
-        const late = rafTimeline(node(10), m.clock)
+        const late = rafTimeline(node(10), { clock: m.clock })
         late.play({ from: { x: 0 } })
         expect(m.pending).toBe(1)
         m.frames(2, 100)
-        expect(survivor.getCurrentValue()!.x).toBeGreaterThan(before)
-        expect(late.getCurrentValue()!.x).toBeGreaterThan(0)
+        expect(survivor.value!.x).toBeGreaterThan(before)
+        expect(late.value!.x).toBeGreaterThan(0)
     })
 
     it('stays on the wall clock under jank and pauses across a suspension', () => {
         const m = createManualClock()
-        const t = rafTimeline(node(10), m.clock)
+        const t = rafTimeline(node(10), { clock: m.clock })
         t.play({ from: { x: 0 } })
         // jank: 16 ms, then a 400 ms frame -> both applied in full
         m.frame(16)
         m.frame(400)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(4.16, 5)
+        expect(t.value!.x).toBeCloseTo(4.16, 5)
         // suspension (hidden tab): a 5 s gap advances by one ordinary frame
         m.frame(5000)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(4.32, 5)
+        expect(t.value!.x).toBeCloseTo(4.32, 5)
         m.frame(16)
-        expect(t.getCurrentValue()!.x).toBeCloseTo(4.48, 5)
+        expect(t.value!.x).toBeCloseTo(4.48, 5)
     })
 
     it('a 1 s animation under 250 ms frames takes 1 s of wall time', () => {
         const m = createManualClock()
-        const t = rafTimeline(node(1), m.clock)
+        const t = rafTimeline(node(1), { clock: m.clock })
         t.play({ from: { x: 0 } })
         m.frames(4, 250)
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual({ x: 100 })
+        expect(t.value).toEqual({ x: 100 })
     })
 
     it('follows pure wall time with lagThreshold: Infinity', () => {
         const realtime = createManualClock({ lagThreshold: Infinity })
-        const exact = rafTimeline(node(10), realtime.clock)
+        const exact = rafTimeline(node(10), { clock: realtime.clock })
         exact.play({ from: { x: 0 } })
         realtime.frame(5000)
-        expect(exact.getCurrentValue()!.x).toBeCloseTo(50, 5)
+        expect(exact.value!.x).toBeCloseTo(50, 5)
     })
 
     it('drives 1000 concurrent timelines to completion and drains to 0 subscribers', () => {
         const m = createManualClock()
         const timelines = Array.from({ length: 1000 }, (_, i) => {
-            const t = rafTimeline(node(0.2 + (i % 10) * 0.1), m.clock)
+            const t = rafTimeline(node(0.2 + (i % 10) * 0.1), {
+                clock: m.clock,
+            })
             t.play({ from: { x: 0 } })
             return t
         })
@@ -205,7 +208,7 @@ describe('real clock + real timelines', () => {
         m.frames(30, 100)
         for (const t of timelines) {
             expect(t.status).toBe('ENDED')
-            expect(t.getCurrentValue()).toEqual({ x: 100 })
+            expect(t.value).toEqual({ x: 100 })
         }
         expect(m.clock.size).toBe(0)
         expect(m.pending).toBe(0)
@@ -214,7 +217,7 @@ describe('real clock + real timelines', () => {
     it('does not accumulate subscribers over 5000 play/dispose cycles', () => {
         const m = createManualClock()
         for (let i = 0; i < 5000; i++) {
-            const t = rafTimeline(node(10), m.clock)
+            const t = rafTimeline(node(10), { clock: m.clock })
             t.play({ from: { x: 0 } })
             if (i % 3 === 0) m.frame(16)
             t.dispose()
@@ -225,7 +228,7 @@ describe('real clock + real timelines', () => {
 
     it('disposed timelines never update or resubscribe', () => {
         const m = createManualClock()
-        const t = rafTimeline(node(10), m.clock)
+        const t = rafTimeline(node(10), { clock: m.clock })
         const spy = vi.fn()
         t.onUpdate(spy)
         t.play({ from: { x: 0 } })
@@ -244,7 +247,7 @@ describe('createStates + real clock', () => {
         const m = createManualClock()
         const states = a.createStates({
             initial: 'idle',
-            initialFrom: { x: 0 },
+            initialValue: { x: 0 },
             states: { idle: node(), active: node() },
             clock: m.clock,
         })
@@ -262,7 +265,7 @@ describe('createStates + real clock', () => {
         const m = createManualClock()
         const states = a.createStates({
             initial: 'idle',
-            initialFrom: { x: 0 },
+            initialValue: { x: 0 },
             states: { idle: node(), active: node() },
             clock: m.clock,
         })

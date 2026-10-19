@@ -3,9 +3,9 @@ import { ManualClock } from '~/ani/core/__tests__/manual_clock'
 import type { ExecutionPlan, Groupable } from '~/ani/core/interface/core_types'
 import { rafTimeline } from '~/ani/raf/timeline'
 import { ani, parallel, SegmentNode, sequence } from '~/nodes'
-import { T, TimingFunction, type TimingFunctionContext } from '~/timing'
+import { TimingFunction, type TimingFunctionContext, timing } from '~/timing'
 import { compileToKeyframes } from '../compiler'
-import { webTimeline } from '../timeline'
+import { waapiTimeline } from '../timeline'
 
 class CountingLinear extends TimingFunction {
     public calls = 0
@@ -58,7 +58,7 @@ describe('compileToKeyframes scaling', () => {
 describe('compileToKeyframes parity with the raf engine', () => {
     it('treats a missing timing as linear next to a bezier segment', () => {
         const node = parallel([
-            ani({ to: { x: 100 }, duration: 1, timing: T.ease() }),
+            ani({ to: { x: 100 }, duration: 1, timing: timing.ease() }),
             ani({ to: { y: 100 }, duration: 1 }),
         ])
         const keyframes = compileToKeyframes(planOf(node), { x: 0, y: 0 })
@@ -66,15 +66,15 @@ describe('compileToKeyframes parity with the raf engine', () => {
         expect(keyframes.length).toBeGreaterThan(2)
         const mid = keyframes.find((k) => Math.abs(k.offset - 0.5) < 1e-9)!
         expect(mid.y).toBeCloseTo(50)
-        const line = rafTimeline(node, new ManualClock())
+        const line = rafTimeline(node, { clock: new ManualClock() })
         line.play({ from: { x: 0, y: 0 } })
         line.seek(0.5)
-        expect(Number(mid.x)).toBeCloseTo(line.getCurrentValue()!.x!, 6)
+        expect(Number(mid.x)).toBeCloseTo(line.value!.x!, 6)
     })
 
     it('still delegates a lone bezier segment to a cubic-bezier easing', () => {
         const keyframes = compileToKeyframes(
-            planOf(ani({ to: { x: 100 }, duration: 1, timing: T.ease() })),
+            planOf(ani({ to: { x: 100 }, duration: 1, timing: timing.ease() })),
             { x: 0 }
         )
         expect(keyframes).toHaveLength(2)
@@ -82,14 +82,14 @@ describe('compileToKeyframes parity with the raf engine', () => {
     })
 
     it('dynamic springs are sampled with isolated, repeatable state', () => {
-        const spring = T.dynamicSpring({ m: 1, k: 100, c: 10 })
+        const spring = timing.dynamicSpring({ m: 1, k: 100, c: 10 })
         const node = ani({ to: { x: 100 }, duration: 3, timing: spring })
 
         const clock = new ManualClock()
-        const line = rafTimeline(node, clock)
+        const line = rafTimeline(node, { clock })
         line.play({ from: { x: 0 } })
         clock.run(15)
-        const before = line.getCurrentValue()!.x
+        const before = line.value!.x
 
         const first = compileToKeyframes(planOf(node), { x: 0 })
         const second = compileToKeyframes(planOf(node), { x: 0 })
@@ -97,14 +97,11 @@ describe('compileToKeyframes parity with the raf engine', () => {
 
         // compiling must not disturb the live run that shares the instance
         clock.run(15)
-        const control = rafTimeline(node, new ManualClock())
+        const control = rafTimeline(node, { clock: new ManualClock() })
         control.play({ from: { x: 0 } })
         control.seek(0.5)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(
-            control.getCurrentValue()!.x!,
-            8
-        )
-        expect(before).toBeLessThan(line.getCurrentValue()!.x!)
+        expect(line.value!.x).toBeCloseTo(control.value!.x!, 8)
+        expect(before).toBeLessThan(line.value!.x!)
     })
 })
 
@@ -147,7 +144,7 @@ describe('WebAniTimeline', () => {
     it('compiles the same plan + from + resolver once', () => {
         const timing = new CountingLinear()
         const node = ani({ to: { x: 100 }, duration: 1, timing })
-        const first = webTimeline(node)
+        const first = waapiTimeline(node)
         const target = {} as Element
 
         first.play(target, { from: { x: 0 } })
@@ -157,7 +154,7 @@ describe('WebAniTimeline', () => {
         // repeated play(), and another timeline over the same node (e.g. one
         // per element), hit the cache
         first.play(target, { from: { x: 0 } })
-        webTimeline(node).play(target, { from: { x: 0 } })
+        waapiTimeline(node).play(target, { from: { x: 0 } })
         expect(timing.calls).toBe(compiledCalls)
 
         // a different `from` or resolver must recompile
@@ -166,7 +163,7 @@ describe('WebAniTimeline', () => {
     })
 
     it('keeps the running animation untouched behind a failing play()', () => {
-        const timeline = webTimeline(ani({ to: { x: 1 }, duration: 1 }))
+        const timeline = waapiTimeline(ani({ to: { x: 1 }, duration: 1 }))
         timeline.play({} as Element, { from: { x: 0 } })
         expect(timeline.animations).toHaveLength(1)
 

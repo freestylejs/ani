@@ -9,7 +9,7 @@ This primitive is a Svelte-specific wrapper around the core `createStates` funct
 
 ```svelte
 <script>
-  import { a } from "@freestylejs/ani-core";
+  import * as a from "@freestylejs/ani-core";
   import { useAniStates } from "@freestylejs/ani-svelte";
 
   const { action, style, state, transitionTo } = useAniStates({
@@ -43,7 +43,7 @@ The primitive manages the active animation state and its timeline, handling seam
 
 -   **Owned.** The machine is created by the primitive and disposed when the component is destroyed, which stops any running timeline (even `repeat: Infinity`). After that `transitionTo` resolves `'disposed'`.
 -   **Action.** Binds on mount (the current value is written at once) and unbinds on destroy; it never disposes the machine.
--   **Server rendering.** `style` is the CSS declaration string of `initialValue` (or the 1.x `initialFrom`). Nothing starts on the clock while rendering on the server.
+-   **Server rendering.** `style` is the CSS declaration string of `initialValue`. Nothing starts on the clock while rendering on the server.
 -   **Atomic.** `transitionTo` validates first (an unknown state throws a `RangeError` and nothing changes). The `state` store mirrors the machine, also for a direct `machine.transitionTo`.
 -   **Resolver.** `resolver` shapes both the `style` string and the writes.
 

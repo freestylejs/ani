@@ -1,11 +1,7 @@
 // @vitest-environment jsdom
 
 import * as a from '@freestylejs/ani-core'
-import {
-    type RafAniTimeline,
-    rafGroup,
-    rafTimeline,
-} from '@freestylejs/ani-core'
+import { type RafTimeline, rafGroup, rafTimeline } from '@freestylejs/ani-core'
 import { get, writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { trackSubscriptions } from '../../../../core/src/__tests__/integration/harness'
@@ -147,7 +143,7 @@ describe('FSVELTE: useTimeline and useAni', () => {
         const a1 = rafTimeline(node(), { clock: first.clock })
         const a2 = rafTimeline(node(), { clock: second.clock })
         a2.play({ from: { opacity: 0.8 } })
-        const source = writable<RafAniTimeline<{ opacity: number }>>(a1)
+        const source = writable<RafTimeline<{ opacity: number }>>(a1)
         const [store] = useAni(source, { opacity: 0.1 })
         const seen: number[] = []
         const unsubscribe = store.subscribe((v) => seen.push(v.opacity))

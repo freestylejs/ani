@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { a, defaultClock, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { defaultClock, rafTimeline } from '../../index'
 import { createManualClock, resetDefaultClock } from '../../testing'
 
 const move = () =>

@@ -7,7 +7,7 @@ import {
     sequence,
     stagger,
 } from '~/nodes'
-import { T, type TimingFunction } from '~/timing'
+import { type TimingFunction, timing } from '~/timing'
 import { rafTimeline } from '../timeline'
 
 describe('Animation Nodes & Compositors', () => {
@@ -23,14 +23,12 @@ describe('Animation Nodes & Compositors', () => {
             const timing = {
                 step: () => ({ value: 0, endOfAnimation: true }),
             } as unknown as TimingFunction
-            const node = ani(
-                {
-                    to: [1],
-                    duration: 1,
-                    timing,
-                },
-                'my-anim'
-            )
+            const node = ani({
+                to: [1],
+                duration: 1,
+                timing,
+                id: 'my-anim',
+            })
             expect(node.id).toBe('my-anim')
             expect(node.props.timing).toBe(timing)
         })
@@ -38,7 +36,7 @@ describe('Animation Nodes & Compositors', () => {
 
     describe('delay()', () => {
         it('should create a SegmentNode with an empty `to` and correct duration', () => {
-            const node = delay(1.5, 'my-delay')
+            const node = delay(1.5, { id: 'my-delay' })
             expect(node.type).toBe('SEGMENT')
             expect(node.duration).toBe(1.5)
             expect(node.props.to).toEqual({})
@@ -80,7 +78,7 @@ describe('Animation Nodes & Compositors', () => {
             } as unknown as TimingFunction
 
             // Applies timing inheritance to a tree that includes `reused`.
-            sequence([reused], parentTiming)
+            sequence([reused], { timing: parentTiming })
 
             // Reusing the same child composition in a new tree should stay unmodified.
             const plainParent = sequence([reused])
@@ -125,7 +123,7 @@ describe('Animation Nodes & Compositors', () => {
                 ani({ to: [1], duration: 1 }), // ends at 0.5 + 1 = 1.5
                 ani({ to: [1], duration: 2 }), // ends at 1.0 + 2 = 3.0
             ]
-            const stag = stagger(children, 0.5)
+            const stag = stagger(children, { offset: 0.5 })
             // Total duration = (2 * 0.5) + 2 = 3
             expect(stag.duration).toBe(3)
         })
@@ -135,7 +133,7 @@ describe('Animation Nodes & Compositors', () => {
             const child2 = ani({ to: [1], duration: 2 })
             const mockCompile1 = vi.spyOn(child1, 'construct')
             const mockCompile2 = vi.spyOn(child2, 'construct')
-            const stag = stagger([child1, child2], 0.5)
+            const stag = stagger([child1, child2], { offset: 0.5 })
             const plan: any[] = []
             stag.construct(plan, 0)
             expect(mockCompile1).toHaveBeenCalledWith(plan, 0)
@@ -164,7 +162,7 @@ describe('Animation Nodes & Compositors', () => {
             Number.POSITIVE_INFINITY,
         ])('stagger() rejects offset %s', (offset) => {
             expect(() =>
-                stagger([ani({ to: [1], duration: 1 })], offset)
+                stagger([ani({ to: [1], duration: 1 })], { offset: offset })
             ).toThrow(RangeError)
         })
     })
@@ -187,8 +185,8 @@ describe('Animation Nodes & Compositors', () => {
 
         it('keeps the duration of a fully overridden segment', () => {
             const par = parallel([
-                ani({ to: { x: 10 }, duration: 3, timing: T.linear() }),
-                ani({ to: { x: 50 }, duration: 1, timing: T.linear() }),
+                ani({ to: { x: 10 }, duration: 3, timing: timing.linear() }),
+                ani({ to: { x: 50 }, duration: 1, timing: timing.linear() }),
             ])
             const timeline = line(par, { x: 0 })
 
@@ -196,31 +194,35 @@ describe('Animation Nodes & Compositors', () => {
             expect(timeline.duration).toBe(3)
 
             timeline.seek(0.5)
-            expect(timeline.getCurrentValue()).toEqual({ x: 25 })
+            expect(timeline.value).toEqual({ x: 25 })
             timeline.seek(2)
-            expect(timeline.getCurrentValue()).toEqual({ x: 50 })
+            expect(timeline.value).toEqual({ x: 50 })
         })
 
         it('only strips the overridden keys of earlier segments', () => {
             const par = parallel([
-                ani({ to: { x: 10, y: 20 }, duration: 1, timing: T.linear() }),
-                ani({ to: { x: 5 }, duration: 1, timing: T.linear() }),
+                ani({
+                    to: { x: 10, y: 20 },
+                    duration: 1,
+                    timing: timing.linear(),
+                }),
+                ani({ to: { x: 5 }, duration: 1, timing: timing.linear() }),
             ])
             const timeline = line(par, { x: 0, y: 0 })
             timeline.seek(1)
-            expect(timeline.getCurrentValue()).toEqual({ x: 5, y: 20 })
+            expect(timeline.value).toEqual({ x: 5, y: 20 })
         })
 
         it('does not rebuild segments that have no conflicts and keeps ids', () => {
-            const a = ani({ to: { x: 1 }, duration: 1 }, 'a')
-            const b = ani({ to: { y: 1 }, duration: 1 }, 'b')
+            const a = ani({ to: { x: 1 }, duration: 1, id: 'a' })
+            const b = ani({ to: { y: 1 }, duration: 1, id: 'b' })
             const par = parallel([a, b])
             expect(par.children[0]).toBe(a)
             expect(par.children[1]).toBe(b)
 
             const overridden = parallel([
-                ani({ to: { x: 1 }, duration: 1 }, 'first'),
-                ani({ to: { x: 2 }, duration: 2 }, 'second'),
+                ani({ to: { x: 1 }, duration: 1, id: 'first' }),
+                ani({ to: { x: 2 }, duration: 2, id: 'second' }),
             ])
             expect(overridden.children.map((c) => c.id)).toEqual([
                 'first',
@@ -233,7 +235,7 @@ describe('Animation Nodes & Compositors', () => {
                 ani({ to: [i], duration: 1 + (i % 3) })
             )
             expect(parallel(children).duration).toBe(3)
-            expect(stagger(children, 0).duration).toBe(3)
+            expect(stagger(children, { offset: 0 }).duration).toBe(3)
         })
     })
 
@@ -245,9 +247,12 @@ describe('Animation Nodes & Compositors', () => {
         })
 
         it('keeps ids, types and durations of cloned nodes', () => {
-            const segment = ani({ to: [1], duration: 1 }, 'seg')
-            const nested = sequence([segment], undefined, 'nested')
-            const outer = sequence([nested], T.linear(), 'outer')
+            const segment = ani({ to: [1], duration: 1, id: 'seg' })
+            const nested = sequence([segment], { id: 'nested' })
+            const outer = sequence([nested], {
+                timing: timing.linear(),
+                id: 'outer',
+            })
 
             const clonedNested = outer.children[0] as typeof nested
             expect(clonedNested).not.toBe(nested)

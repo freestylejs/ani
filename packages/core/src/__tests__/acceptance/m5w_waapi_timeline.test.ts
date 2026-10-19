@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RunResult } from '~/ani/waapi'
-import { webTimeline } from '~/ani/waapi'
-import { a } from '~/index'
+import { waapiTimeline } from '~/ani/waapi'
+import * as a from '~/index'
 
 /**
  * Minimal stable-API fake: jsdom has no Web Animations. `finish()` resolves
@@ -108,7 +108,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A1: creates one animation per target with stacked delays', () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const elements = makeTargets(3)
 
         line.play(elements, { from: fromZero, stagger: 0.1, delay: 0 })
@@ -121,7 +121,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
         ])
         expect(createdEffects[0]!.options.fill).toBe('forwards')
 
-        const withBaseDelay = webTimeline(tree())
+        const withBaseDelay = waapiTimeline(tree())
         withBaseDelay.play(elements, {
             from: fromZero,
             stagger: 0.1,
@@ -134,7 +134,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A2: applies a stagger function per target', () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
 
         line.play(makeTargets(3), {
             from: fromZero,
@@ -147,7 +147,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A3: resolves "ended" after all animations finished, reporting PLAYING then ENDED', async () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const statuses: string[] = []
         const unsubscribe = line.onStatus((status) => {
             statuses.push(status)
@@ -167,7 +167,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A4: interruption commits styles then cancels each old animation', async () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const elements = makeTargets(2)
 
         const firstRun = line.play(elements, { from: fromZero })
@@ -200,7 +200,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A5: interrupt false resolves "skipped" while running', async () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const elements = makeTargets(2)
 
         const run = line.play(elements, { from: fromZero })
@@ -226,11 +226,11 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A6: valueAt evaluates the plan at the target animation currentTime', async () => {
-        const idle = webTimeline(tree())
+        const idle = waapiTimeline(tree())
         expect(idle.value).toBeNull()
         expect(idle.valueAt(0)).toBeNull()
 
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const run = line.play(makeTargets(3), {
             from: fromZero,
             stagger: 0.1,
@@ -251,7 +251,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A6: valueAt subtracts the delay, clamps to the run and wraps repeats', () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         line.play(makeTargets(1), { from: fromZero, delay: 0.1, repeat: 1 })
         const [animation] = createdAnimations
 
@@ -261,14 +261,14 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
         animation!.currentTime = 1350
         expect(line.valueAt(0)).toEqual({ opacity: 0.25, translateX: 25 })
 
-        const single = webTimeline(tree())
+        const single = waapiTimeline(tree())
         single.play(makeTargets(1), { from: fromZero })
         createdAnimations[1]!.currentTime = 5000
         expect(single.valueAt(0)).toEqual({ opacity: 1, translateX: 100 })
     })
 
     it('A7: cancel, finish and dispose settle the right results', async () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const [element] = makeTargets(1)
 
         const resetRun = line.play(element!, { from: fromZero })
@@ -297,7 +297,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A8: invalid input throws synchronously and leaves the run untouched', async () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const [element] = makeTargets(1)
 
         const run = line.play([element!], { from: fromZero })
@@ -328,7 +328,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A9: a throwing commitStyles does not prevent the interruption', async () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const elements = makeTargets(2)
 
         const run = line.play(elements, { from: fromZero })
@@ -353,7 +353,7 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
     })
 
     it('A10: a function from shares keyframes per distinct value set', () => {
-        const line = webTimeline(tree())
+        const line = waapiTimeline(tree())
         const elements = makeTargets(3)
 
         line.play(elements, {

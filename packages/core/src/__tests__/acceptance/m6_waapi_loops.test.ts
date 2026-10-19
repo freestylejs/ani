@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { a } from '~/index'
+import * as a from '~/index'
 
 /**
  * Minimal stable-API fake: jsdom has no Web Animations. `finish()` resolves

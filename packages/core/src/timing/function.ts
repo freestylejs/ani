@@ -78,9 +78,9 @@ export abstract class TimingFunction {
         checkTimeOnly: boolean = true
     ): boolean {
         const tol =
-            context.tolerance !== undefined
-                ? context.tolerance
-                : TimingFunction.DEFAULT_TOLERANCE
+            context.tolerance === undefined
+                ? TimingFunction.DEFAULT_TOLERANCE
+                : context.tolerance
         const timeCondition = time >= context.duration
         const end = checkTimeOnly
             ? timeCondition

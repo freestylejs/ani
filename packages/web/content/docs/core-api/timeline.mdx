@@ -1,9 +1,9 @@
 ---
-title: timeline (WebAPI)
+title: waapiTimeline (WebAPI)
 description:  The main controller that runs an animation, manages its state, and controls its playback. Powered by the Web Animations API.
 ---
 
-The `timeline` API compiles your declarative animation tree into native browser keyframes and plays them using `Element.animate()`. 
+`waapiTimeline` compiles your declarative animation tree into native browser keyframes and plays them using `Element.animate()`. 
 This allows animations to run on the compositor thread (where possible), resulting in silky smooth performance even when the JavaScript main thread is busy.
 
 ### Example
@@ -34,15 +34,15 @@ if (element) {
 
 #### Overview
 
-Unlike the standard `dynamicTimeline` which runs frame-by-frame via JavaScript, `timeline` uses the browser's native animation engine. This offers significant performance benefits, especially for continuous animations (loops) or on lower-end devices.
+Unlike the standard `rafTimeline` which runs frame-by-frame via JavaScript, `waapiTimeline` uses the browser's native animation engine. This offers significant performance benefits, especially for continuous animations (loops) or on lower-end devices.
 
 > Runs natively using web [`AnimationAPI`](https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API), `timeline` does not emit `onUpdate` events.
 > 
 > State management is handled entirely by the browser's `CSSOM` calculations.
 
-#### Key Differences from `dynamicTimeline`
+#### Key Differences from `rafTimeline`
 
-| Feature | `dynamicTimeline` (JS) | `timeline` (Native) |
+| Feature | `rafTimeline` (JS) | `waapiTimeline` (Native) |
 | :--- | :--- | :--- |
 | **Engine** | JavaScript `requestAnimationFrame` | Browser `Element.animate()` |
 | **Performance** | Good, but blocked by main thread | **Excellent**, often compositor-threaded |
@@ -57,7 +57,7 @@ Unlike the standard `dynamicTimeline` which runs frame-by-frame via JavaScript, 
 
 #### Limitation 1: Internal Value Can not be accessed.
 
-> Use [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline), if you should access internal animation value directly.
+> Use [`rafTimeline`](/en/docs/core-api/dynamic_timeline), if you should access internal animation value directly.
 
 `timeline` uses `WebAnimationAPI` so we can not access value directly, which is managed by browser internal logics. 
 
@@ -116,7 +116,7 @@ const run = timeline.play(document.querySelectorAll('.card'), {
 
 Playing again while the timeline is running commits the current styles of every old animation (`commitStyles()`, skipped for elements that are not rendered) and then cancels it, so the element continues from the value it showed instead of jumping back.
 
-> **Velocity is not continuous on WAAPI.** Only the position is kept. A spring restarts from rest. Use [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) when velocity must carry over.
+> **Velocity is not continuous on WAAPI.** Only the position is kept. A spring restarts from rest. Use [`rafTimeline`](/en/docs/core-api/dynamic_timeline) when velocity must carry over.
 
 #### Reading values
 
@@ -124,7 +124,7 @@ Playing again while the timeline is running commits the current styles of every 
 
 #### Server rendering
 
-`webTimeline.play()` needs `KeyframeEffect` and `document.timeline`. Call it on the client only (for example in an effect or `onMount`). See [SSR](/en/docs/guides/ssr).
+`waapiTimeline(...).play()` needs `KeyframeEffect` and `document.timeline`. Call it on the client only (for example in an effect or `onMount`). See [SSR](/en/docs/guides/ssr).
 
 ### API Reference
 
@@ -148,6 +148,6 @@ Invalid input (array `from`, negative or non-finite `delay` / stagger offsets, n
 
 ### Related Components
 
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The standard JavaScript-based controller.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The standard JavaScript-based controller.
 -   [`ani`](/en/docs/core-api/ani) - The building block for animations.
 -   [`Dynamic Animations`](/en/docs/core-api/advanced/dynamic-animations) - For creating interactive animations.

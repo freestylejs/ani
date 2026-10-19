@@ -4,10 +4,10 @@ export interface StyleWriter {
 }
 
 /**
- * Writer for one element. Same write rules as `applyStyleSheet` (camelCase
- * keys by assignment, `--custom` / hyphenated keys with `setProperty`), but
- * skips declarations whose written value equals the one this writer wrote
- * last. The first write writes everything.
+ * Writer for one element. camelCase keys are assigned, `--custom` / hyphenated
+ * keys go through `setProperty` (property assignment silently ignores them).
+ * Declarations whose written value equals the one this writer wrote last are
+ * skipped. The first write writes everything.
  */
 export function createStyleWriter(
     target: { style: CSSStyleDeclaration } | HTMLElement

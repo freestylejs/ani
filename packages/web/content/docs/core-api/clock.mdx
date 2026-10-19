@@ -1,5 +1,5 @@
 ---
-title: clock (AnimationClock / createClock)
+title: clock (createClock / defaultClock)
 description: The frame loop that drives timelines. Use the shared default clock, or create independent clocks for tests and isolated engines.
 ---
 
@@ -21,7 +21,7 @@ const clock = createClock({
   now: () => now,
 });
 
-const timeline = a.rafTimeline(a.ani({ to: { x: 100 }, duration: 1 }), { clock: clock });
+const timeline = a.rafTimeline(a.ani({ to: { x: 100 }, duration: 1 }), { clock });
 timeline.play({ from: { x: 0 } });
 
 now += 500;
@@ -125,7 +125,7 @@ The gap between two frames is turned into animation time with one rule:
 -   **No jump after a suspension.** When a hidden tab comes back, animations continue where they paused instead of finishing instantly.
 -   **Hidden means suspended, however short.** With the default `visibility: true` the clock listens to `visibilitychange` while its loop runs, so a tab hidden for 0.3 s (below `lagThreshold`) is still a suspension instead of a 0.3 s jump. Detection is event driven: a `hidden` value merely read at frame time never suspends. An idle clock holds no listener; `visibility: false` disables detection, an injected `VisibilitySource` lets tests drive it, and without a usable `document` (SSR, workers) it is a silent no-op. Invalid values throw a `TypeError`.
 -   **Pure wall clock:** `lagThreshold: Infinity` applies every gap in full, exactly like WAAPI. This is safe: dynamic springs integrate in fixed substeps and stop once settled, and whole `repeat` iterations are skipped, so even an hour-long gap costs well under a millisecond.
--   **Hard cap (legacy):** `maxDeltaTime` (unlimited by default) caps every delta. A finite value dilates animation time whenever a frame is slower; only set it deliberately.
+-   **Hard cap:** `maxDeltaTime` (unlimited by default) caps every delta. A finite value dilates animation time whenever a frame is slower; only set it deliberately.
 -   The first update of a timeline that joined a running loop follows the same rule, measured from its `play()`.
 -   Invalid values (zero, negative, `NaN`) throw a `RangeError`.
 
@@ -133,7 +133,7 @@ The gap between two frames is turned into animation time with one rule:
 
 #### `createClock(options?)`
 
-Returns an independent clock (`AnimationClockInterface` plus a read-only `size` and `read(fn)`).
+Returns an independent `Clock` (`AnimationClockInterface` plus a read-only `size` and `read(fn)`).
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -146,14 +146,12 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size` 
 | `now` | `() => number` | `performance.now` | Time source in milliseconds, same domain as the frame timestamps. |
 | `onError` | `(error) => void` | async rethrow | Receives errors thrown by subscribers. |
 
-#### `AnimationClock`
+#### `Clock`
 
 | Member | Description |
 | :--- | :--- |
 | `defaultClock` | The process-wide shared clock instance. Creating it touches neither the DOM nor `requestAnimationFrame`. |
-| `AnimationClock.create(maxDeltaTime?)` | Returns `defaultClock`. A given `maxDeltaTime` is applied to it. |
-| `AnimationClock.configure(timing)` | Reconfigures the shared clock: a number sets `maxDeltaTime`; `{ lagThreshold?, maxDeltaTime? }` sets either (validated before anything changes). |
-| `AnimationClock.reset()` | Disposes `defaultClock` and restores its defaults (timing options, `timeScale` 1, not paused). The instance stays the same. |
+| `clock.configure({ lagThreshold?, maxDeltaTime? })` | Reconfigures the frame timing of any clock, `defaultClock` included (validated before anything changes). |
 | `clock.size` | Number of animatables currently subscribed. |
 | `clock.subscribe(animatable)` / `clock.unsubscribe(animatable)` | Used by timelines. An `Animatable` is `{ read?(), update(dt), commit?() }`. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
@@ -164,5 +162,5 @@ Returns an independent clock (`AnimationClockInterface` plus a read-only `size` 
 
 ### Related Components
 
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - Subscribes to a clock while playing.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - Subscribes to a clock while playing.
 -   [`Testing`](/en/docs/guides/testing) - Deterministic tests with a manual frame source.

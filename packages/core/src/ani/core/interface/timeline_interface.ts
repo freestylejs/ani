@@ -1,13 +1,7 @@
 import { type AnimationNode, SegmentNode, type SegmentNodeProps } from '~/nodes'
-import type { Resolver } from '~/style'
 import { type BuiltPlan, buildPlan, unstableLoops } from '../plan_builder'
 import { loopEnds, type PlanLoop, planStateOf } from '../plan_state'
-import type {
-    AnimePrimitive,
-    ExecutionPlan,
-    ExecutionSegment,
-    Groupable,
-} from './core_types'
+import type { ExecutionPlan, ExecutionSegment, Groupable } from './core_types'
 
 export interface TimelineCommonConfig<G extends Groupable> {
     /**
@@ -33,20 +27,6 @@ export interface TimelineCommonConfig<G extends Groupable> {
      * (ordered by start time), see `keyframes`.
      */
     durations?: Array<number | 'keep'>
-    /**
-     * Custom style property resolver.
-     *
-     * @example
-     * ```ts
-     * const timeline = a.timeline(...)
-     * timeline.play({
-     *    propertyResolver: {
-     *       'px': (pxValue) => { key: `top`, value: `${pxValue}px` }
-     *    }
-     * })
-     * ```
-     */
-    propertyResolver?: G extends AnimePrimitive ? never : Resolver<G>
 }
 
 /**
@@ -127,7 +107,7 @@ function computeTotalDuration<G extends Groupable>(
     return total
 }
 
-/** Options of {@link TimelineBase}. */
+/** Options of `TimelineBase`. */
 export interface TimelineBaseOptions<G extends Groupable> {
     /**
      * Writes every finite loop out instead of representing it once. The values
@@ -138,10 +118,7 @@ export interface TimelineBaseOptions<G extends Groupable> {
     planRoot?: AnimationNode<G>
 }
 
-export abstract class TimelineBase<
-    G extends Groupable,
-    PlayArgs extends readonly unknown[] = readonly any[],
-> {
+export abstract class TimelineBase<G extends Groupable> {
     /**
      * Total duration of the currently resolved execution plan.
      * Reflects runtime `durations` overrides. `Infinity` when the tree
@@ -183,7 +160,6 @@ export abstract class TimelineBase<
                 : rootNode.duration
         this._totalDuration = this._baseDuration
 
-        this.play = this.play.bind(this)
         this.pause = this.pause.bind(this)
         this.seek = this.seek.bind(this)
         this.reset = this.reset.bind(this)
@@ -328,7 +304,6 @@ export abstract class TimelineBase<
 
     // Abstract public members
 
-    public abstract play(...args: PlayArgs): unknown
     /**
      * Pause animation.
      */

@@ -14,8 +14,8 @@ Ani can be imported and rendered on the server without a DOM. Nothing animates t
 
 ### What needs the browser
 
--   [`webTimeline`](/en/docs/core-api/timeline) (`play` needs `KeyframeEffect` and `document.timeline`). Call it in a client-only effect.
--   `EventManager.bind(element)` and the `events` option. They attach on mount.
+-   [`waapiTimeline`](/en/docs/core-api/timeline) (`play` needs `KeyframeEffect` and `document.timeline`). Call it in a client-only effect.
+-   `bind(element)` on a timeline, group or follower. The bindings call it on mount.
 
 ### Initial styles and hydration
 

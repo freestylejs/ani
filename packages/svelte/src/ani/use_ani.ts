@@ -1,4 +1,4 @@
-import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import type { AniGroup, Groupable, RafTimeline } from '@freestylejs/ani-core'
 import { get, type Readable, readable } from 'svelte/store'
 import { isReadable } from './shared'
 
@@ -12,22 +12,22 @@ import { isReadable } from './shared'
  * one of a store.
  */
 export function useAni<G extends Groupable>(
-    timeline: RafAniTimeline<G> | Readable<RafAniTimeline<G>>,
+    timeline: RafTimeline<G> | Readable<RafTimeline<G>>,
     initialValue: AniGroup<G>
-): readonly [Readable<AniGroup<G>>, RafAniTimeline<G>] {
-    const getTimeline = (): RafAniTimeline<G> =>
-        isReadable<RafAniTimeline<G>>(timeline) ? get(timeline) : timeline
+): readonly [Readable<AniGroup<G>>, RafTimeline<G>] {
+    const getTimeline = (): RafTimeline<G> =>
+        isReadable<RafTimeline<G>>(timeline) ? get(timeline) : timeline
 
     const store = readable(getTimeline().value ?? initialValue, (set) => {
         let unsubscribeUpdate: (() => void) | undefined
-        const bind = (tl: RafAniTimeline<G>) => {
+        const bind = (tl: RafTimeline<G>) => {
             unsubscribeUpdate?.()
             // Sync immediate value
             set(tl.value ?? initialValue)
             unsubscribeUpdate = tl.onUpdate((e) => set(e.state))
         }
 
-        const unsubscribeStore = isReadable<RafAniTimeline<G>>(timeline)
+        const unsubscribeStore = isReadable<RafTimeline<G>>(timeline)
             ? timeline.subscribe(bind)
             : (bind(timeline), undefined)
 

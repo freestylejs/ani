@@ -7,7 +7,7 @@ import {
     sequence,
     stagger,
 } from '~/nodes'
-import { T, type TimingFunction } from '~/timing'
+import { type TimingFunction, timing } from '~/timing'
 
 /**
  * Deterministic random generators for the property tests.
@@ -142,25 +142,25 @@ function randomTiming(rng: Rng, context: BuildContext): TimingFunction {
     const kind = rng.int(0, 7)
     switch (kind) {
         case 0:
-            return T.linear()
+            return timing.linear()
         case 1:
-            return T.ease()
+            return timing.ease()
         case 2:
-            return T.easeIn()
+            return timing.easeIn()
         case 3:
-            return T.easeOut()
+            return timing.easeOut()
         case 4:
-            return T.easeInOut()
+            return timing.easeInOut()
         case 5:
-            return T.bezier({
+            return timing.bezier({
                 p2: { x: round3(rng.range(0, 1)), y: round3(rng.range(0, 1)) },
                 p3: { x: round3(rng.range(0, 1)), y: round3(rng.range(0, 1)) },
             })
         case 6:
-            return T.spring(springOptions(rng))
+            return timing.spring(springOptions(rng))
         default:
             context.hasDynamicSpring = true
-            return T.dynamicSpring(springOptions(rng))
+            return timing.dynamicSpring(springOptions(rng))
     }
 }
 
@@ -239,7 +239,9 @@ function buildNode(
     if (kind === 1) {
         return parallel(children)
     }
-    return stagger(children, onGrid(context, round3(rng.range(0, 0.3))))
+    return stagger(children, {
+        offset: onGrid(context, round3(rng.range(0, 0.3))),
+    })
 }
 
 /** Builds a random tree (depth <= 3, <= 12 leaves) plus its `from` values. */

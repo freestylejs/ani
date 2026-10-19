@@ -26,9 +26,9 @@ Calls `factory` once, synchronously, and disposes the result with the owner. Wor
 
 ```ts
 function createAni<G>(
-  timeline: RafAniTimeline<G> | Accessor<RafAniTimeline<G>>,
+  timeline: RafTimeline<G> | Accessor<RafTimeline<G>>,
   initialValue: AniGroup<G>
-): readonly [Accessor<AniGroup<G>>, RafAniTimeline<G>]
+): readonly [Accessor<AniGroup<G>>, RafTimeline<G>]
 ```
 
 Syncs the timeline's value with a signal. The returned controller follows accessor swaps. The subscription is removed with the owner; the timeline is never disposed.
@@ -93,10 +93,3 @@ function createFollow<G extends Record<string, number>>(
 ```
 
 Creates a spring follower (disposed with the owner). `ref` calls `follower.bind`. An invalid `initial` throws synchronously.
-
----
-
-## Removed
-
--   `createAniRef({ timeline, events, cleanupEvents, ... })` and the tuple return of `createAniRef` / `createAniStates`.
--   `EventManager` / `AniRefContext` handlers: use the framework's own event props.

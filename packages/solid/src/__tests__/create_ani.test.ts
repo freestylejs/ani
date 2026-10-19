@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import * as a from '@freestylejs/ani-core'
-import { type RafAniTimeline, rafTimeline } from '@freestylejs/ani-core'
+import { type RafTimeline, rafTimeline } from '@freestylejs/ani-core'
 import { createRoot, createSignal } from 'solid-js'
 import { describe, expect, it } from 'vitest'
 import { createAni } from '../ani/create_ani'
@@ -18,10 +18,10 @@ describe('solid createAni', () => {
         const firstSubs = trackSubscriptions(first)
         const secondSubs = trackSubscriptions(second)
         const [current, setCurrent] =
-            createSignal<RafAniTimeline<{ opacity: number }>>(first)
+            createSignal<RafTimeline<{ opacity: number }>>(first)
 
         let value!: () => { opacity: number }
-        let controller!: RafAniTimeline<{ opacity: number }>
+        let controller!: RafTimeline<{ opacity: number }>
         const dispose = createRoot((d) => {
             const [v, c] = createAni(current, { opacity: 0.1 })
             value = v

@@ -42,7 +42,7 @@ const result = await myStates.transitionTo('active'); // 'ended'
 #### Transition rules
 
 -   **Atomic.** An unknown state name throws a `RangeError` *before* anything changes. An invalid `timelineConfig` (for example a malformed `from`) is rolled back: the machine keeps its previous state and timeline, and the error is rethrown.
--   **`interrupt: false`.** If the current timeline is `PLAYING`, the transition is rejected, nothing changes (state, timeline and listeners stay as they are) and the promise resolves `'skipped'`. The legacy third argument `canBeIntercepted = false` does the same; `config.interrupt` wins over it.
+-   **`interrupt: false`.** If the current timeline is `PLAYING`, the transition is rejected, nothing changes (state, timeline and listeners stay as they are) and the promise resolves `'skipped'`. `transitionTo` takes the state and one config: a third argument throws a `TypeError`.
 -   **The promise.** `transitionTo` returns the run of the new timeline and never rejects: `'ended'`, `'interrupted'` (another transition replaced it), `'skipped'`, `'reset'` or `'disposed'` (also after `dispose()`).
 -   **Replaced timelines are disposed.** After a transition the old timeline is dead (`dispose()`d), together with the bindings and listeners attached through the machine. Do not keep a reference to `timeline()` across transitions: use `bind`, `onUpdate` or `onTransition`, which follow the current timeline.
 
@@ -55,11 +55,10 @@ The `createStates` function returns a controller object with the following membe
 | `timeline()` | The currently active timeline. Use it to subscribe to updates or control playback. |
 | `state()` | The current state name. |
 | `value` | The current timeline's value, else the last value the machine showed, else the initial value. Frozen. |
-| `transitionTo(newState, [timelineConfig], [canBeIntercepted])` | Switches state and returns `Promise<RunResult>`. `timelineConfig` is the same as [`play()`](/en/docs/core-api/dynamic_timeline) options except that `from` is optional. |
+| `transitionTo(newState, [timelineConfig])` | Switches state and returns `Promise<RunResult>`. `timelineConfig` is the same as [`play()`](/en/docs/core-api/dynamic_timeline) options except that `from` is optional. |
 | `bind(target, [{ resolver }])` | Writes the value to `target.style` on every notification of the current timeline, now and after every transition. Returns an unbind function that stops it for all future timelines. |
 | `onUpdate(callback)` | Receives the same `{ state, status }` frames as a timeline listener, from the current timeline and every later one. Returns an unsubscribe function. |
 | `onTransition(callback)` | Called with `(state, timeline)` right **before** the new timeline starts playing, so listeners see its first update. Returns an unsubscribe function. Errors thrown by callbacks are rethrown asynchronously. |
-| `onTimelineChange(callback)` | 1.x name of `onTransition`; the callback only receives the timeline. |
 | `dispose()` | Disposes the current timeline and clears every binding and subscriber. Idempotent. Afterwards `transitionTo` resolves `'disposed'`. |
 
 ```typescript
@@ -89,14 +88,13 @@ The controller owns the timelines it creates. Call `dispose()` when it is no lon
 | Option | Type | Description |
 | :--- | :--- | :--- |
 | `initial` | `keyof States` | The initial state name. |
-| `initialValue` | `AniGroup<G>` | Start values for the first transition. Exactly one of `initialValue` and `initialFrom` is required; both or neither throws a `TypeError`. |
-| `initialFrom` | `AniGroup<G>` | 1.x name of `initialValue`. |
+| `initialValue` | `AniGroup<G>` | Start values for the first transition. Required; a missing one throws a `TypeError`. |
 | `states` | `Record<string, AnimationNode<G>>` | Named animation trees. |
 | `clock` | `AnimationClockInterface` | (Optional) Clock for every timeline created by the machine. |
 
 ### Related Components
 
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The underlying controller for each state within the machine.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The underlying controller for each state within the machine.
 -   [`ani`](/en/docs/core-api/ani) - The basic building block for individual animations within each state.
 -   [`sequence`](/en/docs/core-api/sequence) - To compose animations into sequential stages within a state.
 -   [`parallel`](/en/docs/core-api/parallel) - To run multiple animations simultaneously within a state.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { a, rafGroup } from '../../index'
+import * as a from '../../index'
+import { rafGroup } from '../../index'
 import { createManualClock } from '../../testing'
 
 function fakeElement() {

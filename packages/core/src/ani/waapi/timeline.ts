@@ -212,10 +212,90 @@ function endlessLoopBody<G extends Groupable>(
     return null
 }
 
-export class WebAniTimeline<G extends Groupable> extends TimelineBase<
-    G,
-    [targets: Element | ArrayLike<Element>, config: WaapiPlayConfig<G>]
-> {
+/** Public surface of the WAAPI timeline. */
+export interface WaapiTimeline<G extends Groupable> {
+    /** Current lifecycle status. */
+    readonly status: TimelineStatus
+    /**
+     * Total duration in seconds of the current plan; `Infinity` for an
+     * endless root loop.
+     */
+    readonly duration: number
+    /** Native animations of the current run, one per target (in order). */
+    readonly animations: readonly Animation[]
+    /** Value of the first target, `null` when there is no run. */
+    readonly value: Readonly<Record<string, number>> | null
+    /**
+     * Value of target `index`, computed from the plan at that animation's
+     * `currentTime`. `null` without a run or out of range.
+     */
+    valueAt(index: number): Readonly<Record<string, number>> | null
+    /** Subscribes to status changes. Returns unsubscribe. */
+    onStatus(listener: (status: TimelineStatus) => void): () => void
+    /**
+     * Plays the animation on one or several targets, one native animation per
+     * target. The promise never rejects and resolves once per run with how it
+     * ended.
+     */
+    play(
+        targets: Element | ArrayLike<Element>,
+        config: WaapiPlayConfig<G>
+    ): Promise<RunResult>
+    /** Pauses a `PLAYING` timeline. */
+    pause(): void
+    /** Resumes a `PAUSED` timeline. */
+    resume(): void
+    /** Jumps every target to `targetTime` seconds. */
+    seek(targetTime: number): void
+    /** Jumps a running timeline to its end. */
+    finish(): void
+    /** Cancels the native animations and returns to `IDLE`. */
+    cancel(): void
+    /** Alias of `cancel()` for parity with the RAF engine. */
+    reset(): void
+    /** Cancels the run, drops every listener; later `play()` is a no-op. */
+    dispose(): void
+}
+
+const WAAPI_FUNCTIONS = [
+    'play',
+    'pause',
+    'resume',
+    'seek',
+    'finish',
+    'cancel',
+    'reset',
+    'dispose',
+    'valueAt',
+    'onStatus',
+] as const
+
+const WAAPI_MEMBERS = ['status', 'duration', 'animations', 'value']
+
+/**
+ * Whether `value` is a WAAPI timeline: one made by {@link waapiTimeline} or an
+ * object with the same public surface.
+ */
+export function isWaapiTimeline(
+    value: unknown
+): value is WaapiTimeline<Groupable> {
+    if (value instanceof WebAniTimeline) return true
+    if (typeof value !== 'object' || value === null) return false
+    const candidate = value as Record<string, unknown>
+    return (
+        WAAPI_FUNCTIONS.every((key) => typeof candidate[key] === 'function') &&
+        WAAPI_MEMBERS.every((key) => key in candidate)
+    )
+}
+
+/**
+ * @private The class behind {@link waapiTimeline}; the public type is
+ * {@link WaapiTimeline}.
+ */
+export class WebAniTimeline<G extends Groupable>
+    extends TimelineBase<G>
+    implements WaapiTimeline<G>
+{
     private _status: TimelineStatus = 'IDLE'
     private _disposed = false
     private _run: Run | null = null
@@ -247,6 +327,7 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
         this._reducedMotion = resolveReducedMotionPolicy(options.reducedMotion)
         this._preference = options.clock ?? defaultClock
 
+        this.play = this.play.bind(this)
         this.cancel = this.cancel.bind(this)
         this.finish = this.finish.bind(this)
         this.dispose = this.dispose.bind(this)
@@ -264,7 +345,7 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
 
     /**
      * Value of the first target, `null` when there is no run.
-     * @see {@link WebAniTimeline.valueAt}
+     * @see {@link WaapiTimeline.valueAt}
      */
     public get value(): Readonly<Record<string, number>> | null {
         return this.valueAt(0)
@@ -693,11 +774,6 @@ export class WebAniTimeline<G extends Groupable> extends TimelineBase<
 export function waapiTimeline<G extends Groupable>(
     rootNode: AnimationNode<G>,
     options?: WaapiTimelineOptions
-): WebAniTimeline<G> {
+): WaapiTimeline<G> {
     return new WebAniTimeline(rootNode, options)
 }
-
-/**
- * @deprecated Use {@link waapiTimeline}.
- */
-export const webTimeline = waapiTimeline

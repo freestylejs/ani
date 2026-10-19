@@ -83,7 +83,7 @@ A stateful timing must:
 
 -   Re-initialize from `context.from` (and `context.velocity`) when `state` is new, or when `time` goes **backwards** (seek).
 -   Give the same value for the same `time`, regardless of how frames were sliced. Integrate in fixed steps, not with `dt`.
--   Optionally publish `state.velocity` (units per second). The timeline reads it for `getCurrentVelocity()` and velocity-continuous retargeting.
+-   Optionally publish `state.velocity` (units per second). The timeline reads it for `velocity` and velocity-continuous retargeting.
 
 ```typescript
 class Follow extends TimingFunction {

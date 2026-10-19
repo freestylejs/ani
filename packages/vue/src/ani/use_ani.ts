@@ -1,4 +1,4 @@
-import type { AniGroup, Groupable, RafAniTimeline } from '@freestylejs/ani-core'
+import type { AniGroup, Groupable, RafTimeline } from '@freestylejs/ani-core'
 import { createTimelineController } from '@freestylejs/ani-core'
 import {
     computed,
@@ -21,9 +21,9 @@ import {
  * @returns `[value, controller]`; the controller follows timeline swaps.
  */
 export function useAni<G extends Groupable>(
-    timeline: RafAniTimeline<G> | Ref<RafAniTimeline<G>>,
+    timeline: RafTimeline<G> | Ref<RafTimeline<G>>,
     initialValue: AniGroup<G>
-): readonly [Ref<AniGroup<G>>, RafAniTimeline<G>] {
+): readonly [Ref<AniGroup<G>>, RafTimeline<G>] {
     const current = computed(() => toRaw(unref(timeline)))
     const value = shallowRef<AniGroup<G>>(current.value.value ?? initialValue)
     let stop: (() => void) | undefined

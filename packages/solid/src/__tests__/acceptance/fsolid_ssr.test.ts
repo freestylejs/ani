@@ -2,11 +2,11 @@
 
 import * as a from '@freestylejs/ani-core'
 import {
+    type Clock,
     createClock,
     type Follower,
-    type ManagedClock,
-    type RafAniTimeline,
     type RafGroup,
+    type RafTimeline,
     rafGroup,
     rafTimeline,
 } from '@freestylejs/ani-core'
@@ -24,7 +24,7 @@ interface Styled {
 const api = solid as unknown as {
     createTimeline<T extends { dispose(): void }>(factory: () => T): T
     createAniRef(
-        timeline: RafAniTimeline<Values>,
+        timeline: RafTimeline<Values>,
         options?: { initialValue?: Values }
     ): Styled
     createAniGroup(
@@ -35,11 +35,11 @@ const api = solid as unknown as {
         initial: 'idle' | 'active'
         initialValue: Values
         states: Record<'idle' | 'active', ReturnType<typeof a.ani>>
-        clock: ManagedClock
+        clock: Clock
     }): Styled & { state: Accessor<string> }
     createFollow(
         initial: Values,
-        options?: { clock?: ManagedClock }
+        options?: { clock?: Clock }
     ): Styled & { follower: Follower<Values> }
 }
 

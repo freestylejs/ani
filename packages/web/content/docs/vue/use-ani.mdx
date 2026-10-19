@@ -9,11 +9,11 @@ This composable subscribes to a `timeline`'s state and updates a Vue `ref` on ea
 
 ```vue
 <script setup>
-import { a } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
 import { useAni } from "@freestylejs/ani-vue";
 
 // 1. Define the animation structure and create a timeline.
-const myTimeline = a.dynamicTimeline(
+const myTimeline = a.rafTimeline(
   a.ani({ to: { count: 100 }, duration: 5, timing: a.timing.linear() })
 );
 
@@ -58,7 +58,7 @@ The `useAni` composable acts as a bridge between the `@freestylejs/ani-core` eng
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Ref<RafAniTimeline<G>>` | The timeline to read. |
+| `timeline` | `RafTimeline<G> \| Ref<RafTimeline<G>>` | The timeline to read. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
 Returns `readonly [value, controller]`: a `Ref<AniGroup<G>>` and the timeline controller.
@@ -66,4 +66,4 @@ Returns `readonly [value, controller]`: a `Ref<AniGroup<G>>` and the timeline co
 ### Related Components
 
 -   [`useAniRef`](/en/docs/vue/use-ani-ref) - For performance-critical animations that write directly to the DOM.
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this composable subscribes to.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this composable subscribes to.

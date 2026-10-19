@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import * as a from '../../index'
 import {
-    a,
     createClock,
     type RafGroup,
     type RafGroupPlayConfig,
@@ -1201,14 +1201,14 @@ describe('R2: rafGroup', () => {
             const { clock, frames } = setup()
             const group = rafGroup(springNode(), { clock })
             const plain = rafGroup(springNode(), { clock })
-            const line = rafTimeline(springNode(), clock)
+            const line = rafTimeline(springNode(), { clock })
             group.play({ from: { x: 0 }, count: 2, velocity: { x: 5000 } })
             plain.play({ from: { x: 0 }, count: 2 })
             line.play({ from: { x: 0 }, velocity: { x: 5000 } })
 
             frames(3)
 
-            const expected = line.getCurrentValue()!.x
+            const expected = line.value!.x
             expect(xs(group)[0]).toBeCloseTo(expected, 6)
             expect(xs(group)[1]).toBeCloseTo(expected, 6)
             expect(Math.abs(xs(plain)[0]! - expected)).toBeGreaterThan(1)

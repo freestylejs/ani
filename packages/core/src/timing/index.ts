@@ -77,8 +77,3 @@ export const timing = {
             p3: { x: 0.58, y: 1.0 },
         }),
 } as const
-
-/**
- * @deprecated Use {@link timing}.
- */
-export const T = timing

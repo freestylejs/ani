@@ -56,12 +56,12 @@ The `useAni` hook acts as a bridge between the `@freestylejs/ani-core` engine an
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G>` | The timeline to read. |
+| `timeline` | `RafTimeline<G>` | The timeline to read. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one (first render only). |
 
-Returns `readonly [value, controller]`: the current `AniGroup<G>` and a stable `RafAniTimeline<G>` controller.
+Returns `readonly [value, controller]`: the current `AniGroup<G>` and a stable `RafTimeline<G>` controller.
 
 ### Related Components
 
 -   [`useAniRef`](/en/docs/react/use-ani-ref) - For performance-critical animations that write directly to the DOM.
--   [`dynamicTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this hook subscribes to.
+-   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) - The core controller that this hook subscribes to.

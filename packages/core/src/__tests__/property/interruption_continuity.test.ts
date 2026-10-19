@@ -123,7 +123,7 @@ describe('P6: interruption continuity', () => {
             const dt = frameFor(plan)
 
             const clock = new ManualClock()
-            const line = rafTimeline(node, clock)
+            const line = rafTimeline(node, { clock })
             line.play({ from })
             // at least one frame, so the value and velocity exist
             let elapsed = 0
@@ -139,28 +139,28 @@ describe('P6: interruption continuity', () => {
             if (line.status !== 'PLAYING') continue
             interrupted++
 
-            const before = snapshot(line.getCurrentValue()!)
-            const velocity = snapshot(line.getCurrentVelocity()!)
+            const before = snapshot(line.value!)
+            const velocity = snapshot(line.velocity!)
 
             // same tree, `from` = the current value; velocity is inherited
             line.play({ from: snapshot(before) })
 
             const freshClock = new ManualClock()
-            const fresh = rafTimeline(node, freshClock)
+            const fresh = rafTimeline(node, { clock: freshClock })
             fresh.play({ from: snapshot(before) })
             fresh.seek(0)
-            const start = snapshot(fresh.getCurrentValue()!)
+            const start = snapshot(fresh.value!)
             fresh.seek(dt)
-            const moved = snapshot(fresh.getCurrentValue()!)
+            const moved = snapshot(fresh.value!)
 
             const explicitClock = new ManualClock()
-            const explicit = rafTimeline(node, explicitClock)
+            const explicit = rafTimeline(node, { clock: explicitClock })
             explicit.play({ from: snapshot(before), velocity })
 
             clock.tick(dt)
             explicitClock.tick(dt)
-            const first = snapshot(line.getCurrentValue()!)
-            const given = snapshot(explicit.getCurrentValue()!)
+            const first = snapshot(line.value!)
+            const given = snapshot(explicit.value!)
 
             for (const key of keys) {
                 // the velocity carried over is the one the card refers to

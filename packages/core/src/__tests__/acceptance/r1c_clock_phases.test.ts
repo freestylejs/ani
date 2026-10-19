@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { a, createClock, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { createClock, rafTimeline } from '../../index'
 
 const linear = a.timing.linear()
 
@@ -338,19 +339,19 @@ describe('R1C: clock frame phases (read -> update -> commit)', () => {
         const s = setup()
         const t = rafTimeline(
             a.ani({ to: { x: 100 }, duration: 1, timing: linear }),
-            s.clock
+            { clock: s.clock }
         )
         t.play({ from: { x: 0 } })
         const values: number[] = []
         for (let i = 0; i < 5; i++) {
             s.frame(100)
-            values.push(t.getCurrentValue()!.x)
+            values.push(t.value!.x)
         }
         values.forEach((value, i) => {
             expect(value).toBeCloseTo((i + 1) * 10, 5)
         })
         for (let i = 0; i < 6; i++) s.frame(100)
-        expect(t.getCurrentValue()).toEqual({ x: 100 })
+        expect(t.value).toEqual({ x: 100 })
         expect(t.status).toBe('ENDED')
         expect(s.clock.size).toBe(0)
         expect(s.pending).toBe(0)

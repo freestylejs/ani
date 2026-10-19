@@ -1,8 +1,8 @@
 import * as a from '@freestylejs/ani-core'
 import {
     type Follower,
-    type RafAniTimeline,
     type RafGroup,
+    type RafTimeline,
     rafGroup,
     rafTimeline,
 } from '@freestylejs/ani-core'
@@ -25,7 +25,7 @@ describe('react public types', () => {
         const check = () => {
             const timeline = rafTimeline(node)
             expectTypeOf(useAni(timeline, { x: 0 })).toEqualTypeOf<
-                readonly [G, RafAniTimeline<G>]
+                readonly [G, RafTimeline<G>]
             >()
             expectTypeOf(useTimeline(() => rafGroup(node))).toEqualTypeOf<
                 RafGroup<G>

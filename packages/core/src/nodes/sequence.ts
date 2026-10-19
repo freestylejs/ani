@@ -1,11 +1,16 @@
-import type { TimingFunction } from '~/timing'
-import { type AnimationId, type NodeOptions, parseNodeOptions } from './base'
+import {
+    assertNoExtraArguments,
+    type NodeOptions,
+    parseNodeOptions,
+} from './base'
 import {
     type CompositionChildren,
     CompositionNode,
     type CompositionPlan,
 } from './composition'
 import { type Footprint, mergeFootprints, type Placed } from './footprint'
+
+const SEQUENCE_FORM = '`sequence(children, { timing, id })`'
 
 /**
  * Composition node that runs its children one after another.
@@ -17,17 +22,11 @@ export class SequenceNode<
     readonly duration: number
     readonly footprint: Footprint
 
-    constructor(
-        children: Children,
-        timingOrOptions?: TimingFunction | NodeOptions,
-        id?: AnimationId,
-        ...extra: unknown[]
-    ) {
+    constructor(children: Children, options?: NodeOptions) {
         const { timing: resolvedTiming, id: resolvedId } = parseNodeOptions(
-            timingOrOptions,
-            id,
+            options,
             'sequence',
-            extra.length > 0
+            SEQUENCE_FORM
         )
         super(children, resolvedTiming, resolvedId)
         let duration = 0
@@ -60,14 +59,17 @@ export class SequenceNode<
 /**
  * Sequence composition animation
  * @param children Sequence children nodes.
- * @param timingOrOptions Loop timing function or options object.
- * @param id Optional ID for the node (positional form).
+ * @param options `{ timing, id }`: timing inherited by children without their own, optional node ID.
  */
 export function sequence<const Children extends CompositionChildren>(
     children: Children,
-    timingOrOptions?: TimingFunction | NodeOptions,
-    id?: AnimationId,
+    options?: NodeOptions
+): SequenceNode<Children>
+export function sequence<const Children extends CompositionChildren>(
+    children: Children,
+    options?: NodeOptions,
     ...extra: unknown[]
 ): SequenceNode<Children> {
-    return new SequenceNode(children, timingOrOptions, id, ...extra)
+    assertNoExtraArguments('sequence', SEQUENCE_FORM, extra)
+    return new SequenceNode(children, options)
 }

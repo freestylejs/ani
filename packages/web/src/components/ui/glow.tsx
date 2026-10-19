@@ -88,13 +88,13 @@ export function Glow({
         >
             <div
                 className={cn(
-                    'group-hover:-translate-x-1/2 -translate-x-1/2 absolute left-1/2 h-64 w-[60%] scale-[2.5] rounded-[50%] bg-radial from-10% from-[#85BEFFFF]/0 to-60% to-[#85BEFFFF]/0 opacity-100 duration-500 group-hover:scale-150 group-hover:opacity-90 sm:h-[512px] dark:from-[#85BEFFFF]-800/20 dark:to-[#85BEFFFF]-800/0'
+                    'absolute left-1/2 h-64 w-[60%] -translate-x-1/2 scale-[2.5] rounded-[50%] bg-radial from-10% from-[#85BEFFFF]/0 to-60% to-[#85BEFFFF]/0 opacity-100 duration-500 group-hover:-translate-x-1/2 group-hover:scale-150 group-hover:opacity-90 sm:h-[512px] dark:from-[#85BEFFFF]-800/20 dark:to-[#85BEFFFF]-800/0'
                 )}
             />
 
             <div
                 className={cn(
-                    'group-hover:-translate-x-1/2 -translate-x-1/2 scale absolute left-1/2 h-32 w-[40%] rounded-[50%] bg-radial from-0% to-60% opacity-100 duration-500 group-hover:scale-150 group-hover:opacity-90 sm:h-64 dark:from-[#7CB9FFFF]/10 dark:to-[#85BEFFFF]/0'
+                    'scale absolute left-1/2 h-32 w-[40%] -translate-x-1/2 rounded-[50%] bg-radial from-0% to-60% opacity-100 duration-500 group-hover:-translate-x-1/2 group-hover:scale-150 group-hover:opacity-90 sm:h-64 dark:from-[#7CB9FFFF]/10 dark:to-[#85BEFFFF]/0'
                 )}
             />
             {children}

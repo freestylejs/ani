@@ -9,7 +9,8 @@ This composable binds one element to a timeline through `timeline.bind`. Styles 
 
 ```vue
 <script setup>
-import { a, rafTimeline } from "@freestylejs/ani-core";
+import * as a from "@freestylejs/ani-core";
+import { rafTimeline } from "@freestylejs/ani-core";
 import { useAniRef, useTimeline } from "@freestylejs/ani-vue";
 
 const timeline = useTimeline(() =>

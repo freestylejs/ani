@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { AniError, a, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { AniError, rafTimeline } from '../../index'
 import { color, colorIn, length, record, template } from '../../values'
 
 /** Deterministic Park-Miller PRNG: the A5 sweep must be reproducible. */
@@ -196,7 +197,7 @@ describe('VAL engine integration', () => {
         )
         timeline.play({ from: color.encode('#000') })
         timeline.seek(0.5)
-        const state = timeline.getCurrentValue()
+        const state = timeline.value
         expect(state).not.toBeNull()
         expect(color.decode(state!)).toBe('oklab(0.5 0 0 / 1)')
         timeline.dispose()

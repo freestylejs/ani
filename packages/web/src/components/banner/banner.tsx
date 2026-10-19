@@ -64,7 +64,7 @@ export const Banner = ({
                 src={BannerImage}
                 priority={true}
                 alt="banner"
-                className="-z-1 absolute inset-0 size-full rounded-xl border border-transparent object-cover opacity-100 brightness-100 transition-all duration-500 ease-out group-hover:border-zinc-200 group-hover:brightness-110 group-hover:dark:border-zinc-600 group-hover:dark:brightness-90"
+                className="absolute inset-0 -z-1 size-full rounded-xl border border-transparent object-cover opacity-100 brightness-100 transition-all duration-500 ease-out group-hover:border-zinc-200 group-hover:brightness-110 group-hover:dark:border-zinc-600 group-hover:dark:brightness-90"
             />
 
             <div className="flex w-full flex-col items-start justify-center gap-y-6 px-2 py-4 text-left">

@@ -42,7 +42,7 @@ export class DynamicSpringTimingFunction extends TimingFunction {
     public override readonly stateful = true
 
     private readonly substep: number
-    private legacyState: SpringState = createSpringState()
+    private readonly standaloneState: SpringState = createSpringState()
 
     // scratch for the RK4 result (avoids per-step allocations)
     private rx = 0
@@ -59,27 +59,6 @@ export class DynamicSpringTimingFunction extends TimingFunction {
         // RK4 stays accurate while omega * substep is well below ~1.
         const omega = Math.max(Math.sqrt(k / m), c / m)
         this.substep = Math.min(MAX_SUBSTEP, Math.max(MIN_SUBSTEP, 0.5 / omega))
-    }
-
-    /**
-     * Seeds the standalone (state-less `step`) integrator.
-     */
-    public init(startValue: number, velocity: number = 0): void {
-        const s = this.legacyState
-        s.init = true
-        s.done = false
-        s.n = 0
-        s.x = startValue
-        s.v = velocity
-        s.velocity = velocity
-    }
-
-    /**
-     * Clears the standalone integrator so the next `step` re-initializes
-     * from the incoming `context.from`.
-     */
-    public reset(): void {
-        this.legacyState = createSpringState()
     }
 
     private integrate(x: number, v: number, h: number, to: number): void {
@@ -102,7 +81,8 @@ export class DynamicSpringTimingFunction extends TimingFunction {
         time: number,
         context: TimingFunctionContext
     ): { value: number; endOfAnimation: boolean } {
-        const s = (context.state as SpringState | undefined) ?? this.legacyState
+        const s =
+            (context.state as SpringState | undefined) ?? this.standaloneState
         const { to } = context
         const tol = this.opt.tolerance ?? context.tolerance ?? 1e-3
 

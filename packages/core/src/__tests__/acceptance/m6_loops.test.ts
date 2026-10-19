@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import * as a from '../../index'
 import {
-    a,
     type RafTimelineConfig,
     type RunResult,
     rafGroup,
@@ -42,7 +42,7 @@ function sampler<G extends Record<string, number>>(
         line,
         at(time: number): G {
             line.seek(time)
-            return line.getCurrentValue() as G
+            return line.value as G
         },
     }
 }
@@ -102,7 +102,7 @@ describe('M6: equivalence with the flattened tree', () => {
             m.frames(7, 500)
             expect(line.status).toBe('ENDED')
             await expect(run).resolves.toBe('ended')
-            finals.push(line.getCurrentValue()!.x)
+            finals.push(line.value!.x)
         }
         expect(finals[0]).toBeCloseTo(finals[1]!, 9)
         expect(finals[0]).toBeCloseTo(100, 9)
@@ -177,9 +177,9 @@ describe('M6: loop(child, Infinity)', () => {
         line.play({ from: X0 })
 
         m.frame(500)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(50, 9)
+        expect(line.value!.x).toBeCloseTo(50, 9)
         m.frames(2000, 500)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(50, 9)
+        expect(line.value!.x).toBeCloseTo(50, 9)
         expect(line.status).toBe('PLAYING')
     })
 
@@ -200,7 +200,7 @@ describe('M6: loop(child, Infinity)', () => {
         expect(line.status).toBe('PLAYING')
         expect(statuses.has('ENDED')).toBe(false)
         expect(m.clock.size).toBe(1)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(0, 3)
+        expect(line.value!.x).toBeCloseTo(0, 3)
     })
 
     it('A2: duration is Infinity', () => {
@@ -263,7 +263,7 @@ describe('M6: loop(child, Infinity)', () => {
         m.frames(2001, 500)
         expect(line.status).toBe('PLAYING')
         expect(line.duration).toBe(Infinity)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(50, 9)
+        expect(line.value!.x).toBeCloseTo(50, 9)
     })
 
     it('A2: seek accepts any finite t and the iteration-local time decides', () => {
@@ -273,7 +273,7 @@ describe('M6: loop(child, Infinity)', () => {
         expect(s.line.status).toBe('PAUSED')
         s.line.seek(12345.5)
         expect(s.line.status).toBe('PAUSED')
-        expect(s.line.getCurrentValue()!.x).toBeCloseTo(50, 9)
+        expect(s.line.value!.x).toBeCloseTo(50, 9)
     })
 
     it('A2: the first iteration starts from the value at the region start, later ones from the end state', () => {
@@ -418,16 +418,16 @@ describe('M6: unreachable and parallel with an infinite loop', () => {
         })
 
         m.frame(1000)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(0.5, 9)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(100, 9)
+        expect(line.value!.y).toBeCloseTo(0.5, 9)
+        expect(line.value!.x).toBeCloseTo(100, 9)
 
         m.frame(2500)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(1, 9)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(50, 9)
+        expect(line.value!.y).toBeCloseTo(1, 9)
+        expect(line.value!.x).toBeCloseTo(50, 9)
         expect(line.status).toBe('PLAYING')
 
         m.frames(100, 1000)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(1, 9)
+        expect(line.value!.y).toBeCloseTo(1, 9)
         expect(line.status).toBe('PLAYING')
         expect(statuses.has('ENDED')).toBe(false)
         expect(settled).toEqual([])
@@ -511,7 +511,7 @@ describe('M6: constant cost', () => {
         line.play({ from: X0 })
         m.frames(7, 500)
         expect(line.status).toBe('PLAYING')
-        expect(line.getCurrentValue()!.x).toBeCloseTo(50, 9)
+        expect(line.value!.x).toBeCloseTo(50, 9)
     })
 })
 
@@ -525,7 +525,7 @@ describe('M6: overrides count the loop child once', () => {
 
         const at = (time: number) => {
             line.seek(time)
-            return line.getCurrentValue()!.x
+            return line.value!.x
         }
         expect(at(0.5)).toBeCloseTo(25, 9)
         expect(at(1)).toBeCloseTo(50, 9)
@@ -548,7 +548,7 @@ describe('M6: overrides count the loop child once', () => {
 
         const at = (time: number) => {
             line.seek(time)
-            return line.getCurrentValue()!.x
+            return line.value!.x
         }
         expect(at(1)).toBeCloseTo(10, 9)
         expect(at(2)).toBeCloseTo(10, 9)
@@ -568,7 +568,7 @@ describe('M6: overrides count the loop child once', () => {
 
         const at = (time: number) => {
             line.seek(time)
-            return line.getCurrentValue()!.x
+            return line.value!.x
         }
         expect(at(1)).toBeCloseTo(100, 9)
         expect(at(2)).toBeCloseTo(100, 9)
@@ -608,8 +608,8 @@ describe('M6: overrides count the loop child once', () => {
         })
 
         line.seek(1000.5)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(50, 9)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(4, 9)
+        expect(line.value!.x).toBeCloseTo(50, 9)
+        expect(line.value!.y).toBeCloseTo(4, 9)
     })
 })
 
@@ -746,7 +746,7 @@ describe('M6: dynamic springs in a periodic loop', () => {
         timelines.push(line)
         line.play({ from: X0 })
         m.frames(100 * 4 + 1, 250)
-        const played = line.getCurrentValue()!.x
+        const played = line.value!.x
         const s = sampler(a.loop(springy(), Infinity), X0)
         expect(played).toBeCloseTo(s.at(100.25).x, 9)
     })
@@ -769,14 +769,14 @@ describe('M6: reduced motion', () => {
 
         line.play({ from: XY0 })
 
-        const value = line.getCurrentValue()!
+        const value = line.value!
         expect(value.y).toBeCloseTo(1, 9)
         expect(value.x).toBeCloseTo(40, 9)
         expect(line.duration).toBe(Infinity)
 
         m.frames(3, 1000)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(40, 9)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(1, 9)
+        expect(line.value!.x).toBeCloseTo(40, 9)
+        expect(line.value!.y).toBeCloseTo(1, 9)
     })
 
     it("A10: 'jump' is the default and can be given explicitly", () => {
@@ -792,8 +792,8 @@ describe('M6: reduced motion', () => {
 
         line.play({ from: XY0 })
 
-        expect(line.getCurrentValue()!.x).toBeCloseTo(40, 9)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(1, 9)
+        expect(line.value!.x).toBeCloseTo(40, 9)
+        expect(line.value!.y).toBeCloseTo(1, 9)
     })
 
     it("A10: 'jump' applies to the first iteration of a loop that follows a segment", () => {
@@ -810,7 +810,7 @@ describe('M6: reduced motion', () => {
 
         line.play({ from: X0 })
 
-        expect(line.getCurrentValue()!.x).toBeCloseTo(0, 9)
+        expect(line.value!.x).toBeCloseTo(0, 9)
     })
 
     it('A10: { maxDuration } does not apply to an infinite run', () => {
@@ -827,13 +827,13 @@ describe('M6: reduced motion', () => {
         line.play({ from: XY0 })
 
         expect(line.status).toBe('PLAYING')
-        expect(line.getCurrentValue()!.x).toBeCloseTo(0, 9)
+        expect(line.value!.x).toBeCloseTo(0, 9)
         m.frame(1000)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(100, 9)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(0.5, 9)
+        expect(line.value!.x).toBeCloseTo(100, 9)
+        expect(line.value!.y).toBeCloseTo(0.5, 9)
         expect(line.status).toBe('PLAYING')
         m.frame(1000)
-        expect(line.getCurrentValue()!.x).toBeCloseTo(40, 9)
-        expect(line.getCurrentValue()!.y).toBeCloseTo(1, 9)
+        expect(line.value!.x).toBeCloseTo(40, 9)
+        expect(line.value!.y).toBeCloseTo(1, 9)
     })
 })

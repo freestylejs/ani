@@ -27,44 +27,53 @@ export function isTimingFunction(value: unknown): value is TimingFunction {
 }
 
 /**
- * Normalizes timing / options arguments for sequence, parallel and loop.
+ * Throws for arguments after the options object: positional timing / id are
+ * gone.
+ */
+export function assertNoExtraArguments(
+    caller: string,
+    form: string,
+    extra: readonly unknown[]
+): void {
+    if (extra.length > 0) {
+        throw new TypeError(
+            `[${caller}] Unexpected extra argument. Pass everything in one options object: ${form}.`
+        )
+    }
+}
+
+/**
+ * Validates the options object of sequence, parallel and loop.
  */
 export function parseNodeOptions(
-    timingOrOptions: TimingFunction | NodeOptions | undefined,
-    id: AnimationId | undefined,
+    options: NodeOptions | undefined,
     caller: string,
-    extraPositional?: boolean
+    form: string
 ): { timing?: TimingFunction | undefined; id?: AnimationId | undefined } {
-    if (timingOrOptions === undefined) {
-        return { timing: undefined, id }
+    if (options === undefined) {
+        return { timing: undefined, id: undefined }
     }
 
-    if (isTimingFunction(timingOrOptions)) {
-        return { timing: timingOrOptions, id }
+    if (
+        typeof options !== 'object' ||
+        options === null ||
+        isTimingFunction(options)
+    ) {
+        throw new TypeError(
+            `[${caller}] Expected an options object, received ${isTimingFunction(options) ? 'a timing function' : typeof options}. Use ${form}.`
+        )
     }
-
-    if (typeof timingOrOptions === 'object' && timingOrOptions !== null) {
-        if (id !== undefined || extraPositional) {
+    for (const key of Object.keys(options)) {
+        if (key !== 'timing' && key !== 'id') {
             throw new TypeError(
-                `[${caller}] Cannot mix options object and positional arguments. Use either an options object or positional arguments.`
+                `[${caller}] Unknown option "${key}". Allowed options are "timing" and "id".`
             )
         }
-        for (const key of Object.keys(timingOrOptions)) {
-            if (key !== 'timing' && key !== 'id') {
-                throw new TypeError(
-                    `[${caller}] Unknown option "${key}". Allowed options are "timing" and "id".`
-                )
-            }
-        }
-        return {
-            timing: timingOrOptions.timing,
-            id: timingOrOptions.id,
-        }
     }
-
-    throw new TypeError(
-        `[${caller}] Expected TimingFunction or options object, received ${typeof timingOrOptions}.`
-    )
+    return {
+        timing: options.timing,
+        id: options.id,
+    }
 }
 
 /**

@@ -167,7 +167,7 @@ export function PerformanceDemo() {
                         <div
                             ref={jsRef}
                             style={jsStyle}
-                            className="-top-2.5 absolute size-8 rounded-lg bg-linear-to-br from-red-500 to-pink-600 shadow-lg dark:from-red-500 dark:to-pink-600"
+                            className="absolute -top-2.5 size-8 rounded-lg bg-linear-to-br from-red-500 to-pink-600 shadow-lg dark:from-red-500 dark:to-pink-600"
                         />
                     </div>
                 </div>
@@ -188,7 +188,7 @@ export function PerformanceDemo() {
                     <div className="relative h-3 w-full rounded-full bg-secondary/30">
                         <div
                             ref={webRef}
-                            className="-top-2.5 absolute size-8 rounded-lg bg-linear-to-br from-green-500 to-emerald-600 shadow-lg dark:from-green-500 dark:to-emerald-600"
+                            className="absolute -top-2.5 size-8 rounded-lg bg-linear-to-br from-green-500 to-emerald-600 shadow-lg dark:from-green-500 dark:to-emerald-600"
                         />
                     </div>
                 </div>

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ani } from '~/nodes'
-import { webTimeline } from '../timeline'
+import { waapiTimeline } from '../timeline'
 
 interface MockAnimationInstance {
     finish: ReturnType<typeof vi.fn>
@@ -51,7 +51,7 @@ describe('WebAniTimeline reduced motion', () => {
     const on = { reducedMotion: true }
 
     it('jump ends an endless run after one iteration', async () => {
-        const line = webTimeline(tree, { clock: on })
+        const line = waapiTimeline(tree, { clock: on })
 
         const run = line.play({} as Element, {
             from: { opacity: 0 },
@@ -66,7 +66,7 @@ describe('WebAniTimeline reduced motion', () => {
     })
 
     it('jump keeps the iterations of a finite repeat', () => {
-        const line = webTimeline(tree, { clock: on })
+        const line = waapiTimeline(tree, { clock: on })
 
         line.play({} as Element, { from: { opacity: 0 }, repeat: 2 })
 
@@ -75,7 +75,7 @@ describe('WebAniTimeline reduced motion', () => {
 
     it('the preference is read at each play', () => {
         const source = { reducedMotion: false }
-        const line = webTimeline(tree, { clock: source })
+        const line = waapiTimeline(tree, { clock: source })
 
         line.play({} as Element, { from: { opacity: 0 } })
         expect(animations[0]!.finish).not.toHaveBeenCalled()
@@ -88,10 +88,10 @@ describe('WebAniTimeline reduced motion', () => {
 
     it('rejects a malformed policy at construction', () => {
         expect(() =>
-            webTimeline(tree, { reducedMotion: 'always' as never })
+            waapiTimeline(tree, { reducedMotion: 'always' as never })
         ).toThrow(TypeError)
         expect(() =>
-            webTimeline(tree, { reducedMotion: { maxDuration: Infinity } })
+            waapiTimeline(tree, { reducedMotion: { maxDuration: Infinity } })
         ).toThrow(RangeError)
     })
 })

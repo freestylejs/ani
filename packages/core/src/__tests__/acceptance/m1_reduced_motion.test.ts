@@ -1,15 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RunResult } from '~/ani/core'
+import * as a from '../../index'
 import {
-    AnimationClock,
-    a,
     createClock,
     defaultClock,
-    RafAniTimeline,
     type RafTimelineOptions,
     rafTimeline,
 } from '../../index'
-import { createManualClock } from '../../testing'
+import { createManualClock, resetDefaultClock } from '../../testing'
 
 type Values = { translateX: number; opacity: number }
 
@@ -23,11 +21,6 @@ const node = (duration = 1) =>
 
 const FROM: Values = { translateX: 0, opacity: 0 }
 const END: Values = { translateX: 100, opacity: 1 }
-
-// reducedMotion is not part of the pre-M1 option types; keep the typing in one place
-type PolicyOptions = RafTimelineOptions & {
-    reducedMotion?: 'jump' | 'ignore' | { maxDuration: number }
-}
 
 afterEach(() => {
     vi.unstubAllGlobals()
@@ -71,8 +64,8 @@ function track(promise: Promise<RunResult>) {
     return results
 }
 
-const x = (t: { getCurrentValue(): { translateX: number } | null }) =>
-    t.getCurrentValue()!.translateX
+const x = (t: { readonly value: { translateX: number } | null }) =>
+    t.value!.translateX
 
 describe('M1: reduced motion (clock preference)', () => {
     it('A1: boolean values force the preference', () => {
@@ -140,7 +133,7 @@ describe('M1: reduced motion (clock preference)', () => {
         )
         expect(defaultClock.reducedMotion).toBe(true)
 
-        AnimationClock.reset()
+        resetDefaultClock()
         expect(defaultClock.reducedMotion).toBe(true)
         mql.matches = false
         expect(defaultClock.reducedMotion).toBe(false)
@@ -170,7 +163,7 @@ describe('M1: reduced motion (clock preference)', () => {
 describe('M1: reduced motion (RAF policy)', () => {
     it('A3: by default a play jumps to the end state at once', async () => {
         const m = setup(true)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
         const el = fakeElement()
         t.bind(el)
         const statuses: string[] = []
@@ -181,7 +174,7 @@ describe('M1: reduced motion (RAF policy)', () => {
         const run = t.play({ from: FROM })
 
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(statuses).toEqual(['ENDED'])
         expect(el.current.transform).toBe('translateX(100px)')
         expect(el.current.opacity).toBe(1)
@@ -193,13 +186,12 @@ describe('M1: reduced motion (RAF policy)', () => {
         expect(m.clock.size).toBe(0)
     })
 
-    it('A3: "jump" given explicitly behaves like the default, via the constructor too', async () => {
+    it('A3: "jump" given explicitly behaves like the default', async () => {
         const m = setup(true)
-        const options: PolicyOptions = {
+        const t = rafTimeline<Values>(node(), {
             clock: m.clock,
             reducedMotion: 'jump',
-        }
-        const t = new RafAniTimeline<Values>(node(), options)
+        })
         const statuses: string[] = []
         t.onUpdate(({ status }) => {
             statuses.push(status)
@@ -207,29 +199,29 @@ describe('M1: reduced motion (RAF policy)', () => {
 
         await expect(t.play({ from: FROM })).resolves.toBe('ended')
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(statuses).toEqual(['ENDED'])
         expect(m.clock.size).toBe(0)
     })
 
     it('A3: play() still validates before jumping', () => {
         const m = setup(true)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
 
         expect(() =>
             t.play({ from: { translateX: Number.NaN, opacity: 0 } })
         ).toThrow(TypeError)
         expect(t.status).toBe('IDLE')
-        expect(t.getCurrentValue()).toBeNull()
+        expect(t.value).toBeNull()
     })
 
     it('A3: without the preference nothing changes', () => {
         const m = setup(false)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
         const run = track(t.play({ from: FROM }))
 
         expect(t.status).toBe('PLAYING')
-        expect(t.getCurrentValue()).toEqual(FROM)
+        expect(t.value).toEqual(FROM)
         expect(m.clock.size).toBe(1)
 
         m.frame(500)
@@ -240,25 +232,25 @@ describe('M1: reduced motion (RAF policy)', () => {
 
     it('A4: "jump" with repeat: 2 ends at the end state', async () => {
         const m = setup(true)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
 
         await expect(t.play({ from: FROM, repeat: 2 })).resolves.toBe('ended')
 
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(m.clock.size).toBe(0)
     })
 
     it('A4: "jump" with repeat: Infinity ends at the end of one run', async () => {
         const m = setup(true)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
 
         await expect(t.play({ from: FROM, repeat: Infinity })).resolves.toBe(
             'ended'
         )
 
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(m.clock.size).toBe(0)
         expect(m.pending).toBe(0)
     })
@@ -277,11 +269,11 @@ describe('M1: reduced motion (RAF policy)', () => {
                 timing: linear,
             }),
         ])
-        const t = rafTimeline<Values>(sequenced, m.clock)
+        const t = rafTimeline<Values>(sequenced, { clock: m.clock })
 
         await expect(t.play({ from: FROM })).resolves.toBe('ended')
 
-        expect(t.getCurrentValue()).toEqual({ translateX: 40, opacity: 0.5 })
+        expect(t.value).toEqual({ translateX: 40, opacity: 0.5 })
         expect(t.duration).toBe(3)
     })
 
@@ -290,7 +282,7 @@ describe('M1: reduced motion (RAF policy)', () => {
         const t = rafTimeline<Values>(node(1), {
             clock: m.clock,
             reducedMotion: { maxDuration: 0.25 },
-        } as PolicyOptions)
+        })
         const run = t.play({ from: FROM })
 
         expect(t.status).toBe('PLAYING')
@@ -304,7 +296,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
         m.frame(125)
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(t.duration).toBe(1)
         expect(m.clock.size).toBe(0)
         await expect(run).resolves.toBe('ended')
@@ -312,7 +304,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
     it('A5: runs not longer than maxDuration are untouched', () => {
         const m = setup(true)
-        const options: PolicyOptions = {
+        const options: RafTimelineOptions = {
             clock: m.clock,
             reducedMotion: { maxDuration: 0.25 },
         }
@@ -341,7 +333,7 @@ describe('M1: reduced motion (RAF policy)', () => {
         const t = rafTimeline<Values>(node(1), {
             clock: m.clock,
             reducedMotion: { maxDuration: 0.25 },
-        } as PolicyOptions)
+        })
         t.play({ from: FROM, repeat: 1 })
 
         m.frame(250)
@@ -349,7 +341,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
         m.frame(250)
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
     })
 
     it('A5: { maxDuration } without the preference is untouched', () => {
@@ -357,7 +349,7 @@ describe('M1: reduced motion (RAF policy)', () => {
         const t = rafTimeline<Values>(node(1), {
             clock: m.clock,
             reducedMotion: { maxDuration: 0.25 },
-        } as PolicyOptions)
+        })
         t.play({ from: FROM })
 
         m.frame(250)
@@ -370,11 +362,11 @@ describe('M1: reduced motion (RAF policy)', () => {
         const t = rafTimeline<Values>(node(), {
             clock: m.clock,
             reducedMotion: 'ignore',
-        } as PolicyOptions)
+        })
         const run = t.play({ from: FROM })
 
         expect(t.status).toBe('PLAYING')
-        expect(t.getCurrentValue()).toEqual(FROM)
+        expect(t.value).toEqual(FROM)
         expect(m.clock.size).toBe(1)
 
         m.frame(500)
@@ -389,7 +381,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
     it('A7: the preference is read at play time, not during a run', async () => {
         const m = setup(false)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
         const first = t.play({ from: FROM })
 
         m.frame(250)
@@ -407,7 +399,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
         const second = t.play({ from: FROM })
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(m.clock.size).toBe(0)
         await expect(second).resolves.toBe('ended')
     })
@@ -417,7 +409,7 @@ describe('M1: reduced motion (RAF policy)', () => {
         const t = rafTimeline<Values>(node(1), {
             clock: m.clock,
             reducedMotion: { maxDuration: 0.25 },
-        } as PolicyOptions)
+        })
         t.play({ from: FROM })
 
         m.frame(125)
@@ -426,7 +418,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
         m.frame(125)
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
 
         t.play({ from: FROM })
         expect(t.status).toBe('PLAYING')
@@ -436,7 +428,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
     it('A7: a jump interrupts a running run', async () => {
         const m = setup(false)
-        const t = rafTimeline<Values>(node(), m.clock)
+        const t = rafTimeline<Values>(node(), { clock: m.clock })
         const first = t.play({ from: FROM })
         m.frame(250)
 
@@ -446,21 +438,18 @@ describe('M1: reduced motion (RAF policy)', () => {
         await expect(first).resolves.toBe('interrupted')
         await expect(second).resolves.toBe('ended')
         expect(t.status).toBe('ENDED')
-        expect(t.getCurrentValue()).toEqual(END)
+        expect(t.value).toEqual(END)
         expect(m.clock.size).toBe(0)
     })
 
     it('A9: an invalid maxDuration throws a RangeError at construction', () => {
         const m = setup(true)
         for (const bad of [0, -1, Number.NaN, Infinity, -Infinity]) {
-            const options: PolicyOptions = {
+            const options: RafTimelineOptions = {
                 clock: m.clock,
                 reducedMotion: { maxDuration: bad },
             }
             expect(() => rafTimeline<Values>(node(), options)).toThrow(
-                RangeError
-            )
-            expect(() => new RafAniTimeline<Values>(node(), options)).toThrow(
                 RangeError
             )
         }
@@ -469,7 +458,7 @@ describe('M1: reduced motion (RAF policy)', () => {
 
     it('A9: a valid maxDuration does not throw', () => {
         const m = setup(false)
-        const options: PolicyOptions = {
+        const options: RafTimelineOptions = {
             clock: m.clock,
             reducedMotion: { maxDuration: 0.001 },
         }

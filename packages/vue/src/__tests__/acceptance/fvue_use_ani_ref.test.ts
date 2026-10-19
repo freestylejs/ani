@@ -4,7 +4,7 @@ import * as a from '@freestylejs/ani-core'
 import {
     createClock,
     createStyleSheet,
-    type RafAniTimeline,
+    type RafTimeline,
     rafTimeline,
 } from '@freestylejs/ani-core'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -238,7 +238,7 @@ describe('vue useAniRef', () => {
         const m = clockOf()
         const first = rafTimeline(node(), { clock: m.clock })
         const second = rafTimeline(node(), { clock: m.clock })
-        const current = shallowRef<RafAniTimeline<{ opacity: number }>>(first)
+        const current = shallowRef<RafTimeline<{ opacity: number }>>(first)
         const view = mountBinding(() => useAniRef(current))
         const el = view.el()
 

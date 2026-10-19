@@ -17,7 +17,7 @@ const manual = createManualClock(); // time starts at 1000 ms
 
 | Member | Description |
 | :--- | :--- |
-| `clock` | The `ManagedClock` to pass to timelines and `createStates`. |
+| `clock` | The `Clock` to pass to timelines and `createStates`. |
 | `now` | Current time in ms. |
 | `pending` | Queued frame requests (0 or 1 for a healthy clock). |
 | `frame(ms = 16)` | Advance time by `ms` and run one frame. |
@@ -59,7 +59,7 @@ it("reaches the target and leaves the clock", () => {
 
 ### Reset the shared clock
 
-If your code uses the default clock (`defaultClock`), isolate tests with `resetDefaultClock()` (same as `AnimationClock.reset()`). It disposes the shared clock and restores its defaults (timing options, `timeScale` 1, not paused). The instance stays the same, so references to `defaultClock` remain valid.
+If your code uses the default clock (`defaultClock`), isolate tests with `resetDefaultClock()`. It disposes the shared clock and restores its defaults (timing options, `timeScale` 1, not paused). The instance stays the same, so references to `defaultClock` remain valid.
 
 ```typescript
 import { resetDefaultClock } from "@freestylejs/ani-core/testing";

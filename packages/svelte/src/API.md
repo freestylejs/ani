@@ -4,7 +4,7 @@ These Svelte utilities integrate the `@freestylejs/ani-core` animation engine wi
 
 **Ownership:** whoever creates an object disposes it. `useTimeline`, `useAniStates` and `useFollow` dispose what they create in `onDestroy`; `useAni`, `useAniRef` and `useAniGroup` only *detach* from timelines and groups you pass in.
 
-**Removed in 2.0:** the `events` / `cleanupEvents` options (DOM events are Svelte's job) and the `[action, controller]` / `[action, stores, transitionTo]` tuples.
+**Events:** DOM events are Svelte's job (`on:click`, ...). There is no `events` option.
 
 ---
 
@@ -14,7 +14,8 @@ These Svelte utilities integrate the `@freestylejs/ani-core` animation engine wi
 
 ```svelte
 <script>
-  import { a, rafTimeline } from '@freestylejs/ani-core';
+  import * as a from '@freestylejs/ani-core';
+  import { rafTimeline } from '@freestylejs/ani-core';
   import { useTimeline } from '@freestylejs/ani-svelte';
 
   const timeline = useTimeline(() =>
@@ -50,10 +51,10 @@ These Svelte utilities integrate the `@freestylejs/ani-core` animation engine wi
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Readable<RafAniTimeline<G>>` | The timeline to read. |
+| `timeline` | `RafTimeline<G> \| Readable<RafTimeline<G>>` | The timeline to read. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
-Returns `readonly [Readable<AniGroup<G>>, RafAniTimeline<G>]`.
+Returns `readonly [Readable<AniGroup<G>>, RafTimeline<G>]`.
 
 ---
 

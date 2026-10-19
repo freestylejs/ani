@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { a } from '~/index'
+import * as a from '~/index'
 import { createManualClock } from '~/testing'
 
 class FakeKeyframeEffect {

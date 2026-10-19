@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { a, createClock, rafTimeline } from '../../index'
+import * as a from '../../index'
+import { createClock, rafTimeline } from '../../index'
 
 const linear = a.timing.linear()
 const node = (duration = 1) =>
@@ -116,8 +117,8 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         })
         const el1 = fakeElement('el1', log)
         const el2 = fakeElement('el2', log)
-        const t1 = rafTimeline(node(), clock)
-        const t2 = rafTimeline(node(), clock)
+        const t1 = rafTimeline(node(), { clock })
+        const t2 = rafTimeline(node(), { clock })
         t1.bind(el1)
         t2.bind(el2)
         t1.play({ from: FROM })
@@ -149,7 +150,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         const { clock, frame } = setup()
         const log: string[] = []
         const el = fakeElement('el', log)
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         const states: unknown[] = []
         t.onUpdate(({ state, status }) => {
@@ -171,7 +172,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
             status: string
         }
         expect(status).toBe('PLAYING')
-        expect(state).toEqual(t.getCurrentValue())
+        expect(state).toEqual(t.value)
         expect(state.translateX).toBeGreaterThan(0)
         expect(el.current.transform).toBe(`translateX(${state.translateX}px)`)
     })
@@ -179,7 +180,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A3: the final frame of a run notifies exactly once with ENDED and the final value', () => {
         const { clock, frame } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         const seen: { status: string; state: Record<string, number> }[] = []
         t.onUpdate(({ state, status }) => {
@@ -213,7 +214,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
 
     it('A4: the frame that wraps a repeat notifies exactly once, post-wrap', () => {
         const { clock, frame } = setup()
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         const seen: { status: string; x: number }[] = []
         t.onUpdate(({ state, status }) => {
             seen.push({
@@ -251,7 +252,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         const { clock } = setup()
         const log: string[] = []
         const el = fakeElement('el', log)
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         const states: { status: string; x: number | undefined }[] = []
         t.onUpdate(({ state, status }) => {
@@ -296,7 +297,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A5: a binding survives reset() and writes again on the next play()', () => {
         const { clock } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         t.play({ from: FROM })
         t.seek(0.5)
@@ -311,7 +312,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A6: only declarations whose written value changed are written', () => {
         const { clock, frames } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         t.play({ from: { translateX: 0, opacity: 1 } })
         frames(5)
@@ -323,7 +324,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A6: two bindings of one timeline each keep their own cache', () => {
         const { clock, frames } = setup()
         const first = fakeElement('first')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(first)
         t.play({ from: { translateX: 0, opacity: 1 } })
         frames(2)
@@ -342,7 +343,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
 
     it('A7: bind after a value exists writes immediately', () => {
         const { clock } = setup()
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.play({ from: { translateX: 20, opacity: 0.5 } })
         const el = fakeElement('el')
         t.bind(el)
@@ -352,7 +353,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
 
     it('A7: bind before play writes at play, not before', () => {
         const { clock } = setup()
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         const el = fakeElement('el')
         t.bind(el)
         expect(el.writes).toHaveLength(0)
@@ -365,7 +366,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         const { clock, frames } = setup()
         const kept = fakeElement('kept')
         const gone = fakeElement('gone')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(kept)
         const unbind = t.bind(gone)
         t.play({ from: FROM })
@@ -388,7 +389,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         const { clock, frames } = setup()
         const el1 = fakeElement('el1')
         const el2 = fakeElement('el2')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el1)
         t.bind(el2)
         let notified = 0
@@ -420,7 +421,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A8: a timeline disposed between its update and its commit neither writes nor notifies', () => {
         const { clock, frame } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         let notified = 0
         t.bind(el)
         t.onUpdate(() => {
@@ -441,7 +442,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A9: a listener that calls play() on ENDED chains a second run that completes later', () => {
         const { clock, frame } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(0.25), clock)
+        const t = rafTimeline(node(0.25), { clock })
         t.bind(el)
         let frameNo = 0
         const endedAt: number[] = []
@@ -463,7 +464,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A10: a resolver passed to bind decides the written key', () => {
         const { clock, frames } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el, {
             resolver: {
                 translateX: (v: number) => ({ key: 'left', value: `${v}px` }),
@@ -475,22 +476,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         expect(el.count('left')).toBe(3)
         expect(el.count('transform')).toBe(0)
         expect(el.count('opacity')).toBeGreaterThan(0)
-        expect(el.current.left).toBe(`${t.getCurrentValue()!.translateX}px`)
-    })
-
-    it('A10: the default resolver is the run propertyResolver', () => {
-        const { clock } = setup()
-        const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
-        t.bind(el)
-        t.play({
-            from: { translateX: 5, opacity: 0 },
-            propertyResolver: {
-                translateX: (v: number) => ({ key: 'left', value: `${v}px` }),
-            },
-        })
-        expect(el.current.left).toBe('5px')
-        expect(el.count('transform')).toBe(0)
+        expect(el.current.left).toBe(`${t.value!.translateX}px`)
     })
 
     it('A10: custom properties and hyphenated keys go through setProperty', () => {
@@ -501,7 +487,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
                 calls.push([name, value])
             },
         } as unknown as CSSStyleDeclaration
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(
             { style },
             {
@@ -520,8 +506,8 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A11: binding an array-shaped timeline reports one TypeError asynchronously', () => {
         const { clock, frames } = setup()
         const arrayNode = a.ani({ to: [0, 100], duration: 1, timing: linear })
-        const bad = rafTimeline(arrayNode, clock)
-        const good = rafTimeline(node(), clock)
+        const bad = rafTimeline(arrayNode, { clock })
+        const good = rafTimeline(node(), { clock })
         const badEl = fakeElement('bad')
         const goodEl = fakeElement('good')
 
@@ -541,7 +527,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
     it('A11: binding an array-shaped timeline that already has a value reports instead of throwing', () => {
         const { clock, frames } = setup()
         const arrayNode = a.ani({ to: [0, 100], duration: 1, timing: linear })
-        const t = rafTimeline(arrayNode, clock)
+        const t = rafTimeline(arrayNode, { clock })
         t.play({ from: [0, 0] })
         const el = fakeElement('el')
 
@@ -553,38 +539,10 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         expect(el.writes).toHaveLength(0)
     })
 
-    it('A12: a listener that resets the timeline stops the remaining notifications of that frame', () => {
+    it('A12: a listener that resets the timeline: the other listener never sees the stale frame', () => {
         const { clock, frames } = setup()
         const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
-        t.bind(el)
-        const second: string[] = []
-        let armed = false
-        t.onUpdate(() => {
-            if (armed) t.reset(false)
-        })
-        t.onUpdate(({ status }) => {
-            second.push(status)
-        })
-        t.play({ from: FROM })
-        second.length = 0
-        armed = true
-
-        frames(1)
-        const writes = el.writes.length
-        expect(second).toEqual([])
-        expect(t.status).toBe('IDLE')
-
-        frames(3)
-        expect(el.writes).toHaveLength(writes)
-        expect(second).toEqual([])
-        expect(reported).toEqual([])
-    })
-
-    it('A12: with a notifying reset, the other listener never sees the stale frame', () => {
-        const { clock, frames } = setup()
-        const el = fakeElement('el')
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         const second: string[] = []
         let armed = false
@@ -613,8 +571,8 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         const log: string[] = []
         const bad = fakeElement('bad', log, { throwOn: 'transform' })
         const good = fakeElement('good', log)
-        const t = rafTimeline(node(), clock)
-        const other = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
+        const other = rafTimeline(node(), { clock })
         const otherEl = fakeElement('other', log)
         t.bind(bad)
         t.bind(good)
@@ -636,7 +594,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
 
     it('E2: a timeline with several bindings still notifies once per frame', () => {
         const { clock, frame } = setup()
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(fakeElement('a'))
         t.bind(fakeElement('b'))
         t.bind(fakeElement('c'))
@@ -655,7 +613,7 @@ describe('R1T: RAF timeline computes in update, writes and notifies in commit', 
         const { clock, frame } = setup()
         const log: string[] = []
         const el = fakeElement('el', log)
-        const t = rafTimeline(node(), clock)
+        const t = rafTimeline(node(), { clock })
         t.bind(el)
         t.onUpdate(() => {
             log.push('listener')

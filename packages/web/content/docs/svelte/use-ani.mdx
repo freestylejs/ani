@@ -10,7 +10,8 @@ This primitive subscribes to a `timeline`'s state and exposes it as a readable S
 ```svelte
 <script>
   import { onMount } from 'svelte';
-  import { a, rafTimeline } from "@freestylejs/ani-core";
+  import * as a from "@freestylejs/ani-core";
+  import { rafTimeline } from "@freestylejs/ani-core";
   import { useAni, useTimeline } from '@freestylejs/ani-svelte';
 
   // 1. Create the timeline. The component owns it.
@@ -60,7 +61,7 @@ The `useAni` primitive acts as a bridge between the `@freestylejs/ani-core` engi
 
 | Name | Type | Description |
 | :--- | :--- | :--- |
-| `timeline` | `RafAniTimeline<G> \| Readable<RafAniTimeline<G>>` | The timeline to read. |
+| `timeline` | `RafTimeline<G> \| Readable<RafTimeline<G>>` | The timeline to read. |
 | `initialValue` | `AniGroup<G>` | Value before the timeline has one. |
 
 Returns `readonly [store, timeline]`: a `Readable<AniGroup<G>>` and the timeline.

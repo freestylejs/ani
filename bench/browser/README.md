@@ -41,15 +41,23 @@ on success and `1` on any page error or bad invocation; page errors and
 
 | Name | What runs |
 | :--- | :--- |
-| `raf-timelines` | one `rafTimeline` per element, `onUpdate` writes its own element (today's pattern) |
-| `raf-shared` | one `rafTimeline` whose `onUpdate` writes all N elements (upper bound for a future group) |
+| `raf-timelines` | one `rafTimeline` per element, bound to its own element with `bind(el)` (today's pattern) |
+| `raf-shared` | one `rafTimeline` bound to all N elements, one `bind(el)` each (upper bound for a future group) |
 | `raf-deep` | like `raf-timelines`, but each tree is a 20-segment `sequence` with the same total motion |
 | `waapi` | one `waapiTimeline` per element played through `play(el, config)` |
-| `raf-thrash` | like `raf-timelines`, but each `onUpdate` reads `el.offsetWidth` before writing (forced layouts) |
+| `raf-thrash` | like `raf-timelines`, but each `onUpdate` reads `el.offsetWidth` right after the bound write (forced layouts) |
 
 Each scenario builds N absolutely positioned `div`s and animates `translateX`
 0→200 and `opacity` 0.2→1, linear, 2s, `repeat: Infinity`; RAF scenarios write
-styles with `applyStyleSheet(el, createStyleSheet(state))`.
+styles through `timeline.bind(el)`, one bind per element.
+
+The 1.x `applyStyleSheet(el, createStyleSheet(state))` call, which `bind` makes
+redundant, was removed from the package, so these scenarios moved from an
+`onUpdate` write to `bind`. The animation and the number of writes are the
+same. `bind` skips declarations whose value did not change, and writes before
+the `onUpdate` listeners run, so `raf-thrash` now reads the layout after the
+write instead of before it (still one forced layout per element and frame). The
+numbers are not comparable with reports recorded before this change.
 
 ## Metrics
 

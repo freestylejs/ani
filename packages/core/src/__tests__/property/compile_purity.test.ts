@@ -50,13 +50,12 @@ describe('P5: compile purity', () => {
             //    with the compiled plan); compiling between every frame must
             //    not make the line drift from it.
             const clock = new ManualClock()
-            const line = rafTimeline(node, clock)
+            const line = rafTimeline(node, { clock })
             line.play({ from })
             const controlClock = new ManualClock()
-            const control = rafTimeline(
-                generateTree(mulberry32(seed)).node,
-                controlClock
-            )
+            const control = rafTimeline(generateTree(mulberry32(seed)).node, {
+                clock: controlClock,
+            })
             control.play({ from })
 
             const framesBefore = rng.int(2, 8)
@@ -70,8 +69,8 @@ describe('P5: compile purity', () => {
                 compileToKeyframes(plan, from)
                 clock.tick(FRAME)
                 controlClock.tick(FRAME)
-                const actual = snapshot(line.getCurrentValue()!)
-                const expected = snapshot(control.getCurrentValue()!)
+                const actual = snapshot(line.value!)
+                const expected = snapshot(control.value!)
                 for (const key of keys) {
                     expect(
                         actual[key]!,

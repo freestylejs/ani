@@ -182,21 +182,21 @@ const ParallelDemo = ({
 
     const parallelTimelines = useMemo(() => {
         return refs.map(() =>
-            a.timeline(
+            a.waapiTimeline(
                 a.parallel([
                     a.sequence(
                         [
                             a.ani({ to: { scale: 1.5 }, duration: 0.5 }),
                             a.ani({ to: { scale: 1 }, duration: 0.5 }),
                         ],
-                        a.timing.spring({ m: 1, k: 200, c: 15 })
+                        { timing: a.timing.spring({ m: 1, k: 200, c: 15 }) }
                     ),
                     a.sequence(
                         [
                             a.ani({ to: { rotate: 180 }, duration: 0.5 }),
                             a.ani({ to: { rotate: 360 }, duration: 0.5 }),
                         ],
-                        a.timing.spring({ m: 1, k: 200, c: 15 })
+                        { timing: a.timing.spring({ m: 1, k: 200, c: 15 }) }
                     ),
                     a.sequence(
                         [
@@ -209,7 +209,7 @@ const ParallelDemo = ({
                                 duration: 0.5,
                             }),
                         ],
-                        a.timing.spring({ m: 1, k: 250, c: 15 })
+                        { timing: a.timing.spring({ m: 1, k: 250, c: 15 }) }
                     ),
                     a.sequence(
                         [
@@ -219,7 +219,7 @@ const ParallelDemo = ({
                             }),
                             a.ani({ to: { skewX: 0 }, duration: 1 }),
                         ],
-                        a.timing.spring({ m: 1, k: 250, c: 25 })
+                        { timing: a.timing.spring({ m: 1, k: 250, c: 25 }) }
                     ),
                     a.sequence(
                         [
@@ -229,7 +229,7 @@ const ParallelDemo = ({
                             }),
                             a.ani({ to: { translateX: +50 }, duration: 1 }),
                         ],
-                        a.timing.spring({ m: 1, k: 250, c: 25 })
+                        { timing: a.timing.spring({ m: 1, k: 250, c: 25 }) }
                     ),
                 ])
             )
