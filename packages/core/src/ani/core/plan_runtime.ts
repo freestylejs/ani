@@ -5,7 +5,6 @@ import {
     type TimingFunctionContext,
 } from '~/timing'
 import { END_TOLERANCE } from '~/utils/time'
-import { bezierProgress } from './bezier_progress'
 import type {
     ExecutionPlan,
     ExecutionSegment,
@@ -533,10 +532,7 @@ export class PlanRuntime {
             const to = this.c.eTo[e]!
             if (!(local < dur)) return to
             const x = local < 0 ? 0 : local / dur
-            return (
-                from +
-                (to - from) * bezierProgress(fn as BezierTimingFunction, x)
-            )
+            return from + (to - from) * (fn as BezierTimingFunction).ease(x)
         }
         const ctx = this.ctx
         ctx.dt = 0
@@ -715,9 +711,7 @@ export class PlanRuntime {
                     memoDur = dur
                     const x = local / dur
                     memoEased =
-                        kind === 1
-                            ? x
-                            : bezierProgress(fn as BezierTimingFunction, x)
+                        kind === 1 ? x : (fn as BezierTimingFunction).ease(x)
                 }
                 const origin = eFrom[c]!
                 values[k] = origin + (eTo[c]! - origin) * memoEased

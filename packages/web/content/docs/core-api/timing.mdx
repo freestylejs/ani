@@ -36,6 +36,8 @@ The library provides several ready-to-use timing functions accessible via `a.tim
 | `spring(opt)`   | A **duration-based**, **closed-form spring** for bouncy UI effects. The whole oscillation is fitted into the segment duration. |
 | `dynamicSpring(opt)` | A **simulated spring** for interactive animations. It settles by physics, or at the segment duration, whichever comes first. |
 
+`bezier` and the `ease*` presets solve the curve to about 1e-12 of the progress, and two times an ulp apart give progress values an ulp-scale apart (no jumps), so the same animation evaluates the same wherever a loop is represented.
+
 Spring options are `m` (mass), `k` (stiffness), `c` (damping) and an optional `tolerance`.
 
 -   `m > 0`, `k > 0` and `c >= 0` are required. Invalid values throw a `RangeError` when the function is created.
