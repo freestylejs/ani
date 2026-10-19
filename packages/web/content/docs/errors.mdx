@@ -8,7 +8,10 @@ Every error ANI throws or reports is an ANI error: it has a stable `code`, a `do
 ANI errors stay native. A wrong type is a `TypeError`, a value out of range is a `RangeError`, so `instanceof TypeError` and `instanceof RangeError` checks keep working. The code is carried on the error object.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
 import { AniError, isAniError } from "@freestylejs/ani-core";
+
+const timeline = a.rafTimeline(a.ani({ to: { x: 100 }, duration: 1 }));
 
 try {
   timeline.play({ from: { x: Number.NaN } });
@@ -37,7 +40,9 @@ Thrown while building a node: a bad `duration`, `offset` or loop `count`, a `to`
 
 Fix the value the message names. Durations and offsets are finite numbers `>= 0` in seconds; a loop count is a non-negative integer or `Infinity`.
 
-```typescript
+```typescript throws
+import * as a from "@freestylejs/ani-core";
+
 a.ani({ to: { x: 1 }, duration: -1 }); // RangeError: [ANI_INVALID_NODE] ...
 ```
 
@@ -47,7 +52,11 @@ Thrown for a node that can never run: a child after an endless loop in a `sequen
 
 Put the endless child last, run it in a `parallel`, animate its properties elsewhere, or give the loop a finite count.
 
-```typescript
+```typescript throws
+import * as a from "@freestylejs/ani-core";
+
+const node = a.ani({ to: { x: 1 }, duration: 1 });
+const other = a.ani({ to: { x: 2 }, duration: 1 });
 a.sequence([a.loop(node, Infinity), other]); // RangeError: [ANI_UNREACHABLE_NODE] ...
 ```
 
@@ -57,7 +66,10 @@ Thrown by `play`, `drive`, `seek` and group `play` when the config or an argumen
 
 Nothing changes when it is thrown. Correct the config and call again.
 
-```typescript
+```typescript throws
+import * as a from "@freestylejs/ani-core";
+
+const timeline = a.rafTimeline(a.ani({ to: { x: 1 }, duration: 1 }));
 timeline.play({ from: { x: 0 }, delay: -1 }); // RangeError: [ANI_INVALID_CONFIG] ...
 ```
 
@@ -67,12 +79,16 @@ Thrown by `transitionTo` with a name that is not a state, and by `createStates` 
 
 Use one of the state names the message lists.
 
-```typescript
+```typescript throws
+import * as a from "@freestylejs/ani-core";
+
+const node = a.ani({ to: { x: 1 }, duration: 1 });
 const machine = a.createStates({
   initial: "idle",
   initialValue: { x: 0 },
   states: { idle: node },
 });
+// @ts-expect-error intentional invalid state name
 machine.transitionTo("nope"); // RangeError: [ANI_UNKNOWN_STATE] ...
 ```
 
@@ -82,7 +98,9 @@ Thrown by factories and bindings for wrong options: `createClock` and `clock.con
 
 Pass the type and range the message asks for.
 
-```typescript
+```typescript throws
+import * as a from "@freestylejs/ani-core";
+
 a.createClock({ lagThreshold: -1 }); // RangeError: [ANI_INVALID_OPTIONS] ...
 ```
 
@@ -92,7 +110,12 @@ Thrown for a 1.x call shape that no longer exists: positional node arguments, a 
 
 The message names the 2.0 form. See the [migration guide](/en/docs/guides/migration-v1).
 
-```typescript
+```typescript throws
+import * as a from "@freestylejs/ani-core";
+
+const node = a.ani({ to: { x: 1 }, duration: 1 });
+const timing = a.timing.linear();
+// @ts-expect-error intentional 1.x positional timing argument
 a.sequence([node], timing); // TypeError: [ANI_REMOVED_API] ... use { timing } instead
 ```
 
@@ -102,7 +125,7 @@ Thrown by a value codec given input it can not parse or encode: a malformed colo
 
 Pass a value in the format the codec describes. The message shows the offending value.
 
-```typescript
+```typescript throws
 import { color } from "@freestylejs/ani-core/values";
 
 color.encode("not a color"); // AniError: [ANI_CODEC_MISMATCH] ...
@@ -115,8 +138,11 @@ Reported to the clock's `onError`, never thrown from a call, when a subscriber's
 Fix the error in `cause`. The clock and its other subscribers are not affected.
 
 ```typescript
+import * as a from "@freestylejs/ani-core";
+import { isAniError } from "@freestylejs/ani-core";
+
 const clock = a.createClock({
-  onError: (error) => {
+  onError: (error: unknown) => {
     if (isAniError(error) && error.code === "ANI_SUBSCRIBER_QUARANTINED") {
       console.warn(error.cause);
     }

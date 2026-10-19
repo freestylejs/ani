@@ -80,7 +80,7 @@ A subscriber with only `update` keeps working unchanged. `clock.read(fn)` arms a
 
 `timeScale` (default `1`) multiplies every delta handed to subscribers, after lag smoothing and `maxDeltaTime`, including the first delta of a subscriber that joined a running loop. Use it for slow motion, fast forward or a global freeze.
 
-```typescript
+```typescript throws
 import { createClock } from "@freestylejs/ani-core";
 
 const clock = createClock({ timeScale: 0.5 }); // half speed
