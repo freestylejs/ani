@@ -233,12 +233,13 @@ cards.play({ from: { opacity: 0, translateY: 12 } })
 -   `bind(targets, [{ resolver }])` writes element `i` with target `i` in the commit phase through one style writer per element (changed declarations only). Extra elements are left alone, missing ones are not written. A group that has a value writes immediately. Array values report one `TypeError` asynchronously and drop the binding.
 -   `bindAt(index, target, [{ resolver }])` binds one element to target `index` (e.g. for framework refs mounting individually). It uses the same diffing writer and resolver logic as `bind`, writes immediately if a value exists, but does not provide a default `count`.
 -   `onUpdate` listeners get `{ states, status }` (one frozen state per target) once per frame from the commit phase and synchronously on `play`, `seek` and `reset`. Listener errors are isolated and rethrown asynchronously.
+-   Reduced motion is honored per run when the clock reports `reducedMotion`: `'jump'` (default) finishes the whole group run at final values in one frame, `'ignore'` animates normally, `{ maxDuration }` scales time so the run (stagger included) fits within `maxDuration` seconds.
 
 ### API Reference
 
 | Member | Description |
 | :--- | :--- |
-| `rafGroup(node, [{ clock, stagger }])` | `stagger` is seconds per target index or `(index, count) => seconds`. |
+| `rafGroup(node, [{ clock, stagger, reducedMotion }])` | `stagger` is seconds per target index or `(index, count) => seconds`; `reducedMotion` is policy (`'jump'` default, `'ignore'`, `{ maxDuration }`). |
 | `play(config)` | `config`: `from` (value or `(index) => value`), `count`, `keyframes`, `durations`, `repeat`, `delay` (seconds), `velocity`. Returns `Promise<RunResult>`. |
 | `pause()` / `resume()` | Pause a `PLAYING` group / resume a `PAUSED` one. |
 | `seek(time)` | Group time clamped to `[0, duration]`; pauses and notifies once. |
@@ -275,12 +276,13 @@ window.addEventListener('keydown', () => void scroll.set({ y: scroll.target.y + 
 -   `status` is `PLAYING` while moving, else `IDLE`. One clock subscription while moving, none while idle.
 -   `bind` writes in the commit phase (changed declarations only) and writes the current value at once. `onUpdate` gets one `{ state, status }` frame per clock frame while moving, plus `jump`'s synchronous notification.
 -   `dispose()` stops the motion and drops bindings and listeners; later `set` resolves `'disposed'`, `jump` does nothing.
+-   Reduced motion: `reducedMotion` option (`'jump'` default, `'ignore'`). While the clock reports `reducedMotion` and policy is `'jump'`, each `set()` lands at the target on the next frame with velocity 0 and settles. `{ maxDuration }` is rejected (`TypeError`, code `ANI_INVALID_OPTIONS`).
 
 ### API Reference
 
 | Member | Description |
 | :--- | :--- |
-| `follow(initial, [{ spring, clock }])` | `spring` is `{ m, k, c, tolerance? }`, default `{ m: 1, k: 170, c: 26 }`. |
+| `follow(initial, [{ spring, clock, reducedMotion }])` | `spring` is `{ m, k, c, tolerance? }`, default `{ m: 1, k: 170, c: 26 }`. `reducedMotion` is `'jump'` (default) or `'ignore'`. |
 | `set(target, [{ velocity }])` | Returns `Promise<RunResult>`. |
 | `jump(value)` | Lands at once. |
 | `bind(target, [{ resolver }])` | Returns an unbind function. |
@@ -997,6 +999,7 @@ The new state's `from` is, in order: `timelineConfig.from`, the current timeline
 -   **`interrupt: false`** (in the config): if the current timeline is `PLAYING`, the transition is rejected, nothing changes and the promise resolves `'skipped'`.
 -   **One config only:** a third argument throws a `TypeError` before anything changes.
 -   **The promise** never rejects: `'ended'`, `'interrupted'` (another transition replaced it), `'skipped'`, `'reset'` or `'disposed'` (also after `dispose()`).
+-   **Reduced motion:** `createStates` takes `reducedMotion?: ReducedMotionPolicy` (default `'jump'`), forwarded to every state's timeline.
 -   **Replaced timelines are disposed**, with the bindings and listeners attached through the machine. Do not keep references across transitions; use `bind`, `onUpdate` or `onTransition`.
 
 #### The Controller
@@ -1031,6 +1034,7 @@ type StateProps<AnimationStates extends AnimationStateShape> = {
     initialValue: AniGroup<ExtractAnimationNode<AnimationStates[keyof AnimationStates]>>;
     states: AnimationStates;
     clock?: AnimationClockInterface;
+    reducedMotion?: ReducedMotionPolicy;
 };
 
 // Returned controller
@@ -1145,13 +1149,17 @@ const essential = a.rafTimeline(node, { reducedMotion: "ignore" });
 -   RAF `{ maxDuration }`: a run longer than `maxDuration` plays `duration / maxDuration` times faster (springs included); `duration` still reports the plan's. Shorter runs are untouched.
 -   A run of infinite duration (a tree with `loop(child, Infinity)`) never ends: RAF `'jump'` shows every finite part completed and each endless loop at the end of its first iteration, then holds that state `PAUSED` (no `ENDED`; the promise stays pending until `reset()` / `dispose()` / the next `play()`); `{ maxDuration }` does not apply and the run plays unchanged.
 -   WAAPI (`waapiTimeline(node, { reducedMotion, clock })`; `clock` only provides the preference, default `defaultClock`): `'jump'` creates the animations and `finish()`es them at once (`ENDED`, `'ended'`; a `repeat: Infinity` run ends after one; a root `loop(child, Infinity)` shows the end of its first iteration and holds `PAUSED` with the promise pending, like RAF), `{ maxDuration }` sets `playbackRate` to `duration / maxDuration` when longer.
+-   `rafGroup(node, { reducedMotion })`: honors the policy across all targets; `'jump'` completes the whole group run (stagger included) in one frame at its final values, `{ maxDuration }` compresses the whole group run.
+-   `follow(initial, { reducedMotion })`: takes `'jump'` (default) or `'ignore'`; under `'jump'`, `set()` reaches the target on the next frame with velocity 0. `{ maxDuration }` throws a `TypeError` (`ANI_INVALID_OPTIONS`).
+-   `createStates({ reducedMotion })`: forwards the policy to each state's timeline (default `'jump'`).
 -   `'ignore'` keeps the normal behavior; use it for essential motion (progress indicators).
 -   Tests: `createManualClock({ reducedMotion })` and `setReducedMotion(on)` flip the preference.
 
 | Member | Description |
 | :--- | :--- |
 | `ReducedMotionPolicy` | `'jump' \| 'ignore' \| { maxDuration: number }`. |
-| `RafTimelineOptions.reducedMotion` / `WaapiTimelineOptions.reducedMotion` | Policy, default `'jump'`. |
+| `RafTimelineOptions.reducedMotion` / `WaapiTimelineOptions.reducedMotion` / `RafGroupOptions.reducedMotion` / `StateBaseProps.reducedMotion` | Policy, default `'jump'`. |
+| `FollowerOptions.reducedMotion` | `'jump' (default) \| 'ignore'`. |
 | `clock.reducedMotion` | Current effective preference (read-only boolean). |
 | `ReducedMotionSource` | `{ readonly matches: boolean }`, what an injected `reducedMotion` object satisfies. |
 

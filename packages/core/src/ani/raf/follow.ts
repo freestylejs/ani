@@ -1,6 +1,10 @@
-import type { RunResult } from '~/ani/core'
+import { prefersReducedMotion, type RunResult } from '~/ani/core'
 import { createAniError } from '~/error'
-import type { AnimationClockInterface } from '~/loop'
+import {
+    type Animatable,
+    type AnimationClockInterface,
+    defaultClock,
+} from '~/loop'
 import { ani } from '~/nodes'
 import type { Resolver } from '~/style/create_sheet'
 import { timing as presets } from '~/timing'
@@ -31,6 +35,11 @@ export interface FollowOptions {
      * Clock that drives the follower. Defaults to the shared clock.
      */
     clock?: AnimationClockInterface
+    /**
+     * What the follower does while the clock reports `reducedMotion`.
+     * @default 'jump'
+     */
+    reducedMotion?: 'jump' | 'ignore'
 }
 
 export interface FollowSetOptions<G extends Record<string, number>> {
@@ -103,6 +112,27 @@ function describe(value: unknown): string {
           : typeof value
 }
 
+function resolveFollowReducedMotion(policy: unknown): 'jump' | 'ignore' {
+    if (policy === undefined || policy === 'jump') return 'jump'
+    if (policy === 'ignore') return 'ignore'
+    if (
+        typeof policy === 'object' &&
+        policy !== null &&
+        'maxDuration' in policy
+    ) {
+        throw createAniError(
+            TypeError,
+            'ANI_INVALID_OPTIONS',
+            `[follow] \`reducedMotion\` must be 'jump' or 'ignore'; a spring has no duration, received ${JSON.stringify(policy)}.`
+        )
+    }
+    throw createAniError(
+        TypeError,
+        'ANI_INVALID_OPTIONS',
+        `[follow] \`reducedMotion\` must be 'jump' or 'ignore', received ${String(policy)}.`
+    )
+}
+
 /**
  * Creates a value that chases a target with a spring. Setting a new target
  * keeps the current velocity, so repeated input builds on where the motion is
@@ -118,7 +148,11 @@ export function follow<G extends Record<string, number>>(
     return new FollowerImpl<G>(initial, options)
 }
 
-class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
+class FollowerImpl<G extends Record<string, number>>
+    implements Follower<G>, Animatable
+{
+    private readonly _clock: AnimationClockInterface
+    private readonly _reducedMotion: 'jump' | 'ignore'
     private readonly _keys: readonly string[]
     private readonly _zeros: Readonly<G>
     private readonly _timeline: RafAniTimeline<Record<string, number>>
@@ -134,6 +168,10 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
     private _runs = 0
     private _disposed = false
     private _lastValue: Readonly<G> | null = null
+    private _pendingJump: {
+        target: Readonly<G>
+        resolve: (result: RunResult) => void
+    } | null = null
 
     constructor(initial: G, options: FollowOptions) {
         if (
@@ -172,6 +210,8 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
         const spring = options.spring ?? DEFAULT_SPRING
         const timing = presets.dynamicSpring({ ...spring })
 
+        this._clock = options.clock ?? defaultClock
+        this._reducedMotion = resolveFollowReducedMotion(options.reducedMotion)
         this._keys = keys
         this._initial = Object.freeze(start) as Readonly<G>
         this._target = this._initial
@@ -179,7 +219,7 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
         this._seed = this._zeros
         this._timeline = new RafAniTimeline<Record<string, number>>(
             ani({ to: start, duration: HORIZON, timing }),
-            options.clock === undefined ? undefined : { clock: options.clock }
+            { clock: this._clock, reducedMotion: 'ignore' }
         )
         this._timeline.onUpdate((frame) => {
             if (this._muted || this._listeners.size === 0) return
@@ -199,6 +239,21 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
         })
     }
 
+    /** @private Internal clock update callback. */
+    update(_dt: number): void {
+        // No-op during update; follower lands and notifies in commit phase
+    }
+
+    /** @private Internal clock commit callback. */
+    commit(): void {
+        const pending = this._pendingJump
+        if (!pending) return
+        this._pendingJump = null
+        this._clock.unsubscribe(this)
+        this._land(pending.target)
+        pending.resolve('ended')
+    }
+
     get value(): Readonly<G> {
         if (this._disposed) return this._lastValue ?? this._initial
         return (this._timeline.value as Readonly<G> | null) ?? this._initial
@@ -215,6 +270,7 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
 
     get status(): FollowStatus {
         if (this._disposed || this._landing) return 'IDLE'
+        if (this._pendingJump !== null) return 'PLAYING'
         return this._timeline.status === 'PLAYING' ? 'PLAYING' : 'IDLE'
     }
 
@@ -234,12 +290,43 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
         const seed = carried ?? this.velocity
         this._target = merged
         this._seed = seed
+
+        if (this._pendingJump !== null) {
+            const prev = this._pendingJump
+            this._pendingJump = null
+            this._clock.unsubscribe(this)
+            prev.resolve('interrupted')
+        }
+
+        const isReduced =
+            this._reducedMotion === 'jump' && prefersReducedMotion(this._clock)
+
+        if (isReduced) {
+            if (this._timeline.status === 'PLAYING') {
+                this._timeline.pause()
+            }
+            this._seed = this._zeros
+            let resolve!: (result: RunResult) => void
+            const promise = new Promise<RunResult>((done) => {
+                resolve = done
+            })
+            this._pendingJump = { target: merged, resolve }
+            this._clock.subscribe(this)
+            return promise
+        }
+
         return this._run(this.value, merged, seed, true)
     }
 
     jump(value: Partial<G>): void {
         const merged = this._merge(this.value, value, 'jump')
         if (this._disposed) return
+        if (this._pendingJump !== null) {
+            const prev = this._pendingJump
+            this._pendingJump = null
+            this._clock.unsubscribe(this)
+            prev.resolve('interrupted')
+        }
         this._target = merged
         this._seed = this._zeros
         this._land(merged)
@@ -264,6 +351,12 @@ class FollowerImpl<G extends Record<string, number>> implements Follower<G> {
 
     dispose(): void {
         if (this._disposed) return
+        if (this._pendingJump !== null) {
+            const prev = this._pendingJump
+            this._pendingJump = null
+            this._clock.unsubscribe(this)
+            prev.resolve('disposed')
+        }
         this._lastValue = this.value
         this._disposed = true
         this._timeline.dispose()

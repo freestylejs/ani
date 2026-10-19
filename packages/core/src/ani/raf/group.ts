@@ -1,5 +1,11 @@
 import type { AniGroup, Groupable, RunResult } from '~/ani/core'
-import { normalizeRepeatCount, TimelineBase } from '~/ani/core'
+import {
+    normalizeRepeatCount,
+    prefersReducedMotion,
+    type ReducedMotionPolicy,
+    resolveReducedMotionPolicy,
+    TimelineBase,
+} from '~/ani/core'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { resolveGroup } from '~/ani/core/resolver'
 import { createAniError } from '~/error'
@@ -24,6 +30,12 @@ export interface RafGroupOptions {
      * a function of the target index and the target count. Default `0`.
      */
     stagger?: number | ((index: number, count: number) => number)
+    /**
+     * What a `play()` does while the clock reports `reducedMotion`. The
+     * preference is read once at the start of each `play()`.
+     * @default 'jump'
+     */
+    reducedMotion?: ReducedMotionPolicy
 }
 
 export interface RafGroupPlayConfig<G extends Groupable> {
@@ -187,6 +199,7 @@ interface Prepared {
     readonly run: Run
     readonly delay: number
     readonly repeat: number
+    readonly speed: number
 }
 
 /** Times one listener may be on the stack: its call plus one nested notification. */
@@ -327,10 +340,12 @@ class RafAniGroup<G extends Groupable>
     implements RafGroup<G>, Animatable
 {
     private readonly _clock: AnimationClockInterface
+    private readonly _reducedMotion: ReducedMotionPolicy
     private readonly _stagger:
         | number
         | ((index: number, count: number) => number)
     private readonly _planDuration: number
+    private _speed = 1
 
     private _status: TimelineStatus = 'IDLE'
     private _disposed = false
@@ -362,6 +377,7 @@ class RafAniGroup<G extends Groupable>
         if (typeof stagger !== 'function') checkOffset(stagger, 0)
         this._stagger = stagger
         this._clock = options.clock ?? defaultClock
+        this._reducedMotion = resolveReducedMotionPolicy(options.reducedMotion)
         this._planDuration = this._buildExecutionPlan().duration
 
         this.play = this.play.bind(this)
@@ -442,9 +458,10 @@ class RafAniGroup<G extends Groupable>
         if (run.done[index] || dt <= 0) return out
         for (let k = 0; k < run.laneCount; k++) {
             const v = runtime.velocities[k]!
-            out[k] = Number.isNaN(v)
+            const perPlanSecond = Number.isNaN(v)
                 ? (runtime.values[k]! - runtime.previous[k]!) / dt
                 : v
+            out[k] = perPlanSecond * this._speed
         }
         return out
     }
@@ -487,7 +504,10 @@ class RafAniGroup<G extends Groupable>
         }
     }
 
-    private _prepare(config: RafGroupPlayConfig<G>): Prepared {
+    private _prepare(
+        config: RafGroupPlayConfig<G>,
+        maxDuration: number
+    ): Prepared {
         if (typeof config !== 'object' || config === null) {
             throw createAniError(
                 TypeError,
@@ -542,26 +562,39 @@ class RafAniGroup<G extends Groupable>
                 : resolveVelocitySeed(config.velocity, keys, laneCount)
         const inherit = fixed ? null : this._inheritor(keys, laneCount)
 
+        let maxOffset = 0
+        for (let i = 0; i < count; i++) {
+            if (offsets[i]! > maxOffset) maxOffset = offsets[i]!
+        }
+        const duration = planDuration + maxOffset
+        const speed =
+            Number.isFinite(duration) && duration > maxDuration
+                ? duration / maxDuration
+                : 1
+
         // distinct (offset, from, seed) triples share one runtime
         const runtimeIndex = new Map<string, number>()
         const runtimes: PlanRuntime[] = []
         const runtimeOffsets: number[] = []
         const runtimeOf = new Int32Array(count)
-        let maxOffset = 0
         for (let i = 0; i < count; i++) {
             const values =
                 i === 0 || !fromOf
                     ? firstRead
                     : readFrom(fromOf(i), keys, laneCount, i)
             const info = fixed ?? inherit?.(i) ?? NO_SEED
-            const id = `${offsets[i]}|${fromOf ? values.join(',') : ''}|${info.key}`
+            let seed = info.seed
+            if (seed !== null && speed !== 1) {
+                seed = seed.map((v) => v / speed)
+            }
+            const seedKey = seed ? seed.join(',') : ''
+            const id = `${offsets[i]}|${fromOf ? values.join(',') : ''}|${seedKey}`
             let r = runtimeIndex.get(id)
             if (r === undefined) {
                 r = runtimes.length
                 runtimeIndex.set(id, r)
-                runtimes.push(new PlanRuntime(compiled, values, info.seed))
+                runtimes.push(new PlanRuntime(compiled, values, seed))
                 runtimeOffsets.push(offsets[i]!)
-                if (offsets[i]! > maxOffset) maxOffset = offsets[i]!
             }
             runtimeOf[i] = r
         }
@@ -579,7 +612,7 @@ class RafAniGroup<G extends Groupable>
             keys,
             laneCount,
             planDuration,
-            duration: planDuration + maxOffset,
+            duration,
             runtimes,
             offsets: Float64Array.from(runtimeOffsets),
             runtimeOf,
@@ -595,7 +628,12 @@ class RafAniGroup<G extends Groupable>
             dirty: new Uint8Array(total),
             doneCount: 0,
         }
-        return { run, delay, repeat: normalizeRepeatCount(config.repeat) }
+        return {
+            run,
+            delay,
+            repeat: normalizeRepeatCount(config.repeat),
+            speed,
+        }
     }
 
     // ---- evaluation
@@ -676,7 +714,7 @@ class RafAniGroup<G extends Groupable>
             }
         }
 
-        this._advance(run, dt)
+        this._advance(run, dt * this._speed)
     }
 
     /**
@@ -932,7 +970,14 @@ class RafAniGroup<G extends Groupable>
         if (this._disposed) return Promise.resolve('disposed')
 
         // ---- validate & prepare (no state is touched until this succeeds)
-        const { run, delay, repeat } = this._prepare(config)
+        const policy = this._reducedMotion
+        const reduced = policy !== 'ignore' && prefersReducedMotion(this._clock)
+        const jump = reduced && policy === 'jump'
+        const maxDuration =
+            reduced && typeof policy === 'object'
+                ? policy.maxDuration
+                : Infinity
+        const { run, delay, repeat, speed } = this._prepare(config, maxDuration)
 
         // ---- commit
         this._settle('interrupted')
@@ -947,11 +992,46 @@ class RafAniGroup<G extends Groupable>
         this._groupTime = 0
         this._advanced = false
         this._pending = false
+        this._speed = speed
+        if (jump) {
+            this._jumpToEnd(run)
+            return promise
+        }
         this._status = 'PLAYING'
         for (let r = 0; r < run.runtimes.length; r++) this._touch(run, r)
         this._clock.subscribe(this)
         this._notify()
         return promise
+    }
+
+    private _jumpToEnd(run: Run): void {
+        this._clock.unsubscribe(this)
+        this._remainingRepeats = 0
+        if (!Number.isFinite(run.duration)) {
+            let maxSettled = 0
+            for (let r = 0; r < run.runtimes.length; r++) {
+                const rt = run.runtimes[r]!
+                rt.settle()
+                if (rt.settledAt > maxSettled) maxSettled = rt.settledAt
+                this._touch(run, r)
+            }
+            this._groupTime = maxSettled
+            this._pending = false
+            this._status = 'PAUSED'
+            this._notify()
+            return
+        }
+        for (let r = 0; r < run.runtimes.length; r++) {
+            run.runtimes[r]!.evaluate(run.planDuration, 0)
+            run.done[r] = 1
+            this._touch(run, r)
+        }
+        run.doneCount = run.runtimes.length
+        this._groupTime = run.duration
+        this._pending = false
+        this._status = 'ENDED'
+        this._settle('ended')
+        this._notify()
     }
 
     /**
@@ -993,6 +1073,7 @@ class RafAniGroup<G extends Groupable>
         this._remainingRepeats = 0
         this._advanced = false
         this._pending = false
+        this._speed = 1
         this._clock.unsubscribe(this)
     }
 

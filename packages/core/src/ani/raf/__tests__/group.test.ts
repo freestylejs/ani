@@ -243,4 +243,36 @@ describe('rafGroup', () => {
         expect(() => finite.seek(Infinity)).not.toThrow()
         expect(finite.status).toBe('PAUSED')
     })
+
+    it('rejects malformed reducedMotion at construction', () => {
+        const clock = new ManualClock()
+        for (const bad of [
+            'always',
+            3,
+            null,
+            {},
+            { maxDuration: '1' },
+            { maxDuration: -1 },
+        ]) {
+            expect(() =>
+                rafGroup(tree(), { clock, reducedMotion: bad as never })
+            ).toThrow(/reducedMotion/)
+        }
+    })
+
+    it('jump drops a pending start delay and notifies once with ENDED', async () => {
+        const clock = Object.assign(new ManualClock(), { reducedMotion: true })
+        const group = rafGroup(tree(), { clock })
+        const statuses: string[] = []
+        group.onUpdate(({ status }) => {
+            statuses.push(status)
+        })
+
+        const run = group.play({ from: { x: 0 }, count: 2, delay: 5 })
+        expect(await run).toBe('ended')
+        expect(group.valueAt(0)?.x).toBe(100)
+        expect(group.valueAt(1)?.x).toBe(100)
+        expect(group.status).toBe('ENDED')
+        expect(statuses).toEqual(['ENDED'])
+    })
 })

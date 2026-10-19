@@ -138,7 +138,13 @@ const third = group.valueAt(2); // frozen snapshot, null out of range
 
 #### Reduced motion
 
-`rafGroup` does not read the reduced-motion preference: a group plays as you describe it. Gate it yourself where the motion is decorative, for example by skipping `play()` and showing the end state, or use a [`rafTimeline`](/en/docs/core-api/dynamic_timeline), which jumps by default. See [Reduced motion](/en/docs/guides/reduced-motion).
+`rafGroup` takes `reducedMotion?: ReducedMotionPolicy` (default `'jump'`). The preference is read from the clock once at the start of each `play()`:
+
+-   `'jump'` (default): finishes the whole group run (every target, stagger included) in one frame at its final values, notifies once with `ENDED`, and resolves `'ended'`. An endless group pauses at the end of its first iteration with `PAUSED`.
+-   `{ maxDuration }`: compresses the whole group run, stagger included, to at most `maxDuration` seconds by scaling its time.
+-   `'ignore'`: animates normally.
+
+See [Reduced motion](/en/docs/guides/reduced-motion).
 
 ### API Reference
 
@@ -148,6 +154,7 @@ function rafGroup<G extends Groupable>(
   options?: {
     clock?: AnimationClockInterface;
     stagger?: number | ((index: number, count: number) => number);
+    reducedMotion?: ReducedMotionPolicy; // 'jump' | 'ignore' | { maxDuration: number }
   }
 ): RafGroup<G>;
 
