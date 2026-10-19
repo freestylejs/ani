@@ -409,14 +409,48 @@ describe('COD: clock arguments are never dropped or guessed', () => {
         expect(r.warnings.map((w) => w.rule)).toEqual(['clock-create'])
     })
 
-    it('configure wraps only numeric literals', () => {
+    it('configure wraps numeric literal with no warning', () => {
         const r = transform(
-            `${IMPORT}const opts = { lagThreshold: 1 }\nAnimationClock.configure(opts)\nAnimationClock.configure(-2)\nAnimationClock.configure(o.n)\n`,
+            `${IMPORT}AnimationClock.configure(0.05)\nAnimationClock.configure(-2)\n`,
             'f.ts'
         )
         expect(r.code).toBe(
-            `import { defaultClock } from '@freestylejs/ani-core'\nconst opts = { lagThreshold: 1 }\ndefaultClock.configure(opts)\ndefaultClock.configure({ maxDeltaTime: -2 })\ndefaultClock.configure(o.n)\n`
+            `import { defaultClock } from '@freestylejs/ani-core'\ndefaultClock.configure({ maxDeltaTime: 0.05 })\ndefaultClock.configure({ maxDeltaTime: -2 })\n`
         )
         expect(r.warnings).toEqual([])
+    })
+
+    it('configure leaves object literal unchanged with no warning', () => {
+        const r = transform(
+            `${IMPORT}AnimationClock.configure({ lagThreshold: 1 })\nAnimationClock.configure({ maxDeltaTime: 0.1 })\n`,
+            'f.ts'
+        )
+        expect(r.code).toBe(
+            `import { defaultClock } from '@freestylejs/ani-core'\ndefaultClock.configure({ lagThreshold: 1 })\ndefaultClock.configure({ maxDeltaTime: 0.1 })\n`
+        )
+        expect(r.warnings).toEqual([])
+    })
+
+    it('configure warns on identifier, member and call expression', () => {
+        const r = transform(
+            `${IMPORT}AnimationClock.configure(opts)\nAnimationClock.configure(o.n)\nAnimationClock.configure(getDelta())\n`,
+            'f.ts'
+        )
+        expect(r.code).toBe(
+            `import { defaultClock } from '@freestylejs/ani-core'\ndefaultClock.configure(opts)\ndefaultClock.configure(o.n)\ndefaultClock.configure(getDelta())\n`
+        )
+        expect(r.warnings.map((w) => w.rule)).toEqual([
+            'clock-configure-argument',
+            'clock-configure-argument',
+            'clock-configure-argument',
+        ])
+        expect(r.warnings[0]?.message).toBe(
+            '`configure` takes `{ lagThreshold, maxDeltaTime }` in ANI 2; if this value is a number, pass `{ maxDeltaTime: value }`.'
+        )
+        expect(r.warnings[0]).toMatchObject({
+            rule: 'clock-configure-argument',
+            line: 2,
+            column: 1,
+        })
     })
 })

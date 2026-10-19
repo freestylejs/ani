@@ -8,6 +8,7 @@ export type WarningRule =
     | 'context-removed'
     | 'clock-reset'
     | 'clock-create'
+    | 'clock-configure-argument'
     | 'react-use-ani-ref'
 
 export interface RawWarning {
@@ -427,6 +428,19 @@ function handleClock(
                 arg.getStart(ctx.sf),
                 arg.end,
                 `{ maxDeltaTime: ${render(ctx, arg)} }`
+            )
+        } else if (
+            call.arguments.length === 1 &&
+            arg &&
+            ts.isObjectLiteralExpression(arg)
+        ) {
+            // object literal argument is passed through without a warning
+        } else {
+            warn(
+                ctx,
+                'clock-configure-argument',
+                '`configure` takes `{ lagThreshold, maxDeltaTime }` in ANI 2; if this value is a number, pass `{ maxDeltaTime: value }`.',
+                call
             )
         }
     } else if (name === 'create' && call.arguments.length === 0) {
