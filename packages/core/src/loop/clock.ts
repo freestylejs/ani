@@ -177,19 +177,22 @@ const NO_ERROR = Symbol('no-error')
  */
 const STALE_FRAME_MS = 1000
 
-const CONFIGURE_ALLOWED_KEYS = new Set(['lagThreshold', 'maxDeltaTime'])
+const CONFIGURE_ALLOWED_KEYS = {
+    lagThreshold: true,
+    maxDeltaTime: true,
+} satisfies Record<keyof ClockTimingOptions, true>
 
-const CREATE_CLOCK_ALLOWED_KEYS = new Set([
-    'lagThreshold',
-    'maxDeltaTime',
-    'timeScale',
-    'requestFrame',
-    'cancelFrame',
-    'now',
-    'onError',
-    'visibility',
-    'reducedMotion',
-])
+const CREATE_CLOCK_ALLOWED_KEYS = {
+    lagThreshold: true,
+    maxDeltaTime: true,
+    timeScale: true,
+    requestFrame: true,
+    cancelFrame: true,
+    now: true,
+    onError: true,
+    visibility: true,
+    reducedMotion: true,
+} satisfies Record<keyof CreateClockOptions, true>
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -418,7 +421,7 @@ class AnimationClock implements Clock {
             )
         }
         for (const key of Object.keys(timing)) {
-            if (!CONFIGURE_ALLOWED_KEYS.has(key)) {
+            if (!Object.hasOwn(CONFIGURE_ALLOWED_KEYS, key)) {
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
@@ -930,12 +933,16 @@ export function createClock(options?: CreateClockOptions): Clock {
             )
         }
         for (const key of Object.keys(options)) {
-            if (!CREATE_CLOCK_ALLOWED_KEYS.has(key)) {
+            if (!Object.hasOwn(CREATE_CLOCK_ALLOWED_KEYS, key)) {
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
                     __ANI_DEV__
-                        ? `[createClock] Unknown option "${key}". Allowed options are ${[...CREATE_CLOCK_ALLOWED_KEYS].map((k) => `"${k}"`).join(', ')}.`
+                        ? `[createClock] Unknown option "${key}". Allowed options are ${Object.keys(
+                              CREATE_CLOCK_ALLOWED_KEYS
+                          )
+                              .map((k) => `"${k}"`)
+                              .join(', ')}.`
                         : ''
                 )
             }

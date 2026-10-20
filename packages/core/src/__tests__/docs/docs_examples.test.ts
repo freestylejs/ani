@@ -319,6 +319,21 @@ describe('P3B: every docs code example is a test', () => {
             vi.restoreAllMocks()
         })
 
+        // Illustrative snippets that intentionally leave a timeline playing;
+        // the harness resets the default clock after every fence. Anything not
+        // listed here must release its subscription before the reset.
+        const LIVE_EXAMPLES = new Set([
+            'packages/web/content/docs/core-api/clock.mdx:62',
+            'packages/web/content/docs/core-api/delay.mdx:11',
+            'packages/web/content/docs/core-api/dynamic_timeline.mdx:13',
+            'packages/web/content/docs/core-api/dynamic_timeline.mdx:142',
+            'packages/web/content/docs/core-api/group.mdx:42',
+            'packages/web/content/docs/core-api/loop.mdx:11',
+            'packages/web/content/docs/core-api/loop.mdx:30',
+            'packages/web/content/docs/core-api/loop.mdx:85',
+            'packages/web/content/docs/core-api/sequence.mdx:11',
+        ])
+
         it.each(
             runnableFences
         )('$filePath:$codeLine ($sourceLang)', async (fence: ExtractedFence) => {
@@ -387,6 +402,9 @@ describe('P3B: every docs code example is a test', () => {
                 ).toBeUndefined()
             }
 
+            if (!LIVE_EXAMPLES.has(`${fence.filePath}:${fence.codeLine}`)) {
+                expect(core.defaultClock.size).toBe(0)
+            }
             testing.resetDefaultClock()
             expect(core.defaultClock.size).toBe(0)
         })
