@@ -52,6 +52,103 @@ export type StylesheetSupportedLiteral =
     | PxPropertiesLiteral
     | UnitlessPropertiesLiteral
 
+/** How one declaration of a value plan is written. */
+export const VALUE_NUMBER = 0
+export const VALUE_PX = 1
+export const VALUE_PROPERTY = 2
+export const VALUE_TRANSFORM = 3
+export const VALUE_OPACITY = 4
+
+/** One transform part of a value plan (`translateX(` + value + `px)`). */
+export interface ValueStylePart {
+    readonly lane: number
+    readonly open: string
+    readonly close: string
+}
+
+/** One declaration of a value plan, fed straight from a runtime's values. */
+export interface ValueStyleDeclaration {
+    readonly key: string
+    readonly lane: number
+    /** `VALUE_NUMBER`, `VALUE_PX`, `VALUE_PROPERTY`, `VALUE_TRANSFORM` or `VALUE_OPACITY`. */
+    readonly kind: number
+}
+
+/**
+ * A key layout compiled once: writing a frame means formatting these
+ * declarations from the runtime values, without building a style object.
+ */
+export interface ValueStylePlan {
+    readonly signature: string
+    readonly laneCount: number
+    readonly parts: readonly ValueStylePart[]
+    readonly declarations: readonly ValueStyleDeclaration[]
+}
+
+interface MutableDeclaration {
+    readonly key: string
+    readonly lane: number
+    kind: number
+}
+
+const planCache = new WeakMap<readonly string[], ValueStylePlan>()
+
+/**
+ * Compiles (and caches per key array) the declarations `createStyleSheet`
+ * would build for a `from` layout. The insertion order is the same.
+ */
+export function createValueStylePlan(keys: readonly string[]): ValueStylePlan {
+    const cached = planCache.get(keys)
+    if (cached) return cached
+
+    const parts: ValueStylePart[] = []
+    const declarations: MutableDeclaration[] = []
+    let transform: MutableDeclaration | null = null
+
+    for (let lane = 0; lane < keys.length; lane++) {
+        const key = keys[lane]!
+        const kind = KEY_KIND[key]
+        if (kind !== undefined && kind !== PX) {
+            parts.push({ lane, open: kind.open, close: kind.close })
+            continue
+        }
+        const declaration: MutableDeclaration = {
+            key,
+            lane,
+            kind:
+                kind === PX
+                    ? VALUE_PX
+                    : key.includes('-')
+                      ? VALUE_PROPERTY
+                      : key === 'opacity'
+                        ? VALUE_OPACITY
+                        : VALUE_NUMBER,
+        }
+        if (key === 'transform') transform = declaration
+        declarations.push(declaration)
+    }
+    if (parts.length > 0) {
+        if (transform) {
+            transform.kind = VALUE_TRANSFORM
+        } else {
+            declarations.push({
+                key: 'transform',
+                lane: -1,
+                kind: VALUE_TRANSFORM,
+            })
+        }
+    }
+
+    const plan: ValueStylePlan = {
+        signature: keys.join('\u0000'),
+        laneCount: keys.length,
+        parts,
+        declarations,
+    }
+    planCache.set(keys, plan)
+    return plan
+}
+
 export type Resolver<T> = {
     [Key in keyof T]?: (target: T[keyof T]) => {
         key: string
