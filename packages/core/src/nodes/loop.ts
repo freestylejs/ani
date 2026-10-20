@@ -11,6 +11,8 @@ import {
 import { CompositionNode, type CompositionPlan } from './composition'
 import { type Footprint, loopFootprint } from './footprint'
 
+declare const __ANI_DEV__: boolean
+
 const LOOP_FORM = '`loop(child, count, { timing, id })`'
 
 /** Iterations written out before the plan repeats the last one. */
@@ -48,7 +50,9 @@ export class LoopNode<G extends Groupable> extends CompositionNode<
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                `[loop] loopCount must be a finite integer >= 0 or Infinity, received ${String(loopCount)}.`
+                __ANI_DEV__
+                    ? `[loop] loopCount must be a finite integer >= 0 or Infinity, received ${String(loopCount)}.`
+                    : ''
             )
         }
         this.count = loopCount

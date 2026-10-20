@@ -3,6 +3,8 @@ import { TimingFunction, type TimingFunctionContext } from './function'
 
 import type { SpringTimingFunctionOpt } from './spring'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Upper bound of one integration substep (seconds). The integrator only ever
  * advances in whole substeps, so the result depends on the queried time alone,
@@ -56,7 +58,9 @@ export class DynamicSpringTimingFunction extends TimingFunction {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                `[DynamicSpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${m}, k=${k}, c=${c}.`
+                __ANI_DEV__
+                    ? `[DynamicSpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${m}, k=${k}, c=${c}.`
+                    : ''
             )
         }
         // RK4 stays accurate while omega * substep is well below ~1.

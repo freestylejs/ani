@@ -1,5 +1,6 @@
 import {
     createAniError,
+    DEV,
     type Groupable,
     type RafGroup,
 } from '@freestylejs/ani-core'
@@ -48,7 +49,9 @@ export function useAniGroup<G extends Groupable>(
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_OPTIONS',
-                `[useAniGroup] \`index\` must be a non-negative integer, received ${index}.`
+                DEV
+                    ? `[useAniGroup] \`index\` must be a non-negative integer, received ${index}.`
+                    : ''
             )
         }
         let binder = binders.get(index)

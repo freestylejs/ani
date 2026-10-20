@@ -1,4 +1,7 @@
+import { noteWriter } from '~/dev'
 import { createAniError } from '~/error'
+
+declare const __ANI_DEV__: boolean
 
 export interface StyleWriter {
     /** Writes the declarations of `style` that changed since this writer's previous write. */
@@ -19,11 +22,13 @@ export function createStyleWriter(
         throw createAniError(
             TypeError,
             'ANI_INVALID_OPTIONS',
-            '[StyleWriter] target must be an element or an object with a `style` object.'
+            __ANI_DEV__
+                ? '[StyleWriter] target must be an element or an object with a `style` object.'
+                : ''
         )
     }
     const written = new Map<string, string>()
-    return {
+    const writer: StyleWriter = {
         write(style) {
             const css = target.style
             const assignable = css as unknown as Record<string, unknown>
@@ -31,6 +36,7 @@ export function createStyleWriter(
                 const value = style[key]
                 const text = String(value)
                 if (written.get(key) === text) continue
+                if (__ANI_DEV__) noteWriter(target, writer, key)
                 if (key.includes('-')) {
                     css.setProperty(key, text)
                 } else {
@@ -40,4 +46,5 @@ export function createStyleWriter(
             }
         },
     }
+    return writer
 }

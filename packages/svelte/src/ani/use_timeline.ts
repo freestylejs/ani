@@ -1,4 +1,4 @@
-import { createAniError } from '@freestylejs/ani-core'
+import { createAniError, DEV } from '@freestylejs/ani-core'
 import { onDestroy } from 'svelte'
 
 /**
@@ -15,7 +15,9 @@ export function useTimeline<T extends { dispose(): void }>(
         throw createAniError(
             TypeError,
             'ANI_INVALID_OPTIONS',
-            `[useTimeline] \`factory\` must be a function, received ${typeof factory}.`
+            DEV
+                ? `[useTimeline] \`factory\` must be a function, received ${typeof factory}.`
+                : ''
         )
     }
     const owned = factory()
@@ -27,7 +29,9 @@ export function useTimeline<T extends { dispose(): void }>(
         throw createAniError(
             TypeError,
             'ANI_INVALID_OPTIONS',
-            '[useTimeline] `factory` must return an object with a `dispose()` method.'
+            DEV
+                ? '[useTimeline] `factory` must return an object with a `dispose()` method.'
+                : ''
         )
     }
     onDestroy(() => owned.dispose())

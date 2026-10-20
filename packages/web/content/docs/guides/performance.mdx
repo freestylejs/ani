@@ -64,6 +64,10 @@ All timelines use the shared [`defaultClock`](/en/docs/core-api/clock) by defaul
 
 On the project benchmark (Node, no DOM writes): the per-frame cost of a 1000-segment timeline late in the animation is 1.3x the cost early on, and 1000 timelines of 20 segments cost about 0.6 ms per frame. Compiling a 1000-segment tree to WAAPI keyframes takes about 2 ms.
 
+### Production and development builds
+
+The package ships two variants of every entry. A bundler that supports the `development` export condition (Vite, webpack 5, Next.js in dev mode) loads the development variant, which keeps the long error messages and the `ANI_DEV_*` warnings. The production variant folds the `DEV` flag to `false`: `DEV ? ... : ''` branches are removed, so long message and warning text costs no bundle size, error messages become `[CODE] <docs url>`, and dev warnings never run. Error classes, `code`, `docs` and synchronous throw timing are identical in both. Choose the variant with your bundler's mode (for example Vite's `mode` / `build.minify` pipeline) instead of a runtime `NODE_ENV` check.
+
 ### Ownership and disposal
 
 Whoever creates a timeline or state machine owns it and must release it.

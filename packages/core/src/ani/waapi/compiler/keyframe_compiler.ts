@@ -10,6 +10,8 @@ import { BezierTimingFunction, LinearTimingFunction } from '~/timing'
 import { END_TOLERANCE } from '~/utils/time/is_end'
 import { compileTiming } from './timing_compiler'
 
+declare const __ANI_DEV__: boolean
+
 export interface WebAniKeyframe extends Record<string, string | number | null> {
     offset: number
     easing?: string
@@ -105,7 +107,9 @@ export function compileToKeyframes<G extends Groupable>(
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            '[compileToKeyframes] WAAPI backend requires record-shaped values (CSS property names). Received an array; use the RAF engine for positional values.'
+            __ANI_DEV__
+                ? '[compileToKeyframes] WAAPI backend requires record-shaped values (CSS property names). Received an array; use the RAF engine for positional values.'
+                : ''
         )
     }
 

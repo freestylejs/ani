@@ -9,6 +9,7 @@ import {
 } from '~/ani/core'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { resolveGroup } from '~/ani/core/resolver'
+import { devKey, devWarn } from '~/dev'
 import { createAniError } from '~/error'
 import {
     type Animatable,
@@ -19,6 +20,8 @@ import type { AnimationNode } from '~/nodes'
 import { createStyleSheet, type Resolver } from '~/style/create_sheet'
 import { createStyleWriter, type StyleWriter } from '~/style/writer'
 import { END_TOLERANCE } from '~/utils/time'
+
+declare const __ANI_DEV__: boolean
 
 export interface RafTimelineConfig<G extends Groupable>
     extends TimelineCommonConfig<G> {
@@ -149,7 +152,9 @@ function badProgressError(value: unknown): RangeError {
     return createAniError(
         RangeError,
         'ANI_INVALID_CONFIG',
-        `[Timeline] \`drive\` progress must be a finite number, received ${String(value)}.`
+        __ANI_DEV__
+            ? `[Timeline] \`drive\` progress must be a finite number, received ${String(value)}.`
+            : ''
     )
 }
 
@@ -188,14 +193,18 @@ export function assertConfigKeys(config: object): void {
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            '[Timeline] `context` was removed: it was never read. Pass values through the timeline or its nodes.'
+            __ANI_DEV__
+                ? '[Timeline] `context` was removed: it was never read. Pass values through the timeline or its nodes.'
+                : ''
         )
     }
     if (keys.propertyResolver !== undefined) {
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            '[Timeline] `propertyResolver` was removed from the play config. Pass it to `bind`: `timeline.bind(element, { resolver })`.'
+            __ANI_DEV__
+                ? '[Timeline] `propertyResolver` was removed from the play config. Pass it to `bind`: `timeline.bind(element, { resolver })`.'
+                : ''
         )
     }
 }
@@ -331,14 +340,18 @@ export class RafAniTimeline<G extends Groupable>
                 throw createAniError(
                     TypeError,
                     'ANI_REMOVED_API',
-                    `[rafTimeline] Expected an options object, received ${typeof options}. Use \`rafTimeline(node, { clock })\`.`
+                    __ANI_DEV__
+                        ? `[rafTimeline] Expected an options object, received ${typeof options}. Use \`rafTimeline(node, { clock })\`.`
+                        : ''
                 )
             }
             if ('subscribe' in options) {
                 throw createAniError(
                     TypeError,
                     'ANI_REMOVED_API',
-                    '[rafTimeline] The second argument is an options object, not a clock. Use `rafTimeline(node, { clock })`.'
+                    __ANI_DEV__
+                        ? '[rafTimeline] The second argument is an options object, not a clock. Use `rafTimeline(node, { clock })`.'
+                        : ''
                 )
             }
         }
@@ -410,7 +423,9 @@ export class RafAniTimeline<G extends Groupable>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    '[Timeline] `bind()` can only style record values; positional (array) values have no style property.'
+                    __ANI_DEV__
+                        ? '[Timeline] `bind()` can only style record values; positional (array) values have no style property.'
+                        : ''
                 )
             }
             binding.writer.write(
@@ -621,7 +636,9 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `velocity` must be an array or record shaped like `from`.'
+                __ANI_DEV__
+                    ? '[Timeline] `velocity` must be an array or record shaped like `from`.'
+                    : ''
             )
         }
         const seed = new Array<number>(count).fill(0)
@@ -631,14 +648,18 @@ export class RafAniTimeline<G extends Groupable>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    '[Timeline] `velocity` must be an array when `from` is an array.'
+                    __ANI_DEV__
+                        ? '[Timeline] `velocity` must be an array when `from` is an array.'
+                        : ''
                 )
             }
         } else if (Array.isArray(velocity)) {
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `velocity` must be a record when `from` is a record.'
+                __ANI_DEV__
+                    ? '[Timeline] `velocity` must be a record when `from` is a record.'
+                    : ''
             )
         }
         for (let i = 0; i < count; i++) {
@@ -648,7 +669,9 @@ export class RafAniTimeline<G extends Groupable>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[Timeline] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
+                    __ANI_DEV__
+                        ? `[Timeline] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
+                        : ''
                 )
             }
             seed[i] = value
@@ -687,7 +710,9 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `from` must be an array or a record of numbers.'
+                __ANI_DEV__
+                    ? '[Timeline] `from` must be an array or a record of numbers.'
+                    : ''
             )
         }
         const { keyMap, values } = resolveGroup(config.from)
@@ -697,7 +722,9 @@ export class RafAniTimeline<G extends Groupable>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[Timeline] \`from\` ${keyMap ? `"${name}"` : name} must be a finite number, received ${values[i]}.`
+                    __ANI_DEV__
+                        ? `[Timeline] \`from\` ${keyMap ? `"${name}"` : name} must be a finite number, received ${values[i]}.`
+                        : ''
                 )
             }
         }
@@ -706,7 +733,9 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
+                __ANI_DEV__
+                    ? `[Timeline] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
+                    : ''
             )
         }
 
@@ -715,7 +744,9 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `__proto__` can not be used as an animated property name.'
+                __ANI_DEV__
+                    ? '[Timeline] `__proto__` can not be used as an animated property name.'
+                    : ''
             )
         }
         const { plan, duration } = this._buildExecutionPlan(
@@ -756,11 +787,22 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_REMOVED_API',
-                '[Timeline] `play()` takes one argument. Pass `interrupt` in the config: `play({ ...config, interrupt })`.'
+                __ANI_DEV__
+                    ? '[Timeline] `play()` takes one argument. Pass `interrupt` in the config: `play({ ...config, interrupt })`.'
+                    : ''
             )
         }
         assertConfigKeys(config)
-        if (this._disposed) return Promise.resolve('disposed')
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `play()` on a disposed timeline is a no-op.',
+                    devKey(this, 'play')
+                )
+            }
+            return Promise.resolve('disposed')
+        }
         if (this._status === 'PLAYING' && !(config.interrupt ?? true)) {
             return Promise.resolve('skipped')
         }
@@ -855,7 +897,9 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] \`progress\` must be a function, received ${typeof progress}.`
+                __ANI_DEV__
+                    ? `[Timeline] \`progress\` must be a function, received ${typeof progress}.`
+                    : ''
             )
         }
         const { keys, values, plan, duration, compiled } = this._prepare(config)
@@ -863,14 +907,25 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `drive` maps progress onto the duration, which is endless for a tree with `loop(child, Infinity)`.'
+                __ANI_DEV__
+                    ? '[Timeline] `drive` maps progress onto the duration, which is endless for a tree with `loop(child, Infinity)`.'
+                    : ''
             )
         }
         // ignored by a driven run, but validated like in `play()`
         if (config.velocity !== undefined) {
             this._resolveVelocitySeed(config.velocity, keys, values.length)
         }
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `drive()` on a disposed timeline is a no-op.',
+                    devKey(this, 'drive')
+                )
+            }
+            return () => undefined
+        }
         // sampled before any state changes: a throwing source changes nothing
         let first = progress()
         const runtime = new PlanRuntime(compiled, values as number[], null)
@@ -949,6 +1004,16 @@ export class RafAniTimeline<G extends Groupable>
      * Pauses a `PLAYING` timeline (no-op in any other status).
      */
     public pause(): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `pause()` on a disposed timeline is a no-op.',
+                    devKey(this, 'pause')
+                )
+            }
+            return
+        }
         if (this._status !== 'PLAYING') return
         this._status = 'PAUSED'
         this._clock.unsubscribe(this)
@@ -958,7 +1023,17 @@ export class RafAniTimeline<G extends Groupable>
      * Resumes a `PAUSED` timeline (no-op in any other status).
      */
     public resume(): void {
-        if (this._disposed || this._status !== 'PAUSED' || !this._runtime) {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `resume()` on a disposed timeline is a no-op.',
+                    devKey(this, 'resume')
+                )
+            }
+            return
+        }
+        if (this._status !== 'PAUSED' || !this._runtime) {
             return
         }
         this._status = 'PLAYING'
@@ -975,7 +1050,9 @@ export class RafAniTimeline<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_REMOVED_API',
-                '[Timeline] `reset()` takes no arguments. To drop the subscribers too, use `dispose()`.'
+                __ANI_DEV__
+                    ? '[Timeline] `reset()` takes no arguments. To drop the subscribers too, use `dispose()`.'
+                    : ''
             )
         }
         this._reset(true)
@@ -1026,20 +1103,34 @@ export class RafAniTimeline<G extends Groupable>
      * so the result is deterministic. No-op before the first `play()`.
      */
     public seek(targetTime: number): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `seek()` on a disposed timeline is a no-op.',
+                    devKey(this, 'seek')
+                )
+            }
+            return
+        }
         const runtime = this._runtime
         if (!runtime) return
         if (typeof targetTime !== 'number' || Number.isNaN(targetTime)) {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] seek time must be a number, received ${targetTime}.`
+                __ANI_DEV__
+                    ? `[Timeline] seek time must be a number, received ${targetTime}.`
+                    : ''
             )
         }
         if (targetTime === Infinity && !Number.isFinite(this.duration)) {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] seek time must be finite: an endless timeline has no end to seek to.'
+                __ANI_DEV__
+                    ? '[Timeline] seek time must be finite: an endless timeline has no end to seek to.'
+                    : ''
             )
         }
         if (this._status === 'PLAYING' || this._status === 'ENDED') {
@@ -1076,7 +1167,16 @@ export class RafAniTimeline<G extends Groupable>
         target: { style: CSSStyleDeclaration } | HTMLElement,
         options?: BindOptions
     ): () => void {
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `bind()` on a disposed timeline is a no-op.',
+                    devKey(this, 'bind')
+                )
+            }
+            return () => undefined
+        }
         const binding: Binding = {
             writer: createStyleWriter(target),
             resolver: options?.resolver,
@@ -1105,7 +1205,16 @@ export class RafAniTimeline<G extends Groupable>
      * @returns Unsubscribe.
      */
     public onUpdate(callback: OnUpdateCallback<G>): () => void {
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `onUpdate()` on a disposed timeline is a no-op.',
+                    devKey(this, 'onUpdate')
+                )
+            }
+            return () => undefined
+        }
         this._onUpdateCallbacks.add(callback)
         return () => {
             this._onUpdateCallbacks.delete(callback)

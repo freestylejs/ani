@@ -1,5 +1,7 @@
 import { AniError, createAniError } from '../error/ani_error'
 
+declare const __ANI_DEV__: boolean
+
 export interface Animatable {
     /** Read phase: measure layout or sample inputs. Must not write the DOM. */
     read?(): void
@@ -208,7 +210,9 @@ function assertPositive(name: string, value: unknown): number {
         throw createAniError(
             RangeError,
             'ANI_INVALID_OPTIONS',
-            `[Clock] ${name} must be a positive number (Infinity allowed), received ${value}.`
+            __ANI_DEV__
+                ? `[Clock] ${name} must be a positive number (Infinity allowed), received ${value}.`
+                : ''
         )
     }
     return value
@@ -219,7 +223,9 @@ function assertTimeScale(value: unknown): number {
         throw createAniError(
             RangeError,
             'ANI_INVALID_OPTIONS',
-            `[Clock] timeScale must be a finite number >= 0, received ${String(value)}.`
+            __ANI_DEV__
+                ? `[Clock] timeScale must be a finite number >= 0, received ${String(value)}.`
+                : ''
         )
     }
     return value
@@ -243,7 +249,9 @@ function resolveVisibility(value: unknown): boolean | VisibilitySource {
     throw createAniError(
         TypeError,
         'ANI_INVALID_OPTIONS',
-        `[Clock] visibility must be a boolean or an object with a boolean "hidden" and "addEventListener" / "removeEventListener" functions, received ${String(value)}.`
+        __ANI_DEV__
+            ? `[Clock] visibility must be a boolean or an object with a boolean "hidden" and "addEventListener" / "removeEventListener" functions, received ${String(value)}.`
+            : ''
     )
 }
 
@@ -278,7 +286,9 @@ function resolveReducedMotion(
     throw createAniError(
         TypeError,
         'ANI_INVALID_OPTIONS',
-        `[Clock] reducedMotion must be 'system', a boolean or an object with a boolean "matches", received ${String(value)}.`
+        __ANI_DEV__
+            ? `[Clock] reducedMotion must be 'system', a boolean or an object with a boolean "matches", received ${String(value)}.`
+            : ''
     )
 }
 
@@ -388,19 +398,23 @@ class AnimationClock implements Clock {
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    `[Clock] configure() takes { lagThreshold, maxDeltaTime }. Did you mean { maxDeltaTime: ${timing} }?`
+                    __ANI_DEV__
+                        ? `[Clock] configure() takes { lagThreshold, maxDeltaTime }. Did you mean { maxDeltaTime: ${timing} }?`
+                        : ''
                 )
             }
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_OPTIONS',
-                `[Clock] configure() takes { lagThreshold, maxDeltaTime }, received ${
-                    Array.isArray(timing)
-                        ? 'an array'
-                        : timing === null
-                          ? 'null'
-                          : typeof timing
-                }.`
+                __ANI_DEV__
+                    ? `[Clock] configure() takes { lagThreshold, maxDeltaTime }, received ${
+                          Array.isArray(timing)
+                              ? 'an array'
+                              : timing === null
+                                ? 'null'
+                                : typeof timing
+                      }.`
+                    : ''
             )
         }
         for (const key of Object.keys(timing)) {
@@ -408,7 +422,9 @@ class AnimationClock implements Clock {
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    `[Clock] configure() received unknown option "${key}". configure takes { lagThreshold, maxDeltaTime }.`
+                    __ANI_DEV__
+                        ? `[Clock] configure() received unknown option "${key}". configure takes { lagThreshold, maxDeltaTime }.`
+                        : ''
                 )
             }
         }
@@ -761,7 +777,9 @@ class AnimationClock implements Clock {
             this.report(
                 new AniError(
                     'ANI_SUBSCRIBER_QUARANTINED',
-                    `A subscriber threw in ${QUARANTINE_AFTER} consecutive ticks and was unsubscribed.`,
+                    __ANI_DEV__
+                        ? `A subscriber threw in ${QUARANTINE_AFTER} consecutive ticks and was unsubscribed.`
+                        : '',
                     { cause: error }
                 )
             )
@@ -900,13 +918,15 @@ export function createClock(options?: CreateClockOptions): Clock {
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_OPTIONS',
-                `[createClock] Expected an options object, received ${
-                    Array.isArray(options)
-                        ? 'an array'
-                        : options === null
-                          ? 'null'
-                          : typeof options
-                }.`
+                __ANI_DEV__
+                    ? `[createClock] Expected an options object, received ${
+                          Array.isArray(options)
+                              ? 'an array'
+                              : options === null
+                                ? 'null'
+                                : typeof options
+                      }.`
+                    : ''
             )
         }
         for (const key of Object.keys(options)) {
@@ -914,7 +934,9 @@ export function createClock(options?: CreateClockOptions): Clock {
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    `[createClock] Unknown option "${key}". Allowed options are ${[...CREATE_CLOCK_ALLOWED_KEYS].map((k) => `"${k}"`).join(', ')}.`
+                    __ANI_DEV__
+                        ? `[createClock] Unknown option "${key}". Allowed options are ${[...CREATE_CLOCK_ALLOWED_KEYS].map((k) => `"${k}"`).join(', ')}.`
+                        : ''
                 )
             }
         }

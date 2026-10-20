@@ -6,6 +6,8 @@ import {
     NUMBER_SOURCE,
 } from './codec'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Tagged-template codec for strings that carry numbers between literals,
  * such as transform lists. Every interpolation is the unit that follows the
@@ -27,7 +29,9 @@ export function template(
     for (const unit of units) {
         if (typeof unit !== 'string') {
             throw mismatch(
-                'Every template interpolation must be a unit string.'
+                __ANI_DEV__
+                    ? 'Every template interpolation must be a unit string.'
+                    : ''
             )
         }
     }
@@ -45,12 +49,18 @@ export function template(
         encode(value) {
             if (typeof value !== 'string') {
                 throw mismatch(
-                    `A template value must be a string, received ${typeof value}.`
+                    __ANI_DEV__
+                        ? `A template value must be a string, received ${typeof value}.`
+                        : ''
                 )
             }
             const match = matcher.exec(value)
             if (match === null) {
-                throw mismatch(`Cannot encode "${value}" with this template.`)
+                throw mismatch(
+                    __ANI_DEV__
+                        ? `Cannot encode "${value}" with this template.`
+                        : ''
+                )
             }
             const values: number[] = []
             for (let index = 0; index < size; index++) {

@@ -3,7 +3,7 @@ title: Errors
 description: Every error ANI throws or reports carries a stable code and a link to this page.
 ---
 
-Every error ANI throws or reports is an ANI error: it has a stable `code`, a `docs` URL that points at the section of this page for that code, and a message that starts with `[CODE] `.
+Every error ANI throws or reports is an ANI error: it has a stable `code`, a `docs` URL that points at the section of this page for that code, and a message that starts with `[CODE] `. A production build keeps the class, `code`, `docs` URL and synchronous timing, but replaces the long human text with the docs URL: the message is `[CODE] <docs url>`. The full text exists only in a development build. Development builds also emit the `ANI_DEV_*` warnings below.
 
 ANI errors stay native. A wrong type is a `TypeError`, a value out of range is a `RangeError`, so `instanceof TypeError` and `instanceof RangeError` checks keep working. The code is carried on the error object.
 
@@ -149,3 +149,15 @@ const clock = a.createClock({
   },
 });
 ```
+
+## ANI_DEV_CONFLICTING_WRITERS
+
+**Development builds only.** Two different bindings (from any timelines, groups, followers or state machines, through `bind` or `bindAt`) wrote the same CSS property of the same element. The write of the frame's last writer wins, so the property may flicker between the two animations. The warning names the property and is emitted once per element and property.
+
+Bind each property of an element from one source, or animate the two sources on different elements.
+
+## ANI_DEV_DISPOSED_USE
+
+**Development builds only.** A method was called on an object after `dispose()`: `play`, `seek`, `pause`, `resume`, `drive`, `bind`, `bindAt`, `set`, `jump`, `transitionTo` or `onUpdate`. The call is still exactly the no-op it was before (`play` and `set` resolve `'disposed'`); the warning is emitted once per object and method.
+
+Stop using the object after disposing it, or remove the call. Production builds do not warn.

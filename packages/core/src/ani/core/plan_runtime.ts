@@ -13,6 +13,8 @@ import type {
 } from './interface/core_types'
 import { loopEnd, loopEnds, planLoops } from './plan_state'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Evaluation core of the raf engine.
  *
@@ -103,7 +105,9 @@ function pickTiming(
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] segment #${segmentIndex}: \`timing\` has no TimingFunction for animated property "${key}".`
+                __ANI_DEV__
+                    ? `[Timeline] segment #${segmentIndex}: \`timing\` has no TimingFunction for animated property "${key}".`
+                    : ''
             )
         }
         return t
@@ -113,7 +117,9 @@ function pickTiming(
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            `[Timeline] segment #${segmentIndex}: \`timing\` has no TimingFunction for animated value [${index}].`
+            __ANI_DEV__
+                ? `[Timeline] segment #${segmentIndex}: \`timing\` has no TimingFunction for animated value [${index}].`
+                : ''
         )
     }
     return t
@@ -298,7 +304,9 @@ export function compilePlan(
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                `[Timeline] segment #${s}: duration must be a finite number >= 0, received ${duration}.`
+                __ANI_DEV__
+                    ? `[Timeline] segment #${s}: duration must be a finite number >= 0, received ${duration}.`
+                    : ''
             )
         }
         const to = node.props.to as Groupable
@@ -310,14 +318,18 @@ export function compilePlan(
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[Timeline] segment #${s}: array \`to\` can not animate a record \`from\`.`
+                    __ANI_DEV__
+                        ? `[Timeline] segment #${s}: array \`to\` can not animate a record \`from\`.`
+                        : ''
                 )
             }
             if (to.length !== laneCount) {
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[Timeline] segment #${s}: \`to\` has ${to.length} values but \`from\` has ${laneCount}.`
+                    __ANI_DEV__
+                        ? `[Timeline] segment #${s}: \`to\` has ${to.length} values but \`from\` has ${laneCount}.`
+                        : ''
                 )
             }
             for (let i = 0; i < to.length; i++) {
@@ -332,7 +344,9 @@ export function compilePlan(
                     throw createAniError(
                         TypeError,
                         'ANI_INVALID_CONFIG',
-                        `[Timeline] segment #${s}: record \`to\` can not animate an array \`from\`.`
+                        __ANI_DEV__
+                            ? `[Timeline] segment #${s}: record \`to\` can not animate an array \`from\`.`
+                            : ''
                     )
                 }
             } else {
@@ -342,7 +356,9 @@ export function compilePlan(
                         throw createAniError(
                             TypeError,
                             'ANI_INVALID_CONFIG',
-                            `[Timeline] segment #${s}: property "${name}" is animated but missing from \`from\`.`
+                            __ANI_DEV__
+                                ? `[Timeline] segment #${s}: property "${name}" is animated but missing from \`from\`.`
+                                : ''
                         )
                     }
                     lanes.push(lane)
@@ -356,7 +372,9 @@ export function compilePlan(
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[Timeline] segment #${s}: \`to\` ${describe(keys, lanes[j]!)} must be a finite number, received ${tos[j]}.`
+                    __ANI_DEV__
+                        ? `[Timeline] segment #${s}: \`to\` ${describe(keys, lanes[j]!)} must be a finite number, received ${tos[j]}.`
+                        : ''
                 )
             }
             counts[lanes[j]!]!++

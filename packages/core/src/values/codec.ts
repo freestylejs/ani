@@ -1,5 +1,7 @@
 import { AniError } from '../error'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Turns a display value into the number vector the engine animates and back.
  *
@@ -43,7 +45,7 @@ export function clamp01(value: number): number {
 
 /** Builds an `ANI_CODEC_MISMATCH` error. Internal to the codecs. */
 export function mismatch(message: string): AniError {
-    return new AniError('ANI_CODEC_MISMATCH', message)
+    return new AniError('ANI_CODEC_MISMATCH', __ANI_DEV__ ? message : '')
 }
 
 /** Escapes regex metacharacters so a literal can be embedded. Internal. */

@@ -2,6 +2,8 @@ import { createAniError } from '~/error'
 import type { AnimationId } from './base'
 import { SegmentNode } from './segment'
 
+declare const __ANI_DEV__: boolean
+
 type PreserveRecord = Record<string, any>
 
 /**
@@ -30,7 +32,9 @@ export function delay(
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            '[delay] Unexpected extra argument. Use `delay(seconds, { id })`.'
+            __ANI_DEV__
+                ? '[delay] Unexpected extra argument. Use `delay(seconds, { id })`.'
+                : ''
         )
     }
     if (options !== undefined) {
@@ -38,7 +42,9 @@ export function delay(
             throw createAniError(
                 TypeError,
                 'ANI_REMOVED_API',
-                `[delay] Expected an options object, received ${typeof options}. Use \`delay(seconds, { id })\`.`
+                __ANI_DEV__
+                    ? `[delay] Expected an options object, received ${typeof options}. Use \`delay(seconds, { id })\`.`
+                    : ''
             )
         }
         for (const key of Object.keys(options)) {
@@ -46,7 +52,9 @@ export function delay(
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_NODE',
-                    `[delay] Unknown option "${key}". Allowed option is "id".`
+                    __ANI_DEV__
+                        ? `[delay] Unknown option "${key}". Allowed option is "id".`
+                        : ''
                 )
             }
         }

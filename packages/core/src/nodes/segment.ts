@@ -4,6 +4,8 @@ import { createAniError } from '~/error'
 import { type AnimationId, AnimationNode } from './base'
 import { type Footprint, segmentFootprint } from './footprint'
 
+declare const __ANI_DEV__: boolean
+
 function isTarget(to: unknown): boolean {
     if (typeof to !== 'object' || to === null) return false
     return Object.values(to).every(
@@ -39,14 +41,18 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                `[SegmentNode] duration must be a finite number >= 0 (seconds), received ${props.duration}.`
+                __ANI_DEV__
+                    ? `[SegmentNode] duration must be a finite number >= 0 (seconds), received ${props.duration}.`
+                    : ''
             )
         }
         if (!isTarget(props.to)) {
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_NODE',
-                `[SegmentNode] to must be an array or a record of finite numbers, received ${describe(props.to)}.`
+                __ANI_DEV__
+                    ? `[SegmentNode] to must be an array or a record of finite numbers, received ${describe(props.to)}.`
+                    : ''
             )
         }
         const nodeProps: SegmentNodeProps<G> = {
@@ -91,7 +97,9 @@ export function ani<G extends Groupable>(
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            '[ani] Unexpected extra argument. Pass the id in the props: `ani({ to, duration, id })`.'
+            __ANI_DEV__
+                ? '[ani] Unexpected extra argument. Pass the id in the props: `ani({ to, duration, id })`.'
+                : ''
         )
     }
     return new SegmentNode(props)

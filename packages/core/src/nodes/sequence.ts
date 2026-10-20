@@ -11,6 +11,8 @@ import {
 } from './composition'
 import { type Footprint, mergeFootprints, type Placed } from './footprint'
 
+declare const __ANI_DEV__: boolean
+
 const SEQUENCE_FORM = '`sequence(children, { timing, id })`'
 
 /**
@@ -39,7 +41,9 @@ export class SequenceNode<
                 throw createAniError(
                     RangeError,
                     'ANI_UNREACHABLE_NODE',
-                    `[sequence] Child #${i} is unreachable: child #${endless} never ends because it contains an endless loop. Put the endless child last, or run it in a parallel.`
+                    __ANI_DEV__
+                        ? `[sequence] Child #${i} is unreachable: child #${endless} never ends because it contains an endless loop. Put the endless child last, or run it in a parallel.`
+                        : ''
                 )
             }
             placed.push({ footprint: child.footprint, offset: duration })

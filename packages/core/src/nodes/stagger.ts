@@ -16,6 +16,8 @@ import {
     mergeFootprints,
 } from './footprint'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Options for configuring a stagger node.
  */
@@ -35,7 +37,9 @@ function parseStaggerOptions(options: StaggerOptions): {
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            `[stagger] Expected an options object, received ${typeof options}. Use ${STAGGER_FORM}.`
+            __ANI_DEV__
+                ? `[stagger] Expected an options object, received ${typeof options}. Use ${STAGGER_FORM}.`
+                : ''
         )
     }
     for (const key of Object.keys(options)) {
@@ -43,7 +47,9 @@ function parseStaggerOptions(options: StaggerOptions): {
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_NODE',
-                `[stagger] Unknown option "${key}". Allowed options are "offset", "timing", and "id".`
+                __ANI_DEV__
+                    ? `[stagger] Unknown option "${key}". Allowed options are "offset", "timing", and "id".`
+                    : ''
             )
         }
     }
@@ -52,7 +58,9 @@ function parseStaggerOptions(options: StaggerOptions): {
         throw createAniError(
             RangeError,
             'ANI_INVALID_NODE',
-            `[stagger] offset must be a finite number >= 0 (seconds), received ${offset}.`
+            __ANI_DEV__
+                ? `[stagger] offset must be a finite number >= 0 (seconds), received ${offset}.`
+                : ''
         )
     }
     return { offset, timing: options.timing, id: options.id }

@@ -1,5 +1,7 @@
 import { type Codec, clamp01, formatNumber, mismatch } from './codec'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Color spaces a codec can animate in.
  *
@@ -399,7 +401,9 @@ function parseColor(input: string): ParsedColor {
     if (text.startsWith('#')) {
         const parsed = parseHex(text)
         if (parsed === null) {
-            throw mismatch(`Cannot parse "${input}" as a color.`)
+            throw mismatch(
+                __ANI_DEV__ ? `Cannot parse "${input}" as a color.` : ''
+            )
         }
         return parsed
     }
@@ -411,7 +415,9 @@ function parseColor(input: string): ParsedColor {
             text.slice(open + 1, -1)
         )
         if (parsed === null) {
-            throw mismatch(`Cannot parse "${input}" as a color.`)
+            throw mismatch(
+                __ANI_DEV__ ? `Cannot parse "${input}" as a color.` : ''
+            )
         }
         return parsed
     }
@@ -422,7 +428,7 @@ function parseColor(input: string): ParsedColor {
     }
     const named = parseNamed(keyword)
     if (named === null) {
-        throw mismatch(`Cannot parse "${input}" as a color.`)
+        throw mismatch(__ANI_DEV__ ? `Cannot parse "${input}" as a color.` : '')
     }
     return named
 }
@@ -615,7 +621,9 @@ export function colorIn(space: ColorSpace): Codec<string> {
         encode(value) {
             if (typeof value !== 'string') {
                 throw mismatch(
-                    `A color must be a string, received ${typeof value}.`
+                    __ANI_DEV__
+                        ? `A color must be a string, received ${typeof value}.`
+                        : ''
                 )
             }
             const parsed = parseColor(value)

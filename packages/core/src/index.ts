@@ -53,7 +53,8 @@ export {
 } from './ani/waapi'
 export type { TimelineControllerHooks } from './binding'
 export { createTimelineController } from './binding'
-export type { AniErrorCode } from './error'
+export { DEV } from './env'
+export type { AniDevWarningCode, AniErrorCode } from './error'
 export { AniError, createAniError, isAniError } from './error'
 export type {
     Animatable,
