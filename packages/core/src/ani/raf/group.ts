@@ -16,8 +16,17 @@ import {
     defaultClock,
 } from '~/loop'
 import type { AnimationNode } from '~/nodes'
-import { createStyleSheet, type Resolver } from '~/style/create_sheet'
-import { createStyleWriter, type StyleWriter } from '~/style/writer'
+import {
+    createStyleSheet,
+    createValueStylePlan,
+    type Resolver,
+    type ValueStylePlan,
+} from '~/style/create_sheet'
+import {
+    createStyleWriter,
+    formatTransform,
+    type StyleWriter,
+} from '~/style/writer'
 import { END_TOLERANCE } from '~/utils/time'
 import type { TimelineStatus } from './timeline'
 
@@ -153,6 +162,8 @@ interface Binding {
     readonly resolver: StyleResolver | undefined
     /** `bindAt`: the only position of `writers` that is set; `null` for `bind`. */
     readonly index: number | null
+    /** `bindAt` writer (same as `writers[index]`), `null` for `bind`. */
+    readonly writer: StyleWriter | null
 }
 
 interface SheetCache {
@@ -191,6 +202,10 @@ interface Run {
     readonly rev: Int32Array
     readonly snapshots: Array<Readonly<Groupable> | null>
     readonly caches: Map<StyleResolver | undefined, SheetCache>
+    /** Declarations of a record run; no style object is built for plain binds. */
+    readonly valuePlan: ValueStylePlan | null
+    /** Formatted transform declaration per runtime, shared by its targets. */
+    readonly transforms: string[]
     readonly scratch: Record<string, number>
     /** Runtimes that changed since the last notification. */
     readonly changed: number[]
@@ -209,6 +224,7 @@ interface Prepared {
 const MAX_REENTRY = 2
 /** Largest array index: `bindAt` keeps its writer at that position of a sparse array. */
 const MAX_INDEX = 2 ** 32 - 2
+const NO_WRITERS: readonly StyleWriter[] = []
 
 function reportAsync(error: unknown): void {
     queueMicrotask(() => {
@@ -390,7 +406,15 @@ class RafAniGroup<G extends Groupable>
     private _pendingRunId = 0
 
     private readonly _listeners = new Set<Listener<G>>()
+    /** Array bindings (`bind`): one writer per target. */
     private readonly _bindings = new Set<Binding>()
+    /** `bindAt` bindings in insertion order: a dense list to write. */
+    private readonly _atBindings: Binding[] = []
+    // how many `_atBindings` use a resolver (rare: the plain loop is hot)
+    private _atResolved = 0
+    // dense `bindAt` writers by target index; used only when indices are unique
+    private readonly _atWriters: Array<StyleWriter | undefined> = []
+    private _atDense = true
     // how often a listener is on the stack; bounds re-entrant notifications
     private readonly _running = new Map<Listener<G>, number>()
 
@@ -639,6 +663,7 @@ class RafAniGroup<G extends Groupable>
         const members = new Int32Array(count)
         const fill = memberStart.slice(0, total)
         for (let i = 0; i < count; i++) members[fill[runtimeOf[i]!]!++] = i
+        const valuePlan = keys === null ? null : createValueStylePlan(keys)
 
         const run: Run = {
             count,
@@ -656,6 +681,8 @@ class RafAniGroup<G extends Groupable>
             rev: new Int32Array(total),
             snapshots: new Array<Readonly<Groupable> | null>(total).fill(null),
             caches: new Map(),
+            valuePlan,
+            transforms: new Array<string>(total),
             scratch: {},
             changed: [],
             dirty: new Uint8Array(total),
@@ -877,8 +904,15 @@ class RafAniGroup<G extends Groupable>
         return sheet
     }
 
-    private _dropArrayBinding(binding: Binding): void {
-        this._bindings.delete(binding)
+    private _dropBinding(binding: Binding): void {
+        if (binding.index === null) {
+            this._bindings.delete(binding)
+        } else {
+            const at = this._atBindings
+            const position = at.indexOf(binding)
+            if (position !== -1) at.splice(position, 1)
+            if (binding.resolver !== undefined) this._atResolved--
+        }
         reportAsync(
             createAniError(
                 TypeError,
@@ -898,31 +932,131 @@ class RafAniGroup<G extends Groupable>
         }
     }
 
+    private _writeValues(
+        writer: StyleWriter,
+        plan: ValueStylePlan,
+        values: ArrayLike<number>,
+        transform?: string
+    ): void {
+        try {
+            writer.writeValues(plan, values, transform)
+        } catch (error) {
+            reportAsync(error)
+        }
+    }
+
     /** Writes the targets of every runtime that changed since the last notification. */
     private _writeChanged(run: Run): void {
         if (run.keys === null) {
-            for (const binding of this._bindings) {
-                this._dropArrayBinding(binding)
-            }
+            for (const binding of this._bindings) this._dropBinding(binding)
+            const at = this._atBindings
+            for (let b = 0; b < at.length; b++) this._dropBinding(at[b]!)
             return
         }
 
-        const { changed, members, memberStart } = run
+        const { changed, members, memberStart, transforms } = run
+        const plan = run.valuePlan!
+        if (plan.parts.length > 0) {
+            for (let c = 0; c < changed.length; c++) {
+                const r = changed[c]!
+                transforms[r] = formatTransform(plan, run.runtimes[r]!.values)
+            }
+        }
 
-        for (const binding of this._bindings) {
-            const { writers, resolver, index } = binding
-            if (index !== null) {
+        // The common case: every target shares one runtime, so no binding
+        // needs a runtime lookup or a dirty check.
+        const at = this._atBindings
+        if (run.runtimes.length === 1 && run.dirty[0] !== 0) {
+            const values = run.runtimes[0]!.values
+            const transform = transforms[0]
+            if (this._atResolved === 0) {
+                if (this._atDense) {
+                    const writers = this._atWriters
+                    const limit = Math.min(run.count, writers.length)
+                    for (let i = 0; i < limit; i++) {
+                        const writer = writers[i]
+                        if (writer === undefined) continue
+                        try {
+                            writer.writeValues(plan, values, transform)
+                        } catch (error) {
+                            reportAsync(error)
+                        }
+                    }
+                } else {
+                    for (let b = 0; b < at.length; b++) {
+                        const binding = at[b]!
+                        const index = binding.index!
+                        if (index >= run.count) continue
+                        try {
+                            binding.writer!.writeValues(plan, values, transform)
+                        } catch (error) {
+                            reportAsync(error)
+                        }
+                    }
+                }
+            } else {
+                for (let b = 0; b < at.length; b++) {
+                    const binding = at[b]!
+                    const index = binding.index!
+                    if (index >= run.count) continue
+                    if (binding.resolver === undefined) {
+                        try {
+                            binding.writer!.writeValues(plan, values, transform)
+                        } catch (error) {
+                            reportAsync(error)
+                        }
+                    } else {
+                        const sheet = this._sheet(run, binding.resolver, 0)
+                        if (sheet !== undefined) {
+                            this._writeOne(binding.writer!, sheet)
+                        }
+                    }
+                }
+            }
+        } else {
+            for (let b = 0; b < at.length; b++) {
+                const binding = at[b]!
+                const index = binding.index!
                 if (index >= run.count) continue
                 const r = run.runtimeOf[index]!
                 if (!run.dirty[r]) continue
-                const sheet = this._sheet(run, resolver, r)
-                if (sheet !== undefined) this._writeOne(writers[index]!, sheet)
-                continue
+                if (binding.resolver === undefined) {
+                    this._writeValues(
+                        binding.writer!,
+                        plan,
+                        run.runtimes[r]!.values,
+                        transforms[r]
+                    )
+                } else {
+                    const sheet = this._sheet(run, binding.resolver, r)
+                    if (sheet !== undefined) {
+                        this._writeOne(binding.writer!, sheet)
+                    }
+                }
             }
+        }
+
+        for (const binding of this._bindings) {
+            const { writers, resolver } = binding
             for (let c = 0; c < changed.length; c++) {
                 const r = changed[c]!
                 const start = memberStart[r]!
                 if (members[start]! >= writers.length) continue
+                if (resolver === undefined) {
+                    const values = run.runtimes[r]!.values
+                    const transform = transforms[r]
+                    for (let m = start; m < memberStart[r + 1]!; m++) {
+                        const target = members[m]!
+                        if (target >= writers.length) break
+                        this._writeValues(
+                            writers[target]!,
+                            plan,
+                            values,
+                            transform
+                        )
+                    }
+                    continue
+                }
                 const sheet = this._sheet(run, resolver, r)
                 if (sheet === undefined) continue
                 for (let m = start; m < memberStart[r + 1]!; m++) {
@@ -936,12 +1070,40 @@ class RafAniGroup<G extends Groupable>
 
     private _writeAll(run: Run, binding: Binding): void {
         if (run.keys === null) {
-            this._dropArrayBinding(binding)
+            this._dropBinding(binding)
+            return
+        }
+        const plan = run.valuePlan!
+        if (binding.writer !== null) {
+            const index = binding.index!
+            if (index >= run.count) return
+            const r = run.runtimeOf[index]!
+            if (binding.resolver === undefined) {
+                const values = run.runtimes[r]!.values
+                const transform =
+                    plan.parts.length === 0
+                        ? undefined
+                        : formatTransform(plan, values)
+                this._writeValues(binding.writer, plan, values, transform)
+                return
+            }
+            const sheet = this._sheet(run, binding.resolver, r)
+            if (sheet !== undefined) this._writeOne(binding.writer, sheet)
             return
         }
         const length = Math.min(binding.writers.length, run.count)
         for (let i = binding.index ?? 0; i < length; i++) {
-            const sheet = this._sheet(run, binding.resolver, run.runtimeOf[i]!)
+            const r = run.runtimeOf[i]!
+            if (binding.resolver === undefined) {
+                const values = run.runtimes[r]!.values
+                const transform =
+                    plan.parts.length === 0
+                        ? undefined
+                        : formatTransform(plan, values)
+                this._writeValues(binding.writers[i]!, plan, values, transform)
+                continue
+            }
+            const sheet = this._sheet(run, binding.resolver, r)
             if (sheet !== undefined) this._writeOne(binding.writers[i]!, sheet)
         }
     }
@@ -961,7 +1123,9 @@ class RafAniGroup<G extends Groupable>
     private _notify(): void {
         const run = this._run
         if (run) {
-            if (this._bindings.size > 0) this._writeChanged(run)
+            if (this._bindings.size > 0 || this._atBindings.length > 0) {
+                this._writeChanged(run)
+            }
             for (let c = 0; c < run.changed.length; c++) {
                 run.dirty[run.changed[c]!] = 0
             }
@@ -1152,6 +1316,8 @@ class RafAniGroup<G extends Groupable>
         this._settle('disposed')
         this._listeners.clear()
         this._bindings.clear()
+        this._atBindings.length = 0
+        this._atResolved = 0
     }
 
     /**
@@ -1254,14 +1420,27 @@ class RafAniGroup<G extends Groupable>
             writers,
             resolver: options?.resolver,
             index: null,
+            writer: null,
         })
     }
 
     private _attach(binding: Binding): () => void {
-        this._bindings.add(binding)
+        const index = binding.index
+        if (index === null) this._bindings.add(binding)
+        else {
+            this._atBindings.push(binding)
+            if (binding.resolver !== undefined) this._atResolved++
+        }
         if (this._run) this._writeAll(this._run, binding)
         return () => {
-            this._bindings.delete(binding)
+            if (index === null) {
+                this._bindings.delete(binding)
+                return
+            }
+            const at = this._atBindings
+            const position = at.indexOf(binding)
+            if (position !== -1) at.splice(position, 1)
+            if (binding.resolver !== undefined) this._atResolved--
         }
     }
 
@@ -1298,9 +1477,24 @@ class RafAniGroup<G extends Groupable>
             }
             return () => undefined
         }
-        const writers: StyleWriter[] = []
-        writers[index] = writer
-        return this._attach({ writers, resolver: options?.resolver, index })
+        if (index <= 100_000) {
+            if (this._atWriters[index] !== undefined) this._atDense = false
+            else this._atWriters[index] = writer
+        } else {
+            this._atDense = false
+        }
+        const detach = this._attach({
+            writers: NO_WRITERS,
+            resolver: options?.resolver,
+            index,
+            writer,
+        })
+        return () => {
+            detach()
+            if (this._atWriters[index] === writer) {
+                this._atWriters[index] = undefined
+            }
+        }
     }
 
     /**

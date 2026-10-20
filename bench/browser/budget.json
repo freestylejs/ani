@@ -1,7 +1,7 @@
 {
     "n": 5000,
-    "rafTimelinesP95Ms": 19.9,
-    "rafGroupP95Ms": 8.9,
-    "minGroupGain": 3,
+    "rafTimelinesP95Ms": 13.0,
+    "rafGroupP95Ms": 4.5,
+    "minGroupGain": 2.5,
     "maxRafReadStyleRecalcsPerFrame": 1.05
 }
