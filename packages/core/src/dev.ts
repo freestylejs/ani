@@ -46,6 +46,16 @@ const propertyOwners = new WeakMap<object, Map<string, WeakRef<object>>>()
  * of `property` on `target` and warns once per target + property when a
  * different writer writes the same declaration.
  */
+export function releaseWriter(target: object, writer: object): void {
+    const owners = propertyOwners.get(target)
+    if (owners === undefined) return
+    for (const [property, ref] of owners) {
+        const owner = ref.deref()
+        if (owner === undefined || owner === writer) owners.delete(property)
+    }
+    if (owners.size === 0) propertyOwners.delete(target)
+}
+
 export function noteWriter(
     target: object,
     writer: object,
