@@ -152,6 +152,7 @@ export class World {
     private readonly settled: Rec[] = []
     private disposedSubject: Subject | null = null
     private nonInterruptingSubjectId: number | null = null
+    private readonly lastInterrupter = new Map<number, number>()
     private inFrame = false
     private thrown = 0
     private surfaced = 0
@@ -410,6 +411,9 @@ export class World {
         this.remember(op)
         this.disposedSubject = null
         this.nonInterruptingSubjectId = null
+        if (INTERRUPTERS.has(op.k) && 's' in op) {
+            this.lastInterrupter.set(op.s, this.seq)
+        }
         try {
             this.run(op)
         } catch (error) {
@@ -713,11 +717,11 @@ export class World {
                         ? sub?.playingBefore === true
                         : atCreation &&
                           sub !== undefined &&
-                          ((sub.type !== 'group' && this.reducedMotion) ||
+                          (this.reducedMotion ||
                               (sub.type === 'follow' &&
                                   (op.k === 'set' || op.k === 'add')))
                 break
-            case 'interrupted':
+            case 'interrupted': {
                 if (
                     sameSubject &&
                     !atCreation &&
@@ -729,8 +733,15 @@ export class World {
                     )
                     return
                 }
-                legal = sameSubject && !atCreation && INTERRUPTERS.has(op.k)
+                const interruptedAt = this.lastInterrupter.get(rec.sid)
+                legal =
+                    (sameSubject && !atCreation && INTERRUPTERS.has(op.k)) ||
+                    (op.k === 'frame' &&
+                        interruptedAt !== undefined &&
+                        interruptedAt > rec.createdSeq &&
+                        interruptedAt < this.seq)
                 break
+            }
             case 'skipped':
                 legal =
                     atCreation &&
