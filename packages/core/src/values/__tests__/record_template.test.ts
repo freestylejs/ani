@@ -26,7 +26,7 @@ describe('record codec', () => {
     })
 
     it('rejects non-objects and null', () => {
-        expectMismatch(() => xy.encode(null))
+        expectMismatch(() => xy.encode(null as never))
         expectMismatch(() => xy.encode('1px' as never))
     })
 

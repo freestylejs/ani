@@ -20,6 +20,7 @@ import type { AnimationNode } from '~/nodes'
 import { createStyleSheet, type Resolver } from '~/style/create_sheet'
 import { createStyleWriter, type StyleWriter } from '~/style/writer'
 import { END_TOLERANCE } from '~/utils/time'
+import { isFiniteNumber, MAX_REENTRY, reportAsync } from './shared'
 
 declare const __ANI_DEV__: boolean
 
@@ -132,18 +133,6 @@ interface Binding {
 }
 
 /** Times one listener may be on the stack: its call plus one nested notification. */
-const MAX_REENTRY = 2
-
-function reportAsync(error: unknown): void {
-    queueMicrotask(() => {
-        throw error
-    })
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value)
-}
-
 function clamp01(value: number): number {
     return value < 0 ? 0 : value > 1 ? 1 : value
 }
