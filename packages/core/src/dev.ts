@@ -39,7 +39,7 @@ export function devWarn(
     console.warn(`[${code}] ${message} ${docsFor(code)}`)
 }
 
-const propertyOwners = new WeakMap<object, Map<string, object>>()
+const propertyOwners = new WeakMap<object, Map<string, WeakRef<object>>>()
 
 /**
  * Dev check for `ANI_DEV_CONFLICTING_WRITERS`: records `writer` as the owner
@@ -57,9 +57,12 @@ export function noteWriter(
         owners = new Map()
         propertyOwners.set(target, owners)
     }
-    const owner = owners.get(property)
+    const owner = owners.get(property)?.deref()
     if (owner === undefined) {
-        owners.set(property, writer)
+        // WeakRef: the writer owns the element's CSSStyleDeclaration, so a
+        // strong value here would keep the element and writer alive through
+        // the WeakMap's value after unbind.
+        owners.set(property, new WeakRef(writer))
         return
     }
     if (owner === writer) return

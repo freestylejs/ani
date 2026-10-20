@@ -6,7 +6,13 @@
     "license": "MIT",
     "type": "module",
     "keywords": ["animation", "core"],
-    "sideEffects": false,
+    "sideEffects": [
+        "./src/env.ts",
+        "./dist/env.js",
+        "./dist/env.cjs",
+        "./dist/dev/env.js",
+        "./dist/dev/env.cjs"
+    ],
     "private": false,
     "publishConfig": {
         "access": "public"
