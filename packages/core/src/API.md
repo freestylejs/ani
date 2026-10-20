@@ -1252,6 +1252,6 @@ The root export list is intentional:
 - `DEV` is kept public: external error factories can use the same
   `DEV ? longMessage : ''` pattern as core and keep production messages minimal.
 
-Internal engine types (`PlanRuntime`, `ValueStylePlan`, `ValueStyleFrame`,
-`compilePlan`) are not exported. `dist/index.d.ts` contains no internal name;
-the root entry is the public surface.
+Internal engine types (the compiled plan/runtime and the value-style
+structures) are not exported. `dist/index.d.ts` contains no internal name; the
+root entry is the public surface.
