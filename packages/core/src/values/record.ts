@@ -1,5 +1,7 @@
 import { type Codec, type CodecValue, mismatch } from './codec'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Composes codecs into one codec for an object. Members are laid out in
  * `Object.keys(codecs)` order and `size` is the sum of the member sizes.
@@ -21,16 +23,22 @@ export function record<R extends Record<string, Codec<unknown>>>(
         encode(value) {
             if (typeof value !== 'object' || value === null) {
                 throw mismatch(
-                    `A record value must be an object, received ${
-                        value === null ? 'null' : typeof value
-                    }.`
+                    __ANI_DEV__
+                        ? `A record value must be an object, received ${
+                              value === null ? 'null' : typeof value
+                          }.`
+                        : ''
                 )
             }
             const source = value as Record<string, unknown>
             const encoded: number[] = []
             keys.forEach((key, index) => {
                 if (!Object.hasOwn(source, key)) {
-                    throw mismatch(`Record value is missing the key "${key}".`)
+                    throw mismatch(
+                        __ANI_DEV__
+                            ? `Record value is missing the key "${key}".`
+                            : ''
+                    )
                 }
                 const member = members[index] as Codec<unknown>
                 for (const item of member.encode(source[key])) {

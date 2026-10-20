@@ -7,6 +7,9 @@ import {
     TimelineBase,
     toIterationCount,
 } from '~/ani/core'
+import { devKey, devWarn } from '~/dev'
+
+declare const __ANI_DEV__: boolean
 
 export type { RunResult }
 
@@ -151,7 +154,9 @@ function validateFrom(from: unknown, name: string): Record<string, number> {
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            `[Timeline] \`${name}\` must be a record of numbers (CSS property names); the WAAPI engine does not accept arrays.`
+            __ANI_DEV__
+                ? `[Timeline] \`${name}\` must be a record of numbers (CSS property names); the WAAPI engine does not accept arrays.`
+                : ''
         )
     }
     const record = from as Record<string, unknown>
@@ -161,7 +166,9 @@ function validateFrom(from: unknown, name: string): Record<string, number> {
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] \`${name}\` "${key}" must be a finite number, received ${String(value)}.`
+                __ANI_DEV__
+                    ? `[Timeline] \`${name}\` "${key}" must be a finite number, received ${String(value)}.`
+                    : ''
             )
         }
     }
@@ -181,7 +188,9 @@ function resolveOffsets(
         throw createAniError(
             RangeError,
             'ANI_INVALID_CONFIG',
-            `[Timeline] \`stagger\` must be a finite number >= 0 (seconds) or a function, received ${String(stagger)}.`
+            __ANI_DEV__
+                ? `[Timeline] \`stagger\` must be a finite number >= 0 (seconds) or a function, received ${String(stagger)}.`
+                : ''
         )
     }
     for (let i = 0; i < count; i++) {
@@ -195,7 +204,9 @@ function resolveOffsets(
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] \`stagger\` offset of target #${i} must be a finite number >= 0 (seconds), received ${String(offset)}.`
+                __ANI_DEV__
+                    ? `[Timeline] \`stagger\` offset of target #${i} must be a finite number >= 0 (seconds), received ${String(offset)}.`
+                    : ''
             )
         }
         offsets[i] = offset
@@ -473,14 +484,25 @@ export class WebAniTimeline<G extends Groupable>
         targets: Element | ArrayLike<Element>,
         config: WaapiPlayConfig<G>
     ): Promise<RunResult> {
-        if (this._disposed) return Promise.resolve('disposed')
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `play()` on a disposed timeline is a no-op.',
+                    devKey(this, 'play')
+                )
+            }
+            return Promise.resolve('disposed')
+        }
 
         // ---- validate & prepare (no state is touched until this succeeds)
         if (this._endless && !this._endlessBody) {
             throw createAniError(
                 RangeError,
                 'ANI_UNREACHABLE_NODE',
-                '[Timeline] The WAAPI engine can only play an endless loop (`loop(child, Infinity)`) as the root node. Use the RAF engine (`rafTimeline`) for other trees with an endless loop.'
+                __ANI_DEV__
+                    ? '[Timeline] The WAAPI engine can only play an endless loop (`loop(child, Infinity)`) as the root node. Use the RAF engine (`rafTimeline`) for other trees with an endless loop.'
+                    : ''
             )
         }
         const elements = toElements(targets)
@@ -489,7 +511,9 @@ export class WebAniTimeline<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `play` needs at least one target.'
+                __ANI_DEV__
+                    ? '[Timeline] `play` needs at least one target.'
+                    : ''
             )
         }
         const delay = config.delay ?? 0
@@ -497,7 +521,9 @@ export class WebAniTimeline<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] \`delay\` must be a finite number >= 0 (seconds), received ${String(delay)}.`
+                __ANI_DEV__
+                    ? `[Timeline] \`delay\` must be a finite number >= 0 (seconds), received ${String(delay)}.`
+                    : ''
             )
         }
         const offsets = resolveOffsets(config.stagger, count)
@@ -678,6 +704,16 @@ export class WebAniTimeline<G extends Groupable>
      * Pauses a `PLAYING` timeline (no-op in any other status).
      */
     public pause(): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `pause()` on a disposed timeline is a no-op.',
+                    devKey(this, 'pause')
+                )
+            }
+            return
+        }
         const run = this._run
         if (!run || this._status !== 'PLAYING') return
         for (const animation of run.animations) {
@@ -691,6 +727,16 @@ export class WebAniTimeline<G extends Groupable>
      * Resumes a `PAUSED` timeline (no-op in any other status).
      */
     public resume(): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `resume()` on a disposed timeline is a no-op.',
+                    devKey(this, 'resume')
+                )
+            }
+            return
+        }
         const run = this._run
         if (!run || this._status !== 'PAUSED') return
         for (const animation of run.animations) {
@@ -705,13 +751,25 @@ export class WebAniTimeline<G extends Groupable>
      * target keeps its own delay offset. No-op without a run.
      */
     public seek(targetTime: number): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Timeline] `seek()` on a disposed timeline is a no-op.',
+                    devKey(this, 'seek')
+                )
+            }
+            return
+        }
         const run = this._run
         if (!run) return
         if (typeof targetTime !== 'number' || Number.isNaN(targetTime)) {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] seek time must be a number, received ${targetTime}.`
+                __ANI_DEV__
+                    ? `[Timeline] seek time must be a number, received ${targetTime}.`
+                    : ''
             )
         }
         // a tree with an endless loop has no end to clamp to (a finite tree
@@ -721,7 +779,9 @@ export class WebAniTimeline<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] seek time must be finite: an endless run has no end to seek to.'
+                __ANI_DEV__
+                    ? '[Timeline] seek time must be finite: an endless run has no end to seek to.'
+                    : ''
             )
         }
         const seekTime = Math.max(
@@ -745,7 +805,9 @@ export class WebAniTimeline<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Timeline] `finish()` is not available for an endless run (`repeat: Infinity` or an endless loop); use `cancel()`.'
+                __ANI_DEV__
+                    ? '[Timeline] `finish()` is not available for an endless run (`repeat: Infinity` or an endless loop); use `cancel()`.'
+                    : ''
             )
         }
         for (const animation of run.animations) animation.finish()

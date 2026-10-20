@@ -4,6 +4,8 @@ import { type BuiltPlan, buildPlan, unstableLoops } from '../plan_builder'
 import { loopEnds, type PlanLoop, planStateOf } from '../plan_state'
 import type { ExecutionPlan, ExecutionSegment, Groupable } from './core_types'
 
+declare const __ANI_DEV__: boolean
+
 export interface TimelineCommonConfig<G extends Groupable> {
     /**
      * Starting dynamic value.
@@ -58,7 +60,9 @@ export function resolveReducedMotionPolicy(
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_OPTIONS',
-                `[Timeline] \`reducedMotion.maxDuration\` must be a finite number > 0 (seconds), received ${String(maxDuration)}.`
+                __ANI_DEV__
+                    ? `[Timeline] \`reducedMotion.maxDuration\` must be a finite number > 0 (seconds), received ${String(maxDuration)}.`
+                    : ''
             )
         }
         return { maxDuration }
@@ -66,7 +70,9 @@ export function resolveReducedMotionPolicy(
     throw createAniError(
         TypeError,
         'ANI_INVALID_OPTIONS',
-        `[Timeline] \`reducedMotion\` must be 'jump', 'ignore' or { maxDuration }, received ${String(policy)}.`
+        __ANI_DEV__
+            ? `[Timeline] \`reducedMotion\` must be 'jump', 'ignore' or { maxDuration }, received ${String(policy)}.`
+            : ''
     )
 }
 
@@ -199,14 +205,18 @@ export abstract class TimelineBase<G extends Groupable> {
             throw createAniError(
                 Error,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] Keyframe mismatch: Expected ${slotCount}, received ${keyframes.length}.`
+                __ANI_DEV__
+                    ? `[Timeline] Keyframe mismatch: Expected ${slotCount}, received ${keyframes.length}.`
+                    : ''
             )
         }
         if (durations && durations.length !== slotCount) {
             throw createAniError(
                 Error,
                 'ANI_INVALID_CONFIG',
-                `[Timeline] Duration mismatch: Expected ${slotCount}, received ${durations.length}.`
+                __ANI_DEV__
+                    ? `[Timeline] Duration mismatch: Expected ${slotCount}, received ${durations.length}.`
+                    : ''
             )
         }
 

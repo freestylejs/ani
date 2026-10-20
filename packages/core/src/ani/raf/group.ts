@@ -8,6 +8,7 @@ import {
 } from '~/ani/core'
 import { compilePlan, PlanRuntime } from '~/ani/core/plan_runtime'
 import { resolveGroup } from '~/ani/core/resolver'
+import { devKey, devWarn } from '~/dev'
 import { createAniError } from '~/error'
 import {
     type Animatable,
@@ -19,6 +20,8 @@ import { createStyleSheet, type Resolver } from '~/style/create_sheet'
 import { createStyleWriter, type StyleWriter } from '~/style/writer'
 import { END_TOLERANCE } from '~/utils/time'
 import type { TimelineStatus } from './timeline'
+
+declare const __ANI_DEV__: boolean
 
 export interface RafGroupOptions {
     /**
@@ -222,7 +225,9 @@ function checkOffset(offset: unknown, index: number): number {
         throw createAniError(
             RangeError,
             'ANI_INVALID_CONFIG',
-            `[Group] \`stagger\` must be a finite number >= 0 (seconds), received ${offset} for target ${index}.`
+            __ANI_DEV__
+                ? `[Group] \`stagger\` must be a finite number >= 0 (seconds), received ${offset} for target ${index}.`
+                : ''
         )
     }
     return offset
@@ -242,7 +247,9 @@ function readFrom(
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            `[Group] \`from\` must be an array or a record of numbers (target ${index}).`
+            __ANI_DEV__
+                ? `[Group] \`from\` must be an array or a record of numbers (target ${index}).`
+                : ''
         )
     }
     const values = new Array<number>(laneCount)
@@ -251,7 +258,9 @@ function readFrom(
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[Group] \`from\` of target ${index} must be an array of ${laneCount} numbers like the first target.`
+                __ANI_DEV__
+                    ? `[Group] \`from\` of target ${index} must be an array of ${laneCount} numbers like the first target.`
+                    : ''
             )
         }
         for (let i = 0; i < laneCount; i++) {
@@ -260,7 +269,9 @@ function readFrom(
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[Group] \`from\` [${i}] must be a finite number, received ${value} (target ${index}).`
+                    __ANI_DEV__
+                        ? `[Group] \`from\` [${i}] must be a finite number, received ${value} (target ${index}).`
+                        : ''
                 )
             }
             values[i] = value
@@ -272,7 +283,9 @@ function readFrom(
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            `[Group] \`from\` of target ${index} must be a record with the keys of the first target.`
+            __ANI_DEV__
+                ? `[Group] \`from\` of target ${index} must be a record with the keys of the first target.`
+                : ''
         )
     }
     for (let i = 0; i < laneCount; i++) {
@@ -283,7 +296,9 @@ function readFrom(
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[Group] \`from\` "${keys[i]}" must be a finite number, received ${value} (target ${index}).`
+                __ANI_DEV__
+                    ? `[Group] \`from\` "${keys[i]}" must be a finite number, received ${value} (target ${index}).`
+                    : ''
             )
         }
         values[i] = value
@@ -301,21 +316,27 @@ function resolveVelocitySeed(
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            '[Group] `velocity` must be an array or record shaped like `from`.'
+            __ANI_DEV__
+                ? '[Group] `velocity` must be an array or record shaped like `from`.'
+                : ''
         )
     }
     if (keys === null && !Array.isArray(velocity)) {
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            '[Group] `velocity` must be an array when `from` is an array.'
+            __ANI_DEV__
+                ? '[Group] `velocity` must be an array when `from` is an array.'
+                : ''
         )
     }
     if (keys !== null && Array.isArray(velocity)) {
         throw createAniError(
             TypeError,
             'ANI_INVALID_CONFIG',
-            '[Group] `velocity` must be a record when `from` is a record.'
+            __ANI_DEV__
+                ? '[Group] `velocity` must be a record when `from` is a record.'
+                : ''
         )
     }
     const source = velocity as Record<string, unknown>
@@ -327,7 +348,9 @@ function resolveVelocitySeed(
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[Group] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
+                __ANI_DEV__
+                    ? `[Group] \`velocity\` ${keys ? `"${keys[i]}"` : `[${i}]`} must be a finite number, received ${value}.`
+                    : ''
             )
         }
         seed[i] = value
@@ -421,7 +444,9 @@ class RafAniGroup<G extends Groupable>
                 throw createAniError(
                     RangeError,
                     'ANI_INVALID_CONFIG',
-                    `[Group] \`count\` must be a positive integer, received ${requested}.`
+                    __ANI_DEV__
+                        ? `[Group] \`count\` must be a positive integer, received ${requested}.`
+                        : ''
                 )
             }
             return requested
@@ -431,7 +456,9 @@ class RafAniGroup<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Group] `count` is required when no array of targets is bound; `bindAt` bindings do not set the count.'
+                __ANI_DEV__
+                    ? '[Group] `count` is required when no array of targets is bound; `bindAt` bindings do not set the count.'
+                    : ''
             )
         }
         return bound
@@ -512,7 +539,7 @@ class RafAniGroup<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Group] `play()` needs a config object.'
+                __ANI_DEV__ ? '[Group] `play()` needs a config object.' : ''
             )
         }
         const count = this._resolveCount(config.count)
@@ -521,7 +548,9 @@ class RafAniGroup<G extends Groupable>
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Group] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
+                __ANI_DEV__
+                    ? `[Group] \`delay\` must be a finite number >= 0 (seconds), received ${delay}.`
+                    : ''
             )
         }
         const offsets = this._resolveOffsets(count)
@@ -536,7 +565,9 @@ class RafAniGroup<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Group] `from` must be an array or a record of numbers (or a function returning one).'
+                __ANI_DEV__
+                    ? '[Group] `from` must be an array or a record of numbers (or a function returning one).'
+                    : ''
             )
         }
         const { keyMap, values: firstValues } = resolveGroup(first as Groupable)
@@ -545,7 +576,9 @@ class RafAniGroup<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                '[Group] `__proto__` can not be used as an animated property name.'
+                __ANI_DEV__
+                    ? '[Group] `__proto__` can not be used as an animated property name.'
+                    : ''
             )
         }
         const laneCount = firstValues.length
@@ -850,7 +883,9 @@ class RafAniGroup<G extends Groupable>
             createAniError(
                 TypeError,
                 'ANI_INVALID_OPTIONS',
-                '[Group] `bind()` can only style record values; positional (array) values have no style property.'
+                __ANI_DEV__
+                    ? '[Group] `bind()` can only style record values; positional (array) values have no style property.'
+                    : ''
             )
         )
     }
@@ -967,7 +1002,16 @@ class RafAniGroup<G extends Groupable>
      * `play()` replaces the run, `'reset'` or `'disposed'`.
      */
     public play(config: RafGroupPlayConfig<G>): Promise<RunResult> {
-        if (this._disposed) return Promise.resolve('disposed')
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `play()` on a disposed group is a no-op.',
+                    devKey(this, 'play')
+                )
+            }
+            return Promise.resolve('disposed')
+        }
 
         // ---- validate & prepare (no state is touched until this succeeds)
         const policy = this._reducedMotion
@@ -1038,6 +1082,16 @@ class RafAniGroup<G extends Groupable>
      * Pauses a `PLAYING` group (no-op in any other status).
      */
     public pause(): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `pause()` on a disposed group is a no-op.',
+                    devKey(this, 'pause')
+                )
+            }
+            return
+        }
         if (this._status !== 'PLAYING') return
         this._status = 'PAUSED'
         this._clock.unsubscribe(this)
@@ -1047,7 +1101,17 @@ class RafAniGroup<G extends Groupable>
      * Resumes a `PAUSED` group (no-op in any other status).
      */
     public resume(): void {
-        if (this._disposed || this._status !== 'PAUSED' || !this._run) return
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `resume()` on a disposed group is a no-op.',
+                    devKey(this, 'resume')
+                )
+            }
+            return
+        }
+        if (this._status !== 'PAUSED' || !this._run) return
         this._status = 'PLAYING'
         this._clock.subscribe(this)
     }
@@ -1096,20 +1160,34 @@ class RafAniGroup<G extends Groupable>
      * listeners are notified once. No-op before the first `play()`.
      */
     public seek(time: number): void {
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `seek()` on a disposed group is a no-op.',
+                    devKey(this, 'seek')
+                )
+            }
+            return
+        }
         const run = this._run
         if (!run) return
         if (typeof time !== 'number' || Number.isNaN(time)) {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                `[Group] seek time must be a number, received ${time}.`
+                __ANI_DEV__
+                    ? `[Group] seek time must be a number, received ${time}.`
+                    : ''
             )
         }
         if (time === Infinity && !Number.isFinite(run.duration)) {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_CONFIG',
-                '[Group] seek time must be finite: an endless group has no end to seek to.'
+                __ANI_DEV__
+                    ? '[Group] seek time must be finite: an endless group has no end to seek to.'
+                    : ''
             )
         }
         if (this._status === 'PLAYING' || this._status === 'ENDED') {
@@ -1158,7 +1236,16 @@ class RafAniGroup<G extends Groupable>
         targets: ArrayLike<{ style: CSSStyleDeclaration }>,
         options?: RafGroupBindOptions
     ): () => void {
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `bind()` on a disposed group is a no-op.',
+                    devKey(this, 'bind')
+                )
+            }
+            return () => undefined
+        }
         const writers: StyleWriter[] = []
         for (let i = 0; i < targets.length; i++) {
             writers.push(createStyleWriter(targets[i]!))
@@ -1195,11 +1282,22 @@ class RafAniGroup<G extends Groupable>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_OPTIONS',
-                `[Group] \`index\` must be a non-negative integer, received ${index}.`
+                __ANI_DEV__
+                    ? `[Group] \`index\` must be a non-negative integer, received ${index}.`
+                    : ''
             )
         }
         const writer = createStyleWriter(target)
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `bindAt()` on a disposed group is a no-op.',
+                    devKey(this, 'bindAt')
+                )
+            }
+            return () => undefined
+        }
         const writers: StyleWriter[] = []
         writers[index] = writer
         return this._attach({ writers, resolver: options?.resolver, index })
@@ -1213,7 +1311,16 @@ class RafAniGroup<G extends Groupable>
      * @returns Unsubscribe.
      */
     public onUpdate(listener: Listener<G>): () => void {
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[Group] `onUpdate()` on a disposed group is a no-op.',
+                    devKey(this, 'onUpdate')
+                )
+            }
+            return () => undefined
+        }
         this._listeners.add(listener)
         return () => {
             this._listeners.delete(listener)

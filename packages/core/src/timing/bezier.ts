@@ -5,6 +5,8 @@ import {
     type TimingFunctionContext,
 } from './function'
 
+declare const __ANI_DEV__: boolean
+
 export interface BezierTimingFunctionOpt {
     p2: Coord
     p3: Coord
@@ -41,7 +43,9 @@ export class BezierTimingFunction extends TimingFunction {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                '[BezierTimingFunction] control point x values must be within [0, 1].'
+                __ANI_DEV__
+                    ? '[BezierTimingFunction] control point x values must be within [0, 1].'
+                    : ''
             )
         }
         const { p2, p3 } = this.opt

@@ -1,6 +1,8 @@
 import { createAniError } from '~/error'
 import { TimingFunction, type TimingFunctionContext } from './function'
 
+declare const __ANI_DEV__: boolean
+
 export interface SpringTimingFunctionOpt {
     /**
      * Mass constant.
@@ -29,7 +31,9 @@ export class SpringTimingFunction extends TimingFunction {
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                `[SpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${opt.m}, k=${opt.k}, c=${opt.c}.`
+                __ANI_DEV__
+                    ? `[SpringTimingFunction] requires m > 0, k > 0 and c >= 0, received m=${opt.m}, k=${opt.k}, c=${opt.c}.`
+                    : ''
             )
         }
         const DEFAULT_TOLERANCE = 1e-3 as const

@@ -1,5 +1,7 @@
 import { type Codec, formatNumber, mismatch, NUMBER_SOURCE } from './codec'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Units a length codec can carry. There is no unit conversion: a codec only
  * ever parses and prints its own unit.
@@ -40,7 +42,9 @@ export function length(unit: LengthUnit): Codec<string> {
         encode(value) {
             if (typeof value !== 'string') {
                 throw mismatch(
-                    `A length must be a string, received ${typeof value}.`
+                    __ANI_DEV__
+                        ? `A length must be a string, received ${typeof value}.`
+                        : ''
                 )
             }
             const text = value.trim().toLowerCase()
@@ -48,12 +52,18 @@ export function length(unit: LengthUnit): Codec<string> {
             if (match !== null) return [normalizeZero(Number(match[1]))]
             const zero = unitless.exec(text)
             if (zero !== null && Number(zero[1]) === 0) return [0]
-            throw mismatch(`Cannot parse "${value}" as a length in "${unit}".`)
+            throw mismatch(
+                __ANI_DEV__
+                    ? `Cannot parse "${value}" as a length in "${unit}".`
+                    : ''
+            )
         },
         decode(values) {
             if (values.length !== 1) {
                 throw mismatch(
-                    `A length decodes 1 number, received ${values.length}.`
+                    __ANI_DEV__
+                        ? `A length decodes 1 number, received ${values.length}.`
+                        : ''
                 )
             }
             return `${formatNumber(values[0] ?? 0)}${unit}`

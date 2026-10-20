@@ -6,6 +6,8 @@ import {
     type VisibilitySource,
 } from '../loop/clock'
 
+declare const __ANI_DEV__: boolean
+
 export interface ManualClockOptions {
     /** Forwarded to `createClock`. */
     lagThreshold?: number
@@ -125,7 +127,9 @@ export function createManualClock(
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    '[createManualClock] setHidden is unavailable: visibility is disabled (visibility: false).'
+                    __ANI_DEV__
+                        ? '[createManualClock] setHidden is unavailable: visibility is disabled (visibility: false).'
+                        : ''
                 )
             }
             hidden = value

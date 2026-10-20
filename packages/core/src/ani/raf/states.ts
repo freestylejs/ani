@@ -4,6 +4,7 @@ import type {
     ReducedMotionPolicy,
     RunResult,
 } from '~/ani/core'
+import { devKey, devWarn } from '~/dev'
 import { createAniError } from '~/error'
 import type { AnimationClockInterface } from '~/loop'
 import type { AnimationNode, ExtractAnimationNode } from '~/nodes'
@@ -13,6 +14,8 @@ import {
     type RafTimelineConfig,
     rafTimeline,
 } from './timeline'
+
+declare const __ANI_DEV__: boolean
 
 export type AnimationStateShape = Record<string, AnimationNode<Groupable>>
 
@@ -172,21 +175,25 @@ export function createStates<AnimationStates extends AnimationStateShape>(
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            '[createStates] `initialFrom` was renamed `initialValue`.'
+            __ANI_DEV__
+                ? '[createStates] `initialFrom` was renamed `initialValue`.'
+                : ''
         )
     }
     if (config.initialValue === undefined) {
         throw createAniError(
             TypeError,
             'ANI_INVALID_OPTIONS',
-            '[createStates] `initialValue` is required.'
+            __ANI_DEV__ ? '[createStates] `initialValue` is required.' : ''
         )
     }
     if (!Object.hasOwn(config.states, config.initial as string)) {
         throw createAniError(
             RangeError,
             'ANI_UNKNOWN_STATE',
-            `[createStates] Unknown initial state "${String(config.initial)}". Available states: ${Object.keys(config.states).join(', ')}.`
+            __ANI_DEV__
+                ? `[createStates] Unknown initial state "${String(config.initial)}". Available states: ${Object.keys(config.states).join(', ')}.`
+                : ''
         )
     }
     const initialValue = Object.freeze(
@@ -240,8 +247,22 @@ export function createStates<AnimationStates extends AnimationStateShape>(
     // Bindings and `onUpdate` listeners of the machine, re-attached to every
     // new timeline. A replaced timeline drops its own when it is disposed.
     const subscriptions = new Set<Subscription>()
-    const subscribe = (attach: Subscription['attach']): (() => void) => {
-        if (disposed) return () => undefined
+    // Key owner for dev warnings: one per state machine, stable across timelines.
+    const devOwner = {}
+    const subscribe = (
+        method: string,
+        attach: Subscription['attach']
+    ): (() => void) => {
+        if (disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    `[createStates] \`${method}()\` on a disposed state machine is a no-op.`,
+                    devKey(devOwner, method)
+                )
+            }
+            return () => undefined
+        }
         const subscription: Subscription = {
             attach,
             detach: attach(Timeline),
@@ -278,9 +299,9 @@ export function createStates<AnimationStates extends AnimationStateShape>(
             ) as unknown as StateController<AnimationStates>['value']
         },
         bind: (target, options) =>
-            subscribe((timeline) => timeline.bind(target, options)),
+            subscribe('bind', (timeline) => timeline.bind(target, options)),
         onUpdate: (callback) =>
-            subscribe((timeline) =>
+            subscribe('onUpdate', (timeline) =>
                 timeline.onUpdate(
                     callback as Parameters<typeof timeline.onUpdate>[0]
                 )
@@ -291,15 +312,28 @@ export function createStates<AnimationStates extends AnimationStateShape>(
                 throw createAniError(
                     TypeError,
                     'ANI_REMOVED_API',
-                    '[createStates] `transitionTo` takes two arguments. Pass `interrupt` in the config: `transitionTo(state, { ...config, interrupt })`.'
+                    __ANI_DEV__
+                        ? '[createStates] `transitionTo` takes two arguments. Pass `interrupt` in the config: `transitionTo(state, { ...config, interrupt })`.'
+                        : ''
                 )
             }
-            if (disposed) return Promise.resolve('disposed')
+            if (disposed) {
+                if (__ANI_DEV__) {
+                    devWarn(
+                        'ANI_DEV_DISPOSED_USE',
+                        '[createStates] `transitionTo()` on a disposed state machine is a no-op.',
+                        devKey(devOwner, 'transitionTo')
+                    )
+                }
+                return Promise.resolve('disposed')
+            }
             if (!Object.hasOwn(config.states, newState as string)) {
                 throw createAniError(
                     RangeError,
                     'ANI_UNKNOWN_STATE',
-                    `[createStates] Unknown state "${String(newState)}". Available states: ${Object.keys(config.states).join(', ')}.`
+                    __ANI_DEV__
+                        ? `[createStates] Unknown state "${String(newState)}". Available states: ${Object.keys(config.states).join(', ')}.`
+                        : ''
                 )
             }
 

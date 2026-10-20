@@ -3,6 +3,8 @@ import { createAniError } from '~/error'
 import { TimingFunction } from '~/timing'
 import type { Footprint } from './footprint'
 
+declare const __ANI_DEV__: boolean
+
 export type AnimationId = string
 export type AnimationNodeType = string
 export type AnimationDuration = number
@@ -40,7 +42,9 @@ export function assertNoExtraArguments(
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            `[${caller}] Unexpected extra argument. Pass everything in one options object: ${form}.`
+            __ANI_DEV__
+                ? `[${caller}] Unexpected extra argument. Pass everything in one options object: ${form}.`
+                : ''
         )
     }
 }
@@ -65,7 +69,9 @@ export function parseNodeOptions(
         throw createAniError(
             TypeError,
             'ANI_REMOVED_API',
-            `[${caller}] Expected an options object, received ${isTimingFunction(options) ? 'a timing function' : typeof options}. Use ${form}.`
+            __ANI_DEV__
+                ? `[${caller}] Expected an options object, received ${isTimingFunction(options) ? 'a timing function' : typeof options}. Use ${form}.`
+                : ''
         )
     }
     for (const key of Object.keys(options)) {
@@ -73,7 +79,9 @@ export function parseNodeOptions(
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_NODE',
-                `[${caller}] Unknown option "${key}". Allowed options are "timing" and "id".`
+                __ANI_DEV__
+                    ? `[${caller}] Unknown option "${key}". Allowed options are "timing" and "id".`
+                    : ''
             )
         }
     }

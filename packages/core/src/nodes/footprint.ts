@@ -2,6 +2,8 @@ import type { Groupable } from '~/ani/core'
 import { createAniError } from '~/error'
 import { END_TOLERANCE } from '~/utils/time'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * What a node writes, in time relative to its own start. Composition nodes
  * use it to reject trees in which an endless loop shares a property with
@@ -128,7 +130,9 @@ export function assertNoEndlessOverlap(
                 throw createAniError(
                     RangeError,
                     'ANI_UNREACHABLE_NODE',
-                    `[${caller}] An endless loop and another animation both write "${name}" at the same time. An endless loop owns its properties from its start on: animate "${name}" in only one of them, or give the loop a finite count.`
+                    __ANI_DEV__
+                        ? `[${caller}] An endless loop and another animation both write "${name}" at the same time. An endless loop owns its properties from its start on: animate "${name}" in only one of them, or give the loop a finite count.`
+                        : ''
                 )
             }
         }

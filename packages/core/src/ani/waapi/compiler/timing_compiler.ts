@@ -5,6 +5,8 @@ import {
     type TimingFunction,
 } from '~/timing'
 
+declare const __ANI_DEV__: boolean
+
 /**
  * Converts a TimingFunction instance into a WAAPI easing string.
  *
@@ -28,7 +30,9 @@ export function compileTiming(
             throw createAniError(
                 RangeError,
                 'ANI_INVALID_NODE',
-                '[compileTiming] cubic-bezier x values must be within [0, 1] per the CSS spec.'
+                __ANI_DEV__
+                    ? '[compileTiming] cubic-bezier x values must be within [0, 1] per the CSS spec.'
+                    : ''
             )
         }
         return `cubic-bezier(${p2.x}, ${p2.y}, ${p3.x}, ${p3.y})`

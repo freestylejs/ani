@@ -1,4 +1,5 @@
 import { prefersReducedMotion, type RunResult } from '~/ani/core'
+import { devKey, devWarn } from '~/dev'
 import { createAniError } from '~/error'
 import {
     type Animatable,
@@ -9,6 +10,8 @@ import { ani } from '~/nodes'
 import type { Resolver } from '~/style/create_sheet'
 import { timing as presets } from '~/timing'
 import { RafAniTimeline } from './timeline'
+
+declare const __ANI_DEV__: boolean
 
 /** Spring constants of a {@link follow}er, validated like `dynamicSpring`. */
 export interface FollowSpring {
@@ -123,13 +126,17 @@ function resolveFollowReducedMotion(policy: unknown): 'jump' | 'ignore' {
         throw createAniError(
             TypeError,
             'ANI_INVALID_OPTIONS',
-            `[follow] \`reducedMotion\` must be 'jump' or 'ignore'; a spring has no duration, received ${JSON.stringify(policy)}.`
+            __ANI_DEV__
+                ? `[follow] \`reducedMotion\` must be 'jump' or 'ignore'; a spring has no duration, received ${JSON.stringify(policy)}.`
+                : ''
         )
     }
     throw createAniError(
         TypeError,
         'ANI_INVALID_OPTIONS',
-        `[follow] \`reducedMotion\` must be 'jump' or 'ignore', received ${String(policy)}.`
+        __ANI_DEV__
+            ? `[follow] \`reducedMotion\` must be 'jump' or 'ignore', received ${String(policy)}.`
+            : ''
     )
 }
 
@@ -182,7 +189,9 @@ class FollowerImpl<G extends Record<string, number>>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_OPTIONS',
-                `[follow] \`initial\` must be a record of numbers, received ${describe(initial)}.`
+                __ANI_DEV__
+                    ? `[follow] \`initial\` must be a record of numbers, received ${describe(initial)}.`
+                    : ''
             )
         }
         const keys = Object.keys(initial)
@@ -193,7 +202,9 @@ class FollowerImpl<G extends Record<string, number>>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    '[follow] `__proto__` can not be used as a property name.'
+                    __ANI_DEV__
+                        ? '[follow] `__proto__` can not be used as a property name.'
+                        : ''
                 )
             }
             const value = (initial as Record<string, unknown>)[key]
@@ -201,7 +212,9 @@ class FollowerImpl<G extends Record<string, number>>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
-                    `[follow] \`initial\` "${key}" must be a finite number, received ${String(value)}.`
+                    __ANI_DEV__
+                        ? `[follow] \`initial\` "${key}" must be a finite number, received ${String(value)}.`
+                        : ''
                 )
             }
             start[key] = value
@@ -277,7 +290,16 @@ class FollowerImpl<G extends Record<string, number>>
     set(target: Partial<G>, options?: FollowSetOptions<G>): Promise<RunResult> {
         const merged = this._merge(this._target, target, 'set')
         const carried = this._overrideVelocity(options?.velocity)
-        if (this._disposed) return Promise.resolve('disposed')
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[follow] `set()` on a disposed follower is a no-op.',
+                    devKey(this, 'set')
+                )
+            }
+            return Promise.resolve('disposed')
+        }
 
         if (
             this.status === 'IDLE' &&
@@ -320,7 +342,16 @@ class FollowerImpl<G extends Record<string, number>>
 
     jump(value: Partial<G>): void {
         const merged = this._merge(this.value, value, 'jump')
-        if (this._disposed) return
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[follow] `jump()` on a disposed follower is a no-op.',
+                    devKey(this, 'jump')
+                )
+            }
+            return
+        }
         if (this._pendingJump !== null) {
             const prev = this._pendingJump
             this._pendingJump = null
@@ -336,13 +367,31 @@ class FollowerImpl<G extends Record<string, number>>
         target: { style: CSSStyleDeclaration } | HTMLElement,
         options?: { resolver?: Resolver<Record<string, number>> }
     ): () => void {
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[follow] `bind()` on a disposed follower is a no-op.',
+                    devKey(this, 'bind')
+                )
+            }
+            return () => undefined
+        }
         if (this._timeline.value === null) this._prime()
         return this._timeline.bind(target, options)
     }
 
     onUpdate(listener: (frame: FollowFrame<G>) => void): () => void {
-        if (this._disposed) return () => undefined
+        if (this._disposed) {
+            if (__ANI_DEV__) {
+                devWarn(
+                    'ANI_DEV_DISPOSED_USE',
+                    '[follow] `onUpdate()` on a disposed follower is a no-op.',
+                    devKey(this, 'onUpdate')
+                )
+            }
+            return () => undefined
+        }
         this._listeners.add(listener)
         return () => {
             this._listeners.delete(listener)
@@ -447,7 +496,9 @@ class FollowerImpl<G extends Record<string, number>>
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_CONFIG',
-                `[follow] \`${method}()\` ${what} must be a record of numbers, received ${describe(input)}.`
+                __ANI_DEV__
+                    ? `[follow] \`${method}()\` ${what} must be a record of numbers, received ${describe(input)}.`
+                    : ''
             )
         }
         const changes = Object.create(null) as Record<string, number>
@@ -457,7 +508,9 @@ class FollowerImpl<G extends Record<string, number>>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[follow] \`${method}()\` received unknown key "${key}"; keys are fixed by \`initial\` (${this._keys.join(', ')}).`
+                    __ANI_DEV__
+                        ? `[follow] \`${method}()\` received unknown key "${key}"; keys are fixed by \`initial\` (${this._keys.join(', ')}).`
+                        : ''
                 )
             }
             const entry = record[key]
@@ -465,7 +518,9 @@ class FollowerImpl<G extends Record<string, number>>
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_CONFIG',
-                    `[follow] \`${method}()\` ${what} "${key}" must be a finite number, received ${String(entry)}.`
+                    __ANI_DEV__
+                        ? `[follow] \`${method}()\` ${what} "${key}" must be a finite number, received ${String(entry)}.`
+                        : ''
                 )
             }
             changes[key] = entry

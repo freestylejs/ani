@@ -14,6 +14,8 @@ import {
     planStateOf,
 } from './plan_state'
 
+declare const __ANI_DEV__: boolean
+
 /** A plan plus how its segment slots are ordered for overrides. */
 export interface BuiltPlan<G extends Groupable> {
     /** Chronological, stable for equal start times. */
@@ -144,7 +146,9 @@ function endlessError(code: AniErrorCode, reason: string): RangeError {
     return createAniError(
         RangeError,
         code,
-        `[Timeline] An endless loop ${reason}. Give the loop a finite count, or animate the property elsewhere.`
+        __ANI_DEV__
+            ? `[Timeline] An endless loop ${reason}. Give the loop a finite count, or animate the property elsewhere.`
+            : ''
     )
 }
 
@@ -164,7 +168,7 @@ function unfoldable(
         if (loop.count === Infinity) {
             throw endlessError(
                 'ANI_UNREACHABLE_NODE',
-                `overlaps another animation of "${name}"`
+                __ANI_DEV__ ? `overlaps another animation of "${name}"` : ''
             )
         }
         bad.push(loop)
@@ -250,7 +254,9 @@ export function unstableLoops(
         if (loop.count === Infinity) {
             throw endlessError(
                 'ANI_INVALID_CONFIG',
-                'would overrun its iteration with the given `durations`: an iteration must end by the time the next one starts'
+                __ANI_DEV__
+                    ? 'would overrun its iteration with the given `durations`: an iteration must end by the time the next one starts'
+                    : ''
             )
         }
         bad.add(loop)
