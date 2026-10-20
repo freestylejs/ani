@@ -894,7 +894,9 @@ class RafAniGroup<G extends Groupable>
         return sheet
     }
 
-    private _dropBinding(binding: Binding): void {
+    private _dropBinding(binding: Binding, report = false): void {
+        if (binding.writer !== null) binding.writer.release()
+        else for (const writer of binding.writers) writer.release()
         if (binding.index === null) {
             this._bindings.delete(binding)
         } else {
@@ -903,15 +905,17 @@ class RafAniGroup<G extends Groupable>
             if (position !== -1) at.splice(position, 1)
             if (binding.resolver !== undefined) this._atResolved--
         }
-        reportAsync(
-            createAniError(
-                TypeError,
-                'ANI_INVALID_OPTIONS',
-                __ANI_DEV__
-                    ? '[Group] `bind()` can only style record values; positional (array) values have no style property.'
-                    : ''
+        if (report) {
+            reportAsync(
+                createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
+                    __ANI_DEV__
+                        ? '[Group] `bind()` can only style record values; positional (array) values have no style property.'
+                        : ''
+                )
             )
-        )
+        }
     }
 
     private _writeOne(writer: StyleWriter, sheet: Sheet): void {
@@ -938,9 +942,10 @@ class RafAniGroup<G extends Groupable>
     /** Writes the targets of every runtime that changed since the last notification. */
     private _writeChanged(run: Run): void {
         if (run.keys === null) {
-            for (const binding of this._bindings) this._dropBinding(binding)
+            for (const binding of this._bindings)
+                this._dropBinding(binding, true)
             const at = this._atBindings
-            for (let b = 0; b < at.length; b++) this._dropBinding(at[b]!)
+            for (let b = 0; b < at.length; b++) this._dropBinding(at[b]!, true)
             return
         }
 
@@ -1060,7 +1065,7 @@ class RafAniGroup<G extends Groupable>
 
     private _writeAll(run: Run, binding: Binding): void {
         if (run.keys === null) {
-            this._dropBinding(binding)
+            this._dropBinding(binding, true)
             return
         }
         const plan = run.valuePlan!
@@ -1305,8 +1310,8 @@ class RafAniGroup<G extends Groupable>
         this._clear()
         this._settle('disposed')
         this._listeners.clear()
-        this._bindings.clear()
-        this._atBindings.length = 0
+        for (const binding of [...this._bindings]) this._dropBinding(binding)
+        for (const binding of [...this._atBindings]) this._dropBinding(binding)
         this._atResolved = 0
     }
 
@@ -1423,14 +1428,7 @@ class RafAniGroup<G extends Groupable>
         }
         if (this._run) this._writeAll(this._run, binding)
         return () => {
-            if (index === null) {
-                this._bindings.delete(binding)
-                return
-            }
-            const at = this._atBindings
-            const position = at.indexOf(binding)
-            if (position !== -1) at.splice(position, 1)
-            if (binding.resolver !== undefined) this._atResolved--
+            this._dropBinding(binding)
         }
     }
 

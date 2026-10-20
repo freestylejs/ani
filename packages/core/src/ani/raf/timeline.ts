@@ -409,6 +409,7 @@ export class RafAniTimeline<G extends Groupable>
         try {
             if (Array.isArray(group)) {
                 this._bindings.delete(binding)
+                binding.writer.release()
                 throw createAniError(
                     TypeError,
                     'ANI_INVALID_OPTIONS',
@@ -1079,6 +1080,7 @@ export class RafAniTimeline<G extends Groupable>
         this._disposed = true
         this._reset(false)
         this._onUpdateCallbacks.clear()
+        for (const binding of this._bindings) binding.writer.release()
         this._bindings.clear()
     }
 
@@ -1179,6 +1181,7 @@ export class RafAniTimeline<G extends Groupable>
         }
         return () => {
             this._bindings.delete(binding)
+            binding.writer.release()
         }
     }
 

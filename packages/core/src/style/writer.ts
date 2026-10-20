@@ -1,4 +1,4 @@
-import { noteWriter } from '~/dev'
+import { noteWriter, releaseWriter } from '~/dev'
 import { createAniError } from '~/error'
 import {
     VALUE_NUMBER,
@@ -13,6 +13,8 @@ declare const __ANI_DEV__: boolean
 export interface StyleWriter {
     /** Writes the declarations of `style` that changed since this writer's previous write. */
     write(style: Readonly<Record<string, unknown>>): void
+    /** @private Drops this writer's development conflict-tracking entry. */
+    release(): void
     /**
      * @private Writes runtime values through a compiled plan: no style object,
      * no string conversion for unchanged declarations. `transform` is the
@@ -74,6 +76,9 @@ export function createStyleWriter(
     let seen = new Uint8Array(0)
 
     const writer: StyleWriter = {
+        release() {
+            releaseWriter(target, writer)
+        },
         write(style) {
             const cache = (written ??= new Map<string, string>())
             for (const key in style) {
