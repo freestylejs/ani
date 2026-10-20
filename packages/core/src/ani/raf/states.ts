@@ -8,6 +8,7 @@ import { devKey, devWarn } from '~/dev'
 import { createAniError } from '~/error'
 import type { AnimationClockInterface } from '~/loop'
 import type { AnimationNode, ExtractAnimationNode } from '~/nodes'
+import { reportAsync as rethrowAsync } from './shared'
 import {
     type BindOptions,
     type RafTimeline,
@@ -153,12 +154,6 @@ interface Subscription {
 function copyGroup(group: Groupable | null): Groupable | null {
     if (group === null) return null
     return (Array.isArray(group) ? [...group] : { ...group }) as Groupable
-}
-
-function rethrowAsync(error: unknown): void {
-    queueMicrotask(() => {
-        throw error
-    })
 }
 
 /**

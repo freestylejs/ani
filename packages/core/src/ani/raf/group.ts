@@ -28,6 +28,7 @@ import {
     type StyleWriter,
 } from '~/style/writer'
 import { END_TOLERANCE } from '~/utils/time'
+import { isFiniteNumber, MAX_REENTRY, reportAsync } from './shared'
 import type { TimelineStatus } from './timeline'
 
 declare const __ANI_DEV__: boolean
@@ -221,20 +222,9 @@ interface Prepared {
 }
 
 /** Times one listener may be on the stack: its call plus one nested notification. */
-const MAX_REENTRY = 2
 /** Largest array index: `bindAt` keeps its writer at that position of a sparse array. */
 const MAX_INDEX = 2 ** 32 - 2
 const NO_WRITERS: readonly StyleWriter[] = []
-
-function reportAsync(error: unknown): void {
-    queueMicrotask(() => {
-        throw error
-    })
-}
-
-function isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value)
-}
 
 function checkOffset(offset: unknown, index: number): number {
     if (!isFiniteNumber(offset) || offset < 0) {
@@ -1478,8 +1468,9 @@ class RafAniGroup<G extends Groupable>
             return () => undefined
         }
         if (index <= 100_000) {
-            if (this._atWriters[index] !== undefined) this._atDense = false
-            else this._atWriters[index] = writer
+            if (this._atWriters[index] === undefined)
+                this._atWriters[index] = writer
+            else this._atDense = false
         } else {
             this._atDense = false
         }
