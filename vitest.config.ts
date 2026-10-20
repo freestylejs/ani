@@ -2,9 +2,9 @@ import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import { defineConfig } from 'vitest/config'
 
-const bindingFloor = {
+const packageFloor = {
     statements: 92,
-    branches: 80,
+    branches: 85,
     functions: 90,
     lines: 92,
 }
@@ -33,14 +33,15 @@ export default defineConfig({
             // overall 94.3 / 86.5 / 95.1 / 95.0; bindings >= 97.7 / 84.6 /
             // 95.5 / 98.3), so regressions fail CI but noise does not.
             thresholds: {
-                statements: 90,
-                branches: 80,
+                statements: 92,
+                branches: 85,
                 functions: 90,
-                lines: 90,
-                'react/src/**': bindingFloor,
-                'vue/src/**': bindingFloor,
-                'solid/src/**': bindingFloor,
-                'svelte/src/**': bindingFloor,
+                lines: 92,
+                'core/src/**': packageFloor,
+                'react/src/**': packageFloor,
+                'vue/src/**': packageFloor,
+                'solid/src/**': packageFloor,
+                'svelte/src/**': packageFloor,
             },
         },
     },
