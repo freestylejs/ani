@@ -226,7 +226,7 @@ cards.play({ from: { opacity: 0, translateY: 12 } })
 ### Usage & Concepts
 
 -   Target `i` evaluates the plan at `groupTime - offset_i`, clamped to `[0, planDuration]`; before its offset it shows its `from`. `duration` is the plan duration plus the largest offset (one run).
--   Targets with the same offset, `from` values and start velocity share one `PlanRuntime`: evaluation cost is the number of distinct pairs, not N. Style objects are computed once per distinct runtime and frame.
+-   Targets with the same offset, `from` values and start velocity share one evaluation: cost is the number of distinct pairs, not N. Style objects are computed once per distinct runtime and frame.
 -   `play(config)` validates synchronously (nothing changes on failure) and returns a promise that resolves once per run: `'ended'` (last target finished, after repeats), `'interrupted'`, `'reset'` or `'disposed'`. `ENDED` is notified once per run.
 -   `count` defaults to the length of live array bindings (`bind(targets)`); `bindAt` bindings never set the count. `delay` is in **seconds**. `repeat` repeats the whole group run, offsets included.
 -   `play()` over a `PLAYING` group starts from the config's `from`; each target inherits its own current velocity unless `velocity` is given.
@@ -1239,3 +1239,19 @@ function createAniError<E extends Error>(
   options?: ErrorOptions
 ): E & { code: AniErrorCode; docs: string };
 ```
+
+
+## Surface audit (2.0)
+
+The root export list is intentional:
+
+- `normalizeRepeatCount` and `toIterationCount` are kept public: they define the
+  repeat/iteration contract shared by the RAF and WAAPI engines.
+- `compileToKeyframes` is kept public: it is the WAAPI compilation primitive and
+  is used by integrations that build their own `Animation` objects.
+- `DEV` is kept public: external error factories can use the same
+  `DEV ? longMessage : ''` pattern as core and keep production messages minimal.
+
+Internal engine types (`PlanRuntime`, `ValueStylePlan`, `ValueStyleFrame`,
+`compilePlan`) are not exported. `dist/index.d.ts` contains no internal name;
+the root entry is the public surface.

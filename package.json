@@ -16,6 +16,7 @@
         "test:watch": "vitest --watch",
         "test:coverage": "vitest run --coverage",
         "test:browser": "node tests/browser/run.ts",
+        "test:bench": "node --test bench/browser/budget.test.ts",
         "test:ci": "pnpm check && pnpm ts:typecheck && pnpm build && pnpm test:coverage",
         "ts:typecheck": "turbo run ts:typecheck",
         "ts:perf": "rimraf ts-perf && tsc --noEmit --generateTrace ts-perf",
