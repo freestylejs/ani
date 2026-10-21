@@ -68,6 +68,12 @@ importers:
 
   packages/core: {}
 
+  packages/layout:
+    devDependencies:
+      '@freestylejs/ani-core':
+        specifier: workspace:^
+        version: link:../core
+
   packages/react:
     dependencies:
       '@freestylejs/ani-core':
