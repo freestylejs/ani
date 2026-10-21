@@ -80,6 +80,9 @@ importers:
         specifier: workspace:^
         version: link:../core
     devDependencies:
+      '@freestylejs/ani-layout':
+        specifier: workspace:^
+        version: link:../layout
       '@types/react':
         specifier: ^19.2.2
         version: 19.2.7

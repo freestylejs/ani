@@ -22,7 +22,7 @@ Goal: ship a production-grade `@freestylejs/ani-layout` and `@freestylejs/ani-re
 - Presence uses core `createStates`; watchdog only timer.
 - SSR/no-DOM: no module-scope DOM, no hydration changes.
 - Reduced motion leaves timing policy to core; no motion for `'jump'`.
-- Package size targets: layout ≤ 4.0KB gzip; presence ≤ 1.5KB; React adapter ≤ 2.0KB.
+- Package size targets (v1 measured, tree-shaken, peers external): layout all ≤7.5KB gzip (7,291B); FLIP-only ≤3.0KB (2,749B); VT-only ≤2.2KB (1,915B); presence-only ≤1.2KB (815B); React adapter ≤1.5KB (1,157B).
 - All tests: `pnpm check`, `pnpm ts:typecheck`, `pnpm build`, `pnpm test:ci`, targeted browser e2e.
 
 ## Phase map

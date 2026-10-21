@@ -39,7 +39,7 @@ export interface LayoutGroupOptions {
     readonly maxAnimated?: number
     /** `box` nodes per change. Extras fall back to `position`. Default: 16. */
     readonly maxBoxes?: number
-    readonly onError?: (error: unknown, element: HTMLElement) => void
+    readonly onError?: (error: unknown, element?: HTMLElement) => void
 }
 
 export type LayoutResult =
@@ -56,7 +56,7 @@ export type LayoutResult =
 
 declare const layoutSnapshot: unique symbol
 
-/** Opaque, single-use. Expires at the first microtask after capture. */
+/** Opaque, single-use. Expires in the next task after capture. */
 export interface LayoutSnapshot {
     readonly [layoutSnapshot]: true
 }

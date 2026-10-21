@@ -1,10 +1,10 @@
 import { type TimingFunction, timing } from '@freestylejs/ani-core'
+import { cssEasing } from './easing'
 import {
     hasDOM,
     isActiveViewTransition,
     reducedLayoutMotion,
     supportsFlip,
-    supportsLinearEasing,
 } from './feature'
 import type {
     LayoutGroup,
@@ -73,21 +73,6 @@ function defaultTiming(): TimingFunction {
     })
 }
 
-function easingFor(timingFunction: TimingFunction): string {
-    if (!supportsLinearEasing()) return 'ease-out'
-    const samples: number[] = []
-    const context = {
-        dt: 0,
-        from: 0,
-        to: 1,
-        duration: 1,
-    }
-    for (let i = 0; i <= 48; i++) {
-        samples.push(timingFunction.step(i / 48, context).value)
-    }
-    return `linear(${samples.join(',')})`
-}
-
 function rectOf(element: HTMLElement): Rect {
     const rect = element.getBoundingClientRect()
     return {
@@ -138,7 +123,7 @@ function motionOf(
     }
     const timingFunction =
         motion?.timing ?? options.motion?.timing ?? defaultTiming()
-    return { duration, easing: easingFor(timingFunction) }
+    return { duration, easing: cssEasing(timingFunction) }
 }
 
 function canAnimate(): boolean {
@@ -242,9 +227,9 @@ export function createLayoutGroup(
                     }
                 }
             }
-            queueMicrotask(() => {
+            setTimeout(() => {
                 if (!data.used) data.expired = true
-            })
+            }, 0)
             return data as unknown as LayoutSnapshot
         },
 
