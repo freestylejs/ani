@@ -85,7 +85,7 @@ Goal: ship a production-grade `@freestylejs/ani-layout` and `@freestylejs/ani-re
 
 ### Valid
 - p=0/p=1 endpoints; final layout exact; no leftover animations; `getAnimations()` empty.
-- Read counts: capture N rects, 0 gCS; play N rects + box gCS ≤16.
+- Read counts: normal play N rects; capture N rects, 0 gCS; box gCS ≤16. Active retarget may use N visual precheck + N post-cancel layout reads (≤2N) to preserve no-change and continuity; no-change stops at the N-read precheck. No reads during frames.
 - No-change does not create/cancel animations.
 - >300 movers snap; >16 box nodes step down; unreliable measurement snaps.
 - `pnpm vitest run layout/src/__tests__/layout_group.test.ts`.

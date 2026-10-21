@@ -399,12 +399,12 @@ await viewTransition(() => render(next), { share: ['hero-42'], motion })
 | Phase | Reads | Writes | Forced layouts |
 | :--- | :--- | :--- | :--- |
 | Capture | N `getBoundingClientRect`; 0 `getComputedStyle` | 0 | 0 if clean, ≤1 if dirty |
-| Play | N rects; `offsetWidth/Height` for movers; ≤16 gCS (box); `getComputedTiming()` for interrupted | `animate()` × movers after all reads | **Exactly 1** (owed anyway) |
+| Play | N rects; active retarget may use N precheck + N post-cancel layout reads (≤2N); `offsetWidth/Height` for movers; ≤16 gCS (box); `getComputedTiming()` for interrupted | `animate()` × movers after all reads | **Exactly 1** (owed anyway) |
 | Frames | **0** | **0 JS**; radius on ≤16 nodes painted | 0 |
-| No-change | 2N rects | 0; active run untouched | ≤1 |
+| No-change | N precheck rects; active run untouched | 0 | ≤1 |
 | View Transition | 0 per frame | ≤32 names written/restored | Browser capture only |
 
-**Interruption without reading animated state:** capture live visual box; play subtracts own offset analytically via `getComputedTiming().progress` over keyframes; no cancel before read; no-change run continues.
+**Interruption:** the pre-mutation snapshot is the `before` box. Play first measures the current visual once for the no-change check; if changed, it cancels the old animation, measures the new layout, and starts a replacement from the snapshot. An active no-change stops before cancellation. No animated state is inferred or analytically subtracted.
 
 **Budgets:**
 
