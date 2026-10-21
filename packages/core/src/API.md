@@ -1276,6 +1276,7 @@ The root export list is intentional:
 - `DEV` is kept public: external error factories can use the same
   `DEV ? longMessage : ''` pattern as core and keep production messages minimal.
 
-The compiled plan/runtime and value-style internals are not exported.
-`dist/index.d.ts` contains no internal name; the root entry is the public
-surface.
+`ExecutionPlan` and `ExecutionSegment` are public, type-only views of the
+compiled plan. The runtime implementation that evaluates the plan and the
+value-style internals are not exported. `dist/index.d.ts` contains no internal
+export; the root entry is the public surface.
