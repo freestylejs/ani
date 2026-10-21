@@ -34,7 +34,7 @@ pnpm bench:browser --compare bench/browser/results/box-a.json --out bench/browse
 | `--compare <file>` | adds a delta column per metric against a previous JSON |
 | `--smoke` | `n=50`, 0.2s warm-up, 0.5s measure, 1 repeat, all scenarios |
 | `--check` | release gate: runs the budget scenarios at `n=5000` and exits `1` if a budget fails (see [Budgets](#budgets)) |
-| `--update-budget` | runs the same set and rewrites `budget.json` from the result |
+| `--update-budget` | re-baselines the `raf-timelines` p95, clamps `raf-group` p95 to the hard **4.5 ms**, and preserves the 2.5x guard and 1.05 recalc ceiling |
 
 The core package is built automatically before the run. The exit code is `0`
 on success and `1` on any page error or bad invocation; page errors and
@@ -139,11 +139,13 @@ node bench/browser/run.ts --update-budget  # re-baseline budget.json on this mac
 with the default repeats, prints one `ok` / `FAIL` line per budget and names
 the failed ones. A budget whose value could not be measured fails.
 `--update-budget` runs the same set and writes `budget.json`: it re-baselines
-only the two p95 budgets from the measured median × 1.25, rounded up to 0.1 ms.
-It deliberately preserves the amended `minGroupGain` guard of `2.5` and the
-`maxRafReadStyleRecalcsPerFrame` ceiling of `1.05`; those are release gates, not
-measurements, so `--update-budget` is a measurement re-baseline, not a
-release-gate loosening. If any page error
+the `raf-timelines` p95 from the measured median × 1.25 (rounded up to 0.1 ms)
+and sets `raf-group` p95 to the lower of that measured × 1.25 value and the
+hard **4.5 ms** ceiling, so a re-baseline can never raise the approved group
+budget above 4.5 ms. It deliberately preserves the amended `minGroupGain` guard
+of `2.5` and the `maxRafReadStyleRecalcsPerFrame` ceiling of `1.05`; those are
+release gates, not measurements, so `--update-budget` is a measurement
+re-baseline, not a release-gate loosening. If any page error
 occurs during the run, `--update-budget` refuses to write `budget.json`, prints
 the error count, and exits 1 so broken runs cannot pollute the budget file on
 disk. Neither flag can be combined with `--scenario`, `--n` or `--smoke`.

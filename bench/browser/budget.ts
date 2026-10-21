@@ -44,6 +44,8 @@ export const BUDGET_SCENARIOS: readonly string[] = [
 export const BUDGET_N = 5000
 /** The amended group guard: `rafGroup` at least this much faster. */
 export const MIN_GROUP_GAIN = 2.5
+/** Approved hard ceiling for `raf-group` p95; `--update-budget` never raises it. */
+export const GROUP_P95_HARD_MS = 4.5
 /** One recalc per frame is the browser's own; the 5% is measurement slack. */
 export const MAX_READ_STYLE_RECALCS_PER_FRAME = 1.05
 /** Headroom applied to a measured p95 when a budget is written. */
@@ -103,8 +105,11 @@ export function createBudget(rows: readonly ResultRow[], n: number): Budget {
         rafTimelinesP95Ms: ceilTenth(
             measured(rows, 'raf-timelines', n).metrics.tickP95 * BUDGET_HEADROOM
         ),
-        rafGroupP95Ms: ceilTenth(
-            measured(rows, 'raf-group', n).metrics.tickP95 * BUDGET_HEADROOM
+        rafGroupP95Ms: Math.min(
+            ceilTenth(
+                measured(rows, 'raf-group', n).metrics.tickP95 * BUDGET_HEADROOM
+            ),
+            GROUP_P95_HARD_MS
         ),
         minGroupGain: MIN_GROUP_GAIN,
         maxRafReadStyleRecalcsPerFrame: MAX_READ_STYLE_RECALCS_PER_FRAME,
