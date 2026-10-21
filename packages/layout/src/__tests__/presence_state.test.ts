@@ -106,7 +106,7 @@ describe('reconcilePresence', () => {
             seed = (seed * 1664525 + 1013904223) >>> 0
             return seed / 0x100000000
         }
-        let previous: PresenceEntry<string>[] = []
+        let previous: readonly PresenceEntry<string>[] = []
         const live = new Map<string, string>()
 
         for (let step = 0; step < 300; step++) {
@@ -122,9 +122,9 @@ describe('reconcilePresence', () => {
             expect(new Set(keys).size).toBe(keys.length)
 
             for (const entry of next) {
-                if (live.has(entry.key)) {
+                if (live.has(String(entry.key))) {
                     expect(entry.present).toBe(true)
-                    expect(entry.item).toBe(live.get(entry.key))
+                    expect(entry.item).toBe(live.get(String(entry.key)))
                 } else {
                     expect(entry.present).toBe(false)
                     expect(entry.token).toBeGreaterThan(0)
