@@ -1,0 +1,42 @@
+{
+    "name": "@freestylejs/ani-layout",
+    "author": "freestyle",
+    "version": "0.1.0",
+    "description": "Declarative layout animation and presence for Ani.",
+    "license": "MIT",
+    "type": "module",
+    "keywords": ["animation", "layout", "flip", "presence"],
+    "sideEffects": false,
+    "private": false,
+    "publishConfig": {
+        "access": "public"
+    },
+    "files": ["dist"],
+    "main": "./dist/index.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "import": {
+                "types": "./dist/index.d.ts",
+                "default": "./dist/index.js"
+            },
+            "require": {
+                "types": "./dist/index.d.cts",
+                "default": "./dist/index.cjs"
+            }
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "build:fast": "tsup --no-dts",
+        "dev": "pnpm build --sourcemap --watch",
+        "ts:typecheck": "tsc --noEmit --skipLibCheck"
+    },
+    "peerDependencies": {
+        "@freestylejs/ani-core": "^2.0.0"
+    },
+    "devDependencies": {
+        "@freestylejs/ani-core": "workspace:^"
+    }
+}
