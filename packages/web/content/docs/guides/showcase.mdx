@@ -49,11 +49,13 @@ The V2 shape is description-first:
 ```
 
 <Callout type="info" title="Measured, not vibes">
-    On june-wsl / Chromium at N=5,000 (`transform` + `opacity`):
-    `raf-timelines` p95 **11.0 ms**, `raf-group` p95 **4.1 ms** against a
-    **4.5 ms hard budget** and a **4.0 ms target**. That is one plan and one
-    clock subscription instead of 5,000. Numbers are machine-specific — run
-    [`pnpm bench:check`](/en/docs/guides/performance) on your own box.
+    In a representative project browser benchmark at N=5,000
+    (`transform` + `opacity`): one `rafGroup` measured **4.1 ms** p95 versus
+    **11.0 ms** for one `rafTimeline` per element. The structural difference is
+    the point: one plan and one clock subscription instead of 5,000. Absolute
+    timings depend on the browser and hardware; run
+    [`pnpm bench:check`](/en/docs/guides/performance) to measure your target
+    environment.
 </Callout>
 
 ## Read it in three layers
