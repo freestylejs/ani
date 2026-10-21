@@ -32,8 +32,9 @@ and each switch starts a fresh run from that same description.
 - **Replay** creates a new scatter by seeding a fresh `from(index)`. The tree
   is not rebuilt.
 - **Switch engines** at any point. The new realizer starts a new run from the
-  same tree and the same scatter; the playhead is not carried across engines.
-  Only the metrics below the stage change.
+  same tree and the same scatter; the playhead is not carried, so the field
+  restarts while the tree itself is unchanged. The engine label and metrics
+  update with the realizer.
 - **Pause and resume** work on both realizers; the tree and the transport
   semantics never change.
 
