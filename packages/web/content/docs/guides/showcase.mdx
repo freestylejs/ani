@@ -1,55 +1,96 @@
 ---
-title: One tree, many targets
-description: A live dual-engine demo — 36 tiles, one immutable animation tree, and two realizers.
+title: One tree. Every target. Either engine.
+description: A live 36-tile kinetic field — one immutable tree, two realizers, zero rewrites.
 ---
 
 import { GroupShowcase } from '@/components/showcase/group_showcase'
 
-One description, two engines. The field below is 36 tiles driven by a single
-immutable tree. Toggle **RAF GROUP** and **WAAPI**: the choreography, the
-stagger and the per-target `from` stay identical. Only the realizer changes,
-and each switch starts a fresh run from that same description.
+<Callout type="info" title="TL;DR">
+    **One description. Thirty-six targets. Two engines.** Toggle **RAF GROUP**
+    and **WAAPI**: the tree, the stagger and the per-target `from` stay
+    identical. Only the realizer changes. No rewrite, no second choreography,
+    no engine-shaped API.
+</Callout>
 
 <GroupShowcase />
 
-## What you are looking at
+## What the toggle actually proves
+
+The same `tree` is handed to two different execution substrates:
+
+| | `rafGroup` | `waapiTimeline` |
+| :--- | :--- | :--- |
+| **Runs in** | JavaScript frame loop | browser compositor |
+| **Time** | one shared clock | native timeline |
+| **Targets** | one plan, N style writers | N native animations |
+| **Same tree** | yes | yes |
+| **Same `from` / `stagger`** | yes | yes |
+| **Switch cost** | dispose + bind | compile + play |
+
+That is the V2 claim in miniature: **the description is the unit of work, not
+the element and not the engine.** The toggle is deliberately boring to watch;
+the tiles land in the same places because the semantics are the same.
+
+## The shape of the win
+
+The old shape is element-first: one element, one timeline, one subscription.
+The V2 shape is description-first:
+
+```diff
+- const timelines = tiles.map((tile) => {
+-     const timeline = a.rafTimeline(tree)
+-     timeline.bind(tile)
+-     void timeline.play({ from })
+-     return timeline
+- })
++ const group = a.rafGroup(tree, { stagger })
++ group.bind(tiles)
++ void group.play({ from: (i) => scatter(i) })
+```
+
+<Callout type="info" title="Measured, not vibes">
+    On june-wsl / Chromium at N=5,000 (`transform` + `opacity`):
+    `raf-timelines` p95 **11.0 ms**, `raf-group` p95 **4.1 ms** against a
+    **4.5 ms hard budget** and a **4.0 ms target**. That is one plan and one
+    clock subscription instead of 5,000. Numbers are machine-specific — run
+    [`pnpm bench:check`](/en/docs/guides/performance) on your own box.
+</Callout>
+
+## Read it in three layers
 
 - **Description.** `tree` is an immutable `sequence` of two `ani` nodes. It
-  contains no DOM, no values and no time. The same value can be replayed
-  forever, on any number of targets.
+  contains no DOM, no values and no time. It can be replayed forever, on any
+  number of targets.
 - **Time.** The RAF realizer subscribes to the shared clock once and evaluates
-  every target from that frame. The WAAPI realizer compiles the same tree into
-  native keyframes and lets the browser's timeline drive them.
-- **Realization.** `group.bind(tiles)` creates one writer per tile, so only the
-  declarations that changed are committed. On WAAPI, `waapi.play(tiles, …)`
-  still receives one target list and one `stagger`.
-- **One semantics.** Both engines take the same `from` and `stagger`, and they
-  land on the same values. That is the V2 claim in miniature: the description
-  is the unit of work, not the element or the engine.
+  each target at its own local time. WAAPI compiles the same tree to native
+  keyframes; the browser's timeline drives them.
+- **Realization.** `group.bind(tiles)` creates one writer per tile and commits
+  only changed declarations. `waapi.play(tiles, …)` receives the same target
+  list and the same stagger. Same `from` in, same end state out.
+
+The important part is what does **not** change: `tree`, `stagger`, and
+`from(index)` are shared by both engines. The realizer is a deployment target.
 
 ## Try it
 
-- **Replay** creates a new scatter by seeding a fresh `from(index)`. The tree
-  is not rebuilt.
-- **Switch engines** at any point. The new realizer starts a new run from the
-  same tree and the same scatter; the playhead is not carried, so the field
-  restarts while the tree itself is unchanged. The engine label and metrics
-  update with the realizer.
-- **Pause and resume** work on both realizers; the tree and the transport
-  semantics never change.
+1. **Replay** seeds a fresh `from(index)` scatter. The tree is not rebuilt.
+2. **Switch engines** mid-run. The new realizer starts a new run from the same
+   tree and the same scatter; the playhead resets, the choreography does not.
+3. **Pause / resume** on either engine. Transport semantics are part of the
+   timeline contract, not the engine.
 
-## Why this is the point
+## The point
 
-Most animation code makes the element the unit of work: one element, one
-timeline, one subscription. Ani makes the **description** the unit of work and
-lets the realization fan out. The same tree can drive one element, 36 tiles or
-5,000 rows; the cost model is properties and distinct target states, not the
-number of segments in the tree.
+Most animation code makes the element the unit of work. Ani makes the
+**description** the unit of work and lets realization fan out. The same tree
+can drive one element, 36 tiles, or 5,000 rows; the cost model is properties
+and distinct target states, not the number of segments in the tree.
 
-The dual-engine toggle is deliberately boring to watch: the same tiles land in
-the same places. That is the point. `rafGroup` and `waapiTimeline` are two
-realizers of one description, so moving a choreography to the compositor does
-not mean rewriting it.
+This is not a benchmark and not a promise that every target is one evaluation:
+with a stagger, each distinct `(offset, from)` pair gets its own local time.
+What is shared is the plan, the clock subscription, the binding machinery, and
+the semantics. That is enough to stop writing the same choreography once per
+element.
 
 ```typescript
 import * as a from '@freestylejs/ani-core'
@@ -122,6 +163,8 @@ void waapi.play(tiles, {
 })
 waapi.dispose()
 ```
+
+> **The engine is not the architecture. The tree is.**
 
 - [rafGroup](/en/docs/core-api/group) — one plan, N targets
 - [timeline](/en/docs/core-api/timeline) — the shared timeline representation

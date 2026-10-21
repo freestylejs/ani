@@ -394,9 +394,9 @@ export function GroupShowcase() {
                         className="mt-2 flex flex-wrap items-center justify-between gap-2"
                     >
                         <p className="font-mono text-[10px] tracking-[0.08em] text-white/60">
-                            The tree never changes.{' '}
+                            One description. Two engines.{' '}
                             <span className="text-white/90">
-                                The realizer does.
+                                Zero rewrites.
                             </span>
                         </p>
                         {reducedMotion && (
