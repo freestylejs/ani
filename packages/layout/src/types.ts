@@ -56,7 +56,7 @@ export type LayoutResult =
 
 declare const layoutSnapshot: unique symbol
 
-/** Opaque, single-use. Expires at the root clock's next frame. */
+/** Opaque, single-use. Expires at the first microtask after capture. */
 export interface LayoutSnapshot {
     readonly [layoutSnapshot]: true
 }
