@@ -1,4 +1,11 @@
 {
     "title": "Guides",
-    "pages": ["migration-v2", "performance", "reduced-motion", "testing", "ssr"]
+    "pages": [
+        "showcase",
+        "migration-v2",
+        "performance",
+        "reduced-motion",
+        "testing",
+        "ssr"
+    ]
 }
