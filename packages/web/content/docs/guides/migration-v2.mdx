@@ -522,9 +522,9 @@ const progress = a.rafTimeline(node, { reducedMotion: 'ignore' })
 const panel = a.waapiTimeline(node, { reducedMotion: { maxDuration: 0.2 } })
 ```
 
-The preference lives on the clock. To change it for every timeline on a clock, create the clock with `createClock({ reducedMotion: false })` and pass it as `{ clock }`. Machines made by `createStates` have no policy option; give them such a clock.
+The preference lives on the clock. To change it for every timeline on a clock, create the clock with `createClock({ reducedMotion: false })` and pass it as `{ clock }`. The policy is separate from the clock: pass `reducedMotion` to `rafTimeline`, `waapiTimeline`, `rafGroup`, `follow` or `createStates`, which forwards it to every state's timeline.
 
-`rafGroup`, `follow` and `drive()` do not read the preference. Where `matchMedia` does not exist (servers, plain test environments) the preference is off, so existing tests keep their timings. See [Reduced motion](/en/docs/guides/reduced-motion).
+`rafGroup` and `follow` honor the same preference: `rafGroup` accepts `'jump'`, `'ignore'` and `{ maxDuration }`; `follow` accepts `'jump'` and `'ignore'` (a spring has no duration). Only `drive()` does not read the preference: a driven run is progress-driven, so the user controls the motion. Where `matchMedia` does not exist (servers, plain test environments) the preference is off, so existing tests keep their timings. See [Reduced motion](/en/docs/guides/reduced-motion).
 
 ### Commit phase
 

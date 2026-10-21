@@ -1,6 +1,8 @@
 export type {
     AniGroup,
     AnimePrimitive,
+    ExecutionPlan,
+    ExecutionSegment,
     Groupable,
     GroupableRecord,
     GroupableRecordKey,

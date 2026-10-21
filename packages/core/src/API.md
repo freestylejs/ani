@@ -1248,10 +1248,12 @@ The root export list is intentional:
 - `normalizeRepeatCount` and `toIterationCount` are kept public: they define the
   repeat/iteration contract shared by the RAF and WAAPI engines.
 - `compileToKeyframes` is kept public: it is the WAAPI compilation primitive and
-  is used by integrations that build their own `Animation` objects.
+  is used by integrations that build their own `Animation` objects. Its input
+  types `ExecutionPlan` and `ExecutionSegment` are exported from the root for
+  that reason; callers can type a plan without importing internal modules.
 - `DEV` is kept public: external error factories can use the same
   `DEV ? longMessage : ''` pattern as core and keep production messages minimal.
 
-Internal engine types (the compiled plan/runtime and the value-style
-structures) are not exported. `dist/index.d.ts` contains no internal name; the
-root entry is the public surface.
+Runtime and value-style internals (`PlanRuntime`, `ValueStylePlan`,
+`ValueStyleFrame`) are not exported. `dist/index.d.ts` contains no internal
+name; the root entry is the public surface.
