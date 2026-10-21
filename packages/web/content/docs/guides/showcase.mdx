@@ -1,29 +1,51 @@
 ---
 title: One tree, many targets
-description: A live rafGroup demo — 36 tiles, one immutable animation tree, one clock subscription.
+description: A live dual-engine demo — 36 tiles, one immutable animation tree, and two realizers.
 ---
 
 import { GroupShowcase } from '@/components/showcase/group_showcase'
 
-Ani is at its best when a single description drives many realizations. This demo
-is deliberately small, but it uses the full V2 stack: an immutable tree, a
-single clock, one `rafGroup`, a per-target `from`, and a stagger that turns the
-same plan into a wave.
+One description, two engines. The field below is 36 tiles driven by a single
+immutable tree. Toggle **RAF GROUP** and **WAAPI**: the choreography, the
+stagger and the per-target `from` stay identical. Only the realizer changes.
 
 <GroupShowcase />
 
 ## What you are looking at
 
 - **Description.** `tree` is an immutable `sequence` of two `ani` nodes. It
-  contains no DOM, no values, and no time. It can be replayed forever.
-- **Time.** The group subscribes to the shared clock once. Every target sees
-  the same frame time; the stagger only shifts each target's local time.
-- **Realization.** `group.bind(tiles)` creates one writer per tile. The group
-  evaluates the plan once per distinct `(offset, from)` pair and writes the
-  changed declarations in the commit phase.
-- **Replay.** The button does not rebuild the tree. It calls `play()` again with
-  a new `from(index)` function, so the same description produces a different
-  scatter.
+  contains no DOM, no values and no time. The same value can be replayed
+  forever, on any number of targets.
+- **Time.** The RAF realizer subscribes to the shared clock once and evaluates
+  every target from that frame. The WAAPI realizer compiles the same tree into
+  native keyframes and lets the browser's timeline drive them.
+- **Realization.** `group.bind(tiles)` creates one writer per tile, so only the
+  declarations that changed are committed. On WAAPI, `waapi.play(tiles, …)`
+  still receives one target list and one `stagger`.
+- **One semantics.** Both engines take the same `from` and `stagger`, and they
+  land on the same values. That is the V2 claim in miniature: the description
+  is the unit of work, not the element or the engine.
+
+## Try it
+
+- **Replay** creates a new scatter by seeding a fresh `from(index)`. The tree
+  is not rebuilt.
+- **Switch engines** while the field is moving. The metrics below the stage
+  change because the realization changed, not because the animation did.
+- **Pause and resume** work on both realizers. The state machine is shared.
+
+## Why this is the point
+
+Most animation code makes the element the unit of work: one element, one
+timeline, one subscription. Ani makes the **description** the unit of work and
+lets the realization fan out. The same tree can drive one element, 36 tiles or
+5,000 rows; the cost model is properties and distinct target states, not the
+number of segments in the tree.
+
+The dual-engine toggle is deliberately boring to watch: the same tiles land in
+the same places. That is the point. `rafGroup` and `waapiTimeline` are two
+realizers of one description, so moving a choreography to the compositor does
+not mean rewriting it.
 
 ```typescript
 import * as a from '@freestylejs/ani-core'
@@ -37,56 +59,59 @@ type Tile = {
 }
 
 const COLS = 12
+const TILE_COUNT = 36
+
 const tree = a.sequence([
     a.ani({
         to: { opacity: 1, scale: 1.06, translateX: 0, translateY: 0, rotate: 0 },
-        duration: 0.45,
+        duration: 0.8,
         timing: a.timing.easeOut(),
     }),
     a.ani({
         to: { opacity: 1, scale: 1, translateX: 0, translateY: 0, rotate: 0 },
-        duration: 0.25,
+        duration: 0.45,
         timing: a.timing.easeInOut(),
     }),
 ])
 
-const group = a.rafGroup(tree, {
-    stagger: (i) => (i % COLS) * 0.018 + Math.floor(i / COLS) * 0.045,
-})
+const stagger = (index: number) =>
+    (index % COLS) * 0.022 + Math.floor(index / COLS) * 0.05
 
-// In the live demo: group.bind(tiles) before play().
-group.play({
-    count: 36,
-    from: (index): Tile => {
-        const col = index % COLS
-        const row = Math.floor(index / COLS)
-        return {
-            opacity: 0,
-            scale: 0.5,
-            translateX: (col - (COLS - 1) / 2) * 10,
-            translateY: (row - 1) * 16,
-            rotate: 0,
-        }
-    },
-})
+const fromFor = (index: number, seed: number): Tile => {
+    const jitter = Math.sin(index * 12.9898 + seed * 78.233) * 43758.5453
+    const j = jitter - Math.floor(jitter)
+    return {
+        opacity: 0,
+        scale: 0.35 + j * 0.3,
+        translateX: (index % COLS) * 6 - 33,
+        translateY: Math.floor(index / COLS) * 8 - 8,
+        rotate: (j - 0.5) * 84,
+    }
+}
 
-// The owner releases the group when the view goes away.
+const tiles = Array.from({ length: TILE_COUNT }, () =>
+    document.createElement('div')
+)
+
+// One tree, realized by the shared RAF clock.
+const group = a.rafGroup(tree, { stagger })
+const unbind = group.bind(tiles)
+void group.play({ from: (index) => fromFor(index, 1) })
+
+// ...or hand the same tree to the browser's timeline instead.
+unbind()
 group.dispose()
+
+const waapi = a.waapiTimeline(tree)
+void waapi.play(tiles, {
+    from: (index) => fromFor(index, 1),
+    stagger,
+    effect: { fill: 'both' }, // hold `from` during the stagger delay
+})
+waapi.dispose()
 ```
 
-## Why this is the point
-
-Most animation code makes the element the unit of work: one element, one
-timeline, one subscription. Ani makes the **description** the unit of work and
-lets the realization fan out. The same tree can drive one element, 36 tiles, or
-5,000 rows; the cost model is properties and distinct target states, not the
-number of segments in the tree.
-
-If this looks like a lot of machinery for a grid, that is the honest trade-off:
-it is more concept than a one-line hover effect. In exchange, the choreography
-is a value you can reuse, test, replay, and move between the RAF and WAAPI
-engines without rewriting it.
-
 - [rafGroup](/en/docs/core-api/group) — one plan, N targets
-- [clock](/en/docs/core-api/clock) — one frame loop, read/update/commit
+- [timeline](/en/docs/core-api/timeline) — the shared timeline representation
+- [clock](/en/docs/core-api/clock) — one frame loop, read → update → commit
 - [timing](/en/docs/core-api/timing) — the easing used above
