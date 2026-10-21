@@ -3,7 +3,8 @@
 Status: **user-approved gate redefinition** for the 2026-10-20 ANI V2 handoff.
 This document is authoritative where it conflicts with the original delegation
 gate text. The retired criteria are replaced, not retroactively passed. It does
-not change package versions, published artifacts, or any per-packet note.
+not change package versions or published artifacts; judge notes are corrected
+separately for attribution.
 
 ## Approval
 
@@ -45,14 +46,14 @@ budget to the 4.5 ms hard ceiling.
 | Original | `raf-minimal <= 10.6 KB` gzip, with no V1 regression |
 | Amended target | **`raf-minimal <= 12.2 KB (12,200 B)` gzip** |
 | Amended budget | **`raf-minimal <= 12.4 KB (12,400 B)` gzip** (`bench/size/budget.json`) |
-| Diagnostic | V1 `ce45eb2` measures **10,339/10,351 B** gzip for the compared minimal scenarios |
+| Diagnostic | Our build of V1 `ce45eb2` measured **10,339 B** gzip; independent judge builds measured **10,351–10,494 B** depending on the V1 import/bundler variant. All are diagnostic. |
 
 The V1 numbers are recorded as diagnostics only. The original no-V1-regression
 criterion is **explicitly waived** by the user-approved amendment; it is not
-silently satisfied. The V2 feature set (clock phases, reduced motion, error
-codes, `bind`/`drive`, `rafGroup`) adds runtime code, not only development
-strings. The original 10.6 KB target assumed more production stripping than the
-XDEV production build delivered (about 0.6 KB).
+silently satisfied. The original 10.6 KB target assumed more production
+stripping than the XDEV production build delivered: stripping accounts for
+about 0.6 KB of the shortfall, and the rest is V2 runtime/feature cost (clock,
+plan, group, loop), not development strings.
 
 ## Judge attribution
 
