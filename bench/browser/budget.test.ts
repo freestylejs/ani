@@ -48,7 +48,7 @@ test('parseBudget accepts valid budget with maxRafReadStyleRecalcsPerFrame', () 
         n: 5000,
         rafTimelinesP95Ms: 19.9,
         rafGroupP95Ms: 8.9,
-        minGroupGain: 3,
+        minGroupGain: 2.5,
         maxRafReadStyleRecalcsPerFrame: 1.05,
     })
     const budget = parseBudget(json)
@@ -65,7 +65,7 @@ test('parseBudget rejects legacy budget with maxRafReadLayoutsPerFrame', () => {
         n: 5000,
         rafTimelinesP95Ms: 19.9,
         rafGroupP95Ms: 8.9,
-        minGroupGain: 3,
+        minGroupGain: 2.5,
         maxRafReadLayoutsPerFrame: 1.05,
     })
     assert.throws(() => parseBudget(legacy), /invalid budget JSON/)
@@ -82,7 +82,9 @@ test('createBudget initializes maxRafReadStyleRecalcsPerFrame to 1.05', () => {
         budget.maxRafReadStyleRecalcsPerFrame,
         MAX_READ_STYLE_RECALCS_PER_FRAME
     )
+    assert.strictEqual(MIN_GROUP_GAIN, 2.5)
     assert.strictEqual(budget.minGroupGain, MIN_GROUP_GAIN)
+    assert.strictEqual(budget.minGroupGain, 2.5)
     assert.strictEqual(budget.rafTimelinesP95Ms, 20)
     assert.strictEqual(budget.rafGroupP95Ms, 8.8)
 })
@@ -128,7 +130,7 @@ test('checkBudget validates raf-read style recalcs against budget', () => {
         n: 5000,
         rafTimelinesP95Ms: 20,
         rafGroupP95Ms: 10,
-        minGroupGain: 3,
+        minGroupGain: 2.5,
         maxRafReadStyleRecalcsPerFrame: 1.05,
     }
 

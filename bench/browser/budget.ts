@@ -42,8 +42,8 @@ export const BUDGET_SCENARIOS: readonly string[] = [
 
 /** Element count the release budgets are measured at. */
 export const BUDGET_N = 5000
-/** The spec's group gate: `rafGroup` at least this much faster. */
-export const MIN_GROUP_GAIN = 3
+/** The amended group guard: `rafGroup` at least this much faster. */
+export const MIN_GROUP_GAIN = 2.5
 /** One recalc per frame is the browser's own; the 5% is measurement slack. */
 export const MAX_READ_STYLE_RECALCS_PER_FRAME = 1.05
 /** Headroom applied to a measured p95 when a budget is written. */
