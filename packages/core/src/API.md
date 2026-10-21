@@ -414,9 +414,31 @@ interface WaapiTimeline<G extends Groupable> {
     readonly value: Readonly<Record<string, number>> | null;
     valueAt(index: number): Readonly<Record<string, number>> | null;
 }
+
+function compileToKeyframes<G extends Groupable>(
+    plan: ExecutionPlan<G>,
+    initialFrom: G,
+    resolver?: Resolver<Record<string, number>>
+): WebAniKeyframe[];
 ```
 
 Invalid input (array `from`, negative or non-finite `delay` / stagger offsets, no target) throws synchronously, before anything is touched.
+
+#### Keyframe compilation
+
+`compileToKeyframes` turns an `ExecutionPlan` into the `WebAniKeyframe[]` that a native `Animation` plays. Build the plan by calling `construct(plan, startTime)` on the root `AnimationNode`; the plan is a flat array of `ExecutionSegment`s. `initialFrom` is the starting value (record shapes only) and `resolver` maps keys to CSS properties exactly as in `play()`.
+
+```typescript
+import * as a from "@freestylejs/ani-core";
+
+const node = a.ani({ to: { x: 100 }, duration: 1 });
+
+const plan: a.ExecutionPlan<{ x: number }> = [];
+node.construct(plan, 0);
+
+const keyframes = a.compileToKeyframes(plan, { x: 0 });
+// keyframes: a.WebAniKeyframe[] — use it in your own KeyframeEffect.
+```
 
 ### Related Components
 
@@ -1254,6 +1276,6 @@ The root export list is intentional:
 - `DEV` is kept public: external error factories can use the same
   `DEV ? longMessage : ''` pattern as core and keep production messages minimal.
 
-Runtime and value-style internals (`PlanRuntime`, `ValueStylePlan`,
-`ValueStyleFrame`) are not exported. `dist/index.d.ts` contains no internal
-name; the root entry is the public surface.
+The compiled plan/runtime and value-style internals are not exported.
+`dist/index.d.ts` contains no internal name; the root entry is the public
+surface.

@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
+import type { ExecutionPlan, ExecutionSegment } from '../../index'
 import * as a from '../../index'
 import { createManualClock } from '../../testing'
+
+/** The type checker (`pnpm ts:typecheck`) asserts the imports and signatures. */
+function planTypesAtTheSurface() {
+    const node = a.ani({ to: { x: 1 }, duration: 1 })
+    const plan: ExecutionPlan<{ x: number }> = []
+    node.construct(plan, 0)
+    const segment: ExecutionSegment<{ x: number }> = plan[0]!
+    return { plan, segment }
+}
 
 /** Never called: the type checker (`pnpm ts:typecheck`) is the assertion. */
 function removedAtTheTypeLevel() {
@@ -66,5 +76,11 @@ function removedAtTheTypeLevel() {
 describe('MIG3b: removed APIs do not type-check', () => {
     it('T1: the type-only block exists (checked by tsc)', () => {
         expect(typeof removedAtTheTypeLevel).toBe('function')
+    })
+
+    it('T2: the plan input types and compiler are exported', () => {
+        const { plan, segment } = planTypesAtTheSurface()
+        expect(segment.startTime).toBe(0)
+        expect(a.compileToKeyframes(plan, { x: 0 }).length).toBeGreaterThan(0)
     })
 })

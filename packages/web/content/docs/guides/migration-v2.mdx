@@ -506,7 +506,7 @@ The `delay` of `play()` and `transitionTo()` is in **seconds**, on RAF and WAAPI
 
 ### Reduced motion
 
-Animations honor `prefers-reduced-motion` by default. With the system preference on, `rafTimeline`, `waapiTimeline` and the timelines made by `createStates` apply the policy `'jump'`: `play()` validates as usual, then the run **completes at once** in its end state. Bound targets are written, listeners are notified once with `ENDED` and the promise resolves `'ended'`.
+Animations honor `prefers-reduced-motion` by default. With the system preference on, `rafTimeline`, `waapiTimeline`, `rafGroup`, `follow` and the timelines made by `createStates` apply the policy `'jump'`: `play()` or `set()` validates as usual, then the run **completes at once** in its end state (`follow` on the next frame). Bound targets are written, listeners are notified once, and the promise resolves `'ended'`.
 
 Opt out per timeline with the `reducedMotion` option. Keep `'ignore'` for motion that carries information (a progress indicator), or shorten instead of skipping with `{ maxDuration }`.
 
