@@ -23,7 +23,15 @@ declare global {
 }
 
 const ORIGIN = 'http://ani.test'
-const MODULES = ['core', 'react', 'vue', 'solid', 'svelte', 'layout'] as const
+const MODULES = [
+    'core',
+    'react',
+    'vue',
+    'solid',
+    'svelte',
+    'layout',
+    'react_layout',
+] as const
 const CASE_TIMEOUT_MS = 10_000
 const LOAD_TIMEOUT_MS = 10_000
 

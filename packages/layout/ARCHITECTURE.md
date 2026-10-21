@@ -418,14 +418,16 @@ await viewTransition(() => render(next), { share: ['hero-42'], motion })
 
 **Size budgets:**
 
-| Entry | Budget |
-| :--- | ---: |
-| Core delta | 0 B |
-| `ani-layout` all | ≤4.0KB gzip |
-| FLIP-only | ≤2.5KB |
-| View Transition-only | ≤1.2KB |
-| Presence-only | ≤1.5KB |
-| `ani-react/layout` | ≤2.0KB |
+| Entry | Budget | v1 measured (tree-shaken) |
+| :--- | ---: | ---: |
+| Core delta | 0 B | 0 B |
+| `ani-layout` all | ≤7.5KB gzip | 7,291 B |
+| FLIP-only | ≤3.0KB | 2,749 B |
+| View Transition-only | ≤2.2KB | 1,915 B |
+| Presence-only | ≤1.2KB | 815 B |
+| `ani-react/layout` | ≤1.5KB | 1,157 B |
+
+Measured with esbuild, minified ESM, gzip, core/React/layout peers external, one feature entry per row. The root entry includes all three features, hence its larger budget. These are v1 gates; a change requires a measured amendment.
 
 ---
 

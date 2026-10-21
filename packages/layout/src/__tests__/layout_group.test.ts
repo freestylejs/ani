@@ -178,7 +178,7 @@ describe('createLayoutGroup', () => {
         const group = createLayoutGroup()
         group.add(element)
         const snapshot = group.capture()
-        await Promise.resolve()
+        await new Promise((resolve) => setTimeout(resolve, 0))
         await expect(group.play(snapshot)).resolves.toBe('stale')
         expect(animateSpy).not.toHaveBeenCalled()
         group.dispose()

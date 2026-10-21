@@ -47,9 +47,20 @@
         "@freestylejs/ani-core": "workspace:^"
     },
     "peerDependencies": {
-        "react": ">=18.0.0"
+        "@freestylejs/ani-layout": "^0.1.0",
+        "react": ">=18.0.0",
+        "react-dom": ">=18.0.0"
+    },
+    "peerDependenciesMeta": {
+        "@freestylejs/ani-layout": {
+            "optional": true
+        },
+        "react-dom": {
+            "optional": true
+        }
     },
     "devDependencies": {
+        "@freestylejs/ani-layout": "workspace:^",
         "@types/react": "^19.2.2",
         "react": "^19.2.1",
         "react-dom": "^19.2.1"
