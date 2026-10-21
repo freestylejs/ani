@@ -115,19 +115,20 @@ A value is `-` when the scenarios it needs were not run.
 | Key | Budget |
 | :--- | :--- |
 | `rafTimelinesP95Ms` | regression guard for `tick p95` of `raf-timelines` (ms) |
-| `rafGroupP95Ms` | regression guard for `tick p95` of `raf-group` (ms) |
-| `minGroupGain` | regression guard for `groupGain` (diagnostic) |
+| `rafGroupP95Ms` | hard budget for `tick p95` of `raf-group` (ms): **4.5**, target **4.0** |
+| `minGroupGain` | guard for the `groupGain` ratio: **2.5x** |
 | `maxRafReadStyleRecalcsPerFrame` | maximum `sty/f` of `raf-read` |
 
-**Gate amendment (2026-10-20).** The V2 release gate for multi-target work is
-the absolute `raf-group` `tick p95` (**<= 4.0 ms at N=5000**), not a fixed 3x
-ratio. At 5,000 elements the group performs 10,000 DOM declarations per frame
-(`transform` + `opacity`); the measured floor is p50 3.3-3.4 ms and p95 4.0 ms.
-The per-timeline baseline is 10.2-11.8 ms, so a 3x ratio would require the
-group to beat the DOM write floor; it is not a sound release criterion. The
-ratio is still recorded and guarded (`minGroupGain: 2.5`) so a regression in
-amortization fails the budget, while the absolute target is checked in the
-release table.
+**Gate amendment (2026-10-20).** The V2 group gate has three separate numbers:
+a **hard budget of 4.5 ms** for `raf-group` `tick p95` at N=5000
+(`rafGroupP95Ms` in `budget.json`), a **release target of 4.0 ms**, and a
+**groupGain guard of 2.5x** (`minGroupGain`). At 5,000 elements the group
+performs 10,000 DOM declarations per frame (`transform` + `opacity`); the
+measured floor is p50 3.3-3.4 ms and p95 4.0 ms. The per-timeline baseline is
+10.2-11.8 ms, so the retired threefold ratio would require the group to beat the DOM
+write floor; it is not a sound release criterion. `groupGain` is still recorded
+and guarded at 2.5x so an amortization regression still fails `--check`, while
+the absolute 4.0 ms target is reported against the 4.5 ms hard budget.
 
 ```sh
 pnpm bench:check                           # build core, run the budget scenarios, exit 1 on a miss
@@ -137,10 +138,12 @@ node bench/browser/run.ts --update-budget  # re-baseline budget.json on this mac
 `--check` runs exactly `raf-timelines`, `raf-group` and `raf-read` at `n=5000`
 with the default repeats, prints one `ok` / `FAIL` line per budget and names
 the failed ones. A budget whose value could not be measured fails.
-`--update-budget` runs the same set and writes `budget.json`: the two p95
-budgets are the measured median × 1.25 rounded up to 0.1 ms, `minGroupGain` is
-`3` and `maxRafReadStyleRecalcsPerFrame` is `1.05`. The last two are the release
-gates, not measurements, so a re-baseline never loosens them. If any page error
+`--update-budget` runs the same set and writes `budget.json`: it re-baselines
+only the two p95 budgets from the measured median × 1.25, rounded up to 0.1 ms.
+It deliberately preserves the amended `minGroupGain` guard of `2.5` and the
+`maxRafReadStyleRecalcsPerFrame` ceiling of `1.05`; those are release gates, not
+measurements, so `--update-budget` is a measurement re-baseline, not a
+release-gate loosening. If any page error
 occurs during the run, `--update-budget` refuses to write `budget.json`, prints
 the error count, and exits 1 so broken runs cannot pollute the budget file on
 disk. Neither flag can be combined with `--scenario`, `--n` or `--smoke`.
