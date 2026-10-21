@@ -4,6 +4,7 @@ import {
     checkBudget,
     createBudget,
     deriveMetrics,
+    GROUP_P95_HARD_MS,
     MAX_READ_STYLE_RECALCS_PER_FRAME,
     MIN_GROUP_GAIN,
     parseBudget,
@@ -83,10 +84,32 @@ test('createBudget initializes maxRafReadStyleRecalcsPerFrame to 1.05', () => {
         MAX_READ_STYLE_RECALCS_PER_FRAME
     )
     assert.strictEqual(MIN_GROUP_GAIN, 2.5)
+    assert.strictEqual(GROUP_P95_HARD_MS, 4.5)
     assert.strictEqual(budget.minGroupGain, MIN_GROUP_GAIN)
     assert.strictEqual(budget.minGroupGain, 2.5)
     assert.strictEqual(budget.rafTimelinesP95Ms, 20)
-    assert.strictEqual(budget.rafGroupP95Ms, 8.8)
+    assert.strictEqual(budget.rafGroupP95Ms, 4.5)
+})
+
+test('createBudget clamps a 4.0 ms group measurement to the 4.5 ms hard budget', () => {
+    const rows: ResultRow[] = [
+        mockRow('raf-timelines', 5000, { tickP95: 16 }),
+        mockRow('raf-group', 5000, { tickP95: 4.0 }),
+        mockRow('raf-read', 5000, { styleRecalcsPerFrame: 1.0 }),
+    ]
+    const budget = createBudget(rows, 5000)
+    assert.strictEqual(budget.rafGroupP95Ms, 4.5)
+    assert.notStrictEqual(budget.rafGroupP95Ms, 5.0)
+})
+
+test('createBudget keeps measured headroom when it is below the group hard budget', () => {
+    const rows: ResultRow[] = [
+        mockRow('raf-timelines', 5000, { tickP95: 16 }),
+        mockRow('raf-group', 5000, { tickP95: 3.0 }),
+        mockRow('raf-read', 5000, { styleRecalcsPerFrame: 1.0 }),
+    ]
+    const budget = createBudget(rows, 5000)
+    assert.strictEqual(budget.rafGroupP95Ms, 3.8)
 })
 
 test('deriveMetrics computes style recalcs for raf-read and raf-thrash and layout for raf-read', () => {
