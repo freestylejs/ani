@@ -902,8 +902,13 @@ class RafAniGroup<G extends Groupable>
         } else {
             const at = this._atBindings
             const position = at.indexOf(binding)
-            if (position !== -1) at.splice(position, 1)
-            if (binding.resolver !== undefined) this._atResolved--
+            if (position !== -1) {
+                at.splice(position, 1)
+                if (binding.resolver !== undefined) this._atResolved--
+            }
+            if (this._atWriters[binding.index] === binding.writer) {
+                this._atWriters[binding.index] = undefined
+            }
         }
         if (report) {
             reportAsync(
@@ -945,7 +950,8 @@ class RafAniGroup<G extends Groupable>
             for (const binding of this._bindings)
                 this._dropBinding(binding, true)
             const at = this._atBindings
-            for (let b = 0; b < at.length; b++) this._dropBinding(at[b]!, true)
+            for (let b = at.length - 1; b >= 0; b--)
+                this._dropBinding(at[b]!, true)
             return
         }
 
@@ -1311,7 +1317,10 @@ class RafAniGroup<G extends Groupable>
         this._settle('disposed')
         this._listeners.clear()
         for (const binding of [...this._bindings]) this._dropBinding(binding)
-        for (const binding of [...this._atBindings]) this._dropBinding(binding)
+        for (let b = this._atBindings.length - 1; b >= 0; b--)
+            this._dropBinding(this._atBindings[b]!)
+        this._atWriters.length = 0
+        this._atDense = true
         this._atResolved = 0
     }
 
