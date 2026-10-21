@@ -1,6 +1,7 @@
 {
     "name": "@freestylejs/ani-monorepo",
     "version": "1.0.0",
+    "private": true,
     "type": "module",
     "description": "Tiny, but Powerful Declarative Animation Library.",
     "keywords": ["animation", "composition", "declarative", "animation engine"],
