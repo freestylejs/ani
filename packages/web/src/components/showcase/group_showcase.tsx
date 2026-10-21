@@ -298,7 +298,10 @@ export function GroupShowcase() {
                     />
                 </div>
 
-                <div className="relative z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 sm:px-7">
+                <div
+                    data-copy="header"
+                    className="relative z-20 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 sm:px-7"
+                >
                     <div className="flex items-center gap-2.5">
                         <span className="relative flex h-2 w-2">
                             <span
@@ -316,24 +319,24 @@ export function GroupShowcase() {
                                 }`}
                             />
                         </span>
-                        <span className="font-medium font-mono text-[9px] text-white/45 tracking-[0.2em] sm:text-[10px] sm:tracking-[0.24em]">
+                        <span className="font-medium font-mono text-[10px] text-white/65 tracking-[0.18em] sm:tracking-[0.22em]">
                             EXPERIMENT 01
                         </span>
                         <span
                             aria-hidden="true"
                             className="h-3 w-px bg-white/15"
                         />
-                        <span className="font-medium font-mono text-[9px] text-white/85 tracking-[0.2em] sm:text-[10px] sm:tracking-[0.24em]">
+                        <span className="font-medium font-mono text-[10px] text-white/90 tracking-[0.18em] sm:tracking-[0.22em]">
                             IMMUTABLE DESCRIPTION
                         </span>
                     </div>
-                    <div className="flex items-center gap-2 font-mono text-[9px] text-white/40 tracking-[0.18em] sm:text-[10px]">
+                    <div className="flex items-center gap-2 font-mono text-[10px] text-white/55 tracking-[0.14em] sm:tracking-[0.18em]">
                         <span>{TILE_COUNT} TARGETS</span>
                         <span
                             aria-hidden="true"
                             className="h-3 w-px bg-white/15"
                         />
-                        <span className="text-cyan-200/80">
+                        <span className="text-cyan-200/90">
                             {engine === 'raf' ? 'RAF GROUP' : 'WAAPI'}
                         </span>
                     </div>
@@ -341,39 +344,47 @@ export function GroupShowcase() {
 
                 <div className="relative z-10 px-5 pt-5 sm:px-7 sm:pt-6">
                     <div
-                        ref={fieldRef}
-                        aria-hidden="true"
-                        className="grid grid-cols-6 gap-2 lg:grid-cols-12 lg:gap-2.5"
+                        data-field-viewport
+                        className="relative isolate -mx-2 overflow-hidden px-2 py-5"
                     >
-                        {Array.from({ length: TILE_COUNT }, (_, index) => {
-                            const hueA = 184 + (index % 12) * 5
-                            const hueB = 256 + (index % 7) * 5
-                            return (
-                                <div
-                                    key={index}
-                                    data-tile={true}
-                                    className="relative aspect-square min-w-0 rounded-[9px] will-change-transform"
-                                    style={{
-                                        background: `linear-gradient(140deg, hsl(${hueA} 95% 69%) 0%, hsl(${hueB} 88% 64%) 55%, hsl(${hueB + 16} 82% 52%) 100%)`,
-                                        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.45), 0 8px 26px -12px hsl(${hueB} 90% 60% / 0.8), 0 0 22px -14px rgba(34,211,238,0.9)`,
-                                    }}
-                                >
-                                    <span className="absolute inset-0 rounded-[inherit] bg-gradient-to-b from-white/25 via-transparent to-black/25" />
-                                    <span className="absolute top-1.5 left-1.5 h-1 w-1 rounded-full bg-white/80" />
-                                </div>
-                            )
-                        })}
+                        <div
+                            ref={fieldRef}
+                            aria-hidden="true"
+                            className="grid grid-cols-6 gap-2 sm:grid-cols-9 lg:grid-cols-12 lg:gap-2.5"
+                        >
+                            {Array.from({ length: TILE_COUNT }, (_, index) => {
+                                const hueA = 184 + (index % 12) * 5
+                                const hueB = 256 + (index % 7) * 5
+                                return (
+                                    <div
+                                        key={index}
+                                        data-tile={true}
+                                        className="relative aspect-square min-w-0 rounded-[9px] will-change-transform"
+                                        style={{
+                                            background: `linear-gradient(140deg, hsl(${hueA} 95% 69%) 0%, hsl(${hueB} 88% 64%) 55%, hsl(${hueB + 16} 82% 52%) 100%)`,
+                                            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.45), 0 8px 26px -12px hsl(${hueB} 90% 60% / 0.8), 0 0 22px -14px rgba(34,211,238,0.9)`,
+                                        }}
+                                    >
+                                        <span className="absolute inset-0 rounded-[inherit] bg-gradient-to-b from-white/25 via-transparent to-black/25" />
+                                        <span className="absolute top-1.5 left-1.5 h-1 w-1 rounded-full bg-white/80" />
+                                    </div>
+                                )
+                            })}
+                        </div>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-mono text-[9px] tracking-[0.08em] text-white/40 sm:text-[10px]">
+                    <div
+                        data-copy="caption"
+                        className="mt-2 flex flex-wrap items-center justify-between gap-2"
+                    >
+                        <p className="font-mono text-[10px] tracking-[0.08em] text-white/60">
                             The tree never changes.{' '}
-                            <span className="text-white/85">
+                            <span className="text-white/90">
                                 The realizer does.
                             </span>
                         </p>
                         {reducedMotion && (
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-amber-200/[0.06] px-2.5 py-1 font-mono text-[9px] text-amber-100/70 uppercase tracking-[0.12em]">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-amber-200/[0.06] px-2.5 py-1 font-mono text-[10px] text-amber-100/70 uppercase tracking-[0.1em]">
                                 <Waves size={10} aria-hidden="true" />
                                 reduced motion: system
                             </span>
@@ -409,7 +420,7 @@ export function GroupShowcase() {
                                 type="button"
                                 onClick={replay}
                                 aria-label="Replay with a new scatter"
-                                className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 font-medium text-[11px] text-white/70 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080910] motion-reduce:transition-none sm:flex-none"
+                                className="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 font-medium text-[11px] text-white/75 transition hover:border-white/20 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080910] motion-reduce:transition-none sm:flex-none"
                             >
                                 <RotateCcw size={13} aria-hidden="true" />
                                 Replay
@@ -430,10 +441,10 @@ export function GroupShowcase() {
                                         onClick={() => setEngine(option.id)}
                                         aria-pressed={engine === option.id}
                                         aria-label={option.aria}
-                                        className={`inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 font-mono text-[9px] font-medium tracking-[0.12em] transition focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080910] focus-visible:outline-none motion-reduce:transition-none sm:flex-none ${
+                                        className={`inline-flex h-7 flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 font-mono text-[10px] font-medium tracking-[0.1em] transition focus-visible:ring-2 focus-visible:ring-cyan-200 focus-visible:ring-offset-2 focus-visible:ring-offset-[#080910] focus-visible:outline-none motion-reduce:transition-none sm:flex-none ${
                                             engine === option.id
                                                 ? 'bg-white/[0.12] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
-                                                : 'text-white/40 hover:text-white/70'
+                                                : 'text-white/55 hover:text-white/80'
                                         }`}
                                     >
                                         <Icon size={11} aria-hidden="true" />
@@ -450,28 +461,28 @@ export function GroupShowcase() {
                 </p>
             </div>
 
-            <div className="mt-3 grid overflow-hidden rounded-2xl border border-white/10 bg-[#080910] lg:grid-cols-3">
+            <div className="mt-3 grid overflow-hidden rounded-2xl border border-white/10 bg-[#080910] sm:grid-cols-3">
                 {metrics.map((metric, index) => (
                     <div
                         key={metric.label}
                         className={`px-4 py-3.5 sm:px-5 ${
                             index > 0
-                                ? 'border-t border-white/10 lg:border-t-0 lg:border-l'
+                                ? 'border-t border-white/10 sm:border-t-0 sm:border-l'
                                 : ''
                         }`}
                     >
-                        <div className="flex items-center gap-2 font-mono text-[9px] tracking-[0.16em]">
-                            <span className="text-cyan-300/60">
+                        <div className="flex items-center gap-2 font-mono text-[10px] tracking-[0.14em]">
+                            <span className="text-cyan-200/90">
                                 {metric.index}
                             </span>
-                            <span className="text-white/35">
+                            <span className="text-white/60">
                                 {metric.label}
                             </span>
                         </div>
                         <p className="mt-1 font-medium text-[15px] text-white/90">
                             {metric.value}
                         </p>
-                        <p className="mt-0.5 font-mono text-[9px] text-white/35 uppercase tracking-[0.1em]">
+                        <p className="mt-0.5 font-mono text-[10px] text-white/55 uppercase tracking-[0.08em]">
                             {metric.detail}
                         </p>
                     </div>

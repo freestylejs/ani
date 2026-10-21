@@ -7,7 +7,8 @@ import { GroupShowcase } from '@/components/showcase/group_showcase'
 
 One description, two engines. The field below is 36 tiles driven by a single
 immutable tree. Toggle **RAF GROUP** and **WAAPI**: the choreography, the
-stagger and the per-target `from` stay identical. Only the realizer changes.
+stagger and the per-target `from` stay identical. Only the realizer changes,
+and each switch starts a fresh run from that same description.
 
 <GroupShowcase />
 
@@ -30,9 +31,11 @@ stagger and the per-target `from` stay identical. Only the realizer changes.
 
 - **Replay** creates a new scatter by seeding a fresh `from(index)`. The tree
   is not rebuilt.
-- **Switch engines** while the field is moving. The metrics below the stage
-  change because the realization changed, not because the animation did.
-- **Pause and resume** work on both realizers. The state machine is shared.
+- **Switch engines** at any point. The new realizer starts a new run from the
+  same tree and the same scatter; the playhead is not carried across engines.
+  Only the metrics below the stage change.
+- **Pause and resume** work on both realizers; the tree and the transport
+  semantics never change.
 
 ## Why this is the point
 
@@ -77,15 +80,23 @@ const tree = a.sequence([
 const stagger = (index: number) =>
     (index % COLS) * 0.022 + Math.floor(index / COLS) * 0.05
 
+const TAU = Math.PI * 2
+const noise = (index: number, seed: number): number => {
+    const value = Math.sin(index * 12.9898 + seed * 78.233) * 43758.5453
+    return value - Math.floor(value)
+}
+
 const fromFor = (index: number, seed: number): Tile => {
-    const jitter = Math.sin(index * 12.9898 + seed * 78.233) * 43758.5453
-    const j = jitter - Math.floor(jitter)
+    const col = index % COLS
+    const row = Math.floor(index / COLS)
+    const angle = noise(index, seed) * TAU
+    const radius = 24 + noise(index + 101, seed) * 92
     return {
         opacity: 0,
-        scale: 0.35 + j * 0.3,
-        translateX: (index % COLS) * 6 - 33,
-        translateY: Math.floor(index / COLS) * 8 - 8,
-        rotate: (j - 0.5) * 84,
+        scale: 0.35 + noise(index + 211, seed) * 0.3,
+        translateX: (col - (COLS - 1) / 2) * 6 + Math.cos(angle) * radius,
+        translateY: (row - 1) * 8 + Math.sin(angle) * radius * 0.7,
+        rotate: (noise(index + 307, seed) - 0.5) * 84,
     }
 }
 
