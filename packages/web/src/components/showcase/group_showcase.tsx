@@ -4,6 +4,7 @@ import type { RafGroup, RunResult, WaapiTimeline } from '@freestylejs/ani-core'
 import * as a from '@freestylejs/ani-core'
 import { Cpu, Pause, Play, RotateCcw, Waves, Zap } from 'lucide-react'
 import {
+    type CSSProperties,
     type PointerEvent as ReactPointerEvent,
     useEffect,
     useRef,
@@ -99,10 +100,19 @@ const ENGINE_COPY: Record<
         write: 'one bind · one commit',
     },
     waapi: {
-        time: 'native compositor',
-        clock: 'browser timeline · no tick',
-        write: 'one bind · native keyframes',
+        time: 'native timeline',
+        clock: 'no RAF tick',
+        write: 'one bind · keyframes',
     },
+}
+
+const FIELD_MASK: CSSProperties = {
+    maskImage:
+        'linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent), linear-gradient(to bottom, transparent, black 16px, black calc(100% - 16px), transparent)',
+    maskComposite: 'intersect',
+    WebkitMaskImage:
+        'linear-gradient(to right, transparent, black 12px, black calc(100% - 12px), transparent), linear-gradient(to bottom, transparent, black 16px, black calc(100% - 16px), transparent)',
+    WebkitMaskComposite: 'source-in',
 }
 
 const ENGINES = [
@@ -199,6 +209,11 @@ export function GroupShowcase() {
     }, [engine])
 
     const begin = (realizer: Realizer, seed: number) => {
+        // A replay starts from a clean slate; natural end keeps fill forwards.
+        if (engine === 'waapi') {
+            const field = fieldRef.current
+            if (field !== null) clearTiles(tilesIn(field))
+        }
         const token = ++runTokenRef.current
         setPhase('playing')
         void realizer.play(seed).then((result) => {
@@ -344,13 +359,14 @@ export function GroupShowcase() {
 
                 <div className="relative z-10 px-5 pt-5 sm:px-7 sm:pt-6">
                     <div
-                        data-field-viewport
-                        className="relative isolate -mx-2 overflow-hidden px-2 py-5"
+                        data-field-viewport={true}
+                        className="relative isolate -mx-4 overflow-hidden px-4 py-5"
+                        style={FIELD_MASK}
                     >
                         <div
                             ref={fieldRef}
                             aria-hidden="true"
-                            className="grid grid-cols-6 gap-2 sm:grid-cols-9 lg:grid-cols-12 lg:gap-2.5"
+                            className="grid grid-cols-6 gap-2 sm:grid-cols-9 xl:grid-cols-12 xl:gap-2.5"
                         >
                             {Array.from({ length: TILE_COUNT }, (_, index) => {
                                 const hueA = 184 + (index % 12) * 5
@@ -482,7 +498,7 @@ export function GroupShowcase() {
                         <p className="mt-1 font-medium text-[15px] text-white/90">
                             {metric.value}
                         </p>
-                        <p className="mt-0.5 font-mono text-[10px] text-white/55 uppercase tracking-[0.08em]">
+                        <p className="mt-0.5 min-h-7 font-mono text-[10px] text-white/55 uppercase tracking-[0.08em] sm:min-h-14 lg:min-h-7">
                             {metric.detail}
                         </p>
                     </div>
