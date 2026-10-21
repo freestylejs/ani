@@ -1,4 +1,9 @@
-import { createLayoutGroup } from '@freestylejs/ani-layout'
+import {
+    createLayoutGroup,
+    shareElement,
+    supportsViewTransition,
+    viewTransition,
+} from '@freestylejs/ani-layout'
 import { expectClose, expectEqual } from './assert'
 
 export const pageOptions = {
@@ -230,6 +235,54 @@ export async function L8(): Promise<string> {
     } finally {
         remove()
         group.dispose()
+        root.remove()
+    }
+}
+
+export async function L9(): Promise<string> {
+    const root = stage()
+    const element = box(root, 'left: 0; top: 0; width: 40px; height: 40px;')
+    const unbind = shareElement(element, 'hero')
+    try {
+        let duringName = ''
+        const result = await viewTransition(
+            () => {
+                duringName = element.style.getPropertyValue(
+                    'view-transition-name'
+                )
+                element.style.left = '40px'
+            },
+            { share: ['hero'], motion: { duration: 0.12 } }
+        )
+        if (supportsViewTransition()) {
+            if (result === 'unsupported' || result === 'yielded') {
+                throw new Error(`supported VT returned ${result}`)
+            }
+        } else {
+            expectEqual(result, 'unsupported', 'unsupported fallback')
+        }
+        if (result === 'finished') {
+            if (!duringName.startsWith('ani-hero')) {
+                throw new Error(
+                    `shared name missing during transition: ${duringName}`
+                )
+            }
+        }
+        expectEqual(
+            element.style.getPropertyValue('view-transition-name'),
+            '',
+            'name restored'
+        )
+        const origin = root.getBoundingClientRect()
+        expectClose(
+            element.getBoundingClientRect().left - origin.left,
+            40,
+            0.6,
+            'view transition update'
+        )
+        return `view transition: ${result}`
+    } finally {
+        unbind()
         root.remove()
     }
 }
