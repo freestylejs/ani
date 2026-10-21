@@ -80,7 +80,7 @@
 
 //                         const delay = Math.sin(Math.sqrt(dist))
 //                         const totalDuration = 1.75
-//                         const activeDuration = 0.5
+//                         const activeDuration = 0.8
 //                         const restDuration = Math.max(
 //                             0,
 //                             totalDuration - activeDuration - delay
@@ -93,7 +93,7 @@
 //                                     a.ani({
 //                                         to: { scale: 2.15, opacity: 1 },
 //                                         // duration: 0.15,
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 //                                         timing: a.timing.dynamicSpring({
 //                                             m: 1,
 //                                             k: 200,
@@ -103,7 +103,7 @@
 //                                     a.ani({
 //                                         to: { scale: 1, opacity: 0.3 },
 //                                         // duration: 0.45,
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 
 //                                         timing: a.timing.dynamicSpring({
 //                                             m: 1,
@@ -118,7 +118,7 @@
 //                                     a.ani({
 //                                         to: { translateY: -15 },
 //                                         // duration: 0.15,
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 
 //                                         timing: a.timing.dynamicSpring({
 //                                             m: 1,
@@ -129,7 +129,7 @@
 //                                     a.ani({
 //                                         to: { translateY: 0 },
 //                                         // duration: 0.45,
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 //                                     }),
 //                                     a.delay(restDuration),
 //                                 ]),
@@ -295,7 +295,7 @@
 
 //                         const delay = Math.sin(Math.sqrt(dist))
 //                         const totalDuration = 1.75
-//                         const activeDuration = 0.5
+//                         const activeDuration = 0.8
 //                         const restDuration = Math.max(
 //                             0,
 //                             totalDuration - activeDuration - delay
@@ -307,7 +307,7 @@
 //                                     a.delay(delay),
 //                                     a.ani({
 //                                         to: { scale: 2.15, opacity: 1 },
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 //                                         timing: a.timing.dynamicSpring({
 //                                             m: 1,
 //                                             k: 200,
@@ -316,7 +316,7 @@
 //                                     }),
 //                                     a.ani({
 //                                         to: { scale: 1, opacity: 0.3 },
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 //                                         timing: a.timing.dynamicSpring({
 //                                             m: 1,
 //                                             k: 200,
@@ -329,7 +329,7 @@
 //                                     a.delay(delay),
 //                                     a.ani({
 //                                         to: { translateY: -15 },
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 //                                         timing: a.timing.dynamicSpring({
 //                                             m: 1,
 //                                             k: 200,
@@ -338,7 +338,7 @@
 //                                     }),
 //                                     a.ani({
 //                                         to: { translateY: 0 },
-//                                         duration: Infinity,
+//                                         duration: 0.4,
 //                                     }),
 //                                     a.delay(restDuration),
 //                                 ]),
@@ -745,7 +745,7 @@ export const HeartBeatingDemo = () => {
                         // --- Animation Logic (Preserved exactly) ---
                         const delay = Math.sin(Math.sqrt(dist))
                         const totalDuration = 1.75
-                        const activeDuration = 0.5
+                        const activeDuration = 0.8
                         const restDuration = Math.max(
                             0,
                             totalDuration - activeDuration - delay
@@ -757,7 +757,7 @@ export const HeartBeatingDemo = () => {
                                     a.delay(delay),
                                     a.ani({
                                         to: { scale: 2.15, opacity: 1 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                         timing: a.timing.dynamicSpring({
                                             m: 1,
                                             k: 200,
@@ -766,7 +766,7 @@ export const HeartBeatingDemo = () => {
                                     }),
                                     a.ani({
                                         to: { scale: 1, opacity: 0.3 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                         timing: a.timing.dynamicSpring({
                                             m: 1,
                                             k: 200,
@@ -779,7 +779,7 @@ export const HeartBeatingDemo = () => {
                                     a.delay(delay),
                                     a.ani({
                                         to: { translateY: -15 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                         timing: a.timing.dynamicSpring({
                                             m: 1,
                                             k: 200,
@@ -788,7 +788,7 @@ export const HeartBeatingDemo = () => {
                                     }),
                                     a.ani({
                                         to: { translateY: 0 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                     }),
                                     a.delay(restDuration),
                                 ]),
@@ -1177,7 +1177,7 @@ export const HeartBeatingDemo = () => {
 
                         const delay = Math.sin(Math.sqrt(dist))
                         const totalDuration = 1.75
-                        const activeDuration = 0.5
+                        const activeDuration = 0.8
                         const restDuration = Math.max(
                             0,
                             totalDuration - activeDuration - delay
@@ -1189,7 +1189,7 @@ export const HeartBeatingDemo = () => {
                                     a.delay(delay),
                                     a.ani({
                                         to: { scale: 2.15, opacity: 1 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                         timing: a.timing.dynamicSpring({
                                             m: 1,
                                             k: 200,
@@ -1198,7 +1198,7 @@ export const HeartBeatingDemo = () => {
                                     }),
                                     a.ani({
                                         to: { scale: 1, opacity: 0.3 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                         timing: a.timing.dynamicSpring({
                                             m: 1,
                                             k: 200,
@@ -1211,7 +1211,7 @@ export const HeartBeatingDemo = () => {
                                     a.delay(delay),
                                     a.ani({
                                         to: { translateY: -15 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                         timing: a.timing.dynamicSpring({
                                             m: 1,
                                             k: 200,
@@ -1220,7 +1220,7 @@ export const HeartBeatingDemo = () => {
                                     }),
                                     a.ani({
                                         to: { translateY: 0 },
-                                        duration: Infinity,
+                                        duration: 0.4,
                                     }),
                                     a.delay(restDuration),
                                 ]),
