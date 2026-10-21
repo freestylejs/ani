@@ -3,10 +3,13 @@ import { build } from 'esbuild'
 import {
     type Browser,
     type BrowserContext,
+    type BrowserType,
     type CDPSession,
     chromium,
+    firefox,
     type Page,
     type Route,
+    webkit,
 } from 'playwright'
 import { bundleForBrowser } from './bundle.ts'
 import { renderToMarkup } from './ssr.ts'
@@ -20,7 +23,15 @@ declare global {
 }
 
 const ORIGIN = 'http://ani.test'
-const MODULES = ['core', 'react', 'vue', 'solid', 'svelte'] as const
+const MODULES = [
+    'core',
+    'react',
+    'vue',
+    'solid',
+    'svelte',
+    'layout',
+    'react_layout',
+] as const
 const CASE_TIMEOUT_MS = 10_000
 const LOAD_TIMEOUT_MS = 10_000
 
@@ -31,6 +42,7 @@ Usage:
 
 Options:
   --case <glob>   run matching cases only, repeatable (e.g. "react:*", "core:C1")
+  --browser <name> chromium | firefox | webkit (default: chromium)
   --headed        show the browser window
   --list          print the case ids and exit
 
@@ -59,9 +71,12 @@ interface Pattern {
     name: RegExp
 }
 
+type BrowserName = 'chromium' | 'firefox' | 'webkit'
+
 interface Options {
     patterns: Pattern[]
     filters: string[]
+    browser: BrowserName
     headed: boolean
     list: boolean
 }
@@ -105,6 +120,7 @@ function parsePattern(glob: string): Pattern {
 function parseOptions(argv: readonly string[]): Options {
     const patterns: Pattern[] = []
     const filters: string[] = []
+    let browser: BrowserName = 'chromium'
     let headed = false
     let list = false
     for (let i = 0; i < argv.length; i++) {
@@ -117,6 +133,21 @@ function parseOptions(argv: readonly string[]): Options {
                 }
                 filters.push(value)
                 patterns.push(parsePattern(value))
+                i += 1
+                break
+            }
+            case '--browser': {
+                const value = argv[i + 1]
+                if (
+                    value !== 'chromium' &&
+                    value !== 'firefox' &&
+                    value !== 'webkit'
+                ) {
+                    throw new UsageError(
+                        '--browser must be chromium, firefox or webkit'
+                    )
+                }
+                browser = value
                 i += 1
                 break
             }
@@ -133,7 +164,7 @@ function parseOptions(argv: readonly string[]): Options {
                 throw new UsageError(`unknown option "${arg}"`)
         }
     }
-    return { patterns, filters, headed, list }
+    return { patterns, filters, browser, headed, list }
 }
 
 function pageHtml(markup: string): string {
@@ -433,13 +464,21 @@ async function main(): Promise<number> {
         return 1
     }
 
-    const browser = await chromium.launch({
+    const launcher: BrowserType =
+        options.browser === 'firefox'
+            ? firefox
+            : options.browser === 'webkit'
+              ? webkit
+              : chromium
+    const browser = await launcher.launch({
         headless: !options.headed,
-        args: [
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-        ],
+        ...(options.browser === 'chromium' && {
+            args: [
+                '--disable-background-timer-throttling',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-renderer-backgrounding',
+            ],
+        }),
     })
     const counts = { PASS: 0, FAIL: 0, KNOWN: 0 }
     const started = performance.now()

@@ -2,6 +2,7 @@
     "title": "Guides",
     "pages": [
         "showcase",
+        "layout",
         "migration-v2",
         "performance",
         "reduced-motion",

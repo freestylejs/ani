@@ -1,0 +1,112 @@
+---
+title: Layout and presence
+description: Declarative layout animation, shared elements and exit retention for Ani 2.
+---
+
+`@freestylejs/ani-layout` is the optional layout layer for Ani. It keeps the ANI
+tree and core small, and chooses the cheapest browser-native realization for
+the job:
+
+- **View Transitions** for discrete route/page/shared-element changes.
+- **WAAPI FLIP** for interactive reorder, tabs, accordions and cards.
+- **Snap** when measurement is unreliable or a change is too large.
+
+The common path is declarative. You place a boundary and declare participants;
+you do not call `capture`/`play` by hand.
+
+## Layout
+
+```text
+import { LayoutGroup, useLayout } from '@freestylejs/ani-react/layout'
+
+function Row({ item, index }) {
+  const ref = useLayout({ layout: 'position' })
+  return <li ref={ref} style={{ left: index * 40 }}>{item.label}</li>
+}
+
+function List({ items }) {
+  return (
+    <LayoutGroup motion={{ duration: 0.3 }} deps={[items]}>
+      <ul>
+        {items.map((item, index) => (
+          <Row key={item.id} item={item} index={index} />
+        ))}
+      </ul>
+    </LayoutGroup>
+  )
+}
+```
+
+- `LayoutGroup` renders no DOM wrapper.
+- `deps` limits transactions to relevant updates. Without `deps`, every
+  boundary update opens a transaction.
+- `useLayout` registers the element with the nearest group.
+- `layout: 'position'` animates translation only.
+- `layout: 'box'` adds scale and radius correction; use it for surfaces, not
+  text-heavy content.
+- `useLayoutGroup().update(fn)` is the escape hatch for changes no boundary sees.
+
+The measured position path makes no `getComputedStyle` calls and writes no
+inline styles. FLIP is driven by the browser's `Element.animate()`.
+
+## Presence
+
+```text
+import { AnimatePresence, usePresence } from '@freestylejs/ani-react/layout'
+
+const toastMotion = {
+  present: { opacity: 1, translateY: 0 },
+  initial: { opacity: 0, translateY: 8 },
+  exit: ani({ to: { opacity: 0, translateY: 8 }, duration: 0.18 }),
+}
+
+function Toast({ toast }) {
+  const presence = usePresence(toastMotion)
+  return <div ref={presence.ref} inert={!presence.isPresent}>{toast.text}</div>
+}
+
+function Toasts({ toasts }) {
+  return (
+    <AnimatePresence initial={false}>
+      {toasts.map((toast) => <Toast key={toast.id} toast={toast} />)}
+    </AnimatePresence>
+  )
+}
+```
+
+The exiting element keeps its DOM node and state until its exit finishes.
+Re-entry cancels the exit through the core state machine. A watchdog releases
+a node if the exit cannot complete.
+
+## View Transitions
+
+Use the platform API for discrete swaps:
+
+```text
+await viewTransition(
+  () => render(nextView),
+  { share: ['hero-42'], motion: { duration: 0.3 } }
+)
+```
+
+- `viewTransition` runs the update exactly once in every path.
+- `shareElement(element, id)` registers a shared candidate.
+- `retimeViewTransition(motion, names)` retimes the browser pseudo animations.
+- Unsupported browsers run the update without a transition.
+- Firefox currently falls back to the instant update; Chromium and WebKit run
+  the transition.
+
+Do not use View Transitions for list reorder, accordions, drag, scroll-linked
+motion, or other interruptible UI. Use FLIP there.
+
+## Limits and contracts
+
+- Core package remains unchanged.
+- No observers; no per-frame layout reads.
+- `box` is capped per change; excess nodes step down to position.
+- `position: sticky`, rotated/skewed ancestors, and non-uniform radius
+  correction are outside the first release.
+- Reduced motion is delegated to core; the default `'jump'` policy releases
+  presence and writes no inverse layout transform.
+
+See `packages/layout/ARCHITECTURE.md` for the full tier and performance model.
