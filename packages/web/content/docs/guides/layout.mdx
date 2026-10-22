@@ -46,7 +46,11 @@ function List({ items }) {
   text-heavy content.
 - `layout: 'size'` scales size around the origin while position snaps;
   `layout: 'preserve-aspect'` uses one uniform scale.
+  If box motion is unavailable/capped for either mode, the participant snaps;
+  it never degrades to a zero-translate position animation.
 - `layoutDependency` suppresses an animation when its value is unchanged.
+  The comparison is against the value recorded at `capture()`; core callers
+  should capture before calling `set()` with a new dependency.
 - `useLayoutGroup().update(fn)` is the escape hatch for changes no boundary sees.
 - `<LayoutConfig motion={...} reducedMotion="jump">` supplies inherited defaults;
   a component's own `motion`/`reducedMotion` wins.
@@ -137,3 +141,6 @@ motion, or other interruptible UI. Use FLIP there.
   style.
 
 See `packages/layout/ARCHITECTURE.md` for the full tier and performance model.
+
+`AnimatePresence custom` is exposed as data through `usePresence().custom`;
+it is not an exit-variant resolver.
