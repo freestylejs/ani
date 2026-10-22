@@ -5,7 +5,7 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** pending negative-extrapolation fix; base `fe4ca6e`.
+**Reviewed code revision:** `67dabd0` (format-only follow-up included); base `fe4ca6e`.
 
 ## Delivered
 

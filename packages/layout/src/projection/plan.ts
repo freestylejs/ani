@@ -137,14 +137,8 @@ export function evaluatePlanAtProgress(
         }
     }
     return {
-        x:
-            plan.after.x +
-            point.tx +
-            plan.originX * (1 - point.sx),
-        y:
-            plan.after.y +
-            point.ty +
-            plan.originY * (1 - point.sy),
+        x: plan.after.x + point.tx + plan.originX * (1 - point.sx),
+        y: plan.after.y + point.ty + plan.originY * (1 - point.sy),
         width: plan.after.width * point.sx,
         height: plan.after.height * point.sy,
     }
