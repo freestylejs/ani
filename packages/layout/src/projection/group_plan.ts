@@ -26,6 +26,10 @@ export function finishGroupRun(run: GroupRun): void {
     for (const animation of run.animations) {
         try {
             animation.finish()
+        } catch {
+            // A throwing finish must not prevent cancellation.
+        }
+        try {
             animation.cancel()
         } catch {
             // The browser may already have released it.

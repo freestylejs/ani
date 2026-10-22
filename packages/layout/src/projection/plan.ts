@@ -77,15 +77,29 @@ function pathPoint(plan: NodePlan, progress: number): PlanPoint {
         return { q: progress, tx: 0, ty: 0, sx: 1, sy: 1 }
     }
     if (path.length === 1) return path[0]!
-    const target = clamp(progress, 0, 1)
+    const target = progress
+    if (target > 1 && path[path.length - 1]!.q >= 1) {
+        const end = path[path.length - 1]!
+        const previous = path[path.length - 2] ?? end
+        const span = end.q - previous.q
+        const mix = span <= 0 ? 0 : (target - end.q) / span
+        return {
+            q: target,
+            tx: end.tx + (end.tx - previous.tx) * mix,
+            ty: end.ty + (end.ty - previous.ty) * mix,
+            sx: end.sx + (end.sx - previous.sx) * mix,
+            sy: end.sy + (end.sy - previous.sy) * mix,
+        }
+    }
+    const bounded = clamp(target, 0, 1)
     let index = 0
-    while (index < path.length - 2 && target > path[index + 1]!.q) {
+    while (index < path.length - 2 && bounded > path[index + 1]!.q) {
         index++
     }
     const start = path[index]!
     const end = path[index + 1] ?? start
     const span = end.q - start.q
-    const mix = span <= 0 ? 0 : clamp((target - start.q) / span, 0, 1)
+    const mix = span <= 0 ? 0 : (bounded - start.q) / span
     return {
         q: target,
         tx: start.tx + (end.tx - start.tx) * mix,
@@ -127,14 +141,11 @@ export function planVelocity(
     now: number,
     axis: 'x' | 'y' = 'x'
 ): number {
-    const epsilon = 0.001
+    const deltaTime = Math.min(1, Math.max(0.001, plan.durationMs))
     const first = evaluatePlanBox(plan, now)
-    const second = evaluatePlanBox(
-        plan,
-        now + Math.max(1, plan.durationMs) * epsilon
-    )
+    const second = evaluatePlanBox(plan, now + deltaTime)
     const delta = axis === 'x' ? second.x - first.x : second.y - first.y
-    return delta / (Math.max(1, plan.durationMs) * epsilon)
+    return delta / deltaTime
 }
 
 /** Give every animation in a group the same explicit timeline origin. */

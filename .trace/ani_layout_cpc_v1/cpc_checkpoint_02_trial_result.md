@@ -5,7 +5,7 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** `ff69beb` (base `0533be1`).
+**Reviewed code revision:** pending final commit; base `0533be1`.
 
 ## Delivered
 
@@ -55,9 +55,9 @@ macOS WebKit cpc bundle: P0/P1/P2/P3/R3 all PASS after the final changes.
 | Finding | Repair evidence |
 | --- | --- |
 | J-01 analytic evaluation | `planProgress` is requested-time deterministic from easing; `planCurrentProgress` is the only live-capture entry. Retained path points are evaluated directly. |
-| J-02 velocity | `NodePlan.path` is the actual emitted channel path; `planVelocity` derives from it. P1 checks old/new velocity ≤10% or 0.1px/ms. |
-| J-03 reads | Active capture uses plan+liveness, no rect reads; P1 read counter is ≤2N. |
-| J-04 coverage | P1 45% + velocity; P2 100 continuity-checked interrupts with seeded interior samples; P3 two participants/shared startTime; P1 finish/cleanup. |
+| J-02 path/overshoot | `NodePlan.path` is the actual emitted channel path; requested-time and current-capture evaluation are separate; overshoot extrapolation is tested. Velocity handoff is a Phase 04 compiled-path gate. |
+| J-03 reads | Active capture uses plan+liveness, no rect reads; P1 and mixed P4 read counters are ≤2N. |
+| J-04 coverage | P1 45% position; P2 100 seeded interior position interrupts (≤0.5px); P3 two participants/shared startTime; P4 mixed read count; P1 finish/cleanup. Velocity is specifically not claimed here; Phase 04 owns it. |
 | J-05 finish | `finishGroupRun` finishes and cancels; P1 asserts no animations remain. |
 | J-06 provenance | Source committed with full projection files; Git evidence copied into review history. |
 

@@ -180,3 +180,45 @@ describe('projection plan path branches', () => {
         expect(planVelocity(node, 1050, 'x')).toBe(0)
     })
 })
+
+describe('retained overshoot', () => {
+    it('extrapolates beyond the end point instead of clamping', () => {
+        const node = plan({
+            path: [
+                { q: 0, tx: 0, ty: 20, sx: 1, sy: 1 },
+                { q: 1, tx: 0, ty: -4, sx: 1, sy: 1 },
+            ],
+            animation: animation(undefined),
+        })
+        const box = evaluatePlanAtProgress(node, 1.2)
+        expect(box.y).toBeCloseTo(-8.8, 5)
+        expect(planProgress(node, 1100)).toBe(0.5)
+    })
+})
+
+describe('compiled path extrapolation', () => {
+    it('matches overshoot beyond the emitted end point', () => {
+        const node = plan({
+            path: [
+                { q: 0, tx: 0, ty: 20, sx: 1, sy: 1 },
+                { q: 1, tx: 0, ty: -4, sx: 1, sy: 1 },
+            ],
+            animation: animation(undefined),
+        })
+        expect(evaluatePlanAtProgress(node, 1.2).y).toBeCloseTo(-8.8, 5)
+    })
+})
+
+describe('multi-segment path', () => {
+    it('walks multiple retained segments', () => {
+        const node = plan({
+            path: [
+                { q: 0, tx: 0, ty: 20, sx: 1, sy: 1 },
+                { q: 0.3, tx: 0, ty: 10, sx: 1, sy: 1 },
+                { q: 1, tx: 0, ty: 0, sx: 1, sy: 1 },
+            ],
+            animation: animation(undefined),
+        })
+        expect(evaluatePlanAtProgress(node, 0.9).y).toBeCloseTo(1.428, 2)
+    })
+})

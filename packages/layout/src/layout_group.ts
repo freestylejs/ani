@@ -415,6 +415,9 @@ export function createLayoutGroup(
                         offsetHeight: plan.element.offsetHeight,
                     })
                 }
+                const activeElements = new Set(
+                    active.plans.map((plan) => plan.element)
+                )
                 let changed = false
                 for (const participant of participants.values()) {
                     const element = participant.element
@@ -424,6 +427,10 @@ export function createLayoutGroup(
                         layoutLeads.get(participant.layoutId) !== participant
                     ) {
                         continue
+                    }
+                    if (!activeElements.has(element)) {
+                        changed = true
+                        break
                     }
                     const before =
                         data.items.get(element) ??
