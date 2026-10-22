@@ -31,6 +31,8 @@ export interface AnimatePresenceProps {
     initial?: boolean
     mode?: 'sync' | 'popLayout' | 'wait'
     onExitComplete?: (key: string) => void
+    /** Value exposed to presence children (e.g. an exit variant selector). */
+    custom?: unknown
 }
 
 function keyOf(child: ReactElement, index: number): string {
@@ -77,10 +79,20 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     const willEnter = useRef(new Map<PresenceKey, boolean>())
     const initialRender = useRef(true)
     const committedKeys = useRef(new Set<PresenceKey>())
+    const hiddenKeys = useRef(new Set<PresenceKey>())
     const onExitComplete = useRef(props.onExitComplete)
     onExitComplete.current = props.onExitComplete
 
-    const pairs = childrenEntries(props.children)
+    const rawPairs = childrenEntries(props.children)
+    const willExit =
+        props.mode === 'wait' &&
+        entries.some(
+            (entry) =>
+                entry.present && !rawPairs.some(([key]) => key === entry.key)
+        )
+    const pairs = willExit
+        ? rawPairs.filter(([key]) => entries.some((entry) => entry.key === key))
+        : rawPairs
     for (const [key, child] of pairs) childMap.current.set(key, child)
     const previousPresent = new Map(
         entries.map((entry) => [entry.key, entry.present] as const)
@@ -102,9 +114,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     const waiting =
         props.mode === 'wait' && nextEntries.some((entry) => !entry.present)
     const visibleEntries = waiting
-        ? nextEntries.filter(
-              (entry) => !entry.present || committedKeys.current.has(entry.key)
-          )
+        ? nextEntries.filter((entry) => committedKeys.current.has(entry.key))
         : nextEntries
 
     useEffect(() => {
@@ -204,10 +214,12 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
                 !entry.present &&
                 (registrants.current.get(entry.key)?.size ?? 0) === 0
             ) {
-                if (typeof console !== 'undefined') {
-                    console.warn(
-                        `[ani-react/layout] AnimatePresence has no usePresence registrant for "${String(entry.key)}"; releasing it now.`
-                    )
+                if (committedKeys.current.has(entry.key)) {
+                    if (typeof console !== 'undefined') {
+                        console.warn(
+                            `[ani-react/layout] AnimatePresence has no usePresence registrant for "${String(entry.key)}"; releasing it now.`
+                        )
+                    }
                 }
                 settle(entry.key, entry.token)
             }
@@ -223,6 +235,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
                     present: entry.present,
                     willEnter: willEnter.current.get(entry.key) ?? true,
                     popLayout: props.mode === 'popLayout',
+                    custom: props.custom,
                     register: () => register(entry.key),
                     unregister: (id) => unregister(entry.key, id),
                     settle: () => settle(entry.key, entry.token),
@@ -245,6 +258,7 @@ export interface UsePresenceResult<E extends HTMLElement> {
     ref: RefCallback<E>
     style: CSSProperties | undefined
     isPresent: boolean
+    custom: unknown
 }
 
 /**
@@ -406,6 +420,7 @@ export function usePresence<
         ref,
         style: popStyle ?? (applyInitial ? initialStyle : undefined),
         isPresent: context?.present ?? true,
+        custom: context?.custom,
     }
 }
 

@@ -164,7 +164,7 @@ policy and the existing per-element error hook.
 - `LayoutConfig` supplies a default layout transition and reduced-motion policy
   for descendants; per-component `layout` transition overrides it.
 - `AnimatePresence` modes: `sync`, `popLayout`, `wait`.
-- `custom` exit data is passed to child exit variants (low-risk React glue).
+- `custom` data is exposed to presence children (`usePresence().custom`); exit variants remain a future API. This is the Phase 03 contract.
 
 ## 5. Showcase contract
 

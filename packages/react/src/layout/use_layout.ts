@@ -42,7 +42,7 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
     useIsoLayoutEffect(() => {
         if (!context || !element.current) return
         context.set(element.current, participantOptions(latest.current))
-    }, [context, options.layout, options.layoutId])
+    }, [context, options.layout, options.layoutId, options.layoutDependency])
 
     useIsoLayoutEffect(() => {
         const previous = previousRef.current

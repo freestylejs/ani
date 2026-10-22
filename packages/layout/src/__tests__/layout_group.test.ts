@@ -285,6 +285,39 @@ describe('createLayoutGroup', () => {
         group.dispose()
     })
 
+    it('runs again when layoutDependency changes', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup()
+        group.add(element, { layoutDependency: 'a' })
+        const first = group.capture()
+        setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+        const run = group.play(first)
+        group.finish()
+        await run
+        group.set(element, { layoutDependency: 'b' })
+        animateSpy.mockClear()
+        const second = group.capture()
+        setBox(element, { x: 20, y: 0, width: 10, height: 10 })
+        const changed = group.play(second)
+        group.finish()
+        await changed
+        expect(animateSpy).toHaveBeenCalledTimes(1)
+        group.dispose()
+    })
+
+    it('uses a uniform scale for preserve-aspect', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+        const group = createLayoutGroup()
+        group.add(element, { layout: 'preserve-aspect' })
+        const snapshot = group.capture()
+        setBox(element, { x: 0, y: 0, width: 50, height: 50 })
+        await expect(group.play(snapshot)).resolves.toBe('ended')
+        expect(animateSpy.mock.calls[0]![0][0]).toMatchObject({
+            scale: '2 2',
+        })
+        group.dispose()
+    })
+
     it('does not interrupt an active run when a later play has no change', async () => {
         const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
         const group = createLayoutGroup()
@@ -440,4 +473,15 @@ describe('createLayoutGroup', () => {
         group.finish()
         group.dispose()
     })
+})
+
+it('suppresses the first update with an unchanged initial dependency', async () => {
+    const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+    const group = createLayoutGroup()
+    group.add(element, { layoutDependency: 'a' })
+    const snapshot = group.capture()
+    setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+    await expect(group.play(snapshot)).resolves.toBe('no-change')
+    expect(animateSpy).not.toHaveBeenCalled()
+    group.dispose()
 })
