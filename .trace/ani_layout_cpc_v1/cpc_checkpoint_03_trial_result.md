@@ -4,7 +4,7 @@
 **Validation:** `cpc_valid_03_api.md`  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** pending repair commit; base `45f7377`.
+**Reviewed code revision:** `a3f46bb`; base `45f7377`.
 
 ## Delivered
 
