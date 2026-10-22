@@ -136,8 +136,8 @@ export function createLayoutFacade(): LayoutFacade {
 export const LayoutContext = createContext<LayoutFacade | null>(null)
 
 export interface LayoutConfigValue {
-    readonly motion?: LayoutMotion
-    readonly reducedMotion?: ReducedMotionPolicy
+    readonly motion?: LayoutMotion | undefined
+    readonly reducedMotion?: ReducedMotionPolicy | undefined
 }
 
 export const LayoutConfigContext = createContext<LayoutConfigValue>({})

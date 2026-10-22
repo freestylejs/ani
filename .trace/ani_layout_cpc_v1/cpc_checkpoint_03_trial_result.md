@@ -4,7 +4,7 @@
 **Validation:** `cpc_valid_03_api.md`  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** `45f7377`; base `31fabca`.
+**Reviewed code revision:** pending repair commit; base `45f7377`.
 
 ## Delivered
 
@@ -24,8 +24,8 @@
 
 ```text
 pnpm test:ci -> PASS
-  134 test files / 1,537 tests
-  layout core 23 tests; React layout 23 tests
+  134 test files / 1,541 tests
+  layout core 25 tests; React layout 25 tests
 pnpm check -> PASS
 pnpm build / layout build / react build -> PASS
 React R1/R2/R3 Chromium -> 3/3 PASS
@@ -34,9 +34,11 @@ cpc:P1 Chromium -> PASS
 core diff 6715bb1 -> 0
 ```
 
-Core tests cover dependency suppression (initial/unchanged/changed), size and
-preserve-aspect modes. React tests cover LayoutConfig duration inheritance,
-dependency changes, wait sequencing, ghost prevention and exposed custom data.
+Core tests cover dependency suppression (initial/unchanged/changed), the
+capture-before-set `a,a,b,b,a → 0,1,0,1` sequence, size/preserve-aspect and
+box-unavailable snap. React tests cover the same dependency sequence, nested
+LayoutConfig inheritance/explicit-undefined behavior, StrictMode, wait ghost
+prevention and exposed custom data.
 
 ## Known limits
 
@@ -48,8 +50,8 @@ dependency changes, wait sequencing, ghost prevention and exposed custom data.
 
 ## FAIL repair
 
-- F1: `layoutDependency` added to the `useLayout` `set` effect dependencies; initial dependency is committed at add/initial set. Core tests cover initial, unchanged and changed dependency. React test covers changed dependency and config duration.
+- F1: `lastDependency` was removed. `capture()` records the participant dependency at that instant, before React’s layout-effect `set()`. Core and React sequences `a,a,b,b,a` now assert animate deltas `0,1,0,1`.
 - F2: `custom` is exposed through `AnimatePresence` and `usePresence().custom`; authority wording was corrected; test verifies SSR/child access.
-- F3: added preserve-aspect, changed dependency, LayoutConfig inheritance, wait ghost, custom and SSR tests; report corrected.
-- F4: wait mode filters uncommitted children and releases hidden entries silently; a→b→c regression passes.
-- F5: LayoutConfig no longer spreads children or lets an explicit undefined override a parent; JSDoc placement fixed.
+- F3: added capture-before-set dependency, preserve-aspect, nested LayoutConfig inheritance, explicit-undefined inheritance, StrictMode, wait ghost, custom and SSR tests; report corrected.
+- F4: unused `hiddenKeys` was removed; wait mode filters uncommitted children and releases the silent hidden path; a→b→c regression passes without a ghost warning.
+- F5: `size`/`preserve-aspect` now snap when box motion is unavailable instead of degrading to a zero-translate position animation; types docs state this. Nested/undefined LayoutConfig defaults are tested.

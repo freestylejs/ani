@@ -72,6 +72,8 @@ interface Candidate {
     originY: number
     velocityX?: number | undefined
     velocityY?: number | undefined
+    requestedMode: 'size' | 'preserve-aspect' | 'other'
+    skip?: boolean
     radius?: number
 }
 
@@ -218,7 +220,6 @@ export function createLayoutGroup(
     const owner = {}
     const participants = new Map<HTMLElement, Participant>()
     let run: GroupRun | null = null
-    const lastDependency = new Map<HTMLElement, unknown>()
 
     const finishRun = (state: GroupRun, result: LayoutResult): void => {
         if (run !== state) return
@@ -252,9 +253,6 @@ export function createLayoutGroup(
                 layoutId: participantOptions.layoutId,
                 layoutDependency: participantOptions.layoutDependency,
             })
-            if (participantOptions.layoutDependency !== undefined) {
-                lastDependency.set(element, participantOptions.layoutDependency)
-            }
             return () => {
                 if (participants.get(element)?.element !== element) return
                 participants.delete(element)
@@ -266,12 +264,6 @@ export function createLayoutGroup(
             if (!participant) return
             participant.layout = participantOptions.layout ?? 'position'
             participant.layoutId = participantOptions.layoutId
-            if (
-                participant.layoutDependency === undefined &&
-                participantOptions.layoutDependency !== undefined
-            ) {
-                lastDependency.set(element, participantOptions.layoutDependency)
-            }
             participant.layoutDependency = participantOptions.layoutDependency
         },
 
@@ -339,14 +331,8 @@ export function createLayoutGroup(
                         offsetHeight,
                     }
                     data.items.set(element, item)
-                    if (participant.layoutDependency === undefined) {
-                        lastDependency.delete(element)
-                    } else {
+                    if (participant.layoutDependency !== undefined) {
                         data.dependencies.set(
-                            element,
-                            lastDependency.get(element)
-                        )
-                        lastDependency.set(
                             element,
                             participant.layoutDependency
                         )
@@ -585,6 +571,11 @@ export function createLayoutGroup(
                     originY: 0,
                     velocityX: activeVelocity.get(element)?.x,
                     velocityY: activeVelocity.get(element)?.y,
+                    requestedMode:
+                        participant.layout === 'size' ||
+                        participant.layout === 'preserve-aspect'
+                            ? participant.layout
+                            : 'other',
                 })
             }
 
@@ -608,6 +599,10 @@ export function createLayoutGroup(
                     candidate.sy < 0.25 ||
                     candidate.sy > 4
                 ) {
+                    if (candidate.requestedMode !== 'other') {
+                        candidate.skip = true
+                        continue
+                    }
                     candidate.mode = 'position'
                     continue
                 }
@@ -624,6 +619,10 @@ export function createLayoutGroup(
                         (translate !== 'none' && translate !== '0px') ||
                         transform !== 'none'
                     ) {
+                        if (candidate.requestedMode !== 'other') {
+                            candidate.skip = true
+                            continue
+                        }
                         candidate.mode = 'position'
                         continue
                     }
@@ -652,7 +651,11 @@ export function createLayoutGroup(
                     candidate.originX = origin.x
                     candidate.originY = origin.y
                 } catch (error) {
-                    candidate.mode = 'position'
+                    if (candidate.requestedMode === 'other') {
+                        candidate.mode = 'position'
+                    } else {
+                        candidate.skip = true
+                    }
                     options.onError?.(error, candidate.element)
                 }
             }
@@ -661,6 +664,7 @@ export function createLayoutGroup(
             const plans: NodePlan[] = []
             const startTime = timelineNow()
             for (const candidate of candidates) {
+                if (candidate.skip) continue
                 try {
                     if (
                         candidate.mode === 'box' &&

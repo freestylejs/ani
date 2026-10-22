@@ -35,4 +35,4 @@
 - BLOCK if required artifacts/access are unavailable.
 
 ## 4) Required evidence
-Type tests, React SSR/StrictMode, dependency no-op, mode selection, wait sequencing, custom data. Browser smoke.
+Type tests, React SSR/StrictMode, dependency no-op, mode selection, wait sequencing, custom data exposed via `usePresence().custom`. Browser smoke.
