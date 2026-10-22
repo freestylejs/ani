@@ -3,6 +3,7 @@
         "introduction",
         "core-api",
         "guides",
+        "showcase",
         "errors",
         "---Framework Bindings---",
         "react",

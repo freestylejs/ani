@@ -36,7 +36,8 @@
         "pkg:init": "pnpm test:ci && changeset",
         "pkg:version": "changeset version",
         "pkg:publish": "changeset publish",
-        "pre-commit": "pnpm check"
+        "pre-commit": "pnpm check",
+        "test:docs-showcase": "node tests/browser/docs_showcase.mjs"
     },
     "packageManager": "pnpm@10.20.0",
     "devDependencies": {
