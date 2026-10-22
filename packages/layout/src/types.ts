@@ -20,6 +20,11 @@ export interface LayoutMotion {
 
 export type LayoutMode = 'position' | 'box' | 'size' | 'preserve-aspect'
 
+export interface LayoutAnchor {
+    readonly x: number
+    readonly y: number
+}
+
 export interface LayoutParticipantOptions {
     /**
      * Default: 'position' translates only. 'box' adds scale + radius.
@@ -31,6 +36,8 @@ export interface LayoutParticipantOptions {
     readonly layout?: LayoutMode
     /** Shared identity within the layout root. */
     readonly layoutId?: string
+    /** Normalized transform anchor for box motion; default is computed origin. */
+    readonly layoutAnchor?: LayoutAnchor
     /** If supplied, equal previous/current values suppress this participant's run. */
     readonly layoutDependency?: unknown
 }

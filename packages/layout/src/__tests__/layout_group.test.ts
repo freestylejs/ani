@@ -522,3 +522,137 @@ it('snaps size/preserve-aspect when box motion is unavailable', async () => {
     expect(animateSpy).not.toHaveBeenCalled()
     group.dispose()
 })
+
+it('projects a depth-1 child through a box parent with an anchor', async () => {
+    const parent = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const child = makeElement({ x: 10, y: 10, width: 20, height: 20 })
+    parent.append(child)
+    const group = createLayoutGroup({ motion: { duration: 0.2 } })
+    group.add(parent, {
+        layout: 'box',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+    })
+    group.add(child, { layout: 'box' })
+    const snapshot = group.capture()
+    setBox(parent, { x: 60, y: 0, width: 160, height: 100 })
+    setBox(child, { x: 70, y: 10, width: 20, height: 20 })
+    await expect(group.play(snapshot)).resolves.toBe('ended')
+    expect(animateSpy).toHaveBeenCalledTimes(2)
+    const childFrames = animateSpy.mock.calls[1]![0]
+    expect(childFrames[0]).toMatchObject({
+        scale: '1.6 1',
+    })
+    expect(childFrames[0]!.translate).not.toBe('0px 0px')
+    group.dispose()
+})
+
+it('snaps size mode when the element already has a transform', async () => {
+    const spy = vi.spyOn(window, 'getComputedStyle').mockReturnValue({
+        scale: 'none',
+        rotate: 'none',
+        transform: 'matrix(1,0,0,1,0,0)',
+        translate: 'none',
+        transformOrigin: '50% 50%',
+        borderTopLeftRadius: '0px',
+        borderTopRightRadius: '0px',
+        borderBottomRightRadius: '0px',
+        borderBottomLeftRadius: '0px',
+    } as CSSStyleDeclaration)
+    const element = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const group = createLayoutGroup()
+    group.add(element, { layout: 'size' })
+    const snapshot = group.capture()
+    setBox(element, { x: 10, y: 10, width: 50, height: 50 })
+    await expect(group.play(snapshot)).resolves.toBe('unsupported')
+    expect(animateSpy).not.toHaveBeenCalled()
+    spy.mockRestore()
+    group.dispose()
+})
+
+it('snaps preserve-aspect when computed style read fails', async () => {
+    const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation(() => {
+        throw new Error('style unavailable')
+    })
+    const onError = vi.fn()
+    const element = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const group = createLayoutGroup({ onError })
+    group.add(element, { layout: 'preserve-aspect' })
+    const snapshot = group.capture()
+    setBox(element, { x: 10, y: 10, width: 50, height: 50 })
+    await expect(group.play(snapshot)).resolves.toBe('unsupported')
+    expect(onError).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+    group.dispose()
+})
+
+it('samples live paused progress for retarget when an effect exists', async () => {
+    const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+    const group = createLayoutGroup({ motion: { duration: 0.2 } })
+    group.add(element)
+    const snapshot = group.capture()
+    setBox(element, { x: 80, y: 0, width: 10, height: 10 })
+    let resolve!: (value: Animation) => void
+    const finished = new Promise<Animation>((done) => {
+        resolve = done
+    })
+    let currentTime = 100
+    const custom = {
+        get currentTime() {
+            return currentTime
+        },
+        set currentTime(value: number) {
+            currentTime = value
+        },
+        startTime: 0,
+        effect: {
+            getComputedTiming: () => ({ progress: currentTime / 200 }),
+        },
+        finished,
+        cancel: vi.fn(() => resolve(custom as unknown as Animation)),
+        finish: vi.fn(() => resolve(custom as unknown as Animation)),
+    }
+    animateSpy.mockImplementationOnce(() => custom as unknown as Animation)
+    const first = group.play(snapshot)
+    const secondSnapshot = group.capture()
+    setBox(element, { x: 140, y: 0, width: 10, height: 10 })
+    const second = group.play(secondSnapshot)
+    group.finish()
+    await Promise.all([first, second])
+    expect(animateSpy).toHaveBeenCalledTimes(2)
+    group.dispose()
+})
+
+it('snaps box motion under a transformed static ancestor', async () => {
+    const ancestor = document.createElement('div')
+    document.body.append(ancestor)
+    const element = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    ancestor.append(element)
+    const none = {
+        scale: 'none',
+        rotate: 'none',
+        translate: 'none',
+        transform: 'none',
+        transformOrigin: '50% 50%',
+        borderTopLeftRadius: '0px',
+        borderTopRightRadius: '0px',
+        borderBottomRightRadius: '0px',
+        borderBottomLeftRadius: '0px',
+    } as CSSStyleDeclaration
+    const transformed = {
+        ...none,
+        transform: 'matrix(1,0,0,1,10,0)',
+    } as CSSStyleDeclaration
+    const spy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockImplementation((target) =>
+            target === ancestor ? transformed : none
+        )
+    const group = createLayoutGroup()
+    group.add(element, { layout: 'box' })
+    const snapshot = group.capture()
+    setBox(element, { x: 20, y: 0, width: 50, height: 50 })
+    await expect(group.play(snapshot)).resolves.toBe('unsupported')
+    expect(animateSpy).not.toHaveBeenCalled()
+    spy.mockRestore()
+    group.dispose()
+})
