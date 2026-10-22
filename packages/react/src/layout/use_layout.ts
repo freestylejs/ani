@@ -14,6 +14,9 @@ function participantOptions(
     return {
         ...(options.layout !== undefined && { layout: options.layout }),
         ...(options.layoutId !== undefined && { layoutId: options.layoutId }),
+        ...(options.layoutAnchor !== undefined && {
+            layoutAnchor: options.layoutAnchor,
+        }),
         ...(options.layoutDependency !== undefined && {
             layoutDependency: options.layoutDependency,
         }),

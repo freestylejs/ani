@@ -3,6 +3,7 @@ import { expectClose, expectEqual } from './assert'
 import {
     blockMainThread,
     boxOf,
+    pauseAt,
     resumeAnimations,
     runPausedOracle,
     sampleBoxes,
@@ -329,6 +330,128 @@ export async function P4(): Promise<string> {
     } finally {
         removeFirst()
         removeSecond()
+        group.dispose()
+        root.remove()
+    }
+}
+
+export async function P5(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:300px;height:200px;'
+    const parent = document.createElement('div')
+    parent.style.cssText =
+        'position:absolute;left:0;top:0;width:100px;height:100px;background:#ddd;'
+    const child = document.createElement('div')
+    child.style.cssText =
+        'position:absolute;left:10px;top:10px;width:20px;height:20px;background:#222;'
+    parent.append(child)
+    root.append(parent)
+    document.body.append(root)
+    const group = createLayoutGroup({ motion: { duration: 0.2 } })
+    const removeParent = group.add(parent, {
+        layout: 'box',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+    })
+    const removeChild = group.add(child, { layout: 'box' })
+    try {
+        const snapshot = group.capture()
+        const beforeParent = boxOf(parent)
+        const beforeChild = boxOf(child)
+        parent.style.left = '60px'
+        parent.style.width = '160px'
+        const run = group.play(snapshot)
+        const animations = [...parent.getAnimations(), ...child.getAnimations()]
+        if (animations.length < 2) {
+            throw new Error('P5 nested projection did not animate both nodes')
+        }
+        pauseAt(animations, 0)
+        const firstChild = boxOf(child)
+        expectClose(
+            firstChild.left,
+            beforeChild.left,
+            1.5,
+            'P5 child first-frame projection'
+        )
+        expectClose(
+            firstChild.width,
+            beforeChild.width,
+            1.5,
+            'P5 child first-frame width'
+        )
+        const firstParent = boxOf(parent)
+        expectClose(
+            firstParent.left,
+            beforeParent.left,
+            1.5,
+            'P5 parent first-frame'
+        )
+        resumeAnimations(animations)
+        await run
+        const finalChild = boxOf(child)
+        const finalParent = boxOf(parent)
+        expectClose(
+            finalChild.left,
+            finalParent.left + 10,
+            0.6,
+            'P5 child final parent-relative left'
+        )
+        expectClose(finalChild.width, 20, 0.6, 'P5 child final width')
+        return 'P5: depth-1 parent projection + layoutAnchor + child counter-scale'
+    } finally {
+        removeParent()
+        removeChild()
+        group.dispose()
+        root.remove()
+    }
+}
+
+export async function P6(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:240px;height:80px;'
+    const element = document.createElement('div')
+    element.style.cssText =
+        'position:absolute;left:0;top:0;width:20px;height:20px;background:#222;'
+    root.append(element)
+    document.body.append(root)
+    const group = createLayoutGroup({ motion: { duration: 0.2 } })
+    const remove = group.add(element)
+    try {
+        const snapshot = group.capture()
+        element.style.left = '80px'
+        const firstRun = group.play(snapshot)
+        const firstAnimations = element.getAnimations()
+        if (firstAnimations.length === 0) {
+            throw new Error('P6 first run has no animations')
+        }
+        const sample100 = sampleBoxes([element], firstAnimations, 100).boxes[0]!
+        const sample101 = sampleBoxes([element], firstAnimations, 101).boxes[0]!
+        const oldVelocity = sample101.left - sample100.left
+        const retargetSnapshot = group.capture()
+        element.style.left = '140px'
+        const secondRun = group.play(retargetSnapshot)
+        const secondAnimations = element.getAnimations()
+        if (secondAnimations.length === 0) {
+            throw new Error('P6 retarget has no animations')
+        }
+        const first = sampleBoxes([element], secondAnimations, 0).boxes[0]!
+        const early = sampleBoxes([element], secondAnimations, 1).boxes[0]!
+        const newVelocity = early.left - first.left
+        const origin = root.getBoundingClientRect().left
+        expectClose(first.left, sample100.left, 1.5, 'P6 first frame')
+        expectEqual(
+            Math.abs(newVelocity - oldVelocity) <=
+                Math.max(Math.abs(oldVelocity) * 0.1, 0.1),
+            true,
+            `P6 compiled velocity ${oldVelocity} -> ${newVelocity}`
+        )
+        resumeAnimations(secondAnimations)
+        await secondRun
+        expectClose(boxOf(element).left - origin, 140, 0.6, 'P6 final')
+        group.finish()
+        await firstRun.catch(() => undefined)
+        return 'P6: live compiled-path velocity handoff <=10%'
+    } finally {
+        remove()
         group.dispose()
         root.remove()
     }

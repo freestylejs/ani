@@ -6,6 +6,7 @@ import {
     reducedLayoutMotion,
     supportsFlip,
 } from './feature'
+import { anchorOrigin, compileChildProjection } from './projection/compiler'
 import {
     cancelGroupRun,
     finishGroupRun,
@@ -45,6 +46,7 @@ interface SnapshotItem {
 
 interface SnapshotData {
     dependencies: Map<HTMLElement, unknown>
+    parents: Map<HTMLElement, HTMLElement>
     owner: object
     items: Map<HTMLElement, SnapshotItem>
     byId: Map<string, SnapshotItem>
@@ -56,6 +58,7 @@ interface Participant {
     element: HTMLElement
     layout: LayoutMode
     layoutId?: string | undefined
+    layoutAnchor?: { x: number; y: number } | undefined
     layoutDependency?: unknown
 }
 
@@ -73,6 +76,8 @@ interface Candidate {
     velocityX?: number | undefined
     velocityY?: number | undefined
     requestedMode: 'size' | 'preserve-aspect' | 'other'
+    parentElement?: HTMLElement | undefined
+    anchor?: { x: number; y: number } | undefined
     skip?: boolean
     radius?: number
 }
@@ -204,6 +209,48 @@ function positionPath(dx: number, dy: number): PlanPoint[] {
     ]
 }
 
+interface LivePlanSample {
+    box: ReturnType<typeof evaluatePlanAtProgress>
+    x: number
+    y: number
+}
+
+/** Current visual box and 1ms visual velocity from the live paused animation. */
+function livePlanSample(plan: NodePlan): LivePlanSample | null {
+    const animation = plan.animation
+    if (
+        typeof animation.currentTime !== 'number' ||
+        typeof animation.effect?.getComputedTiming !== 'function'
+    ) {
+        return null
+    }
+    const firstProgress = animation.effect.getComputedTiming().progress
+    if (typeof firstProgress !== 'number') return null
+    const original = animation.currentTime
+    let secondProgress: number | undefined
+    try {
+        animation.currentTime = original + 1
+        const value = animation.effect.getComputedTiming().progress
+        if (typeof value === 'number') secondProgress = value
+    } catch {
+        // Fall through to the plan derivative.
+    } finally {
+        try {
+            animation.currentTime = original
+        } catch {
+            // Ignore restoration failures on detached animations.
+        }
+    }
+    if (secondProgress === undefined) return null
+    const firstBox = evaluatePlanAtProgress(plan, firstProgress)
+    const secondBox = evaluatePlanAtProgress(plan, secondProgress)
+    return {
+        box: firstBox,
+        x: secondBox.x - firstBox.x,
+        y: secondBox.y - firstBox.y,
+    }
+}
+
 function canAnimate(): boolean {
     return hasDOM() && supportsFlip()
 }
@@ -241,6 +288,7 @@ export function createLayoutGroup(
             if (existing) {
                 existing.layout = participantOptions.layout ?? 'position'
                 existing.layoutId = participantOptions.layoutId
+                existing.layoutAnchor = participantOptions.layoutAnchor
                 existing.layoutDependency = participantOptions.layoutDependency
                 return () => {
                     if (participants.get(element)?.element !== element) return
@@ -251,6 +299,7 @@ export function createLayoutGroup(
                 element,
                 layout: participantOptions.layout ?? 'position',
                 layoutId: participantOptions.layoutId,
+                layoutAnchor: participantOptions.layoutAnchor,
                 layoutDependency: participantOptions.layoutDependency,
             })
             return () => {
@@ -264,6 +313,7 @@ export function createLayoutGroup(
             if (!participant) return
             participant.layout = participantOptions.layout ?? 'position'
             participant.layoutId = participantOptions.layoutId
+            participant.layoutAnchor = participantOptions.layoutAnchor
             participant.layoutDependency = participantOptions.layoutDependency
         },
 
@@ -286,6 +336,7 @@ export function createLayoutGroup(
                 used: false,
                 expired: false,
                 dependencies: new Map(),
+                parents: new Map(),
             }
             if (hasDOM()) {
                 const activePlans = new Map<HTMLElement, NodePlan>()
@@ -331,6 +382,11 @@ export function createLayoutGroup(
                         offsetHeight,
                     }
                     data.items.set(element, item)
+                    let parent = element.parentElement
+                    while (parent && !participants.has(parent)) {
+                        parent = parent.parentElement
+                    }
+                    if (parent) data.parents.set(element, parent)
                     if (participant.layoutDependency !== undefined) {
                         data.dependencies.set(
                             element,
@@ -412,11 +468,17 @@ export function createLayoutGroup(
                         typeof plan.animation.currentTime === 'number'
                             ? plan.startTime + plan.animation.currentTime
                             : now
-                    const box = evaluatePlanBox(plan, planNow)
-                    activeVelocity.set(plan.element, {
-                        x: planVelocity(plan, planNow, 'x'),
-                        y: planVelocity(plan, planNow, 'y'),
-                    })
+                    const live = livePlanSample(plan)
+                    const box = live?.box ?? evaluatePlanBox(plan, planNow)
+                    activeVelocity.set(
+                        plan.element,
+                        live
+                            ? { x: live.x, y: live.y }
+                            : {
+                                  x: planVelocity(plan, planNow, 'x'),
+                                  y: planVelocity(plan, planNow, 'y'),
+                              }
+                    )
                     activeBefore.set(plan.element, {
                         element: plan.element,
                         rect: {
@@ -571,6 +633,8 @@ export function createLayoutGroup(
                     originY: 0,
                     velocityX: activeVelocity.get(element)?.x,
                     velocityY: activeVelocity.get(element)?.y,
+                    parentElement: data.parents.get(element),
+                    anchor: participant.layoutAnchor,
                     requestedMode:
                         participant.layout === 'size' ||
                         participant.layout === 'preserve-aspect'
@@ -585,6 +649,59 @@ export function createLayoutGroup(
             if (candidates.length > maxAnimated) {
                 cancelRun('capped')
                 return 'capped'
+            }
+
+            // Depth-1 projection: a child of a projected parent starts from
+            // the local coordinate that produces its captured visual box after
+            // the parent transform. This is a bounded analytic correction, not
+            // a per-frame loop.
+            const candidateByElement = new Map(
+                candidates.map((candidate) => [candidate.element, candidate])
+            )
+            for (const candidate of candidates) {
+                if (!candidate.parentElement) continue
+                const parent = candidateByElement.get(candidate.parentElement)
+                if (!parent || parent.skip) continue
+                const projected = compileChildProjection(
+                    {
+                        after: {
+                            x: parent.after.x,
+                            y: parent.after.y,
+                            width: parent.after.width,
+                            height: parent.after.height,
+                        },
+                        dx: parent.dx,
+                        dy: parent.dy,
+                        sx: parent.sx,
+                        sy: parent.sy,
+                        mode: parent.mode,
+                    },
+                    {
+                        before: {
+                            x: candidate.before.x,
+                            y: candidate.before.y,
+                            width: candidate.before.width,
+                            height: candidate.before.height,
+                        },
+                        after: {
+                            x: candidate.after.x,
+                            y: candidate.after.y,
+                            width: candidate.after.width,
+                            height: candidate.after.height,
+                        },
+                        mode: candidate.mode,
+                    }
+                )
+                if (!projected) {
+                    candidate.skip = true
+                    continue
+                }
+                candidate.dx = projected.dx
+                candidate.dy = projected.dy
+                if (candidate.mode === 'box') {
+                    candidate.sx = projected.sx
+                    candidate.sy = projected.sy
+                }
             }
 
             // Read all box facts before creating any animation. This keeps
@@ -626,14 +743,45 @@ export function createLayoutGroup(
                         candidate.mode = 'position'
                         continue
                     }
+                    let ancestor = candidate.element.parentElement
+                    while (ancestor && ancestor !== document.body) {
+                        const ancestorStyle = getComputedStyle(ancestor)
+                        const ancestorScale = ancestorStyle.scale
+                        const ancestorRotate = ancestorStyle.rotate
+                        const ancestorTranslate = ancestorStyle.translate
+                        const ancestorTransform = ancestorStyle.transform
+                        if (
+                            (ancestorScale &&
+                                ancestorScale !== 'none' &&
+                                ancestorScale !== '1') ||
+                            (ancestorRotate &&
+                                ancestorRotate !== 'none' &&
+                                ancestorRotate !== '0deg') ||
+                            (ancestorTranslate &&
+                                ancestorTranslate !== 'none' &&
+                                ancestorTranslate !== '0px') ||
+                            (ancestorTransform && ancestorTransform !== 'none')
+                        ) {
+                            candidate.skip = true
+                            break
+                        }
+                        ancestor = ancestor.parentElement
+                    }
+                    if (candidate.skip) continue
                     const afterRect =
                         after.get(candidate.element)?.rect ??
                         rectOf(candidate.element)
-                    const origin = parseOrigin(
-                        computed.transformOrigin || '50% 50%',
-                        afterRect.width,
-                        afterRect.height
-                    )
+                    const origin = candidate.anchor
+                        ? anchorOrigin(
+                              candidate.anchor,
+                              afterRect.width,
+                              afterRect.height
+                          )
+                        : parseOrigin(
+                              computed.transformOrigin || '50% 50%',
+                              afterRect.width,
+                              afterRect.height
+                          )
                     const corners = [
                         computed.borderTopLeftRadius,
                         computed.borderTopRightRadius,
