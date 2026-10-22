@@ -4,6 +4,8 @@
 **Validation:** `cpc_valid_03_api.md`  
 **Verdict:** pending CHIEF JUSTICE
 
+**Reviewed code revision:** `31fabca`; base `be5f1b2`.
+
 ## Delivered
 
 - `LayoutMode` now includes `position`, `box`, `size`,
