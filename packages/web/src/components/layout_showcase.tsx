@@ -70,8 +70,13 @@ function ShowcaseCard({
     )
 }
 
-function AnchorDemo() {
-    const [open, setOpen] = useState(false)
+function AnchorSurface({
+    open,
+    onToggle,
+}: {
+    open: boolean
+    onToggle: () => void
+}) {
     const parent = useLayout<HTMLDivElement>({
         layout: 'box',
         motion: spring,
@@ -83,42 +88,50 @@ function AnchorDemo() {
     })
 
     return (
-        <>
-            <div className={styles.stage}>
+        <div className={styles.stage}>
+            <div
+                ref={parent}
+                className={join(
+                    styles.anchorParent,
+                    open && styles.anchorParentOpen
+                )}
+                data-anchor-parent={true}
+                onClick={onToggle}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') onToggle()
+                }}
+            >
                 <div
-                    ref={parent}
+                    ref={child}
                     className={join(
-                        styles.anchorParent,
-                        open && styles.anchorParentOpen
+                        styles.anchorChild,
+                        open && styles.anchorChildOpen
                     )}
-                    data-anchor-parent={true}
-                    onClick={() => setOpen((value) => !value)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            setOpen((value) => !value)
-                        }
-                    }}
+                    data-anchor-child={true}
                 >
-                    <div
-                        ref={child}
-                        className={join(
-                            styles.anchorChild,
-                            open && styles.anchorChildOpen
-                        )}
-                        data-anchor-child={true}
-                    >
-                        <span className={styles.crosshair} />A
-                    </div>
-                    <span className={styles.anchorLabel}>anchor 0.5 / 0.5</span>
+                    <span className={styles.crosshair} />A
                 </div>
+                <span className={styles.anchorLabel}>anchor 0.5 / 0.5</span>
             </div>
+        </div>
+    )
+}
+
+function AnchorDemo() {
+    const [open, setOpen] = useState(false)
+    const toggle = () => setOpen((value) => !value)
+    return (
+        <>
+            <LayoutGroup deps={[open]}>
+                <AnchorSurface open={open} onToggle={toggle} />
+            </LayoutGroup>
             <div className={styles.controls}>
                 <button
                     className={styles.control}
                     data-action="toggle-anchor"
-                    onClick={() => setOpen((value) => !value)}
+                    onClick={toggle}
                     type="button"
                 >
                     <ArrowUpRight size={13} />
@@ -137,71 +150,84 @@ const createActions: Array<{ icon: LucideIcon; label: string }> = [
     { icon: FileText, label: 'Template' },
 ]
 
-function CreateDemo() {
-    const [open, setOpen] = useState(false)
+function CreateSurface({
+    open,
+    onToggle,
+}: {
+    open: boolean
+    onToggle: () => void
+}) {
     const surface = useLayout<HTMLDivElement>({
         layout: 'box',
         layoutId: 'showcase-create-button',
         layoutAnchor: { x: 0.5, y: 0.5 },
         motion: spring,
     })
-
     return (
-        <>
-            <div className={styles.stage}>
-                <div className={styles.createStage}>
-                    <div
-                        ref={surface}
-                        className={join(
-                            styles.createSurface,
-                            open && styles.createSurfaceOpen
-                        )}
-                        data-create-button={true}
-                        onClick={() => setOpen((value) => !value)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                                setOpen((value) => !value)
-                            }
-                        }}
-                    >
-                        <div className={styles.createTop}>
-                            <span className={styles.createIcon}>
-                                <Plus size={14} />
-                            </span>
-                            <span className={styles.createText}>
-                                {open ? 'Create something' : 'New project'}
-                            </span>
-                            <ChevronDown
-                                className={join(
-                                    styles.createChevron,
-                                    open && styles.createChevronOpen
-                                )}
-                                size={14}
-                            />
-                        </div>
-                        {open ? (
-                            <div className={styles.createMenu}>
-                                {createActions.map(({ icon: Icon, label }) => (
-                                    <div
-                                        key={label}
-                                        className={styles.createAction}
-                                    >
-                                        <Icon size={12} />
-                                        {label}
-                                    </div>
-                                ))}
-                            </div>
-                        ) : null}
+        <div className={styles.stage}>
+            <div className={styles.createStage}>
+                <div
+                    ref={surface}
+                    className={join(
+                        styles.createSurface,
+                        open && styles.createSurfaceOpen
+                    )}
+                    data-create-button={true}
+                    onClick={onToggle}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ')
+                            onToggle()
+                    }}
+                >
+                    <div className={styles.createTop}>
+                        <span className={styles.createIcon}>
+                            <Plus size={14} />
+                        </span>
+                        <span className={styles.createText}>
+                            {open ? 'Create something' : 'New project'}
+                        </span>
+                        <ChevronDown
+                            className={join(
+                                styles.createChevron,
+                                open && styles.createChevronOpen
+                            )}
+                            size={14}
+                        />
                     </div>
+                    {open ? (
+                        <div className={styles.createMenu}>
+                            {createActions.map(({ icon: Icon, label }) => (
+                                <div
+                                    key={label}
+                                    className={styles.createAction}
+                                >
+                                    <Icon size={12} />
+                                    {label}
+                                </div>
+                            ))}
+                        </div>
+                    ) : null}
                 </div>
             </div>
+        </div>
+    )
+}
+
+function CreateDemo() {
+    const [open, setOpen] = useState(false)
+    const toggle = () => setOpen((value) => !value)
+    return (
+        <>
+            <LayoutGroup deps={[open]}>
+                <CreateSurface open={open} onToggle={toggle} />
+            </LayoutGroup>
             <div className={styles.controls}>
                 <button
                     className={styles.control}
                     data-action="toggle-create"
-                    onClick={() => setOpen((value) => !value)}
+                    onClick={toggle}
                     type="button"
                 >
                     <Zap size={13} />
@@ -261,86 +287,89 @@ const folderApps: Array<{ label: string; icon: LucideIcon; color: string }> = [
     },
 ]
 
-function FolderDemo() {
-    const [open, setOpen] = useState(false)
+function FolderSurface({
+    open,
+    onToggle,
+}: {
+    open: boolean
+    onToggle: () => void
+}) {
     const surface = useLayout<HTMLDivElement>({
         layout: 'box',
         layoutId: 'showcase-folder',
         layoutAnchor: { x: 0.5, y: 0.5 },
         motion: spring,
     })
+    return (
+        <div className={join(styles.stage, styles.folderStage)}>
+            <div
+                ref={surface}
+                className={join(
+                    styles.folderSurface,
+                    open && styles.folderSurfaceOpen
+                )}
+                data-folder={true}
+                onClick={onToggle}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') onToggle()
+                }}
+            >
+                <div className={styles.folderTop}>
+                    <div>
+                        <div className={styles.folderTitle}>Creator Studio</div>
+                        <div className={styles.folderSub}>
+                            {open ? '9 apps · grouped' : 'Tap to open folder'}
+                        </div>
+                    </div>
+                    <Folder size={16} />
+                </div>
+                {open ? (
+                    <div className={styles.folderApps} data-folder-apps={true}>
+                        {folderApps.map(({ label, icon: Icon, color }) => (
+                            <div key={label} className={styles.folderApp}>
+                                <div
+                                    className={styles.folderAppIcon}
+                                    style={{ '--tile': color } as CSSProperties}
+                                >
+                                    <Icon size={17} />
+                                </div>
+                                <span className={styles.folderAppLabel}>
+                                    {label}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className={styles.folderMini}>
+                        {folderApps.map(({ label, color }) => (
+                            <div
+                                key={label}
+                                className={styles.folderMiniCell}
+                                style={{ '--tile': color } as CSSProperties}
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
 
+function FolderDemo() {
+    const [open, setOpen] = useState(false)
+    const toggle = () => setOpen((value) => !value)
     return (
         <>
-            <div className={join(styles.stage, styles.folderStage)}>
-                <div
-                    ref={surface}
-                    className={join(
-                        styles.folderSurface,
-                        open && styles.folderSurfaceOpen
-                    )}
-                    data-folder={true}
-                    onClick={() => setOpen((value) => !value)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                            setOpen((value) => !value)
-                        }
-                    }}
-                >
-                    <div className={styles.folderTop}>
-                        <div>
-                            <div className={styles.folderTitle}>
-                                Creator Studio
-                            </div>
-                            <div className={styles.folderSub}>
-                                {open
-                                    ? '9 apps · grouped'
-                                    : 'Tap to open folder'}
-                            </div>
-                        </div>
-                        <Folder size={16} />
-                    </div>
-                    {open ? (
-                        <div
-                            className={styles.folderApps}
-                            data-folder-apps={true}
-                        >
-                            {folderApps.map(({ label, icon: Icon, color }) => (
-                                <div key={label} className={styles.folderApp}>
-                                    <div
-                                        className={styles.folderAppIcon}
-                                        style={
-                                            { '--tile': color } as CSSProperties
-                                        }
-                                    >
-                                        <Icon size={17} />
-                                    </div>
-                                    <span className={styles.folderAppLabel}>
-                                        {label}
-                                    </span>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className={styles.folderMini}>
-                            {folderApps.slice(0, 9).map(({ label, color }) => (
-                                <div
-                                    key={label}
-                                    className={styles.folderMiniCell}
-                                    style={{ '--tile': color } as CSSProperties}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
+            <LayoutGroup deps={[open]}>
+                <FolderSurface open={open} onToggle={toggle} />
+            </LayoutGroup>
             <div className={styles.controls}>
                 <button
                     className={styles.control}
                     data-action="toggle-folder"
-                    onClick={() => setOpen((value) => !value)}
+                    onClick={toggle}
                     type="button"
                 >
                     <Folder size={13} />
@@ -393,7 +422,7 @@ function StoreCard({
     onSelect: () => void
 }) {
     const ref = useLayout<HTMLButtonElement>({
-        layout: 'position',
+        layout: 'box',
         layoutId: `showcase-store-${item.id}`,
     })
     const Icon = item.icon
@@ -401,6 +430,7 @@ function StoreCard({
         <button
             ref={ref}
             className={styles.storeCard}
+            data-store-card={true}
             onClick={onSelect}
             style={{ '--cover': item.cover } as CSSProperties}
             type="button"
@@ -425,7 +455,7 @@ function StoreDetail({
     onClose: () => void
 }) {
     const ref = useLayout<HTMLDivElement>({
-        layout: 'position',
+        layout: 'box',
         layoutId: `showcase-store-${item.id}`,
     })
     const Icon = item.icon
@@ -674,7 +704,7 @@ const galleryItems = [
 ]
 
 function GalleryTile({ item }: { item: (typeof galleryItems)[number] }) {
-    const ref = useLayout<HTMLDivElement>({ layout: 'position' })
+    const ref = useLayout<HTMLDivElement>({ layout: 'box' })
     return (
         <div ref={ref} className={styles.galleryTile} data-gallery-tile={true}>
             <div
