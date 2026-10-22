@@ -5,6 +5,8 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
+**Reviewed revision:** `137482b` (base `8654839`; phase-01 commit).
+
 ## Delivered
 
 - `packages/layout/ARCHITECTURE_CPC.md` authoritative direction.
