@@ -421,13 +421,13 @@ await viewTransition(() => render(next), { share: ['hero-42'], motion })
 | Entry | Budget | v1 measured (tree-shaken) |
 | :--- | ---: | ---: |
 | Core delta | 0 B | 0 B |
-| `ani-layout` all | ≤7.5KB gzip | 7,291 B |
+| `ani-layout` all | ≤7.5KB gzip | 7,274 B |
 | FLIP-only | ≤3.0KB | 2,749 B |
 | View Transition-only | ≤2.2KB | 1,915 B |
 | Presence-only | ≤1.2KB | 815 B |
-| `ani-react/layout` layout-only | ≤1.5KB | 1,334 B |
-| `ani-react/layout` presence-only | ≤2.0KB | 1,733 B |
-| `ani-react/layout` all | ≤3.2KB | 3,075 B |
+| `ani-react/layout` layout-only | ≤1.5KB | 1,340 B |
+| `ani-react/layout` presence-only | ≤2.0KB | 1,785 B |
+| `ani-react/layout` all | ≤3.2KB | 3,129 B |
 
 Measured with esbuild, minified ESM, gzip, core/React/layout peers external, one feature entry per row. The root entry includes all three features, hence its larger budget. These are v1 gates; a change requires a measured amendment.
 
