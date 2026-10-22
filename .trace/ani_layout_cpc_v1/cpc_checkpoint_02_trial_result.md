@@ -3,7 +3,7 @@
 **Task:** `cpc_task_02_planner.md`  
 **Validation:** `cpc_valid_02_planner.md`  
 **Date:** 2026-10-22  
-**Verdict:** pending re-judgment after FAIL repairs
+**Verdict:** **TRIBUNAL PASS** (S0/S1/S2 = 0)
 
 **Reviewed code revision:** `67dabd0` (format-only follow-up included); base `fe4ca6e`.
 
@@ -38,14 +38,16 @@ pnpm test:ci -> PASS
 pnpm check -> PASS
 pnpm build -> PASS
 layout/src coverage -> 86.26 / 78.75 / 90.24 / 90.46
-projection plan tests -> 9/9
+projection plan tests -> 14/14
 group_plan tests -> 2/2
 pnpm test:browser --case "cpc:P1" -> PASS Chromium
 pnpm test:browser --browser firefox --case "cpc:P1" -> PASS Firefox
 pnpm test:browser --case "cpc:P2" -> PASS Chromium (100 continuity-checked retargets)
 pnpm test:browser --browser firefox --case "cpc:P2" -> PASS Firefox
 pnpm test:browser --case "cpc:P3" -> PASS Chromium (two participants, one clock)
-pnpm test:browser --case "cpc:P4" -> PASS Chromium (mixed active/inactive 2N reads)
+pnpm test:browser --case "cpc:P4" -> PASS Chromium
+pnpm test:browser --browser firefox --case "cpc:P4" -> PASS Firefox
+macOS WebKit P4 -> PASS
 pnpm test:browser --browser firefox --case "cpc:P3" -> PASS Firefox
 ```
 
@@ -72,3 +74,9 @@ macOS WebKit cpc bundle: P0/P1/P2/P3/R3 all PASS after the final changes.
 - Depth-1 projection, layoutAnchor, crossfade and showcase rows remain later
   phases.
 - Linux WebKit host remains unavailable; macOS WebKit results are recorded.
+
+## Final tribunal
+
+- Verdict: **TRIBUNAL PASS**. Negative/positive extrapolation, requested/current separation, emitted-path fidelity, 2N mixed reads, 100 seeded interior retargets, shared clock, finish-failure cancellation and provenance are closed.
+- Velocity handoff is explicitly Phase 04.
+- Reviewed code `67dabd0`, formatting follow-up `bad1b9d`; base `fe4ca6e`; Core diff `6715bb1` empty.
