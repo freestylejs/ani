@@ -4,7 +4,7 @@
 **Validation:** `cpc_valid_04_projection.md`  
 **Verdict:** pending re-judgment after gate-amended F1–F7 repairs
 
-**Reviewed code revision:** pending final repair commit; prior `e9f8eea`.
+**Reviewed code revision:** `e672a17`; prior `e9f8eea`.
 
 ## Delivered
 
