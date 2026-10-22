@@ -5,6 +5,8 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
+**Reviewed code revision:** `ff69beb` (base `0533be1`).
+
 ## Delivered
 
 - `projection/plan.ts`
