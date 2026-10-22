@@ -49,9 +49,15 @@ export async function R1(): Promise<string> {
 
         root.render(createElement(App, { left: 80 }))
         await frames(1)
+        const animations = element.getAnimations()
+        if (animations.length === 0) {
+            throw new Error('React layout animation missing')
+        }
         const origin = host.getBoundingClientRect().left
-        const first = element.getBoundingClientRect().left - origin
+        const first =
+            sampleBoxes([element], animations, 0).boxes[0]!.left - origin
         expectClose(first, 0, 0.6, 'React first frame')
+        resumeAnimations(animations)
         await waitFor(
             () => element.getAnimations().length === 0,
             2000,

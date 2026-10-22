@@ -5,7 +5,13 @@ import {
     type LayoutSnapshot,
 } from '@freestylejs/ani-layout'
 import { Component, createElement, type ReactNode, useContext } from 'react'
-import { createLayoutFacade, LayoutContext, type LayoutFacade } from './context'
+import {
+    createLayoutFacade,
+    LayoutConfigContext,
+    type LayoutConfigValue,
+    LayoutContext,
+    type LayoutFacade,
+} from './context'
 
 export interface LayoutGroupProps extends LayoutGroupOptions {
     children?: ReactNode
@@ -26,6 +32,7 @@ function changed(
 
 interface BoundaryProps extends LayoutGroupProps {
     readonly outer: LayoutFacade | null
+    readonly config: LayoutConfigValue
 }
 
 class LayoutBoundary extends Component<BoundaryProps> {
@@ -38,16 +45,15 @@ class LayoutBoundary extends Component<BoundaryProps> {
 
     override componentDidMount(): void {
         if (this.props.outer) return
+        const motion = this.props.motion ?? this.props.config.motion
+        const reducedMotion =
+            this.props.reducedMotion ?? this.props.config.reducedMotion
         const options: LayoutGroupOptions = {
-            ...(this.props.motion !== undefined && {
-                motion: this.props.motion,
-            }),
+            ...(motion !== undefined && { motion }),
             ...(this.props.clock !== undefined && {
                 clock: this.props.clock,
             }),
-            ...(this.props.reducedMotion !== undefined && {
-                reducedMotion: this.props.reducedMotion,
-            }),
+            ...(reducedMotion !== undefined && { reducedMotion }),
             ...(this.props.threshold !== undefined && {
                 threshold: this.props.threshold,
             }),
@@ -84,7 +90,7 @@ class LayoutBoundary extends Component<BoundaryProps> {
     ): void {
         if (!snapshot || !this.facade.group) return
         void this.facade
-            .play(snapshot, this.props.motion)
+            .play(snapshot, this.props.motion ?? this.props.config.motion)
             ?.catch((error: unknown) => this.props.onError?.(error))
     }
 
@@ -101,7 +107,22 @@ class LayoutBoundary extends Component<BoundaryProps> {
  * DOM-less layout boundary. The outermost group owns the transaction and the
  * core layout group; nested groups join the outer group and act as boundaries.
  */
+export interface LayoutConfigProps extends LayoutConfigValue {
+    children?: ReactNode
+}
+
+/** Defaults inherited by descendant LayoutGroups. */
+export function LayoutConfig(props: LayoutConfigProps): ReactNode {
+    const parent = useContext(LayoutConfigContext)
+    return createElement(
+        LayoutConfigContext.Provider,
+        { value: { ...parent, ...props } },
+        props.children
+    )
+}
+
 export function LayoutGroup(props: LayoutGroupProps): ReactNode {
     const outer = useContext(LayoutContext)
-    return createElement(LayoutBoundary, { ...props, outer })
+    const config = useContext(LayoutConfigContext)
+    return createElement(LayoutBoundary, { ...props, outer, config })
 }

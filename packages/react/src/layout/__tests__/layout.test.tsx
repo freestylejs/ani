@@ -18,6 +18,7 @@ import { createManualClock } from '../../../../core/src/testing/index'
 import { act, mount } from '../../__tests__/helpers'
 import {
     AnimatePresence,
+    LayoutConfig,
     LayoutGroup,
     useLayout,
     useLayoutGroup,
@@ -863,5 +864,47 @@ describe('react layout adapter', () => {
             </LayoutGroup>
         )
         expect(markup).toBe('<ul><li>A</li></ul>')
+    })
+})
+
+describe('react layout config and wait mode', () => {
+    it('inherits LayoutConfig and delays a new child in wait mode', async () => {
+        const clock = createManualClock()
+        const motion = {
+            present: { opacity: 1 },
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.2,
+                timing: a.timing.linear(),
+            }),
+        }
+        function Row({ id }: { id: string }) {
+            const presence = usePresence(motion, { clock: clock.clock })
+            return (
+                <div ref={presence.ref} data-id={id} style={presence.style} />
+            )
+        }
+        function App({ ids }: { ids: string[] }) {
+            return (
+                <LayoutConfig motion={{ duration: 0.1 }}>
+                    <AnimatePresence initial={false} mode="wait">
+                        {ids.map((id) => (
+                            <Row key={id} id={id} />
+                        ))}
+                    </AnimatePresence>
+                </LayoutConfig>
+            )
+        }
+        const view = await mount(<App ids={['a']} />)
+        try {
+            await view.rerender(<App ids={['b']} />)
+            expect(view.container.querySelector('[data-id="b"]')).toBeNull()
+            await act(async () => {
+                clock.frames(20)
+            })
+            expect(view.container.querySelector('[data-id="b"]')).not.toBeNull()
+        } finally {
+            await view.unmount()
+        }
     })
 })

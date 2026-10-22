@@ -29,7 +29,7 @@ export interface AnimatePresenceProps {
     children?: ReactNode
     /** Default false: first-render children do not enter. */
     initial?: boolean
-    mode?: 'sync' | 'popLayout'
+    mode?: 'sync' | 'popLayout' | 'wait'
     onExitComplete?: (key: string) => void
 }
 
@@ -76,6 +76,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     const nextRegistrant = useRef(0)
     const willEnter = useRef(new Map<PresenceKey, boolean>())
     const initialRender = useRef(true)
+    const committedKeys = useRef(new Set<PresenceKey>())
     const onExitComplete = useRef(props.onExitComplete)
     onExitComplete.current = props.onExitComplete
 
@@ -98,10 +99,27 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     }
     if (nextEntries !== entries) setEntries(nextEntries)
     entriesRef.current = nextEntries
+    const waiting =
+        props.mode === 'wait' && nextEntries.some((entry) => !entry.present)
+    const visibleEntries = waiting
+        ? nextEntries.filter(
+              (entry) => !entry.present || committedKeys.current.has(entry.key)
+          )
+        : nextEntries
 
     useEffect(() => {
         initialRender.current = false
     }, [])
+
+    useEffect(() => {
+        if (!waiting) {
+            committedKeys.current = new Set(
+                nextEntries
+                    .filter((entry) => entry.present)
+                    .map((entry) => entry.key)
+            )
+        }
+    }, [nextEntries, waiting])
 
     const settle = useMemo(
         () => (key: PresenceKey, token: number) => {
@@ -198,7 +216,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
 
     return (
         <>
-            {nextEntries.map((entry) => {
+            {visibleEntries.map((entry) => {
                 const value: PresenceContextValue = {
                     key: String(entry.key),
                     token: entry.token,

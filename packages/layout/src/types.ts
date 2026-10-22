@@ -18,13 +18,15 @@ export interface LayoutMotion {
     readonly timing?: TimingFunction
 }
 
-export type LayoutMode = 'position' | 'box'
+export type LayoutMode = 'position' | 'box' | 'size' | 'preserve-aspect'
 
 export interface LayoutParticipantOptions {
     /** Default: 'position'. 'box' adds scale + radius correction; surfaces only. */
     readonly layout?: LayoutMode
     /** Shared identity within the layout root. */
     readonly layoutId?: string
+    /** If supplied, equal previous/current values suppress this participant's run. */
+    readonly layoutDependency?: unknown
 }
 
 export interface LayoutGroupOptions {
