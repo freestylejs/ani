@@ -1,22 +1,21 @@
 // @vitest-environment jsdom
 
 import * as a from '@freestylejs/ani-core'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { renderToString } from 'react-dom/server'
+import type { LayoutGroup as CoreLayoutGroup } from '@freestylejs/ani-layout'
 import {
+    type CSSProperties,
     createRef,
+    type RefObject,
     StrictMode,
-    useEffect,
     useContext,
+    useEffect,
     useLayoutEffect,
     useState,
-    type CSSProperties,
-    type RefObject,
 } from 'react'
-import type { LayoutGroup as CoreLayoutGroup } from '@freestylejs/ani-layout'
+import { renderToString } from 'react-dom/server'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../../core/src/testing/index'
 import { act, mount } from '../../__tests__/helpers'
-import { createLayoutFacade, LayoutContext, type LayoutFacade } from '../context'
 import {
     AnimatePresence,
     LayoutGroup,
@@ -25,6 +24,11 @@ import {
     usePresence,
     usePresenceControl,
 } from '..'
+import {
+    createLayoutFacade,
+    LayoutContext,
+    type LayoutFacade,
+} from '../context'
 
 function installLayoutDom(): void {
     ;(globalThis as unknown as { CSS: { supports: () => boolean } }).CSS = {
@@ -43,9 +47,7 @@ function installLayoutDom(): void {
         },
     })
     Element.prototype.getBoundingClientRect = function () {
-        const left = Number.parseFloat(
-            (this as HTMLElement).style.left || '0'
-        )
+        const left = Number.parseFloat((this as HTMLElement).style.left || '0')
         return {
             left,
             top: 0,
@@ -89,13 +91,7 @@ afterEach(() => {
 describe('react layout adapter', () => {
     it('registers refs and flips on a LayoutGroup boundary update', async () => {
         const items = [{ id: 'a' }, { id: 'b' }]
-        function Row({
-            item,
-            index,
-        }: {
-            item: { id: string }
-            index: number
-        }) {
+        function Row({ item, index }: { item: { id: string }; index: number }) {
             const ref = useLayout<HTMLLIElement>()
             return (
                 <li
@@ -124,9 +120,11 @@ describe('react layout adapter', () => {
             expect(Element.prototype.animate).toHaveBeenCalledTimes(0)
             await view.rerender(<List list={[items[1]!, items[0]!]} />)
             expect(Element.prototype.animate).toHaveBeenCalled()
-            const frames = (Element.prototype.animate as unknown as {
-                mock: { calls: Array<[Keyframe[]]> }
-            }).mock.calls[0]![0]
+            const frames = (
+                Element.prototype.animate as unknown as {
+                    mock: { calls: Array<[Keyframe[]]> }
+                }
+            ).mock.calls[0]![0]
             expect(frames[0]).toHaveProperty('translate')
         } finally {
             await view.unmount()
@@ -177,18 +175,26 @@ describe('react layout adapter', () => {
         }
     })
 
-
     it('survives StrictMode remount and still flips', async () => {
         const items = [{ id: 'a' }, { id: 'b' }]
         function Row({ index }: { index: number }) {
             const ref = useLayout<HTMLLIElement>()
-            return <li ref={ref} style={{ position: 'absolute', left: index * 40 }} />
+            return (
+                <li
+                    ref={ref}
+                    style={{ position: 'absolute', left: index * 40 }}
+                />
+            )
         }
         function List({ list }: { list: typeof items }) {
             return (
                 <StrictMode>
                     <LayoutGroup deps={[list]}>
-                        <ul>{list.map((item, index) => <Row key={item.id} index={index} />)}</ul>
+                        <ul>
+                            {list.map((item, index) => (
+                                <Row key={item.id} index={index} />
+                            ))}
+                        </ul>
                     </LayoutGroup>
                 </StrictMode>
             )
@@ -207,30 +213,46 @@ describe('react layout adapter', () => {
         const motion = {
             present: { opacity: 1 },
             initial: { opacity: 0 },
-            exit: a.ani({ to: { opacity: 0 }, duration: 0.2, timing: a.timing.linear() }),
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.2,
+                timing: a.timing.linear(),
+            }),
         }
         function Row({ id }: { id: string }) {
             const presence = usePresence(motion, { clock: clock.clock })
             return <li ref={presence.ref} data-id={id} style={presence.style} />
         }
         function List({ ids }: { ids: string[] }) {
-            return <AnimatePresence initial={false} mode="popLayout">{ids.map((id) => <Row key={id} id={id} />)}</AnimatePresence>
+            return (
+                <AnimatePresence initial={false} mode="popLayout">
+                    {ids.map((id) => (
+                        <Row key={id} id={id} />
+                    ))}
+                </AnimatePresence>
+            )
         }
         const view = await mount(<List ids={['a', 'b']} />)
         try {
-            const before = view.container.querySelector('[data-id="b"]') as HTMLElement
+            const before = view.container.querySelector(
+                '[data-id="b"]'
+            ) as HTMLElement
             await view.rerender(<List ids={['a']} />)
-            expect((view.container.querySelector('[data-id="b"]') as HTMLElement).style.position).toBe('absolute')
+            expect(
+                (view.container.querySelector('[data-id="b"]') as HTMLElement)
+                    .style.position
+            ).toBe('absolute')
             await view.rerender(<List ids={['a', 'b']} />)
             expect(view.container.querySelector('[data-id="b"]')).toBe(before)
             expect(before.style.position).not.toBe('absolute')
-            await act(async () => { clock.frames(20) })
+            await act(async () => {
+                clock.frames(20)
+            })
             expect(view.container.querySelector('[data-id="b"]')).toBe(before)
         } finally {
             await view.unmount()
         }
     })
-
 
     it('composes a forwarded ref and exposes safe no-context fallbacks', async () => {
         const forwarded = createRef<HTMLDivElement>()
@@ -280,13 +302,22 @@ describe('react layout adapter', () => {
         const items = [{ id: 'a' }, { id: 'b' }]
         function Row({ index }: { index: number }) {
             const ref = useLayout<HTMLLIElement>()
-            return <li ref={ref} style={{ position: 'absolute', left: index * 40 }} />
+            return (
+                <li
+                    ref={ref}
+                    style={{ position: 'absolute', left: index * 40 }}
+                />
+            )
         }
         function List({ list }: { list: typeof items }) {
             return (
                 <LayoutGroup deps={[list]}>
                     <LayoutGroup deps={[list]}>
-                        <ul>{list.map((item, index) => <Row key={item.id} index={index} />)}</ul>
+                        <ul>
+                            {list.map((item, index) => (
+                                <Row key={item.id} index={index} />
+                            ))}
+                        </ul>
                     </LayoutGroup>
                 </LayoutGroup>
             )
@@ -299,7 +330,6 @@ describe('react layout adapter', () => {
             await view.unmount()
         }
     })
-
 
     it('flushes an imperative descendant update between capture and play', async () => {
         function Child() {
@@ -331,7 +361,11 @@ describe('react layout adapter', () => {
     it('transfers a forwarded ref when the ref prop changes', async () => {
         const first = createRef<HTMLDivElement>()
         const second = createRef<HTMLDivElement>()
-        function Child({ target }: { target: RefObject<HTMLDivElement | null> }) {
+        function Child({
+            target,
+        }: {
+            target: RefObject<HTMLDivElement | null>
+        }) {
             const ref = useLayout<HTMLDivElement>({ ref: target })
             return <div ref={ref} />
         }
@@ -350,11 +384,19 @@ describe('react layout adapter', () => {
         const clock = createManualClock()
         const short = {
             present: { opacity: 1 },
-            exit: a.ani({ to: { opacity: 0 }, duration: 0.1, timing: a.timing.linear() }),
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.1,
+                timing: a.timing.linear(),
+            }),
         }
         const long = {
             present: { opacity: 1 },
-            exit: a.ani({ to: { opacity: 0 }, duration: 0.3, timing: a.timing.linear() }),
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.3,
+                timing: a.timing.linear(),
+            }),
         }
         function Pair() {
             const first = usePresence(short, { clock: clock.clock })
@@ -367,15 +409,27 @@ describe('react layout adapter', () => {
             )
         }
         function App({ show }: { show: boolean }) {
-            return <AnimatePresence initial={false}>{show && <Pair key="pair" />}</AnimatePresence>
+            return (
+                <AnimatePresence initial={false}>
+                    {show && <Pair key="pair" />}
+                </AnimatePresence>
+            )
         }
-        const view = await mount(<App show />)
+        const view = await mount(<App show={true} />)
         try {
             await view.rerender(<App show={false} />)
-            await act(async () => { clock.frames(10) })
-            expect(view.container.querySelector('[data-part="short"]')).not.toBeNull()
-            await act(async () => { clock.frames(20) })
-            expect(view.container.querySelector('[data-part="long"]')).toBeNull()
+            await act(async () => {
+                clock.frames(10)
+            })
+            expect(
+                view.container.querySelector('[data-part="short"]')
+            ).not.toBeNull()
+            await act(async () => {
+                clock.frames(20)
+            })
+            expect(
+                view.container.querySelector('[data-part="long"]')
+            ).toBeNull()
         } finally {
             await view.unmount()
         }
@@ -385,22 +439,27 @@ describe('react layout adapter', () => {
         vi.useFakeTimers()
         function Content() {
             const control = usePresenceControl({ maxExitMs: 10 })
-            return <div data-custom>{String(control.isPresent)}</div>
+            return <div data-custom={true}>{String(control.isPresent)}</div>
         }
         function App({ show }: { show: boolean }) {
-            return <AnimatePresence initial={false}>{show && <Content key="custom" />}</AnimatePresence>
+            return (
+                <AnimatePresence initial={false}>
+                    {show && <Content key="custom" />}
+                </AnimatePresence>
+            )
         }
-        const view = await mount(<App show />)
+        const view = await mount(<App show={true} />)
         try {
             await view.rerender(<App show={false} />)
             expect(view.container.querySelector('[data-custom]')).not.toBeNull()
-            await act(async () => { vi.advanceTimersByTime(11) })
+            await act(async () => {
+                vi.advanceTimersByTime(11)
+            })
             expect(view.container.querySelector('[data-custom]')).toBeNull()
         } finally {
             await view.unmount()
         }
     })
-
 
     it('keeps distinct boundary transactions separate across microtasks', async () => {
         const group = {
@@ -419,7 +478,6 @@ describe('react layout adapter', () => {
         expect(group.play).toHaveBeenCalledTimes(2)
         facade.dispose()
     })
-
 
     it('transfers a replacement ref and participant options in the layout phase', async () => {
         const first = createRef<HTMLDivElement>()
@@ -464,13 +522,15 @@ describe('react layout adapter', () => {
             return (
                 <LayoutGroup>
                     <Capture />
-                    <Child target={target} layout={layout} layoutId={layoutId} />
+                    <Child
+                        target={target}
+                        layout={layout}
+                        layoutId={layoutId}
+                    />
                 </LayoutGroup>
             )
         }
-        const view = await mount(
-            <Parent target={first} layout="position" />
-        )
+        const view = await mount(<Parent target={first} layout="position" />)
         try {
             setSpy = vi.spyOn(facade!.group!, 'set')
             await view.rerender(
@@ -497,15 +557,21 @@ describe('react layout adapter', () => {
             return <div data-custom="true" />
         }
         function App({ show }: { show: boolean }) {
-            return <AnimatePresence initial={false}>{show && <Content key="custom" />}</AnimatePresence>
+            return (
+                <AnimatePresence initial={false}>
+                    {show && <Content key="custom" />}
+                </AnimatePresence>
+            )
         }
-        const view = await mount(<App show />)
+        const view = await mount(<App show={true} />)
         try {
             await view.rerender(<App show={false} />)
-            await view.rerender(<App show />)
+            await view.rerender(<App show={true} />)
             await view.rerender(<App show={false} />)
             oldSafe!()
-            await act(async () => { vi.advanceTimersByTime(11) })
+            await act(async () => {
+                vi.advanceTimersByTime(11)
+            })
             expect(view.container.querySelector('[data-custom]')).toBeNull()
         } finally {
             await view.unmount()
@@ -532,7 +598,6 @@ describe('react layout adapter', () => {
         facade.dispose()
     })
 
-
     it('returns motion.initial as SSR/first-enter style and clears it at rest', async () => {
         const motion = {
             present: { opacity: 1, translateY: 0 },
@@ -550,14 +615,14 @@ describe('react layout adapter', () => {
             return <div ref={presence.ref} style={presence.style} />
         }
         const markup = renderToString(
-            <AnimatePresence initial>
+            <AnimatePresence initial={true}>
                 <Row key="row" />
             </AnimatePresence>
         )
         expect(markup).toContain('opacity:0')
 
         const view = await mount(
-            <AnimatePresence initial>
+            <AnimatePresence initial={true}>
                 <Row key="row" />
             </AnimatePresence>
         )
@@ -584,7 +649,12 @@ describe('react layout adapter', () => {
                 <div
                     ref={presence.ref}
                     data-id={id}
-                    style={{ position: 'relative', left, height: 20, ...presence.style }}
+                    style={{
+                        position: 'relative',
+                        left,
+                        height: 20,
+                        ...presence.style,
+                    }}
                 />
             )
         }
@@ -600,23 +670,30 @@ describe('react layout adapter', () => {
         const view = await mount(<List ids={['a', 'b']} />)
         try {
             await view.rerender(<List ids={['b']} />)
-            const exiting = view.container.querySelector('[data-id="a"]') as HTMLElement
+            const exiting = view.container.querySelector(
+                '[data-id="a"]'
+            ) as HTMLElement
             expect(exiting).not.toBeNull()
             expect(exiting.style.position).toBe('absolute')
             expect(exiting.style.pointerEvents).toBe('none')
-            await act(async () => { clock.frames(20) })
+            await act(async () => {
+                clock.frames(20)
+            })
             expect(view.container.querySelector('[data-id="a"]')).toBeNull()
         } finally {
             await view.unmount()
         }
     })
 
-
     it('refreshes popLayout geometry when a present child moves and resizes', async () => {
         const clock = createManualClock()
         const motion = {
             present: { opacity: 1 },
-            exit: a.ani({ to: { opacity: 0 }, duration: 0.2, timing: a.timing.linear() }),
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.2,
+                timing: a.timing.linear(),
+            }),
         }
         function Row({ width }: { width: number }) {
             const presence = usePresence(motion, { clock: clock.clock })
@@ -624,7 +701,12 @@ describe('react layout adapter', () => {
                 <div
                     ref={presence.ref}
                     data-id="row"
-                    style={{ position: 'relative', width, height: 20, ...presence.style }}
+                    style={{
+                        position: 'relative',
+                        width,
+                        height: 20,
+                        ...presence.style,
+                    }}
                 />
             )
         }
@@ -635,27 +717,34 @@ describe('react layout adapter', () => {
                 </AnimatePresence>
             )
         }
-        const view = await mount(<App show width={20} />)
+        const view = await mount(<App show={true} width={20} />)
         try {
-            const row = view.container.querySelector('[data-id="row"]') as HTMLElement
-            row.getBoundingClientRect = () => ({
-                left: 80,
-                top: 10,
-                x: 80,
-                y: 10,
-                right: 120,
-                bottom: 30,
-                width: 40,
-                height: 20,
-                toJSON: () => ({}),
-            }) as DOMRect
-            await view.rerender(<App show width={40} />)
+            const row = view.container.querySelector(
+                '[data-id="row"]'
+            ) as HTMLElement
+            row.getBoundingClientRect = () =>
+                ({
+                    left: 80,
+                    top: 10,
+                    x: 80,
+                    y: 10,
+                    right: 120,
+                    bottom: 30,
+                    width: 40,
+                    height: 20,
+                    toJSON: () => ({}),
+                }) as DOMRect
+            await view.rerender(<App show={true} width={40} />)
             await view.rerender(<App show={false} width={40} />)
-            const exiting = view.container.querySelector('[data-id="row"]') as HTMLElement
+            const exiting = view.container.querySelector(
+                '[data-id="row"]'
+            ) as HTMLElement
             expect(exiting.style.left).toBe('80px')
             expect(exiting.style.top).toBe('10px')
             expect(exiting.style.width).toBe('40px')
-            await act(async () => { clock.frames(20) })
+            await act(async () => {
+                clock.frames(20)
+            })
         } finally {
             await view.unmount()
         }
@@ -665,44 +754,99 @@ describe('react layout adapter', () => {
         const clock = createManualClock()
         const motion = {
             present: { opacity: 1 },
-            exit: a.ani({ to: { opacity: 0 }, duration: 0.2, timing: a.timing.linear() }),
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.2,
+                timing: a.timing.linear(),
+            }),
         }
         let bump = 0
         function Row({ value }: { value: number }) {
             const presence = usePresence(motion, { clock: clock.clock })
-            return <div ref={presence.ref} data-id="row" style={{ height: 20, ...presence.style }} data-bump={value} />
+            return (
+                <div
+                    ref={presence.ref}
+                    data-id="row"
+                    style={{ height: 20, ...presence.style }}
+                    data-bump={value}
+                />
+            )
         }
         function App({ show }: { show: boolean }) {
             return (
-                <div data-parent="true" style={{ position: 'relative', width: 200, height: 100 }}>
+                <div
+                    data-parent="true"
+                    style={{ position: 'relative', width: 200, height: 100 }}
+                >
                     <AnimatePresence initial={false} mode="popLayout">
                         {show && <Row key="row" value={bump} />}
                     </AnimatePresence>
                 </div>
             )
         }
-        const view = await mount(<App show />)
+        const view = await mount(<App show={true} />)
         try {
-            const row = view.container.querySelector('[data-id="row"]') as HTMLElement
-            const parent = view.container.querySelector('[data-parent="true"]') as HTMLElement
-            row.getBoundingClientRect = () => ({
-                left: 30, top: 10, x: 30, y: 10, right: 70, bottom: 30, width: 40, height: 20, toJSON: () => ({}),
-            }) as DOMRect
-            parent.getBoundingClientRect = () => ({
-                left: 0, top: 0, x: 0, y: 0, right: 200, bottom: 100, width: 200, height: 100, toJSON: () => ({}),
-            }) as DOMRect
-            Object.defineProperty(row, 'offsetParent', { configurable: true, get: () => parent })
-            Object.defineProperty(parent, 'clientLeft', { configurable: true, value: 10 })
-            Object.defineProperty(parent, 'clientTop', { configurable: true, value: 2 })
-            Object.defineProperty(parent, 'scrollLeft', { configurable: true, value: 5 })
-            Object.defineProperty(parent, 'scrollTop', { configurable: true, value: 3 })
+            const row = view.container.querySelector(
+                '[data-id="row"]'
+            ) as HTMLElement
+            const parent = view.container.querySelector(
+                '[data-parent="true"]'
+            ) as HTMLElement
+            row.getBoundingClientRect = () =>
+                ({
+                    left: 30,
+                    top: 10,
+                    x: 30,
+                    y: 10,
+                    right: 70,
+                    bottom: 30,
+                    width: 40,
+                    height: 20,
+                    toJSON: () => ({}),
+                }) as DOMRect
+            parent.getBoundingClientRect = () =>
+                ({
+                    left: 0,
+                    top: 0,
+                    x: 0,
+                    y: 0,
+                    right: 200,
+                    bottom: 100,
+                    width: 200,
+                    height: 100,
+                    toJSON: () => ({}),
+                }) as DOMRect
+            Object.defineProperty(row, 'offsetParent', {
+                configurable: true,
+                get: () => parent,
+            })
+            Object.defineProperty(parent, 'clientLeft', {
+                configurable: true,
+                value: 10,
+            })
+            Object.defineProperty(parent, 'clientTop', {
+                configurable: true,
+                value: 2,
+            })
+            Object.defineProperty(parent, 'scrollLeft', {
+                configurable: true,
+                value: 5,
+            })
+            Object.defineProperty(parent, 'scrollTop', {
+                configurable: true,
+                value: 3,
+            })
             bump += 1
-            await view.rerender(<App show />)
+            await view.rerender(<App show={true} />)
             await view.rerender(<App show={false} />)
-            const exiting = view.container.querySelector('[data-id="row"]') as HTMLElement
+            const exiting = view.container.querySelector(
+                '[data-id="row"]'
+            ) as HTMLElement
             expect(exiting.style.left).toBe('25px')
             expect(exiting.style.top).toBe('11px')
-            await act(async () => { clock.frames(20) })
+            await act(async () => {
+                clock.frames(20)
+            })
         } finally {
             await view.unmount()
         }
