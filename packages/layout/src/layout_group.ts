@@ -60,6 +60,7 @@ interface Participant {
     layout: LayoutMode
     layoutId?: string | undefined
     layoutAnchor?: { x: number; y: number } | undefined
+    layoutCrossfade?: boolean | undefined
     motion?: LayoutMotion | undefined
     layoutDependency?: unknown
 }
@@ -314,6 +315,7 @@ export function createLayoutGroup(
                 existing.layout = participantOptions.layout ?? 'position'
                 existing.layoutId = participantOptions.layoutId
                 existing.layoutAnchor = participantOptions.layoutAnchor
+                existing.layoutCrossfade = participantOptions.layoutCrossfade
                 existing.motion = participantOptions.motion
                 existing.layoutDependency = participantOptions.layoutDependency
                 return () => {
@@ -326,6 +328,7 @@ export function createLayoutGroup(
                 layout: participantOptions.layout ?? 'position',
                 layoutId: participantOptions.layoutId,
                 layoutAnchor: participantOptions.layoutAnchor,
+                layoutCrossfade: participantOptions.layoutCrossfade,
                 motion: participantOptions.motion,
                 layoutDependency: participantOptions.layoutDependency,
             })
@@ -341,6 +344,7 @@ export function createLayoutGroup(
             participant.layout = participantOptions.layout ?? 'position'
             participant.layoutId = participantOptions.layoutId
             participant.layoutAnchor = participantOptions.layoutAnchor
+            participant.layoutCrossfade = participantOptions.layoutCrossfade
             participant.motion = participantOptions.motion
             participant.layoutDependency = participantOptions.layoutDependency
         },
@@ -474,11 +478,24 @@ export function createLayoutGroup(
             const maxAnimated = options.maxAnimated ?? DEFAULT_MAX_ANIMATED
             const maxBoxes = options.maxBoxes ?? DEFAULT_MAX_BOXES
             const layoutLeads = new Map<string, Participant>()
+            const layoutGroups = new Map<string, Participant[]>()
             for (const participant of participants.values()) {
                 if (participant.layoutId) {
                     layoutLeads.set(participant.layoutId, participant)
+                    const group = layoutGroups.get(participant.layoutId) ?? []
+                    group.push(participant)
+                    layoutGroups.set(participant.layoutId, group)
                 }
             }
+            const crossfadeGroups = [...layoutGroups.entries()].filter(
+                ([, group]) =>
+                    group.length > 1 &&
+                    group.some(
+                        (participant) =>
+                            participant.layoutCrossfade !== false &&
+                            participant.element.isConnected
+                    )
+            )
             const active = run
             const activeBefore = new Map<HTMLElement, SnapshotItem>()
             const activeVisual = new Map<HTMLElement, SnapshotItem>()
@@ -682,7 +699,7 @@ export function createLayoutGroup(
                 })
             }
 
-            if (candidates.length === 0) {
+            if (candidates.length === 0 && crossfadeGroups.length === 0) {
                 return 'no-change'
             }
             // Read all box facts before creating any animation. This keeps
@@ -870,7 +887,7 @@ export function createLayoutGroup(
             }
 
             const animatable = candidates.filter((candidate) => !candidate.skip)
-            if (animatable.length === 0) {
+            if (animatable.length === 0 && crossfadeGroups.length === 0) {
                 return candidates.some((candidate) => candidate.unsupported)
                     ? 'unsupported'
                     : 'no-change'
@@ -1115,6 +1132,33 @@ export function createLayoutGroup(
                     })
                 } catch (error) {
                     options.onError?.(error, candidate.element)
+                }
+            }
+
+            for (const [layoutId, group] of crossfadeGroups) {
+                const lead = layoutLeads.get(layoutId)
+                for (const participant of group) {
+                    if (!participant.element.isConnected) continue
+                    if (participant.layoutCrossfade === false) continue
+                    const fadeIn = participant === lead
+                    try {
+                        animations.push(
+                            participant.element.animate(
+                                [
+                                    { opacity: fadeIn ? '0' : '1' },
+                                    { opacity: fadeIn ? '1' : '0' },
+                                ],
+                                {
+                                    duration: duration * 1000,
+                                    easing,
+                                    composite: 'replace',
+                                    fill: 'none',
+                                }
+                            )
+                        )
+                    } catch (error) {
+                        options.onError?.(error, participant.element)
+                    }
                 }
             }
 

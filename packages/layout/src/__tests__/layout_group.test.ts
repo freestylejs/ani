@@ -418,7 +418,7 @@ describe('createLayoutGroup', () => {
         setBox(next, { x: 60, y: 0, width: 10, height: 10 })
 
         await expect(group.play(snapshot)).resolves.toBe('ended')
-        expect(animateSpy).toHaveBeenCalledTimes(1)
+        expect(animateSpy).toHaveBeenCalledTimes(3)
         expect(animateSpy.mock.calls[0]![0][0]).toEqual({
             translate: '-40px 0px',
         })

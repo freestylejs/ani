@@ -38,6 +38,8 @@ export interface LayoutParticipantOptions {
     readonly layoutId?: string
     /** Normalized transform anchor for box motion; default is computed origin. */
     readonly layoutAnchor?: LayoutAnchor
+    /** Duplicate layoutId crossfade; default true. */
+    readonly layoutCrossfade?: boolean
     /** Per-participant timing; defaults to the group motion. */
     readonly motion?: LayoutMotion
     /** If supplied, equal previous/current values suppress this participant's run. */

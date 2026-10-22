@@ -17,6 +17,9 @@ function participantOptions(
         ...(options.layoutAnchor !== undefined && {
             layoutAnchor: options.layoutAnchor,
         }),
+        ...(options.layoutCrossfade !== undefined && {
+            layoutCrossfade: options.layoutCrossfade,
+        }),
         ...(options.motion !== undefined && { motion: options.motion }),
         ...(options.layoutDependency !== undefined && {
             layoutDependency: options.layoutDependency,
