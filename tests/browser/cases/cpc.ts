@@ -1,6 +1,10 @@
 import { createLayoutGroup } from '@freestylejs/ani-layout'
 import { expectClose, expectEqual } from './assert'
-import { blockMainThread, boxOf, runPausedOracle } from './cpc_harness'
+import {
+    blockMainThread,
+    boxOf,
+    runPausedOracle,
+} from './cpc_harness'
 
 export const pageOptions = {}
 export const knownFailures: Record<string, string> = {}
@@ -80,9 +84,29 @@ export async function P0(): Promise<string> {
         const target = run.target[0]!
         const middle = run.middle.boxes[0]!
         for (const key of ['left', 'top', 'width', 'height'] as const) {
-            expectClose(firstSample[key], before[key], 1, `first-frame ${key}`)
+            expectClose(
+                firstSample[key],
+                before[key],
+                1,
+                `first-frame ${key}`
+            )
         }
-        expectClose(run.final[0]!.top, target.top, 0.6, 'final top')
+        for (const key of ['left', 'top', 'width', 'height'] as const) {
+            expectClose(
+                run.final[0]![key],
+                target[key],
+                0.6,
+                `final ${key}`
+            )
+            if (key !== 'top') {
+                expectClose(
+                    middle[key],
+                    target[key],
+                    1,
+                    `interior invariant ${key}`
+                )
+            }
+        }
         expectClose(target.top, before.top - 20, 0.6, 'target top')
         if (!(middle.top < firstSample.top && middle.top > target.top)) {
             throw new Error('oracle interior sample is nonterminal')
