@@ -5,7 +5,7 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** pending final commit; base `0533be1`.
+**Reviewed code revision:** `fe4ca6e`; base `0533be1`.
 
 ## Delivered
 
