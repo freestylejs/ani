@@ -4,6 +4,8 @@
 **Validation:** `cpc_valid_04_projection.md`  
 **Verdict:** pending CHIEF JUSTICE
 
+**Reviewed code revision:** `68f50ae`; base `04f06e2`.
+
 ## Delivered
 
 - `projection/compiler.ts`: bounded depth-1 parent translation/scale inversion,
