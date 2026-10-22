@@ -1,13 +1,16 @@
 ---
 title: Layout Showcase
-description: Live E1–E5 and reduced 2D Gallery fixtures for Ani layout.
+description: A reduced 2D layout lab for anchors, shared identity, presence and gallery poses.
 ---
 
-This page is a documentation fixture, not a separate application shell. It uses
-the public `@freestylejs/ani-react/layout` surface directly.
+Ani compiles measured DOM changes into compositor-native transforms. This lab
+keeps the surface small enough to inspect: resize an anchored surface, hand off a
+shared identity, open a folder, move a product card, stack notifications and
+change a gallery pose. Every demo is live and uses the public
+`@freestylejs/ani-react/layout` API.
 
-The current contract is intentionally bounded: compositor-native layout,
-bounded depth-1 projection, duplicate-layoutId handoff, popLayout presence and a
-reduced 2D gallery. Full 3D/drag/scroll-observer Gallery rows remain excluded.
+The scope is the bounded 2D contract: depth-1 projection, shared `layoutId`,
+`popLayout` presence and a reduced gallery. Full 3D/drag/scroll-observer rows are
+explicitly out of scope.
 
 <LayoutShowcase />

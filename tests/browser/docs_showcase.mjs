@@ -25,6 +25,9 @@ assert.equal(await page.locator('[data-showcase]').count(), 6)
 
 const parent = page.locator('[data-anchor-parent]')
 const beforeAnchor = await parent.boundingBox()
+const beforeAnchorChild = await page
+    .locator('[data-anchor-child]')
+    .boundingBox()
 await page.locator('[data-action="toggle-anchor"]').click()
 const anchorAnimations = await page.evaluate(
     () => document.getAnimations().length
@@ -32,11 +35,16 @@ const anchorAnimations = await page.evaluate(
 assert.ok(anchorAnimations > 0, 'E1 created managed animations')
 await page.waitForTimeout(650)
 const afterAnchor = await parent.boundingBox()
+const afterAnchorChild = await page.locator('[data-anchor-child]').boundingBox()
 assert.ok(
     afterAnchor.width > beforeAnchor.width + 50,
     `anchor width ${beforeAnchor.width} -> ${afterAnchor.width}`
 )
 assert.ok(await page.locator('[data-anchor-child]').isVisible())
+assert.ok(
+    afterAnchorChild.width > beforeAnchorChild.width + 10,
+    `anchor child width ${beforeAnchorChild.width} -> ${afterAnchorChild.width}`
+)
 
 const create = page.locator('[data-create-button]')
 const beforeCreate = await create.boundingBox()
@@ -59,7 +67,16 @@ const folderAnimations = await page.evaluate(
 assert.ok(folderAnimations > 0, 'E3 created a layout animation')
 await page.waitForTimeout(550)
 assert.ok(await page.locator('[data-folder-apps]').isVisible())
-assert.equal(await page.locator('[data-folder-apps] > div').count(), 6)
+assert.equal(await page.locator('[data-folder-apps] > div').count(), 9)
+const folderBox = await page.locator('[data-folder]').boundingBox()
+const lastAppBox = await page
+    .locator('[data-folder-apps] > div')
+    .last()
+    .boundingBox()
+assert.ok(
+    lastAppBox.y + lastAppBox.height <= folderBox.y + folderBox.height + 1,
+    `all folder apps fit inside the folder: folder=${JSON.stringify(folderBox)} last=${JSON.stringify(lastAppBox)}`
+)
 
 await page.locator('[data-action="toggle-store"]').click()
 const storeAnimations = await page.evaluate(
@@ -91,7 +108,10 @@ const listA = await tiles.nth(0).boundingBox()
 const listB = await tiles.nth(1).boundingBox()
 assert.ok(listB.y > listA.y + 60, 'list tiles are stacked')
 
-const showcaseErrors = errors.filter((error) => !error.endsWith('/en/blog'))
+const showcaseErrors = errors.filter(
+    (error) =>
+        !error.includes('/en/blog') && !error.includes('localhost:3200/en/blog')
+)
 assert.deepEqual(showcaseErrors, [])
 if (browserName === 'chromium') {
     await page.screenshot({
@@ -106,6 +126,7 @@ console.log(
             title: await page.title(),
             sections: await page.locator('[data-showcase]').count(),
             anchor: [beforeAnchor.width, afterAnchor.width],
+            anchorChild: [beforeAnchorChild.width, afterAnchorChild.width],
             create: [beforeCreate.width, afterCreate.width],
             toasts: initialToasts,
             animations: {
