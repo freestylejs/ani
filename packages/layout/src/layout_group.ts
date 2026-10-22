@@ -16,6 +16,7 @@ import {
     evaluatePlanAtProgress,
     evaluatePlanBox,
     type NodePlan,
+    type PlanPoint,
     planVelocity,
     timelineNow,
 } from './projection/plan'
@@ -147,36 +148,56 @@ function clamp(value: number, min: number, max: number): number {
 
 /**
  * Sampled Hermite path with the old velocity at the start and zero velocity at
- * the target. Emitted as linear keyframes so the initial slope survives on the
- * compositor.
+ * the target. The path is retained and is the same data used by the keyframes.
  */
-function velocityKeyframes(
+function velocityPath(
     dx: number,
     dy: number,
     velocityX: number,
     velocityY: number,
     durationMs: number
-): Keyframe[] {
+): PlanPoint[] {
     const slopeX = dx === 0 ? 0 : clamp((velocityX * durationMs) / dx, -4, 4)
     const slopeY = dy === 0 ? 0 : clamp((velocityY * durationMs) / dy, -4, 4)
-    const frames: Keyframe[] = [
-        { translate: `${dx}px ${dy}px`, offset: 0 } as Keyframe,
+    const points: PlanPoint[] = [
+        { q: 0, tx: dx, ty: dy, sx: 1, sy: 1 },
         {
-            translate: `${dx + velocityX}px ${dy + velocityY}px`,
-            offset: Math.min(0.5, 1 / durationMs),
-        } as Keyframe,
+            q: Math.min(0.5, 1 / durationMs),
+            tx: dx + velocityX,
+            ty: dy + velocityY,
+            sx: 1,
+            sy: 1,
+        },
     ]
     const steps = 11
     for (let index = 1; index < steps; index++) {
         const q = index / (steps - 1)
         const basis = 2 * q ** 3 - 3 * q ** 2 + 1
         const slopeBasis = q ** 3 - 2 * q ** 2 + q
-        frames.push({
-            translate: `${dx * (basis + slopeX * slopeBasis)}px ${dy * (basis + slopeY * slopeBasis)}px`,
-            offset: q,
-        } as Keyframe)
+        points.push({
+            q,
+            tx: dx * (basis + slopeX * slopeBasis),
+            ty: dy * (basis + slopeY * slopeBasis),
+            sx: 1,
+            sy: 1,
+        })
     }
-    return frames
+    return points
+}
+
+function pathKeyframes(path: readonly PlanPoint[]): Keyframe[] {
+    return path.map((point) => ({
+        offset: point.q,
+        translate: `${point.tx}px ${point.ty}px`,
+        scale: `${point.sx} ${point.sy}`,
+    })) as Keyframe[]
+}
+
+function positionPath(dx: number, dy: number): PlanPoint[] {
+    return [
+        { q: 0, tx: dx, ty: dy, sx: 1, sy: 1 },
+        { q: 1, tx: 0, ty: 0, sx: 1, sy: 1 },
+    ]
 }
 
 function canAnimate(): boolean {
@@ -373,10 +394,14 @@ export function createLayoutGroup(
                     ) {
                         continue
                     }
-                    const box = evaluatePlanBox(plan, now)
+                    const planNow =
+                        typeof plan.animation.currentTime === 'number'
+                            ? plan.startTime + plan.animation.currentTime
+                            : now
+                    const box = evaluatePlanBox(plan, planNow)
                     activeVelocity.set(plan.element, {
-                        x: planVelocity(plan, now, 'x'),
-                        y: planVelocity(plan, now, 'y'),
+                        x: planVelocity(plan, planNow, 'x'),
+                        y: planVelocity(plan, planNow, 'y'),
                     })
                     activeBefore.set(plan.element, {
                         element: plan.element,
@@ -595,6 +620,7 @@ export function createLayoutGroup(
                             candidate.originY * (1 - candidate.sy)
                         const steps = candidate.radius === undefined ? 2 : 11
                         const keyframes: Keyframe[] = []
+                        const path: PlanPoint[] = []
                         for (let index = 0; index < steps; index++) {
                             const q = steps === 2 ? index : index / (steps - 1)
                             const scaleX = 1 + (candidate.sx - 1) * (1 - q)
@@ -608,6 +634,13 @@ export function createLayoutGroup(
                                 frame.borderRadius = `${candidate.radius / scaleX}px / ${candidate.radius / scaleY}px`
                             }
                             keyframes.push(frame as Keyframe)
+                            path.push({
+                                q,
+                                tx: tx * (1 - q),
+                                ty: ty * (1 - q),
+                                sx: scaleX,
+                                sy: scaleY,
+                            })
                         }
                         const animation = candidate.element.animate(keyframes, {
                             duration: duration * 1000,
@@ -631,10 +664,8 @@ export function createLayoutGroup(
                                 width: candidate.after.width,
                                 height: candidate.after.height,
                             },
-                            dx: candidate.dx,
-                            dy: candidate.dy,
-                            sx: candidate.sx,
-                            sy: candidate.sy,
+                            path,
+                            linear: false,
                             originX: candidate.originX,
                             originY: candidate.originY,
                             durationMs: duration * 1000,
@@ -649,14 +680,17 @@ export function createLayoutGroup(
                         candidate.velocityX !== undefined &&
                         candidate.velocityY !== undefined &&
                         (candidate.velocityX !== 0 || candidate.velocityY !== 0)
-                    const keyframes = hasVelocity
-                        ? velocityKeyframes(
+                    const path = hasVelocity
+                        ? velocityPath(
                               candidate.dx,
                               candidate.dy,
                               candidate.velocityX!,
                               candidate.velocityY!,
                               duration * 1000
                           )
+                        : positionPath(candidate.dx, candidate.dy)
+                    const keyframes = hasVelocity
+                        ? pathKeyframes(path)
                         : ([
                               {
                                   translate: `${candidate.dx}px ${candidate.dy}px`,
@@ -685,10 +719,8 @@ export function createLayoutGroup(
                             width: candidate.after.width,
                             height: candidate.after.height,
                         },
-                        dx: candidate.dx,
-                        dy: candidate.dy,
-                        sx: candidate.sx,
-                        sy: candidate.sy,
+                        path,
+                        linear: hasVelocity,
                         originX: 0,
                         originY: 0,
                         durationMs: duration * 1000,

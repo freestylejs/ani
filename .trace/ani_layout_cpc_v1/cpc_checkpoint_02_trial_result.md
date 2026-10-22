@@ -27,17 +27,17 @@
     computed progress without a rect read;
   - retarget measures the new layout once, uses the captured before box, and
     compiles a velocity-aware Hermite path for position retargets;
-  - P1 two-participant read count is **≤2N**;
+  - P1 retarget read counter is **≤2N** for one participant; P3 covers two participants sharing one clock;
   - finish/dispose release animations.
 
 ## Evidence
 
 ```text
 pnpm test:ci -> PASS
-  134 test files / 1,523 tests
+  134 test files / 1,525 tests
 pnpm check -> PASS
 pnpm build -> PASS
-layout/src coverage -> 86.11 / 79.22 / 92.4 / 90.2
+layout/src coverage -> 86.26 / 78.75 / 90.24 / 90.46
 projection plan tests -> 9/9
 group_plan tests -> 2/2
 pnpm test:browser --case "cpc:P1" -> PASS Chromium
@@ -54,10 +54,10 @@ macOS WebKit cpc bundle: P0/P1/P2/P3/R3 all PASS after the final changes.
 
 | Finding | Repair evidence |
 | --- | --- |
-| J-01 analytic evaluation | Retained easing samples; deterministic `planProgress`; overshoot test; no live progress in requested-time evaluation. |
-| J-02 velocity | `planVelocity` derivative plus velocity-aware WAAPI Hermite keyframes; P1 checks old/new velocity ≤10% or 0.1px/ms. |
+| J-01 analytic evaluation | `planProgress` is requested-time deterministic from easing; `planCurrentProgress` is the only live-capture entry. Retained path points are evaluated directly. |
+| J-02 velocity | `NodePlan.path` is the actual emitted channel path; `planVelocity` derives from it. P1 checks old/new velocity ≤10% or 0.1px/ms. |
 | J-03 reads | Active capture uses plan+liveness, no rect reads; P1 read counter is ≤2N. |
-| J-04 coverage | P1 45% + velocity; P2 100 continuity-checked interrupts; P3 two participants/shared startTime; P1 finish/cleanup. |
+| J-04 coverage | P1 45% + velocity; P2 100 continuity-checked interrupts with seeded interior samples; P3 two participants/shared startTime; P1 finish/cleanup. |
 | J-05 finish | `finishGroupRun` finishes and cancels; P1 asserts no animations remain. |
 | J-06 provenance | Source committed with full projection files; Git evidence copied into review history. |
 
