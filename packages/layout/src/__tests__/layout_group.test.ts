@@ -640,7 +640,7 @@ it('snaps box motion under a transformed static ancestor', async () => {
     } as CSSStyleDeclaration
     const transformed = {
         ...none,
-        transform: 'matrix(1,0,0,1,10,0)',
+        transform: 'matrix(0.98,0.17,-0.17,0.98,10,0)',
     } as CSSStyleDeclaration
     const spy = vi
         .spyOn(window, 'getComputedStyle')
@@ -654,5 +654,22 @@ it('snaps box motion under a transformed static ancestor', async () => {
     await expect(group.play(snapshot)).resolves.toBe('unsupported')
     expect(animateSpy).not.toHaveBeenCalled()
     spy.mockRestore()
+    group.dispose()
+})
+
+it('counter-scales a stationary child when only its parent scales', async () => {
+    const parent = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const child = makeElement({ x: 10, y: 10, width: 20, height: 20 })
+    parent.append(child)
+    const group = createLayoutGroup({ motion: { duration: 0.2 } })
+    group.add(parent, { layout: 'box' })
+    group.add(child, { layout: 'box' })
+    const snapshot = group.capture()
+    setBox(parent, { x: 0, y: 0, width: 200, height: 200 })
+    setBox(child, { x: 10, y: 10, width: 20, height: 20 })
+    await expect(group.play(snapshot)).resolves.toBe('ended')
+    expect(animateSpy).toHaveBeenCalledTimes(2)
+    const childFrames = animateSpy.mock.calls[1]![0]
+    expect(childFrames[0]).toMatchObject({ scale: '2 2' })
     group.dispose()
 })

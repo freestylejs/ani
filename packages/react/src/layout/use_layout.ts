@@ -17,6 +17,7 @@ function participantOptions(
         ...(options.layoutAnchor !== undefined && {
             layoutAnchor: options.layoutAnchor,
         }),
+        ...(options.motion !== undefined && { motion: options.motion }),
         ...(options.layoutDependency !== undefined && {
             layoutDependency: options.layoutDependency,
         }),
@@ -45,7 +46,13 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
     useIsoLayoutEffect(() => {
         if (!context || !element.current) return
         context.set(element.current, participantOptions(latest.current))
-    }, [context, options.layout, options.layoutId, options.layoutDependency])
+    }, [
+        context,
+        options.layout,
+        options.layoutId,
+        options.layoutAnchor,
+        options.layoutDependency,
+    ])
 
     useIsoLayoutEffect(() => {
         const previous = previousRef.current
