@@ -5,7 +5,7 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** `fe4ca6e`; base `0533be1`.
+**Reviewed code revision:** pending negative-extrapolation fix; base `fe4ca6e`.
 
 ## Delivered
 
@@ -34,7 +34,7 @@
 
 ```text
 pnpm test:ci -> PASS
-  134 test files / 1,525 tests
+  134 test files / 1,528 tests
 pnpm check -> PASS
 pnpm build -> PASS
 layout/src coverage -> 86.26 / 78.75 / 90.24 / 90.46
@@ -45,6 +45,7 @@ pnpm test:browser --browser firefox --case "cpc:P1" -> PASS Firefox
 pnpm test:browser --case "cpc:P2" -> PASS Chromium (100 continuity-checked retargets)
 pnpm test:browser --browser firefox --case "cpc:P2" -> PASS Firefox
 pnpm test:browser --case "cpc:P3" -> PASS Chromium (two participants, one clock)
+pnpm test:browser --case "cpc:P4" -> PASS Chromium (mixed active/inactive 2N reads)
 pnpm test:browser --browser firefox --case "cpc:P3" -> PASS Firefox
 ```
 

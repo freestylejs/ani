@@ -20,7 +20,9 @@ function animation(progress: number | undefined): Animation {
     } as unknown as Animation
 }
 
-function plan(overrides: Partial<NodePlan> = {}): NodePlan {
+function plan(
+    overrides: Partial<NodePlan> = {}
+): NodePlan {
     return {
         element: document.createElement('div'),
         mode: 'position',
@@ -71,7 +73,10 @@ describe('projection plan', () => {
         const start = evaluatePlanBox(node, 1000)
         expect(start.width).toBe(20)
         expect(start.height).toBe(20)
-        const end = evaluatePlanBox({ ...node, animation: animation(1) }, 1200)
+        const end = evaluatePlanBox(
+            { ...node, animation: animation(1) },
+            1200
+        )
         expect(end.width).toBe(10)
         expect(end.height).toBe(10)
     })
@@ -114,11 +119,7 @@ describe('projection plan edge cases', () => {
     })
 
     it('handles zero-duration and missing-easing plans', () => {
-        const node = plan({
-            durationMs: 0,
-            easing: [0, 1],
-            animation: animation(0.5),
-        })
+        const node = plan({ durationMs: 0, easing: [0, 1], animation: animation(0.5) })
         expect(planProgress(node, 0)).toBe(1)
         const missing = plan({ easing: [], animation: animation(undefined) })
         expect(planProgress(missing, 1050)).toBe(0.25)
@@ -206,6 +207,7 @@ describe('compiled path extrapolation', () => {
             animation: animation(undefined),
         })
         expect(evaluatePlanAtProgress(node, 1.2).y).toBeCloseTo(-8.8, 5)
+        expect(evaluatePlanAtProgress(node, -0.2).y).toBeCloseTo(24.8, 5)
     })
 })
 
