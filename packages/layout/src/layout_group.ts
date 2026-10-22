@@ -44,6 +44,7 @@ interface SnapshotItem {
 }
 
 interface SnapshotData {
+    dependencies: Map<HTMLElement, unknown>
     owner: object
     items: Map<HTMLElement, SnapshotItem>
     byId: Map<string, SnapshotItem>
@@ -55,6 +56,7 @@ interface Participant {
     element: HTMLElement
     layout: LayoutMode
     layoutId?: string | undefined
+    layoutDependency?: unknown
 }
 
 interface Candidate {
@@ -237,6 +239,7 @@ export function createLayoutGroup(
             if (existing) {
                 existing.layout = participantOptions.layout ?? 'position'
                 existing.layoutId = participantOptions.layoutId
+                existing.layoutDependency = participantOptions.layoutDependency
                 return () => {
                     if (participants.get(element)?.element !== element) return
                     participants.delete(element)
@@ -246,6 +249,7 @@ export function createLayoutGroup(
                 element,
                 layout: participantOptions.layout ?? 'position',
                 layoutId: participantOptions.layoutId,
+                layoutDependency: participantOptions.layoutDependency,
             })
             return () => {
                 if (participants.get(element)?.element !== element) return
@@ -258,6 +262,7 @@ export function createLayoutGroup(
             if (!participant) return
             participant.layout = participantOptions.layout ?? 'position'
             participant.layoutId = participantOptions.layoutId
+            participant.layoutDependency = participantOptions.layoutDependency
         },
 
         update(mutate, motion) {
@@ -278,6 +283,7 @@ export function createLayoutGroup(
                 byId: new Map(),
                 used: false,
                 expired: false,
+                dependencies: new Map(),
             }
             if (hasDOM()) {
                 const activePlans = new Map<HTMLElement, NodePlan>()
@@ -323,6 +329,12 @@ export function createLayoutGroup(
                         offsetHeight,
                     }
                     data.items.set(element, item)
+                    if (participant.layoutDependency !== undefined) {
+                        data.dependencies.set(
+                            element,
+                            participant.layoutDependency
+                        )
+                    }
                     if (participant.layoutId) {
                         data.byId.set(participant.layoutId, item)
                     }
@@ -511,12 +523,33 @@ export function createLayoutGroup(
                     before = data.byId.get(participant.layoutId)
                 }
                 if (!before || sameRect(before.rect, current.rect)) continue
+                if (
+                    participant.layoutDependency !== undefined &&
+                    data.dependencies.has(element) &&
+                    Object.is(
+                        data.dependencies.get(element),
+                        participant.layoutDependency
+                    )
+                ) {
+                    continue
+                }
                 if (!visible(before.rect) && !visible(current.rect)) continue
 
-                const dx = before.rect.x - current.rect.x
-                const dy = before.rect.y - current.rect.y
-                const sx = before.rect.width / current.rect.width
-                const sy = before.rect.height / current.rect.height
+                let dx = before.rect.x - current.rect.x
+                let dy = before.rect.y - current.rect.y
+                let sx = before.rect.width / current.rect.width
+                let sy = before.rect.height / current.rect.height
+                let mode = participant.layout
+                if (mode === 'size') {
+                    dx = 0
+                    dy = 0
+                    mode = 'box'
+                } else if (mode === 'preserve-aspect') {
+                    const uniform = Math.min(sx, sy)
+                    sx = uniform
+                    sy = uniform
+                    mode = 'box'
+                }
                 const moved =
                     Math.abs(dx) >= threshold ||
                     Math.abs(dy) >= threshold ||
@@ -530,7 +563,7 @@ export function createLayoutGroup(
                     after: current.rect,
                     dx,
                     dy,
-                    mode: participant.layout,
+                    mode,
                     sx,
                     sy,
                     originX: 0,

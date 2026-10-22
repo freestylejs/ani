@@ -44,7 +44,12 @@ function List({ items }) {
 - `layout: 'position'` animates translation only.
 - `layout: 'box'` adds scale and radius correction; use it for surfaces, not
   text-heavy content.
+- `layout: 'size'` scales size around the origin while position snaps;
+  `layout: 'preserve-aspect'` uses one uniform scale.
+- `layoutDependency` suppresses an animation when its value is unchanged.
 - `useLayoutGroup().update(fn)` is the escape hatch for changes no boundary sees.
+- `<LayoutConfig motion={...} reducedMotion="jump">` supplies inherited defaults;
+  a component's own `motion`/`reducedMotion` wins.
 
 The measured position path makes no `getComputedStyle` calls and writes no
 inline styles. FLIP is driven by the browser's `Element.animate()`.
@@ -94,6 +99,12 @@ siblings can move; it requires `usePresence` (not the custom-exit control).
 ## View Transitions
 
 Use the platform API for discrete swaps:
+
+```text
+<AnimatePresence mode="wait">...</AnimatePresence>
+```
+
+`wait` delays the entering child until the current exit completes.
 
 ```text
 await viewTransition(

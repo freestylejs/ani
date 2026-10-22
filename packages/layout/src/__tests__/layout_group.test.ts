@@ -253,6 +253,38 @@ describe('createLayoutGroup', () => {
         group.dispose()
     })
 
+    it('suppresses a run when layoutDependency is unchanged', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup()
+        group.add(element, { layoutDependency: 'open' })
+        const first = group.capture()
+        setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+        const run = group.play(first)
+        group.finish()
+        await run
+        animateSpy.mockClear()
+        const second = group.capture()
+        setBox(element, { x: 20, y: 0, width: 10, height: 10 })
+        await expect(group.play(second)).resolves.toBe('no-change')
+        expect(animateSpy).not.toHaveBeenCalled()
+        group.dispose()
+    })
+
+    it('maps size mode to scale-only box motion', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 100, height: 50 })
+        const group = createLayoutGroup()
+        group.add(element, { layout: 'size' })
+        const snapshot = group.capture()
+        setBox(element, { x: 20, y: 20, width: 50, height: 25 })
+        await expect(group.play(snapshot)).resolves.toBe('ended')
+        const frames = animateSpy.mock.calls[0]![0]
+        expect(frames[0]).toMatchObject({
+            translate: '25px 12.5px',
+            scale: '2 2',
+        })
+        group.dispose()
+    })
+
     it('does not interrupt an active run when a later play has no change', async () => {
         const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
         const group = createLayoutGroup()

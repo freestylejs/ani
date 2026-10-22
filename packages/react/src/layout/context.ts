@@ -1,3 +1,4 @@
+import type { ReducedMotionPolicy } from '@freestylejs/ani-core'
 import type {
     LayoutGroup,
     LayoutMotion,
@@ -133,6 +134,13 @@ export function createLayoutFacade(): LayoutFacade {
 }
 
 export const LayoutContext = createContext<LayoutFacade | null>(null)
+
+export interface LayoutConfigValue {
+    readonly motion?: LayoutMotion
+    readonly reducedMotion?: ReducedMotionPolicy
+}
+
+export const LayoutConfigContext = createContext<LayoutConfigValue>({})
 
 export interface PresenceContextValue {
     readonly key: string
