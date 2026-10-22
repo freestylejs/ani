@@ -19,6 +19,7 @@ import {
     type NodePlan,
     type PlanPoint,
     planVelocity,
+    sampleEasing,
     timelineNow,
 } from './projection/plan'
 import type {
@@ -83,6 +84,7 @@ interface Candidate {
     anchor?: { x: number; y: number } | undefined
     motion?: LayoutMotion | undefined
     skip?: boolean
+    unsupported?: boolean
     radius?: number
 }
 
@@ -255,16 +257,23 @@ function livePlanSample(plan: NodePlan): LivePlanSample | null {
     }
 }
 
-function hasRotateOrSkew(style: CSSStyleDeclaration): boolean {
+function hasUnsupportedStaticTransform(style: CSSStyleDeclaration): boolean {
     const rotate = style.rotate
     if (rotate && rotate !== 'none' && rotate !== '0deg') return true
+    const scale = style.scale
+    if (scale && scale !== 'none' && scale !== '1') return true
     const transform = style.transform
     if (!transform || transform === 'none') return false
     const match = transform.match(/matrix\(([^)]+)\)/)
     if (!match) return transform !== 'none'
     const values = match[1]!.split(',').map(Number)
     if (values.length < 4) return true
-    return Math.abs(values[1] ?? 0) > 1e-6 || Math.abs(values[2] ?? 0) > 1e-6
+    return (
+        Math.abs((values[0] ?? 1) - 1) > 1e-6 ||
+        Math.abs((values[3] ?? 1) - 1) > 1e-6 ||
+        Math.abs(values[1] ?? 0) > 1e-6 ||
+        Math.abs(values[2] ?? 0) > 1e-6
+    )
 }
 
 function canAnimate(): boolean {
@@ -676,11 +685,6 @@ export function createLayoutGroup(
             if (candidates.length === 0) {
                 return 'no-change'
             }
-            if (candidates.length > maxAnimated) {
-                cancelRun('capped')
-                return 'capped'
-            }
-
             // Read all box facts before creating any animation. This keeps
             // every layout/style read before the first write of the pass.
             let boxCount = 0
@@ -695,6 +699,7 @@ export function createLayoutGroup(
                 ) {
                     if (candidate.requestedMode !== 'other') {
                         candidate.skip = true
+                        candidate.unsupported = true
                         continue
                     }
                     candidate.mode = 'position'
@@ -715,6 +720,7 @@ export function createLayoutGroup(
                     ) {
                         if (candidate.requestedMode !== 'other') {
                             candidate.skip = true
+                            candidate.unsupported = true
                             continue
                         }
                         candidate.mode = 'position'
@@ -723,8 +729,9 @@ export function createLayoutGroup(
                     let ancestor = candidate.element.parentElement
                     while (ancestor && ancestor !== document.body) {
                         const ancestorStyle = getComputedStyle(ancestor)
-                        if (hasRotateOrSkew(ancestorStyle)) {
+                        if (hasUnsupportedStaticTransform(ancestorStyle)) {
                             candidate.skip = true
+                            candidate.unsupported = true
                             break
                         }
                         ancestor = ancestor.parentElement
@@ -765,6 +772,7 @@ export function createLayoutGroup(
                         candidate.mode = 'position'
                     } else {
                         candidate.skip = true
+                        candidate.unsupported = true
                     }
                     options.onError?.(error, candidate.element)
                 }
@@ -780,7 +788,15 @@ export function createLayoutGroup(
             for (const candidate of candidates) {
                 if (!candidate.parentElement) continue
                 const parent = candidateByElement.get(candidate.parentElement)
-                if (!parent || parent.skip) continue
+                if (!parent) {
+                    candidate.skip = true
+                    continue
+                }
+                if (parent.skip) {
+                    candidate.skip = true
+                    candidate.unsupported = parent.unsupported === true
+                    continue
+                }
                 if (
                     parent.parentElement &&
                     candidateByElement.has(parent.parentElement)
@@ -820,6 +836,7 @@ export function createLayoutGroup(
                 )
                 if (!projected) {
                     candidate.skip = true
+                    candidate.unsupported = true
                     continue
                 }
                 candidate.parent = parent
@@ -836,6 +853,7 @@ export function createLayoutGroup(
                         candidate.sy > 4
                     ) {
                         candidate.skip = true
+                        candidate.unsupported = true
                     }
                 }
                 const projectedMoved =
@@ -844,6 +862,17 @@ export function createLayoutGroup(
                     Math.abs(candidate.sx - 1) >= 0.01 ||
                     Math.abs(candidate.sy - 1) >= 0.01
                 if (!projectedMoved) candidate.skip = true
+            }
+
+            const animatable = candidates.filter((candidate) => !candidate.skip)
+            if (animatable.length === 0) {
+                return candidates.some((candidate) => candidate.unsupported)
+                    ? 'unsupported'
+                    : 'no-change'
+            }
+            if (animatable.length > maxAnimated) {
+                cancelRun('capped')
+                return 'capped'
             }
 
             const animations: Animation[] = []
@@ -890,48 +919,58 @@ export function createLayoutGroup(
                                     options,
                                     parent.motion ?? motion
                                 )
-                                const parentQ = Math.min(
+                                const parentTime = Math.min(
                                     1,
                                     (q * candidateDurationMs) /
                                         (parentMotion.duration * 1000)
                                 )
+                                const parentProgress = sampleEasing(
+                                    parentMotion.easingValues,
+                                    parentTime
+                                )
+                                const childProgress = sampleEasing(
+                                    candidatePlanEasing,
+                                    q
+                                )
                                 const parentScaleX =
                                     parent.mode === 'box'
-                                        ? 1 + (parent.sx - 1) * (1 - parentQ)
+                                        ? 1 +
+                                          (parent.sx - 1) * (1 - parentProgress)
                                         : 1
                                 const parentScaleY =
                                     parent.mode === 'box'
-                                        ? 1 + (parent.sy - 1) * (1 - parentQ)
+                                        ? 1 +
+                                          (parent.sy - 1) * (1 - parentProgress)
                                         : 1
                                 const desiredLeft =
                                     candidate.after.x +
                                     (candidate.before.x - candidate.after.x) *
-                                        (1 - q)
+                                        (1 - childProgress)
                                 const desiredTop =
                                     candidate.after.y +
                                     (candidate.before.y - candidate.after.y) *
-                                        (1 - q)
+                                        (1 - childProgress)
                                 const desiredWidth =
                                     candidate.after.width +
                                     (candidate.before.width -
                                         candidate.after.width) *
-                                        (1 - q)
+                                        (1 - childProgress)
                                 const desiredHeight =
                                     candidate.after.height +
                                     (candidate.before.height -
                                         candidate.after.height) *
-                                        (1 - q)
+                                        (1 - childProgress)
                                 const localLeft =
                                     parent.after.x +
                                     (desiredLeft -
                                         parent.after.x -
-                                        parent.dx * (1 - parentQ)) /
+                                        parent.dx * (1 - parentProgress)) /
                                         parentScaleX
                                 const localTop =
                                     parent.after.y +
                                     (desiredTop -
                                         parent.after.y -
-                                        parent.dy * (1 - parentQ)) /
+                                        parent.dy * (1 - parentProgress)) /
                                         parentScaleY
                                 translateX =
                                     localLeft -
@@ -978,7 +1017,9 @@ export function createLayoutGroup(
                         }
                         const animation = candidate.element.animate(keyframes, {
                             duration: candidateDurationMs,
-                            easing,
+                            easing: candidate.projected
+                                ? 'linear'
+                                : candidateEasing,
                             composite: 'replace',
                             fill: 'none',
                         })
@@ -999,7 +1040,7 @@ export function createLayoutGroup(
                                 height: candidate.after.height,
                             },
                             path,
-                            linear: false,
+                            linear: candidate.projected === true,
                             projected: candidate.projected ?? false,
                             originX: candidate.originX,
                             originY: candidate.originY,
@@ -1034,7 +1075,10 @@ export function createLayoutGroup(
                           ] as Keyframe[])
                     const animation = candidate.element.animate(keyframes, {
                         duration: candidateDurationMs,
-                        easing: hasVelocity ? 'linear' : candidateEasing,
+                        easing:
+                            hasVelocity || candidate.projected
+                                ? 'linear'
+                                : candidateEasing,
                         composite: 'add',
                         fill: 'none',
                     })
@@ -1055,7 +1099,7 @@ export function createLayoutGroup(
                             height: candidate.after.height,
                         },
                         path,
-                        linear: hasVelocity,
+                        linear: hasVelocity || candidate.projected === true,
                         projected: candidate.projected ?? false,
                         originX: 0,
                         originY: 0,

@@ -37,14 +37,17 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value))
 }
 
-function easingAt(plan: NodePlan, time: number): number {
-    const samples = plan.easing
+export function sampleEasing(samples: readonly number[], time: number): number {
     if (samples.length < 2) return time
     const position = time * (samples.length - 1)
     const lower = Math.floor(position)
     const upper = Math.min(samples.length - 1, lower + 1)
     const mix = position - lower
     return (samples[lower] ?? 0) * (1 - mix) + (samples[upper] ?? 0) * mix
+}
+
+function easingAt(plan: NodePlan, time: number): number {
+    return sampleEasing(plan.easing, time)
 }
 
 /**

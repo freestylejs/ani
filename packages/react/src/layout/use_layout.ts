@@ -51,6 +51,7 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
         options.layout,
         options.layoutId,
         options.layoutAnchor,
+        options.motion,
         options.layoutDependency,
     ])
 

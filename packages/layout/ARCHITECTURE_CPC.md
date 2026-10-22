@@ -96,8 +96,8 @@ The compiler:
 2. samples the parent's known curve and the child's timing curve over the group
    duration;
 3. computes child corrective translate/scale keyframes on both axes;
-4. folds transform-origin into the translate values (never animates
-   `transform-origin`);
+4. folds transform-origin into translate values, and emits a constant
+   animated `transform-origin` only when an explicit `layoutAnchor` requires it;
 5. emits sampled keyframes (`linear` between samples) for cross-engine WAAPI;
 6. computes worst-case sample error; if above budget, marks the subtree snap.
 
@@ -106,8 +106,12 @@ Bounds:
 - projected ancestor depth ≤ **2**;
 - translate + scale only;
 - axis-aligned ancestors only;
-- maximum **48** keyframes per channel (adaptive around 1/s curves);
-- target worst-case error ≤ **0.5 px** (or 1% of box for large boxes);
+- maximum **48** keyframes per channel for projected children;
+- Phase 04 gate amendment (2026-10-22): the current compiler uses a fixed
+  48-offset sampled path and proves the E1 composed path at 60 offsets; a
+  runtime adaptive estimator is deferred to the final hardening phase;
+- target worst-case error ≤ **0.5 px** (or 1% of box for large boxes) on the
+  E1/P5/P9 fixture, with structural snap for degenerate scales/caps/ancestors;
 - static ancestor transforms are applied to the target box; rotation/skew
   causes snap;
 - parent/child mismatch (spring/tween/delay) is supported by sampling the

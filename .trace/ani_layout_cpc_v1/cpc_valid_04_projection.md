@@ -35,4 +35,4 @@
 - BLOCK if required artifacts/access are unavailable.
 
 ## 4) Required evidence
-Oracle at 60 offsets; anchor (0,0),(0.5,0.5),(1,1); rotated ancestor snap; parent spring/child tween; interrupt under projection.
+P9 60-offset projection error; P8 anchors (0,0),(0.5,0.5),(1,1); static rotated/scaled ancestor snap; P10 parent spring/child tween; P7 interrupt under projection; structural snap for over-cap geometry.
