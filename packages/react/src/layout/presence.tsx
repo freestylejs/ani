@@ -31,7 +31,10 @@ export interface AnimatePresenceProps {
     initial?: boolean
     mode?: 'sync' | 'popLayout' | 'wait'
     onExitComplete?: (key: string) => void
-    /** Value exposed to presence children (e.g. an exit variant selector). */
+    /**
+     * Value exposed to presence children via `usePresence().custom`.
+     * This is data, not an exit-variant resolver.
+     */
     custom?: unknown
 }
 
@@ -79,7 +82,6 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     const willEnter = useRef(new Map<PresenceKey, boolean>())
     const initialRender = useRef(true)
     const committedKeys = useRef(new Set<PresenceKey>())
-    const hiddenKeys = useRef(new Set<PresenceKey>())
     const onExitComplete = useRef(props.onExitComplete)
     onExitComplete.current = props.onExitComplete
 
@@ -258,6 +260,7 @@ export interface UsePresenceResult<E extends HTMLElement> {
     ref: RefCallback<E>
     style: CSSProperties | undefined
     isPresent: boolean
+    /** Custom value passed through AnimatePresence. */
     custom: unknown
 }
 

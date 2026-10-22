@@ -21,7 +21,13 @@ export interface LayoutMotion {
 export type LayoutMode = 'position' | 'box' | 'size' | 'preserve-aspect'
 
 export interface LayoutParticipantOptions {
-    /** Default: 'position'. 'box' adds scale + radius correction; surfaces only. */
+    /**
+     * Default: 'position' translates only. 'box' adds scale + radius.
+     * 'size' scales around the origin with position snap. 'preserve-aspect'
+     * applies one uniform scale. If box motion is unavailable/capped for
+     * 'size' or 'preserve-aspect', the participant snaps (it never degrades to
+     * a zero-translate position animation).
+     */
     readonly layout?: LayoutMode
     /** Shared identity within the layout root. */
     readonly layoutId?: string

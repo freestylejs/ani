@@ -27,15 +27,15 @@
 
 ## 2) 명확한 Task 및 목적 정의
 - Current problem: the capability in scope is not yet implemented or not independently proven.
-- Required outcome/production change: Extend LayoutParticipantOptions and React props. Implement dependency equality gate at capture. Add minimal LayoutConfig context for transition/reducedMotion. Add wait mode sequencing and custom exit data. Keep Core V2 unchanged. Add unit/integration/SSR/StrictMode tests.
+- Required outcome/production change: Extend LayoutParticipantOptions and React props. Implement dependency equality gate at capture. Add minimal LayoutConfig context for transition/reducedMotion. Add wait mode sequencing and custom data exposed via `usePresence().custom` (not exit variants). Keep Core V2 unchanged. Add unit/integration/SSR/StrictMode tests.
 - Supporting changes: tests, fixtures, types, docs only as required.
 - Final observable goal: Expose the bounded public API needed by the showcase without adding projection math yet.
 - Side effects that must not occur: public API churn outside scope, observer/per-frame JS, inline FLIP, Core V2 edits, unrelated package changes.
 
 ## 3) Code-level Impl/Test Spec 요구사항
-- Outcome implementation targets: Extend LayoutParticipantOptions and React props. Implement dependency equality gate at capture. Add minimal LayoutConfig context for transition/reducedMotion. Add wait mode sequencing and custom exit data. Keep Core V2 unchanged. Add unit/integration/SSR/StrictMode tests.
+- Outcome implementation targets: Extend LayoutParticipantOptions and React props. Implement dependency equality gate at capture. Add minimal LayoutConfig context for transition/reducedMotion. Add wait mode sequencing and custom data exposed via `usePresence().custom` (not exit variants). Keep Core V2 unchanged. Add unit/integration/SSR/StrictMode tests.
 - Interfaces/contracts to preserve: v1 public layout/presence/VT APIs; root `ani-react` entry; `'use client'` subpath; package exports.
-- Required tests/checks: Type tests, React SSR/StrictMode, dependency no-op, mode selection, wait sequencing, custom data. Browser smoke.
+- Required tests/checks: Type tests, React SSR/StrictMode, dependency no-op, mode selection, wait sequencing, custom data exposed via `usePresence().custom`. Browser smoke.
 - Edge cases: interrupt/retarget, re-entry, empty/zero-size nodes, reduced motion, nested boundary, caps, SSR/StrictMode where applicable.
 - Failure/rollback: revert this phase's files; do not weaken a gate or silently snap a claimed parity row.
 

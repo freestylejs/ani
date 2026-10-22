@@ -294,9 +294,9 @@ describe('createLayoutGroup', () => {
         const run = group.play(first)
         group.finish()
         await run
-        group.set(element, { layoutDependency: 'b' })
         animateSpy.mockClear()
         const second = group.capture()
+        group.set(element, { layoutDependency: 'b' })
         setBox(element, { x: 20, y: 0, width: 10, height: 10 })
         const changed = group.play(second)
         group.finish()
@@ -482,6 +482,43 @@ it('suppresses the first update with an unchanged initial dependency', async () 
     const snapshot = group.capture()
     setBox(element, { x: 10, y: 0, width: 10, height: 10 })
     await expect(group.play(snapshot)).resolves.toBe('no-change')
+    expect(animateSpy).not.toHaveBeenCalled()
+    group.dispose()
+})
+
+it('runs the capture-before-set dependency sequence a,a,b,b,a as 0,1,0,1', async () => {
+    const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+    const group = createLayoutGroup()
+    group.add(element, { layoutDependency: 'a' })
+    animateSpy.mockClear()
+    const counts: number[] = []
+    for (const [dependency, left] of [
+        ['a', 10],
+        ['b', 20],
+        ['b', 30],
+        ['a', 40],
+    ] as const) {
+        const snapshot = group.capture()
+        group.set(element, { layoutDependency: dependency })
+        setBox(element, { x: left, y: 0, width: 10, height: 10 })
+        const before = animateSpy.mock.calls.length
+        const run = group.play(snapshot)
+        group.finish()
+        await run
+        counts.push(animateSpy.mock.calls.length - before)
+    }
+    expect(counts).toEqual([0, 1, 0, 1])
+    group.dispose()
+})
+
+it('snaps size/preserve-aspect when box motion is unavailable', async () => {
+    const element = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const group = createLayoutGroup({ maxBoxes: 0 })
+    group.add(element, { layout: 'size' })
+    const snapshot = group.capture()
+    setBox(element, { x: 10, y: 10, width: 50, height: 50 })
+    animateSpy.mockClear()
+    await expect(group.play(snapshot)).resolves.toBe('unsupported')
     expect(animateSpy).not.toHaveBeenCalled()
     group.dispose()
 })

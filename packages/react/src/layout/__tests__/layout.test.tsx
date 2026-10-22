@@ -900,10 +900,24 @@ describe('react layout adapter', () => {
         const view = await mount(<App left={0} dependency="a" />)
         try {
             animateSpyClear()
-            await view.rerender(<App left={20} dependency="a" />)
-            expect(Element.prototype.animate).not.toHaveBeenCalled()
-            await view.rerender(<App left={40} dependency="b" />)
-            expect(Element.prototype.animate).toHaveBeenCalled()
+            const calls = () =>
+                (
+                    Element.prototype.animate as unknown as {
+                        mock: { calls: unknown[] }
+                    }
+                ).mock.calls.length
+            const counts: number[] = []
+            for (const [left, dependency] of [
+                [20, 'a'],
+                [40, 'b'],
+                [60, 'b'],
+                [80, 'a'],
+            ] as const) {
+                const before = calls()
+                await view.rerender(<App left={left} dependency={dependency} />)
+                counts.push(calls() - before)
+            }
+            expect(counts).toEqual([0, 1, 0, 1])
             const options = (
                 Element.prototype.animate as unknown as {
                     mock: {
@@ -1028,6 +1042,108 @@ describe('react layout config and wait mode', () => {
                 clock.frames(20)
             })
             expect(view.container.querySelector('[data-id="b"]')).not.toBeNull()
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('merges nested LayoutConfig defaults and ignores explicit undefined', async () => {
+        function Row({ left }: { left: number }) {
+            const ref = useLayout<HTMLDivElement>()
+            return (
+                <div
+                    ref={ref}
+                    style={{
+                        position: 'absolute',
+                        left,
+                        width: 10,
+                        height: 10,
+                    }}
+                />
+            )
+        }
+        function App({
+            left,
+            innerMotion,
+        }: {
+            left: number
+            innerMotion?: { duration?: number } | undefined
+        }) {
+            return (
+                <LayoutConfig motion={{ duration: 0.2 }}>
+                    <LayoutConfig motion={innerMotion}>
+                        <LayoutGroup deps={[left]}>
+                            <Row left={left} />
+                        </LayoutGroup>
+                    </LayoutConfig>
+                </LayoutConfig>
+            )
+        }
+        const view = await mount(<App left={0} innerMotion={undefined} />)
+        try {
+            animateSpyClear()
+            await view.rerender(<App left={20} innerMotion={undefined} />)
+            let options = (
+                Element.prototype.animate as unknown as {
+                    mock: {
+                        calls: Array<[Keyframe[], KeyframeAnimationOptions]>
+                    }
+                }
+            ).mock.calls.at(-1)![1]
+            expect(options.duration).toBe(200)
+            animateSpyClear()
+            await view.rerender(
+                <App left={40} innerMotion={{ duration: 0.4 }} />
+            )
+            options = (
+                Element.prototype.animate as unknown as {
+                    mock: {
+                        calls: Array<[Keyframe[], KeyframeAnimationOptions]>
+                    }
+                }
+            ).mock.calls.at(-1)![1]
+            expect(options.duration).toBe(400)
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('mounts new layout features under StrictMode without duplicate runs', async () => {
+        function Row({ left }: { left: number }) {
+            const ref = useLayout<HTMLDivElement>()
+            return (
+                <div
+                    ref={ref}
+                    style={{
+                        position: 'absolute',
+                        left,
+                        width: 10,
+                        height: 10,
+                    }}
+                />
+            )
+        }
+        function App({ left }: { left: number }) {
+            return (
+                <StrictMode>
+                    <LayoutConfig motion={{ duration: 0.1 }}>
+                        <LayoutGroup deps={[left]}>
+                            <Row left={left} />
+                        </LayoutGroup>
+                    </LayoutConfig>
+                </StrictMode>
+            )
+        }
+        const view = await mount(<App left={0} />)
+        try {
+            animateSpyClear()
+            await view.rerender(<App left={20} />)
+            const calls = (
+                Element.prototype.animate as unknown as {
+                    mock: { calls: unknown[] }
+                }
+            ).mock.calls.length
+            expect(calls).toBe(1)
         } finally {
             await view.unmount()
         }
