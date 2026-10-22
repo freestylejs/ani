@@ -1,32 +1,29 @@
-import {
-    Fragment,
-    isValidElement,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-    type ReactElement,
-    type CSSProperties,
-    type ReactNode,
-    type RefCallback,
-} from 'react'
 import { createStyleSheet, type GroupableRecord } from '@freestylejs/ani-core'
 import {
     createPresence,
-    reconcilePresence,
-    settlePresence,
     type PresenceEntry,
     type PresenceHandle,
     type PresenceKey,
     type PresenceMotion,
     type PresenceOptions,
+    reconcilePresence,
+    settlePresence,
 } from '@freestylejs/ani-layout'
-import { useIsoLayoutEffect } from '../ani/owned'
 import {
-    PresenceContext,
-    type PresenceContextValue,
-} from './context'
+    type CSSProperties,
+    Fragment,
+    isValidElement,
+    type ReactElement,
+    type ReactNode,
+    type RefCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react'
+import { useIsoLayoutEffect } from '../ani/owned'
+import { PresenceContext, type PresenceContextValue } from './context'
 
 export interface AnimatePresenceProps {
     children?: ReactNode
@@ -52,8 +49,7 @@ function childrenEntries(
         if (!isValidElement(node)) return
         if (node.type === Fragment) {
             visit(
-                (node as ReactElement<{ children?: ReactNode }>).props
-                    .children
+                (node as ReactElement<{ children?: ReactNode }>).props.children
             )
             return
         }
@@ -68,9 +64,9 @@ function childrenEntries(
  * exits; it never clones a child or creates a wrapper element.
  */
 export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
-    const [entries, setEntries] = useState<
-        readonly PresenceEntry<ReactNode>[]
-    >([])
+    const [entries, setEntries] = useState<readonly PresenceEntry<ReactNode>[]>(
+        []
+    )
     const entriesRef = useRef(entries)
     const childMap = useRef(new Map<PresenceKey, ReactNode>())
     const registrants = useRef(new Map<PresenceKey, Set<number>>())
@@ -241,10 +237,7 @@ export interface UsePresenceResult<E extends HTMLElement> {
 export function usePresence<
     G extends GroupableRecord,
     E extends HTMLElement = HTMLElement,
->(
-    motion: PresenceMotion<G>,
-    options?: PresenceOptions
-): UsePresenceResult<E> {
+>(motion: PresenceMotion<G>, options?: PresenceOptions): UsePresenceResult<E> {
     const context = useContext(PresenceContext)
     const contextRef = useRef(context)
     contextRef.current = context
@@ -398,9 +391,7 @@ export function usePresence<
     }
 }
 
-export function usePresenceControl(options?: {
-    maxExitMs?: number
-}): {
+export function usePresenceControl(options?: { maxExitMs?: number }): {
     isPresent: boolean
     safeToRemove: () => void
 } {
