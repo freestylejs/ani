@@ -762,3 +762,49 @@ export async function P11(): Promise<string> {
         root.remove()
     }
 }
+
+export async function P12(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:240px;height:120px;'
+    const old = document.createElement('div')
+    old.style.cssText =
+        'position:absolute;left:0;top:0;width:40px;height:40px;background:#222;'
+    const next = document.createElement('div')
+    next.style.cssText =
+        'position:absolute;left:120px;top:0;width:40px;height:40px;background:#444;'
+    root.append(old, next)
+    document.body.append(root)
+    const group = createLayoutGroup({ motion: { duration: 0.15 } })
+    const removeOld = group.add(old, { layoutId: 'hero' })
+    const removeNext = group.add(next, { layoutId: 'hero' })
+    try {
+        const snapshot = group.capture()
+        old.style.left = '20px'
+        next.style.left = '140px'
+        const run = group.play(snapshot)
+        const oldAnimations = old.getAnimations()
+        const nextAnimations = next.getAnimations()
+        const opacity = [...oldAnimations, ...nextAnimations].some(
+            (animation) =>
+                animation.effect
+                    ?.getKeyframes()
+                    .some((frame) => frame.opacity !== undefined)
+        )
+        expectEqual(opacity, true, 'P12 duplicate layoutId crossfades')
+        expectEqual(
+            new Set(
+                [...oldAnimations, ...nextAnimations].map((a) => a.startTime)
+            ).size,
+            1,
+            'P12 crossfade shares one clock'
+        )
+        group.finish()
+        await run
+        return 'P12: duplicate-layoutId crossfade shares the group clock'
+    } finally {
+        removeOld()
+        removeNext()
+        group.dispose()
+        root.remove()
+    }
+}

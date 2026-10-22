@@ -49,6 +49,7 @@ function List({ items }) {
   If box motion is unavailable/capped for either mode, the participant snaps;
   it never degrades to a zero-translate position animation.
 - `layoutAnchor={{ x: 0.5, y: 1 }}` anchors requested box motion.
+- Duplicate `layoutId` participants crossfade unless `layoutCrossfade={false}`.
 - `layoutDependency` suppresses an animation when its value is unchanged.
   The comparison is against the value recorded at `capture()`; core callers
   should capture before calling `set()` with a new dependency.
