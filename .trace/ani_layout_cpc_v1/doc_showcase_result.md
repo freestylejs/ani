@@ -37,7 +37,7 @@ Chromium result:
   "anchorChild": [70, 98],
   "create": [164, 280],
   "toasts": 2,
-  "animations": { "anchor": 1, "create": 3, "folder": 4, "store": 5, "gallery": 10 },
+  "animations": { "anchor": 3, "create": 5, "folder": 5, "store": 5, "gallery": 10 },
   "gridY": [658.140625, 658.140625],
   "listY": [620.140625, 734.140625]
 }
@@ -49,6 +49,12 @@ list (stacked). Folder apps are asserted to fit inside the folder surface.
 
 The documentation navbar `/blog` link was corrected to an external route; the
 Chromium and Firefox runs now report no console errors and no page errors.
+
+A paused-animation diagnostic (`tests/browser/diagnose_layout_showcase.mjs`)
+confirms real intermediate frames: E1 parent 190→283.8→280 with child
+70→99.2→98; E2 164→284.9→280; E3 190→296.3→292; E4 detail starts at the
+old 117px card and settles at 360px; Gallery tiles 276→776→846px. Spring
+overshoot is intentional and settles to the exact CSS final box.
 
 ## Scope note
 
