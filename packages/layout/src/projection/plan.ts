@@ -78,6 +78,19 @@ function pathPoint(plan: NodePlan, progress: number): PlanPoint {
     }
     if (path.length === 1) return path[0]!
     const target = progress
+    if (target < 0 && path[0]!.q <= 0) {
+        const start = path[0]!
+        const next = path[1] ?? start
+        const span = next.q - start.q
+        const mix = span <= 0 ? 0 : (target - start.q) / span
+        return {
+            q: target,
+            tx: start.tx + (next.tx - start.tx) * mix,
+            ty: start.ty + (next.ty - start.ty) * mix,
+            sx: start.sx + (next.sx - start.sx) * mix,
+            sy: start.sy + (next.sy - start.sy) * mix,
+        }
+    }
     if (target > 1 && path[path.length - 1]!.q >= 1) {
         const end = path[path.length - 1]!
         const previous = path[path.length - 2] ?? end
@@ -124,8 +137,14 @@ export function evaluatePlanAtProgress(
         }
     }
     return {
-        x: plan.after.x + point.tx + plan.originX * (1 - point.sx),
-        y: plan.after.y + point.ty + plan.originY * (1 - point.sy),
+        x:
+            plan.after.x +
+            point.tx +
+            plan.originX * (1 - point.sx),
+        y:
+            plan.after.y +
+            point.ty +
+            plan.originY * (1 - point.sy),
         width: plan.after.width * point.sx,
         height: plan.after.height * point.sy,
     }
