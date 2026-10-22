@@ -3,8 +3,10 @@
 import { describe, expect, it } from 'vitest'
 import {
     assignGroupStartTime,
+    evaluatePlanAtProgress,
     evaluatePlanBox,
     type NodePlan,
+    planCurrentProgress,
     planProgress,
     planVelocity,
     timelineNow,
@@ -24,10 +26,11 @@ function plan(overrides: Partial<NodePlan> = {}): NodePlan {
         mode: 'position',
         before: { x: 0, y: 20, width: 10, height: 10 },
         after: { x: 0, y: 0, width: 10, height: 10 },
-        dx: 0,
-        dy: 20,
-        sx: 1,
-        sy: 1,
+        path: [
+            { q: 0, tx: 0, ty: 20, sx: 1, sy: 1 },
+            { q: 1, tx: 0, ty: 0, sx: 1, sy: 1 },
+        ],
+        linear: false,
         originX: 0,
         originY: 0,
         durationMs: 200,
@@ -55,10 +58,11 @@ describe('projection plan', () => {
             mode: 'box',
             before: { x: 0, y: 0, width: 20, height: 20 },
             after: { x: 0, y: 0, width: 10, height: 10 },
-            dx: 0,
-            dy: 0,
-            sx: 2,
-            sy: 2,
+            path: [
+                { q: 0, tx: 5, ty: 5, sx: 2, sy: 2 },
+                { q: 1, tx: 0, ty: 0, sx: 1, sy: 1 },
+            ],
+            linear: false,
             originX: 5,
             originY: 5,
             animation: animation(0),
@@ -105,10 +109,8 @@ describe('projection plan edge cases', () => {
             easing: [0, 0.25, 1.2, 1],
             animation,
         })
-        expect(planProgress(node, 9999)).toBe(0.725)
-        expect(
-            evaluatePlanBox({ ...node, easing: [0, 1.2, 1] }, 1100).y
-        ).toBeLessThan(0)
+        expect(planProgress(node, 9999)).toBe(1)
+        expect(planCurrentProgress(node, 9999)).toBe(0.725)
     })
 
     it('handles zero-duration and missing-easing plans', () => {
@@ -143,5 +145,38 @@ describe('projection plan edge cases', () => {
         )(node, 1100)
         expect(box.y).toBe(10)
         expect(timelineNow()).toBeGreaterThanOrEqual(0)
+    })
+})
+
+describe('projection plan path branches', () => {
+    it('uses linear progress and empty/single-point paths', () => {
+        const node = plan({ linear: true, animation: animation(undefined) })
+        expect(planProgress(node, 1100)).toBe(0.5)
+        const empty = plan({ path: [], animation: animation(undefined) })
+        expect(evaluatePlanAtProgress(empty, 0.5)).toEqual({
+            x: 0,
+            y: 0,
+            width: 10,
+            height: 10,
+        })
+        const single = plan({
+            path: [{ q: 0.5, tx: 4, ty: 8, sx: 1, sy: 1 }],
+            animation: animation(undefined),
+        })
+        expect(evaluatePlanAtProgress(single, 0.9).y).toBe(8)
+    })
+
+    it('falls back when currentTime is unavailable and computes both axes', () => {
+        const animation = {
+            playState: 'paused',
+            get currentTime() {
+                throw new Error('unavailable')
+            },
+            effect: { getComputedTiming: () => ({ progress: 0.2 }) },
+        } as unknown as Animation
+        const node = plan({ animation })
+        expect(planCurrentProgress(node, 1100)).toBe(0.5)
+        expect(planVelocity(node, 1050, 'y')).toBeLessThan(0)
+        expect(planVelocity(node, 1050, 'x')).toBe(0)
     })
 })

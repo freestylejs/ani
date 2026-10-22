@@ -218,6 +218,7 @@ export async function P2(): Promise<string> {
     const remove = group.add(element)
     try {
         let previous = boxOf(element)
+        let seed = 17
         for (let index = 0; index < 100; index++) {
             const snapshot = group.capture()
             element.style.left = index % 2 === 0 ? '100px' : '20px'
@@ -230,10 +231,12 @@ export async function P2(): Promise<string> {
             expectClose(
                 first.left,
                 previous.left,
-                1.5,
+                0.6,
                 `P2 interrupt ${index} continuity`
             )
-            previous = first
+            seed = (seed * 1664525 + 1013904223) >>> 0
+            const interior = 4 + (seed % 20)
+            previous = sampleBoxes([element], animations, interior).boxes[0]!
         }
         const finalSnapshot = group.capture()
         element.style.left = '100px'
