@@ -34,7 +34,7 @@
 - Side effects that must not occur: public API churn outside scope, observer/per-frame JS, inline FLIP, Core V2 edits, unrelated package changes.
 
 ## 3) Code-level Impl/Test Spec 요구사항
-- Outcome implementation targets: Add projection/compiler.ts. Compose parent and child timelines, sample adaptive keyframes, fold origin, compute worst-case error and snap when over budget. Add anchor math. Add E1 fixture and P0/P1/P2/P3/P6 tests in Chromium/Firefox/WebKit.
+- Outcome implementation targets: Add projection/compiler.ts. Compose parent/child timelines, sample fixed 48-offset projected keyframes, fold origin, and apply structural snap. Add anchor math and E1/P9/P11 evidence.
 - Interfaces/contracts to preserve: v1 public layout/presence/VT APIs; root `ani-react` entry; `'use client'` subpath; package exports.
 - Required tests/checks: P9 oracle at 60 offsets (0.001px); P8 anchors (0,0),(0.5,0.5),(1,1); static rotated/scaled ancestor snap; P10 parent spring/child tween; P7 interrupt under projection.
 - Edge cases: interrupt/retarget, re-entry, empty/zero-size nodes, reduced motion, nested boundary, caps, SSR/StrictMode where applicable.

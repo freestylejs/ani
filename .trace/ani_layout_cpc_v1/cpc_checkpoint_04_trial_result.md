@@ -2,7 +2,7 @@
 
 **Task:** `cpc_task_04_projection.md`  
 **Validation:** `cpc_valid_04_projection.md`  
-**Verdict:** pending re-judgment after gate-amended F1–F7 repairs
+**Verdict:** **TRIBUNAL PASS** (S0/S1/S2 = 0)
 
 **Reviewed code revision:** `39911a8`; prior `e672a17`.
 
@@ -62,3 +62,9 @@ core diff 6715bb1 -> 0
 - N1: a moving child is no longer skipped when its participant parent is stationary; only an unmoved child is skipped. Unit coverage added.
 - N2: anchored projected child translation now uses the projected scale, not the stale linear scale. P11 samples an anchored child over 60 offsets and records 0.001px.
 - P9 assertion tightened to the 0.5px target. Task 04 no longer asks for an adaptive runtime estimator; the documented fixed-48/60-offset amendment is authoritative.
+
+## Final tribunal
+
+- Verdict: **TRIBUNAL PASS** at code `39911a8`, evidence `e8ca1a7`.
+- Low documentation follow-up: Task 04 outcome wording aligned with the fixed-48/60-offset amendment; evidence block now includes P7–P11 and Firefox/WebKit.
+- Residual risks owned by Phase 05+: runtime estimator, depth-2 compile/snap semantics, box quota on unchanged trees, E2–E4 crossfade/nested shared elements, reduced 2D Gallery.
