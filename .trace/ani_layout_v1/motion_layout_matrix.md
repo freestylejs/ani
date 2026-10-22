@@ -124,3 +124,19 @@ Two coherent gates:
 No row may be marked PASS from final rects alone, from a View Transition
 fallback on an interactive row, or from a no-crash test. Premium Motion+
 examples require an executable capture before gating.
+
+## Final decision — 2026-10-22
+
+**B′ — Compiled Projection Core** selected after Opus-5.5 high review.
+
+- Target: E1–E5 + reduced 2D Gallery.
+- Core API addition: compiled projection plans, shared group startTime, analytic
+  interrupt recompile, `layoutAnchor`, crossfade, layout modes, layoutDependency,
+  LayoutConfig, wait mode, opt-in per-corner radius.
+- Hard bounds: depth ≤2, axis-aligned ancestors, ~48 samples, error-bound-or-snap,
+  no observers/per-frame JS/inline FLIP.
+- Rejected: full 3D/drag/loop Gallery, scroll/root observers, arc, shadow
+  correction, deep/infinite counter-scale, SVG/inline, rotation/skew projection.
+- See `.trace/ani_layout_v1/FINAL_LAYOUT_DIRECTION.md`.
+
+This gate is not yet passed; implementation and checkpoint evidence are required.
