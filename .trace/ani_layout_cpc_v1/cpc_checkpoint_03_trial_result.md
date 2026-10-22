@@ -2,9 +2,9 @@
 
 **Task:** `cpc_task_03_api.md`  
 **Validation:** `cpc_valid_03_api.md`  
-**Verdict:** pending re-judgment after FAIL repairs
+**Verdict:** **TRIBUNAL PASS** (S0/S1/S2 = 0)
 
-**Reviewed code revision:** `a3f46bb`; base `45f7377`.
+**Reviewed code revision:** `a3f46bb`; evidence commit `34d9a86`; base `45f7377`.
 
 ## Delivered
 
@@ -55,3 +55,9 @@ prevention and exposed custom data.
 - F3: added capture-before-set dependency, preserve-aspect, nested LayoutConfig inheritance, explicit-undefined inheritance, StrictMode, wait ghost, custom and SSR tests; report corrected.
 - F4: unused `hiddenKeys` was removed; wait mode filters uncommitted children and releases the silent hidden path; a→b→c regression passes without a ghost warning.
 - F5: `size`/`preserve-aspect` now snap when box motion is unavailable instead of degrading to a zero-translate position animation; types docs state this. Nested/undefined LayoutConfig defaults are tested.
+
+## Final tribunal
+
+- Verdict: **TRIBUNAL PASS**. F1–F5 are closed at `a3f46bb`.
+- Low-severity follow-ups accepted: add a warning-spy assertion to the wait ghost test; cover the other box-skip branches; broaden StrictMode coverage; update public docs for snap/custom/dependency ordering. Docs updated here; the rest are tracked for Phase 04+.
+- Phase 04 owns post-mount reducedMotion config refresh and nested boundary prop precedence.
