@@ -5,7 +5,7 @@
 **Date:** 2026-10-22  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed revision:** `137482b` (base `8654839`; phase-01 commit).
+**Reviewed revision:** fix on top of `137482b`; base `8654839`; final hash recorded in the Git evidence file.
 
 ## Delivered
 
@@ -27,7 +27,8 @@
   boxes, resumes, then checks final geometry and exit cleanup.
 - J-03: added `packages/layout/src/__tests__/cpc_oracle.test.ts` covering pause,
   box capture, resume/cancel and completion.
-- J-04: cpc:P0 and R3 executed against macOS WebKit.
+- J-04: cpc:P0 and R3 executed against macOS WebKit after the final geometry
+  assertions; both PASS.
 - J-05: reviewed revision is the current Git worktree on `v2/main`; phase diff
   and Core diff are recorded below.
 - S3: count and evidence corrected.
@@ -41,7 +42,7 @@ pnpm test:ci                                      PASS
   132 test files / 1,507 tests
 pnpm check                                        PASS
 pnpm build                                        PASS
-pnpm test:browser --case "cpc:P0"                 PASS Chromium
+pnpm test:browser --case "cpc:P0"                 PASS Chromium (final + interior dimensions)
 pnpm test:browser --browser firefox --case "cpc:P0" PASS Firefox
 pnpm test:browser --case "react_layout:R3"        PASS Chromium
 pnpm test:browser --browser firefox --case "react_layout:R3" PASS Firefox
@@ -60,9 +61,10 @@ react_layout:R3 -> PASS
 
 ## P0 assertions
 
-- Paused first sample is within 1px of the before box.
-- Final sibling box is within 0.6px of the target.
-- Oracle finishes with `finished`.
+- Paused first sample is within 1px of the before box on all four box dimensions.
+- Final sibling box matches the target on all four dimensions within 0.6px;
+  interior invariant left/width/height match and top is nonterminal.
+- Oracle resumes naturally and finishes with `ended`.
 - ResizeObserver / MutationObserver / IntersectionObserver construction = 0.
 - Layout-owned rAF = 0.
 - E5 popLayout exiting node is absolute; sibling moves into the gap; exit
