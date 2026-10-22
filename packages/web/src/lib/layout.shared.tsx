@@ -15,7 +15,8 @@ const GetLinkItems = (locale: string): LinkItemType[] => [
     {
         icon: <BookIcon />,
         text: 'Blog',
-        url: `/blog`,
+        url: '/blog',
+        external: true,
         // secondary items will be displayed differently on navbar
         secondary: false,
     },

@@ -7,341 +7,526 @@ import {
     useLayout,
     usePresence,
 } from '@freestylejs/ani-react/layout'
+import {
+    ArrowLeft,
+    ArrowUpRight,
+    Bell,
+    ChevronDown,
+    FileText,
+    Folder,
+    Grid2X2,
+    Layers,
+    LayoutGrid,
+    List,
+    type LucideIcon,
+    Plus,
+    Sparkles,
+    Star,
+    X,
+    Zap,
+} from 'lucide-react'
 import { type CSSProperties, type ReactNode, useState } from 'react'
+import styles from './layout_showcase.module.css'
 
-const surface: CSSProperties = {
-    position: 'relative',
-    border: '1px solid var(--color-fd-border, #e4e4e7)',
-    borderRadius: 18,
-    background: 'var(--color-fd-card, #fff)',
-    color: 'var(--color-fd-foreground, #18181b)',
-    overflow: 'hidden',
+const spring = {
+    duration: 0.46,
+    timing: timing.spring({ m: 1, k: 170, c: 18 }),
 }
 
-const section: CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 14,
-    padding: 20,
-    borderRadius: 22,
-    border: '1px solid var(--color-fd-border, #e4e4e7)',
-    background: 'var(--color-fd-card, #fff)',
-}
-
-const button: CSSProperties = {
-    appearance: 'none',
-    border: '1px solid var(--color-fd-border, #d4d4d8)',
-    borderRadius: 999,
-    background: 'var(--color-fd-primary, #18181b)',
-    color: 'var(--color-fd-primary-foreground, #fff)',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: 650,
-    padding: '9px 15px',
-}
-
-const muted = 'var(--color-fd-muted-foreground, #71717a)'
-
-function Eyebrow({ children }: { children: ReactNode }) {
-    return (
-        <div
-            style={{
-                color: muted,
-                fontSize: 11,
-                fontWeight: 750,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-            }}
-        >
-            {children}
-        </div>
-    )
+function join(...values: Array<string | false | null | undefined>): string {
+    return values.filter(Boolean).join(' ')
 }
 
 function ShowcaseCard({
     id,
     title,
     description,
+    tag,
+    wide = false,
     children,
 }: {
     id: string
     title: string
     description: string
+    tag: string
+    wide?: boolean
     children: ReactNode
 }) {
     return (
-        <section data-showcase={id} style={section}>
-            <Eyebrow>{id}</Eyebrow>
-            <h3 style={{ fontSize: 20, fontWeight: 750, margin: 0 }}>
-                {title}
-            </h3>
-            <p
-                style={{
-                    color: muted,
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    margin: 0,
-                }}
-            >
-                {description}
-            </p>
-            <div style={{ display: 'grid', gap: 14 }}>{children}</div>
+        <section
+            className={join(styles.card, wide && styles.wide)}
+            data-showcase={id}
+        >
+            <header className={styles.cardHead}>
+                <span className={styles.index}>{id}</span>
+                <div className={styles.titleWrap}>
+                    <h3 className={styles.title}>{title}</h3>
+                    <p className={styles.copy}>{description}</p>
+                </div>
+                <span className={styles.tag}>{tag}</span>
+            </header>
+            {children}
         </section>
     )
 }
 
-function AnchorFrame({ open }: { open: boolean }) {
+function AnchorDemo() {
+    const [open, setOpen] = useState(false)
     const parent = useLayout<HTMLDivElement>({
         layout: 'box',
-        layoutAnchor: { x: 0.5, y: 0.5 },
-        motion: {
-            duration: 0.42,
-            timing: timing.spring({ m: 1, k: 170, c: 18 }),
-        },
+        motion: spring,
     })
     const child = useLayout<HTMLDivElement>({
         layout: 'box',
-        motion: {
-            duration: 0.42,
-            timing: timing.spring({ m: 1, k: 170, c: 18 }),
-        },
+        layoutAnchor: { x: 0.5, y: 0.5 },
+        motion: spring,
     })
+
     return (
-        <div
-            ref={parent}
-            data-anchor-parent={true}
-            style={{
-                ...surface,
-                alignSelf: 'center',
-                alignItems: 'flex-end',
-                background: 'linear-gradient(135deg, #f4f4f5, #e4e4e7)',
-                display: 'flex',
-                height: open ? 186 : 116,
-                justifyContent: 'center',
-                padding: 16,
-                width: open ? 300 : 190,
-            }}
-        >
-            <div
-                ref={child}
-                data-anchor-child={true}
-                style={{
-                    background: '#18181b',
-                    borderRadius: 12,
-                    color: '#fff',
-                    fontSize: 13,
-                    fontWeight: 700,
-                    padding: '11px 16px',
-                }}
-            >
-                anchored
+        <>
+            <div className={styles.stage}>
+                <div
+                    ref={parent}
+                    className={join(
+                        styles.anchorParent,
+                        open && styles.anchorParentOpen
+                    )}
+                    data-anchor-parent={true}
+                    onClick={() => setOpen((value) => !value)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            setOpen((value) => !value)
+                        }
+                    }}
+                >
+                    <div
+                        ref={child}
+                        className={join(
+                            styles.anchorChild,
+                            open && styles.anchorChildOpen
+                        )}
+                        data-anchor-child={true}
+                    >
+                        <span className={styles.crosshair} />A
+                    </div>
+                    <span className={styles.anchorLabel}>anchor 0.5 / 0.5</span>
+                </div>
             </div>
-        </div>
+            <div className={styles.controls}>
+                <button
+                    className={styles.control}
+                    data-action="toggle-anchor"
+                    onClick={() => setOpen((value) => !value)}
+                    type="button"
+                >
+                    <ArrowUpRight size={13} />
+                    {open ? 'Collapse surface' : 'Expand surface'}
+                </button>
+                <span className={styles.metaPill}>layoutAnchor</span>
+            </div>
+        </>
     )
 }
 
-function CreateButtonFrame({ expanded }: { expanded: boolean }) {
-    const ref = useLayout<HTMLButtonElement>({
+const createActions: Array<{ icon: LucideIcon; label: string }> = [
+    { icon: FileText, label: 'Document' },
+    { icon: LayoutGrid, label: 'Board' },
+    { icon: Sparkles, label: 'Prompt' },
+    { icon: FileText, label: 'Template' },
+]
+
+function CreateDemo() {
+    const [open, setOpen] = useState(false)
+    const surface = useLayout<HTMLDivElement>({
         layout: 'box',
-        layoutId: 'documentation-create-button',
-        motion: {
-            duration: 0.34,
-            timing: timing.spring({ m: 1, k: 190, c: 22 }),
-        },
+        layoutId: 'showcase-create-button',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+        motion: spring,
     })
+
+    return (
+        <>
+            <div className={styles.stage}>
+                <div className={styles.createStage}>
+                    <div
+                        ref={surface}
+                        className={join(
+                            styles.createSurface,
+                            open && styles.createSurfaceOpen
+                        )}
+                        data-create-button={true}
+                        onClick={() => setOpen((value) => !value)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                setOpen((value) => !value)
+                            }
+                        }}
+                    >
+                        <div className={styles.createTop}>
+                            <span className={styles.createIcon}>
+                                <Plus size={14} />
+                            </span>
+                            <span className={styles.createText}>
+                                {open ? 'Create something' : 'New project'}
+                            </span>
+                            <ChevronDown
+                                className={join(
+                                    styles.createChevron,
+                                    open && styles.createChevronOpen
+                                )}
+                                size={14}
+                            />
+                        </div>
+                        {open ? (
+                            <div className={styles.createMenu}>
+                                {createActions.map(({ icon: Icon, label }) => (
+                                    <div
+                                        key={label}
+                                        className={styles.createAction}
+                                    >
+                                        <Icon size={12} />
+                                        {label}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
+                    </div>
+                </div>
+            </div>
+            <div className={styles.controls}>
+                <button
+                    className={styles.control}
+                    data-action="toggle-create"
+                    onClick={() => setOpen((value) => !value)}
+                    type="button"
+                >
+                    <Zap size={13} />
+                    {open ? 'Collapse menu' : 'Open create menu'}
+                </button>
+                <span className={styles.metaPill}>shared layoutId</span>
+            </div>
+        </>
+    )
+}
+
+const folderApps: Array<{ label: string; icon: LucideIcon; color: string }> = [
+    {
+        label: 'Notes',
+        icon: FileText,
+        color: 'linear-gradient(135deg,#f59e0b,#f97316)',
+    },
+    {
+        label: 'Photos',
+        icon: Sparkles,
+        color: 'linear-gradient(135deg,#ec4899,#8b5cf6)',
+    },
+    {
+        label: 'Music',
+        icon: Star,
+        color: 'linear-gradient(135deg,#ef4444,#ec4899)',
+    },
+    {
+        label: 'Files',
+        icon: Folder,
+        color: 'linear-gradient(135deg,#3b82f6,#06b6d4)',
+    },
+    {
+        label: 'Health',
+        icon: Zap,
+        color: 'linear-gradient(135deg,#22c55e,#14b8a6)',
+    },
+    {
+        label: 'Maps',
+        icon: Layers,
+        color: 'linear-gradient(135deg,#6366f1,#8b5cf6)',
+    },
+    {
+        label: 'Reader',
+        icon: FileText,
+        color: 'linear-gradient(135deg,#64748b,#334155)',
+    },
+    {
+        label: 'Studio',
+        icon: Grid2X2,
+        color: 'linear-gradient(135deg,#0ea5e9,#6366f1)',
+    },
+    {
+        label: 'Timer',
+        icon: Zap,
+        color: 'linear-gradient(135deg,#f97316,#ef4444)',
+    },
+]
+
+function FolderDemo() {
+    const [open, setOpen] = useState(false)
+    const surface = useLayout<HTMLDivElement>({
+        layout: 'box',
+        layoutId: 'showcase-folder',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+        motion: spring,
+    })
+
+    return (
+        <>
+            <div className={join(styles.stage, styles.folderStage)}>
+                <div
+                    ref={surface}
+                    className={join(
+                        styles.folderSurface,
+                        open && styles.folderSurfaceOpen
+                    )}
+                    data-folder={true}
+                    onClick={() => setOpen((value) => !value)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            setOpen((value) => !value)
+                        }
+                    }}
+                >
+                    <div className={styles.folderTop}>
+                        <div>
+                            <div className={styles.folderTitle}>
+                                Creator Studio
+                            </div>
+                            <div className={styles.folderSub}>
+                                {open
+                                    ? '9 apps · grouped'
+                                    : 'Tap to open folder'}
+                            </div>
+                        </div>
+                        <Folder size={16} />
+                    </div>
+                    {open ? (
+                        <div
+                            className={styles.folderApps}
+                            data-folder-apps={true}
+                        >
+                            {folderApps.map(({ label, icon: Icon, color }) => (
+                                <div key={label} className={styles.folderApp}>
+                                    <div
+                                        className={styles.folderAppIcon}
+                                        style={
+                                            { '--tile': color } as CSSProperties
+                                        }
+                                    >
+                                        <Icon size={17} />
+                                    </div>
+                                    <span className={styles.folderAppLabel}>
+                                        {label}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className={styles.folderMini}>
+                            {folderApps.slice(0, 9).map(({ label, color }) => (
+                                <div
+                                    key={label}
+                                    className={styles.folderMiniCell}
+                                    style={{ '--tile': color } as CSSProperties}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className={styles.controls}>
+                <button
+                    className={styles.control}
+                    data-action="toggle-folder"
+                    onClick={() => setOpen((value) => !value)}
+                    type="button"
+                >
+                    <Folder size={13} />
+                    {open ? 'Close folder' : 'Open folder'}
+                </button>
+                <span className={styles.metaPill}>popLayout</span>
+            </div>
+        </>
+    )
+}
+
+const storeItems = [
+    {
+        id: 'atlas',
+        category: 'DESIGN SYSTEMS',
+        title: 'Atlas',
+        meta: 'Field guide · 24 min',
+        copy: 'A calm, practical guide to building interfaces that feel inevitable.',
+        cover: 'linear-gradient(135deg,#4f46e5,#7c3aed 55%,#ec4899)',
+        icon: Layers,
+        tags: ['Editorial', 'Systems', 'Craft'],
+    },
+    {
+        id: 'orbit',
+        category: 'MOTION',
+        title: 'Orbit',
+        meta: 'Motion studies · 18 min',
+        copy: 'A small collection of physical motion patterns for product teams.',
+        cover: 'linear-gradient(135deg,#0f766e,#0891b2 55%,#22d3ee)',
+        icon: Sparkles,
+        tags: ['Spring', 'Layout', 'Presence'],
+    },
+    {
+        id: 'signal',
+        category: 'INTERFACE',
+        title: 'Signal',
+        meta: 'Product craft · 31 min',
+        copy: 'A practical field guide to quieter controls, stronger hierarchy.',
+        cover: 'linear-gradient(135deg,#b45309,#f59e0b 55%,#fde68a)',
+        icon: Star,
+        tags: ['Product', 'Rhythm', 'Focus'],
+    },
+]
+
+function StoreCard({
+    item,
+    onSelect,
+}: {
+    item: (typeof storeItems)[number]
+    onSelect: () => void
+}) {
+    const ref = useLayout<HTMLButtonElement>({
+        layout: 'position',
+        layoutId: `showcase-store-${item.id}`,
+    })
+    const Icon = item.icon
     return (
         <button
             ref={ref}
-            data-create-button={true}
-            style={{
-                ...button,
-                alignItems: 'center',
-                alignSelf: 'flex-start',
-                display: 'flex',
-                gap: 10,
-                minHeight: 44,
-                padding: expanded ? '13px 20px' : '11px 16px',
-                width: expanded ? 260 : 156,
-            }}
+            className={styles.storeCard}
+            onClick={onSelect}
+            style={{ '--cover': item.cover } as CSSProperties}
             type="button"
         >
-            <span
-                style={{
-                    alignItems: 'center',
-                    background: 'rgba(255,255,255,.18)',
-                    borderRadius: 8,
-                    display: 'inline-flex',
-                    height: 22,
-                    justifyContent: 'center',
-                    width: 22,
-                }}
-            >
-                +
+            <span className={styles.storeCover}>
+                <Icon size={24} />
             </span>
-            <span>{expanded ? 'Create a new project' : 'New project'}</span>
+            <span className={styles.storeBody}>
+                <span className={styles.storeCategory}>{item.category}</span>
+                <span className={styles.storeTitle}>{item.title}</span>
+                <span className={styles.storeMeta}>{item.meta}</span>
+            </span>
         </button>
     )
 }
 
-function FolderFrame({ open }: { open: boolean }) {
+function StoreDetail({
+    item,
+    onClose,
+}: {
+    item: (typeof storeItems)[number]
+    onClose: () => void
+}) {
     const ref = useLayout<HTMLDivElement>({
-        layout: 'box',
-        layoutId: 'documentation-folder',
-        layoutAnchor: { x: 0.5, y: 0.5 },
-        motion: {
-            duration: 0.4,
-            timing: timing.spring({ m: 1, k: 160, c: 20 }),
-        },
+        layout: 'position',
+        layoutId: `showcase-store-${item.id}`,
     })
+    const Icon = item.icon
     return (
         <div
             ref={ref}
-            data-folder={true}
-            style={{
-                ...surface,
-                background: open
-                    ? 'linear-gradient(145deg, #f5f3ff, #ede9fe)'
-                    : 'linear-gradient(145deg, #fafafa, #f4f4f5)',
-                height: open ? 180 : 82,
-                padding: 14,
-                width: open ? 300 : 174,
-            }}
+            className={styles.storeDetail}
+            data-store-detail={true}
+            style={{ '--cover': item.cover } as CSSProperties}
         >
-            <div style={{ fontSize: 13, fontWeight: 750 }}>iOS Folder</div>
-            <div style={{ color: muted, fontSize: 12, marginTop: 3 }}>
-                {open ? '6 apps · grouped' : 'Tap to open'}
-            </div>
-            {open ? (
-                <div
-                    data-folder-apps={true}
-                    style={{
-                        display: 'grid',
-                        gap: 9,
-                        gridTemplateColumns: 'repeat(3, 1fr)',
-                        marginTop: 18,
-                    }}
+            <div className={styles.detailCover}>
+                <Icon size={38} />
+                <button
+                    aria-label="Close product"
+                    className={styles.detailBack}
+                    onClick={onClose}
+                    type="button"
                 >
-                    {[
-                        'Notes',
-                        'Photos',
-                        'Music',
-                        'Files',
-                        'Health',
-                        'Maps',
-                    ].map((name) => (
-                        <div
-                            key={name}
-                            style={{
-                                background: '#fff',
-                                border: '1px solid #ddd6fe',
-                                borderRadius: 10,
-                                fontSize: 10,
-                                fontWeight: 650,
-                                padding: '12px 4px',
-                                textAlign: 'center',
-                            }}
-                        >
-                            {name}
-                        </div>
+                    <X size={13} />
+                </button>
+            </div>
+            <div className={styles.detailBody}>
+                <div className={styles.storeCategory}>{item.category}</div>
+                <div className={styles.detailTitle}>{item.title}</div>
+                <p className={styles.detailCopy}>{item.copy}</p>
+                <div className={styles.detailTags}>
+                    {item.tags.map((tag) => (
+                        <span key={tag} className={styles.detailTag}>
+                            {tag}
+                        </span>
                     ))}
                 </div>
-            ) : null}
+            </div>
         </div>
     )
 }
 
-function StoreFrame({ selected }: { selected: boolean }) {
-    const compact = useLayout<HTMLDivElement>({
-        layout: 'position',
-        layoutId: 'documentation-store-card',
-    })
-    const detail = useLayout<HTMLDivElement>({
-        layout: 'position',
-        layoutId: 'documentation-store-card',
-    })
-    return selected ? (
-        <div
-            ref={detail}
-            data-store-detail={true}
-            style={{
-                ...surface,
-                background: 'linear-gradient(145deg, #ecfeff, #cffafe)',
-                padding: 18,
-                width: 300,
-            }}
-        >
-            <div style={{ fontSize: 12, fontWeight: 750, color: '#0e7490' }}>
-                APP STORE
+function StoreDemo() {
+    const [selected, setSelected] = useState<string | null>(null)
+    const selectedItem = storeItems.find((item) => item.id === selected)
+
+    return (
+        <>
+            <div className={join(styles.stage, styles.storeStage)}>
+                <LayoutGroup deps={[selected]}>
+                    {selectedItem ? (
+                        <StoreDetail
+                            item={selectedItem}
+                            onClose={() => setSelected(null)}
+                        />
+                    ) : (
+                        <div className={styles.storeGrid}>
+                            {storeItems.map((item) => (
+                                <StoreCard
+                                    key={item.id}
+                                    item={item}
+                                    onSelect={() => setSelected(item.id)}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </LayoutGroup>
             </div>
-            <div style={{ fontSize: 19, fontWeight: 800, marginTop: 8 }}>
-                Design tools
+            <div className={styles.controls}>
+                <button
+                    className={styles.control}
+                    data-action="toggle-store"
+                    onClick={() =>
+                        setSelected((value) =>
+                            value ? null : storeItems[0]!.id
+                        )
+                    }
+                    type="button"
+                >
+                    <ArrowLeft size={13} />
+                    {selected ? 'Back to storefront' : 'Open featured product'}
+                </button>
             </div>
-            <p style={{ color: '#155e75', fontSize: 13, lineHeight: 1.55 }}>
-                A compact card grows into a focused product detail surface.
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-                {['Editorial', 'Systems', 'Motion'].map((tag) => (
-                    <span
-                        key={tag}
-                        style={{
-                            background: 'rgba(14,116,144,.1)',
-                            borderRadius: 999,
-                            color: '#0e7490',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: '5px 9px',
-                        }}
-                    >
-                        {tag}
-                    </span>
-                ))}
-            </div>
-        </div>
-    ) : (
-        <div
-            ref={compact}
-            data-store-card={true}
-            style={{
-                ...surface,
-                alignItems: 'center',
-                background: '#ecfeff',
-                display: 'flex',
-                gap: 12,
-                padding: 14,
-                width: 240,
-            }}
-        >
-            <div
-                style={{
-                    background: '#0891b2',
-                    borderRadius: 12,
-                    height: 44,
-                    width: 44,
-                }}
-            />
-            <div>
-                <div style={{ fontSize: 14, fontWeight: 800 }}>
-                    Design tools
-                </div>
-                <div style={{ color: '#155e75', fontSize: 12 }}>
-                    Product detail
-                </div>
-            </div>
-        </div>
+        </>
     )
 }
 
 const toastMotion = {
     present: { opacity: 1, translateY: 0 },
-    initial: { opacity: 0, translateY: 10 },
+    initial: { opacity: 0, translateY: 8 },
     exit: ani({
-        to: { opacity: 0, translateY: 10 },
+        to: { opacity: 0, translateY: 8 },
         duration: 0.2,
         timing: timing.linear(),
     }),
 }
 
-function ToastRow({ text }: { text: string }) {
+function ToastRow({
+    index,
+    text,
+    onClose,
+}: {
+    index: number
+    text: string
+    onClose: () => void
+}) {
     const presence = usePresence(toastMotion)
     const ref = useLayout<HTMLDivElement>({
         layout: 'position',
@@ -350,268 +535,313 @@ function ToastRow({ text }: { text: string }) {
     return (
         <div
             ref={ref}
+            className={styles.toast}
             data-toast={true}
-            style={{
-                background: '#18181b',
-                borderRadius: 12,
-                color: '#fff',
-                fontSize: 12,
-                fontWeight: 650,
-                padding: '11px 14px',
-                ...presence.style,
-            }}
+            style={{ top: index * 48, zIndex: 10 - index }}
         >
-            {text}
+            <div className={styles.toastIcon}>
+                <Bell size={12} />
+            </div>
+            <div className={styles.toastBody}>
+                <div className={styles.toastTitle}>Workspace update</div>
+                <div className={styles.toastText}>{text}</div>
+            </div>
+            <button
+                aria-label="Dismiss notification"
+                className={styles.toastClose}
+                onClick={onClose}
+                type="button"
+            >
+                <X size={11} />
+            </button>
         </div>
     )
 }
 
-const galleryItems = ['Aurora', 'Mono', 'Tide', 'Orbit', 'Fable', 'Nova']
+function ToastDemo() {
+    const [toasts, setToasts] = useState([
+        { id: 1, text: 'Project synced with the team' },
+        { id: 2, text: 'Layout plan compiled' },
+    ])
+    const [nextId, setNextId] = useState(3)
 
-function GalleryTile({ name }: { name: string }) {
+    return (
+        <>
+            <div className={join(styles.stage, styles.toastStage)}>
+                <div className={styles.toastPhone}>
+                    <div className={styles.toastTop}>
+                        <span>Notifications</span>
+                        <span className={styles.toastStatus}>
+                            <span className={styles.toastStatusDot} />
+                            live
+                        </span>
+                    </div>
+                    <LayoutGroup deps={[toasts]}>
+                        <div
+                            className={styles.toastList}
+                            data-toast-list={true}
+                        >
+                            <AnimatePresence initial={false} mode="popLayout">
+                                {toasts.map((toast, index) => (
+                                    <ToastRow
+                                        key={toast.id}
+                                        index={index}
+                                        text={toast.text}
+                                        onClose={() =>
+                                            setToasts((current) =>
+                                                current.filter(
+                                                    (entry) =>
+                                                        entry.id !== toast.id
+                                                )
+                                            )
+                                        }
+                                    />
+                                ))}
+                            </AnimatePresence>
+                        </div>
+                    </LayoutGroup>
+                </div>
+            </div>
+            <div className={styles.controls}>
+                <button
+                    className={styles.control}
+                    data-action="add-toast"
+                    onClick={() => {
+                        setToasts((current) => [
+                            ...current,
+                            {
+                                id: nextId,
+                                text: `A new layout notification #${nextId}`,
+                            },
+                        ])
+                        setNextId((value) => value + 1)
+                    }}
+                    type="button"
+                >
+                    <Plus size={13} />
+                    Push notification
+                </button>
+                <button
+                    className={join(styles.control, styles.controlGhost)}
+                    data-action="remove-toast"
+                    onClick={() => setToasts((current) => current.slice(1))}
+                    type="button"
+                >
+                    Remove oldest
+                </button>
+            </div>
+        </>
+    )
+}
+
+const galleryItems = [
+    {
+        name: 'Aurora',
+        meta: 'Gradient study',
+        art: 'linear-gradient(135deg,#6366f1,#ec4899)',
+        marker: '01',
+    },
+    {
+        name: 'Mono',
+        meta: 'Type system',
+        art: 'linear-gradient(135deg,#18181b,#52525b)',
+        marker: '02',
+    },
+    {
+        name: 'Tide',
+        meta: 'Color field',
+        art: 'linear-gradient(135deg,#06b6d4,#3b82f6)',
+        marker: '03',
+    },
+    {
+        name: 'Orbit',
+        meta: 'Motion study',
+        art: 'linear-gradient(135deg,#f59e0b,#ef4444)',
+        marker: '04',
+    },
+    {
+        name: 'Fable',
+        meta: 'Editorial',
+        art: 'linear-gradient(135deg,#10b981,#84cc16)',
+        marker: '05',
+    },
+    {
+        name: 'Nova',
+        meta: 'Interface',
+        art: 'linear-gradient(135deg,#8b5cf6,#22d3ee)',
+        marker: '06',
+    },
+]
+
+function GalleryTile({ item }: { item: (typeof galleryItems)[number] }) {
     const ref = useLayout<HTMLDivElement>({ layout: 'position' })
     return (
-        <div
-            ref={ref}
-            data-gallery-tile={true}
-            style={{
-                ...surface,
-                background: 'linear-gradient(145deg, #fff7ed, #ffedd5)',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                height: 104,
-                padding: 12,
-            }}
-        >
-            <span style={{ color: '#9a3412', fontSize: 10, fontWeight: 800 }}>
-                COLLECTION
-            </span>
-            <span style={{ fontSize: 14, fontWeight: 800 }}>{name}</span>
+        <div ref={ref} className={styles.galleryTile} data-gallery-tile={true}>
+            <div
+                className={styles.tileArt}
+                style={{ '--art': item.art } as CSSProperties}
+            />
+            <span className={styles.tileMarker}>{item.marker}</span>
+            <div className={styles.tileInfo}>
+                <div className={styles.tileTitle}>{item.name}</div>
+                <div className={styles.tileMeta}>{item.meta}</div>
+            </div>
         </div>
+    )
+}
+
+function GalleryDemo() {
+    const [layout, setLayout] = useState<'grid' | 'list'>('grid')
+    return (
+        <>
+            <div className={join(styles.stage, styles.galleryStage)}>
+                <LayoutGroup deps={[layout]}>
+                    <div
+                        className={join(
+                            styles.gallery,
+                            layout === 'grid'
+                                ? styles.galleryGrid
+                                : styles.galleryList
+                        )}
+                        data-gallery={true}
+                    >
+                        {galleryItems.map((item) => (
+                            <GalleryTile key={item.name} item={item} />
+                        ))}
+                    </div>
+                </LayoutGroup>
+            </div>
+            <div className={styles.toolbar}>
+                <div className={styles.controls}>
+                    <button
+                        className={styles.control}
+                        data-action="toggle-gallery"
+                        onClick={() =>
+                            setLayout((value) =>
+                                value === 'grid' ? 'list' : 'grid'
+                            )
+                        }
+                        type="button"
+                    >
+                        {layout === 'grid' ? (
+                            <List size={13} />
+                        ) : (
+                            <Grid2X2 size={13} />
+                        )}
+                        {layout === 'grid'
+                            ? 'Switch to list'
+                            : 'Switch to grid'}
+                    </button>
+                </div>
+                <span className={styles.metaPill}>
+                    {layout === 'grid' ? '3 columns' : 'single column'}
+                </span>
+            </div>
+        </>
     )
 }
 
 export function LayoutShowcase() {
-    const [anchorOpen, setAnchorOpen] = useState(false)
-    const [createOpen, setCreateOpen] = useState(false)
-    const [folderOpen, setFolderOpen] = useState(false)
-    const [storeOpen, setStoreOpen] = useState(false)
-    const [layout, setLayout] = useState<'grid' | 'list'>('grid')
-    const [nextToast, setNextToast] = useState(3)
-    const [toasts, setToasts] = useState([
-        { id: 1, text: 'Project synced' },
-        { id: 2, text: 'Layout plan compiled' },
-    ])
-
     return (
-        <div
-            data-layout-showcase={true}
-            style={{ display: 'grid', gap: 18, margin: '28px 0' }}
-        >
-            <div
-                style={{
-                    ...surface,
-                    background:
-                        'linear-gradient(120deg, #faf5ff 0%, #eef2ff 55%, #ecfeff 100%)',
-                    padding: 24,
-                }}
-            >
-                <Eyebrow>Ani layout / compiled projection</Eyebrow>
-                <h2
-                    style={{
-                        fontSize: 28,
-                        letterSpacing: '-.035em',
-                        margin: '8px 0 6px',
-                    }}
-                >
-                    Layout motion, without a per-frame loop.
+        <div className={styles.root} data-layout-showcase={true}>
+            <section className={styles.hero}>
+                <div className={styles.heroTop}>
+                    <span className={styles.badge}>
+                        <span className={styles.dot} />
+                        Layout Lab
+                    </span>
+                    <span className={styles.metaPill}>Ani 2.0 / docs</span>
+                </div>
+                <h2 className={styles.heroTitle}>
+                    Layout motion that feels
+                    <br />
+                    <em>physical, not procedural.</em>
                 </h2>
-                <p
-                    style={{
-                        color: muted,
-                        fontSize: 14,
-                        lineHeight: 1.65,
-                        maxWidth: 660,
-                    }}
-                >
-                    These are live documentation fixtures for the reduced B′
-                    contract: compositor-native FLIP, bounded projection, shared
-                    identity, presence and a 2D gallery. Interact with each
-                    surface.
+                <p className={styles.heroCopy}>
+                    A live documentation lab for Ani’s compositor-native layout
+                    surface. Resize, morph, stack and reorder real DOM without a
+                    per-frame JavaScript loop.
                 </p>
+                <div className={styles.heroMeta}>
+                    <span className={styles.metaPill}>5 layout studies</span>
+                    <span className={styles.metaPill}>reduced 2D gallery</span>
+                    <span className={styles.metaPill}>WAAPI projection</span>
+                </div>
+                <div className={styles.preview} aria-hidden="true">
+                    <div className={styles.previewCard}>
+                        <div className={styles.previewArt} />
+                        <div className={styles.previewLine} />
+                        <div className={styles.previewLine} />
+                    </div>
+                    <div className={styles.previewCard}>
+                        <div className={styles.previewArt} />
+                        <div className={styles.previewLine} />
+                        <div className={styles.previewLine} />
+                    </div>
+                    <div className={styles.previewCard}>
+                        <div className={styles.previewArt} />
+                        <div className={styles.previewLine} />
+                    </div>
+                </div>
+            </section>
+
+            <div className={styles.grid}>
+                <ShowcaseCard
+                    id="E1"
+                    title="Layout Anchor"
+                    description="Resize a spring-driven parent without letting the child drift. The crosshair is the anchor point."
+                    tag="projection"
+                >
+                    <AnchorDemo />
+                </ShowcaseCard>
+
+                <ShowcaseCard
+                    id="E2"
+                    title="Create Button"
+                    description="A shared layoutId turns one compact action into a small creation menu while keeping the same surface identity."
+                    tag="shared id"
+                >
+                    <CreateDemo />
+                </ShowcaseCard>
+
+                <ShowcaseCard
+                    id="E3"
+                    title="iOS Folder"
+                    description="A reduced 2D folder: tap the tile, reveal the app matrix, and let the surface morph around it."
+                    tag="popLayout"
+                >
+                    <FolderDemo />
+                </ShowcaseCard>
+
+                <ShowcaseCard
+                    id="E4"
+                    title="App Store"
+                    description="A storefront card becomes a focused detail panel. The transition is shared identity, not a route swap."
+                    tag="shared id"
+                >
+                    <StoreDemo />
+                </ShowcaseCard>
+
+                <ShowcaseCard
+                    id="E5"
+                    title="Notifications"
+                    description="Stacked notifications settle as siblings move, with popLayout removing exits from flow immediately."
+                    tag="presence"
+                    wide={true}
+                >
+                    <ToastDemo />
+                </ShowcaseCard>
+
+                <ShowcaseCard
+                    id="Gallery"
+                    title="Reduced 2D Gallery"
+                    description="A gallery should feel like a gallery. Toggle pose and watch every tile re-measure through one layout group."
+                    tag="grid / list"
+                    wide={true}
+                >
+                    <GalleryDemo />
+                </ShowcaseCard>
             </div>
-
-            <ShowcaseCard
-                id="E1"
-                title="Layout Anchor"
-                description="A spring-driven parent box and an anchored child keep their first-frame continuity while the parent resizes."
-            >
-                <LayoutGroup deps={[anchorOpen]}>
-                    <AnchorFrame open={anchorOpen} />
-                </LayoutGroup>
-                <button
-                    data-action="toggle-anchor"
-                    onClick={() => setAnchorOpen((value) => !value)}
-                    style={button}
-                    type="button"
-                >
-                    {anchorOpen ? 'Collapse anchor' : 'Expand anchor'}
-                </button>
-            </ShowcaseCard>
-
-            <ShowcaseCard
-                id="E2"
-                title="Create Button"
-                description="A shared layoutId hands the create button from compact to expanded geometry in one measured frame."
-            >
-                <div
-                    style={{
-                        alignItems: 'center',
-                        display: 'flex',
-                        minHeight: 64,
-                    }}
-                >
-                    <LayoutGroup deps={[createOpen]}>
-                        <CreateButtonFrame expanded={createOpen} />
-                    </LayoutGroup>
-                </div>
-                <button
-                    data-action="toggle-create"
-                    onClick={() => setCreateOpen((value) => !value)}
-                    style={button}
-                    type="button"
-                >
-                    {createOpen ? 'Compact create' : 'Expand create'}
-                </button>
-            </ShowcaseCard>
-
-            <ShowcaseCard
-                id="E3"
-                title="iOS Folder"
-                description="A folder surface opens into a grouped 2D app matrix. The folder uses box motion and a centered anchor."
-            >
-                <LayoutGroup deps={[folderOpen]}>
-                    <FolderFrame open={folderOpen} />
-                </LayoutGroup>
-                <button
-                    data-action="toggle-folder"
-                    onClick={() => setFolderOpen((value) => !value)}
-                    style={button}
-                    type="button"
-                >
-                    {folderOpen ? 'Close folder' : 'Open folder'}
-                </button>
-            </ShowcaseCard>
-
-            <ShowcaseCard
-                id="E4"
-                title="App Store"
-                description="A compact product card grows into a focused detail panel using a shared layoutId and position layout."
-            >
-                <LayoutGroup deps={[storeOpen]}>
-                    <StoreFrame selected={storeOpen} />
-                </LayoutGroup>
-                <button
-                    data-action="toggle-store"
-                    onClick={() => setStoreOpen((value) => !value)}
-                    style={button}
-                    type="button"
-                >
-                    {storeOpen ? 'Back to card' : 'Open product'}
-                </button>
-            </ShowcaseCard>
-
-            <ShowcaseCard
-                id="E5"
-                title="Notifications"
-                description="popLayout removes exits from flow immediately while siblings and the remaining stack settle with a managed group clock."
-            >
-                <LayoutGroup deps={[toasts]}>
-                    <div
-                        data-toast-list={true}
-                        style={{
-                            display: 'grid',
-                            gap: 8,
-                            minHeight: 76,
-                            position: 'relative',
-                        }}
-                    >
-                        <AnimatePresence initial={false} mode="popLayout">
-                            {toasts.map((toast) => (
-                                <ToastRow key={toast.id} text={toast.text} />
-                            ))}
-                        </AnimatePresence>
-                    </div>
-                </LayoutGroup>
-                <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                        data-action="add-toast"
-                        onClick={() => {
-                            setToasts((current) => [
-                                ...current,
-                                {
-                                    id: nextToast,
-                                    text: `Notification ${nextToast}`,
-                                },
-                            ])
-                            setNextToast((value) => value + 1)
-                        }}
-                        style={button}
-                        type="button"
-                    >
-                        Add toast
-                    </button>
-                    <button
-                        data-action="remove-toast"
-                        onClick={() => setToasts((current) => current.slice(1))}
-                        style={{
-                            ...button,
-                            background: 'transparent',
-                            color: 'inherit',
-                        }}
-                        type="button"
-                    >
-                        Remove first
-                    </button>
-                </div>
-            </ShowcaseCard>
-
-            <ShowcaseCard
-                id="Gallery"
-                title="Reduced 2D Gallery"
-                description="Grid and list poses share a layout group; no 3D, drag, scroll observer or loop is used."
-            >
-                <LayoutGroup deps={[layout]}>
-                    <div
-                        data-gallery={true}
-                        style={{
-                            display: 'grid',
-                            gap: 10,
-                            gridTemplateColumns:
-                                layout === 'grid'
-                                    ? 'repeat(3, minmax(0, 1fr))'
-                                    : '1fr',
-                        }}
-                    >
-                        {galleryItems.map((name) => (
-                            <GalleryTile key={name} name={name} />
-                        ))}
-                    </div>
-                </LayoutGroup>
-                <button
-                    data-action="toggle-gallery"
-                    onClick={() =>
-                        setLayout((value) =>
-                            value === 'grid' ? 'list' : 'grid'
-                        )
-                    }
-                    style={button}
-                    type="button"
-                >
-                    {layout === 'grid' ? 'List pose' : 'Grid pose'}
-                </button>
-            </ShowcaseCard>
         </div>
     )
 }

@@ -33,24 +33,26 @@ Chromium result:
 {
   "title": "Layout Showcase",
   "sections": 6,
-  "anchor": [190, 300],
-  "create": [156, 260],
+  "anchor": [190, 280],
+  "anchorChild": [70, 98],
+  "create": [164, 280],
   "toasts": 2,
-  "animations": { "anchor": 2, "create": 1, "folder": 1, "store": 1, "gallery": 6 },
+  "animations": { "anchor": 1, "create": 3, "folder": 4, "store": 5, "gallery": 10 },
   "gridY": [658.140625, 658.140625],
   "listY": [620.140625, 734.140625]
 }
 ```
 
-Firefox result: the same six sections, 190→300px anchor, 156→260px create,
-2 toasts, the same animation counts, and grid (same row) → list (stacked).
+Firefox result: the same six sections, 190→280px anchor (child 70→98px),
+164→280px create, 2 toasts, the same animation counts, and grid (same row) →
+list (stacked). Folder apps are asserted to fit inside the folder surface.
 
-The only console error is the pre-existing docs nav prefetch of `/en/blog`
-(actual route is `/blog`); the showcase itself is error-free.
+The documentation navbar `/blog` link was corrected to an external route; the
+Chromium and Firefox runs now report no console errors and no page errors.
 
 ## Scope note
 
-This is a **bounded B′ showcase**: E1–E5 are reduced 2D fixtures over the public
+This is a production-styled **bounded B′ showcase**: E1–E5 are reduced 2D fixtures over the public
 React layout surface, not full 3D/drag/scroll-observer Motion parity. E3/E4
 exercise reduced 2D folder/store composition, not the excluded depth-2 Gallery
 engine. WebKit was not available for this Next server host; core WebKit P0–P11
