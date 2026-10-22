@@ -62,12 +62,20 @@ const toastMotion = {
 
 function Toast({ toast }) {
   const presence = usePresence(toastMotion)
-  return <div ref={presence.ref} inert={!presence.isPresent}>{toast.text}</div>
+  return (
+    <div
+      ref={presence.ref}
+      style={{ ...baseToastStyle, ...presence.style }}
+      inert={!presence.isPresent}
+    >
+      {toast.text}
+    </div>
+  )
 }
 
 function Toasts({ toasts }) {
   return (
-    <AnimatePresence initial={false}>
+    <AnimatePresence initial={false} mode="popLayout">
       {toasts.map((toast) => <Toast key={toast.id} toast={toast} />)}
     </AnimatePresence>
   )
@@ -77,6 +85,11 @@ function Toasts({ toasts }) {
 The exiting element keeps its DOM node and state until its exit finishes.
 Re-entry cancels the exit through the core state machine. A watchdog releases
 a node if the exit cannot complete.
+
+`presence.style` carries `motion.initial` for the first render/SSR and the
+absolute-positioning box during `popLayout`. Spread it after your base styles.
+`mode="popLayout"` removes exiting children from normal flow immediately so
+siblings can move; it requires `usePresence` (not the custom-exit control).
 
 ## View Transitions
 
@@ -108,5 +121,8 @@ motion, or other interruptible UI. Use FLIP there.
   correction are outside the first release.
 - Reduced motion is delegated to core; the default `'jump'` policy releases
   presence and writes no inverse layout transform.
+- `popLayout` reads the exiting box once per present popLayout child update and
+  positions the exit absolutely; custom-exit controls do not receive that
+  style.
 
 See `packages/layout/ARCHITECTURE.md` for the full tier and performance model.

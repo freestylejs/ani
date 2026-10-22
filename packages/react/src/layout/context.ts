@@ -139,6 +139,7 @@ export interface PresenceContextValue {
     readonly token: number
     readonly present: boolean
     readonly willEnter: boolean
+    readonly popLayout: boolean
     readonly register: () => number
     readonly unregister: (id: number) => void
     readonly settle: () => void

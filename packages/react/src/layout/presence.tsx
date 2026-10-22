@@ -1,35 +1,38 @@
-import type { GroupableRecord } from '@freestylejs/ani-core'
-import {
-    createPresence,
-    type PresenceEntry,
-    type PresenceHandle,
-    type PresenceKey,
-    type PresenceMotion,
-    type PresenceOptions,
-    reconcilePresence,
-    settlePresence,
-} from '@freestylejs/ani-layout'
 import {
     Fragment,
     isValidElement,
-    type ReactElement,
-    type ReactNode,
-    type RefCallback,
     useContext,
     useEffect,
     useMemo,
     useRef,
     useState,
+    type ReactElement,
+    type CSSProperties,
+    type ReactNode,
+    type RefCallback,
 } from 'react'
+import { createStyleSheet, type GroupableRecord } from '@freestylejs/ani-core'
+import {
+    createPresence,
+    reconcilePresence,
+    settlePresence,
+    type PresenceEntry,
+    type PresenceHandle,
+    type PresenceKey,
+    type PresenceMotion,
+    type PresenceOptions,
+} from '@freestylejs/ani-layout'
 import { useIsoLayoutEffect } from '../ani/owned'
-import { PresenceContext, type PresenceContextValue } from './context'
+import {
+    PresenceContext,
+    type PresenceContextValue,
+} from './context'
 
 export interface AnimatePresenceProps {
     children?: ReactNode
     /** Default false: first-render children do not enter. */
     initial?: boolean
-    /** v1 supports sync only. */
-    mode?: 'sync'
+    mode?: 'sync' | 'popLayout'
     onExitComplete?: (key: string) => void
 }
 
@@ -49,7 +52,8 @@ function childrenEntries(
         if (!isValidElement(node)) return
         if (node.type === Fragment) {
             visit(
-                (node as ReactElement<{ children?: ReactNode }>).props.children
+                (node as ReactElement<{ children?: ReactNode }>).props
+                    .children
             )
             return
         }
@@ -64,9 +68,9 @@ function childrenEntries(
  * exits; it never clones a child or creates a wrapper element.
  */
 export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
-    const [entries, setEntries] = useState<readonly PresenceEntry<ReactNode>[]>(
-        []
-    )
+    const [entries, setEntries] = useState<
+        readonly PresenceEntry<ReactNode>[]
+    >([])
     const entriesRef = useRef(entries)
     const childMap = useRef(new Map<PresenceKey, ReactNode>())
     const registrants = useRef(new Map<PresenceKey, Set<number>>())
@@ -204,6 +208,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
                     token: entry.token,
                     present: entry.present,
                     willEnter: willEnter.current.get(entry.key) ?? true,
+                    popLayout: props.mode === 'popLayout',
                     register: () => register(entry.key),
                     unregister: (id) => unregister(entry.key, id),
                     settle: () => settle(entry.key, entry.token),
@@ -224,19 +229,22 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
 
 export interface UsePresenceResult<E extends HTMLElement> {
     ref: RefCallback<E>
-    style: undefined
+    style: CSSProperties | undefined
     isPresent: boolean
 }
 
 /**
  * Creates a per-element presence handle bound to the surrounding
- * AnimatePresence. The returned style is intentionally undefined: presence
- * must not stamp resting styles on mount.
+ * AnimatePresence. The returned style is undefined at rest; it carries
+ * `motion.initial` for the first enter and popLayout positioning during exit.
  */
 export function usePresence<
     G extends GroupableRecord,
     E extends HTMLElement = HTMLElement,
->(motion: PresenceMotion<G>, options?: PresenceOptions): UsePresenceResult<E> {
+>(
+    motion: PresenceMotion<G>,
+    options?: PresenceOptions
+): UsePresenceResult<E> {
     const context = useContext(PresenceContext)
     const contextRef = useRef(context)
     contextRef.current = context
@@ -247,6 +255,12 @@ export function usePresence<
     const elementRef = useRef<E | null>(null)
     const handle = useRef<PresenceHandle | null>(null)
     const registration = useRef<number | null>(null)
+    const popBox = useRef<{
+        left: number
+        top: number
+        width: number
+        height: number
+    } | null>(null)
 
     const detach = useMemo(
         () => () => {
@@ -299,6 +313,42 @@ export function usePresence<
 
     useIsoLayoutEffect(() => {
         const current = contextRef.current
+        const element = elementRef.current
+        if (!current?.popLayout || !element || !current.present) return
+        const rect = element.getBoundingClientRect()
+        const parent = element.offsetParent as HTMLElement | null
+        if (parent) {
+            const parentRect = parent.getBoundingClientRect()
+            popBox.current = {
+                left:
+                    rect.left -
+                    parentRect.left -
+                    parent.clientLeft +
+                    parent.scrollLeft,
+                top:
+                    rect.top -
+                    parentRect.top -
+                    parent.clientTop +
+                    parent.scrollTop,
+                width: rect.width,
+                height: rect.height,
+            }
+        } else {
+            popBox.current = {
+                left:
+                    rect.left +
+                    (typeof window === 'undefined' ? 0 : window.scrollX),
+                top:
+                    rect.top +
+                    (typeof window === 'undefined' ? 0 : window.scrollY),
+                width: rect.width,
+                height: rect.height,
+            }
+        }
+    })
+
+    useIsoLayoutEffect(() => {
+        const current = contextRef.current
         const active = handle.current
         if (!current || !active) return
         if (!current.present) {
@@ -313,14 +363,44 @@ export function usePresence<
         }
     }, [context?.present, context?.willEnter, context?.token])
 
+    const initialStyle = useMemo(
+        () =>
+            context?.willEnter && motion.initial
+                ? (createStyleSheet(
+                      motion.initial as Record<string, number>
+                  ) as CSSProperties)
+                : undefined,
+        [context?.willEnter, motion.initial]
+    )
+    const [applyInitial, setApplyInitial] = useState(true)
+    useEffect(() => {
+        if (!applyInitial) return
+        setApplyInitial(false)
+    }, [applyInitial])
+    const popStyle: CSSProperties | undefined =
+        context && !context.present && context.popLayout
+            ? {
+                  position: 'absolute',
+                  left: popBox.current?.left ?? 0,
+                  top: popBox.current?.top ?? 0,
+                  width: popBox.current?.width ?? 0,
+                  height: popBox.current?.height ?? 0,
+                  margin: 0,
+                  boxSizing: 'border-box',
+                  pointerEvents: 'none',
+              }
+            : undefined
+
     return {
         ref,
-        style: undefined,
+        style: popStyle ?? (applyInitial ? initialStyle : undefined),
         isPresent: context?.present ?? true,
     }
 }
 
-export function usePresenceControl(options?: { maxExitMs?: number }): {
+export function usePresenceControl(options?: {
+    maxExitMs?: number
+}): {
     isPresent: boolean
     safeToRemove: () => void
 } {
