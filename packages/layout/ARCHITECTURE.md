@@ -1,3 +1,7 @@
+> **v0.2 authority notice:** `packages/layout/ARCHITECTURE_CPC.md` is the
+> authoritative projection/API contract for the Compiled Projection Core. This
+> file remains the v1 historical contract; where the two conflict, CPC wins.
+
 > **Authority note (2026-10-21):** This is the implementation authority for `@freestylejs/ani-layout`. The earlier `ANI_LAYOUT_ARCHITECTURE_DECLARATIVE.md` is superseded; its declarative boundary goal is preserved here, while the engine is the final pragmatic tier: View Transitions + WAAPI approximate FLIP + snap. Read this document before changing the package.
 
 # ANI Layout — Final Pragmatic Architecture

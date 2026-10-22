@@ -31,6 +31,7 @@ const MODULES = [
     'svelte',
     'layout',
     'react_layout',
+    'cpc',
 ] as const
 const CASE_TIMEOUT_MS = 10_000
 const LOAD_TIMEOUT_MS = 10_000
