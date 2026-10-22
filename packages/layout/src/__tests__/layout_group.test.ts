@@ -719,3 +719,17 @@ it('returns no-change for an unchanged nested participant tree', async () => {
     expect(animateSpy).not.toHaveBeenCalled()
     group.dispose()
 })
+
+it('animates a moving child even when its participant parent is stationary', async () => {
+    const parent = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const child = makeElement({ x: 10, y: 10, width: 20, height: 20 })
+    parent.append(child)
+    const group = createLayoutGroup()
+    group.add(parent, { layout: 'box' })
+    group.add(child, { layout: 'position' })
+    const snapshot = group.capture()
+    setBox(child, { x: 50, y: 10, width: 20, height: 20 })
+    await expect(group.play(snapshot)).resolves.toBe('ended')
+    expect(animateSpy).toHaveBeenCalledTimes(1)
+    group.dispose()
+})

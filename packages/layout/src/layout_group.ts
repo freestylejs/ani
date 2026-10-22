@@ -789,7 +789,12 @@ export function createLayoutGroup(
                 if (!candidate.parentElement) continue
                 const parent = candidateByElement.get(candidate.parentElement)
                 if (!parent) {
-                    candidate.skip = true
+                    const ownMoved =
+                        Math.abs(candidate.dx) >= threshold ||
+                        Math.abs(candidate.dy) >= threshold ||
+                        Math.abs(candidate.sx - 1) >= 0.01 ||
+                        Math.abs(candidate.sy - 1) >= 0.01
+                    if (!ownMoved) candidate.skip = true
                     continue
                 }
                 if (parent.skip) {
@@ -972,6 +977,14 @@ export function createLayoutGroup(
                                         parent.after.y -
                                         parent.dy * (1 - parentProgress)) /
                                         parentScaleY
+                                scaleX =
+                                    desiredWidth /
+                                    parentScaleX /
+                                    candidate.after.width
+                                scaleY =
+                                    desiredHeight /
+                                    parentScaleY /
+                                    candidate.after.height
                                 translateX =
                                     localLeft -
                                     candidate.after.x -
@@ -984,14 +997,6 @@ export function createLayoutGroup(
                                     (candidate.anchor
                                         ? candidate.originY * (1 - scaleY)
                                         : 0)
-                                scaleX =
-                                    desiredWidth /
-                                    parentScaleX /
-                                    candidate.after.width
-                                scaleY =
-                                    desiredHeight /
-                                    parentScaleY /
-                                    candidate.after.height
                             }
                             const frame: Record<string, string | number> = {
                                 translate: `${translateX}px ${translateY}px`,
