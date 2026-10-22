@@ -76,13 +76,13 @@ react/src/layout    90.6 / 80.75 / 92 / 92.98
 Size (esbuild minified ESM, gzip, peers external, tree-shaken):
 
 ```text
-ani-layout all                7,291 B  (budget 7,500)
+ani-layout all                7,274 B  (budget 7,500)
 FLIP-only                     2,749 B  (budget 3,000)
 View Transition-only          1,915 B  (budget 2,200)
 Presence-only                   815 B  (budget 1,200)
-ani-react/layout layout-only  1,334 B  (budget 1,500)
-ani-react/layout presence-only 1,733 B (budget 2,000)
-ani-react/layout all          3,075 B  (budget 3,200)
+ani-react/layout layout-only  1,340 B  (budget 1,500)
+ani-react/layout presence-only 1,785 B (budget 2,000)
+ani-react/layout all          3,129 B  (budget 3,200)
 ```
 
 ## Production constraints recorded
