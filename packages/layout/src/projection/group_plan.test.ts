@@ -46,5 +46,6 @@ describe('group plan lifecycle', () => {
         )
         expect(finish).toHaveBeenCalledTimes(1)
         expect(cancel).toHaveBeenCalledTimes(1)
+        expect(thrower.cancel).toHaveBeenCalledTimes(1)
     })
 })
