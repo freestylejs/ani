@@ -4,7 +4,7 @@
 **Validation:** `cpc_valid_03_api.md`  
 **Verdict:** pending re-judgment after FAIL repairs
 
-**Reviewed code revision:** `31fabca`; base `be5f1b2`.
+**Reviewed code revision:** `45f7377`; base `31fabca`.
 
 ## Delivered
 
