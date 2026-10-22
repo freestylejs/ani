@@ -3,7 +3,7 @@
 **Task:** `cpc_task_01_baseline.md`  
 **Validation:** `cpc_valid_01_baseline.md`  
 **Date:** 2026-10-22  
-**Verdict:** pending re-judgment after FAIL repairs
+**Verdict:** **TRIBUNAL PASS** (S0/S1/S2 = 0)
 
 **Reviewed revision:** fix on top of `137482b`; base `8654839`; final hash recorded in the Git evidence file.
 
@@ -84,3 +84,9 @@ react_layout:R3 -> PASS
 - `tests/browser/cases/cpc.ts`
 - `tests/browser/cases/cpc_harness.ts`
 - `tests/browser/cases/react_layout.ts` (R3)
+
+## Final tribunal
+
+- Verdict: **TRIBUNAL PASS**. J-01 oracle geometry/lifecycle, J-02 managed sibling motion, J-03 oracle units, J-04 three-engine coverage, and J-05 provenance are closed.
+- Accepted S3: the reduced review copy is partial/dirty; the source checkout is clean and execution evidence is recorded.
+- Reviewed code revision `84944f5`, evidence revision `0533be1`, base `8654839`; Core diff against `6715bb1` is 0.
