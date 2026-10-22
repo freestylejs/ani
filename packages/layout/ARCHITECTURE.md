@@ -236,7 +236,7 @@ Both edges move linearly in eased progress; box interpolation is exact. Assumes 
 1. `box` on text/icons/1px borders with aspect change: squash/stretch. Use surfaces/images; content sibling or registered child.
 2. Width-changing text: line breaks cannot morph; position-only + snap size, or VT crossfade.
 3. Shared element with different content without crossfade: content pops; use VT or surface + presence fade.
-4. Exit-then-slide without popLayout: gap lingers; keep exits ≤150ms; popLayout P3.
+4. Exit-then-slide without popLayout: gap lingers; use `AnimatePresence mode="popLayout"` when siblings must move immediately.
 5. Rapid reorder with springs: velocity kink; drag uses `follow`.
 6. Moves across scroll containers: clipped mid-flight; VT for discrete drop.
 7. `position: fixed` descendants of moving item: transform creates containing block; known break.
@@ -425,7 +425,9 @@ await viewTransition(() => render(next), { share: ['hero-42'], motion })
 | FLIP-only | ≤3.0KB | 2,749 B |
 | View Transition-only | ≤2.2KB | 1,915 B |
 | Presence-only | ≤1.2KB | 815 B |
-| `ani-react/layout` | ≤1.5KB | 1,157 B |
+| `ani-react/layout` layout-only | ≤1.5KB | 1,334 B |
+| `ani-react/layout` presence-only | ≤2.0KB | 1,733 B |
+| `ani-react/layout` all | ≤3.2KB | 3,075 B |
 
 Measured with esbuild, minified ESM, gzip, core/React/layout peers external, one feature entry per row. The root entry includes all three features, hence its larger budget. These are v1 gates; a change requires a measured amendment.
 
@@ -506,7 +508,7 @@ Browser support must be rechecked in P0; floors are not a substitute for the har
 | **P0** | Three-engine harness for H1–H4, T1–T3 | Decision tree; H2 failure stops |
 | **P1** | `ani-layout`: presence; FLIP position/box/layoutId; step-downs; `viewTransition`, `shareElement`, `retimeViewTransition`; React `LayoutGroup`, `useLayout`, presence; recipes list/tab/accordion/toast/route | G1–G13 + kept D-gates → 0.1.0 |
 | **P2** | One-level nested correction; card-expand recipe | H5 + G4 nested |
-| **P3** | Vue/Svelte/Solid adapters; router/MPA recipes; `popLayout` if demand | Per-adapter boundary matrix |
+| **P3** | Vue/Svelte/Solid adapters; router/MPA recipes; `popLayout` landed in the React adapter behind an opt-in mode | Per-adapter boundary matrix |
 | **Reopen only on evidence** | Element-scoped VT, crossfade, `layoutScroll`, rotation projection, velocity handoff | — |
 
 ---
@@ -523,7 +525,6 @@ Browser support must be rechecked in P0; floors are not a substitute for the har
 | `layoutScroll`/`layoutRoot` | VT/scroll-container evidence |
 | `layoutId` cross-route without VT | Requires View Transition |
 | Rotation/skew projection | Separate cycle |
-| `popLayout` | Exit-then-slide top complaint |
 | Element-scoped VT | Two engines ship |
 | Observers | Not needed; VT/FLIP cover the cases |
 
