@@ -114,9 +114,16 @@ export interface LayoutConfigProps extends LayoutConfigValue {
 /** Defaults inherited by descendant LayoutGroups. */
 export function LayoutConfig(props: LayoutConfigProps): ReactNode {
     const parent = useContext(LayoutConfigContext)
+    const value: LayoutConfigValue = {
+        ...parent,
+        ...(props.motion !== undefined && { motion: props.motion }),
+        ...(props.reducedMotion !== undefined && {
+            reducedMotion: props.reducedMotion,
+        }),
+    }
     return createElement(
         LayoutConfigContext.Provider,
-        { value: { ...parent, ...props } },
+        { value },
         props.children
     )
 }

@@ -218,6 +218,7 @@ export function createLayoutGroup(
     const owner = {}
     const participants = new Map<HTMLElement, Participant>()
     let run: GroupRun | null = null
+    const lastDependency = new Map<HTMLElement, unknown>()
 
     const finishRun = (state: GroupRun, result: LayoutResult): void => {
         if (run !== state) return
@@ -251,6 +252,9 @@ export function createLayoutGroup(
                 layoutId: participantOptions.layoutId,
                 layoutDependency: participantOptions.layoutDependency,
             })
+            if (participantOptions.layoutDependency !== undefined) {
+                lastDependency.set(element, participantOptions.layoutDependency)
+            }
             return () => {
                 if (participants.get(element)?.element !== element) return
                 participants.delete(element)
@@ -262,6 +266,12 @@ export function createLayoutGroup(
             if (!participant) return
             participant.layout = participantOptions.layout ?? 'position'
             participant.layoutId = participantOptions.layoutId
+            if (
+                participant.layoutDependency === undefined &&
+                participantOptions.layoutDependency !== undefined
+            ) {
+                lastDependency.set(element, participantOptions.layoutDependency)
+            }
             participant.layoutDependency = participantOptions.layoutDependency
         },
 
@@ -329,8 +339,14 @@ export function createLayoutGroup(
                         offsetHeight,
                     }
                     data.items.set(element, item)
-                    if (participant.layoutDependency !== undefined) {
+                    if (participant.layoutDependency === undefined) {
+                        lastDependency.delete(element)
+                    } else {
                         data.dependencies.set(
+                            element,
+                            lastDependency.get(element)
+                        )
+                        lastDependency.set(
                             element,
                             participant.layoutDependency
                         )
@@ -525,7 +541,6 @@ export function createLayoutGroup(
                 if (!before || sameRect(before.rect, current.rect)) continue
                 if (
                     participant.layoutDependency !== undefined &&
-                    data.dependencies.has(element) &&
                     Object.is(
                         data.dependencies.get(element),
                         participant.layoutDependency

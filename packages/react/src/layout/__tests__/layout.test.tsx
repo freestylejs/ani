@@ -31,6 +31,12 @@ import {
     type LayoutFacade,
 } from '../context'
 
+function animateSpyClear(): void {
+    ;(
+        Element.prototype.animate as unknown as { mockClear?: () => void }
+    ).mockClear?.()
+}
+
 function installLayoutDom(): void {
     ;(globalThis as unknown as { CSS: { supports: () => boolean } }).CSS = {
         supports: () => true,
@@ -851,6 +857,125 @@ describe('react layout adapter', () => {
         } finally {
             await view.unmount()
         }
+    })
+
+    it('honors React layoutDependency changes and LayoutConfig duration', async () => {
+        function Row({
+            left,
+            dependency,
+        }: {
+            left: number
+            dependency: string
+        }) {
+            const ref = useLayout<HTMLDivElement>({
+                layoutDependency: dependency,
+            })
+            return (
+                <div
+                    ref={ref}
+                    style={{
+                        position: 'absolute',
+                        left,
+                        width: 10,
+                        height: 10,
+                    }}
+                />
+            )
+        }
+        function App({
+            left,
+            dependency,
+        }: {
+            left: number
+            dependency: string
+        }) {
+            return (
+                <LayoutConfig motion={{ duration: 0.1 }}>
+                    <LayoutGroup deps={[left, dependency]}>
+                        <Row left={left} dependency={dependency} />
+                    </LayoutGroup>
+                </LayoutConfig>
+            )
+        }
+        const view = await mount(<App left={0} dependency="a" />)
+        try {
+            animateSpyClear()
+            await view.rerender(<App left={20} dependency="a" />)
+            expect(Element.prototype.animate).not.toHaveBeenCalled()
+            await view.rerender(<App left={40} dependency="b" />)
+            expect(Element.prototype.animate).toHaveBeenCalled()
+            const options = (
+                Element.prototype.animate as unknown as {
+                    mock: {
+                        calls: Array<[Keyframe[], KeyframeAnimationOptions]>
+                    }
+                }
+            ).mock.calls.at(-1)![1]
+            expect(options.duration).toBe(100)
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('does not render a never-committed child as a wait ghost', async () => {
+        const clock = createManualClock()
+        const motion = {
+            present: { opacity: 1 },
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.2,
+                timing: a.timing.linear(),
+            }),
+        }
+        function Row({ id }: { id: string }) {
+            const presence = usePresence(motion, { clock: clock.clock })
+            return (
+                <div ref={presence.ref} data-id={id} style={presence.style} />
+            )
+        }
+        function App({ ids }: { ids: string[] }) {
+            return (
+                <AnimatePresence initial={false} mode="wait">
+                    {ids.map((id) => (
+                        <Row key={id} id={id} />
+                    ))}
+                </AnimatePresence>
+            )
+        }
+        const view = await mount(<App ids={['a']} />)
+        try {
+            await view.rerender(<App ids={['b']} />)
+            await view.rerender(<App ids={['c']} />)
+            await act(async () => undefined)
+            expect(view.container.querySelector('[data-id="b"]')).toBeNull()
+            await act(async () => {
+                clock.frames(20)
+            })
+            expect(view.container.querySelector('[data-id="c"]')).not.toBeNull()
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('shares custom presence data with the child and supports SSR wrappers', () => {
+        const motion = {
+            present: { opacity: 1 },
+            exit: a.ani({ to: { opacity: 0 }, duration: 0.1 }),
+        }
+        function Row() {
+            const presence = usePresence(motion)
+            return (
+                <div ref={presence.ref} data-custom={String(presence.custom)} />
+            )
+        }
+        const markup = renderToString(
+            <LayoutConfig motion={{ duration: 0.1 }}>
+                <AnimatePresence custom="urgent">
+                    <Row key="row" />
+                </AnimatePresence>
+            </LayoutConfig>
+        )
+        expect(markup).toContain('data-custom="urgent"')
     })
 
     it('renders no wrapper DOM and produces SSR markup without boundaries', () => {
