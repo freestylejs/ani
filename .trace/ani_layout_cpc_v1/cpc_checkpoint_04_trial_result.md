@@ -4,7 +4,7 @@
 **Validation:** `cpc_valid_04_projection.md`  
 **Verdict:** pending re-judgment after gate-amended F1–F7 repairs
 
-**Reviewed code revision:** `e672a17`; prior `e9f8eea`.
+**Reviewed code revision:** pending N1/N2 commit; prior `e672a17`.
 
 ## Delivered
 
@@ -28,7 +28,7 @@
 
 ```text
 pnpm test:ci -> PASS
-  135 test files / 1,552 tests
+  135 test files / 1,553 tests
 pnpm check / layout build / react build -> PASS
 cpc:P5 Chromium -> PASS
 cpc:P5 Firefox -> PASS
@@ -56,3 +56,9 @@ core diff 6715bb1 -> 0
 - F2: projected box children now use 48 sampled keyframe offsets and a zero-origin projected child frame, reducing P9 to 0.001px over 60 offsets; the E1 projection is within the 0.5px target.
 - F3/F5: parent/child durations/easing are composed with parent and child eased progress separately; P10 samples 60 offsets (width error 0.157px) and P7 covers projection interrupt. Unchanged-rect children are counter-scaled and stationary nested trees return no-change before cap accounting.
 - F6/F7: React `motion` and `layoutAnchor` are in the effect deps; static ancestor scale/rotate/skew snap; architecture now permits the constant anchored transform-origin.
+
+## N1/N2 repair
+
+- N1: a moving child is no longer skipped when its participant parent is stationary; only an unmoved child is skipped. Unit coverage added.
+- N2: anchored projected child translation now uses the projected scale, not the stale linear scale. P11 samples an anchored child over 60 offsets and records 0.001px.
+- P9 assertion tightened to the 0.5px target. Task 04 no longer asks for an adaptive runtime estimator; the documented fixed-48/60-offset amendment is authoritative.

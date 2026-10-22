@@ -561,7 +561,7 @@ export async function P9(): Promise<string> {
         }
         resumeAnimations(animations)
         await run
-        expectEqual(worst <= 1.5, true, `P9 projection sampled error ${worst}`)
+        expectEqual(worst <= 0.5, true, `P9 projection sampled error ${worst}`)
         return `P9: 60-offset projection error ${worst.toFixed(3)}px`
     } finally {
         removeParent()
@@ -696,6 +696,65 @@ export async function P10(): Promise<string> {
         )
         expectEqual(maxStep <= 4, true, `P10 spring/tween step ${maxStep}`)
         return `P10: parent spring + child tween compose (width ${worstWidth.toFixed(3)}, step ${maxStep.toFixed(3)})`
+    } finally {
+        removeParent()
+        removeChild()
+        group.dispose()
+        root.remove()
+    }
+}
+
+export async function P11(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:320px;height:220px;'
+    const parent = document.createElement('div')
+    parent.style.cssText =
+        'position:absolute;left:0;top:0;width:100px;height:100px;background:#ddd;'
+    const child = document.createElement('div')
+    child.style.cssText =
+        'position:absolute;left:10px;top:10px;width:20px;height:20px;background:#222;'
+    parent.append(child)
+    root.append(parent)
+    document.body.append(root)
+    const group = createLayoutGroup({
+        motion: { duration: 0.2, timing: timing.linear() },
+    })
+    const removeParent = group.add(parent, {
+        layout: 'box',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+    })
+    const removeChild = group.add(child, {
+        layout: 'box',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+    })
+    try {
+        const snapshot = group.capture()
+        const before = boxOf(child)
+        parent.style.left = '60px'
+        parent.style.width = '160px'
+        const run = group.play(snapshot)
+        const animations = [...parent.getAnimations(), ...child.getAnimations()]
+        let worst = 0
+        for (let index = 0; index <= 60; index++) {
+            const q = index / 60
+            pauseAt(animations, q * 200)
+            const box = boxOf(child)
+            const expectedLeft = before.left + 60 * q
+            const expectedWidth = before.width
+            const error = Math.max(
+                Math.abs(box.left - expectedLeft),
+                Math.abs(box.width - expectedWidth)
+            )
+            worst = Math.max(worst, error)
+        }
+        resumeAnimations(animations)
+        await run
+        expectEqual(
+            worst <= 0.5,
+            true,
+            `P11 anchored-child projection sampled error ${worst}`
+        )
+        return `P11: anchored-child 60-offset projection error ${worst.toFixed(3)}px`
     } finally {
         removeParent()
         removeChild()
