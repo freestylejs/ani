@@ -184,6 +184,75 @@ describe('createLayoutGroup', () => {
         group.dispose()
     })
 
+    it('rejects an invalid duration and does not create a run', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup({ motion: { duration: 0 } })
+        group.add(element)
+        const snapshot = group.capture()
+        setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+        await expect(group.play(snapshot)).rejects.toThrow(RangeError)
+        expect(group.active).toBe(false)
+        group.dispose()
+    })
+
+    it('reports a per-element animate failure and keeps the group usable', async () => {
+        const onError = vi.fn()
+        const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup({ onError })
+        group.add(element)
+        const snapshot = group.capture()
+        setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+        animateSpy.mockImplementationOnce(() => {
+            throw new Error('animate failed')
+        })
+        await expect(group.play(snapshot)).resolves.toBe('unsupported')
+        expect(onError).toHaveBeenCalledTimes(1)
+        group.dispose()
+    })
+
+    it('finishes and disposes active runs without stale resolution', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup()
+        group.add(element)
+        const snapshot = group.capture()
+        setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+        const run = group.play(snapshot)
+        group.finish()
+        await expect(run).resolves.toBe('finished')
+        expect(group.active).toBe(false)
+        group.dispose()
+    })
+
+    it('rejects a foreign snapshot and supports set/remove churn', async () => {
+        const first = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const second = makeElement({ x: 20, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup()
+        const other = createLayoutGroup()
+        const remove = group.add(first)
+        group.add(second)
+        group.set(first, { layout: 'box' })
+        const snapshot = group.capture()
+        await expect(other.play(snapshot)).resolves.toBe('stale')
+        remove()
+        remove()
+        group.dispose()
+        other.dispose()
+    })
+
+    it('returns reduced without touching animations', async () => {
+        const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
+        const group = createLayoutGroup({
+            clock: { reducedMotion: true },
+            reducedMotion: 'jump',
+        })
+        group.add(element)
+        const snapshot = group.capture()
+        setBox(element, { x: 10, y: 0, width: 10, height: 10 })
+        await expect(group.play(snapshot)).resolves.toBe('reduced')
+        expect(animateSpy).not.toHaveBeenCalled()
+        group.dispose()
+    })
+
     it('does not interrupt an active run when a later play has no change', async () => {
         const element = makeElement({ x: 0, y: 0, width: 10, height: 10 })
         const group = createLayoutGroup()
