@@ -24,6 +24,7 @@ export interface NodePlan {
     readonly after: PlanBox
     readonly path: readonly PlanPoint[]
     readonly linear: boolean
+    readonly projected?: boolean
     readonly originX: number
     readonly originY: number
     readonly durationMs: number

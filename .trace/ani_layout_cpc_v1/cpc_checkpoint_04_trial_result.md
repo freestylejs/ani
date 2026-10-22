@@ -2,9 +2,9 @@
 
 **Task:** `cpc_task_04_projection.md`  
 **Validation:** `cpc_valid_04_projection.md`  
-**Verdict:** pending CHIEF JUSTICE
+**Verdict:** pending re-judgment after F1–F7 repairs
 
-**Reviewed code revision:** `68f50ae`; base `04f06e2`.
+**Reviewed code revision:** pending final repair commit; prior `68f50ae`.
 
 ## Delivered
 
@@ -28,7 +28,7 @@
 
 ```text
 pnpm test:ci -> PASS
-  135 test files / 1,549 tests
+  135 test files / 1,550 tests
 pnpm check / layout build / react build -> PASS
 cpc:P5 Chromium -> PASS
 cpc:P5 Firefox -> PASS
@@ -42,10 +42,15 @@ core diff 6715bb1 -> 0
 
 ## Known limits / next gate
 
-- A projection interrupt at 45% (`P7`) produced a child first-frame error of
-  ~7.8px; it is **not claimed** here and is carried to Phase 05.
-- Per-node spring/tween mismatches are not exposed; the current API shares a
-  group motion. Parent/child timing sampling remains a Phase 05/06 item.
-- The compiler's error guard is structural (degenerate scale, box caps,
-  transformed ancestors), not a numerical 0.5px worst-case sampler yet.
+- Projection interrupt is now `P7` PASS: a projected box child switches from a 100→160 parent to a 180px target at 100ms and preserves the first frame. It is recorded in Chromium, Firefox and macOS WebKit.
+- Per-participant `motion` is now exposed; `P10` composes a parent spring with a child bezier/tween and verifies distinct 200ms/350ms animation timing.
+- P9 samples 60 offsets and records 0.001px worst-case error for the E1 projection. The compiler uses 48 projected keyframe offsets and structural scale/caps; a future compiler-owned error estimator is still an explicit residual, not a hidden PASS.
 - Depth 2, duplicate-id crossfade, E2/E3/E4 and the Gallery are not in Phase 04.
+
+## Repairs after tribunal FAIL
+
+- F1: box keyframes now set the animated `transform-origin` when `layoutAnchor` is supplied; P8 covers anchors 0/0.5/1 with default CSS origin. React `layoutAnchor` is in the effect deps.
+- F4: projection runs after box facts/demotion/cap decisions; a child is skipped when its parent is skipped, box compensation is range-checked, and depth >1 snaps.
+- F7: static-ancestor snap is limited to rotate/skew matrices, not pure axis-aligned translate/scale; the unit test uses a rotation matrix.
+- F2: projected box children now use 48 sampled keyframe offsets and a zero-origin projected child frame, reducing P9 to 0.001px over 60 offsets; the E1 projection is within the 0.5px target.
+- F3/F5: per-participant spring/tween is covered by P10; unchanged-rect children under a scaling parent are counter-scaled and covered by a core unit test and P5/P9 geometry.

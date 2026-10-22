@@ -1,3 +1,4 @@
+import { timing } from '@freestylejs/ani-core'
 import { createLayoutGroup } from '@freestylejs/ani-layout'
 import { expectClose, expectEqual } from './assert'
 import {
@@ -452,6 +453,239 @@ export async function P6(): Promise<string> {
         return 'P6: live compiled-path velocity handoff <=10%'
     } finally {
         remove()
+        group.dispose()
+        root.remove()
+    }
+}
+
+export async function P8(): Promise<string> {
+    for (const anchor of [
+        { x: 0, y: 0 },
+        { x: 0.5, y: 0.5 },
+        { x: 1, y: 1 },
+    ]) {
+        const root = document.createElement('div')
+        root.style.cssText = 'position:relative;width:320px;height:220px;'
+        const parent = document.createElement('div')
+        parent.style.cssText =
+            'position:absolute;left:0;top:0;width:100px;height:100px;background:#ddd;'
+        const child = document.createElement('div')
+        child.style.cssText =
+            'position:absolute;left:10px;top:10px;width:20px;height:20px;background:#222;'
+        parent.append(child)
+        root.append(parent)
+        document.body.append(root)
+        const group = createLayoutGroup({ motion: { duration: 0.1 } })
+        const removeParent = group.add(parent, {
+            layout: 'box',
+            layoutAnchor: anchor,
+        })
+        const removeChild = group.add(child, { layout: 'box' })
+        try {
+            const snapshot = group.capture()
+            const beforeParent = boxOf(parent)
+            parent.style.left = '60px'
+            parent.style.top = '30px'
+            parent.style.width = '160px'
+            parent.style.height = '160px'
+            const run = group.play(snapshot)
+            const animations = [
+                ...parent.getAnimations(),
+                ...child.getAnimations(),
+            ]
+            pauseAt(animations, 0)
+            const first = boxOf(parent)
+            expectClose(
+                first.left,
+                beforeParent.left,
+                1.5,
+                `P8 anchor ${anchor.x}/${anchor.y} first left`
+            )
+            expectClose(
+                first.top,
+                beforeParent.top,
+                1.5,
+                `P8 anchor ${anchor.x}/${anchor.y} first top`
+            )
+            resumeAnimations(animations)
+            await run
+        } finally {
+            removeParent()
+            removeChild()
+            group.dispose()
+            root.remove()
+        }
+    }
+    return 'P8: anchor 0/0.5/1 preserves the first frame'
+}
+
+export async function P9(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:320px;height:220px;'
+    const parent = document.createElement('div')
+    parent.style.cssText =
+        'position:absolute;left:0;top:0;width:100px;height:100px;background:#ddd;'
+    const child = document.createElement('div')
+    child.style.cssText =
+        'position:absolute;left:10px;top:10px;width:20px;height:20px;background:#222;'
+    parent.append(child)
+    root.append(parent)
+    document.body.append(root)
+    const group = createLayoutGroup({
+        motion: { duration: 0.2, timing: timing.linear() },
+    })
+    const removeParent = group.add(parent, {
+        layout: 'box',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+    })
+    const removeChild = group.add(child, { layout: 'box' })
+    try {
+        const snapshot = group.capture()
+        const before = boxOf(child)
+        parent.style.left = '60px'
+        parent.style.width = '160px'
+        const run = group.play(snapshot)
+        const animations = [...parent.getAnimations(), ...child.getAnimations()]
+        let worst = 0
+        for (let index = 0; index <= 60; index++) {
+            const q = index / 60
+            pauseAt(animations, q * 200)
+            const box = boxOf(child)
+            const expectedLeft = before.left + 60 * q
+            const expectedWidth = before.width
+            const error = Math.max(
+                Math.abs(box.left - expectedLeft),
+                Math.abs(box.width - expectedWidth)
+            )
+            worst = Math.max(worst, error)
+        }
+        resumeAnimations(animations)
+        await run
+        expectEqual(worst <= 1.5, true, `P9 projection sampled error ${worst}`)
+        return `P9: 60-offset projection error ${worst.toFixed(3)}px`
+    } finally {
+        removeParent()
+        removeChild()
+        group.dispose()
+        root.remove()
+    }
+}
+
+export async function P7(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:320px;height:220px;'
+    const parent = document.createElement('div')
+    parent.style.cssText =
+        'position:absolute;left:0;top:0;width:100px;height:100px;background:#ddd;'
+    const child = document.createElement('div')
+    child.style.cssText =
+        'position:absolute;left:10px;top:10px;width:20px;height:20px;background:#222;'
+    parent.append(child)
+    root.append(parent)
+    document.body.append(root)
+    const group = createLayoutGroup({ motion: { duration: 0.2 } })
+    const removeParent = group.add(parent, {
+        layout: 'box',
+        layoutAnchor: { x: 0.5, y: 0.5 },
+    })
+    const removeChild = group.add(child, { layout: 'box' })
+    try {
+        const snapshot = group.capture()
+        parent.style.left = '60px'
+        parent.style.width = '160px'
+        const run = group.play(snapshot)
+        const firstAnimations = [
+            ...parent.getAnimations(),
+            ...child.getAnimations(),
+        ]
+        pauseAt(firstAnimations, 100)
+        const beforeRetarget = boxOf(child)
+        const retarget = group.capture()
+        parent.style.left = '80px'
+        parent.style.width = '180px'
+        const second = group.play(retarget)
+        const secondAnimations = [
+            ...parent.getAnimations(),
+            ...child.getAnimations(),
+        ]
+        pauseAt(secondAnimations, 0)
+        expectClose(
+            boxOf(child).left,
+            beforeRetarget.left,
+            1.5,
+            'P7 projected retarget first frame'
+        )
+        resumeAnimations(secondAnimations)
+        await second
+        group.finish()
+        await run.catch(() => undefined)
+        return 'P7: interrupt/retarget under depth-1 projection'
+    } finally {
+        removeParent()
+        removeChild()
+        group.dispose()
+        root.remove()
+    }
+}
+
+export async function P10(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position:relative;width:320px;height:220px;'
+    const parent = document.createElement('div')
+    parent.style.cssText =
+        'position:absolute;left:0;top:0;width:100px;height:100px;background:#ddd;'
+    const child = document.createElement('div')
+    child.style.cssText =
+        'position:absolute;left:10px;top:10px;width:20px;height:20px;background:#222;'
+    parent.append(child)
+    root.append(parent)
+    document.body.append(root)
+    const group = createLayoutGroup()
+    const removeParent = group.add(parent, {
+        layout: 'box',
+        motion: {
+            duration: 0.2,
+            timing: timing.spring({ m: 1, k: 180, c: 12 }),
+        },
+    })
+    const removeChild = group.add(child, {
+        layout: 'box',
+        motion: {
+            duration: 0.35,
+            timing: timing.bezier({
+                p2: { x: 0.2, y: 0 },
+                p3: { x: 0.2, y: 1 },
+            }),
+        },
+    })
+    try {
+        const snapshot = group.capture()
+        const beforeChild = boxOf(child)
+        parent.style.left = '60px'
+        parent.style.width = '160px'
+        const run = group.play(snapshot)
+        const parentAnimations = parent.getAnimations()
+        const childAnimations = child.getAnimations()
+        if (parentAnimations.length === 0 || childAnimations.length === 0) {
+            throw new Error('P10 spring/tween participants did not animate')
+        }
+        const parentOptions = parentAnimations[0]!.effect?.getTiming()
+        const childOptions = childAnimations[0]!.effect?.getTiming()
+        expectEqual(parentOptions?.duration, 200, 'P10 parent spring duration')
+        expectEqual(childOptions?.duration, 350, 'P10 child tween duration')
+        pauseAt([...parentAnimations, ...childAnimations], 0)
+        expectClose(
+            boxOf(child).left,
+            beforeChild.left,
+            1.5,
+            'P10 first projected frame'
+        )
+        resumeAnimations([...parentAnimations, ...childAnimations])
+        await run
+        return 'P10: parent spring + child tween compose'
+    } finally {
+        removeParent()
+        removeChild()
         group.dispose()
         root.remove()
     }
