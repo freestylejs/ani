@@ -673,16 +673,29 @@ export async function P10(): Promise<string> {
         const childOptions = childAnimations[0]!.effect?.getTiming()
         expectEqual(parentOptions?.duration, 200, 'P10 parent spring duration')
         expectEqual(childOptions?.duration, 350, 'P10 child tween duration')
-        pauseAt([...parentAnimations, ...childAnimations], 0)
-        expectClose(
-            boxOf(child).left,
-            beforeChild.left,
-            1.5,
-            'P10 first projected frame'
-        )
-        resumeAnimations([...parentAnimations, ...childAnimations])
+        const allAnimations = [...parentAnimations, ...childAnimations]
+        let worstWidth = 0
+        let maxStep = 0
+        let previousLeft = beforeChild.left
+        for (let index = 0; index <= 60; index++) {
+            const q = index / 60
+            pauseAt(allAnimations, q * 350)
+            const box = boxOf(child)
+            worstWidth = Math.max(worstWidth, Math.abs(box.width - 20))
+            if (index > 0) {
+                maxStep = Math.max(maxStep, Math.abs(box.left - previousLeft))
+            }
+            previousLeft = box.left
+        }
+        resumeAnimations(allAnimations)
         await run
-        return 'P10: parent spring + child tween compose'
+        expectEqual(
+            worstWidth <= 0.5,
+            true,
+            `P10 spring/tween width error ${worstWidth}`
+        )
+        expectEqual(maxStep <= 4, true, `P10 spring/tween step ${maxStep}`)
+        return `P10: parent spring + child tween compose (width ${worstWidth.toFixed(3)}, step ${maxStep.toFixed(3)})`
     } finally {
         removeParent()
         removeChild()

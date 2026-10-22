@@ -673,3 +673,49 @@ it('counter-scales a stationary child when only its parent scales', async () => 
     expect(childFrames[0]).toMatchObject({ scale: '2 2' })
     group.dispose()
 })
+
+it('snaps box motion under a static scaled ancestor', async () => {
+    const ancestor = document.createElement('div')
+    document.body.append(ancestor)
+    const element = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    ancestor.append(element)
+    const none = {
+        scale: 'none',
+        rotate: 'none',
+        translate: 'none',
+        transform: 'none',
+        transformOrigin: '50% 50%',
+        borderTopLeftRadius: '0px',
+        borderTopRightRadius: '0px',
+        borderBottomRightRadius: '0px',
+        borderBottomLeftRadius: '0px',
+    } as CSSStyleDeclaration
+    const scaled = {
+        ...none,
+        transform: 'matrix(2,0,0,2,0,0)',
+    } as CSSStyleDeclaration
+    const spy = vi
+        .spyOn(window, 'getComputedStyle')
+        .mockImplementation((target) => (target === ancestor ? scaled : none))
+    const group = createLayoutGroup()
+    group.add(element, { layout: 'box' })
+    const snapshot = group.capture()
+    setBox(element, { x: 20, y: 0, width: 50, height: 50 })
+    await expect(group.play(snapshot)).resolves.toBe('unsupported')
+    expect(animateSpy).not.toHaveBeenCalled()
+    spy.mockRestore()
+    group.dispose()
+})
+
+it('returns no-change for an unchanged nested participant tree', async () => {
+    const parent = makeElement({ x: 0, y: 0, width: 100, height: 100 })
+    const child = makeElement({ x: 10, y: 10, width: 20, height: 20 })
+    parent.append(child)
+    const group = createLayoutGroup({ maxAnimated: 1 })
+    group.add(parent, { layout: 'box' })
+    group.add(child, { layout: 'box' })
+    const snapshot = group.capture()
+    await expect(group.play(snapshot)).resolves.toBe('no-change')
+    expect(animateSpy).not.toHaveBeenCalled()
+    group.dispose()
+})
