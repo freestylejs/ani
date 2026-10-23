@@ -307,6 +307,8 @@ export const E3 = {
     /** Seconds between two non-shared items' enters. */
     stagger: 0.04,
     enterScale: 0.2,
+    /** Seconds of one non-shared item's enter (after its stagger delay). */
+    enterDuration: 0.35,
 }
 
 /** A tile's box in the stage, closed (inside the folder) or open. */
@@ -363,7 +365,7 @@ function FolderItem({ i, clock }: { i: number; clock: Clock | undefined }) {
                 delay(k * E3.stagger),
                 ani({
                     to: { scale: 1, opacity: 1 },
-                    duration: 0.35,
+                    duration: E3.enterDuration,
                     timing: SPRING,
                 }),
             ]),
