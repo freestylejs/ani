@@ -294,11 +294,130 @@ function containsAbsolute(style: CSSStyleDeclaration): boolean {
     )
 }
 
+/** The border-box size of a computed style, before transforms (0 where not computed). */
+function borderBox(style: CSSStyleDeclaration): {
+    width: number
+    height: number
+} {
+    let width = px(style.width)
+    let height = px(style.height)
+    if (style.boxSizing !== 'border-box') {
+        width +=
+            px(style.paddingLeft) +
+            px(style.paddingRight) +
+            px(style.borderLeftWidth) +
+            px(style.borderRightWidth)
+        height +=
+            px(style.paddingTop) +
+            px(style.paddingBottom) +
+            px(style.borderTopWidth) +
+            px(style.borderBottomWidth)
+    }
+    return { width, height }
+}
+
+/** A 2D affine map `[a, b, c, d, e, f]`: `x′ = a·x + c·y + e`, `y′ = b·x + d·y + f`. */
+type Affine = readonly [number, number, number, number, number, number]
+
+const IDENTITY: Affine = [1, 0, 0, 1, 0, 0]
+
+function compose(m: Affine, n: Affine): Affine {
+    return [
+        m[0] * n[0] + m[2] * n[1],
+        m[1] * n[0] + m[3] * n[1],
+        m[0] * n[2] + m[2] * n[3],
+        m[1] * n[2] + m[3] * n[3],
+        m[0] * n[4] + m[2] * n[5] + m[4],
+        m[1] * n[4] + m[3] * n[5] + m[5],
+    ]
+}
+
+const shift = (x: number, y: number): Affine => [1, 0, 0, 1, x, y]
+
+/** A length of a computed `translate` / `transform-origin`; `%` of `size`. */
+const length = (value: string | undefined, size: number): number =>
+    value?.endsWith('%') ? (px(value) / 100) * size : px(value ?? '0')
+
+const ANGLE: Record<string, number> = {
+    deg: Math.PI / 180,
+    grad: Math.PI / 200,
+    rad: 1,
+    turn: 2 * Math.PI,
+}
+
+/** A computed `rotate` about the z axis, in radians (0 for a 3D axis). */
+function angle(value: string): number {
+    const parts = value.trim().split(/\s+/)
+    const axis = parts.slice(0, -1)
+    if (
+        axis.length > 0 &&
+        axis.join(' ') !== 'z' &&
+        axis.join(' ') !== '0 0 1'
+    ) {
+        return 0
+    }
+    const match = /^(-?[\d.e+-]+)([a-z]+)$/.exec(parts[parts.length - 1] ?? '')
+    return match ? Number(match[1]) * (ANGLE[match[2]!] ?? 0) : 0
+}
+
+/** A computed `transform` (`matrix()`, or the 2D part of `matrix3d()`). */
+function matrix(value: string): Affine {
+    const match = /^matrix(3d)?\(([^)]*)\)$/.exec(value)
+    if (!match) return IDENTITY
+    const n = match[2]!.split(',').map(Number)
+    const m: Affine = match[1]
+        ? [n[0]!, n[1]!, n[4]!, n[5]!, n[12]!, n[13]!]
+        : [n[0]!, n[1]!, n[2]!, n[3]!, n[4]!, n[5]!]
+    return m.every(Number.isFinite) ? m : IDENTITY
+}
+
 /**
- * The exiting element's box as `position: absolute` offsets in its
- * containing block (§7.2 popLayout): the nearest ancestor that contains
- * absolute descendants, else the initial containing block. Rect based, so a
- * scaled containing block is divided out.
+ * The element's own transforms as one map of its border box (`width` ×
+ * `height`, local coordinates from its top left corner): `translate`,
+ * `rotate`, `scale` and `transform` about `transform-origin`, as CSS
+ * composes them. Presence's `transform` and layout's pose are among them.
+ */
+function ownMap(
+    style: CSSStyleDeclaration,
+    width: number,
+    height: number
+): Affine {
+    const origin = (style.transformOrigin || '50% 50%').split(/\s+/)
+    const ox = length(origin[0], width)
+    const oy = length(origin[1], height)
+    let map = shift(ox, oy)
+    if (set(style.translate)) {
+        const [x, y] = style.translate.split(/\s+/)
+        map = compose(map, shift(length(x, width), length(y, height)))
+    }
+    if (set(style.rotate)) {
+        const r = angle(style.rotate)
+        map = compose(map, [
+            Math.cos(r),
+            Math.sin(r),
+            -Math.sin(r),
+            Math.cos(r),
+            0,
+            0,
+        ])
+    }
+    if (set(style.scale)) {
+        const factor = (value: string) =>
+            value.endsWith('%') ? px(value) / 100 : px(value)
+        const [x = '1', y = x] = style.scale.split(/\s+/)
+        map = compose(map, [factor(x), 0, 0, factor(y), 0, 0])
+    }
+    if (set(style.transform)) map = compose(map, matrix(style.transform))
+    return compose(map, shift(-ox, -oy))
+}
+
+/**
+ * The exiting element's CSS box as `position: absolute` offsets in its
+ * containing block (§6, §7.2 popLayout): the nearest ancestor that contains
+ * absolute descendants, else the initial containing block. Measured from the
+ * rect, so the block's scale is divided out and the element's own transforms
+ * (presence's `transform`, layout's pose, authored ones) are taken back out:
+ * the lifted element keeps them, and draws exactly where it was.
  */
 function popBox(element: HTMLElement): {
     left: number
@@ -308,50 +427,71 @@ function popBox(element: HTMLElement): {
 } {
     const rect = element.getBoundingClientRect()
     let block: HTMLElement | null = null
-    let style: CSSStyleDeclaration | null = null
+    let blockStyle: CSSStyleDeclaration | null = null
     for (let node = element.parentElement; node; node = node.parentElement) {
         const candidate = getComputedStyle(node)
         if (containsAbsolute(candidate)) {
             block = node
-            style = candidate
+            blockStyle = candidate
             break
         }
     }
-    if (!block || !style) {
+    // the drawn rect in the block's padding-box coordinates
+    let left: number
+    let top: number
+    let sx = 1
+    let sy = 1
+    if (!block || !blockStyle) {
         const view = element.ownerDocument.defaultView
-        return {
-            left: rect.left + (view?.scrollX ?? 0),
-            top: rect.top + (view?.scrollY ?? 0),
-            width: rect.width,
-            height: rect.height,
-        }
+        left = rect.left + (view?.scrollX ?? 0)
+        top = rect.top + (view?.scrollY ?? 0)
+    } else {
+        const outer = block.getBoundingClientRect()
+        // the border-box size before transforms, exact
+        const size = borderBox(blockStyle)
+        sx = size.width > 0 ? outer.width / size.width : 1
+        sy = size.height > 0 ? outer.height / size.height : 1
+        left =
+            (rect.left - outer.left) / sx -
+            px(blockStyle.borderLeftWidth) +
+            block.scrollLeft
+        top =
+            (rect.top - outer.top) / sy -
+            px(blockStyle.borderTopWidth) +
+            block.scrollTop
     }
-    const outer = block.getBoundingClientRect()
-    const borderLeft = px(style.borderLeftWidth)
-    const borderTop = px(style.borderTopWidth)
-    // the border-box size before transforms, exact
-    let width = px(style.width)
-    let height = px(style.height)
-    if (style.boxSizing !== 'border-box') {
-        width +=
-            px(style.paddingLeft) +
-            px(style.paddingRight) +
-            borderLeft +
-            px(style.borderRightWidth)
-        height +=
-            px(style.paddingTop) +
-            px(style.paddingBottom) +
-            borderTop +
-            px(style.borderBottomWidth)
+    const drawnWidth = rect.width / sx
+    const drawnHeight = rect.height / sy
+    const style = getComputedStyle(element)
+    const own = borderBox(style)
+    // the CSS size where computed, else the drawn one through the own scale
+    const unscale = ownMap(style, drawnWidth, drawnHeight)
+    const width =
+        own.width > 0
+            ? own.width
+            : unscale[1] === 0 && unscale[2] === 0 && unscale[0] !== 0
+              ? drawnWidth / Math.abs(unscale[0])
+              : drawnWidth
+    const height =
+        own.height > 0
+            ? own.height
+            : unscale[1] === 0 && unscale[2] === 0 && unscale[3] !== 0
+              ? drawnHeight / Math.abs(unscale[3])
+              : drawnHeight
+    // the drawn rect is the bounding box of the own map's corners
+    const map = ownMap(style, width, height)
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    for (const [x, y] of [
+        [0, 0],
+        [width, 0],
+        [0, height],
+        [width, height],
+    ] as const) {
+        minX = Math.min(minX, map[0] * x + map[2] * y + map[4])
+        minY = Math.min(minY, map[1] * x + map[3] * y + map[5])
     }
-    const sx = width > 0 ? outer.width / width : 1
-    const sy = height > 0 ? outer.height / height : 1
-    return {
-        left: (rect.left - outer.left) / sx - borderLeft + block.scrollLeft,
-        top: (rect.top - outer.top) / sy - borderTop + block.scrollTop,
-        width: rect.width / sx,
-        height: rect.height / sy,
-    }
+    return { left: left - minX, top: top - minY, width, height }
 }
 
 export interface UsePresenceResult<E extends HTMLElement> {

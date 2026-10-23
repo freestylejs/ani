@@ -45,7 +45,8 @@ function rect(left: number, top: number, width: number, height: number) {
 /** A popLayout child inside `block`, exited after its geometry is stubbed. */
 async function popInside(
     blockStyle: CSSProperties,
-    stub: (row: HTMLElement, block: HTMLElement) => void
+    stub: (row: HTMLElement, block: HTMLElement) => void,
+    rowStyle: CSSProperties = { height: 20 }
 ): Promise<Record<'left' | 'top' | 'width' | 'height', string>> {
     const clock = createManualClock()
     function Row() {
@@ -54,7 +55,7 @@ async function popInside(
             <div
                 ref={presence.ref}
                 data-id="row"
-                style={{ height: 20, ...presence.style }}
+                style={{ ...rowStyle, ...presence.style }}
             />
         )
     }
@@ -587,7 +588,9 @@ describe('react presence', () => {
             (row, block) => {
                 row.getBoundingClientRect = rect(30, 10, 40, 20)
                 block.getBoundingClientRect = rect(0, 0, 400, 200)
-            }
+            },
+            // drawn 20 px tall at scale 2
+            { height: 10 }
         )
         expect(style.left).toBe('15px')
         expect(style.top).toBe('5px')
@@ -601,5 +604,63 @@ describe('react presence', () => {
         })
         expect(style.left).toBe(`${30 + window.scrollX}px`)
         expect(style.top).toBe(`${10 + window.scrollY}px`)
+    })
+
+    it('J-027: takes the own transform of the element back out of the popLayout box', async () => {
+        // CSS box left 50 / top 80 / 100 × 50 in a positioned block; presence
+        // draws it through translateY(14px) scale(0.8) about 0 0
+        const style = await popInside(
+            {
+                position: 'relative',
+                width: 400,
+                height: 300,
+                boxSizing: 'border-box',
+            },
+            (row, block) => {
+                row.getBoundingClientRect = rect(50, 94, 80, 40)
+                block.getBoundingClientRect = rect(0, 0, 400, 300)
+            },
+            {
+                width: 100,
+                height: 50,
+                transform: 'matrix(0.8, 0, 0, 0.8, 0, 14)',
+                transformOrigin: '0px 0px',
+            }
+        )
+        expect(style).toEqual({
+            left: '50px',
+            top: '80px',
+            width: '100px',
+            height: '50px',
+        })
+    })
+
+    it('J-027: inverts an own transform about a centred origin inside a scaled block', async () => {
+        // block scale 2; CSS box 10 / 20 / 60 × 30, scaleX 0.5 about its centre
+        // and translateY 5: drawn (2·(10 + 15), 2·(20 + 5), 2·30, 2·30)
+        const style = await popInside(
+            {
+                transform: 'scale(2)',
+                width: 200,
+                height: 100,
+                boxSizing: 'border-box',
+            },
+            (row, block) => {
+                row.getBoundingClientRect = rect(50, 50, 60, 60)
+                block.getBoundingClientRect = rect(0, 0, 400, 200)
+            },
+            {
+                width: 60,
+                height: 30,
+                transform: 'matrix(0.5, 0, 0, 1, 0, 5)',
+                transformOrigin: '30px 15px',
+            }
+        )
+        expect(style).toEqual({
+            left: '10px',
+            top: '20px',
+            width: '60px',
+            height: '30px',
+        })
     })
 })
