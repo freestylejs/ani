@@ -45,7 +45,9 @@ import { expectClose, expectEqual } from './assert'
 
 export const pageOptions = {}
 
-export const knownFailures: Record<string, string> = {}
+export const knownFailures: Record<string, string> = {
+    E5: "engine (packages/layout/src/scope.ts), not the adapter: a flush that leaves a running 'position' track untouched re-freezes the node's presence transform, so the re-render that ends t1's enter at 0.4 s (frame 25) jumps t1/t2 (t2 width 298.50 → 295.22 px) and replaces the tracks of t3/t4 (t3 off by 11.6 px a frame later); every add frame before it and the whole exit phase are on the expectation. Reported with a vanilla repro in cp5_react.md (CP5 trial fix proof, E-1).",
+}
 
 const FRAME_MS = 16
 const DT = FRAME_MS / 1000
@@ -876,20 +878,33 @@ export async function RL7(): Promise<string> {
 
 /* ── E5 notifications: presence and layout on one element ── */
 
+// plan.md E5: enter y 14 px / scaleX 0.8 / opacity 0; exit y 10 px /
+// scaleX 0.9 / 0.2 s; spring; origin centre-bottom; layout 'position';
+// popLayout; five adds 80 ms apart
 const TOAST = { w: 300, h: 48, gap: 8 }
+const TOAST_SPRING = timing.spring({ m: 1, k: 170, c: 26 })
+const TOAST_ENTER = 0.4
+const TOAST_EXIT = 0.2
+const TOAST_LAYOUT = 0.4
+
+type ToastPose = { opacity: number; translateY: number; scaleX: number }
+
+const TOAST_PRESENT: ToastPose = { opacity: 1, translateY: 0, scaleX: 1 }
+const TOAST_INITIAL: ToastPose = { opacity: 0, translateY: 14, scaleX: 0.8 }
+const TOAST_EXITED: ToastPose = { opacity: 0, translateY: 10, scaleX: 0.9 }
 
 const toastMotion = {
-    present: { opacity: 1, translateY: 0, scaleX: 1 },
-    initial: { opacity: 0, translateY: -20, scaleX: 0.9 },
+    present: TOAST_PRESENT,
+    initial: TOAST_INITIAL,
     enter: ani({
-        to: { opacity: 1, translateY: 0, scaleX: 1 },
-        duration: 0.3,
-        timing: timing.linear(),
+        to: TOAST_PRESENT,
+        duration: TOAST_ENTER,
+        timing: TOAST_SPRING,
     }),
     exit: ani({
-        to: { opacity: 0, translateY: 0, scaleX: 0.5 },
-        duration: 0.2,
-        timing: timing.linear(),
+        to: TOAST_EXITED,
+        duration: TOAST_EXIT,
+        timing: TOAST_SPRING,
     }),
 }
 
@@ -910,6 +925,7 @@ function Toast({ id }: { id: string }): ReactNode {
                 width: TOAST.w,
                 height: TOAST.h,
                 flex: 'none',
+                transformOrigin: 'center bottom',
                 background: 'rgb(40, 40, 40)',
                 ...presence.style,
             },
@@ -921,7 +937,10 @@ function Toast({ id }: { id: string }): ReactNode {
 function Toasts({ ids }: { ids: readonly string[] }): ReactNode {
     return h(
         LayoutGroup,
-        { clock: toastClock!.clock },
+        {
+            clock: toastClock!.clock,
+            motion: { duration: TOAST_LAYOUT, timing: TOAST_SPRING },
+        },
         h(
             'div',
             {
@@ -962,106 +981,372 @@ function matrixOf(element: Element): number[] {
         .map((n) => Number.parseFloat(n))
 }
 
-/** E5: five adds 80 ms apart, then a popLayout exit with scaleX. */
+/**
+ * Presence's pose `t` seconds into a transition from `from` to `to`: the
+ * timeline evaluates the spring per property over the duration and ends on
+ * `to` (Core's timing, not the layout solver).
+ */
+function toastPose(
+    from: ToastPose,
+    to: ToastPose,
+    duration: number,
+    t: number
+): ToastPose {
+    const at = (key: keyof ToastPose) =>
+        t <= 0
+            ? from[key]
+            : t >= duration
+              ? to[key]
+              : TOAST_SPRING.step(t, {
+                    dt: 0,
+                    from: from[key],
+                    to: to[key],
+                    duration,
+                }).value
+    return {
+        opacity: at('opacity'),
+        translateY: at('translateY'),
+        scaleX: at('scaleX'),
+    }
+}
+
+/** A CSS box drawn through presence's pose about its centre-bottom origin. */
+function throughPose(css: OBox, pose: ToastPose): OBox {
+    const ox = css.x + css.w / 2
+    return {
+        x: ox - (pose.scaleX * css.w) / 2,
+        y: css.y + pose.translateY,
+        w: pose.scaleX * css.w,
+        h: css.h,
+    }
+}
+
+interface ToastModel {
+    readonly id: string
+    slot: number
+    /** Frame count at the commit that started its presence transition. */
+    start: number
+    from: ToastPose
+    to: ToastPose
+    duration: number
+    /** Its layout track: planned at frame `flush`, drawn through `q0`. */
+    track: { spec: OTrackSpec; flush: number; q0: OBox } | null
+}
+
+/**
+ * The independent expectation for a toast after `frame` frames: presence's
+ * pose (its timeline advances by the frame time from its first frame on),
+ * and in 'position' mode the layout track moves that box by `V(t) − q0`, the
+ * track drawn relative to the inner box it was planned against (§3.1, §11).
+ * A track's first frame has `dt = 0` (§4.3).
+ */
+function toastExpected(
+    host: HTMLElement,
+    toast: ToastModel,
+    frame: number
+): { box: OBox; pose: ToastPose; moving: OBox | null } {
+    const pose = toastPose(
+        toast.from,
+        toast.to,
+        toast.duration,
+        (frame - toast.start) * DT
+    )
+    const inner = throughPose(toastSlot(host, toast.slot), pose)
+    const track = toast.track
+    if (!track) return { box: inner, pose, moving: null }
+    const t = Math.max(0, frame - track.flush - 1) * DT
+    const v = expectedBox(track.spec, t)
+    // the track's velocity (box per second), while it runs
+    let moving: OBox | null = null
+    if (t < track.spec.duration) {
+        const dt = 1e-4
+        const a = expectedBox(track.spec, Math.max(0, t - dt))
+        const b = expectedBox(track.spec, t + dt)
+        const span = t + dt - Math.max(0, t - dt)
+        moving = {
+            x: (b.x - a.x) / span,
+            y: (b.y - a.y) / span,
+            w: 0,
+            h: 0,
+        }
+    }
+    return {
+        box: {
+            x: inner.x + v.x - track.q0.x,
+            y: inner.y + v.y - track.q0.y,
+            w: inner.w,
+            h: inner.h,
+        },
+        pose,
+        moving,
+    }
+}
+
+/**
+ * Checks every toast's drawn box, presence transform and opacity; a
+ * mismatch is recorded in `failures` (the run goes on, so one report shows
+ * every frame that is off).
+ */
+function expectToasts(
+    host: HTMLElement,
+    toasts: readonly ToastModel[],
+    frame: number,
+    label: string,
+    failures: string[]
+): number {
+    let error = 0
+    for (const toast of toasts) {
+        const element = byId(host, toast.id)
+        const want = toastExpected(host, toast, frame)
+        try {
+            error = Math.max(
+                error,
+                expectAt(element, want.box, `${label}: ${toast.id} drawn`)
+            )
+            const m = matrixOf(element)
+            expectClose(
+                m[0]!,
+                want.pose.scaleX,
+                1e-3,
+                `${label}: ${toast.id} scaleX`
+            )
+            expectClose(
+                m[5]!,
+                want.pose.translateY,
+                1e-2,
+                `${label}: ${toast.id} translateY`
+            )
+            expectClose(
+                Number(getComputedStyle(element).opacity),
+                want.pose.opacity,
+                1e-2,
+                `${label}: ${toast.id} opacity`
+            )
+        } catch (failure) {
+            failures.push(`frame ${frame} ${(failure as Error).message}`)
+        }
+    }
+    return error
+}
+
+/**
+ * E5: five adds 80 ms apart, every frame of every enter and every layout
+ * track (interrupted ones with their velocity) on the expectation; then a
+ * popLayout exit of the middle toast.
+ */
 export async function E5(): Promise<string> {
     const mc = createManualClock()
     toastClock = mc
     const view = mountRoot()
+    let frame = 0
+    const step = async () => {
+        mc.frame(FRAME_MS)
+        frame++
+        await microtasks()
+        await macrotask()
+    }
     try {
         await view.render(h(Toasts, { ids: [] }))
-        const ids: string[] = []
-        let enterChecks = 0
+        const toasts: ToastModel[] = []
+        const failures: string[] = []
+        let error = 0
+        let interrupted = 0
         for (let n = 1; n <= 5; n++) {
-            const before = picture(view.host)
-            ids.unshift(`t${n}`)
-            await view.render(h(Toasts, { ids: [...ids] }))
-            // existing toasts did not jump: the flush drew them where they were
-            for (const [id, box] of before) {
-                expectAt(byId(view.host, id), box, `add ${n}: ${id} at flush`)
-            }
-            // first frame equals the enter transform
-            const entering = byId(view.host, `t${n}`)
-            const m = matrixOf(entering)
-            expectClose(m[0]!, 0.9, 1e-3, `t${n} enter scaleX`)
-            expectClose(m[5]!, -20, 1e-3, `t${n} enter translateY`)
-            expectClose(
-                Number(getComputedStyle(entering).opacity),
-                0,
-                1e-3,
-                `t${n} enter opacity`
-            )
-            enterChecks++
-            // 80 ms until the next add
-            await frames(mc, 5, () => {
-                for (const element of view.host.querySelectorAll('[data-id]')) {
-                    const box = pageBox(element)
-                    if (![box.x, box.y, box.w, box.h].every(Number.isFinite)) {
-                        throw new Error('non-finite box')
-                    }
+            // every toast below the new one moves down one slot at this flush
+            for (const toast of toasts) {
+                const now = toastExpected(view.host, toast, frame)
+                toast.slot++
+                const pose = now.pose
+                const after = throughPose(
+                    toastSlot(view.host, toast.slot),
+                    pose
+                )
+                if (now.moving) interrupted++
+                toast.track = {
+                    spec: spec(now.box, after, {
+                        mode: 'position',
+                        duration: TOAST_LAYOUT,
+                        timing: TOAST_SPRING as TimingFunction,
+                        velocity: now.moving,
+                    }),
+                    flush: frame,
+                    q0: after,
                 }
+            }
+            toasts.unshift({
+                id: `t${n}`,
+                slot: 0,
+                start: frame,
+                from: TOAST_INITIAL,
+                to: TOAST_PRESENT,
+                duration: TOAST_ENTER,
+                track: null,
             })
+            await view.render(h(Toasts, { ids: toasts.map((t) => t.id) }))
+            // the flush draws t = 0: no jump, the new toast at its initial pose
+            error = Math.max(
+                error,
+                expectToasts(
+                    view.host,
+                    toasts,
+                    frame,
+                    `add ${n} at the flush`,
+                    failures
+                )
+            )
+            // 80 ms until the next add
+            for (let k = 0; k < 5; k++) {
+                await step()
+                error = Math.max(
+                    error,
+                    expectToasts(
+                        view.host,
+                        toasts,
+                        frame,
+                        `add ${n}, frame ${k + 1}`,
+                        failures
+                    )
+                )
+            }
+        }
+        // the rest of every enter and track, frame by frame
+        for (let k = 0; k < 40; k++) {
+            await step()
+            error = Math.max(
+                error,
+                expectToasts(
+                    view.host,
+                    toasts,
+                    frame,
+                    `settling, frame ${k + 1}`,
+                    failures
+                )
+            )
         }
         await settleAll(mc, view.host)
-        ids.forEach((id, i) =>
+        toasts.forEach((toast, i) =>
             expectAt(
-                byId(view.host, id),
+                byId(view.host, toast.id),
                 toastSlot(view.host, i),
-                `${id} settled`
+                `${toast.id} settled`
             )
         )
+        const adds = `5 adds 80 ms apart: every enter (spring, ${TOAST_ENTER} s, centre-bottom) and every layout track (${interrupted} interrupted with their velocity) on the expectation every frame, max error ${error.toFixed(4)} px`
 
         // remove the middle toast: popLayout, siblings final at t = 0
-        const leaving = ids[2]!
+        const leaving = toasts[2]!
         const before = picture(view.host)
-        const rest = ids.filter((id) => id !== leaving)
-        await view.render(h(Toasts, { ids: rest }))
-        const exiting = byId(view.host, leaving)
+        const rest = toasts.filter((toast) => toast !== leaving)
+        await view.render(h(Toasts, { ids: rest.map((t) => t.id) }))
+        const exiting = byId(view.host, leaving.id)
         expectEqual(exiting.style.position, 'absolute', 'popped out of flow')
-        expectAt(exiting, before.get(leaving)!, 'popped in place')
-        const tracks = rest.map((id, i) => {
-            const element = byId(view.host, id)
+        expectAt(exiting, before.get(leaving.id)!, 'popped in place')
+        rest.forEach((toast, i) => {
+            const element = byId(view.host, toast.id)
             // the layout box is final at t = 0 (offsets ignore transforms)
             expectClose(
                 element.offsetTop,
                 i * (TOAST.h + TOAST.gap),
                 0.5,
-                `${id} layout final at t = 0`
+                `${toast.id} layout final at t = 0`
             )
-            expectAt(element, before.get(id)!, `${id} unmoved at flush`)
-            return spec(before.get(id)!, toastSlot(view.host, i), {
-                mode: 'position',
-            })
+            const now = toastExpected(view.host, toast, frame)
+            toast.slot = i
+            const after = toastSlot(view.host, i)
+            toast.track = {
+                spec: spec(now.box, after, {
+                    mode: 'position',
+                    duration: TOAST_LAYOUT,
+                    timing: TOAST_SPRING as TimingFunction,
+                }),
+                flush: frame,
+                q0: after,
+            }
         })
-        const bottom = before.get(leaving)!.y + TOAST.h
-        const centre = before.get(leaving)!.x + TOAST.w / 2
-        let error = 0
+        // the exit: from the present pose, about its popped CSS box
+        const popped = before.get(leaving.id)!
+        leaving.start = frame
+        leaving.from = TOAST_PRESENT
+        leaving.to = TOAST_EXITED
+        leaving.duration = TOAST_EXIT
+        let exitError = 0
         let removedAt = Number.NaN
-        await frames(mc, 40, (elapsed) => {
-            rest.forEach((id, i) => {
-                error = Math.max(
-                    error,
-                    expectAt(
-                        byId(view.host, id),
-                        expectedBox(tracks[i]!, elapsed),
-                        `${id} at ${elapsed.toFixed(3)} s`
-                    )
+        let lowest = 0
+        for (let k = 0; k < 40; k++) {
+            if (k > 0) await step()
+            const elapsed = (frame - leaving.start) * DT
+            exitError = Math.max(
+                exitError,
+                expectToasts(
+                    view.host,
+                    rest,
+                    frame,
+                    `exit frame ${k}`,
+                    failures
                 )
-            })
+            )
             const element = view.host.querySelector<HTMLElement>(
-                `[data-id="${leaving}"]`
+                `[data-id="${leaving.id}"]`
             )
             if (!element) {
                 if (Number.isNaN(removedAt)) removedAt = elapsed
-                return
+                continue
             }
+            const pose = toastPose(
+                TOAST_PRESENT,
+                TOAST_EXITED,
+                TOAST_EXIT,
+                elapsed
+            )
+            const want = throughPose(popped, pose)
+            exitError = Math.max(
+                exitError,
+                expectAt(
+                    element,
+                    want,
+                    `${leaving.id} exiting at ${elapsed.toFixed(3)} s`
+                )
+            )
+            expectClose(
+                Number(getComputedStyle(element).opacity),
+                pose.opacity,
+                1e-2,
+                `${leaving.id} opacity at ${elapsed.toFixed(3)} s`
+            )
+            // centre-bottom origin: scaleX never moves the bottom edge
             const box = pageBox(element)
-            expectClose(box.y + box.h, bottom, 1, 'bottom edge under scaleX')
-            expectClose(box.x + box.w / 2, centre, 1, 'centre under scaleX')
-        })
-        if (!(removedAt >= 0.2 - 1e-9 && removedAt <= 0.2 + 3 * DT)) {
-            throw new Error(`exit released at ${removedAt} s, expected ≈ 0.2 s`)
+            lowest = Math.max(
+                lowest,
+                Math.abs(
+                    box.y + box.h - (popped.y + popped.h + pose.translateY)
+                )
+            )
         }
-        return `5 adds 80 ms apart (${enterChecks} enter first frames, no jumps); exit released at ${removedAt.toFixed(3)} s; siblings on the oracle, max error ${error.toFixed(4)} px`
+        if (
+            !(
+                removedAt >= TOAST_EXIT - 1e-9 &&
+                removedAt <= TOAST_EXIT + 2 * DT
+            )
+        ) {
+            throw new Error(
+                `exit released at ${removedAt} s, expected ≈ ${TOAST_EXIT} s`
+            )
+        }
+        expectClose(lowest, 0, 1, 'bottom edge under scaleX')
+        await settleAll(mc, view.host)
+        expectEqual(mc.clock.size, 0, 'nothing subscribed after the settle')
+        if (failures.length > 0) {
+            const first = new Map<string, string>()
+            for (const failure of failures) {
+                const toast = /: (t\d) /.exec(failure)?.[1] ?? ''
+                if (!first.has(toast)) first.set(toast, failure)
+            }
+            const exitPhase = failures.filter((f) => f.includes(' exit frame '))
+            throw new Error(
+                `${failures.length} of the per-frame checks are off (${exitPhase.length} in the exit phase), from frame ${/^frame (\d+)/.exec(failures[0]!)?.[1]}; first per toast: ${[...first.values()].join('; ')}`
+            )
+        }
+        return `${adds}; exit (y 10, scaleX 0.9, ${TOAST_EXIT} s spring) on the expectation every frame, bottom edge within ${lowest.toFixed(4)} px, released at ${removedAt.toFixed(3)} s; siblings final at t = 0 and on their tracks, max error ${exitError.toFixed(4)} px`
     } finally {
         view.dispose()
         toastClock = null
