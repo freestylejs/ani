@@ -40,7 +40,7 @@ change happens somewhere else:
 ```ts
 group.capture() // read the boxes before the change
 list.prepend(list.lastElementChild!) // any synchronous DOM change
-const report = await group.flush() // read the boxes after it and start the run
+const run = await group.flush() // read the boxes after it and start the run
 ```
 
 - `add(element, options?)` registers a participant and returns an idempotent remove function

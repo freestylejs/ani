@@ -358,17 +358,6 @@ import {
     useLayout,
     usePresence,
 } from '@freestylejs/ani-react/layout'
-import { type Ref, type RefCallback, useMemo } from 'react'
-
-function mergeRefs<T>(...refs: Ref<T>[]): RefCallback<T> {
-    return (value) => {
-        for (const ref of refs) {
-            if (typeof ref === 'function') ref(value)
-            else if (ref) ref.current = value
-        }
-    }
-}
-
 const toastMotion = {
     present: { opacity: 1, translateY: 0, scaleX: 1 },
     initial: { opacity: 0, translateY: 14, scaleX: 0.8 },
@@ -386,14 +375,13 @@ const toastMotion = {
 type ToastData = { id: string; text: string }
 
 function Toast({ toast }: { toast: ToastData }) {
-    const layout = useLayout<HTMLLIElement>({ layout: 'position' })
     const presence = usePresence(toastMotion)
-    // one stable callback: a new one on every render would detach and
-    // re-attach both refs
-    const ref = useMemo(
-        () => mergeRefs(layout, presence.ref),
-        [layout, presence.ref]
-    )
+    // `ref` forwards the element to presence: one stable ref callback (a
+    // merged ref created inline would be new on every render)
+    const ref = useLayout<HTMLLIElement>({
+        layout: 'position',
+        ref: presence.ref,
+    })
     return (
         <li
             ref={ref}
