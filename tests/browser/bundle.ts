@@ -110,16 +110,21 @@ async function bundle(
     return output.text
 }
 
-/** Bundles a page-side module (ESM, real browser conditions). */
+/**
+ * Bundles a page-side module (ESM, real browser conditions), with an inline
+ * source map when coverage is collected.
+ */
 export function bundleForBrowser(
     entry: string,
-    variant: BrowserVariant = {}
+    variant: BrowserVariant = {},
+    sourcemap = false
 ): Promise<string> {
     return bundle(
         {
             entryPoints: [entry],
             platform: 'browser',
             conditions: ['browser'],
+            ...(sourcemap && { sourcemap: 'inline' as const }),
         },
         variant
     )

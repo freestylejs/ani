@@ -65,8 +65,10 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      # also gates the coverage of the layout DOM engine, which only real
+      # layout runs (tests/browser/coverage.ts)
       - name: Browser binding tests
-        run: pnpm test:browser
+        run: pnpm test:browser --coverage
 
       - name: Browser benchmark unit tests
         run: pnpm test:bench

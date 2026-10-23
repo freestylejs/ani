@@ -29,6 +29,9 @@ export const pageOptions = {}
 
 export const knownFailures: Record<string, string> = {}
 
+/** Cases that measure time: never run under coverage instrumentation. */
+export const timed = ['COST', 'SCALE']
+
 const FRAME_MS = 16
 const DT = FRAME_MS / 1000
 /** Per-frame tolerance against the oracle (§11). */
