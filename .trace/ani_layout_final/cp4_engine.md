@@ -21,7 +21,8 @@
   - `@freestylejs/ani-layout` and every package except `@freestylejs/ani-react` are clean.
   - `tests/browser` is clean except `react_layout.ts`. The React adapter's layout module still
     targets the deleted engine; CP5 replaces it (plan T4.2, V5).
-- Lint: `biome check packages/layout tests/browser package.json` → 0 errors.
+- Lint: the CP4 trial found one formatter error in `tests/browser/cases/layout.ts` (J-024); after the fix,
+  `npx biome check packages/layout packages/react tests/browser vitest.config.ts` → 0 errors (warnings only).
 - Regressions: `--case 'spike:S*' --case 'react:*'` in Chromium all pass.
 
 ## Engine model, as implemented
@@ -138,3 +139,40 @@ Residual risks:
 PASS (implementer review): T4.1–T4.4 and V4 are met in three browsers, and the CP3 trial's
 J-009–J-015 are corrected with proof. CP5 starts; CP4 goes to the Chief Justice together with the
 re-judgment of J-009–J-015.
+
+## Fix proof report for the CP4 trial (`cp4_engine_trial_result.md`, frozen `5c9f57c`)
+
+The trial resolved J-009–J-015 and found J-016–J-025. Each is fixed at its root and reproduced by
+a browser regression case named after it (`tests/browser/cases/layout.ts`, `layout:J16`–`J25`),
+with the trial's own numbers where it gave them. Every case passes in Chromium, Firefox and WebKit.
+
+| Defect | Root cause | Correction | Proof (all three browsers) |
+|---|---|---|---|
+| J-016 | `add`/`set` flagged every call as an option change | `sameTrackOptions` (`motion.ts`): mode, anchor, radius and motion by value (a timing by class + `opt`). Only a difference flags `changed`. `layoutId`, `layoutCrossfade` and `layoutDependency` never restart a track. | `J16`: 23 flushes with `set(e, {})`, `set(e, {layout: true})` and an equivalent delayed motion (inside the delay too). The run is never interrupted; both nodes stay on the original oracle (max error 0.0000 px). |
+| J-017 | A same-lead retarget dropped the lead's fade | The lead keeps its fade (`keptFade`). Fades gate their first update on their own `started` flag, so the pair stays in step after the track restarts. Opacity is written only while a fade is owned, so the lead gives its opacity back at the fade's end. | `J17`: retarget at 0.48 s of a 1 s crossfade. Opacity sum stays within 0.0000. The pair is on the velocity oracle (≤ 0.0083 px). Presence release and the lead's opacity restore both land at 1.008 s (the fade's end); the follower is held at 0; the lead's style is restored. |
+| J-018 | `settle`, `restoreOpacity` and remove wrote immediately | Restores are queued (`queueRestore`) and written with the other writes: after every flush read, and in the clock's commit (`raf.ts` unsubscribes after the commit of the last frame). | `J18`: a flush with one node disconnected and another retargeted logs 3 reads before 3 writes. A phase marker subscribed before the scope records all 14 frame writes, including the 2 settle removals, in `commit`. |
+| J-019 | Kept tracks ignored a reduced-motion mode change | Each drive records the mode it was planned under; a different mode marks the node changed, so it is re-planned from its drawn box and velocity with the current clamp. | `J19`: `maxDuration: 0.1`, toggled at 0.19 s with an unchanged A. The first run resolves `'interrupted'`. The active and the delayed track end within 8 frames (≤ 0.1 s). Styles are restored; 0 subscribers. |
+| J-020 | Retention kept the box but not the velocity | `retained` stores `{box, velocity, until}`; `IdHistory.retainedVelocity` seeds the handoff. The velocity is kept only for a moving, non-holding own track. | `plan.test.ts` J-020: x(0.02) = 44.12672; the derivative at 0 is 200 for h = 1e-5…1e-7. `J20`: the new lead is on the velocity oracle every frame; after `retain` has expired there is no handoff. |
+| J-021 | Corners owned mid-run were never saved | `startDrive` (existing drive) saves the radius properties when `radius` turns on, and gives them back at once when it turns off. A radius change is a track-option change. | `J21`: radius turned on at 0.19 s is owned (`!important`); the inline style is byte-identical after settle, `finish()` and `dispose()`. |
+| J-022 | The original snapshot overwrote a later authored inline value | `adoptAuthored` (`dom.ts`) recognises an author's inline write by its priority: layout's writes are `!important`, React's are not. It takes the write into `saved` at each flush and before each restore, and drops the written-value cache so the pose is re-asserted. | `J22`: translate 4px → 20px and scale 1 → 1.5 set inline mid-run. After settle, `finish()` and `dispose()` the author's values (normal priority) apply: box (220, 0, 60 × 60) within 0.01 px. |
+| J-023 | Unregister resolved the run `'ended'` and left the scheduler running | `cancelRunNode`: a run left with no node resolves `'disposed'`. Removal drops pending writes for the element, restores at once, recounts `stats.tracks` and stops the realizer when nothing live is left. A node gone from the document is cancelled the same way at the next flush. | `J23`: sole removal → `'disposed'`, 0 subscribers, 0 tracks, restored at once. Partial removal → the rest stays on the oracle and reports `'ended'` once. A disconnected node → `'disposed'` and restored. |
+| J-024 | Formatter error in `layout.ts` | Formatted. | `npx biome check packages/layout packages/react tests/browser vitest.config.ts`: 0 errors. |
+| J-025 | B of a driven node ignored a presence matrix changed since the last flush | `reconcileLayers` maps the engine's current poses through the presence matrices read at this flush (stored per geometry as `matrix`). This needs no extra read and no write before the reads. The velocity is scaled by the same change. | `J25`: parent scale 0.8 → 1 between flushes. B = (138.4, w 40) at the new t = 0, the first frame is continuous, every frame is on the velocity oracle (≤ 0.0083 px), and the settle is the identity. The same defect made the React E5 toast stack jump; `react_layout:E5` now passes. |
+
+Re-run after the fixes (remote mirror, frozen tree of the CP5 commit):
+
+| Check | Result |
+|---|---|
+| `pnpm vitest run` (all packages) | 135 files, 1,577 / 1,577 |
+| `layout:*` × Chromium / Firefox / WebKit | 24 / 24 each (T1–T13, J16–J25, VT1, COST) |
+| `test:browser --browser chromium` (every module) | 80 / 80 |
+| COST: commit reads at 1,000 participants / 300 moving (gate ≤ 4 ms) | 2.40 / 3.00 / 2.00 ms |
+| COST: frame p95 at 300 nested movers (gate ≤ 2 ms) | 0.63 / 0.85 / 0.65 ms |
+| `tsc` for layout, react, core, vue, solid, svelte and `tests/browser` | clean |
+
+`packages/web` (the docs site) still fails `tsc`: its Next route types are not generated and
+`@freestylejs/ani-react` is not built in the mirror. CP6 rewrites that site (T6.4).
+
+Residual risks: an author's inline write with `!important` to `translate`/`scale` is not
+recognised as authored (React cannot produce one). The presence velocity itself is not part
+of a reconciled B's velocity, only the change of scale.
