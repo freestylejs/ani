@@ -286,7 +286,10 @@ Each pose is recovered *with its rate* from the drawn box and velocity, and reco
 the current maps (maps with time derivatives compose exactly by the product rule), so the
 velocity is carried exactly: a parent's motion stays a translation of the child whatever the
 child's own scale became. Only a node whose A moved by at least `threshold`, or whose track
-options changed, gets a new track; every other node keeps its track untouched. Track options
+options changed, gets a new track; every other node keeps its track untouched. That A is
+judged under the presence matrices its track was planned with: a presence `transform` that
+changed since is a visual layer (§3.1), not a move, so a re-render during a presence
+animation keeps the track, and a kept track keeps the geometry it was planned with. Track options
 are compared by their *effective* value under the group's motion: `layout`, `layoutAnchor`,
 `radius` and `motion` with the defaults and the group's fields merged in (`{}` equals
 `{ motion: { delay: 0 } }`), a timing by its class and parameters in any key order, so an
@@ -436,7 +439,7 @@ usePresenceControl(options?): { isPresent, safeToRemove }
   when its last participant leaves, independently of every other pair.
 - The outermost `LayoutGroup` owns a scope. Nested groups join it: they namespace `layoutId`s
   (`id`) and supply `motion` defaults; scope options (`clock`, `reducedMotion`, `threshold`,
-  `maxNodes`, `retain`, `onSnap`) are read from the outermost group only, and a nested group
+  `maxNodes`, `retain`, `onSnap`, `engine`) are read from the outermost group only, and a nested group
   that sets one prints a development warning. A change of a scope option recreates the scope
   (compared by value; `onSnap` is always the latest prop).
 - A participant's `motion` is merged field by field over its groups' `motion`.
@@ -447,7 +450,9 @@ usePresenceControl(options?): { isPresent, safeToRemove }
   when the DOM around its participants changed with no capture.
 - **Adapter mechanics.** A render of a participant, group or `AnimatePresence` calls
   `capture()` on its scope (only on a scope that exists: registration creates an implicit
-  root). Their layout effects queue one microtask per scope that calls `flush()`, followed by
+  root), except while that scope's flush is queued: React 18 can start the next render in the
+  commit's task, after the DOM changed, and that render's before-boxes come from the hand-off
+  capture instead. Their layout effects queue one microtask per scope that calls `flush()`, followed by
   `capture()` when a render touched the scope after the commit's last layout effect (§4.1
   hand-off). Participant options are compared by value (§5.5); only a change calls `set`.
   `useLayoutGroup().update(fn)` flushes a pending commit's flush first, then runs
