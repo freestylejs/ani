@@ -4,7 +4,12 @@
 // picture must not move while time stands still.
 
 import type { Clock } from '@freestylejs/ani-core'
-import { ani, type TimingFunction, timing } from '@freestylejs/ani-core'
+import {
+    ani,
+    defaultClock,
+    type TimingFunction,
+    timing,
+} from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -1608,4 +1613,163 @@ export async function J28(): Promise<string> {
     }
     if (failures.length > 0) throw new Error(failures.join('; '))
     return results.join('; ')
+}
+
+/* ── AnimatePresence routes to its document's implicit root (J-029) ── */
+
+const fadeExit = {
+    present: { opacity: 1 },
+    exit: ani({ to: { opacity: 0 }, duration: 0.1, timing: timing.linear() }),
+}
+
+function FadeRow(): ReactNode {
+    const presence = usePresence(fadeExit, { clock: toastClock!.clock })
+    return h('div', {
+        ref: presence.ref,
+        'data-id': 'row',
+        style: { width: 100, height: 50, flex: 'none' },
+    })
+}
+
+const Sibling = memo(function Sibling(): ReactNode {
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        'data-id': 'sibling',
+        style: { width: 100, height: 40, flex: 'none', background: '#888' },
+    })
+})
+
+/** No LayoutGroup: a sync exit above a memoized participant of the implicit root. */
+function ImplicitStack({ show }: { show: boolean }): ReactNode {
+    return h(
+        Column,
+        null,
+        h(
+            AnimatePresence,
+            { initial: false },
+            show ? h(FadeRow, { key: 'row' }) : null
+        ),
+        h(Sibling)
+    )
+}
+
+interface Frame {
+    readonly doc: Document
+    readonly root: Root
+    readonly remove: () => void
+}
+
+async function frameRoot(): Promise<Frame> {
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'width: 400px; height: 300px; border: 0;'
+    const loaded = new Promise<void>((resolve) =>
+        iframe.addEventListener('load', () => resolve(), { once: true })
+    )
+    document.body.append(iframe)
+    await loaded
+    const doc = iframe.contentDocument!
+    doc.body.style.margin = '0'
+    const host = doc.createElement('div')
+    doc.body.append(host)
+    return { doc, root: createRoot(host), remove: () => iframe.remove() }
+}
+
+/** The sibling's drawn offset from its column, and its owned translate. */
+function siblingState(doc: Document): { y: number; translate: string } {
+    const sibling = doc.querySelector<HTMLElement>('[data-id="sibling"]')!
+    const column = sibling.parentElement!
+    return {
+        y:
+            sibling.getBoundingClientRect().top -
+            column.getBoundingClientRect().top,
+        translate: sibling.style.translate,
+    }
+}
+
+/** Exits the row (0.1 s on the manual clock) and drains its settle commit. */
+async function exitRow(
+    mc: ManualClock,
+    doc: Document,
+    render: (show: boolean) => void
+): Promise<void> {
+    render(false)
+    await microtasks()
+    for (let frame = 0; frame < 20; frame++) {
+        mc.frame(FRAME_MS)
+        await microtasks()
+        await macrotask()
+        if (!doc.querySelector('[data-id="row"]')) break
+    }
+    await microtasks()
+    if (doc.querySelector('[data-id="row"]'))
+        throw new Error('row not released')
+}
+
+/** J-029: the settle commit of an exit captures the implicit root of the exiting element's document. */
+export async function J29(): Promise<string> {
+    const mc = createManualClock()
+    toastClock = mc
+    const main = mountRoot()
+    const frame = await frameRoot()
+    // the default layout clock stands still: t = 0 stays on screen
+    defaultClock.pause()
+    try {
+        const renderMain = (show: boolean) =>
+            flushSync(() => main.root.render(h(ImplicitStack, { show })))
+        const renderFrame = (show: boolean) =>
+            flushSync(() => frame.root.render(h(ImplicitStack, { show })))
+        renderMain(true)
+        renderFrame(true)
+        await microtasks()
+        const states: string[] = []
+        const failures: string[] = []
+        for (const [label, doc, render] of [
+            ['main document', document, renderMain],
+            ['iframe', frame.doc, renderFrame],
+        ] as const) {
+            expectEqual(
+                siblingState(doc).y,
+                50,
+                `${label}: sibling below the row`
+            )
+            await exitRow(mc, doc, render)
+            const state = siblingState(doc)
+            states.push(
+                `${label} y ${state.y} (translate ${state.translate || 'none'})`
+            )
+            if (state.y !== 50 || state.translate !== '0px 50px') {
+                failures.push(
+                    `${label}: the sibling jumped to y ${state.y} (translate '${state.translate}') at t = 0`
+                )
+            }
+        }
+        if (failures.length > 0) throw new Error(failures.join('; '))
+        // both animate and settle on their own once time runs
+        defaultClock.resume()
+        await sleep(600)
+        for (const [label, doc] of [
+            ['main document', document],
+            ['iframe', frame.doc],
+        ] as const) {
+            const state = siblingState(doc)
+            expectEqual(state, { y: 0, translate: '' }, `${label}: settled`)
+        }
+        // the iframe's root goes with its last participant; the main one stays
+        flushSync(() => frame.root.unmount())
+        await microtasks()
+        renderMain(true)
+        await microtasks()
+        expectEqual(
+            siblingState(document).translate,
+            '0px -50px',
+            'main still animates'
+        )
+        return `${states.join(', ')} at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left`
+    } finally {
+        defaultClock.resume()
+        frame.remove()
+        main.dispose()
+        toastClock = null
+    }
 }

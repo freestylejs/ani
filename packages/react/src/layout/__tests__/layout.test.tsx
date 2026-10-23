@@ -7,11 +7,18 @@ import type {
     LayoutOptions,
     LayoutReport,
 } from '@freestylejs/ani-layout'
-import { createRef, type RefObject, StrictMode, useState } from 'react'
+import { createRef, memo, type RefObject, StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createManualClock } from '../../../../core/src/testing/index'
 import { act, mount } from '../../__tests__/helpers'
-import { LayoutGroup, useLayout, useLayoutGroup } from '..'
+import {
+    AnimatePresence,
+    LayoutGroup,
+    useLayout,
+    useLayoutGroup,
+    usePresence,
+} from '..'
 import { createLayoutScope, rootScope } from '../context'
 
 /** A recording stand-in for the core group: the adapter calls only its public API. */
@@ -437,6 +444,104 @@ describe('react layout adapter', () => {
                 (fake) => fake.disposed || fake.members.size === 0
             )
         ).toBe(true)
+    })
+
+    it('J-029: AnimatePresence touches the implicit root of the document of its children', async () => {
+        const clock = createManualClock()
+        const fade = {
+            present: { opacity: 1 },
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.1,
+                timing: a.timing.linear(),
+            }),
+        }
+        function Row() {
+            const presence = usePresence(fade, { clock: clock.clock })
+            return <li ref={presence.ref} data-id="row" />
+        }
+        const Sibling = memo(function Sibling() {
+            return <Item id="sibling" />
+        })
+        let add: ((on: boolean) => void) | null = null
+        function Adder() {
+            const [on, set] = useState(false)
+            add = set
+            return on ? <Item id="added" /> : null
+        }
+        function App({ show }: { show: boolean }) {
+            return (
+                <ul>
+                    <Adder />
+                    <AnimatePresence initial={false}>
+                        {show && <Row key="row" />}
+                    </AnimatePresence>
+                    <Sibling />
+                </ul>
+            )
+        }
+        // a root in the main document exists too
+        const main = await mount(
+            <ul>
+                <Item id="m" />
+            </ul>
+        )
+        const other = document.implementation.createHTMLDocument('other')
+        const container = other.createElement('div')
+        other.body.appendChild(container)
+        const root = createRoot(container)
+        try {
+            await act(async () => {
+                root.render(<App show={true} />)
+            })
+            const otherFake = live().find(
+                (fake) => [...fake.members.keys()][0]!.ownerDocument === other
+            )!
+            const mainFake = live().find((fake) => fake !== otherFake)!
+            await act(async () => {
+                root.render(<App show={false} />)
+            })
+            otherFake.calls.length = 0
+            mainFake.calls.length = 0
+            const seen: boolean[] = []
+            recorder.onCapture = () =>
+                seen.push(other.querySelector('[data-id="row"]') !== null)
+            // the exit ends: the settle commit renders AnimatePresence only
+            await act(async () => {
+                clock.frames(10)
+            })
+            await settle()
+            expect(other.querySelector('[data-id="row"]')).toBeNull()
+            // captured before React removed the row, flushed after
+            expect(otherFake.calls).toEqual(['capture', 'flush'])
+            expect(seen).toEqual([true])
+            expect(mainFake.calls).toEqual([])
+
+            // a participant's first render knows no document yet: it touches
+            // every implicit root, so the memoized sibling it pushes is captured
+            otherFake.calls.length = 0
+            seen.length = 0
+            recorder.onCapture = () =>
+                seen.push(other.querySelector('[data-id="added"]') !== null)
+            await act(async () => {
+                add!(true)
+            })
+            await settle()
+            expect(otherFake.calls).toEqual(['capture', 'add', 'flush'])
+            // every capture (one per root) saw the DOM before the add
+            expect(seen.length).toBeGreaterThan(0)
+            expect(seen).not.toContain(true)
+
+            // each root is still disposed on its own
+            await act(async () => {
+                root.unmount()
+            })
+            await settle()
+            expect(otherFake.disposed).toBe(true)
+            expect(mainFake.disposed).toBe(false)
+        } finally {
+            await main.unmount()
+        }
     })
 
     it('keeps implicit roots of different clocks apart', () => {

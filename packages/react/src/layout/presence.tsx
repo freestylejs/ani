@@ -24,7 +24,7 @@ import {
 } from 'react'
 import { useIsoLayoutEffect } from '../ani/owned'
 import {
-    existingScope,
+    existingScopes,
     hasDOM,
     LayoutContext,
     PresenceContext,
@@ -76,10 +76,16 @@ function childrenEntries(
  */
 export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     const layout = useContext(LayoutContext)
-    // render: the before-boxes of the scope its children live in (§4.1)
-    existingScope(layout)?.touch()
+    /** The documents its children's elements registered from. */
+    const documents = useRef(new Set<Document>())
+    // render: the before-boxes of the scopes its children live in (§4.1),
+    // also in a render that only settles an exit and renders no participant
+    const touched = existingScopes(layout, documents.current)
+    for (const scope of touched) scope.touch()
+    const touchedRef = useRef(touched)
+    touchedRef.current = touched
     useIsoLayoutEffect(() => {
-        existingScope(layout)?.commit()
+        for (const scope of touchedRef.current) scope.commit()
     })
     const [entries, setEntries] = useState<readonly PresenceEntry<ReactNode>[]>(
         []
@@ -182,7 +188,8 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     )
 
     const register = useMemo(
-        () => (key: PresenceKey) => {
+        () => (key: PresenceKey, document?: Document) => {
+            if (document) documents.current.add(document)
             const id = ++nextRegistrant.current
             let ids = registrants.current.get(key)
             if (!ids) {
@@ -251,7 +258,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
                     willEnter: willEnter.current.get(entry.key) ?? true,
                     popLayout: props.mode === 'popLayout',
                     custom: props.custom,
-                    register: () => register(entry.key),
+                    register: (document) => register(entry.key, document),
                     unregister: (id) => unregister(entry.key, id),
                     settle: () => settle(entry.key, entry.token),
                     reportExit: (id) => reportExit(entry.key, id, entry.token),
@@ -573,7 +580,7 @@ export function usePresence<
                 optionsRef.current
             )
             bound.current = element
-            registration.current = current.register()
+            registration.current = current.register(element.ownerDocument)
         },
         [release]
     )
