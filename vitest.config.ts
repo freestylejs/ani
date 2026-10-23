@@ -29,6 +29,12 @@ export default defineConfig({
                 '**/binding_api.ts',
                 '**/utils/types/**',
                 'web/**',
+                // the layout DOM engine needs real layout: its coverage is
+                // gated in Chromium (`pnpm test:browser --coverage`,
+                // tests/browser/coverage.ts)
+                'layout/src/scope.ts',
+                'layout/src/dom.ts',
+                'layout/src/realize/**',
             ],
             // Floors set a few points below the measured values (v1 hardening:
             // overall 94.3 / 86.5 / 95.1 / 95.0; bindings >= 97.7 / 84.6 /

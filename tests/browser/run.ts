@@ -12,6 +12,7 @@ import {
     webkit,
 } from 'playwright'
 import { type BrowserVariant, bundleForBrowser } from './bundle.ts'
+import { EngineCoverage } from './coverage.ts'
 import { renderToMarkup } from './ssr.ts'
 
 declare global {
@@ -61,6 +62,7 @@ Options:
   --case <glob>   run matching cases only, repeatable (e.g. "react:*", "core:C1")
   --browser <name> chromium | firefox | webkit (default: chromium)
   --headed        show the browser window
+  --coverage      report the layout engine's coverage; a full run gates it (Chromium)
   --list          print the case ids and exit
 
 Modules: ${MODULES.join(', ')}
@@ -83,6 +85,8 @@ interface CaseModule {
     knownFailures: Record<string, string>
     /** Cases that measure through CDP: skipped, not run, in Firefox and WebKit. */
     chromiumOnly: string[]
+    /** Cases that measure time: never instrumented for coverage. */
+    timed: string[]
 }
 
 interface Pattern {
@@ -98,6 +102,7 @@ interface Options {
     browser: BrowserName
     headed: boolean
     list: boolean
+    coverage: boolean
 }
 
 interface Outcome {
@@ -142,6 +147,7 @@ function parseOptions(argv: readonly string[]): Options {
     let browser: BrowserName = 'chromium'
     let headed = false
     let list = false
+    let coverage = false
     for (let i = 0; i < argv.length; i++) {
         const arg = argv[i]
         switch (arg) {
@@ -176,6 +182,9 @@ function parseOptions(argv: readonly string[]): Options {
             case '--list':
                 list = true
                 break
+            case '--coverage':
+                coverage = true
+                break
             case '--help':
             case '-h':
                 throw new UsageError('')
@@ -183,7 +192,10 @@ function parseOptions(argv: readonly string[]): Options {
                 throw new UsageError(`unknown option "${arg}"`)
         }
     }
-    return { patterns, filters, browser, headed, list }
+    if (coverage && browser !== 'chromium') {
+        throw new UsageError('--coverage needs --browser chromium')
+    }
+    return { patterns, filters, browser, headed, list, coverage }
 }
 
 function pageHtml(markup: string): string {
@@ -288,11 +300,13 @@ async function load(page: Page, module: CaseModule): Promise<void> {
 /** Loads the module once to learn its cases and their metadata. */
 async function inspect(
     browser: Browser,
-    name: ModuleName
+    name: ModuleName,
+    sourcemap: boolean
 ): Promise<CaseModule> {
     const code = await bundleForBrowser(
         fileURLToPath(new URL(`./cases/${name}.ts`, import.meta.url)),
-        VARIANTS[name]
+        VARIANTS[name],
+        sourcemap
     )
     const module: CaseModule = {
         name,
@@ -301,6 +315,7 @@ async function inspect(
         pageOptions: {},
         knownFailures: {},
         chromiumOnly: [],
+        timed: [],
     }
     const context = await browser.newContext()
     try {
@@ -322,6 +337,7 @@ async function inspect(
                     string
                 >,
                 chromiumOnly: (cases.chromiumOnly ?? []) as string[],
+                timed: (cases.timed ?? []) as string[],
             }
         })
         if (problems.length > 0) {
@@ -352,8 +368,12 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
 async function runCase(
     browser: Browser,
     module: CaseModule,
-    name: string
+    name: string,
+    engine: EngineCoverage | null
 ): Promise<Outcome> {
+    const coverage = engine?.wants(module.code, module.timed.includes(name))
+        ? engine
+        : null
     const started = performance.now()
     const problems: string[] = []
     const failures: string[] = []
@@ -364,7 +384,13 @@ async function runCase(
         const markup = options.ssr
             ? await renderToMarkup(module.name as 'react' | 'vue')
             : ''
-        const { page } = await openPage(context, module, markup, problems)
+        const { page, session } = await openPage(
+            context,
+            module,
+            markup,
+            problems
+        )
+        if (coverage) await coverage.start(await session())
         if (options.reducedMotion) {
             await page.emulateMedia({ reducedMotion: options.reducedMotion })
         }
@@ -403,6 +429,7 @@ async function runCase(
                     )
                 )
         )
+        if (coverage) await coverage.take(await session(), module.code)
     } catch (error) {
         failures.push(describeError(error))
     } finally {
@@ -455,7 +482,8 @@ async function findCases(name: ModuleName): Promise<string[]> {
         (key) =>
             key !== 'pageOptions' &&
             key !== 'knownFailures' &&
-            key !== 'chromiumOnly'
+            key !== 'chromiumOnly' &&
+            key !== 'timed'
     )
 }
 
@@ -510,6 +538,8 @@ async function main(): Promise<number> {
         }),
     })
     const counts = { PASS: 0, FAIL: 0, KNOWN: 0, SKIP: 0 }
+    const coverage =
+        options.coverage && !options.list ? new EngineCoverage() : null
     const started = performance.now()
     try {
         for (const name of MODULES) {
@@ -519,7 +549,7 @@ async function main(): Promise<number> {
 
             let module: CaseModule
             try {
-                module = await inspect(browser, name)
+                module = await inspect(browser, name, coverage !== null)
             } catch (error) {
                 counts.FAIL += 1
                 report(`${name}:*`, {
@@ -546,7 +576,12 @@ async function main(): Promise<number> {
                     writeOut(`SKIP ${id} (CDP: Chromium only)`)
                     continue
                 }
-                const outcome = await runCase(browser, module, caseName)
+                const outcome = await runCase(
+                    browser,
+                    module,
+                    caseName,
+                    coverage
+                )
                 counts[outcome.status] += 1
                 report(id, outcome)
             }
@@ -555,12 +590,16 @@ async function main(): Promise<number> {
         await browser.close()
     }
     if (options.list) return 0
+    // a filtered run reports without gating: the floors cover every module
+    const uncovered =
+        coverage?.report(writeOut, options.patterns.length === 0) ?? []
+    for (const failure of uncovered) writeOut(`FAIL coverage: ${failure}`)
 
     const seconds = ((performance.now() - started) / 1000).toFixed(1)
     writeOut(
         `\n${counts.PASS} passed, ${counts.FAIL} failed, ${counts.KNOWN} known failures, ${counts.SKIP} skipped (${seconds} s)`
     )
-    return counts.FAIL === 0 ? 0 : 1
+    return counts.FAIL === 0 && uncovered.length === 0 ? 0 : 1
 }
 
 main().then(
