@@ -2319,3 +2319,75 @@ export async function COST(): Promise<string> {
     }
     return line
 }
+
+/**
+ * Cost at 50, 300 and 1,000 participants (plan T6.3): the whole commit with
+ * every participant moving, and the steady frame of that run (a third are
+ * parents of two nested children each).
+ */
+export async function SCALE(): Promise<string> {
+    const linear = timing.linear()
+    document.body.style.margin = '0'
+    const lines: string[] = []
+    let worstFrame = 0
+    for (const count of [50, 300, 1000]) {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            maxNodes: 5000,
+            motion: { duration: 1000, timing: linear },
+        })
+        const stage = document.createElement('div')
+        stage.style.cssText =
+            'position: relative; width: 1200px; height: 800px;'
+        document.body.append(stage)
+        const moved: HTMLElement[] = []
+        for (let i = 0; moved.length < count; i++) {
+            const parent = node(
+                stage,
+                `left: ${(i % 24) * 50}px; top: ${Math.floor(i / 24) * 40}px; width: 46px; height: 36px;`
+            )
+            group.add(parent)
+            moved.push(parent)
+            for (let j = 0; j < 2 && moved.length < count; j++) {
+                const child = node(
+                    parent,
+                    `left: ${j * 22}px; top: 4px; width: 20px; height: 20px;`
+                )
+                group.add(child)
+                moved.push(child)
+            }
+        }
+        const commits: number[] = []
+        const frameTimes: number[] = []
+        for (let round = 0; round < 7; round++) {
+            await macrotask()
+            void stage.offsetHeight
+            const t = performance.now()
+            group.capture()
+            for (const e of moved) {
+                e.style.left = `${Number.parseFloat(e.style.left) + (round % 2 === 0 ? 3 : -3)}px`
+            }
+            void group.flush()
+            commits.push(performance.now() - t)
+            mc.frames(2)
+            const batch = 10
+            for (let s = 0; s < 6; s++) {
+                const f = performance.now()
+                for (let k = 0; k < batch; k++) mc.frame(FRAME_MS)
+                frameTimes.push((performance.now() - f) / batch)
+            }
+            group.finish()
+        }
+        const tracks = count
+        const p95 = percentile(frameTimes, 0.95)
+        worstFrame = Math.max(worstFrame, p95)
+        lines.push(
+            `${count} (${tracks} moving): commit ${percentile(commits, 0.5).toFixed(2)} ms, frame p50 ${percentile(frameTimes, 0.5).toFixed(3)} / p95 ${p95.toFixed(3)} ms`
+        )
+        group.dispose()
+        stage.remove()
+        expectEqual(mc.clock.size, 0, `${count}: no subscriber left`)
+    }
+    return lines.join('; ')
+}
