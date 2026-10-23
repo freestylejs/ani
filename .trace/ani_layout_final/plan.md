@@ -103,7 +103,8 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
 - T3.4 `plan.ts`: movers by threshold, keep vs retarget with velocity, layoutId lead/follower,
   handoff, crossfade gating, culling, cap, unsupported subtree propagation, layoutDependency.
 - V3: property tests (seeded) — random trees depth ≤ 5, random timings/delays: composed drawn
-  boxes equal the independent oracle within 1e-9; c(0)=B, c(1)=A, c′(0)=v for every retarget
+  boxes (random inner maps on every level) equal the independent oracle within 1e-9; identity
+  poses at settle; c(0)=B, c(1)=A, c′(0)=v for every retarget
   (including fast, short ones), size floor only when it binds; keep vs retarget;
   every snap reason; validation errors carry the code. No DOM or clock import in these files.
 
@@ -116,6 +117,7 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
 - T4.3 Browser module `layout` (manual clock): flat move, nested depth 3 with mixed modes,
   anchor, delay, interruption with velocity, layoutId handoff and crossfade with presence,
   a participant ancestor with a constant and with an animating presence transform (§3.1),
+  a constantly scaled parent and a delayed child on different timelines (CP2 trial J-001 DOM),
   a running retarget whose flush reads before any write,
   every snap reason, reduced motion (jump / maxDuration / ignore / toggle), finish, dispose,
   byte-identical restore, reads per commit and zero reads per frame.

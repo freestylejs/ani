@@ -46,3 +46,8 @@ Chief Justice trial 1 (`cp1_authority_trial_result.md`, frozen `81d8e57`): **TRI
 | J-007 document isolation | Implicit root per `(clock, document)` with independent disposal (§7.2, K13, T5.1, T5.3). | — |
 
 Carried items C1-a and C1-b are unchanged (CP6).
+
+**CP2 trial ruling on J-001: NOT RESOLVED.** The J-001 row above is withdrawn: the affine
+argument holds for one fixed outer map, not for inner maps interleaved with independently timed
+poses. The corrected model (track space = visual space, `Mπ` = parent's full map) and its proof
+are in `cp3_pure_core.md`.
