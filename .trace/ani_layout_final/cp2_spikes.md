@@ -14,31 +14,49 @@
   the root (pnpm otherwise hoisted React 18 to the root `node_modules/react`).
 - Command (june-wsl `~/ani-v2/lay`): `pnpm test:browser --browser <b> --case 'spike*:*'`
   (WebKit after `source ~/ani-v2/sysroot/webkit-env.sh`). Result: 19/19 PASS in each of
-  Chromium, Firefox, WebKit (57/57).
+  Chromium, Firefox, WebKit (57/57); after the J-008 fix, `--case 'spike*:S1_*'` 16/16 in each
+  browser.
 
 ## S1 — render capture (stop: a capture consumed by the wrong commit; stale > 1 in 20)
 
 Truth: a `Probe` class component's `getSnapshotBeforeUpdate` reads every participant's rect in
 the before-mutation phase of each commit it renders in; each flush compares the B it used with
-the truth of the first probed commit since the previous flush (0.5 px). All runs under
-StrictMode; every scenario is run twice: with the §4.1 lifetime rule and as a no-refresh
-control.
+the truth of the first probed commit since the previous flush (0.5 px). There are two probes: one
+at the app root and one inside the Suspense boundary, which sees a reveal commit confined to the
+boundary. All runs are under StrictMode, and every scenario runs twice: with the §4.1 lifetime
+rule and as a no-refresh control.
 
-| Scenario | Builds × browsers | Flushes compared | Violations (rule) | Violations (control) | Missing captures |
-|---|---|---|---|---|---|
-| sync + batched updates (20) | 4 × 3 | 180 boxes each | 0 | 0 | 0 |
-| `startTransition`, time-sliced (12 × 3 ms), each pre-empted by a `flushSync` commit outside the scope while its capture is pending (10) or by an urgent in-scope update (10) | 4 × 3 | 180–270 boxes | **0** | **81–90, max 37.3 px** | 0 |
-| `useDeferredValue` (12 keystrokes, slow deferred render, banner toggles) | 4 × 3 | 58–117 boxes | 0 | 0 | 0 |
-| Suspense: transition suspend, sync fallback, resolve (6 rounds) | 4 × 3 | 210–216 boxes | 0 | 0 | 0 |
+No required update may pass unverified (CP2 trial J-008):
 
-Builds: React 19.2.1 plain, React 19.2.1 compiled, React 18.3.1 plain, React 18.3.1 compiled; the
+- **unchecked**: a flush that would animate (its B differs from the DOM at the flush by > 0.5 px),
+  or that follows a reveal, with no probe truth. Must be 0.
+- **No-op flushes are not commits to certify**: initial mounts, StrictMode effect replays and
+  commits that move nothing. They are told apart by the same test: nothing moved.
+- **reveals**: flushes of a commit that showed new resolved Suspense content *and* were compared
+  with truth. A replayed effect with the same content is not a reveal. Must be ≥ 6.
+
+| Scenario | Builds × browsers | Boxes compared | Violations (rule) | Violations (control) | Missing / unchecked | Checked reveals |
+|---|---|---|---|---|---|---|
+| sync + batched updates (20) | 4 × 3 | 180 each | 0 | 0 | 0 / 0 | — |
+| `startTransition`, time-sliced (12 × 3 ms), each pre-empted by a `flushSync` commit outside the scope while its capture is pending (10) or by an urgent in-scope update (10) | 4 × 3 | 180–270 | **0** | **90, max 37.3 px** | 0 / 0 | — |
+| `useDeferredValue` (12 keystrokes, slow deferred render, banner toggles) | 4 × 3 | 58–117 | 0 | 0 | 0 / 0 | — |
+| Suspense, 3 rounds: transition suspend → resolve; sync fallback → reveal (450 ms waits outlast React's 300 ms reveal throttle) | 4 × 3 | 108–132 | 0 | 0 | 0 / 0 | **6 in every run** |
+
+Builds: React 19.2.1 plain, React 19.2.1 compiled, React 18.3.1 plain, React 18.3.1 compiled. The
 module checks that the fixture is (or is not) compiled. "Updates interleaved into a pending
-capture: 20" in every transition run proves each pre-emption happened while a capture was
-pending. Stale rate under the rule: 0 of 600+ flushes. **Stop condition not met → PASS.**
+capture: 20" in every transition run proves that each pre-emption happened while a capture was
+pending. **Stop condition not met → PASS** (48/48 S1 cases).
 
-Finding used by the architecture: a default-priority update does not pre-empt a running
-transition render in React 18/19 (the transition commits first), so only a sync commit can land
-between a capture and its consumer; the task-stamped refresh (§4.1) covers it.
+Findings used by the architecture:
+
+- A default-priority update does not pre-empt a running transition render in React 18/19 (the
+  transition commits first). So only a sync commit can land between a capture and its consumer,
+  and the task-stamped refresh (§4.1) covers it.
+- **Flush hand-off (K14).** The stricter check exposed one more interleaving in React 19 (Firefox
+  and WebKit, plain and compiled). The scheduler ran a commit and the start of the next render in
+  one task. That render touched before the commit's flush microtask, and the flush consumed the
+  capture. §4.1 now hands such a render a capture of A (its exact before-box); `handoffs 1` in
+  those runs, then 0 unchecked and 0 missing.
 
 ## S2 — first painted frame after a 120 ms block (stop: > one frame of progress)
 

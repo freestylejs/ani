@@ -12,7 +12,7 @@ import {
     useRef,
     useState,
 } from 'react'
-import { close, probe, register, touch } from './spike_proto'
+import { close, probe, register, revealed, touch } from './spike_proto'
 import { busy, controls, readResource } from './spike_s1_support'
 
 export interface AppState {
@@ -42,6 +42,8 @@ function useProtoGroup(): void {
 }
 
 class Probe extends Component<{ version: number; deferred: string }> {
+    // re-rendered with every commit of its parent: its before-mutation
+    // snapshot is the truth the flush is compared with
     override getSnapshotBeforeUpdate(): null {
         probe()
         return null
@@ -88,6 +90,9 @@ const Banner = memo(function Banner(): ReactNode {
 function Detail({ suspend }: { suspend: number }): ReactNode {
     const text = readResource(suspend)
     const ref = useProtoLayout()
+    useLayoutEffect(() => {
+        if (text.startsWith('loaded')) revealed(text)
+    }, [text])
     return h('p', { ref, style: { height: '24px', margin: 0 } }, text)
 }
 
@@ -126,6 +131,8 @@ export function App({ slow }: { slow: boolean }): ReactNode {
         h(
             Suspense,
             { fallback: h('p', { style: { height: '10px' } }, 'loading') },
+            // a probe inside the boundary sees commits confined to it (a reveal)
+            h(Probe, { version: state.suspend, deferred: 'suspense' }),
             h(Detail, { suspend: state.suspend })
         )
     )
