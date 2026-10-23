@@ -35,7 +35,10 @@ describe('package metadata', () => {
         const dev = pkg.devDependencies as Record<string, string>
         for (const [name, range] of Object.entries(dev)) {
             expect(range, name).not.toBe('latest')
-            expect(range, name).toMatch(/^\d+\.\d+\.\d+$/)
+            // an exact version, or an alias pinned to one (`npm:react@18.3.1`)
+            expect(range, name).toMatch(
+                /^(npm:(@[\w.-]+\/)?[\w.-]+@)?\d+\.\d+\.\d+$/
+            )
         }
         expect(dev['@vitest/coverage-v8']).toBe(dev.vitest)
     })
