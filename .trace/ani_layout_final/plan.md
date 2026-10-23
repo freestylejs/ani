@@ -56,9 +56,9 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
 | CP | Objective | Planned changes | Verification | Rollback point |
 |---:|---|---|---|---|
 | 1 | Single authority | New `ARCHITECTURE.md`; delete both old architecture docs and old layout `.trace` folders; this plan; drift matrix | Judge: authority consistent with the approved decision and the two answers; no stale authority left in the repo | `4aade58` |
-| 2 | P0 spikes S1–S3 | Spike browser module and a React 18.3 alias / React Compiler fixture | S1/S2/S3 stop conditions in three browsers | CP1 commit |
+| 2 | P0 spikes S1–S4 (hard gates) | Spike browser modules, React 18.3 alias, React Compiler build variant | S1–S4 stop conditions in three browsers; no production code before all pass | CP1 commit |
 | 3 | Pure core | `geometry.ts`, `motion.ts`, `plan.ts`, `solve.ts` + property tests with an independent oracle | vitest property suites; typecheck; no DOM/clock imports | CP2 commit |
-| 4 | Engine + vanilla API + hard deletion | `dom.ts`, `scope.ts`, `realize/raf.ts`, `presence_link.ts`, new `types.ts`/`index.ts`; delete `layout_group.ts`, `projection/*`, CPC tests/harness, FLIP writer; deterministic browser module | Unit tests; browser tests (flat, nesting depth 3, anchor, interruption + velocity, every snap reason, reduced motion, dispose/finish, read counts) ×3 browsers; S4 cost | CP3 commit |
+| 4 | Engine + vanilla API + hard deletion | `dom.ts`, `scope.ts`, `realize/raf.ts`, `presence_link.ts`, new `types.ts`/`index.ts`; delete `layout_group.ts`, `projection/*`, CPC tests/harness, FLIP writer; deterministic browser module | Unit tests; browser tests (flat, nesting depth 3, anchor, interruption + velocity, every snap reason, reduced motion, dispose/finish, read counts) ×3 browsers; S4 re-measured on the engine | CP3 commit |
 | 5 | React adapter + presence composition | Rewrite `use_layout.ts`, `layout_group.tsx`, `context.ts`, presence edits (popLayout containing block, opacity rule, release hold), implicit root scope, dev MutationObserver | React unit tests; browser: StrictMode, `startTransition`, `useDeferredValue`, Suspense, trigger warning, E5 ×3 browsers | CP4 commit |
 | 6 | Acceptance + product surface | E1–E5 + Gallery fixtures and frame-level tests; regression tests; seeded fuzz; cost gates; showcase rebuilt; README, docs guide, showcase page, changeset | Every row of `ARCHITECTURE.md` §11 ×3 browsers; docs examples typecheck; web build | CP5 commit |
 | 7 | P4 WAAPI engine (optional, gated) | `realize/waapi.ts` + engine option, or a recorded no-ship decision | Differential ≤ 0.5 px/frame; 120 ms block ≤ 6 %; compositor trace | CP6 commit |
@@ -73,30 +73,38 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
 - V1: the new document covers decision, model, commit/frame, solver, ownership, API, modules,
   failure, WAAPI gate, acceptance, risks; no other file claims layout authority.
 
-### CP2 — Spikes (stop conditions reopen the architecture)
-- T2.1 **S1 render capture:** prototype hook capturing in render with an epoch counter and a
-  layout-effect-scheduled microtask; scenarios: StrictMode, `startTransition`, `useDeferredValue`,
-  Suspense (fallback → content), React Compiler-compiled component; React 19 and React 18.3.
-  Must show: every commit's flush sees a capture taken before that commit's mutation, never a
-  capture consumed by the wrong commit; transition updates stale ≤ 1 in 20.
+### CP2 — Spikes (hard gates before any production code)
+- T2.1 **S1 render capture:** prototype scope with the §4.1 lifetime (task-stamped capture,
+  layout-effect-scheduled flush microtask); a `getSnapshotBeforeUpdate` probe gives the true
+  before-mutation boxes of every probed commit. Scenarios, all under StrictMode: sync and
+  batched updates; `startTransition` renders time-sliced over several tasks and pre-empted by
+  a sync commit outside the scope; `useDeferredValue`; Suspense (fallback and transition).
+  Builds: React 19 and 18.3, each plain and React Compiler-compiled. Must show: zero flushes
+  using a B other than the probe's; zero commits without a capture; a no-refresh control run
+  that does use stale B (sensitivity).
 - T2.2 **S2 first frame:** React commit → flush in microtask → 120 ms block → first painted frame
-  progress ≤ 6 % (RAF on the core clock with first `dt` = 0).
-- T2.3 **S3 composition:** an element mid presence-enter (`transform: translateY(14px) scaleX(.8)`
-  with `transform-origin: 50% 100%`) and a `scale: 1.05` / `translate: 10% 4px` authored
-  element: dividing out inner maps gives the layout box within 0.5 px of the truth
-  (`offsetLeft/Top` chain with transforms removed).
-- V2: each spike's numbers per browser in `cp2_spikes.md`; any stop condition → fallback recorded.
+  progress ≤ 6 % (RAF on the core clock with first `dt` = 0); control without the forced 0.
+- T2.3 **S3 composition:** a toast mid presence-enter (`transform: translateY(14px) scaleX(.8)`,
+  origin centre-bottom) with a scaled child, a `scale: 1.05; translate: 10% 4px` card, and a
+  three-level chain with a participant-ancestor presence transform: dividing out the inner maps
+  gives every layout box within 0.5 px of the truth (transforms removed).
+- T2.4 **S4 cost:** reads of one commit at 1,000 participants ≤ 4 ms; steady frame
+  (solve + writes) at 300 nested movers ≤ 2 ms p95.
+- V2: each spike's numbers per browser in `cp2_spikes.md`. **Gate:** a spike that misses its stop
+  condition blocks CP3; its named fallback must be applied to the architecture and re-validated
+  by the same spike before CP3 starts. A recorded failure never closes the gate.
 
 ### CP3 — Pure core
 - T3.1 `geometry.ts`: axis maps, compose/invert, element map from inner values, pose from box.
 - T3.2 `motion.ts`: defaults, validation (`ANI_INVALID_OPTIONS`), stateless check, `e`, `e′(0)`,
   reduced-motion clamp.
-- T3.3 `solve.ts`: track channels, velocity term and clamp, anchor rule, modes, crossfade
-  opacity, radius, top-down projection.
+- T3.3 `solve.ts`: track channels, unclamped velocity term with the size floor, delay rule
+  (moving nodes ignore it), anchor rule, modes, crossfade opacity, radius, top-down projection.
 - T3.4 `plan.ts`: movers by threshold, keep vs retarget with velocity, layoutId lead/follower,
   handoff, crossfade gating, culling, cap, unsupported subtree propagation, layoutDependency.
 - V3: property tests (seeded) — random trees depth ≤ 5, random timings/delays: composed drawn
-  boxes equal the independent oracle within 1e-9; c(0)=B, c(1)=A, c′(0)=v; keep vs retarget;
+  boxes equal the independent oracle within 1e-9; c(0)=B, c(1)=A, c′(0)=v for every retarget
+  (including fast, short ones), size floor only when it binds; keep vs retarget;
   every snap reason; validation errors carry the code. No DOM or clock import in these files.
 
 ### CP4 — Engine and vanilla API
@@ -107,6 +115,8 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
   other than View Transitions, old tests and the CPC browser harness; fresh-clone typecheck fixed.
 - T4.3 Browser module `layout` (manual clock): flat move, nested depth 3 with mixed modes,
   anchor, delay, interruption with velocity, layoutId handoff and crossfade with presence,
+  a participant ancestor with a constant and with an animating presence transform (§3.1),
+  a running retarget whose flush reads before any write,
   every snap reason, reduced motion (jump / maxDuration / ignore / toggle), finish, dispose,
   byte-identical restore, reads per commit and zero reads per frame.
 - T4.4 S4 cost: commit reads at 1,000 participants; steady frame at 300 nested movers (p95).
@@ -114,14 +124,17 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
 
 ### CP5 — React
 - T5.1 `useLayout` (render capture, layout-effect flush, ref, options), `LayoutGroup` (outermost
-  scope, nesting, namespacing, defaults, recreation), implicit root scope, `useLayoutGroup`,
+  scope, nesting, namespacing, defaults, recreation), implicit root scope per `(clock, document)`
+  with independent disposal, `useLayoutGroup`,
   `AnimatePresence` toucher, dev `MutationObserver`.
 - T5.2 Presence: popLayout containing block, opacity ownership registration, release hold.
-- T5.3 Tests: jsdom unit tests for the adapter contract; browser module `react_layout`: list
+- T5.3 Tests: jsdom unit tests for the adapter contract (including root-scope isolation per
+  clock and per document); browser module `react_layout`: list
   reorder, StrictMode, transition, deferred value, Suspense, memoized-subtree warning,
   `useLayoutGroup().update`, unrelated re-render identical trajectory, E5.
 - V5: green ×3 browsers; no 0.1.0 symbol (`LayoutConfig`, `deps`, `maxBoxes`, `play(`,
-  `LayoutSnapshot`, `'preserve-aspect'`, `'box'`) left in sources, docs or tests.
+  `LayoutSnapshot`, `'preserve-aspect'`, `'box'`) left in package sources or tests (the user
+  docs are rewritten in T6.4 and checked by V6).
 
 ### CP6 — Acceptance and product
 - T6.1 Fixtures and frame-level tests for E1–E5 and the reduced Gallery (parameters below).
@@ -130,7 +143,9 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
 - T6.3 Cost gates recorded at 50, 300 and 1,000 participants.
 - T6.4 Showcase rebuilt on the fixtures (CSS-flow toasts); README, docs guide, showcase page,
   changeset rewritten; docs examples typecheck.
-- V6: every row green ×3 browsers; web build green; docs examples green.
+- V6: every row green ×3 browsers; web build green; docs examples green; no 0.1.0 symbol left
+  anywhere in the repository (sources, tests, README, docs, showcase, changeset); no `spike*`
+  browser module remains.
 
 Row parameters (from the 2026-10-22 Motion research):
 - **E1** parent 150 → 300 px; child 70 → 100 px, `layoutAnchor {0.5, 0.5}`, delay 0.8 s; crosshair grandchild.
@@ -163,5 +178,6 @@ Row parameters (from the 2026-10-22 Motion research):
    for the implementer.
 3. I continue with the next checkpoint while the trial runs. A FAIL adds its failed tasks to the
    next checkpoint; that checkpoint's trial re-judges them.
-4. Sub-agents: at most three live at once (the Chief Justice counts as one). Helpers are reused
+4. A spike failure (CP2) is never carried forward: CP3 starts only after every spike passes.
+5. Sub-agents: at most three live at once (the Chief Justice counts as one). Helpers are reused
    for related work and shut down when their context no longer fits.
