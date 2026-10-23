@@ -44,6 +44,8 @@ export interface PlanNode {
      * so keep or retarget is judged on this box. `null`: judged on `a`.
      */
     readonly planned: Box | null
+    /** The parent's A in the same space as `planned` (an anchored track's offset target). */
+    readonly parentPlanned: Box | null
     readonly mode: LayoutMode
     readonly anchor: LayoutAnchor | null
     readonly motion: Motion
@@ -398,7 +400,7 @@ export function plan(input: PlanInput): Plan {
             node.track &&
             node.trackTarget &&
             !node.optionsChanged &&
-            targetMoved(node, parentNode?.planned ?? parentAfter) < threshold
+            targetMoved(node, node.parentPlanned ?? parentAfter) < threshold
         ) {
             own = KEEP
         } else if (

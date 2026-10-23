@@ -3,15 +3,20 @@
  * radii), top-down. Pure: no DOM, no clock.
  */
 import {
-    aboutOrigin,
     type Box,
+    carry,
     compose,
+    composeMoving,
     IDENTITY_MAP,
     invert,
+    invertMoving,
     type Map2,
+    type MovingMap,
     mapBox,
     type Pose,
     poseFor,
+    STILL_IDENTITY,
+    still,
 } from './geometry'
 import type { Curve, LayoutMode, Motion } from './motion'
 
@@ -78,12 +83,20 @@ export interface SolveNode {
     /** Corner radii at A: tl-x, tl-y, tr-x, tr-y, br-x, br-y, bl-x, bl-y. */
     readonly radius: readonly number[] | null
     /**
-     * The inner maps of its ancestors (root first) at the flush that planned
-     * this node, when they differ from those its parent's map was solved
-     * with: its track lives in that flush's visual space, and a presence
-     * layer changed since then draws over it (§3.1, §11).
+     * The ancestors (root first) whose presence matrix at the flush that
+     * planned this node differs from the one frozen with their own geometry:
+     * its track lives in that flush's visual space (§3.1).
      */
-    readonly inners?: readonly Map2[] | null
+    readonly layers?: readonly Layer[] | null
+}
+
+/**
+ * Ancestor `at` as a node's flush saw it: `map` undoes the ancestor's own
+ * inner map and applies the one of that flush, `Qₐ⁻¹ ∘ Qₐ′`.
+ */
+export interface Layer {
+    readonly at: number
+    readonly map: Map2
 }
 
 export interface Solved {
@@ -238,24 +251,171 @@ function offsetVelocity(
     return d / track.duration
 }
 
+/** A node of the epoch recurrence: its parent and its layers. */
+export type EpochNode = Pick<SolveNode, 'parent' | 'layers'>
+
+/** Maps of one frame, plain or with their time derivative. */
+interface Algebra<M> {
+    readonly id: M
+    compose(outer: M, inner: M): M
+    invert(map: M): M
+    lift(map: Map2): M
+}
+
+const PLAIN: Algebra<Map2> = {
+    id: IDENTITY_MAP,
+    compose,
+    invert,
+    lift: (map) => map,
+}
+
+const MOVING: Algebra<MovingMap> = {
+    id: STILL_IDENTITY,
+    compose: composeMoving,
+    invert: invertMoving,
+    lift: still,
+}
+
 /**
- * Drawn boxes of every node. A follower is drawn at its lead and an anchored
- * node relative to its parent, whatever their order in `nodes`.
+ * The map each node's parent is drawn with in the node's own epoch (§3.1),
+ * from every node's full map `full(i)`, which carries its CSS box onto its
+ * drawn box whatever epoch it was solved in. `Ωₐ`, the full map of `a` under
+ * every ancestor's own inner map, is `corrₐ⁻¹ ∘ fullₐ`; a node sees its
+ * parent through `corr ∘ Ω_parent` with `corr = Π (Ωₐ ∘ Γₐ ∘ Ωₐ⁻¹)` over its
+ * layers, root first. One map per node and one per layer (§5.3).
  */
-export function drawnBoxes(nodes: readonly SolveNode[]): Box[] {
-    const drawn: (Box | undefined)[] = new Array(nodes.length)
-    const at = (i: number): Box => {
-        const known = drawn[i]
+function epochs<M>(
+    nodes: readonly EpochNode[],
+    full: (i: number) => M,
+    alg: Algebra<M>
+) {
+    const omegas: (M | undefined)[] = new Array(nodes.length)
+    const corrs: (M | null | undefined)[] = new Array(nodes.length)
+    const corr = (i: number): M | null => {
+        let c = corrs[i]
+        if (c === undefined) {
+            c = null
+            for (const layer of nodes[i]!.layers ?? []) {
+                const o = omega(layer.at)
+                const step = alg.compose(
+                    alg.compose(o, alg.lift(layer.map)),
+                    alg.invert(o)
+                )
+                c = c === null ? step : alg.compose(c, step)
+            }
+            corrs[i] = c
+        }
+        return c
+    }
+    const omega = (i: number): M => {
+        let o = omegas[i]
+        if (o === undefined) {
+            const c = corr(i)
+            o = c === null ? full(i) : alg.compose(alg.invert(c), full(i))
+            omegas[i] = o
+        }
+        return o
+    }
+    return {
+        corr,
+        parent(i: number): M {
+            const parent = nodes[i]!.parent
+            if (parent < 0) return alg.id
+            const c = corr(i)
+            return c === null ? omega(parent) : alg.compose(c, omega(parent))
+        },
+    }
+}
+
+/** `epochs` over moving maps: carries a box with its velocity (§5.5). */
+export function movingParents(
+    nodes: readonly EpochNode[],
+    full: (i: number) => MovingMap
+): (i: number) => MovingMap {
+    return epochs(nodes, full, MOVING).parent
+}
+
+/** The CSS box `L = Q⁻¹(X)`, local frame. */
+function cssOf(node: SolveNode): Box {
+    return mapBox(invert(node.inner), node.box)
+}
+
+/** The map carrying `css` onto `drawn`; identity on an empty axis. */
+function onto(css: Box, drawn: Box): Map2 {
+    const kx = css.w > 0 ? drawn.w / css.w : 1
+    const ky = css.h > 0 ? drawn.h / css.h : 1
+    return {
+        x: { k: kx, b: drawn.x - kx * css.x },
+        y: { k: ky, b: drawn.y - ky * css.y },
+    }
+}
+
+/**
+ * Drawn boxes of every node and, with `rates`, their analytic velocities. A
+ * follower is drawn at its lead and an anchored node relative to its parent,
+ * whatever their order in `nodes`; the parent as the anchored node's own
+ * epoch draws it (§5.4).
+ */
+function drawnMotion(
+    nodes: readonly SolveNode[],
+    rates: boolean
+): { boxes: Box[]; velocities: BoxVelocity[] } {
+    const boxes: (Box | undefined)[] = new Array(nodes.length)
+    const velocities: (BoxVelocity | undefined)[] = new Array(nodes.length)
+    const parents: ({ box: Box; velocity: Box } | undefined)[] = new Array(
+        nodes.length
+    )
+    let maps: ReturnType<typeof epochs<MovingMap>> | null = null
+    const full = (i: number): MovingMap => {
+        const css = cssOf(nodes[i]!)
+        const box = boxAt(i)
+        const v = rates ? velocityAt(i) : ZERO_VELOCITY
+        const kx = css.w > 0 ? box.w / css.w : 1
+        const ky = css.h > 0 ? box.h / css.h : 1
+        const rx = css.w > 0 ? v.w / css.w : 0
+        const ry = css.h > 0 ? v.h / css.h : 0
+        return {
+            map: {
+                x: { k: kx, b: box.x - kx * css.x },
+                y: { k: ky, b: box.y - ky * css.y },
+            },
+            rate: {
+                x: { k: rx, b: v.x - rx * css.x },
+                y: { k: ry, b: v.y - ry * css.y },
+            },
+        }
+    }
+    /** The parent's drawn box and velocity in node `i`'s epoch: `corrᵢ ∘ corr_parent⁻¹`. */
+    const parentOf = (i: number): { box: Box; velocity: Box } => {
+        const known = parents[i]
+        if (known) return known
+        const node = nodes[i]!
+        const box = boxAt(node.parent)
+        const velocity = rates ? velocityAt(node.parent) : ZERO_VELOCITY
+        let seen = { box, velocity }
+        if (node.layers || nodes[node.parent]!.layers) {
+            maps ??= epochs(nodes, full, MOVING)
+            const own = maps.corr(i)
+            const theirs = maps.corr(node.parent)
+            let shift = own ?? STILL_IDENTITY
+            if (theirs) shift = composeMoving(shift, invertMoving(theirs))
+            seen = carry(shift, box, velocity)
+        }
+        parents[i] = seen
+        return seen
+    }
+    const boxAt = (i: number): Box => {
+        const known = boxes[i]
         if (known) return known
         const node = nodes[i]!
         const track = node.track
         let box: Box
         if (node.follow >= 0) {
-            box = at(node.follow)
+            box = boxAt(node.follow)
         } else if (track) {
             box = ownBox(track, node.elapsed)
             if (track.anchor && node.parent >= 0) {
-                const parent = at(node.parent)
+                const parent = parentOf(i).box
                 const off = anchorOffset(track.anchor, track, node.elapsed)
                 const { u, v } = track.anchor
                 box = {
@@ -268,24 +428,17 @@ export function drawnBoxes(nodes: readonly SolveNode[]): Box[] {
         } else {
             box = node.a
         }
-        drawn[i] = box
+        boxes[i] = box
         return box
     }
-    for (let i = 0; i < nodes.length; i++) at(i)
-    return drawn as Box[]
-}
-
-/** Analytic velocity of every node's drawn box, in any order (see `drawnBoxes`). */
-export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
-    const velocity: (BoxVelocity | undefined)[] = new Array(nodes.length)
-    const at = (i: number): BoxVelocity => {
-        const known = velocity[i]
+    const velocityAt = (i: number): BoxVelocity => {
+        const known = velocities[i]
         if (known) return known
         const node = nodes[i]!
         const track = node.track
         let v: BoxVelocity
         if (node.follow >= 0) {
-            v = at(node.follow)
+            v = velocityAt(node.follow)
         } else if (track) {
             const holding = isHolding(track, node.elapsed)
             const tau = progress(track, node.elapsed)
@@ -293,7 +446,7 @@ export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
             const h = holding ? 0 : channelVelocity(track, 3, tau)
             const rule = track.anchor
             if (rule && node.parent >= 0) {
-                const parent = at(node.parent)
+                const parent = parentOf(i).velocity
                 const ox = holding
                     ? 0
                     : offsetVelocity(rule.fromX, rule.toX, rule.kx, track, tau)
@@ -319,11 +472,24 @@ export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
         } else {
             v = ZERO_VELOCITY
         }
-        velocity[i] = v
+        velocities[i] = v
         return v
     }
-    for (let i = 0; i < nodes.length; i++) at(i)
-    return velocity as BoxVelocity[]
+    for (let i = 0; i < nodes.length; i++) {
+        boxAt(i)
+        if (rates) velocityAt(i)
+    }
+    return { boxes: boxes as Box[], velocities: velocities as BoxVelocity[] }
+}
+
+/** Drawn boxes of every node (see `drawnMotion`). */
+export function drawnBoxes(nodes: readonly SolveNode[]): Box[] {
+    return drawnMotion(nodes, false).boxes
+}
+
+/** Analytic velocity of every node's drawn box (see `drawnMotion`). */
+export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
+    return drawnMotion(nodes, true).velocities
 }
 
 /** The lead's weight `from + (1 − from)·clamp(e(τ))`; the follower's is its complement. */
@@ -333,45 +499,15 @@ function fadeWeight(fade: Fade): number {
     return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, w))
 }
 
-/** The ancestors' solved poses composed with `inners` instead of their own inner maps. */
-function epochMap(
-    nodes: readonly SolveNode[],
-    out: readonly Solved[],
-    parent: number,
-    inners: readonly Map2[]
-): Map2 {
-    const chain: number[] = []
-    for (let k = parent; k >= 0; k = nodes[k]!.parent) chain.unshift(k)
-    let map = IDENTITY_MAP
-    chain.forEach((k, j) => {
-        const a = nodes[k]!
-        map = compose(
-            compose(map, aboutOrigin(out[k]!.pose, a.ox, a.oy)),
-            inners[j]!
-        )
-    })
-    return map
-}
-
 /** Poses, opacities and radii of every node (parents first). */
 export function solve(nodes: readonly SolveNode[]): Solved[] {
     const drawn = drawnBoxes(nodes)
-    const out: Solved[] = []
-    for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i]!
+    const fulls = nodes.map((node, i) => onto(cssOf(node), drawn[i]!))
+    const parentMap = epochs(nodes, (i) => fulls[i]!, PLAIN).parent
+    return nodes.map((node, i) => {
         const box = drawn[i]!
-        const parentMap =
-            node.parent < 0
-                ? IDENTITY_MAP
-                : node.inners
-                  ? epochMap(nodes, out, node.parent, node.inners)
-                  : out[node.parent]!.map
-        const local = mapBox(invert(parentMap), box)
+        const local = mapBox(invert(parentMap(i)), box)
         const pose = poseFor(local, node.box, node.ox, node.oy)
-        const map = compose(
-            compose(parentMap, aboutOrigin(pose, node.ox, node.oy)),
-            node.inner
-        )
         let opacity: number | null = null
         if (node.fade) {
             const w = fadeWeight(node.fade)
@@ -383,7 +519,6 @@ export function solve(nodes: readonly SolveNode[]): Solved[] {
             const ky = node.a.h / box.h
             radius = node.radius.map((r, j) => r * (j % 2 === 0 ? kx : ky))
         }
-        out.push({ drawn: box, pose, map, opacity, radius })
-    }
-    return out
+        return { drawn: box, pose, map: fulls[i]!, opacity, radius }
+    })
 }
