@@ -1246,9 +1246,81 @@ export async function J16(): Promise<string> {
             () => done.value !== null
         )
         expectEqual(done.value!.status, 'ended', 'never interrupted')
-        return `${sets} flushes with equivalent options (defaults, inherited fields, spring key order; inside the delay too); on the oracle, max error ${worst.toFixed(4)} px`
+        const defaults = await defaultTimingLeg()
+        return `${sets} flushes with equivalent options (defaults, inherited fields, spring key order; inside the delay too); on the oracle, max error ${worst.toFixed(4)} px; ${defaults}`
     } finally {
         h.dispose()
+    }
+}
+
+/**
+ * CP6 trial J-016: under a group without a timing, an omitted timing and an
+ * explicit `timing.easeOut()` are the same track; `easeIn()` is another.
+ */
+async function defaultTimingLeg(): Promise<string> {
+    const h = harness({ motion: { duration: 1 } })
+    const control = harness({ motion: { duration: 1 } })
+    try {
+        const css =
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        const e = node(h.root, css)
+        // in view: the control's own root lies below the first one
+        const c = node(h.root, css.replace('top: 0', 'top: 60px'))
+        h.add(e)
+        control.add(c)
+        const before = pageBox(e)
+        h.group.capture()
+        control.group.capture()
+        e.style.left = '200px'
+        c.style.left = '200px'
+        const after = pageBox(e)
+        const done = report(h.group.flush())
+        const changed = report(control.group.flush())
+        const track = spec(before, after, {
+            duration: 1,
+            timing: timing.easeOut(),
+        })
+        let worst = 0
+        let sets = 0
+        await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        e,
+                        expectedBox(track, elapsed),
+                        `default timing at ${elapsed.toFixed(3)} s`
+                    )
+                )
+                if (Math.round(elapsed / DT) % 4 === 3) {
+                    h.group.capture()
+                    h.group.set(
+                        e,
+                        sets % 2 === 0
+                            ? { motion: { timing: timing.easeOut() } }
+                            : {}
+                    )
+                    void h.group.flush()
+                    sets += 1
+                }
+            },
+            () => done.value !== null
+        )
+        expectEqual(done.value!.status, 'ended', 'default timing kept')
+        // a genuine change retargets
+        control.mc.frame(FRAME_MS)
+        control.mc.frame(FRAME_MS * 12)
+        control.group.capture()
+        control.group.set(c, { motion: { timing: timing.easeIn() } })
+        void control.group.flush()
+        await settleMicrotasks()
+        expectEqual(changed.value?.status, 'interrupted', 'easeIn retargets')
+        return `omitted ↔ explicit ease-out ${sets}× on the oracle within ${worst.toFixed(4)} px, ended; easeIn interrupts`
+    } finally {
+        h.dispose()
+        control.dispose()
     }
 }
 
