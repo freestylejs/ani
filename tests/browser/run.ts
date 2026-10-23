@@ -31,16 +31,23 @@ const MODULES = [
     'svelte',
     'layout',
     'react_layout',
-    'spike',
-    'spike_r18',
-    'spike_rc',
-    'spike_r18c',
+    'acceptance',
+    'regressions',
+    'waapi',
+    'react_layout_r18',
+    'acceptance_r18',
+    'acceptance_rc',
+    'acceptance_r18c',
 ] as const
-/** Modules built against React 18.3 and/or with the React Compiler. */
+/**
+ * Modules built against React 18.3 and/or with the React Compiler applied to
+ * the showcase fixtures (the same cases, re-exported).
+ */
 const VARIANTS: Partial<Record<(typeof MODULES)[number], BrowserVariant>> = {
-    spike_r18: { react18: true },
-    spike_rc: { compiler: true },
-    spike_r18c: { react18: true, compiler: true },
+    react_layout_r18: { react18: true },
+    acceptance_r18: { react18: true },
+    acceptance_rc: { compiler: true },
+    acceptance_r18c: { react18: true, compiler: true },
 }
 const CASE_TIMEOUT_MS = 10_000
 const LOAD_TIMEOUT_MS = 10_000
@@ -430,7 +437,11 @@ async function findCases(name: ModuleName): Promise<string[]> {
         entryPoints: [
             fileURLToPath(new URL(`./cases/${name}.ts`, import.meta.url)),
         ],
-        bundle: false,
+        // bundled with packages external, so a variant's `export *` lists
+        bundle: true,
+        packages: 'external',
+        format: 'esm',
+        jsx: 'automatic',
         metafile: true,
         write: false,
         logLevel: 'silent',

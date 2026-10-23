@@ -1,151 +1,573 @@
 ---
 title: Layout and presence
-description: Declarative layout animation, shared elements and exit retention for Ani 2.
+description: Animate layout changes, shared elements and exits with @freestylejs/ani-layout and its React adapter.
 ---
 
-`@freestylejs/ani-layout` is the optional layout layer for Ani. It keeps the ANI
-tree and core small, and chooses the cheapest browser-native realization for
-the job:
+`@freestylejs/ani-layout` animates layout changes. You mark elements; when a change moves or resizes a marked element, it animates from where it was drawn to where layout put it. The React adapter, `@freestylejs/ani-react/layout`, does this on every commit without any call from you.
 
-- **View Transitions** for discrete route/page/shared-element changes.
-- **WAAPI FLIP** for interactive reorder, tabs, accordions and cards.
-- **Snap** when measurement is unreliable or a change is too large.
+```sh
+pnpm add @freestylejs/ani-core @freestylejs/ani-layout @freestylejs/ani-react
+```
 
-The common path is declarative. You place a boundary and declare participants;
-you do not call `capture`/`play` by hand.
+`@freestylejs/ani-layout` is an optional peer dependency of `@freestylejs/ani-react`. Only the `@freestylejs/ani-react/layout` entry needs it.
 
-## Layout
+### How it works
 
-```text
+-   **Before the change, capture.** Every render of a participant, a `LayoutGroup` or an `AnimatePresence` reads where the participants of its group are drawn now. React has not changed the DOM yet, so this is what the user sees.
+-   **After the commit, flush.** One microtask per group, after every layout effect and before paint, reads where layout put each participant and starts an animation for every box that moved by at least `threshold` pixels (default 1).
+-   **Frames do no reads.** Each frame computes every moving box from its two ends, parent before child, and writes only `translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` with `radius: true`). The animation runs on Ani's clock, together with every other Ani animation.
+-   **Both ends are what the user sees.** The start is the box as it was drawn, including any transform on screen (an animation in progress, a presence enter, a hover scale). The end is where the element will rest. An interrupted element therefore continues from where it is drawn, and nested elements stay exact at any depth.
+-   **Jump, never move wrongly.** An element the engine cannot animate exactly jumps to its final layout and is reported with a [reason](#when-an-element-jumps).
+
+The first painted frame after a change shows the previous picture; the last frame is the real layout with your inline styles exactly as they were. A participant that mounts has no previous box: it appears where it lays out (give it an enter with [presence](#presence)), unless it takes over a [`layoutId`](#shared-elements). On the server nothing runs, and hydration never animates.
+
+### Animate a list
+
+Mark each item with `useLayout`. Nothing else is needed: the state change re-renders the items, and every item whose box changed animates.
+
+```tsx
+import { useLayout } from '@freestylejs/ani-react/layout'
+import { useState } from 'react'
+
+type Todo = { id: string; label: string }
+
+function Item({ todo }: { todo: Todo }) {
+    const ref = useLayout<HTMLLIElement>({ layout: 'position' })
+    return <li ref={ref}>{todo.label}</li>
+}
+
+export function TodoList({ initial }: { initial: Todo[] }) {
+    const [todos, setTodos] = useState(initial)
+    return (
+        <>
+            <button
+                type="button"
+                onClick={() => setTodos((list) => [...list].reverse())}
+            >
+                Reverse
+            </button>
+            <ul>
+                {todos.map((todo) => (
+                    <Item key={todo.id} todo={todo} />
+                ))}
+            </ul>
+        </>
+    )
+}
+```
+
+`useLayout(options?)` returns a ref callback. It is stable while the element stays in the same group, so it never re-attaches on its own. Pass `ref` in the options to forward the element to another ref as well.
+
+### Options
+
+| Option | Default | Meaning |
+| :--- | :--- | :--- |
+| `layout` | `true` | What animates; see [Modes](#modes). |
+| `layoutId` | — | Shared identity; see [Shared elements](#shared-elements). |
+| `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant; see [Anchored children](#anchored-children). |
+| `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
+| `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps to its new box instead of animating (not reported). Use it to animate only for the changes you name. |
+| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. |
+| `motion` | — | `{ duration, delay, timing }` in seconds; see [Motion](#motion). |
+| `ref` | — | Another ref that receives the element. |
+
+Options are compared by value on every render: an inline object or an inline `timing.spring({ ... })` with the same values changes nothing. Only a change of `layout`, `layoutAnchor`, `radius` or `motion` restarts a running animation, from where the element is drawn.
+
+#### Modes
+
+| `layout` | Position | Size | Use it for |
+| :--- | :--- | :--- | :--- |
+| `true` | animates | animates | Surfaces: cards, panels, images. |
+| `'position'` | animates | final size at once | Text and list rows. Under a parent that scales, the element is counter-scaled, so its content never stretches. |
+| `'size'` | final position at once | animates | A box that grows in place. |
+
+A size animation scales the element, and everything inside it that is not a participant scales with it. Mark text inside a resizing surface with `layout: 'position'` to keep its glyphs at their size:
+
+```tsx
+import { useLayout } from '@freestylejs/ani-react/layout'
+import type { ReactNode } from 'react'
+
+export function Panel({ open, children }: { open: boolean; children: ReactNode }) {
+    const panel = useLayout<HTMLDivElement>({ radius: true })
+    const title = useLayout<HTMLHeadingElement>({ layout: 'position' })
+    return (
+        <div ref={panel} className={open ? 'panel open' : 'panel'}>
+            <h3 ref={title}>Details</h3>
+            {open && <p>{children}</p>}
+        </div>
+    )
+}
+```
+
+#### Motion
+
+| Field | Default | Meaning |
+| :--- | :--- | :--- |
+| `duration` | `0.35` | Seconds. |
+| `delay` | `0` | Seconds. Applies to an element at rest when the change happens; an element that is already moving starts at once and keeps its speed. |
+| `timing` | `timing.easeOut()` | A core timing function. |
+
+The timing must be stateless and must start with a finite slope, because a moving element carries its velocity into the curve. `timing.linear()`, `timing.bezier(...)`, the CSS presets and `timing.spring(...)` work. `timing.dynamicSpring(...)` and a bezier with `x1 = 0` and `y1 ≠ 0` throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` as soon as you pass them. Like everywhere in Ani, `timing.spring` is fitted to `duration` (see [timing](/en/docs/core-api/timing)).
+
+A participant's `motion` is merged field by field over the `motion` of its groups, outermost first:
+
+```tsx
+import { timing } from '@freestylejs/ani-core'
 import { LayoutGroup, useLayout } from '@freestylejs/ani-react/layout'
+import type { ReactNode } from 'react'
 
-function Row({ item, index }) {
-  const ref = useLayout({ layout: 'position' })
-  return <li ref={ref} style={{ left: index * 40 }}>{item.label}</li>
+const springy = {
+    duration: 0.5,
+    timing: timing.spring({ m: 1, k: 300, c: 30 }),
 }
 
-function List({ items }) {
-  return (
-    <LayoutGroup motion={{ duration: 0.3 }} deps={[items]}>
-      <ul>
-        {items.map((item, index) => (
-          <Row key={item.id} item={item} index={index} />
-        ))}
-      </ul>
-    </LayoutGroup>
-  )
+export function Springy({ children }: { children: ReactNode }) {
+    return <LayoutGroup motion={springy}>{children}</LayoutGroup>
+}
+
+export function Row({ label }: { label: string }) {
+    // inside <Springy>: duration 0.5 and the spring from the group,
+    // plus a delay of its own
+    const ref = useLayout<HTMLLIElement>({ motion: { delay: 0.05 } })
+    return <li ref={ref}>{label}</li>
 }
 ```
 
-- `LayoutGroup` renders no DOM wrapper.
-- `deps` limits transactions to relevant updates. Without `deps`, every
-  boundary update opens a transaction.
-- `useLayout` registers the element with the nearest group.
-- `layout: 'position'` animates translation only.
-- `layout: 'box'` adds scale and radius correction; use it for surfaces, not
-  text-heavy content.
-- `layout: 'size'` scales size around the origin while position snaps;
-  `layout: 'preserve-aspect'` uses one uniform scale.
-  If box motion is unavailable/capped for either mode, the participant snaps;
-  it never degrades to a zero-translate position animation.
-- `layoutAnchor={{ x: 0.5, y: 1 }}` anchors requested box motion.
-- Duplicate `layoutId` participants crossfade unless `layoutCrossfade={false}`.
-- `layoutDependency` suppresses an animation when its value is unchanged.
-  The comparison is against the value recorded at `capture()`; core callers
-  should capture before calling `set()` with a new dependency.
-- `useLayoutGroup().update(fn)` is the escape hatch for changes no boundary sees.
-- `<LayoutConfig motion={...} reducedMotion="jump">` supplies inherited defaults;
-  a component's own `motion`/`reducedMotion` wins.
+### Shared elements
 
-The measured position path makes no `getComputedStyle` calls and writes no
-inline styles. FLIP is driven by the browser's `Element.animate()`.
+Elements with the same `layoutId` are one element to the user. When the element that carries an id leaves and another one with the id is rendered, the new one starts from the box (and the speed) of the one that left.
 
-## Presence
+-   **Lead.** Per id, the newest mounted element that is not exiting leads. Two mounted, non-exiting elements with one id print a development warning; the newest leads and the other animates on its own.
+-   **Handoff.** The new lead starts from the drawn box of the element it replaces: the live box of an element exiting under presence, or the box of a removed element, kept for `retain` seconds (default 1).
+-   **Crossfade.** When the previous element is exiting under [presence](#presence) and the box moved, both draw at the lead's box while the lead fades in and the exiting element fades out, on the lead's curve. The exiting element stays invisible until presence removes it, and presence waits for the crossfade to end. `layoutCrossfade: false` on either element turns it off.
+-   **Opacity.** If the exiting element's presence animates `opacity` itself, there is no crossfade and a development warning is printed. Animate opacity on a child instead.
 
-```text
-import { AnimatePresence, usePresence } from '@freestylejs/ani-react/layout'
+A card that opens into a detail view, with the surface, the image and the title as three nested ids:
 
+```tsx
+import { ani, timing } from '@freestylejs/ani-core'
+import {
+    AnimatePresence,
+    LayoutGroup,
+    useLayout,
+    usePresence,
+} from '@freestylejs/ani-react/layout'
+import { useState } from 'react'
+
+type CardData = { id: string; title: string; image: string }
+
+const cardMotion = {
+    duration: 0.45,
+    timing: timing.spring({ m: 1, k: 300, c: 30 }),
+}
+
+// An exit that changes nothing: presence keeps the detail mounted, and marks
+// it as exiting, until the crossfade back to the card has ended.
+const handoff = {
+    present: { translateY: 0 },
+    exit: ani({ to: { translateY: 0 }, duration: 0.1 }),
+}
+
+function Card({ card, onOpen }: { card: CardData; onOpen: () => void }) {
+    const surface = useLayout<HTMLButtonElement>({
+        layoutId: `card-${card.id}`,
+        radius: true,
+    })
+    const image = useLayout<HTMLImageElement>({ layoutId: `image-${card.id}` })
+    const title = useLayout<HTMLSpanElement>({
+        layoutId: `title-${card.id}`,
+        layout: 'position',
+    })
+    return (
+        <button ref={surface} type="button" className="card" onClick={onOpen}>
+            <img ref={image} src={card.image} alt="" />
+            <span ref={title}>{card.title}</span>
+        </button>
+    )
+}
+
+function Detail({ card, onClose }: { card: CardData; onClose: () => void }) {
+    const presence = usePresence(handoff)
+    const surface = useLayout<HTMLElement>({
+        layoutId: `card-${card.id}`,
+        radius: true,
+    })
+    const image = useLayout<HTMLImageElement>({ layoutId: `image-${card.id}` })
+    const title = useLayout<HTMLHeadingElement>({
+        layoutId: `title-${card.id}`,
+        layout: 'position',
+    })
+    return (
+        <div ref={presence.ref} style={presence.style} className="overlay">
+            <article ref={surface} className="detail">
+                <img ref={image} src={card.image} alt="" />
+                <h2 ref={title}>{card.title}</h2>
+                <button type="button" onClick={onClose}>
+                    Close
+                </button>
+            </article>
+        </div>
+    )
+}
+
+export function Cards({ cards }: { cards: CardData[] }) {
+    const [openId, setOpenId] = useState<string | null>(null)
+    const open = cards.find((card) => card.id === openId)
+    return (
+        <LayoutGroup motion={cardMotion}>
+            <ul className="grid">
+                {cards.map((card) => (
+                    <li key={card.id} className="cell">
+                        {card.id !== openId && (
+                            <Card card={card} onOpen={() => setOpenId(card.id)} />
+                        )}
+                    </li>
+                ))}
+            </ul>
+            <AnimatePresence mode="popLayout">
+                {open && (
+                    <Detail
+                        key={open.id}
+                        card={open}
+                        onClose={() => setOpenId(null)}
+                    />
+                )}
+            </AnimatePresence>
+        </LayoutGroup>
+    )
+}
+```
+
+-   **Open.** The card unmounts and the detail mounts in the same commit. Each of the three ids starts from the card's boxes. The card is removed, not exiting, so there is no crossfade: the detail grows out of the card.
+-   **Close.** The detail exits under presence and the card mounts again. The card starts from the detail's drawn boxes, and the two crossfade on the way back.
+-   The grid cell stays rendered, so the grid keeps its shape while the card is open.
+-   `layout: 'position'` keeps the title's text at its final size instead of stretching it.
+-   Presence releases an exit after at most its exit duration plus one second (the `maxExitMs` watchdog). Keep the layout motion shorter than that, or raise `maxExitMs`.
+
+### Anchored children
+
+`layoutAnchor` keeps a point of an element on the same point of its parent participant, on every frame. The parent participant is the nearest ancestor that is a participant of the same group; without one, the anchor is ignored and the element animates by its `layout` mode.
+
+```tsx
+import { useLayout } from '@freestylejs/ani-react/layout'
+
+export function Stage({ wide }: { wide: boolean }) {
+    const stage = useLayout<HTMLDivElement>()
+    const dot = useLayout<HTMLDivElement>({
+        layoutAnchor: { x: 0.5, y: 0.5 },
+        motion: { delay: 0.8 },
+    })
+    return (
+        <div ref={stage} className={wide ? 'stage wide' : 'stage'}>
+            <div ref={dot} className={wide ? 'dot large' : 'dot'} />
+        </div>
+    )
+}
+```
+
+When `wide` turns on, the stage grows. The dot's centre stays on the stage's drawn centre for the whole run, and the dot keeps its size until its own delay of 0.8 seconds has passed. If the anchor points do not coincide, the difference moves from its old to its new value on the dot's own curve.
+
+### Groups
+
+A participant with no `LayoutGroup` above it joins an implicit root group, one per clock and document, created on first use and disposed when its last participant leaves. All participants of a group are captured and flushed together, and share `layoutId`s.
+
+`LayoutGroup` renders no DOM. The outermost `LayoutGroup` owns a group; nested ones join it:
+
+-   `id` namespaces the `layoutId`s of the participants below it (`outer/inner/id`), so two lists with the same ids do not hand off to each other.
+-   `motion` supplies defaults, merged field by field from the outermost group to the participant.
+-   Group options are read from the outermost `LayoutGroup` only. A nested group that sets one prints a development warning.
+
+| Group option | Default | Meaning |
+| :--- | :--- | :--- |
+| `clock` | `defaultClock` | The Ani clock that drives the group. |
+| `reducedMotion` | `'jump'` | See [Reduced motion](#reduced-motion). |
+| `threshold` | `1` | Pixels a box must move to animate. |
+| `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
+| `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
+| `onSnap` | — | `(element, reason) => void` for every element that jumped. The latest prop is always called. |
+
+A change of `clock`, `reducedMotion`, `threshold`, `maxNodes` or `retain` creates a new group, and running animations jump to their end. Define these values once, outside the component, and pass the same objects on every render.
+
+### When a change animates
+
+A commit animates when it renders a participant, a `LayoutGroup` or an `AnimatePresence` of the group: rendering is when the boxes are captured. A change that renders none of them, for example a reorder in a component whose items are memoized, changes the DOM without a capture, so it does not animate. In development, a `MutationObserver` prints one warning per group when that happens.
+
+Two fixes:
+
+-   Put the `LayoutGroup` inside the component that owns the state. Every render of that component renders the group.
+-   Wrap the change in `useLayoutGroup().update(fn)`. It captures, runs `fn` inside `flushSync`, and flushes.
+
+```tsx
+import { useLayout, useLayoutGroup } from '@freestylejs/ani-react/layout'
+import { memo, useState } from 'react'
+
+const Tile = memo(function Tile({ label }: { label: string }) {
+    const ref = useLayout<HTMLLIElement>({ layout: 'position' })
+    return <li ref={ref}>{label}</li>
+})
+
+export function Board({ initial }: { initial: string[] }) {
+    const [labels, setLabels] = useState(initial)
+    const layout = useLayoutGroup()
+    const reverse = () => {
+        void layout.update(() => setLabels((list) => [...list].reverse()))
+    }
+    return (
+        <>
+            <button type="button" onClick={reverse}>
+                Reverse
+            </button>
+            <ul>
+                {labels.map((label) => (
+                    <Tile key={label} label={label} />
+                ))}
+            </ul>
+        </>
+    )
+}
+```
+
+`useLayoutGroup()` returns the nearest group's controls (the implicit root's when there is no `LayoutGroup`):
+
+-   `update(fn)` resolves with the [report](#when-an-element-jumps) of the change.
+-   `finish()` jumps every running animation of the group to its end.
+
+Under `StrictMode`, the replayed renders, effects and ref callbacks keep one group and each participant's captured box. Transitions, deferred values and Suspense work as well: a render that React restarts in a later task captures again.
+
+### Presence
+
+`AnimatePresence` keeps a removed child mounted while it exits. It renders no DOM and never clones its children; each child that should animate calls `usePresence` with its motion.
+
+| `AnimatePresence` prop | Default | Meaning |
+| :--- | :--- | :--- |
+| `initial` | `false` | Whether the children of the first render play their enter. |
+| `mode` | `'sync'` | `'sync'`: exits and enters run together. `'popLayout'`: the exiting child leaves the flow at once, so its siblings move from the first frame. `'wait'`: an entering child waits until the exit has finished. |
+| `custom` | — | Data passed to the children as `usePresence().custom`. |
+| `onExitComplete` | — | `(key) => void` when a child's exit has finished and it is removed. |
+
+`usePresence(motion, options?)` returns `{ ref, style, isPresent, custom }`. The motion has `present` (the resting values), a required `exit` node, and an optional `enter` node and `initial` values. Spread `style` after your own styles: it carries `initial` from the first render (also on the server) until the enter has finished, and the position of an exiting child under `popLayout`. Use `isPresent` to make an exiting child inert. For an exit you run yourself, `usePresenceControl()` returns `{ isPresent, safeToRemove }`; it gets no `popLayout` style and takes no part in a crossfade.
+
+**`popLayout`.** In the render where a child stops being present, its box is measured relative to its containing block: the nearest ancestor that contains absolutely positioned elements (a positioned, transformed, filtered or contained ancestor), or the initial containing block. The commit lifts it to `position: absolute` at that box, before the flush, so the siblings are measured without it. No wrapper is required; a `position: relative` list keeps an exiting child inside the list's own scrolling and clipping.
+
+A toast stack, where layout and presence share each element:
+
+```tsx
+import { ani, timing } from '@freestylejs/ani-core'
+import {
+    AnimatePresence,
+    useLayout,
+    usePresence,
+} from '@freestylejs/ani-react/layout'
 const toastMotion = {
-  present: { opacity: 1, translateY: 0 },
-  initial: { opacity: 0, translateY: 8 },
-  exit: ani({ to: { opacity: 0, translateY: 8 }, duration: 0.18 }),
+    present: { opacity: 1, translateY: 0, scaleX: 1 },
+    initial: { opacity: 0, translateY: 14, scaleX: 0.8 },
+    enter: ani({
+        to: { opacity: 1, translateY: 0, scaleX: 1 },
+        duration: 0.3,
+        timing: timing.easeOut(),
+    }),
+    exit: ani({
+        to: { opacity: 0, translateY: 10, scaleX: 0.9 },
+        duration: 0.2,
+    }),
 }
 
-function Toast({ toast }) {
-  const presence = usePresence(toastMotion)
-  return (
-    <div
-      ref={presence.ref}
-      style={{ ...baseToastStyle, ...presence.style }}
-      inert={!presence.isPresent}
-    >
-      {toast.text}
-    </div>
-  )
+type ToastData = { id: string; text: string }
+
+function Toast({ toast }: { toast: ToastData }) {
+    const presence = usePresence(toastMotion)
+    // `ref` forwards the element to presence: one stable ref callback (a
+    // merged ref created inline would be new on every render)
+    const ref = useLayout<HTMLLIElement>({
+        layout: 'position',
+        ref: presence.ref,
+    })
+    return (
+        <li
+            ref={ref}
+            className="toast"
+            style={presence.style}
+            inert={!presence.isPresent}
+        >
+            {toast.text}
+        </li>
+    )
 }
 
-function Toasts({ toasts }) {
-  return (
-    <AnimatePresence initial={false} mode="popLayout">
-      {toasts.map((toast) => <Toast key={toast.id} toast={toast} />)}
-    </AnimatePresence>
-  )
+export function Toasts({ toasts }: { toasts: ToastData[] }) {
+    return (
+        <ul className="toasts">
+            <AnimatePresence initial={false} mode="popLayout">
+                {toasts.map((toast) => (
+                    <Toast key={toast.id} toast={toast} />
+                ))}
+            </AnimatePresence>
+        </ul>
+    )
 }
 ```
 
-The exiting element keeps its DOM node and state until its exit finishes.
-Re-entry cancels the exit through the core state machine. A watchdog releases
-a node if the exit cannot complete.
+```css
+.toasts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
 
-`presence.style` carries `motion.initial` for the first render/SSR and the
-absolute-positioning box during `popLayout`. Spread it after your base styles.
-`mode="popLayout"` removes exiting children from normal flow immediately so
-siblings can move; it requires `usePresence` (not the custom-exit control).
-
-## View Transitions
-
-Use the platform API for discrete swaps:
-
-```text
-<AnimatePresence mode="wait">...</AnimatePresence>
+.toast {
+    transform-origin: 50% 100%;
+    /* colors only: a transition on translate, scale or all makes layout jump */
+    transition: background-color 0.2s;
+}
 ```
 
-`wait` delays the entering child until the current exit completes.
+A new toast plays its enter while the others slide to make room. A removed toast is lifted out of the stack, plays its exit where it was, and its siblings close the gap from the first frame. `useLayout({ layout: 'position', ref: presence.ref })` is a shorter way to give both hooks the element.
 
-```text
-await viewTransition(
-  () => render(nextView),
-  { share: ['hero-42'], motion: { duration: 0.3 } }
+### Styles on a participant
+
+Layout and the other style writers own separate CSS properties:
+
+| Property | Owner | Rule |
+| :--- | :--- | :--- |
+| `translate`, `scale` | Layout | Your own values, inline or from a stylesheet (Tailwind `translate-x-2`, `hover:scale-105`), are kept: layout composes its motion with them during a run and restores them exactly at the end. A change of them during a run applies when the run ends. |
+| `transform` | Presence and Ani timelines | Never written by layout. Presence enters and exits, `useAniRef` and other Ani animations write here. |
+| `transform-origin` | You | Read once per change. A size animation scales around it. |
+| `opacity` | Presence and you | Layout writes it only for a `layoutId` crossfade pair. |
+| `border-radius` | Layout with `radius: true` | Restored at the end of the run. |
+| `rotate`, skew | You | An element with them, or under a non-participant ancestor that rotates, skews or scales, jumps with `'unsupported'`. |
+
+**CSS transitions.** A CSS transition on `translate`, `scale` or `all` would animate layout's own writes, so the element jumps with `'unsupported'` and a development warning. Tailwind's `transition` and `transition-all` include them; use `transition-colors`, `transition-opacity` or a `transition-property` list without them. A running CSS animation of `translate` or `scale` jumps the same way.
+
+### Interruption
+
+A change while elements are moving does not wait for them and does not restart them from scratch. Each element whose target moved starts its new animation from where it is drawn, with its current velocity, and skips its `delay`. Elements whose target did not move keep their running animation untouched, so an unrelated re-render cannot restart anything. A change of `layoutId`, `layoutCrossfade` or `layoutDependency` alone never restarts a running animation.
+
+The carried velocity bends the start of the new curve and fades out by its end. It keeps the motion continuous; it is not spring physics.
+
+### Reduced motion
+
+The preference comes from the group's clock (by default `matchMedia('(prefers-reduced-motion: reduce)')`) and is read at every flush, so a change applies at the next commit, also to elements that are still moving.
+
+| `reducedMotion` | Behavior |
+| :--- | :--- |
+| `'jump'` (default) | Nothing animates. Running animations finish at once, and the clock is not subscribed. The report's status is `'reduced'`. |
+| `{ maxDuration }` | Delay and duration are scaled down so that each animation fits in `maxDuration` seconds. Shorter ones are untouched. |
+| `'ignore'` | Animations play in full. |
+
+```tsx
+import { LayoutGroup } from '@freestylejs/ani-react/layout'
+import type { ReactNode } from 'react'
+
+// defined once: a new object on every render would create a new group
+const reducedMotion = { maxDuration: 0.2 }
+
+export function App({ children }: { children: ReactNode }) {
+    return <LayoutGroup reducedMotion={reducedMotion}>{children}</LayoutGroup>
+}
+```
+
+Presence has its own `reducedMotion` option (`usePresence(motion, { reducedMotion })`), with the same policies and the same `'jump'` default. See [Reduced motion](/en/docs/guides/reduced-motion) for how the preference is read and tested.
+
+### When an element jumps
+
+Anything the engine cannot animate exactly jumps to its final layout. Each change resolves a report, `{ status, snapped }`, from `useLayoutGroup().update(fn)` or the vanilla `flush()`. Every element that jumped is listed in `snapped` and passed to `onSnap`.
+
+| Condition | Effect | Reason |
+| :--- | :--- | :--- |
+| Both boxes are outside the viewport (plus 10 %) | That element jumps, and does not count toward `maxNodes` | `'culled'` |
+| More than `maxNodes` visible elements move | The whole change jumps | `'capped'` |
+| `rotate` or skew; a non-participant ancestor that rotates, skews or scales; a CSS transition or animation on `translate`/`scale`; zero size; `display: contents` or `inline`; a size change beyond 50× | That element and its participants jump | `'unsupported'` |
+| A scroll container inside the page scrolled between capture and flush | The whole change jumps | `'stale'` |
+| Reduced motion with `'jump'` | Everything jumps | `'reduced'` |
+
+`'unsupported'`, `'capped'` and `'stale'` print one development warning per group, naming the cause. `'culled'` and `'reduced'` are normal operation and stay silent.
+
+| `status` | When |
+| :--- | :--- |
+| `'ended'` | Every element of the change settled, or `finish()` was called. |
+| `'interrupted'` | A later change retargeted one of its elements. Its other elements keep running. |
+| `'no-change'` | Nothing moved. |
+| `'reduced'`, `'capped'`, `'stale'` | Everything jumped, for that reason. |
+| `'disposed'` | The group was disposed or unmounted, or every element of the change was removed. Inline styles are restored. |
+
+Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a stateful timing) throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` when they are passed, never inside a frame.
+
+### Limits
+
+-   Layout motion runs on the main thread, on Ani's clock. While the main thread is blocked, the animation does not advance on screen.
+-   Capture reads the DOM during render. These are reads only, but when styles changed since the last layout they force one.
+-   A change that renders no participant, `LayoutGroup` or `AnimatePresence` does not animate (see [When a change animates](#when-a-change-animates)).
+-   Text inside an element that scales is re-rasterized and can look soft until the animation ends. Use `layout: 'position'` on text.
+-   A change of your own `translate` or `scale` during a run applies when the run ends, as one jump.
+-   A presence `transform` that animates during a layout run moves the element and its participants on top of their layout motion.
+-   A box never shrinks below one pixel; a fast element headed there loses that part of its speed.
+-   Not supported: 3D transforms, rotation and skew, SVG and inline elements, drag-driven or scroll-linked layout, shadow correction and curved paths.
+
+### Vanilla API
+
+Without React, `createLayoutGroup` from `@freestylejs/ani-layout` gives the same engine. You call the capture and the flush.
+
+```ts
+import { createLayoutGroup } from '@freestylejs/ani-layout'
+
+const list = document.querySelector<HTMLUListElement>('#list')!
+const group = createLayoutGroup({ motion: { duration: 0.3 } })
+
+const removes = [...list.querySelectorAll<HTMLLIElement>('li')].map((item) =>
+    group.add(item, { layout: 'position' })
 )
+
+// capture → mutate → flush
+const report = await group.update(() => {
+    list.prepend(list.lastElementChild!)
+})
+
+// or the same three steps yourself
+group.capture()
+list.append(list.firstElementChild!)
+await group.flush()
+
+for (const remove of removes) remove()
+group.dispose()
 ```
 
-- `viewTransition` runs the update exactly once in every path.
-- `shareElement(element, id)` registers a shared candidate.
-- `retimeViewTransition(motion, names)` retimes the browser pseudo animations.
-- Unsupported browsers run the update without a transition.
-- Firefox currently falls back to the instant update; Chromium and WebKit run
-  the transition.
+| Member | Meaning |
+| :--- | :--- |
+| `add(element, options?)` | Registers a participant and returns an idempotent remove function that restores its styles. |
+| `set(element, options)` | Replaces a participant's options. |
+| `capture()` | Reads the boxes before a change. Repeated calls in the same task reuse the reading; a call in a later task reads again. |
+| `flush()` | Reads the boxes after the change and starts the animations. Resolves the report. |
+| `update(mutate)` | `capture()`, `mutate()`, `flush()`. A throwing `mutate` discards the capture and rethrows. |
+| `finish()` | Jumps every running animation to its end. |
+| `dispose()` | Cancels everything and restores every style the group wrote. |
+| `stats` | `{ captures, reads, tracks }`. |
 
-Do not use View Transitions for list reorder, accordions, drag, scroll-linked
-motion, or other interruptible UI. Use FLIP there.
+`createLayoutGroup(options?)` takes the group options of the table in [Groups](#groups) plus `motion`. `createPresence(element, motion, options?)` is the presence handle behind `usePresence`: `enter()`, `exit()` and `dispose()`. A participant inside an exiting presence element takes part in a `layoutId` crossfade.
 
-## Limits and contracts
+### View Transitions
 
-- Core package remains unchanged.
-- No observers; no per-frame layout reads.
-- `box` is capped per change; excess nodes step down to position.
-- `position: sticky`, rotated/skewed ancestors, and non-uniform radius
-  correction are outside the first release.
-- Reduced motion is delegated to core; the default `'jump'` policy releases
-  presence and writes no inverse layout transform.
-- `popLayout` reads the exiting box once per present popLayout child update and
-  positions the exit absolutely; custom-exit controls do not receive that
-  style.
+For discrete swaps such as route changes, use the browser's View Transitions instead:
 
-See `packages/layout/ARCHITECTURE.md` for the full tier and performance model.
+```ts
+import { shareElement, viewTransition } from '@freestylejs/ani-layout'
 
-`AnimatePresence custom` is exposed as data through `usePresence().custom`;
-it is not an exit-variant resolver.
+const hero = document.querySelector<HTMLElement>('#hero')!
+const unshare = shareElement(hero, 'hero-42')
 
-See the live [Layout Showcase](/en/docs/showcase/layout) for E1–E5 and
-reduced 2D Gallery fixtures.
+const result = await viewTransition(
+    () => {
+        document.body.classList.toggle('detail')
+    },
+    { share: ['hero-42'], motion: { duration: 0.3 } }
+)
+unshare()
+```
+
+-   `viewTransition` runs the update exactly once in every path and resolves `'finished'`, `'skipped'`, `'interrupted'`, `'yielded'`, `'unsupported'` or `'reduced'`.
+-   Only the ids in `share` get a `view-transition-name`, and only for this transition.
+-   Without browser support the update runs without a transition and resolves `'unsupported'`.
+-   `retimeViewTransition(motion, names?)` retimes the browser's transition animations.
+
+Use layout animation, not View Transitions, for reorders, accordions, toasts and anything that can be interrupted.
+
+See the live [Layout Showcase](/en/docs/showcase/layout).

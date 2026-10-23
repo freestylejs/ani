@@ -50,6 +50,8 @@ export interface Track {
 /** A crossfade timeline, started with the lead's motion at the handoff. */
 export interface Fade {
     readonly role: 'lead' | 'follower'
+    /** The lead's weight at the start: 0 for a new handoff, its current opacity for a reversal. */
+    readonly from: number
     readonly elapsed: number
     readonly duration: number
     readonly curve: Curve
@@ -89,7 +91,7 @@ export interface Solved {
 /** Velocity of a drawn box, px per second for x, y, w, h. */
 export type BoxVelocity = Box
 
-const ZERO_VELOCITY: BoxVelocity = { x: 0, y: 0, w: 0, h: 0 }
+export const ZERO_VELOCITY: BoxVelocity = { x: 0, y: 0, w: 0, h: 0 }
 
 export function channelsOf(box: Box, fx: number, fy: number): Channels {
     return [box.x + fx * box.w, box.y + fy * box.h, box.w, box.h]
@@ -317,10 +319,11 @@ export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
     return velocity as BoxVelocity[]
 }
 
+/** The lead's weight `from + (1 − from)·clamp(e(τ))`; the follower's is its complement. */
 function fadeWeight(fade: Fade): number {
     if (fade.duration <= 0) return 1
     const w = fade.curve.value(fade.elapsed / fade.duration)
-    return Math.min(1, Math.max(0, w))
+    return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, w))
 }
 
 /** Poses, opacities and radii of every node (parents first). */

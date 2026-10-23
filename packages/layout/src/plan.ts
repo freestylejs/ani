@@ -315,8 +315,11 @@ export function plan(input: PlanInput): Plan {
         carried[lead.index] = lead.handoffVelocity
         if (lead.follower < 0) continue
         const follower = nodes[lead.follower]!
+        // a pair that reverses mid-crossfade keeps fading, however little
+        // it moves: its opacities must not pop (§5.6)
+        const reversing = node.following === lead.follower
         if (
-            moved(lead.handoff, node.a, node) < threshold ||
+            (!reversing && moved(lead.handoff, node.a, node) < threshold) ||
             !node.crossfade ||
             !follower.crossfade
         ) {
@@ -394,7 +397,8 @@ export function plan(input: PlanInput): Plan {
         } else if (
             node.moving ||
             (b !== null && movedFrom(b) >= threshold) ||
-            parentMoves
+            parentMoves ||
+            fadeLead.has(i)
         ) {
             const from = b ?? node.a
             const velocity = carried[i]!
