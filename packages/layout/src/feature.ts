@@ -4,25 +4,6 @@ export function hasDOM(): boolean {
     return typeof document !== 'undefined' && typeof Element !== 'undefined'
 }
 
-export function supportsFlip(): boolean {
-    if (!hasDOM() || typeof Element.prototype.animate !== 'function') {
-        return false
-    }
-    if (typeof CSS === 'undefined' || typeof CSS.supports !== 'function') {
-        return false
-    }
-    if (!CSS.supports('translate', '1px')) return false
-    try {
-        if (typeof KeyframeEffect !== 'undefined') {
-            const effect = new KeyframeEffect(null, [], { composite: 'add' })
-            if (effect.composite !== 'add') return false
-        }
-    } catch {
-        return false
-    }
-    return true
-}
-
 export function supportsLinearEasing(): boolean {
     return (
         typeof CSS !== 'undefined' &&

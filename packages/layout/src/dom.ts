@@ -1,0 +1,348 @@
+/**
+ * Every DOM read of the layout engine, every owned-style write and the
+ * byte-exact restore (§4, §6). No decisions: callers interpret the values.
+ */
+import type { Box } from './geometry'
+
+/** A CSS length as `px + pct · basis`. */
+export interface Len {
+    readonly px: number
+    readonly pct: number
+}
+
+export function resolveLen(len: Len, basis: number): number {
+    return len.px + len.pct * basis
+}
+
+/** A participant's computed transform inputs, read once per flush when active. */
+export interface Measured {
+    /** Why layout cannot drive this element, or `null`. */
+    readonly unsupported: string | null
+    readonly translate: readonly [Len, Len]
+    readonly scale: readonly [number, number]
+    /** The 2D scale/translate part of the computed `transform` (presence). */
+    readonly matrix: {
+        readonly a: number
+        readonly d: number
+        readonly e: number
+        readonly f: number
+    }
+    /** `transform-origin`, px from the border box's top-left. */
+    readonly origin: readonly [number, number]
+    /** Border-box size in CSS px before any transform, rounded (`offsetWidth`/`offsetHeight`). */
+    readonly size: readonly [number, number]
+    /** Corner radii (tl, tr, br, bl as x/y pairs), when asked for. */
+    readonly radius: readonly Len[] | null
+}
+
+const IDENTITY_MATRIX = { a: 1, d: 1, e: 0, f: 0 }
+const ZERO: Len = { px: 0, pct: 0 }
+const RADIUS_PROPERTIES = [
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+] as const
+
+function parseLen(token: string): Len | null {
+    const value = Number.parseFloat(token)
+    if (!Number.isFinite(value)) return null
+    if (token.endsWith('%')) return { px: 0, pct: value / 100 }
+    if (token.endsWith('px') || value === 0) return { px: value, pct: 0 }
+    return null
+}
+
+function parseTranslate(value: string): readonly [Len, Len] | null {
+    if (value === 'none') return [ZERO, ZERO]
+    const parts = value.split(' ')
+    if (parts.length > 3) return null
+    const x = parseLen(parts[0]!)
+    const y = parts[1] === undefined ? ZERO : parseLen(parts[1])
+    const z = parts[2] === undefined ? ZERO : parseLen(parts[2])
+    if (!x || !y || !z || z.px !== 0 || z.pct !== 0) return null
+    return [x, y]
+}
+
+function parseScale(value: string): readonly [number, number] | null {
+    if (value === 'none') return [1, 1]
+    const parts = value
+        .split(' ')
+        .map((part) =>
+            part.endsWith('%')
+                ? Number.parseFloat(part) / 100
+                : Number.parseFloat(part)
+        )
+    if (parts.length > 3 || parts.some((n) => !Number.isFinite(n))) return null
+    const x = parts[0]!
+    const y = parts[1] ?? x
+    if ((parts[2] ?? 1) !== 1) return null
+    return [x, y]
+}
+
+function isZeroAngle(value: string): boolean {
+    return value === 'none' || /^0(deg|rad|turn|grad)?$/.test(value)
+}
+
+function parseMatrix(value: string): Measured['matrix'] | null {
+    if (value === 'none') return IDENTITY_MATRIX
+    const match = /^matrix\(([^)]*)\)$/.exec(value)
+    if (!match) return null
+    const n = match[1]!.split(',').map((part) => Number.parseFloat(part))
+    if (n.length !== 6 || n.some((x) => !Number.isFinite(x))) return null
+    // rotation or skew
+    if (Math.abs(n[1]!) > 1e-9 || Math.abs(n[2]!) > 1e-9) return null
+    return { a: n[0]!, d: n[3]!, e: n[4]!, f: n[5]! }
+}
+
+function px(value: string): number {
+    return Number.parseFloat(value)
+}
+
+/** The exact border-box size from computed values; `null` when not computable. */
+export function borderSize(
+    element: HTMLElement
+): readonly [number, number] | null {
+    const style = getComputedStyle(element)
+    const w = px(style.width)
+    const h = px(style.height)
+    if (!Number.isFinite(w) || !Number.isFinite(h)) return null
+    if (style.boxSizing === 'border-box') return [w, h]
+    return [
+        w +
+            px(style.paddingLeft) +
+            px(style.paddingRight) +
+            px(style.borderLeftWidth) +
+            px(style.borderRightWidth),
+        h +
+            px(style.paddingTop) +
+            px(style.paddingBottom) +
+            px(style.borderTopWidth) +
+            px(style.borderBottomWidth),
+    ]
+}
+
+/** Whether a transition (configured or running) or a CSS animation drives `translate` or `scale`. */
+const NO_TIME = /^(0s,\s*)*0s$/
+
+/** A transition configured on `translate`/`scale` (or `all`) would animate layout's own writes. */
+function transitionsConfigured(style: CSSStyleDeclaration): boolean {
+    if (
+        NO_TIME.test(style.transitionDuration) &&
+        NO_TIME.test(style.transitionDelay)
+    ) {
+        return false
+    }
+    return transitionsOwned(style)
+}
+
+function transitionsOwned(style: CSSStyleDeclaration): boolean {
+    const properties = style.transitionProperty.split(',').map((p) => p.trim())
+    const durations = style.transitionDuration.split(',').map((d) => px(d))
+    const delays = style.transitionDelay.split(',').map((d) => px(d))
+    for (let i = 0; i < properties.length; i++) {
+        const property = properties[i]!
+        if (
+            property !== 'all' &&
+            property !== 'translate' &&
+            property !== 'scale'
+        ) {
+            continue
+        }
+        const duration = durations[i % durations.length] ?? 0
+        const delay = delays[i % delays.length] ?? 0
+        if (duration + Math.max(0, delay) > 0) return true
+    }
+    return false
+}
+
+/**
+ * Elements a CSS transition or CSS animation of `translate`/`scale` is
+ * running on: one scan of the document per flush, not one per element.
+ */
+export function animatedOwned(doc: Document): Set<Element> {
+    const animated = new Set<Element>()
+    if (typeof doc.getAnimations !== 'function') return animated
+    for (const animation of doc.getAnimations()) {
+        const css = animation as Animation & {
+            transitionProperty?: string
+            animationName?: string
+        }
+        const effect = animation.effect as KeyframeEffect | null
+        const target = effect?.target
+        if (!target) continue
+        if (
+            css.transitionProperty === 'translate' ||
+            css.transitionProperty === 'scale'
+        ) {
+            animated.add(target)
+        } else if (css.animationName !== undefined) {
+            for (const frame of effect.getKeyframes()) {
+                if ('translate' in frame || 'scale' in frame) {
+                    animated.add(target)
+                    break
+                }
+            }
+        }
+    }
+    return animated
+}
+
+/** Page scroll of a document, read once per batch of rects. */
+export function pageScroll(doc: Document): readonly [number, number] {
+    const view = doc.defaultView
+    return [view?.scrollX ?? 0, view?.scrollY ?? 0]
+}
+
+/** Page box: viewport rect plus page scroll. */
+export function pageRect(
+    element: Element,
+    scroll: readonly [number, number]
+): Box {
+    const r = element.getBoundingClientRect()
+    return {
+        x: r.left + scroll[0],
+        y: r.top + scroll[1],
+        w: r.width,
+        h: r.height,
+    }
+}
+
+/** The viewport as a page box. */
+export function viewportBox(doc: Document): Box {
+    const view = doc.defaultView
+    return {
+        x: view?.scrollX ?? 0,
+        y: view?.scrollY ?? 0,
+        w: view?.innerWidth ?? doc.documentElement.clientWidth,
+        h: view?.innerHeight ?? doc.documentElement.clientHeight,
+    }
+}
+
+export function measure(
+    element: HTMLElement,
+    radius: boolean,
+    animated: () => ReadonlySet<Element>
+): Measured {
+    const style = getComputedStyle(element)
+    const translate = parseTranslate(style.translate)
+    const scale = parseScale(style.scale)
+    const matrix = parseMatrix(style.transform)
+    const origin = style.transformOrigin.split(' ').map(px)
+    let unsupported: string | null = null
+    if (style.display === 'contents' || style.display === 'none') {
+        unsupported = `display: ${style.display}`
+    } else if (style.display === 'inline') {
+        unsupported = 'display: inline (transforms do not apply)'
+    } else if (!translate) {
+        unsupported = `unparseable translate "${style.translate}"`
+    } else if (!scale) {
+        unsupported = `unparseable scale "${style.scale}"`
+    } else if (!matrix) {
+        unsupported = `rotation, skew or unparseable transform "${style.transform}"`
+    } else if (!isZeroAngle(style.rotate)) {
+        unsupported = `rotate "${style.rotate}"`
+    } else if (!Number.isFinite(origin[0]) || !Number.isFinite(origin[1])) {
+        unsupported = `unparseable transform-origin "${style.transformOrigin}"`
+    } else if (transitionsConfigured(style) || animated().has(element)) {
+        unsupported =
+            'a CSS transition or animation on translate/scale (use a transition-property without translate, scale or all)'
+    }
+    let radii: Len[] | null = null
+    if (radius && !unsupported) {
+        radii = []
+        for (const property of RADIUS_PROPERTIES) {
+            const parts = style.getPropertyValue(property).split(' ')
+            const x = parseLen(parts[0]!) ?? ZERO
+            const y = parts[1] === undefined ? x : (parseLen(parts[1]) ?? ZERO)
+            radii.push(x, y)
+        }
+    }
+    return {
+        unsupported,
+        translate: translate ?? [ZERO, ZERO],
+        scale: scale ?? [1, 1],
+        matrix: matrix ?? IDENTITY_MATRIX,
+        origin: [origin[0] ?? 0, origin[1] ?? 0],
+        size: [element.offsetWidth, element.offsetHeight],
+        radius: radii,
+    }
+}
+
+/**
+ * Scroll offsets of every ancestor of `elements` (each ancestor read once),
+ * except the document scroller: page boxes already include page scroll.
+ */
+export function scrollOffsets(
+    elements: Iterable<Element>
+): Map<Element, readonly [number, number]> {
+    const offsets = new Map<Element, readonly [number, number]>()
+    for (const element of elements) {
+        const scroller = element.ownerDocument.scrollingElement
+        for (
+            let node = element.parentElement;
+            node && !offsets.has(node);
+            node = node.parentElement
+        ) {
+            if (node === scroller) break
+            offsets.set(node, [node.scrollLeft, node.scrollTop])
+        }
+    }
+    return offsets
+}
+
+/** Whether any recorded ancestor that is still connected scrolled since. */
+export function scrolledSince(
+    offsets: ReadonlyMap<Element, readonly [number, number]>
+): boolean {
+    for (const [node, [left, top]] of offsets) {
+        if (!node.isConnected) continue
+        if (node.scrollLeft !== left || node.scrollTop !== top) return true
+    }
+    return false
+}
+
+/* ───────────────────────── owned styles ───────────────────────── */
+
+export const POSE_PROPERTIES = ['translate', 'scale'] as const
+export const OPACITY_PROPERTIES = ['opacity'] as const
+export { RADIUS_PROPERTIES }
+
+/** Inline declarations as they were before layout owned them. */
+export type Saved = ReadonlyMap<
+    string,
+    readonly [value: string, priority: string]
+>
+
+export function save(
+    element: HTMLElement,
+    properties: readonly string[]
+): Saved {
+    const saved = new Map<string, readonly [string, string]>()
+    for (const property of properties) {
+        saved.set(property, [
+            element.style.getPropertyValue(property),
+            element.style.getPropertyPriority(property),
+        ])
+    }
+    return saved
+}
+
+/**
+ * Puts every saved declaration back: an existing one is replaced in place, a
+ * missing one removed, so the inline style serializes exactly as before.
+ */
+export function restore(element: HTMLElement, saved: Saved): void {
+    for (const [property, [value, priority]] of saved) {
+        if (value === '') element.style.removeProperty(property)
+        else element.style.setProperty(property, value, priority)
+    }
+}
+
+/** Writes one owned declaration (important, so stylesheet rules cannot override it mid-run). */
+export function write(
+    element: HTMLElement,
+    property: string,
+    value: string
+): void {
+    element.style.setProperty(property, value, 'important')
+}

@@ -13,6 +13,7 @@
             "@freestylejs/ani-core/testing": [
                 "packages/core/src/testing/index.ts"
             ],
+            "@freestylejs/ani-layout": ["packages/layout/src/index.ts"],
             "@freestylejs/ani-react": ["packages/react/src/index.ts"],
             "@freestylejs/ani-vue": ["packages/vue/src/index.ts"],
             "@freestylejs/ani-solid": ["packages/solid/src/index.ts"],
