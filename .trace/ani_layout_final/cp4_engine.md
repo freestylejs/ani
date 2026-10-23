@@ -471,3 +471,109 @@ Other runs:
 
 **Residual risk.** A follower that is a layered ancestor of its own lead (an exiting element
 containing its replacement) is drawn at the lead's box without the conversion.
+
+## Fix proof report for the CP8 second re-trial (J-038)
+
+Trial: `cp8_final_retrial2_trial_result.md` (frozen `ac36e12`). It closed J-037 and kept
+J-032, J-035, J-036, J-016, J-033 and J-034 closed. Clarification K25; ARCHITECTURE §5.6.
+Commits `79787d2` (engine and tests), `9ca9365` (authority).
+
+- *Root cause.* `seenFrom(follower, lead)` applied the follower's whole correction `corr_f`
+  to the lead's box. `corr_f` is made of the follower's layers, conjugations at the
+  follower's ancestors. A lead those ancestors do not draw is not moved by them. In the
+  trial's case the follower starts under a kept parent whose layer changed (scaleX 0.8 → 1),
+  and the new lead is top level. The parent's 1 / 0.8 correction widened the lead's box to
+  w 50 at the handoff and kept the pair apart for the whole fade.
+- *Change* (`solve.ts`, `drawnMotion`).
+  - `seenFrom(i, j)` draws `j` with every ancestor of `i` as `i`'s flush saw it, and every
+    other presence as `j` was drawn with.
+  - Only `i`'s layers at ancestors of `j` (or at `j` itself) and `j`'s layers at ancestors
+    of `i` convert: `corr_i ∘ corr_j⁻¹` over those two runs. Both runs are the root-first
+    part of each chain down to where the chains part, so `j`'s deeper layers cancel and are
+    left as they are.
+  - For an anchored node and its parent the runs are the whole lists, and the memoised
+    `corr` is reused, so the anchor path is unchanged.
+  - Ancestry is an O(1) test on pre-order subtree spans (`treeSpans`). It is computed once per
+    frame, and only when a layered pair exists.
+  - `epochs` exposes `through(layers)`, the correction of any root-first run of layers.
+  - The J-037 guard (a lead with a layer at its own follower) is now part of the rule: the
+    follower's own presence is not one of its ancestors, so it is never converted.
+- *Regressions* (`tests/browser/cases/layout.ts`, `crossfadeAcrossLayer`). The setup is the
+  trial's: the parent goes left 100 → 200 (300 wide, scaleX 0.8, origin 0 0), and at 0.2 s its
+  layer becomes 1. The old child (40×40, `layoutId: 'pair'`) then exits and the new lead
+  appears. Checks:
+  - the follower's B is (120, w 40);
+  - both nodes are at B at the handoff, with opacities 1 / 0;
+  - every frame of both nodes is on the independent track from B at vx 100 to (400, w 100);
+  - every frame the kept parent is on its own timeline `100 + 100t`, under its layer;
+  - opacities are τ and 1 − τ; release and the lead's opacity hand-back come at the fade's
+    end;
+  - the run is `ended` with nothing snapped; lead styles are restored; the follower is held
+    at opacity 0; zero clock subscribers remain after dispose.
+
+  The cases:
+  - `J38`: the trial's case, with the lead top level at left 400.
+  - `J38Shared`: the lead in the same parent at left 200.
+  - `J38Unchanged`: the layer stays 0.8, so B is (120, w 32).
+- *Pure tests* (`solve.test.ts`).
+  - The random follower test over 300 layered trees uses a new oracle. The follower is
+    rendered as its own flush draws its ancestors. The lead is rendered with the follower's
+    view of the ancestors they share and its own view elsewhere: a browser chain with
+    substituted inner transforms, independent of the `corr` algebra. It covers more than 50
+    pairs in each list order and more than 50 pairs with a layer the two do not share, and it
+    checks follower rates against finite differences.
+  - A new closed-form J-038 test, in both list orders: the follower's box and velocity equal
+    the top-level lead's exactly. The follower is drawn there through the parent's pose
+    under its current layer.
+
+**Sensitivity.**
+
+- With the `4cfc353` `solve.ts`, J38 fails with `follower at the handoff: drawn {"x":120,
+  "y":0,"w":50,"h":40} differs from {"x":120,"y":0,"w":40,"h":40} by 10.000 px`, the trial's
+  numbers. J38Shared and J38Unchanged pass on that engine.
+- The random follower test fails there at seed 1 (follower 5, lead 14, 0.108 relative). The
+  closed-form test fails with w 61.475 against 49.18 (1 / 0.8).
+
+**Results** (max error per frame):
+
+| Case | Chromium | Firefox | WebKit |
+|---|---|---|---|
+| J38 | 0.0001 | 0.0083 | 0.0001 px |
+| J38Shared | 0.0001 | 0.0083 | 0.0001 px |
+| J38Unchanged | 0.0001 | 0.0083 | 0.0001 px |
+| J37 / J37Control / J37Moving | 0.0000 | 0.0067 | 0.0000 px |
+| J37Retarget | 0.0001 | 0.0082 | 0.0001 px |
+
+Opacities are within 0.0000 of the fade. Every J38 release comes at the first frame with
+τ ≥ 1 (τ 1.008), and every J37 release at τ 1.000.
+
+**Fresh clone at `9ca9365`** (`git bundle` → empty directory on june-wsl):
+
+| Step | Result |
+|---|---|
+| `pnpm install --frozen-lockfile` | exit 0 |
+| `pnpm test:ci` | exit 0 (vitest 137 files, 1,609 tests) |
+| Chromium `--coverage` | 135 passed; engine coverage 94.69 / 85.88 / 98.01 / 97.53 |
+| Firefox / WebKit | 133 passed, 2 skipped by design |
+| `pnpm size` | exit 0, 8/8 PASS (everything 22,910 / 23,700) |
+
+Also on the mirror:
+
+- `pnpm test:waapi-trace` passed.
+- `pnpm check` and tsc `--noUnusedLocals --noUnusedParameters` (layout, browser tests) are
+  clean.
+
+**Authority mapping.**
+
+- §3.1 visual B, §3.3 invariants 1 and 4 (first frame, continuity): J38 at the handoff and
+  every frame.
+- §5.6 (both nodes at the lead's box; opacities; release; hold): J38, J38Shared and
+  J38Unchanged.
+- §5.3 cost: unchanged map arithmetic (the conversion runs over at most the pair's own
+  layers), plus one O(N) span pass when a layered pair exists.
+- T3.3/V3 (pure follower coherence), T4.1/T4.3/V4 (regressions), V8 (gates).
+
+**Residual risk.** A presence change after a track's flush is a visual layer only over its
+own subtree (§3.1). A follower outside a lead's ancestor whose presence changed after the
+lead's flush is drawn at the lead's box as that flush drew it. The changed layer shows over
+the lead only, until the lead is planned again.
