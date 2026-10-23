@@ -1,548 +1,455 @@
-> **v0.2 authority notice:** `packages/layout/ARCHITECTURE_CPC.md` is the
-> authoritative projection/API contract for the Compiled Projection Core. This
-> file remains the v1 historical contract; where the two conflict, CPC wins.
+# ANI Layout — Architecture
 
-> **Authority note (2026-10-21):** This is the implementation authority for `@freestylejs/ani-layout`. The earlier `ANI_LAYOUT_ARCHITECTURE_DECLARATIVE.md` is superseded; its declarative boundary goal is preserved here, while the engine is the final pragmatic tier: View Transitions + WAAPI approximate FLIP + snap. Read this document before changing the package.
+**Status:** authority for `@freestylejs/ani-layout` and `@freestylejs/ani-react/layout` (0.2.0).
+**Source decision:** *ANI Layout — Final Architecture* (APPROVE, 2026-10-23), with the
+two open questions closed on 2026-10-23: the default `layout` is `true`, and stateful
+timings (`dynamicSpring`) are rejected. This file replaces the 0.1.0 tiered FLIP
+contract and the Compiled Projection Core (CPC); neither applies any more.
 
-# ANI Layout — Final Pragmatic Architecture
-
-**Date:** 2026-10-21  
-**Candidate:** ANI V2 `6715bb1`  
-**Reviewer:** Claude Opus 5.5 `<high>` — fifth pass  
-**Verdict:** **APPROVE** for the pragmatic, tiered Motion-level architecture  
-**Implementation gate:** P0 browser hypotheses must pass; **H2 is a hard stop**.
+Execution plan and evidence: `.trace/ani_layout_final/`.
 
 ---
 
-## 0. The decision
+## 1. Decision
 
-Do not animate every layout in JavaScript, pixel by pixel.
+ani-layout is **one pure layout solver on Ani's own clock**.
 
-Use two **browser-native** motion engines, and let ANI do math once per change:
+At each commit it learns where every marked box *was drawn* (B) and where layout
+*put it* (A). On every frame it re-solves every animating box top-down, parent before
+child, and writes only `translate` and `scale` (plus `opacity` for a crossfade pair and
+`border-radius` when asked).
 
-1. **View Transitions** — for discrete route/page/view/shared-element swaps. Browser snapshots, zero per-frame JS.
-2. **WAAPI approximate FLIP** — for interactive list reorder, tabs, accordions, cards. `Element.animate()` on the compositor, zero per-frame JS.
-3. **Snap** — whenever measurement is unreliable, the change is too large, or the UI is not worth animating.
+- **Exact by construction.** Nesting at any depth, `layoutAnchor`, shared `layoutId` and
+  crossfade are one equation per node. No keyframe sampling, no error budget, no depth
+  limit.
+- **Ani's moat.** Reads happen once per commit and never interleave with writes. Steady
+  frames do zero DOM reads. The scope is one `Animatable` on the core clock, so it
+  shares frame time, time scale, reduced motion and ownership with every other Ani
+  animation.
+- **Declarative.** In React you mark an element with `useLayout()`. It animates whenever
+  its box changes across a commit. No `deps`, no capture or play calls.
+- **Snap, never wrong motion.** Anything the solver cannot do exactly jumps to the real
+  layout and is reported with a typed reason.
 
-Quality is intentionally tiered:
+Presence and View Transitions stay. Jank resilience (compositor-only motion while the
+main thread is blocked) is not promised for layout; it exists only as the optional,
+gated WAAPI engine of §10.
 
-- **Exact:** `p=0` matches the before visual; `p=1` is the real layout; no flash; no wrong final position.
-- **Approximate:** size path, radius between samples, text raster sharpness, velocity on retarget.
-- **Never:** pixel-perfect projection on every node at any cost.
+## 2. Constraints
 
-This is the “cheap but good” model the user asked for.
+- Core V2's public API does not change. Layout uses only Core's public exports: the
+  clock (`Animatable { read?, update(dt), commit? }`, `Clock`, `defaultClock`), timing
+  functions, `createAniError`, `DEV`, and the reduced-motion policy type.
+- Dependency direction: `ani-layout → ani-core`; `ani-react/layout → ani-layout + ani-core`.
+  Core knows nothing of layout.
+- The vanilla API must not block later Vue, Svelte and Solid adapters: an adapter only
+  needs `add`, `set`, `capture` and `flush`.
+- Out of scope: 3D, drag-coupled layout, loop/snap, `layoutScroll`/`layoutRoot`, arc paths,
+  shadow correction, SVG and inline layout, rotation/skew projection.
 
----
+## 3. Model
 
-## 1. Capability tiers
+The real DOM after a commit is the only layout truth. The engine never decides where
+anything ends; it only animates the visual difference back to that truth.
 
-| UI class | Tier | Fallback | Never |
-| :--- | :--- | :--- | :--- |
-| Route / page / view swap | **View Transition** | Instant swap | Whole-page FLIP |
-| Shared element, card→detail, card→modal (discrete) | **View Transition** + shared name | Instant | Cross-route FLIP |
-| In-place interruptible expand | **FLIP `box`** surface + `position` content | Snap | View Transition |
-| List reorder / insert / remove | **FLIP `position`** + presence | Snap | View Transition |
-| Accordion / disclosure | **FLIP `position`** on siblings + presence content | Snap | Height animation |
-| Tab indicator | **FLIP `box` + `layoutId`** | Snap | View Transition |
-| Modal / toast | Presence; FLIP `position` for siblings | Instant | — |
-| Grid N≥1000 | **FLIP `position`**, viewport-culled, max 300 movers | Snap | View Transition |
-| Drag / scroll-linked | Core `follow`/springs | — | Layout FLIP |
+### 3.1 Spaces and maps
 
-**No precise-tier option and no `fidelity` switch.** The API you call chooses the tier; quality steps down automatically inside FLIP.
+All boxes are **page boxes**: viewport rect plus page scroll, so page scrolling between
+two measurements cancels out. Every axis is independent, and every map is an
+axis-aligned affine map `x ↦ k·x + b` per axis.
 
----
+For a participant `n`:
 
-## 2. View Transitions
+| Name | Meaning |
+|---|---|
+| **Inner map Qₙ** | The element's own authored `translate`/`scale` and its inline `transform` (presence), about its `transform-origin`. Not owned by layout. |
+| **Pose Pₙ** | Layout's own `(t, s)` per axis, about the `transform-origin`. Owned by layout. |
+| **Layout box Lₙ** | The CSS box with every participant pose and every inner map removed. |
+| **Drawn box Vₙ** | Where the element appears with every pose applied and every inner map removed. |
 
-### 2.1 Where they are correct
+CSS composes `translate · rotate · scale · transform`. Layout writes the *outer* map
+(`translate = t + s·authoredTranslate`, `scale = s·authoredScale`) and presence's
+`transform` stays inside, so the inner maps are a visual layer *inside* layout motion:
 
-Infrequent, user-initiated, discrete changes where blocking input for ≤0.5s is acceptable:
+- **Measurement** divides the inner maps out along the participant chain, outermost first:
+  `L = Qₙ⁻¹ ∘ … ∘ Q_root⁻¹ (rect)` with every pose stripped.
+- **Projection** composes poses only: `Mₙ = Mπ ∘ Pₙ`, where `Mπ` is the parent
+  participant's map.
 
-- routes/pages
-- view-mode/theme switches
-- hero/shared elements
-- Suspense reveals
-- card→modal when the change is discrete
+At rest every pose is the identity and `V = L`.
 
-### 2.2 Where they are wrong
+### 3.2 Data
 
-| Case | Why |
-| :--- | :--- |
-| List reorder/insert/remove | N names/textures; duplicate names abort; not retargetable; list unclickable |
-| Accordion, drawer, menu, tab indicator | Not interruptible; new transition skips old to end, causing a jump |
-| Filter-as-you-type, live data, drag, resize, scroll | Freezes rendering during update; recaptures the document |
-| Video/canvas/caret/spinner | Old snapshot is a frozen bitmap |
-| Scroll/clip containers | Captured elements lift above overflow/sticky |
-| Text aspect changes | Snapshot stretches unless author CSS corrects pseudo-elements |
+| Data | Owner | Lifetime |
+|---|---|---|
+| Before box B per participant | Scope (capture) | One epoch |
+| After box A per participant | Scope (flush) | One flush |
+| Track per animating node: B, A, delay, duration, timing, velocity seed, start | Engine | Until it settles or is replaced |
+| Pose per node per frame | Solver output | One frame |
+| Registry: element → options; `layoutId` → lead and exiting follower; retained boxes | Scope | Until removal (+ `retain`) |
+| Presence state: present / entering / exiting / exited | Presence handle | Until exit settles |
 
-**View Transitions are not the universal layout engine.** They are the discrete-swap tier.
+### 3.3 Invariants
 
-### 2.3 Vanilla API
+1. The first painted frame after a change shows the previous drawn box (no flash, no late
+   start).
+2. The final frame is the real layout: identity pose, inline styles byte-identical to before
+   the run, no clock subscription left.
+3. One owner per CSS property on a participant (§6).
+4. Interruption is continuous in position and velocity.
+5. A node whose target did not move is never retargeted: an unrelated re-render cannot
+   restart anything.
+6. Anything the solver cannot do exactly snaps, with a typed reason.
+
+## 4. Commit and frame model
+
+Each commit costs one batched read before the mutation and one after. Every animation
+frame after that is arithmetic plus writes, inside the clock's `update` and `commit`
+phases.
+
+### 4.1 Capture (B)
+
+`capture()` reads every registered participant of the scope that the engine does not
+drive: `getBoundingClientRect`, page scroll, the inline `transform`, and the scroll
+position of each participant's scroll container. Driven nodes are not read: their drawn
+box is known exactly.
+
+- Capture is idempotent within an epoch: StrictMode's second render and every further
+  participant render reuse it.
+- **Refresh:** a capture taken before an animation frame is read again by the next
+  `capture()` (the first render touch after that frame). A render that never commits leaves
+  a capture that is still the true before-box as long as no commit happened; the refresh rule
+  covers a commit that painted in between.
+
+In React, the first render of a `useLayout` participant, a `LayoutGroup` or an
+`AnimatePresence` in an epoch calls `capture()`. React has not mutated the DOM yet, so this
+is the true before-box, not a remembered one.
+
+### 4.2 Flush (A, plan, t = 0 pose)
+
+`flush()` consumes the capture synchronously:
+
+1. Restore the owned styles of every engine node (writes only).
+2. Read A for every participant (one layout).
+3. Plan (§5) and write the t = 0 pose of every engine node, which reproduces B.
+4. Subscribe the scope's `Animatable` if any track exists.
+
+In React, a layout effect of every participant, group and `AnimatePresence` queues **one**
+microtask per scope and commit that calls `flush()`. It runs after every layout effect
+(presence has lifted its `popLayout` exits by then) and before paint. Several commits
+before one flush coalesce: B from the first capture, A from the last commit.
+
+**B at flush:** the engine's current drawn box for a node it drives (or drove since the
+capture: its settled box), otherwise the captured box. An animation frame between capture and
+flush is therefore compensated exactly instead of invalidating the epoch.
+
+**Stale:** an inner scroll container that moved between capture and flush makes the epoch
+stale; it snaps with `'stale'` and never guesses.
+
+### 4.3 Frames
+
+- A track's time starts at its first clock update, whose `dt` is forced to 0. A 120 ms block
+  after the commit therefore costs one late frame, not 120 ms of progress.
+- After that, tracks advance by the clock's `dt` (lag-smoothed, time-scaled), exactly like
+  every other Ani animation.
+- The read phase is unused; `update` solves; `commit` writes only declarations whose value
+  changed.
+- A node settles when its own track ended and no ancestor still animates: its saved inline
+  declarations are restored byte for byte. The scope unsubscribes when no track is left.
+
+## 5. Solver
+
+### 5.1 Track
+
+Each node animates four channels: the **origin point** (the box point under its
+`transform-origin`, kept as a fraction of the box) and the size. Interpolating the origin
+point matches Motion, whose layout origin defaults to the centre.
+
+With `τ = (elapsed − delay) / duration`, `D` the duration and `e` the timing curve:
+
+```
+c(τ) = A + (B − A)·(1 − e(τ)) + k·τ·(1 − τ)²,   k = v·D + (B − A)·e′(0)
+```
+
+- `c(0) = B` and `c(1) = A` for every timing; `c′(0) = v`.
+- Before its delay a channel holds B (a delayed retarget starts at rest).
+- `k` carries the incoming velocity `v`, the central difference of the old track at the
+  retarget instant. Core's `timing.spring` ignores a passed velocity, so this term is the
+  only way to keep velocity continuous. `k` is clamped so that the bump never exceeds half
+  of `max(|B − A|, size)` and a size channel never drops below one pixel.
+- Timing must be stateless. A stateful timing (`timing.dynamicSpring`) throws
+  `ANI_INVALID_OPTIONS`.
+
+### 5.2 Modes
+
+| `layout` | Origin point | Size |
+|---|---|---|
+| `true` (default) | animates | animates |
+| `'position'` | animates | pinned to A (counter-scaled under a scaling parent) |
+| `'size'` | pinned to A | animates |
+
+### 5.3 Projection
+
+For node `n` with drawn box `V(t)`, layout box `A`, origin offset `o` and parent map `Mπ`:
+
+```
+V′ = Mπ⁻¹(V),   s = V′_w / A_w,   t = V′_x − A_x − o_x·(1 − s),   Mₙ = Mπ ∘ Tₙ
+```
+
+Depth is unlimited and the cost is O(N) arithmetic per frame. Every participant under an
+animating ancestor is solved each frame (a node whose own box did not move keeps `V = A` and
+is counter-projected), so nesting never distorts it.
+
+### 5.4 Anchor
+
+`layoutAnchor {x, y}` (0–1) replaces the origin channels: the node's anchor point is placed
+on the parent participant's drawn anchor point every frame, plus an offset that moves from
+the initial discrepancy to the final one on the node's own timeline (zero when the anchor
+points coincide, as in E1). Without a parent participant the anchor is ignored.
+
+### 5.5 Interruption
+
+A new flush while tracks run never reads animated state. B for a driven node is its current
+drawn box and `v` its current velocity. Only a node whose A moved by at least `threshold`
+(or whose options changed) gets a new track; every other node keeps its track untouched.
+
+### 5.6 Shared `layoutId` and crossfade
+
+- Per id the scope keeps one **lead** (newest connected, non-exiting registrant) and at most
+  one **follower** (a registrant exiting under presence).
+- **Handoff:** a new lead's B is the departing node's drawn box: from the live follower, or
+  from a box retained for `retain` seconds (default 1) after its removal.
+- **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting
+  under presence, the box moved by at least `threshold`, and neither node sets
+  `layoutCrossfade: false`. Both nodes draw at the lead's box; the opacities are `w` and
+  `1 − w`, with `w = clamp(e(τ), 0, 1)` on the lead's timeline.
+- The follower is held at opacity 0 until presence unmounts it, and presence's release waits
+  for the crossfade to end. Nothing pops back to opacity 1.
+- If presence animates `opacity` on a crossfade node (its `present` record names `opacity`),
+  the pair hands off without a crossfade and a development warning is printed.
+- Two live, non-exiting nodes with one id print a development warning; the newest leads and
+  the other animates on its own.
+
+### 5.7 Radius
+
+`radius: true` reads the four corner radii of A once per flush and writes each corner as
+`r·A_w/V_w` / `r·A_h/V_h` (elliptical radii), so corners keep their on-screen radius under
+any total scale. The declaration is restored on settle.
+
+## 6. Property ownership on one element
+
+| Property | Owner | Rule |
+|---|---|---|
+| `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. A running CSS transition or animation on them snaps the node. |
+| `transform` | Presence and Core | Divided out of measurement. |
+| `transform-origin` | Author | Read once per flush for active nodes. |
+| `opacity` | Presence; layout only for a crossfade pair | §5.6. |
+| `border-radius` | Layout when `radius: true` | Restored on settle. |
+| `rotate`, skew, non-translation ancestor transforms | Author | The subtree snaps with `'unsupported'`. |
+
+Presence and layout meet only inside the package: `createPresence` registers its element,
+its exiting phase, whether its record names `opacity`, and a release hold
+(`presence_link.ts`). Adapters see none of it.
+
+**popLayout.** In the render where a child stops being present, `usePresence` measures its
+layout box relative to its real containing block (the nearest ancestor that establishes one
+for absolute positioning, or the initial containing block). The commit lifts it to
+`position: absolute` at that box, before the flush, so siblings are measured without the gap
+and move from t = 0.
+
+## 7. Public API
+
+The vocabulary is Motion's (`layout`, `layoutId`, `layoutAnchor`, `layoutCrossfade`,
+`layoutDependency`) with Ani's own `motion` in seconds.
+
+### 7.1 Vanilla — `@freestylejs/ani-layout`
 
 ```ts
-import type { Clock, ReducedMotionPolicy } from '@freestylejs/ani-core'
-
-export interface ViewTransitionOptions {
-  /** layoutIds to morph; only these get names, only for this transition. */
-  readonly share?: Iterable<string>
-  /** Used when ViewTransition.prototype.types exists. */
-  readonly types?: readonly string[]
-  /** Retimes UA group/old/new animations. Clamped to [0.1, 0.5]s. */
-  readonly motion?: LayoutMotion
-  /** Default 'jump' → update runs without transition. */
-  readonly reducedMotion?: ReducedMotionPolicy
-  /** Live reduced-motion source. Default defaultClock. */
-  readonly clock?: Pick<Clock, 'reducedMotion'>
+interface LayoutMotion {
+  readonly duration?: number          // seconds, default 0.35
+  readonly delay?: number             // seconds, default 0
+  readonly timing?: TimingFunction    // stateless only; default timing.easeOut()
 }
 
-export type ViewTransitionResult =
-  | 'finished'
-  | 'skipped'
-  | 'interrupted'
-  | 'yielded'
-  | 'unsupported'
-  | 'reduced'
-
-/** update runs exactly once in every path. Rejects only if update throws/rejects. */
-export function viewTransition(
-  update: () => void | Promise<void>,
-  options?: ViewTransitionOptions
-): Promise<ViewTransitionResult>
-
-/** Registers a shared-element candidate; writes nothing until shared. */
-export function shareElement(element: HTMLElement, id: string): () => void
-
-/**
- * Retimes running ::view-transition-* animations to ANI timing.
- * Springs are sampled to CSS linear(). 0 means cosmetic UA timing fallback.
- */
-export function retimeViewTransition(
-  motion: LayoutMotion,
-  names?: readonly string[]
-): number
-
-export function supportsViewTransition(): boolean
-```
-
-### 2.4 Algorithm
-
-1. No DOM / no `document.startViewTransition`: `await update()`, resolve `'unsupported'`.
-2. Reduced motion: `await update()`, resolve `'reduced'`.
-3. Foreign transition active (`document.activeViewTransition`, else `:active-view-transition` in try): run update, resolve `'yielded'`. **Do not call `startViewTransition`; it would kill React/router transition.**
-4. ANI transition active: let browser skip old one (`'interrupted'`), start new one. Accept jump to old end.
-5. Name shared elements only for the transition duration:
-   - most recently registered connected element per id;
-   - save inline `view-transition-name`;
-   - inside update, after update resolves, newest connected registrant becomes lead;
-   - restore old element, name lead;
-   - cap 32 names; extras remain unnamed + dev error;
-   - duplicates impossible: one name per id, one element.
-6. On `ready`, `retimeViewTransition(motion, names)`.
-7. On finish/skip, restore names byte-for-byte.
-8. Dev warning if `update` >100ms. Data must load before transition.
-
-### 2.5 React / routers
-
-- **React ≥19.3:** use React's `<ViewTransition name>`; ANI only supplies `onShare={() => retimeViewTransition(motion, [name])}`.
-- **Next.js App Router** with view transitions: same React path.
-- **React Router `<Link viewTransition>`:** its update callback keeps the snapshot live; ANI FLIP yields.
-- **React 18 / 19.0–19.2:** recipe `viewTransition(() => flushSync(fn), { share })`; no wrapper.
-- **Vue Router / SvelteKit:** recipes with commit-completion hooks.
-- **Cross-document:** CSS `@view-transition { navigation: auto }`; Chrome/Safari; Firefox instant fallback.
-- **ANI ships no React VT wrapper.** React owns it and interrupts other callers.
-
-### 2.6 Composition with core
-
-- Old snapshot freezes in-flight core animations.
-- New image is live; core continues inside it.
-- Do not drive named elements with core during transition.
-- FLIP yields during a transition.
-- A VT started mid-FLIP captures the mid-flight visual; acceptable.
-
----
-
-## 3. Approximate FLIP
-
-### 3.1 Engine
-
-Per participant: one `Element.animate()` per change.
-
-- Keyframes computed once; `fill: 'none'`.
-- Easing: ANI `timing` sampled to CSS `linear()` (48 points); fallback cubic-bezier or ease-out.
-- Browser runs it on compositor for `translate`/`scale`.
-- **No ANI clock subscription, no rAF, no per-frame reads or writes.**
-- Main-thread jank after DOM change does not stutter motion.
-
-### 3.2 `position` mode (default)
-
-```js
-el.animate(
-  [{ translate: `${dx}px ${dy}px` }, { translate: '0px 0px' }],
-  { duration, easing, composite: 'add', fill: 'none' }
-)
-```
-
-- `composite:'add'` adds to CSS/Tailwind `translate`, including percentages.
-- Core `transform` untouched.
-- No inline writes, no restore, no transition-neutralizing hack.
-
-### 3.3 `box` mode (position + size; surfaces only)
-
-Per axis, with layout box after `A` (`a`, `wA`), visual before `B` (`b`, `wB`), origin `o`:
-
-```text
-s = wB / wA
-t = b - a - o * (1 - s)
-```
-
-Both edges move linearly in eased progress; box interpolation is exact. Assumes no rotation.
-
-- Radius correction: sampled keyframes of `r/sx(p) r/sy(p)` (11 offsets), only for `box` nodes, ≤16 per change.
-- One `getComputedStyle` per `box` node per change, after all rect reads; reads `transform-origin`, base `scale`, four radii.
-- Base `scale ≠ none` → position-only.
-- `layoutId`: new participant animates from departing participant’s captured box in same snapshot; newest wins; older still-mounted snaps.
-- Nested correction P2, one level, gated on H5. Unregistered content inside `box` distorts by design.
-
-### 3.4 Exact vs approximate
-
-**Exact:**
-
-- `p=1` real layout; effect removed.
-- `p=0` within 0.5px position / 1px box edges.
-- No flash: first frame is keyframe 0.
-- No wrong final position.
-- Interruption continuity within 0.5px.
-
-**Approximate:**
-
-- path when core transforms change simultaneously;
-- velocity restarts at zero on retarget;
-- radius between samples;
-- text raster sharpness during scale;
-- sub-pixel settle.
-
-### 3.5 Automatic step-downs
-
-| Condition | Action |
-| :--- | :--- |
-| `|dx|,|dy| < 1px` and scale within 1% | Skip |
-| Zero-size, `display: contents`, SVG without offset, no before | Skip |
-| `rect.w/offsetWidth` or `rect.h/offsetHeight` deviates >2% | **Snap** (unreliable measurement) |
-| `box` scale outside `[0.25, 4]` | Position-only |
-| `box` nodes beyond `maxBoxes` (16) | Position-only |
-| Both boxes outside viewport +10% | Snap |
-| Visible movers > `maxAnimated` (300) | **Whole change snaps** (`'capped'`) |
-| Active View Transition at play | `'yielded'` |
-| Reduced motion | `'reduced'`, zero animations |
-
-### 3.6 Where cheap FLIP looks bad
-
-1. `box` on text/icons/1px borders with aspect change: squash/stretch. Use surfaces/images; content sibling or registered child.
-2. Width-changing text: line breaks cannot morph; position-only + snap size, or VT crossfade.
-3. Shared element with different content without crossfade: content pops; use VT or surface + presence fade.
-4. Exit-then-slide without popLayout: gap lingers; use `AnimatePresence mode="popLayout"` when siblings must move immediately.
-5. Rapid reorder with springs: velocity kink; drag uses `follow`.
-6. Moves across scroll containers: clipped mid-flight; VT for discrete drop.
-7. `position: fixed` descendants of moving item: transform creates containing block; known break.
-
-### 3.7 Why no Pretext-style prediction
-
-FLIP needs real layout after DOM change. The browser does that layout before paint anyway; FLIP’s one read moves it earlier, not adds it. Predicting flex/grid/container-query layout in JS means reimplementing CSS and being wrong. No text measurement, no width/height/top/left/font animation, so no rewrap per frame.
-
----
-
-## 4. Public API
-
-### 4.1 `@freestylejs/ani-layout`
-
-One root entry, zero dependencies, core diff 0 B.
-
-```ts
-import type { Clock, ReducedMotionPolicy, TimingFunction } from '@freestylejs/ani-core'
-
-export interface LayoutMotion {
-  readonly duration?: number // default 0.35s
-  readonly timing?: TimingFunction // sampled to CSS linear()
-}
-
-export type LayoutMode = 'position' | 'box'
-
-export interface LayoutParticipantOptions {
-  /** Default 'position'. 'box' = position + scale + radius; surfaces only. */
-  readonly layout?: LayoutMode
-  /** Shared identity within root group (same-document, interruptible). */
+interface LayoutOptions {
+  readonly layout?: true | 'position' | 'size'   // default true
   readonly layoutId?: string
+  readonly layoutAnchor?: { readonly x: number; readonly y: number }  // 0..1
+  readonly layoutCrossfade?: boolean             // default true
+  readonly layoutDependency?: unknown            // optional narrowing
+  readonly radius?: boolean                      // default false
+  readonly motion?: LayoutMotion
 }
 
-export interface LayoutGroupOptions {
-  motion?: LayoutMotion
-  /** Default 'jump'. Evaluated at play against clock.reducedMotion. */
-  reducedMotion?: ReducedMotionPolicy
-  clock?: Pick<Clock, 'reducedMotion'>
-  threshold?: number // default 1px
-  maxAnimated?: number // default 300
-  maxBoxes?: number // default 16
-  onError?: (error: unknown, element: HTMLElement) => void
+interface LayoutGroupOptions {
+  readonly clock?: Clock                         // default defaultClock
+  readonly motion?: LayoutMotion
+  readonly reducedMotion?: ReducedMotionPolicy   // default 'jump'
+  readonly threshold?: number                    // px, default 1
+  readonly maxNodes?: number                     // visible movers, default 300
+  readonly retain?: number                       // seconds, default 1
+  readonly onSnap?: (element: HTMLElement, reason: SnapReason) => void
 }
 
-export type LayoutResult =
-  | 'ended'
-  | 'no-change'
-  | 'interrupted'
-  | 'finished'
-  | 'disposed'
-  | 'stale'
-  | 'yielded'
-  | 'capped'
-  | 'reduced'
-  | 'unsupported'
+type SnapReason = 'culled' | 'capped' | 'unsupported' | 'stale' | 'reduced'
 
-export interface LayoutGroup {
-  add(element: HTMLElement, options?: LayoutParticipantOptions): () => void
-  set(element: HTMLElement, options: LayoutParticipantOptions): void
-  update(mutate: () => void, motion?: LayoutMotion): Promise<LayoutResult>
-  capture(): LayoutSnapshot
-  play(snapshot: LayoutSnapshot, motion?: LayoutMotion): Promise<LayoutResult>
+interface LayoutReport {
+  readonly status: 'ended' | 'interrupted' | 'no-change' | 'reduced' | 'capped' | 'stale' | 'disposed'
+  readonly snapped: readonly { readonly element: HTMLElement; readonly reason: SnapReason }[]
+}
+
+interface LayoutGroup {
+  add(element: HTMLElement, options?: LayoutOptions): () => void
+  set(element: HTMLElement, options: LayoutOptions): void
+  capture(): void
+  flush(): Promise<LayoutReport>
+  update(mutate: () => void): Promise<LayoutReport>   // capture → mutate → flush
   finish(): void
-  readonly active: boolean
   dispose(): void
+  readonly stats: { readonly captures: number; readonly reads: number; readonly tracks: number }
 }
 
-export function createLayoutGroup(options?: LayoutGroupOptions): LayoutGroup
+function createLayoutGroup(options?: LayoutGroupOptions): LayoutGroup
 ```
 
-`capture`/`play` are the adapter interface; `update` is the vanilla declarative-in-scope transaction.
+- `flush()` and `update()` follow Core's run contract: the promise never rejects and resolves
+  once per run. A run whose track is replaced by a later flush resolves `'interrupted'` at that
+  moment; its untouched tracks keep running under the engine.
+- Invalid options throw synchronously with `ANI_INVALID_OPTIONS`, never inside a frame. A
+  throwing `mutate` in `update()` discards the capture and rethrows.
+- `layoutDependency`: when given and equal (`Object.is`) to its value at the participant's
+  previous flush, the participant is left out of planning (it jumps, unreported).
+- A scope is a namespace by itself, so the vanilla API has no `id`; the React `LayoutGroup`
+  namespaces the ids of nested groups that share one scope.
 
-**Presence API is unchanged** from the prior final architecture:
-
-- `reconcilePresence` / `settlePresence`
-- `createPresence` on `createStates`
-- `PresenceMotion`, `PresenceHandle`
-- watchdog, re-entry token, reduced-motion release
-
-### 4.2 `@freestylejs/ani-react/layout`
-
-`'use client'` first; React 18/19 peers.
+### 7.2 React — `@freestylejs/ani-react/layout`
 
 ```ts
-export interface LayoutGroupProps extends LayoutGroupOptions {
-  children?: ReactNode
-  deps?: DependencyList
-}
-export const LayoutGroup: ComponentType<LayoutGroupProps>
-
-export interface UseLayoutOptions<E extends HTMLElement>
-  extends LayoutParticipantOptions {
-  ref?: Ref<E>
-}
-/** Stable callback; options read from latest render. */
-export function useLayout<E extends HTMLElement = HTMLElement>(
-  options?: UseLayoutOptions<E>
-): RefCallback<E>
-
-export interface LayoutGroupControl {
-  update(fn: () => void): Promise<LayoutResult>
-  finish(): void
-}
-export function useLayoutGroup(): LayoutGroupControl
-
-export interface AnimatePresenceProps {
-  children?: ReactNode
-  initial?: boolean
-  mode?: 'sync' | 'popLayout'
-  onExitComplete?: (key: string) => void
-}
-export function AnimatePresence(props: AnimatePresenceProps): ReactElement
-
-export interface UsePresenceResult<E extends HTMLElement> {
-  ref: RefCallback<E>
-  style: CSSProperties | undefined
-  isPresent: boolean
-}
-export function usePresence<G extends GroupableRecord, E extends HTMLElement = HTMLElement>(
-  motion: PresenceMotion<G>,
-  options?: PresenceOptions
-): UsePresenceResult<E>
-
-export function usePresenceControl(options?: { maxExitMs?: number }): {
-  isPresent: boolean
-  safeToRemove: () => void
-}
+useLayout<E extends HTMLElement>(options?: LayoutOptions & { ref?: Ref<E> }): RefCallback<E>
+<LayoutGroup id? clock? motion? reducedMotion? threshold? maxNodes? retain? onSnap?>  // no DOM
+useLayoutGroup(): { update(fn: () => void): Promise<LayoutReport>; finish(): void }
+<AnimatePresence initial? mode?: 'sync' | 'popLayout' | 'wait' custom? onExitComplete?>
+usePresence(motion, options?): { ref, style, isPresent, custom }
+usePresenceControl(options?): { isPresent, safeToRemove }
 ```
 
-### 4.3 Usage
+- A participant with no `LayoutGroup` joins an implicit root scope (one per clock, created
+  lazily, disposed when empty).
+- The outermost `LayoutGroup` owns a scope. Nested groups join it: they namespace `layoutId`s
+  (`id`) and supply `motion` defaults; scope options (`clock`, `reducedMotion`, `threshold`,
+  `maxNodes`, `retain`, `onSnap`) are read from the outermost group only, and a nested group
+  that sets one prints a development warning. A change of a scope option recreates the scope
+  (compared by value; `onSnap` is always the latest prop).
+- A participant's `motion` is merged field by field over its groups' `motion`.
+- **Trigger contract:** a commit animates when it renders the group, an `AnimatePresence` or
+  any participant of the scope. If state lives in a component that renders none of them
+  (memoized children below), place the `LayoutGroup` inside that component, or wrap the change
+  in `useLayoutGroup().update(fn)`. A development-only `MutationObserver` warns once per scope
+  when the DOM around its participants changed with no capture.
 
 ```tsx
-// Tab indicator: FLIP box + layoutId
-function Tab({ active, label }) {
-  const ref = useLayout({ layout: 'box', layoutId: 'tab-indicator' })
-  return <button>{label}{active && <span ref={ref} className="indicator" />}</button>
+// List reorder: mark the items, nothing else
+function Item({ item }) {
+  const ref = useLayout({ layout: 'position' })
+  return <li ref={ref}>{item.label}</li>
 }
 
-// Route hero: React 19.3 owns the transition
-<ViewTransition
-  name={`photo-${id}`}
-  onShare={() => retimeViewTransition(motion, [`photo-${id}`])}
->
-  <img src={src} />
-</ViewTransition>
-
-// Vanilla
-const group = createLayoutGroup({ motion: { duration: 0.3 } })
-items.forEach((el) => group.add(el))
-await group.update(() => list.append(list.firstElementChild!))
-await viewTransition(() => render(next), { share: ['hero-42'], motion })
+// Toast stack: CSS lays the list out; presence and layout share the element
+function Toast({ toast }) {
+  const layout = useLayout({ layout: 'position' })
+  const presence = usePresence(toastMotion)
+  return <li ref={mergeRefs(layout, presence.ref)} style={presence.style}>{toast.text}</li>
+}
 ```
 
-**Rejected:** `<layout.div>` element factory, `fidelity` option, ANI React VT wrapper. Reasons: measurement frequency, API noise, duplicate orchestrator.
+## 8. Module boundaries
 
----
+| Layer | Module | Owns |
+|---|---|---|
+| Pure | `geometry.ts` | Boxes, axis maps, composition and inversion, pose from box. |
+| Pure | `motion.ts` | Option validation, defaults, timing evaluation, reduced-motion clamp. |
+| Pure | `plan.ts` | Per flush: who animates, handoff, crossfade pairs, every snap reason. |
+| Pure | `solve.ts` | Per frame: tracks → drawn boxes → poses, opacities, radii. |
+| Shell | `dom.ts` | Every DOM read, every owned-style write and byte-exact restore. |
+| Shell | `scope.ts` | Registry, epochs, runs, lifecycle; the public `LayoutGroup`. |
+| Shell | `realize/raf.ts` | The one `Animatable`. |
+| Shell | `presence_link.ts` | Package-internal presence registry (§6). |
+| Kept | `presence.ts`, `presence_state.ts`, `view_transition.ts`, `feature.ts`, `easing.ts` | Presence, View Transitions. |
 
-## 5. Performance model
+The pure modules import nothing from the DOM or the clock. Only `dom.ts` touches the DOM
+for layout and only `realize/*` touches the clock. The React adapter calls only the public
+group API.
 
-| Phase | Reads | Writes | Forced layouts |
-| :--- | :--- | :--- | :--- |
-| Capture | N `getBoundingClientRect`; 0 `getComputedStyle` | 0 | 0 if clean, ≤1 if dirty |
-| Play | N rects; active retarget may use N precheck + N post-cancel layout reads (≤2N); `offsetWidth/Height` for movers; ≤16 gCS (box); `getComputedTiming()` for interrupted | `animate()` × movers after all reads | **Exactly 1** (owed anyway) |
-| Frames | **0** | **0 JS**; radius on ≤16 nodes painted | 0 |
-| No-change | N precheck rects; active run untouched | 0 | ≤1 |
-| View Transition | 0 per frame | ≤32 names written/restored | Browser capture only |
+## 9. Failure, snap and reduced motion
 
-**Interruption:** the pre-mutation snapshot is the `before` box. Play first measures the current visual once for the no-change check; if changed, it cancels the old animation, measures the new layout, and starts a replacement from the snapshot. An active no-change stops before cancellation. No animated state is inferred or analytically subtracted.
+| Condition | Behaviour | Reason |
+|---|---|---|
+| Both boxes outside the viewport ± 10 % | That node jumps, uncounted | `'culled'` |
+| Visible movers exceed `maxNodes` | The whole flush snaps | `'capped'` |
+| Rotate, skew, non-translation ancestor transform, unparseable inline transform or authored value, running CSS transition/animation on `translate`/`scale`, zero size, `display: contents`, scale outside 1/50–50 | That subtree snaps | `'unsupported'` |
+| An inner scroll container moved between capture and flush | The flush snaps | `'stale'` |
+| Reduced motion with policy `'jump'` (default) | No tracks; active tracks finish at once; no clock subscription | `'reduced'` |
+| Reduced motion `{ maxDuration }` | Delay + duration scaled down to fit, in `motion.ts` only | — |
+| Reduced motion `'ignore'` | Plays in full | — |
+| `dispose()` or unmount | Tracks cancelled, inline styles restored, presence holds released | status `'disposed'` |
+| `finish()` | Every track jumps to A and settles | status `'ended'` |
+| No DOM (SSR), first client commit | No-op; hydration never animates | — |
 
-**Budgets:**
+Snapped nodes are listed in `report.snapped` and passed to `onSnap`. A development warning is
+printed once per scope for `'unsupported'`, `'capped'` and `'stale'` (actionable);
+`'culled'` and `'reduced'` are normal operation and stay silent. Reduced motion is read from
+the scope's clock at every flush.
 
-- N=1000, 300 visible movers:
-  - capture ≤2ms desktop
-  - play JS ≤6ms desktop / ≤16ms mobile
-  - at most 1 dropped frame per change (Chromium trace)
-- N=50 list: play ≤1ms.
-- Forced layouts: capture ≤1, play =1, frames 0.
-- gCS: position path 0; per change ≤ `maxBoxes`.
+## 10. WAAPI engine (optional, gated)
 
-**Size budgets:**
+Same plan, realized with `Element.animate()`: depth-0 tracks only (no participant ancestor
+that animates), `'position'` mode, no anchor, no velocity term; anything else throws at
+`add`/`set`. It never writes `startTime`: animations are created in the flush and start at
+the browser's pending-play time, so the first painted frame is τ = 0. It ships only if
+(1) the RAF-vs-WAAPI differential is ≤ 0.5 px per frame, (2) the 120 ms block test is ≤ 6 %,
+and (3) a trace shows compositor-only frames during a block. If any gate fails, it does not
+ship.
 
-| Entry | Budget | v1 measured (tree-shaken) |
-| :--- | ---: | ---: |
-| Core delta | 0 B | 0 B |
-| `ani-layout` all | ≤7.5KB gzip | 7,274 B |
-| FLIP-only | ≤3.0KB | 2,749 B |
-| View Transition-only | ≤2.2KB | 1,915 B |
-| Presence-only | ≤1.2KB | 815 B |
-| `ani-react/layout` layout-only | ≤1.5KB | 1,340 B |
-| `ani-react/layout` presence-only | ≤2.0KB | 1,785 B |
-| `ani-react/layout` all | ≤3.2KB | 3,129 B |
+## 11. Acceptance
 
-Measured with esbuild, minified ESM, gzip, core/React/layout peers external, one feature entry per row. The root entry includes all three features, hence its larger budget. These are v1 gates; a change requires a measured amendment.
+A row passes only when every frame of a real browser run (Chromium, Firefox, WebKit) matches
+an oracle that shares no code with the solver. Final rects and no-crash tests count for
+nothing.
 
----
+- **Oracle:** at elapsed time t, every node's drawn rect equals its own track in page
+  coordinates, with its anchor rule applied.
+- **Layers:** pure property tests on `solve`/`plan` (random trees to depth 5, within 1e-9);
+  deterministic browser tests on a manual clock (0.5 px per frame); a few real-clock tests
+  (jank, read counts, frame cost).
 
-## 6. Browser / feature detection
+| Row | Frame-level assertion |
+|---|---|
+| E1 Layout Anchor | Child centre on parent centre ≤ 0.5 px every frame; child stays 70 px until 0.8 s; child starts at 0.8 s ± one frame |
+| E2 Create Button | Opacity sum 1 ± 0.05 every frame; label glyph height constant ± 1 px; close and reopen at 100 ms and 500 ms |
+| E3 iOS Folder | Four shared tiles first and final rects; tile scale 0.2 ± 0.02; stagger ± one frame; reopen at 500 ms |
+| E4 App Store | Card, image and title nested ids; no gap > 0.5 px in image coverage; title size pinned; close and reopen |
+| E5 Notifications | First frame equals the enter transform; siblings final at t = 0 under popLayout; exit ≈ 0.2 s; bottom edge ± 1 px under scaleX; five adds 80 ms apart |
+| Reduced 2D Gallery | 16 tiles grid ↔ list, plus a detail view with a shared id |
 
-| Capability | Detect | Floor | Below floor |
-| :--- | :--- | :--- | :--- |
-| FLIP | `Element.prototype.animate` && `CSS.supports('translate','1px')` && additive KeyframeEffect | Chrome 112, Firefox 104, Safari 16 | `'unsupported'`, snap |
-| `linear()` | `CSS.supports('animation-timing-function','linear(0,1)')` | Chrome 113, Firefox 112, Safari 17.2 | cubic-bezier/ease-out |
-| Same-doc VT | `typeof document.startViewTransition === 'function'` | Chrome 111, Safari 18, Firefox 144 | Instant |
-| VT `types` | `'types' in ViewTransition.prototype` | per engine | Drop types |
-| Active transition | `document.activeViewTransition`, else `:active-view-transition` try | per engine | Own flag + snapshot expiry |
-| Cross-document VT | CSS `@view-transition` | Chrome 126, Safari 18.2; Firefox no | Instant |
-| Element-scoped VT | not used | Chrome 147 only | Reopen when 2 engines ship |
-| SSR/no DOM | `typeof document` | — | no-op; update runs |
+Regression tests: late start after a 120 ms block (≤ 6 %), unrelated re-render (identical
+trajectory), crossfade only on a real handoff with no pop to 1, velocity ≤ 5 % across a
+retarget under jank, reduced motion (zero writes, zero subscribers, mid-run toggle), showcase
+honesty. Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
+per property, byte-identical final inline style, no subscription left.
 
-Browser support must be rechecked in P0; floors are not a substitute for the harness.
+Cost gates: reads per commit = 2N rects plus one computed-style read per active node; zero
+reads on steady frames; commit reads at 1,000 participants ≤ 4 ms; steady frame at 300 nested
+movers ≤ 2 ms p95.
 
----
+## 12. Accepted risks
 
-## 7. Failure / skip / snap
-
-| Case | Behavior |
-| :--- | :--- |
-| `update`/`mutate` throws | FLIP snapshot discarded, nothing written; VT rejects, names restored |
-| Element detached mid-run | Cancel its animation; no inline restore needed |
-| FLIP during VT | `'yielded'`, zero animations |
-| ANI VT superseded | Old `'interrupted'` (visual jump accepted); updates run once, in order |
-| Hidden doc/timeout | `'skipped'`; DOM correct; names restored |
-| Duplicate shared ids | Newest wins; never two names |
-| >32 shared elements | Extras unnamed, dev error |
-| >300 visible movers | `'capped'`, whole change snaps |
-| Unreliable measurement | Node snaps |
-| `dispose()`/`finish()` | Cancel/finish group animations; idempotent |
-| Presence | Watchdog, re-entry token, reduced-motion release unchanged |
-
----
-
-## 8. Hard gates
-
-**P0 hypotheses (Chromium/Firefox/WebKit before P1):**
-
-| # | Must prove | Failure |
-| :--- | :--- | :--- |
-| H1 | `composite:'add'` translate sums with CSS `translate` (px, %) | Fallback: one gCS per moved node + `replace` |
-| H2 | WAAPI created inside React/sync commit paints keyframe 0 on first frame, no flash | **Stop; reopen engine** |
-| H3 | Analytic offset from `getComputedTiming` matches live rect within 0.5px | Cancel-then-read fallback |
-| H4 | Budgets at 300 movers | Lower `maxAnimated` |
-| H5 (P2) | Parent/child sampled animations drift ≤0.5px at 60/120Hz | Nested correction not shipped |
-| T1 | VT pseudo animations retimable via `document.getAnimations()` | UA timing cosmetic fallback |
-| T2 | Active-transition detection in React 19.3/React Router/ANI callbacks | Snapshot expiry + own flag |
-| T3 | Inline name set inside update captured as new state | Framework hook names lead before resolving |
-
-**Release gates:** kept D1–D12, D14, D16–D18, D21, D22, D26 plus:
-
-- **G1 Frame path:** static ban on `requestAnimationFrame`/observers; zero layout clock subscriptions; `animate()` only in FLIP writer; `startViewTransition` only in `viewTransition`.
-- **G2 No inline writes (FLIP):** randomized lifecycle leaves `style` byte-identical; `getAnimations()` empty after settle.
-- **G3 Read/write order:** instrumented; capture 0 writes; play all reads before first `animate()`; forced layouts ≤1; gCS 0 position path / ≤maxBoxes.
-- **G4 Endpoints:** paused `currentTime` 0/50/100%; p=0 within 0.5/1px; p=1 exact; first frame p=0.
-- **G5 Interruption:** 10 retargets/300ms continuity ≤0.5px; one live animation per node.
-- **G6 No-change:** 2N rects, 0 gCS, 0 animations created/cancelled, run untouched.
-- **G7 Step-downs:** transformed-context/caps/culling/box-limit produce snaps, never wrong motion.
-- **G8 VT names:** 50-cycle churn fuzzed share sets; zero `InvalidStateError`; names restored.
-- **G9 VT paths:** update exactly once across unsupported/reduced/yielded/skipped/interrupted/finished/throw.
-- **G10 Yield:** zero FLIP animations during active VT.
-- **G11 Performance:** budgets.
-- **G12 Size:** budgets.
-- **G13 Disjointness:** dev error if core animates `translate`/`scale` on participant.
-
----
-
-## 9. Implementation sequence
-
-| Phase | Scope | Exit |
-| :--- | :--- | :--- |
-| **P0** | Three-engine harness for H1–H4, T1–T3 | Decision tree; H2 failure stops |
-| **P1** | `ani-layout`: presence; FLIP position/box/layoutId; step-downs; `viewTransition`, `shareElement`, `retimeViewTransition`; React `LayoutGroup`, `useLayout`, presence; recipes list/tab/accordion/toast/route | G1–G13 + kept D-gates → 0.1.0 |
-| **P2** | One-level nested correction; card-expand recipe | H5 + G4 nested |
-| **P3** | Vue/Svelte/Solid adapters; router/MPA recipes; `popLayout` landed in the React adapter behind an opt-in mode | Per-adapter boundary matrix |
-| **Reopen only on evidence** | Element-scoped VT, crossfade, `layoutScroll`, rotation projection, velocity handoff | — |
-
----
-
-## 10. Accepted risks / deferred
-
-| Item | Reopen when |
-| :--- | :--- |
-| No pixel-perfect projection on every node | Real user complaint; cost budget allows precise tier |
-| `box` text/border distortion | Content-aware surface contract becomes necessary |
-| Text raster softness | Never gated; `position` escape hatch |
-| Velocity kink on retarget | Measured complaint |
-| Shared element across routes | View Transition covers discrete; FLIP cross-route deferred |
-| `layoutScroll`/`layoutRoot` | VT/scroll-container evidence |
-| `layoutId` cross-route without VT | Requires View Transition |
-| Rotation/skew projection | Separate cycle |
-| Element-scoped VT | Two engines ship |
-| Observers | Not needed; VT/FLIP cover the cases |
-
----
-
-## 11. Final verdict
-
-**APPROVE** for the pragmatic tiered architecture:
-
-- **View Transitions** for discrete, infrequent swaps; React 19.3 owns React transitions.
-- **WAAPI approximate FLIP** for interactive layout; zero ANI JS per frame, zero inline writes.
-- **Snap** when measurement is unreliable or the change is too large.
-- Exact `p=0`/`p=1`, no flash, no wrong final position; approximate path/radius/text.
-- Core unchanged; no text measurement; no per-frame gCS; no `matrix3d` conflict.
-- P0 H2 is the single hard stop.
-
-> **Use the browser where it is best, use math where it is cheap, and snap when precision is not worth the cost.**
+- Nested layout motion is not compositor-smooth while the main thread is blocked.
+- Render-phase reads bend React's purity norm (reads only) and can force a layout during render
+  when the DOM is dirty.
+- A state change that renders no participant, group or `AnimatePresence` does not animate
+  (documented, development warning).
+- The velocity term is a continuity device, not spring physics.
+- Text under scale re-rasterizes and can look soft mid-flight.
+- An authored `translate`/`scale` change during a run applies after settle.
+- A participant's presence transform that animates while its participant descendants move is a
+  visual layer: their tracks are exact in layout space and the presence motion renders inside.
