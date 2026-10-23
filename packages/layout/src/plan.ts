@@ -60,6 +60,8 @@ export interface IdHistory {
     readonly lead: number | null
     /** The previous lead's drawn box when it left within `retain`. */
     readonly retained: Box | null
+    /** Its velocity then, when its own track was moving. */
+    readonly retainedVelocity: BoxVelocity | null
 }
 
 export interface PlanInput {
@@ -236,8 +238,9 @@ function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
         let follower = -1
         if (previous !== index) {
             if (previous === null) {
-                // the previous lead left the scope: its retained box
+                // the previous lead left the scope: its retained box and velocity
                 handoff = history?.retained ?? null
+                handoffVelocity = history?.retainedVelocity ?? null
             } else if (input.nodes[previous]!.exiting) {
                 const old = input.nodes[previous]!
                 handoff = old.before ?? old.a

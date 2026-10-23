@@ -4,24 +4,25 @@
  */
 import { type Clock, DEV, defaultClock } from '@freestylejs/ani-core'
 import {
+    adoptAuthored,
     animatedOwned,
     borderSize,
     type Len,
     type Measured,
     measure,
     OPACITY_PROPERTIES,
+    OWNED_PRIORITY,
     POSE_PROPERTIES,
     pageRect,
     pageScroll,
+    put,
     RADIUS_PROPERTIES,
     resolveLen,
-    restore,
     type Saved,
     save,
     scrolledSince,
     scrollOffsets,
     viewportBox,
-    write,
 } from './dom'
 import { hasDOM } from './feature'
 import {
@@ -44,6 +45,7 @@ import {
     type LayoutOptions,
     type Motion,
     resolveMotion,
+    sameTrackOptions,
     validateLayoutOptions,
     validateMotion,
     validateReducedMotion,
@@ -137,12 +139,16 @@ interface Geometry {
     readonly authored: Authored
     /** Corner radii at A in px (x/y per corner), when `radius: true`. */
     readonly radius: readonly number[] | null
+    /** The presence part of the computed `transform` at this flush. */
+    readonly matrix: Measured['matrix']
     readonly unsupported: string | null
 }
 
 interface DriveFade {
     readonly role: 'lead' | 'follower'
     elapsed: number
+    /** Its first clock update has happened (independent of the track's). */
+    started: boolean
     readonly duration: number
     readonly curve: Curve
 }
@@ -159,6 +165,8 @@ interface Drive {
     lead: Participant | null
     readonly saved: Saved
     readonly authored: Authored
+    /** The reduced-motion mode its track was planned under. */
+    mode: string
     run: Run | null
     release: (() => void) | null
     /** Last written value per owned property. */
@@ -208,7 +216,9 @@ interface FrameNode {
 interface Write {
     readonly element: HTMLElement
     readonly property: string
+    /** `''` removes the declaration. */
     readonly value: string
+    readonly priority: string
 }
 
 const GROUP_KEYS = [
@@ -291,6 +301,8 @@ function fadeEnded(fade: DriveFade): boolean {
     return fade.elapsed >= fade.duration
 }
 
+const IDENTITY_POSE = { tx: 0, ty: 0, sx: 1, sy: 1 }
+
 function noop(): void {
     // a removal after dispose has nothing to undo
 }
@@ -323,10 +335,14 @@ export function createLayoutGroup(
     let disposed = false
     /** Previous lead per `layoutId`. */
     const leads = new Map<string, Participant>()
-    /** Boxes of leads removed within `retain` seconds. */
+    /** Drawn boxes and velocities of leads removed within `retain` seconds. */
     const retained = new Map<
         string,
-        { readonly box: Box; readonly until: number }
+        {
+            readonly box: Box
+            readonly velocity: BoxVelocity | null
+            readonly until: number
+        }
     >()
     const warned = new Set<string>()
     const stats = { captures: 0, reads: 0, tracks: 0 }
@@ -383,7 +399,23 @@ export function createLayoutGroup(
     ): void {
         if (d.written.get(property) === value) return
         d.written.set(property, value)
-        pending.push({ element, property, value })
+        pending.push({ element, property, value, priority: OWNED_PRIORITY })
+    }
+
+    /**
+     * Queues the saved declarations of `d` (the author's latest, §6) for the
+     * write phase: never between reads, never outside a commit (§4.2, §4.3).
+     */
+    function queueRestore(
+        element: HTMLElement,
+        d: Drive,
+        properties?: readonly string[]
+    ): void {
+        adoptAuthored(element, d.saved, d.written)
+        for (const [property, [value, priority]] of d.saved) {
+            if (properties && !properties.includes(property)) continue
+            pending.push({ element, property, value, priority })
+        }
     }
 
     function queuePose(node: FrameNode, solved: Solved): void {
@@ -403,7 +435,8 @@ export function createLayoutGroup(
             'scale',
             `${format(pose.sx * a.sx)} ${format(pose.sy * a.sy)}`
         )
-        if (solved.opacity !== null) {
+        // only while it owns a fade: a lead gives its opacity back at the end
+        if (solved.opacity !== null && d.fade !== null) {
             writeValue(element, d, 'opacity', format(solved.opacity))
         }
         if (solved.radius) {
@@ -428,22 +461,34 @@ export function createLayoutGroup(
         }
     }
 
-    /** Restores every owned declaration of `p` and drops its drive. */
-    function settle(p: Participant): void {
+    /** A node leaves its run unfinished: unregistered or gone from the document (§9). */
+    function cancelRunNode(p: Participant): void {
+        const run = p.drive?.run
+        if (!run) return
+        run.nodes.delete(p)
+        p.drive!.run = null
+        if (run.nodes.size === 0 && !run.done) {
+            run.done = true
+            run.resolve({ status: 'disposed', snapped: run.snapped })
+        }
+    }
+
+    /** Queues the restore of every owned declaration of `p` and drops its drive. */
+    function settle(p: Participant, cancelled = false): void {
         const d = p.drive
         if (!d) return
-        finishRunNode(p)
+        if (cancelled) cancelRunNode(p)
+        else finishRunNode(p)
         d.release?.()
         p.drive = null
         if (p.geometry) p.lastBox = p.geometry.a
-        restore(p.element, d.saved)
+        queueRestore(p.element, d)
     }
 
     function restoreOpacity(element: HTMLElement, d: Drive): void {
-        const saved = d.saved.get('opacity')
-        if (!saved) return
+        if (!d.saved.has('opacity')) return
+        queueRestore(element, d, OPACITY_PROPERTIES)
         d.written.delete('opacity')
-        restore(element, new Map([['opacity', saved]]))
     }
 
     /** Ends a crossfade: the lead owns no opacity any more, a follower stays invisible. */
@@ -470,12 +515,13 @@ export function createLayoutGroup(
             for (const node of frame) {
                 const d = node.p.drive
                 if (!d || d.kind === 'held') continue
-                if (!d.started) {
-                    d.started = true
-                    continue
+                if (d.started) d.elapsed += dt
+                else d.started = true
+                // a fade kept across a retarget stays in step with its pair
+                if (d.fade) {
+                    if (d.fade.started) d.fade.elapsed += dt
+                    else d.fade.started = true
                 }
-                d.elapsed += dt
-                if (d.fade) d.fade.elapsed += dt
             }
         }
         // a follower whose lead left the frame stays where it is
@@ -536,7 +582,7 @@ export function createLayoutGroup(
     function commitWrites(): void {
         const writes = pending
         pending = []
-        for (const w of writes) write(w.element, w.property, w.value)
+        for (const w of writes) put(w.element, w.property, w.value, w.priority)
     }
 
     const realizer = createRaf(clock, {
@@ -676,6 +722,7 @@ export function createLayoutGroup(
                 fy: css.h > 0 ? m.origin[1] / css.h : 0.5,
                 authored,
                 radius,
+                matrix: m.matrix,
                 unsupported,
             },
             full,
@@ -701,20 +748,95 @@ export function createLayoutGroup(
         return value
     }
 
+    /**
+     * B of a driven node is its drawn box as the user sees it now: through the
+     * presence layers as they are at this flush, not as they were frozen at the
+     * last one (§3.1). Only the presence matrix can differ (it is not React's,
+     * so the commit did not change it); the poses are the engine's own.
+     */
+    function reconcileLayers(
+        index: ReadonlyMap<Participant, number>,
+        geometry: readonly (Geometry | null)[],
+        nowSolve: readonly SolveNode[],
+        drawn: Map<Participant, Box>,
+        velocity: Map<Participant, BoxVelocity>
+    ): void {
+        if (frame.length === 0) return
+        const current = frame.map((node) => {
+            const i = index.get(node.p)
+            return i === undefined ? null : (geometry[i]?.matrix ?? null)
+        })
+        const changed = frame.some((node, k) => {
+            const m = current[k] ?? null
+            const f = node.geometry.matrix
+            return (
+                m !== null &&
+                (m.a !== f.a || m.d !== f.d || m.e !== f.e || m.f !== f.f)
+            )
+        })
+        if (!changed) return
+        const solved = solve(nowSolve)
+        const maps: Map2[] = []
+        frame.forEach((node, k) => {
+            const g = node.geometry
+            const m = current[k] ?? g.matrix
+            const au = node.p.drive?.authored ?? g.authored
+            const inner = aboutOrigin(
+                {
+                    tx: au.tx + au.sx * m.e,
+                    ty: au.ty + au.sy * m.f,
+                    sx: au.sx * m.a,
+                    sy: au.sy * m.d,
+                },
+                g.ox,
+                g.oy
+            )
+            const parent = node.parent >= 0 ? maps[node.parent]! : IDENTITY_MAP
+            const pose = node.p.drive ? solved[k]!.pose : IDENTITY_POSE
+            const map = compose(
+                compose(parent, aboutOrigin(pose, g.ox, g.oy)),
+                inner
+            )
+            maps.push(map)
+            if (!node.p.drive) return
+            const seen = mapBox(map, mapBox(invert(g.inner), g.box))
+            const was = drawn.get(node.p)
+            drawn.set(node.p, seen)
+            const v = velocity.get(node.p)
+            if (v && was && was.w > 0 && was.h > 0) {
+                const rx = seen.w / was.w
+                const ry = seen.h / was.h
+                velocity.set(node.p, {
+                    x: v.x * rx,
+                    y: v.y * ry,
+                    w: v.w * rx,
+                    h: v.h * ry,
+                })
+            }
+        })
+    }
+
     function flush(): Promise<LayoutReport> {
         if (disposed) return resolved('disposed')
         const cap = capture
         capture = null
         if (!hasDOM()) return resolved('no-change')
 
-        // drives of participants that left the document end here
+        // drives of participants that left the document end here (their
+        // restores are written with the others, after every read); the author's
+        // inline changes to owned properties are taken in (§6)
         for (const p of registry.values()) {
-            if (!p.element.isConnected && p.drive) settle(p)
+            if (!p.drive) continue
+            if (p.element.isConnected)
+                adoptAuthored(p.element, p.drive.saved, p.drive.written)
+            else settle(p, true)
         }
         const list = [...registry.values()].filter((p) => p.element.isConnected)
         if (list.length === 0) {
             frame = []
+            commitWrites()
             realizer.stop()
+            stats.tracks = 0
             return resolved('no-change')
         }
 
@@ -804,6 +926,7 @@ export function createLayoutGroup(
             chained.push(p.drive !== null || (parent >= 0 && chained[parent]!))
         })
         measureNodes(chained)
+        reconcileLayers(index, geometry, nowSolve, drawn, velocity)
 
         const reduced = reducedMode()
         const ids = new Map<string, IdHistory>()
@@ -821,12 +944,11 @@ export function createLayoutGroup(
                     previous && !previous.removed
                         ? index.get(previous)
                         : undefined
+                const kept = lead === undefined ? retained.get(id) : undefined
                 ids.set(id, {
                     lead: lead ?? null,
-                    retained:
-                        lead === undefined
-                            ? (retained.get(id)?.box ?? null)
-                            : null,
+                    retained: kept?.box ?? null,
+                    retainedVelocity: kept?.velocity ?? null,
                 })
             }
             return ids
@@ -893,7 +1015,9 @@ export function createLayoutGroup(
                         hasDependency &&
                         p.dependency !== null &&
                         Object.is(p.dependency.value, options.layoutDependency),
-                    optionsChanged: p.changed,
+                    // a changed reduced-motion mode re-plans a running track
+                    optionsChanged:
+                        p.changed || (moving && d!.mode !== reduced),
                     following:
                         d?.kind === 'follow' && d.lead
                             ? (index.get(d.lead) ?? -1)
@@ -1027,19 +1151,26 @@ export function createLayoutGroup(
         ): Drive => {
             const existing = p.drive
             if (existing) {
-                // an owned property it did not save yet (opacity for a new crossfade)
-                const missing = properties.filter(
+                // an owned property it did not save yet (opacity for a new
+                // crossfade, corners when `radius` was turned on mid-run)
+                const wanted = [...properties]
+                if (p.options.radius && g.radius)
+                    wanted.push(...RADIUS_PROPERTIES)
+                const missing = wanted.filter(
                     (prop) => !existing.saved.has(prop)
                 )
-                if (missing.length > 0) {
-                    const extra = save(p.element, missing)
-                    for (const [k, v] of extra)
-                        (
-                            existing.saved as Map<
-                                string,
-                                readonly [string, string]
-                            >
-                        ).set(k, v)
+                for (const [k, v] of save(p.element, missing))
+                    existing.saved.set(k, v)
+                // corners it no longer owns go back now
+                if (
+                    !p.options.radius &&
+                    existing.saved.has(RADIUS_PROPERTIES[0])
+                ) {
+                    queueRestore(p.element, existing, RADIUS_PROPERTIES)
+                    for (const prop of RADIUS_PROPERTIES) {
+                        existing.saved.delete(prop)
+                        existing.written.delete(prop)
+                    }
                 }
                 existing.kind = kind
                 return existing
@@ -1056,6 +1187,7 @@ export function createLayoutGroup(
                 lead: null,
                 saved: save(p.element, all),
                 authored: g.authored,
+                mode: reduced,
                 run: null,
                 release: null,
                 written: new Map(),
@@ -1096,6 +1228,14 @@ export function createLayoutGroup(
                     }
                     const wasFollower =
                         d?.kind === 'follow' || d?.kind === 'held'
+                    // a lead retargeted mid-crossfade keeps its fade: the pair
+                    // stays complementary and the release follows it (§5.6)
+                    const keptFade =
+                        !action.fadeLead &&
+                        d?.fade?.role === 'lead' &&
+                        !fadeEnded(d.fade)
+                            ? d.fade
+                            : null
                     const drive = startDrive(
                         p,
                         'track',
@@ -1110,15 +1250,17 @@ export function createLayoutGroup(
                     drive.target = nodes[i]!.a
                     drive.elapsed = 0
                     drive.started = false
+                    drive.mode = reduced
                     drive.lead = null
                     drive.fade = action.fadeLead
                         ? {
                               role: 'lead',
                               elapsed: -action.track.delay,
+                              started: false,
                               duration: action.track.duration,
                               curve: action.track.curve,
                           }
-                        : null
+                        : keptFade
                     drive.run = run
                     ;(run as Run | null)?.nodes.add(p)
                     return
@@ -1149,6 +1291,7 @@ export function createLayoutGroup(
                     drive.fade = {
                         role: 'follower',
                         elapsed: -(track?.delay ?? 0),
+                        started: false,
                         duration: track?.duration ?? 0,
                         curve: track?.curve ?? nodes[i]!.motion.curve,
                     }
@@ -1208,10 +1351,41 @@ export function createLayoutGroup(
 
     /* ───────────────────────── lifecycle ───────────────────────── */
 
-    function currentDrawn(p: Participant): Box | null {
-        if (!p.drive) return null
+    /** The drawn box of a driven node now, and its velocity while its own track moves. */
+    function currentMotion(
+        p: Participant
+    ): { box: Box; velocity: BoxVelocity | null } | null {
+        const d = p.drive
+        if (!d) return null
         const at = frame.findIndex((node) => node.p === p)
-        return at < 0 ? null : (drawnBoxes(solveNodes(frame))[at] ?? null)
+        if (at < 0) return null
+        const nodes = solveNodes(frame)
+        const box = drawnBoxes(nodes)[at]
+        if (!box) return null
+        const moving =
+            d.kind === 'track' &&
+            d.track !== null &&
+            !trackEnded(d.track, d.elapsed) &&
+            d.elapsed >= d.track.delay
+        return {
+            box,
+            velocity: moving ? (drawnVelocities(nodes)[at] ?? null) : null,
+        }
+    }
+
+    function countTracks(): number {
+        let tracks = 0
+        for (const node of frame) {
+            const d = node.p.drive
+            if (
+                d?.kind === 'track' &&
+                d.track &&
+                !trackEnded(d.track, d.elapsed)
+            ) {
+                tracks += 1
+            }
+        }
+        return tracks
     }
 
     function rebuildFrame(): void {
@@ -1256,8 +1430,8 @@ export function createLayoutGroup(
             if (!d) continue
             if (status === 'disposed' || d.kind !== 'held') settle(node.p)
         }
+        commitWrites()
         frame = frame.filter((node) => node.p.drive !== null)
-        pending = []
         realizer.stop()
         stats.tracks = 0
     }
@@ -1268,8 +1442,10 @@ export function createLayoutGroup(
             if (disposed) return noop
             let p = registry.get(element)
             if (p) {
+                // only a change that draws another track retargets (§3.3 inv. 5)
+                if (!sameTrackOptions(p.options, layoutOptions ?? {}))
+                    p.changed = true
                 p.options = layoutOptions ?? {}
-                p.changed = true
                 p.motion = null
             } else {
                 p = {
@@ -1294,20 +1470,39 @@ export function createLayoutGroup(
                 registry.delete(element)
                 const id = self.options.layoutId
                 if (id !== undefined && leads.get(id) === self) {
+                    // the box and the velocity it left with (§5.6)
+                    const motion = currentMotion(self)
                     const box =
-                        currentDrawn(self) ??
-                        capture?.rects.get(self) ??
-                        self.lastBox
+                        motion?.box ?? capture?.rects.get(self) ?? self.lastBox
                     leads.delete(id)
                     if (box && retain > 0)
-                        retained.set(id, { box, until: now() + retain * 1000 })
+                        retained.set(id, {
+                            box,
+                            velocity: motion?.velocity ?? null,
+                            until: now() + retain * 1000,
+                        })
                 }
-                if (self.drive) {
-                    finishRunNode(self)
-                    self.drive.release?.()
-                    restore(self.element, self.drive.saved)
+                const d = self.drive
+                if (d) {
+                    // unmount cancels its track (§9): the run reports
+                    // 'disposed' if nothing else of it is left
+                    cancelRunNode(self)
+                    d.release?.()
                     self.drive = null
+                    pending = pending.filter((w) => w.element !== element)
+                    queueRestore(element, d)
+                    commitWrites()
                     rebuildFrame()
+                    stats.tracks = countTracks()
+                    if (
+                        !frame.some(
+                            (node) =>
+                                node.p.drive !== null &&
+                                node.p.drive.kind !== 'held'
+                        )
+                    ) {
+                        realizer.stop()
+                    }
                 }
             }
         },
@@ -1316,8 +1511,8 @@ export function createLayoutGroup(
             validateLayoutOptions(layoutOptions)
             const p = registry.get(element)
             if (!p) return
+            if (!sameTrackOptions(p.options, layoutOptions)) p.changed = true
             p.options = layoutOptions
-            p.changed = true
             p.motion = null
         },
 

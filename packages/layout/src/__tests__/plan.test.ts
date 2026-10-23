@@ -169,7 +169,7 @@ describe('plan: layoutId', () => {
 
     it('a new lead starts from the departing node (live, exiting): handoff and crossfade', () => {
         const ids = new Map<string, IdHistory>([
-            ['card', { lead: 0, retained: null }],
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
         ])
         const result = plan(
             input(
@@ -214,7 +214,7 @@ describe('plan: layoutId', () => {
 
     it('hands off from a retained box when the departing node is gone; no crossfade', () => {
         const ids = new Map<string, IdHistory>([
-            ['card', { lead: null, retained: cardBox }],
+            ['card', { lead: null, retained: cardBox, retainedVelocity: null }],
         ])
         const result = plan(
             input([node({ layoutId: 'card', a: detailBox, before: null })], {
@@ -234,7 +234,7 @@ describe('plan: layoutId', () => {
     ] as const) {
         it(`no crossfade when ${name}`, () => {
             const ids = new Map<string, IdHistory>([
-                ['card', { lead: 0, retained: null }],
+                ['card', { lead: 0, retained: null, retainedVelocity: null }],
             ])
             const follower = node({
                 layoutId: 'card',
@@ -260,7 +260,7 @@ describe('plan: layoutId', () => {
 
     it('presence animating opacity on a crossfade node: handoff without crossfade, warning', () => {
         const ids = new Map<string, IdHistory>([
-            ['card', { lead: 0, retained: null }],
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
         ])
         const result = plan(
             input(
@@ -303,7 +303,7 @@ describe('plan: layoutId', () => {
 
     it('a running crossfade follower keeps following while it exits and the lead still leads', () => {
         const ids = new Map<string, IdHistory>([
-            ['card', { lead: 1, retained: null }],
+            ['card', { lead: 1, retained: null, retainedVelocity: null }],
         ])
         const result = plan(
             input(
@@ -569,7 +569,7 @@ describe('plan: CP3 trial regressions', () => {
 
     it('J-012: a registered node that becomes the lead takes over the departing lead (handoff + crossfade)', () => {
         const ids = new Map<string, IdHistory>([
-            ['x', { lead: 1, retained: null }],
+            ['x', { lead: 1, retained: null, retainedVelocity: null }],
         ])
         const result = plan(
             input(
@@ -605,6 +605,52 @@ describe('plan: CP3 trial regressions', () => {
         ])[0]!
         expect(at.x).toBeCloseTo(200, 12)
         expect(at.w).toBeCloseTo(300, 12)
+    })
+
+    it('J-020: a lead that left while moving hands off its box and its velocity', () => {
+        const linear = resolveMotion([
+            { duration: 1, delay: 0, timing: timing.linear() },
+        ])
+        const ids = new Map<string, IdHistory>([
+            [
+                'x',
+                {
+                    lead: null,
+                    retained: box(40, 40),
+                    retainedVelocity: { x: 200, y: 0, w: 0, h: 0 },
+                },
+            ],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'x',
+                        a: box(400, 40),
+                        before: null,
+                        motion: linear,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        const action = result.actions[0]!
+        if (action.kind !== 'track') throw new Error('expected a track')
+        const at = (elapsed: number) =>
+            drawnBoxes([
+                rootNode(box(400, 40), {
+                    fx: 0.5,
+                    fy: 0.5,
+                    track: action.track,
+                    elapsed,
+                }),
+            ])[0]!.x
+        expect(at(0)).toBeCloseTo(40, 12)
+        // c(τ) = A + (B − A)(1 − τ) + kτ(1 − τ)², k = vD + (B − A)
+        expect(at(0.02)).toBeCloseTo(44.12672, 9)
+        for (const h of [1e-5, 1e-6, 1e-7]) {
+            expect((at(h) - 40) / h).toBeCloseTo(200, 2)
+        }
     })
 
     it('J-013: an offscreen child under a visible mover is culled before the cap and stays counter-projected', () => {

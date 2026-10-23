@@ -1021,12 +1021,7 @@ export async function T11(): Promise<string> {
         h.group.capture()
         e.style.left = '200px'
         const done = report(h.group.flush())
-        const count = await frames(
-            h.mc,
-            40,
-            noCheck,
-            () => done.value !== null
-        )
+        const count = await frames(h.mc, 40, noCheck, () => done.value !== null)
         expectEqual(done.value!.status, 'ended', 'ignore plays')
         if (count < 13) throw new Error(`ignore ran ${count} frames`)
         h.dispose()
@@ -1149,6 +1144,690 @@ export async function T13(): Promise<string> {
         )
         expectEqual(done.value!.status, 'ended', 'never interrupted')
         return `${count} frames with a re-render every 3rd; max error ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/* ───────────────────── CP4 trial regressions ───────────────────── */
+
+const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+function at(o: OBox, x: number, y: number, w: number, h: number): OBox {
+    return { x: o.x + x, y: o.y + y, w, h }
+}
+
+/** J-016: unchanged and equivalent options (also inside a delay) never restart a track. */
+export async function J16(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const e = node(
+            h.root,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        const late = node(
+            h.root,
+            'left: 0; top: 100px; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(e)
+        h.add(late, { motion: { delay: 0.5 } })
+        const before = [pageBox(e), pageBox(late)]
+        h.group.capture()
+        e.style.left = '200px'
+        late.style.left = '200px'
+        const after = [pageBox(e), pageBox(late)]
+        const done = report(h.group.flush())
+        const tracks = [
+            spec(before[0]!, after[0]!, { duration: 1, timing: linear }),
+            spec(before[1]!, after[1]!, {
+                duration: 1,
+                delay: 0.5,
+                timing: linear,
+            }),
+        ]
+        let worst = 0
+        let sets = 0
+        await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                ;[e, late].forEach((element, i) => {
+                    worst = Math.max(
+                        worst,
+                        expectAt(
+                            element,
+                            expectedBox(tracks[i]!, elapsed),
+                            `${i} at ${elapsed.toFixed(3)} s`
+                        )
+                    )
+                })
+                if (Math.round(elapsed / DT) % 4 === 3) {
+                    h.group.capture()
+                    h.group.set(e, {})
+                    h.group.set(e, { layout: true })
+                    h.group.set(late, { motion: { delay: 0.5 } })
+                    void h.group.flush()
+                    sets += 1
+                }
+            },
+            () => done.value !== null
+        )
+        expectEqual(done.value!.status, 'ended', 'never interrupted')
+        return `${sets} flushes with unchanged/equivalent options (inside the delay too); on the oracle, max error ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** J-017: a lead retargeted mid-crossfade keeps its fade; the pair stays complementary. */
+export async function J17(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const card = node(
+            h.root,
+            'left: 0; top: 0; width: 80px; height: 80px; transform-origin: 0 0; background: #366;'
+        )
+        h.add(card, { layoutId: 'hero' })
+        const presence = createPresence(
+            card,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+        const cardBox = pageBox(card)
+        h.group.capture()
+        let fadeTime = 0
+        let exitedAt = -1
+        void presence.exit().then(() => {
+            exitedAt = fadeTime
+        })
+        const detail = node(
+            h.root,
+            'left: 200px; top: 0; width: 400px; height: 80px; transform-origin: 0 0; background: #663;'
+        )
+        const authoredStyle = detail.style.cssText
+        h.add(detail, { layoutId: 'hero' })
+        const first = report(h.group.flush())
+        let sum = 0
+        const sumOff = () =>
+            Math.abs(
+                Number(getComputedStyle(detail).opacity) +
+                    Number(getComputedStyle(card).opacity) -
+                    1
+            )
+        let frame = 0
+        await frames(h.mc, 31, () => {
+            fadeTime = frame * DT
+            frame += 1
+            sum = Math.max(sum, sumOff())
+        })
+        const drawn = expectedBox(
+            spec(cardBox, at(o, 200, 0, 400, 80), {
+                duration: 1,
+                timing: linear,
+            }),
+            30 * DT
+        )
+        h.group.capture()
+        detail.style.left = '400px'
+        const detailStyle = authoredStyle.replace('left: 200px', 'left: 400px')
+        const second = report(h.group.flush())
+        expectAt(detail, drawn, 'lead continuous at the retarget')
+        await settleMicrotasks()
+        expectEqual(first.value?.status, 'interrupted', 'first run')
+        const track = spec(drawn, at(o, 400, 0, 400, 80), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 320, h: 0 },
+        })
+        let worst = 0
+        let restoredAt = -1
+        await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                fadeTime = frame * DT
+                frame += 1
+                const want = expectedBox(track, elapsed)
+                worst = Math.max(
+                    worst,
+                    expectAt(detail, want, `lead at ${elapsed.toFixed(3)} s`)
+                )
+                // drawn at the lead while the fade runs; then held invisible
+                if (card.style.opacity !== '0') {
+                    worst = Math.max(
+                        worst,
+                        expectAt(
+                            card,
+                            want,
+                            `follower at ${elapsed.toFixed(3)} s`
+                        )
+                    )
+                }
+                sum = Math.max(sum, sumOff())
+                if (restoredAt < 0 && detail.style.opacity === '') {
+                    restoredAt = fadeTime
+                }
+            },
+            () => second.value !== null
+        )
+        if (sum > 0.01) throw new Error(`opacity sum off by ${sum}`)
+        if (!(exitedAt >= 1 - 1e-9 && exitedAt <= 1 + 2 * DT)) {
+            throw new Error(
+                `presence released at ${exitedAt} s, not at the fade's end (1 s)`
+            )
+        }
+        if (!(restoredAt >= 1 - 1e-9 && restoredAt <= 1 + 2 * DT)) {
+            throw new Error(
+                `lead opacity given back at ${restoredAt} s, not at the fade's end`
+            )
+        }
+        expectEqual(second.value!.status, 'ended', 'second run')
+        expectEqual(card.style.opacity, '0', 'follower held invisible')
+        expectEqual(detail.style.cssText, detailStyle, 'lead restored')
+        presence.dispose()
+        return `retarget at 0.48 s: opacity sum within ${sum.toFixed(4)}; pair on the oracle within ${worst.toFixed(4)} px; release and lead opacity at ${exitedAt.toFixed(3)} s`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** J-018: restores happen in the write phase: after every flush read, in the clock's commit. */
+export async function J18(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.2, timing: linear } })
+    let phase = 'idle'
+    const marker = {
+        update() {
+            phase = 'update'
+        },
+        commit() {
+            phase = 'commit'
+        },
+    }
+    // subscribed before the scope, so its phase is set first in each phase
+    h.mc.clock.subscribe(marker)
+    const probe = probeDom()
+    try {
+        const a = node(h.root, 'left: 0; top: 0; width: 40px; height: 40px;')
+        const b = node(h.root, 'left: 0; top: 60px; width: 40px; height: 40px;')
+        const c = node(
+            h.root,
+            'left: 0; top: 120px; width: 40px; height: 40px;'
+        )
+        h.add(a)
+        h.add(b)
+        h.add(c)
+        h.group.capture()
+        a.style.left = '100px'
+        b.style.left = '100px'
+        void h.group.flush()
+        await frames(h.mc, 3, noCheck)
+        // one driven node leaves the document; the other retargets
+        h.group.capture()
+        a.remove()
+        b.style.left = '300px'
+        probe.on = true
+        probe.log.length = 0
+        void h.group.flush()
+        probe.on = false
+        const log = [...probe.log]
+        const firstWrite = log.indexOf('write')
+        const lastRead = log.findLastIndex((e) => e !== 'write')
+        expectEqual(
+            firstWrite > lastRead,
+            true,
+            `flush: every read before every write (${log.join(',')})`
+        )
+        expectEqual(a.style.translate, '', 'disconnected node restored')
+        // the natural end: settle writes land in the commit phase
+        const phases: string[] = []
+        const set = CSSStyleDeclaration.prototype.setProperty
+        const remove = CSSStyleDeclaration.prototype.removeProperty
+        let ticking = false
+        CSSStyleDeclaration.prototype.setProperty = function (
+            this: CSSStyleDeclaration,
+            ...args: Parameters<CSSStyleDeclaration['setProperty']>
+        ) {
+            if (ticking) phases.push(`${phase}:set ${args[0]}`)
+            return set.apply(this, args)
+        }
+        CSSStyleDeclaration.prototype.removeProperty = function (
+            this: CSSStyleDeclaration,
+            property: string
+        ) {
+            if (ticking) phases.push(`${phase}:remove ${property}`)
+            return remove.call(this, property)
+        }
+        try {
+            for (let i = 0; i < 30 && b.style.translate !== ''; i++) {
+                ticking = true
+                h.mc.frame(FRAME_MS)
+                ticking = false
+                await settleMicrotasks()
+            }
+        } finally {
+            CSSStyleDeclaration.prototype.setProperty = set
+            CSSStyleDeclaration.prototype.removeProperty = remove
+        }
+        const removals = phases.filter((e) => e.includes(':remove'))
+        expectEqual(
+            removals.length >= 2,
+            true,
+            `settle removed translate and scale (${phases.join(', ')})`
+        )
+        const outside = phases.filter((e) => !e.startsWith('commit:'))
+        expectEqual(outside, [], 'every frame write in the commit phase')
+        return `flush ${log.filter((e) => e !== 'write').length} reads before ${log.filter((e) => e === 'write').length} writes; ${phases.length} frame writes all in commit (${removals.length} settle removals)`
+    } finally {
+        probe.restore()
+        h.mc.clock.unsubscribe(marker)
+        h.dispose()
+    }
+}
+
+/** J-019: reduced motion turned on mid-run clamps the running tracks at the next flush. */
+export async function J19(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({
+        motion: { duration: 1, timing: linear },
+        reducedMotion: { maxDuration: 0.1 },
+    })
+    try {
+        const e = node(h.root, 'left: 0; top: 0; width: 40px; height: 40px;')
+        const late = node(
+            h.root,
+            'left: 0; top: 60px; width: 40px; height: 40px;'
+        )
+        h.add(e)
+        h.add(late, { motion: { delay: 0.5 } })
+        h.group.capture()
+        e.style.left = '200px'
+        late.style.left = '200px'
+        const styles = [e.style.cssText, late.style.cssText]
+        const first = report(h.group.flush())
+        await frames(h.mc, 13, noCheck)
+        h.mc.setReducedMotion(true)
+        h.group.capture()
+        const second = report(h.group.flush())
+        await settleMicrotasks()
+        expectEqual(
+            first.value?.status,
+            'interrupted',
+            'the long run is replaced'
+        )
+        const count = await frames(
+            h.mc,
+            40,
+            noCheck,
+            () => second.value !== null
+        )
+        expectEqual(second.value!.status, 'ended', 'clamped run')
+        if (count * DT > 0.1 + 2 * DT) {
+            throw new Error(`the clamped run took ${count} frames (> 0.1 s)`)
+        }
+        expectEqual(e.style.cssText, styles[0], 'restored')
+        expectEqual(late.style.cssText, styles[1], 'delayed node restored')
+        expectEqual(h.mc.clock.size, 0, 'no subscriber')
+        return `toggle at 0.19 s: the active and the delayed track end within ${count} frames (≤ 0.1 s); restored, unsubscribed`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** J-020: a lead removed while moving hands off its box and its velocity; retention expires. */
+export async function J20(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const a = node(
+            h.root,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        const removeA = h.group.add(a, { layoutId: 'x' })
+        h.group.capture()
+        await h.group.flush()
+        h.group.capture()
+        a.style.left = '200px'
+        void h.group.flush()
+        await frames(h.mc, 13, noCheck)
+        const left = pageBox(a)
+        expectClose(left.x - o.x, 0.192 * 200, 0.01, 'leaving at x')
+        removeA()
+        a.remove()
+        const b = node(
+            h.root,
+            'left: 400px; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(b, { layoutId: 'x' })
+        const done = report(h.group.flush())
+        const track = spec(left, at(o, 400, 0, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 0, h: 0 },
+        })
+        let worst = 0
+        await frames(
+            h.mc,
+            80,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(b, expectedBox(track, elapsed), `t=${elapsed}`)
+                )
+            },
+            () => done.value !== null
+        )
+        expectEqual(done.value!.status, 'ended', 'handoff run')
+    } finally {
+        h.dispose()
+    }
+    // expired: no handoff
+    const g = harness({ motion: { duration: 1, timing: linear }, retain: 0.02 })
+    try {
+        const o = pageBox(g.root)
+        const a = node(g.root, 'left: 0; top: 0; width: 40px; height: 40px;')
+        const removeA = g.group.add(a, { layoutId: 'x' })
+        g.group.capture()
+        await g.group.flush()
+        g.group.capture()
+        a.style.left = '200px'
+        void g.group.flush()
+        await frames(g.mc, 13, noCheck)
+        removeA()
+        a.remove()
+        await sleep(60)
+        const b = node(
+            g.root,
+            'left: 400px; top: 0; width: 40px; height: 40px;'
+        )
+        g.add(b, { layoutId: 'x' })
+        await g.group.flush()
+        expectAt(b, at(o, 400, 0, 40, 40), 'no handoff after retain', 0.01)
+        return 'handoff at x = 38.4 with 200 px/s on the oracle every frame; none after retain'
+    } finally {
+        g.dispose()
+    }
+}
+
+type End = 'settle' | 'finish' | 'dispose'
+
+async function endRun(
+    h: Harness,
+    done: { value: LayoutReport | null },
+    end: End
+): Promise<void> {
+    if (end === 'finish') h.group.finish()
+    else if (end === 'dispose') h.group.dispose()
+    else await frames(h.mc, 120, noCheck, () => done.value !== null)
+    await settleMicrotasks()
+}
+
+/** J-021: corners owned from mid-run are saved and restored (settle, finish, dispose). */
+export async function J21(): Promise<string> {
+    const linear = timing.linear()
+    const lines: string[] = []
+    for (const end of ['settle', 'finish', 'dispose'] as const) {
+        const h = harness({ motion: { duration: 0.5, timing: linear } })
+        try {
+            const e = node(
+                h.root,
+                'left: 0; top: 0; width: 40px; height: 40px; border-radius: 8px; transform-origin: 0 0;'
+            )
+            h.add(e)
+            h.group.capture()
+            e.style.left = '200px'
+            e.style.width = '80px'
+            const style = e.style.cssText
+            report(h.group.flush())
+            await frames(h.mc, 13, noCheck)
+            h.group.capture()
+            h.group.set(e, { radius: true })
+            // a changed option retargets: the run to wait for is this one
+            const done = report(h.group.flush())
+            await frames(h.mc, 2, noCheck)
+            expectEqual(
+                e.style.getPropertyPriority('border-top-left-radius'),
+                'important',
+                'corners owned mid-run'
+            )
+            await endRun(h, done, end)
+            expectEqual(
+                e.style.cssText,
+                style,
+                `${end}: restored byte for byte`
+            )
+            lines.push(end)
+        } finally {
+            h.dispose()
+        }
+    }
+    return `radius turned on mid-run, restored after ${lines.join(', ')}`
+}
+
+/** J-022: an inline authored change during a run applies after it (settle, finish, dispose). */
+export async function J22(): Promise<string> {
+    const linear = timing.linear()
+    const lines: string[] = []
+    for (const end of ['settle', 'finish', 'dispose'] as const) {
+        const h = harness({ motion: { duration: 0.5, timing: linear } })
+        try {
+            const o = pageBox(h.root)
+            const e = node(
+                h.root,
+                'left: 0; top: 0; width: 40px; height: 40px; translate: 4px 0px; transform-origin: 0 0;'
+            )
+            h.add(e)
+            h.group.capture()
+            e.style.left = '200px'
+            const done = report(h.group.flush())
+            await frames(h.mc, 13, noCheck)
+            // the author writes inline mid-run (React does this on a re-render)
+            e.style.translate = '20px 0px'
+            e.style.scale = '1.5'
+            h.group.capture()
+            void h.group.flush()
+            await frames(h.mc, 2, noCheck)
+            await endRun(h, done, end)
+            const authored = document.createElement('div').style
+            authored.translate = '20px 0px'
+            expectEqual(
+                e.style.translate,
+                authored.translate,
+                `${end}: authored translate`
+            )
+            expectEqual(e.style.scale, '1.5', `${end}: authored scale`)
+            expectEqual(
+                e.style.getPropertyPriority('translate'),
+                '',
+                `${end}: author's priority`
+            )
+            expectAt(e, at(o, 220, 0, 60, 60), `${end}: authored box`, 0.01)
+            lines.push(end)
+        } finally {
+            h.dispose()
+        }
+    }
+    return `inline translate 4px → 20px and scale 1 → 1.5 mid-run applied after ${lines.join(', ')}`
+}
+
+/** J-023: unregistering or disconnecting a moving node cancels it; the rest of its run goes on. */
+export async function J23(): Promise<string> {
+    const linear = timing.linear()
+    // the sole node of a run
+    {
+        const h = harness({ motion: { duration: 1, timing: linear } })
+        try {
+            const e = node(
+                h.root,
+                'left: 0; top: 0; width: 40px; height: 40px;'
+            )
+            const remove = h.group.add(e)
+            h.group.capture()
+            e.style.left = '200px'
+            const style = e.style.cssText
+            const done = report(h.group.flush())
+            await frames(h.mc, 5, noCheck)
+            remove()
+            expectEqual(h.mc.clock.size, 0, 'unsubscribed at once')
+            expectEqual(h.group.stats.tracks, 0, 'no track left')
+            expectEqual(e.style.cssText, style, 'restored at once')
+            await settleMicrotasks()
+            expectEqual(done.value!.status, 'disposed', 'sole node removed')
+        } finally {
+            h.dispose()
+        }
+    }
+    // part of a run
+    let worst = 0
+    {
+        const h = harness({ motion: { duration: 0.3, timing: linear } })
+        try {
+            const a = node(
+                h.root,
+                'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+            )
+            const b = node(
+                h.root,
+                'left: 0; top: 60px; width: 40px; height: 40px; transform-origin: 0 0;'
+            )
+            const removeA = h.group.add(a)
+            h.add(b)
+            const before = pageBox(b)
+            h.group.capture()
+            a.style.left = '200px'
+            b.style.left = '200px'
+            const after = pageBox(b)
+            const done = report(h.group.flush())
+            const track = spec(before, after, { duration: 0.3, timing: linear })
+            let reports = 0
+            await frames(h.mc, 4, (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(b, expectedBox(track, elapsed), `b t=${elapsed}`)
+                )
+            })
+            removeA()
+            await settleMicrotasks()
+            expectEqual(done.value, null, 'the run goes on')
+            let frame = 4
+            await frames(
+                h.mc,
+                40,
+                () => {
+                    worst = Math.max(
+                        worst,
+                        expectAt(
+                            b,
+                            expectedBox(track, frame * DT),
+                            `b t=${frame * DT}`
+                        )
+                    )
+                    frame += 1
+                },
+                () => done.value !== null
+            )
+            if (done.value) reports += 1
+            expectEqual(done.value!.status, 'ended', 'the rest ended')
+            expectEqual(reports, 1, 'reported once')
+        } finally {
+            h.dispose()
+        }
+    }
+    // disconnected, then a flush
+    {
+        const h = harness({ motion: { duration: 1, timing: linear } })
+        try {
+            const e = node(
+                h.root,
+                'left: 0; top: 0; width: 40px; height: 40px;'
+            )
+            h.add(e)
+            h.group.capture()
+            e.style.left = '200px'
+            const done = report(h.group.flush())
+            await frames(h.mc, 5, noCheck)
+            e.remove()
+            h.group.capture()
+            await h.group.flush()
+            await settleMicrotasks()
+            expectEqual(done.value!.status, 'disposed', 'disconnected node')
+            expectEqual(e.style.translate, '', 'restored')
+            expectEqual(h.mc.clock.size, 0, 'unsubscribed')
+        } finally {
+            h.dispose()
+        }
+    }
+    return `sole removal: 'disposed', unsubscribed and restored at once; partial removal: the rest on the oracle (${worst.toFixed(4)} px), 'ended' once; disconnected: 'disposed'`
+}
+
+/** J-025: B of a driven node is what the user saw through a presence layer changed since the last flush. */
+export async function J25(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const parent = node(
+            h.root,
+            'left: 100px; top: 50px; width: 400px; height: 200px; transform: scale(0.8); transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(parent)
+        h.add(child)
+        h.group.capture()
+        child.style.left = '200px'
+        const style = child.style.cssText
+        const first = report(h.group.flush())
+        await frames(h.mc, 13, noCheck)
+        expectAt(child, at(o, 100 + 0.8 * 38.4, 50, 32, 32), 'under scale 0.8')
+        // the presence layer changes between flushes
+        parent.style.transform = 'scale(1)'
+        const seen = pageBox(child)
+        h.group.capture()
+        child.style.left = '300px'
+        const second = report(h.group.flush())
+        expectAt(child, seen, 'B is what the user saw (x 138.4, w 40)')
+        await settleMicrotasks()
+        expectEqual(first.value?.status, 'interrupted', 'first run')
+        const track = spec(seen, at(o, 400, 50, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 0, h: 0 },
+        })
+        let worst = 0
+        await frames(
+            h.mc,
+            80,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(child, expectedBox(track, elapsed), `t=${elapsed}`)
+                )
+            },
+            () => second.value !== null
+        )
+        expectEqual(
+            child.style.cssText,
+            style.replace('200px', '300px'),
+            'identity settle'
+        )
+        return `after scale 0.8 → 1: B = (${(seen.x - o.x).toFixed(1)}, w ${seen.w}); continuous, on the oracle within ${worst.toFixed(4)} px`
     } finally {
         h.dispose()
     }

@@ -268,6 +268,46 @@ function convergedSlope0(value: (tau: number) => number): number {
 const curves = new WeakMap<TimingFunction, Curve>()
 
 /** The normalized curve of a stateless timing (cached per instance). */
+/**
+ * Timings compared by value: the same class with equal `opt` (a timing written
+ * inline is a new object on every call).
+ */
+function sameTiming(a: unknown, b: unknown): boolean {
+    if (a === b) return true
+    if (
+        typeof a !== 'object' ||
+        typeof b !== 'object' ||
+        a === null ||
+        b === null ||
+        a.constructor !== b.constructor ||
+        !('opt' in a) ||
+        !('opt' in b)
+    ) {
+        return false
+    }
+    return JSON.stringify(a.opt) === JSON.stringify(b.opt)
+}
+
+/**
+ * Whether two option sets draw the same track: mode, anchor, motion and
+ * radius. A change of any of them retargets a running track (§5.5); equal
+ * options keep it (§3.3 invariant 5). `layoutId`, `layoutCrossfade` and
+ * `layoutDependency` act at the flush and never restart a track.
+ */
+export function sameTrackOptions(a: LayoutOptions, b: LayoutOptions): boolean {
+    const am = a.motion
+    const bm = b.motion
+    return (
+        (a.layout ?? true) === (b.layout ?? true) &&
+        a.layoutAnchor?.x === b.layoutAnchor?.x &&
+        a.layoutAnchor?.y === b.layoutAnchor?.y &&
+        (a.radius ?? false) === (b.radius ?? false) &&
+        am?.duration === bm?.duration &&
+        am?.delay === bm?.delay &&
+        sameTiming(am?.timing, bm?.timing)
+    )
+}
+
 export function curveOf(fn: TimingFunction): Curve {
     const cached = curves.get(fn)
     if (cached) return cached
