@@ -551,6 +551,14 @@ function GridCard({
                 color: INK,
                 boxShadow: '0 4px 16px rgb(0 0 0 / 0.1)',
                 cursor: 'pointer',
+                // a button resets the inherited text styles (UA font,
+                // letter/word spacing, text transform); the detail is a div
+                // that inherits them, so the shared title must inherit here
+                // too, or its metrics change between the two states (J-033)
+                font: 'inherit',
+                letterSpacing: 'inherit',
+                wordSpacing: 'inherit',
+                textTransform: 'inherit',
             }}
         >
             <CardBody i={i} detail={false} />

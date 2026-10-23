@@ -55,6 +55,22 @@ function opacity(element: Element): number {
     return Number(getComputedStyle(element).opacity)
 }
 
+/** The computed text styles that set an element's glyph metrics. */
+function fontOf(element: Element): string {
+    const s = getComputedStyle(element)
+    return [
+        s.fontFamily,
+        s.fontSize,
+        s.fontWeight,
+        s.fontStyle,
+        s.fontStretch,
+        s.lineHeight,
+        s.letterSpacing,
+        s.wordSpacing,
+        s.textTransform,
+    ].join(' | ')
+}
+
 /** The presence part of `transform`: [scaleX, translateY]. */
 function presenceOf(element: Element): [number, number] {
     const value = getComputedStyle(element).transform
@@ -387,9 +403,17 @@ export async function E4Card(): Promise<string> {
         const cardBox = pageBox(card)
         const imageBox = pageBox(q(card, `[data-layout-id="card-${i}-image"]`))
         const titleBox = pageBox(q(card, `[data-layout-id="card-${i}-title"]`))
+        const gridFont = fontOf(q(card, `[data-layout-id="card-${i}-title"]`))
         titleSize = titleBox
         await view.render(app(i))
         const detail = q(view.host, `[data-card-detail="${i}"]`)
+        // J-033: the title's text styles do not depend on its container (a
+        // button in the grid, a div in the detail), so its metrics match
+        expectEqual(
+            fontOf(q(detail, `[data-layout-id="card-${i}-title"]`)),
+            gridFont,
+            'title text styles, detail vs grid'
+        )
         // the first frame: each nested id starts from the card's own box
         expectAt(detail, cardBox, 'surface first frame')
         expectAt(
@@ -412,6 +436,17 @@ export async function E4Card(): Promise<string> {
             offset(stage, { x, y, w: width, h: height }),
             'detail final',
             0.01
+        )
+        // the title measures the same at rest in the detail as in the grid
+        const restTitle = pageBox(
+            q(detail, `[data-layout-id="card-${i}-title"]`)
+        )
+        expectClose(restTitle.w, titleBox.w, TOL, 'title width, detail vs grid')
+        expectClose(
+            restTitle.h,
+            titleBox.h,
+            TOL,
+            'title height, detail vs grid'
         )
         // close, and reopen while it closes
         let jumps = 0
@@ -452,7 +487,7 @@ export async function E4Card(): Promise<string> {
         if (coverage > TOL)
             throw new Error(`image coverage gap ${coverage} px at ${where}`)
         if (pinned > TOL) throw new Error(`title size moved by ${pinned} px`)
-        return `nested ids from their own boxes; image coverage within ${coverage.toFixed(4)} px; title size pinned within ${pinned.toFixed(4)} px; close/reopen without a jump (${jumps.toFixed(4)} px)`
+        return `nested ids from their own boxes; title ${titleBox.w.toFixed(3)} px wide in the grid, ${restTitle.w.toFixed(3)} px in the detail, same text styles; image coverage within ${coverage.toFixed(4)} px; title size pinned within ${pinned.toFixed(4)} px; close/reopen without a jump (${jumps.toFixed(4)} px)`
     } finally {
         view.dispose()
     }
