@@ -85,15 +85,17 @@ const SCENARIOS = {
     suspense: {
         slow: false,
         body: async () => {
-            for (let i = 0; i < 6; i++) {
+            // React throttles a fallback reveal by up to 300 ms: every wait
+            // outlasts it, so each resolved commit lands on its own
+            for (let i = 0; i < 3; i++) {
                 startTransition(() =>
                     set((s) => ({ ...reorder(s, i), suspend: s.suspend + 1 }))
                 )
-                await sleep(120)
+                await sleep(450)
                 set((s) => ({ ...reorder(s, i + 1), suspend: s.suspend + 1 }))
                 await sleep(40)
                 set((s) => ({ ...reorder(s, i + 2), suspend: s.suspend + 1 }))
-                await sleep(120)
+                await sleep(450)
                 set((s) => ({ ...reorder(s, i + 3), suspend: s.suspend + 1 }))
                 await sleep(40)
             }
@@ -136,12 +138,14 @@ export async function runS1(
     const { slow, body } = SCENARIOS[name]!
     const real = await scenario(slow, body, true)
     const control = await scenario(slow, body, false)
-    const line = `React ${reactVersion}, compiled=${compiled}, StrictMode, ${name}: flushes ${real.flushes}, compared ${real.compared}, violations ${real.violations} (control without refresh: ${control.violations}, max error ${control.maxError.toFixed(1)} px), refreshes ${real.refreshes}, updates interleaved into a pending capture ${real.interleaved}, missing ${real.missing}, max error ${real.maxError.toFixed(3)} px`
+    const line = `React ${reactVersion}, compiled=${compiled}, StrictMode, ${name}: flushes ${real.flushes}, compared ${real.compared}, violations ${real.violations} (control without refresh: ${control.violations}, max error ${control.maxError.toFixed(1)} px), refreshes ${real.refreshes}, handoffs ${real.handoffs}, unchecked ${real.unchecked}, reveals ${real.reveals}, updates interleaved into a pending capture ${real.interleaved}, missing ${real.missing}, max error ${real.maxError.toFixed(3)} px`
     const insensitive = name === 'transition' && control.violations === 0
     if (
         real.violations > 0 ||
         real.missing > 0 ||
         real.compared === 0 ||
+        real.unchecked > 0 ||
+        (name === 'suspense' && real.reveals < 6) ||
         insensitive
     ) {
         throw new Error(`S1 failed: ${line}`)
