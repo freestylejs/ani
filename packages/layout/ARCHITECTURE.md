@@ -337,8 +337,11 @@ its velocity.
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting
   under presence, the box moved by at least `threshold` (or the pair is reversing, below),
   and neither node sets `layoutCrossfade: false`. Both nodes draw at the lead's box; the
-  follower takes it as its own flush space draws the lead (§3.1, §5.3: `corr_f ∘ corr_l⁻¹`),
-  and a continuing follower keeps the space of the flush that started it, like a kept track.
+  follower takes it as its own flush space draws the lead (§3.1, §5.3): its ancestors as its
+  flush saw them, every other presence as the lead was drawn with. Only the layers at the
+  follower's ancestors that also draw the lead convert, `corr_f ∘ corr_l⁻¹` over those; a lead
+  outside the follower's layered parent is taken as is. A continuing follower keeps the space
+  of the flush that started it, like a kept track.
   The opacities are `w` and `1 − w`, with `w = from + (1 − from)·clamp(e(τ), 0, 1)` on the lead's
   timeline and `from = 0` for a new handoff.
 - **Reversal.** When the new lead is the follower of the running crossfade (a menu reopened
