@@ -116,3 +116,97 @@ Firefox and WebKit timers are coarse (1 ms).
 
 PASS (implementer review). The CP5 adapter fixes (`layout/react-fix`, proof in `cp5_react.md`)
 are merged; the CP5 trial's carried defects go to the CP6 trial for re-judgment.
+
+## CP6 trial fix proof (J-033, J-034)
+
+Branch `layout/accept-fix` from `43f045a`. Commits `a6c2a1d` (J-033) and `3757638` (J-034).
+No engine source (`packages/layout/src`) changed. Runs on the Linux mirror, Playwright 1.55.0.
+
+### Changed files
+
+| File | Change | Defect |
+|---|---|---|
+| `packages/web/src/components/layout_fixtures.tsx` | GridCard's `<button>` sets `font`, `letterSpacing`, `wordSpacing`, `textTransform` to `inherit` (the UA button styles reset them; CardDetail's `<div>` inherits them) | J-033 |
+| same | `E3.enterDuration = 0.35`; FolderItem's enter uses it (same value as before) | J-034 |
+| `tests/browser/cases/layout_frames.ts` | `framesUntilDone(mc, limit, check, done, label)`: runs `frames()` and throws `"<label> did not settle within <limit> frames"` when `done()` is still false; `frames()` itself unchanged for other callers | J-034 |
+| `tests/browser/cases/acceptance.ts` | E4 text-style and width assertions; E3 rewritten; Gallery detail frame checks; all 13 settle-predicate loops in the suite use `framesUntilDone` | J-033, J-034 |
+
+### Assertions added
+
+**E4 (J-033).** Unchanged: surface/image first frame on the card's boxes, title first frame
+x/y within 0.5 px (position mode), coverage and title-size-pinned ≤ 0.5 px every frame.
+Added:
+
+- `fontOf(title)` (computed `fontFamily | fontSize | fontWeight | fontStyle | fontStretch |
+  lineHeight | letterSpacing | wordSpacing | textTransform`) is equal in the grid card (read
+  before opening) and the detail (`expectEqual`, "title text styles, detail vs grid").
+- After the opening settles, the detail title's width and height equal the grid title's within
+  0.5 px ("title width/height, detail vs grid").
+
+**E3 (J-034).** Origin `O` is the centre of the closed folder, measured before opening. For
+item k with layout box `B_k` (from `folderTile`), the expected drawn box at scale s is
+`O + s·(B_k − O)` (x, y) and `s·B_k` (w, h). The expected scale is computed in the test from
+the fixture's spring step alone: `s = 0.2` until `k·0.04 s`, then
+`SPRING.step(local, {from: 0.2, to: 1, duration: E3.enterDuration})` (1 once it reports its
+end). Presence timelines start at the commit, so the harness frame at elapsed t (layout
+dt = 0 on the first frame) is `t + DT` on them; measured scale at the first frame 0.2454 =
+the spring at exactly 16 ms (e = 0.0566). For both the open and the reopen-at-500-ms runs:
+
+- exactly `E3.others` (5) items are mounted, in order;
+- first frame: each item's scale (drawn w / 68) is 0.2 ± 0.02 and its box is
+  `O + 0.2·(B_k − O)` within 0.5 px;
+- every frame: every item is connected and drawn on its expected path within 0.5 px;
+- every start (first frame whose scale exceeds 0.2 by > 1e-3) is found and finite, and lies in
+  `(k·0.04, k·0.04 + DT]`; successive starts differ by 0.04 s ± DT;
+- the run settles (`framesUntilDone`, 90 frames) and each item ends on `B_k` within 0.01 px;
+- during the open run the four shared tiles are on the oracle track (folder box → panel box,
+  `DURATION`, `SPRING`) every frame, in addition to the first/final checks.
+
+**Gallery (J-034).** Opening: track from tile 5's measured drawn box before the commit to the
+detail's measured layout box after it (`offsetLeft/Top/Width/Height` in the stage, offset
+parent asserted); return: from the detail's settled drawn box to the returning tile's measured
+layout box. Both checked every frame with `expectedBox` within 0.5 px, both must settle; first
+and final checks retained.
+
+### Results (all four builds: `acceptance`, `acceptance_r18`, `acceptance_rc`, `acceptance_r18c`)
+
+`pnpm -s test:browser --browser <b> --case 'acceptance*:E3Folder' --case 'acceptance*:E4Card' --case 'acceptance*:Gallery*'`:
+
+| | Chromium | Firefox | WebKit |
+|---|---|---|---|
+| Cases | 12 / 12 | 12 / 12 | 12 / 12 |
+| E3 tiles on oracle (max) | 0.0000 px | 0.0083 px | 0.0000 px |
+| E3 items on enter path (max) | 0.0000 px | 0.0082 px | 0.0000 px |
+| E3 starts, open and reopen (s) | .016/.048/.096/.128/.176 | same | same |
+| E3 stagger error (max) | 0.008 s | 0.008 s | 0.008 s |
+| E4 title width grid / detail | 58.000 / 58.000 px | 58.500 / 58.500 px | 58.516 / 58.516 px |
+| Gallery grid↔list (max) | 0.0002 px | 0.0083 px | 0.0002 px |
+| Gallery detail open/return (max) | 0.0001 px | 0.0080 px | 0.0001 px |
+
+`pnpm -s test:browser --browser <b> --case 'acceptance*:*'`: Chromium 28 / 28, Firefox 28 / 28,
+WebKit 28 / 28 (7 rows × 4 builds). `npx tsc -p tests/browser --noEmit`: exit 0.
+`npx biome check tests/browser packages/web/src/components`: exit 0 (4 pre-existing warnings,
+none in the changed files; `--diagnostic-level=warn` on the three changed files is clean).
+
+### Controls (not committed)
+
+- **J-034 sensitivity control** — only FolderItem's enter changed to `to: { scale: 0.2 }`,
+  `duration: 1000`; Chromium, `acceptance*:E3Folder`: **0 passed, 4 failed**, each
+  `open: item 0 enter t=0: drawn {"x":35.2,"y":51.2,"w":13.6,"h":13.6} differs from
+  {"x":34.111,"y":53.741,"w":16.686,"h":16.686} by 3.086 px`. Reverted.
+- **J-033 control** — button `inherit` lines removed; `acceptance:E4Card` in Chromium FAILs:
+  `title text styles, detail vs grid: expected "Arial | 15px | 700 | … ", received
+  "\"Times New Roman\" | 15px | 700 | …"`. Firefox and WebKit on the mirror resolve the same
+  font for both (58.5 / 58.516 px), which is why the judge's environment saw the Firefox failure
+  and ours did not; the computed-style assertion catches the drift wherever the UA button font
+  differs. Reverted.
+
+### Residual risks
+
+- The E3 enter expectation uses the timeline convention that an enter starts at its commit
+  (`t + DT` on the harness clock). If core changed presence timelines to a dt = 0 first frame,
+  E3 would fail by about 3 px at t = 0 and the offset would have to be revisited deliberately.
+- The E3 enter path evaluates the fixture spring's own `step`; it is independent of the presence
+  runtime and the layout solver, not of the timing function definition (as the oracle).
+- The Gallery after-boxes use integer `offset*` metrics; the fixture geometry is integral, so this
+  is exact here but would round a fractional layout.
