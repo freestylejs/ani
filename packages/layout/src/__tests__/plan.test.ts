@@ -330,6 +330,44 @@ describe('plan: layoutId', () => {
             start: false,
         })
     })
+
+    it('a pair that reverses mid-crossfade keeps fading below the threshold (no opacity pop)', () => {
+        // the follower becomes the lead again while the old lead exits, its
+        // box within the threshold of where the pair is drawn
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const near = { ...cardBox, x: cardBox.x + 0.4 }
+        const nodes = (following: number) => [
+            node({
+                layoutId: 'card',
+                exiting: true,
+                a: cardBox,
+                before: cardBox,
+                order: 1,
+            }),
+            node({
+                layoutId: 'card',
+                a: near,
+                before: cardBox,
+                following,
+                order: 2,
+            }),
+        ]
+        const reversed = plan(input(nodes(0), { ids }))
+        expect(reversed.leads.get('card')).toBe(1)
+        expect(reversed.actions[0]).toEqual({
+            kind: 'follow',
+            lead: 1,
+            start: true,
+        })
+        const lead = reversed.actions[1]!
+        if (lead.kind !== 'track') throw new Error('expected a track')
+        expect(lead.fadeLead).toBe(true)
+        // control: a node that was not the follower gets no crossfade there
+        const fresh = plan(input(nodes(-1), { ids }))
+        expect(fresh.actions[1]!.kind).not.toBe('track')
+    })
 })
 
 describe('plan: nesting and anchors', () => {
