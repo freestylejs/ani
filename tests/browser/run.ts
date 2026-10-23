@@ -81,6 +81,8 @@ interface CaseModule {
     cases: string[]
     pageOptions: Record<string, PageOptions>
     knownFailures: Record<string, string>
+    /** Cases that measure through CDP: skipped, not run, in Firefox and WebKit. */
+    chromiumOnly: string[]
 }
 
 interface Pattern {
@@ -298,6 +300,7 @@ async function inspect(
         cases: [],
         pageOptions: {},
         knownFailures: {},
+        chromiumOnly: [],
     }
     const context = await browser.newContext()
     try {
@@ -318,6 +321,7 @@ async function inspect(
                     string,
                     string
                 >,
+                chromiumOnly: (cases.chromiumOnly ?? []) as string[],
             }
         })
         if (problems.length > 0) {
@@ -448,7 +452,10 @@ async function findCases(name: ModuleName): Promise<string[]> {
     })
     const output = Object.values(result.metafile?.outputs ?? {})[0]
     return (output?.exports ?? []).filter(
-        (key) => key !== 'pageOptions' && key !== 'knownFailures'
+        (key) =>
+            key !== 'pageOptions' &&
+            key !== 'knownFailures' &&
+            key !== 'chromiumOnly'
     )
 }
 
@@ -502,7 +509,7 @@ async function main(): Promise<number> {
             ],
         }),
     })
-    const counts = { PASS: 0, FAIL: 0, KNOWN: 0 }
+    const counts = { PASS: 0, FAIL: 0, KNOWN: 0, SKIP: 0 }
     const started = performance.now()
     try {
         for (const name of MODULES) {
@@ -531,6 +538,14 @@ async function main(): Promise<number> {
                     writeOut(known === undefined ? id : `${id} (known failure)`)
                     continue
                 }
+                if (
+                    options.browser !== 'chromium' &&
+                    module.chromiumOnly.includes(caseName)
+                ) {
+                    counts.SKIP += 1
+                    writeOut(`SKIP ${id} (CDP: Chromium only)`)
+                    continue
+                }
                 const outcome = await runCase(browser, module, caseName)
                 counts[outcome.status] += 1
                 report(id, outcome)
@@ -543,7 +558,7 @@ async function main(): Promise<number> {
 
     const seconds = ((performance.now() - started) / 1000).toFixed(1)
     writeOut(
-        `\n${counts.PASS} passed, ${counts.FAIL} failed, ${counts.KNOWN} known failures (${seconds} s)`
+        `\n${counts.PASS} passed, ${counts.FAIL} failed, ${counts.KNOWN} known failures, ${counts.SKIP} skipped (${seconds} s)`
     )
     return counts.FAIL === 0 ? 0 : 1
 }
