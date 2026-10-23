@@ -9,7 +9,7 @@ importers:
   .:
     devDependencies:
       '@babel/core':
-        specifier: ^7.29.7
+        specifier: 7.29.7
         version: 7.29.7
       '@biomejs/biome':
         specifier: 2.4.9
@@ -30,7 +30,7 @@ importers:
         specifier: 4.1.2
         version: 4.1.2(vitest@4.1.2(@types/node@25.5.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.7.1)(@types/node@25.5.0)(esbuild@0.27.0)(jiti@2.6.1)(yaml@2.8.3)))
       babel-plugin-react-compiler:
-        specifier: ^1.0.0
+        specifier: 1.0.0
         version: 1.0.0
       esbuild:
         specifier: 0.27.0
@@ -54,7 +54,7 @@ importers:
         specifier: npm:react@18.3.1
         version: react@18.3.1
       react-compiler-runtime:
-        specifier: ^1.0.0
+        specifier: 1.0.0
         version: 1.0.0(react@19.2.1)
       react-dom:
         specifier: 19.2.1
