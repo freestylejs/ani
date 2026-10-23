@@ -1,9 +1,4 @@
-export {
-    LayoutConfig,
-    type LayoutConfigProps,
-    LayoutGroup,
-    type LayoutGroupProps,
-} from './layout_group'
+export { LayoutGroup, type LayoutGroupProps } from './layout_group'
 export {
     AnimatePresence,
     type AnimatePresenceProps,

@@ -71,6 +71,9 @@ export default defineConfig({
             '@freestylejs/ani-core': fileURLToPath(
                 new URL('./packages/core/src/index.ts', import.meta.url)
             ),
+            '@freestylejs/ani-layout': fileURLToPath(
+                new URL('./packages/layout/src/index.ts', import.meta.url)
+            ),
             react: fileURLToPath(new URL('./node_modules/react', import.meta.url)),
             'react/jsx-runtime': fileURLToPath(
                 new URL('./node_modules/react/jsx-runtime.js', import.meta.url)

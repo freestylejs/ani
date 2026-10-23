@@ -1,146 +1,353 @@
-import type { ReducedMotionPolicy } from '@freestylejs/ani-core'
-import type {
-    LayoutGroup,
-    LayoutMotion,
-    LayoutParticipantOptions,
-    LayoutResult,
-    LayoutSnapshot,
-} from '@freestylejs/ani-layout'
+import { type Clock, DEV } from '@freestylejs/ani-core'
 import {
-    createContext,
-    type ReactNode,
-    type Ref,
-    type RefCallback,
-} from 'react'
+    createLayoutGroup,
+    type LayoutGroup,
+    type LayoutGroupOptions,
+    type LayoutMotion,
+    type LayoutOptions,
+    type LayoutReport,
+} from '@freestylejs/ani-layout'
+import { createContext, type Ref, type RefCallback } from 'react'
+import { flushSync } from 'react-dom'
 
-export interface LayoutFacade {
-    group: LayoutGroup | null
-    add(element: HTMLElement, options: LayoutParticipantOptions): () => void
-    set(element: HTMLElement, options: LayoutParticipantOptions): void
-    update(mutate: () => void): Promise<LayoutResult>
-    capture(): LayoutSnapshot | null
-    play(
-        snapshot: LayoutSnapshot,
-        motion?: LayoutMotion
-    ): Promise<LayoutResult> | null
+const NO_CHANGE: LayoutReport = { status: 'no-change', snapped: [] }
+
+export const hasDOM = (): boolean => typeof document !== 'undefined'
+
+/**
+ * The adapter's handle on one core scope (§4.1–§4.2): renders capture,
+ * layout effects queue one flush per scope and commit. The core group is
+ * created lazily and re-created (with every registration) when its options
+ * change or after disposal.
+ */
+export interface LayoutScope {
+    /** Render of a participant, group or presence: the before-boxes. */
+    touch(): void
+    /** Layout effect: queues the commit's one flush. */
+    commit(): void
+    add(element: HTMLElement, options: LayoutOptions): () => void
+    set(element: HTMLElement, options: LayoutOptions): void
+    update(fn: () => void): Promise<LayoutReport>
     finish(): void
-    attach(group: LayoutGroup): void
+    /** Re-creates the core group with new options. */
+    recreate(options: LayoutGroupOptions): void
     dispose(): void
 }
 
-export function createLayoutFacade(): LayoutFacade {
-    let group: LayoutGroup | null = null
-    let pendingSnapshot: LayoutSnapshot | null = null
-    let pendingPlay: Promise<LayoutResult> | null = null
-    let playSnapshot: LayoutSnapshot | null = null
-    const pending = new Map<HTMLElement, LayoutParticipantOptions>()
-    const cleanups = new Map<HTMLElement, () => void>()
+interface Member {
+    options: LayoutOptions
+    remove: () => void
+    /** Removed, pending the end of the task. */
+    leaving: boolean
+}
 
-    const addNow = (
-        element: HTMLElement,
-        options: LayoutParticipantOptions
-    ) => {
-        if (!group) return () => undefined
-        const cleanup = group.add(element, options)
-        cleanups.set(element, cleanup)
-        return () => {
-            if (cleanups.get(element) !== cleanup) return
-            cleanups.delete(element)
-            cleanup()
+const TRIGGER_WARNING =
+    '[ani-react/layout] The DOM around layout participants changed in a commit that rendered none of them, so nothing was captured and the change did not animate. Render a participant, LayoutGroup or AnimatePresence in that commit (put the LayoutGroup inside the component that owns the state), or wrap the change in useLayoutGroup().update(fn).'
+
+/**
+ * Timings are compared by value: the same class with equal `opt` (a timing
+ * written inline is a new object every render).
+ */
+function sameTiming(a: unknown, b: unknown): boolean {
+    if (a === b) return true
+    if (
+        typeof a !== 'object' ||
+        typeof b !== 'object' ||
+        a === null ||
+        b === null ||
+        a.constructor !== b.constructor ||
+        !('opt' in a) ||
+        !('opt' in b)
+    ) {
+        return false
+    }
+    return JSON.stringify(a.opt) === JSON.stringify(b.opt)
+}
+
+function sameMotion(
+    a: LayoutMotion | undefined,
+    b: LayoutMotion | undefined
+): boolean {
+    if (a === b) return true
+    if (!a || !b) return false
+    return (
+        a.duration === b.duration &&
+        a.delay === b.delay &&
+        sameTiming(a.timing, b.timing)
+    )
+}
+
+/** Equal options keep a running track; a change retargets it (§5.5). */
+export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
+    return (
+        a.layout === b.layout &&
+        a.layoutId === b.layoutId &&
+        a.layoutAnchor?.x === b.layoutAnchor?.x &&
+        a.layoutAnchor?.y === b.layoutAnchor?.y &&
+        a.layoutCrossfade === b.layoutCrossfade &&
+        'layoutDependency' in a === 'layoutDependency' in b &&
+        Object.is(a.layoutDependency, b.layoutDependency) &&
+        a.radius === b.radius &&
+        sameMotion(a.motion, b.motion)
+    )
+}
+
+export function createLayoutScope(
+    initial: LayoutGroupOptions,
+    onEmpty?: () => void
+): LayoutScope {
+    let options = initial
+    let group: LayoutGroup | null = null
+    const members = new Map<HTMLElement, Member>()
+    let queued = false
+    /** A render touched after the commit's last layout effect (K14). */
+    let touched = false
+
+    // development: the trigger contract (§7.2)
+    let observer: MutationObserver | null = null
+    let capturedSinceCheck = false
+    let warned = false
+
+    const live = (): LayoutGroup => {
+        group ??= createLayoutGroup(options)
+        return group
+    }
+
+    const run = (): void => {
+        if (!queued) return
+        queued = false
+        const current = group
+        if (!current) return
+        void current.flush()
+        // the next commit's mutations are covered only by a later capture
+        capturedSinceCheck = touched
+        // a render that started in the commit's task reused the capture this
+        // flush consumed: its before-boxes are the after-boxes just read
+        if (touched) {
+            touched = false
+            current.capture()
         }
     }
 
-    return {
-        get group() {
-            return group
-        },
-        add(element, options) {
-            if (group) return addNow(element, options)
-            pending.set(element, options)
-            const remove = () => {
-                pending.delete(element)
-                const cleanup = cleanups.get(element)
-                if (!cleanup) return
-                cleanups.delete(element)
-                cleanup()
+    const emptied = (): void => {
+        if (!onEmpty) return
+        queueMicrotask(() => {
+            if (members.size === 0) onEmpty()
+        })
+    }
+
+    const watch = (element: HTMLElement): void => {
+        if (!DEV || typeof MutationObserver === 'undefined') return
+        observer ??= new MutationObserver(() => {
+            if (members.size === 0) return
+            if (capturedSinceCheck) {
+                capturedSinceCheck = false
+                return
             }
-            return remove
+            if (warned) return
+            warned = true
+            // biome-ignore lint/suspicious/noConsole: development warning
+            console.warn(TRIGGER_WARNING)
+        })
+        observer.observe(element, {
+            attributes: true,
+            attributeFilter: ['class'],
+        })
+        if (element.parentElement) {
+            observer.observe(element.parentElement, { childList: true })
+        }
+    }
+
+    const scope: LayoutScope = {
+        touch() {
+            if (!hasDOM()) return
+            live().capture()
+            touched = true
+            capturedSinceCheck = true
         },
-        set(element, options) {
-            if (pending.has(element)) pending.set(element, options)
-            group?.set(element, options)
+
+        commit() {
+            touched = false
+            if (queued) return
+            queued = true
+            queueMicrotask(run)
         },
-        update(mutate) {
-            if (group) return group.update(mutate)
-            mutate()
-            return Promise.resolve('no-change')
-        },
-        capture() {
-            if (!group) return null
-            if (!pendingSnapshot) {
-                const snapshot = group.capture()
-                pendingSnapshot = snapshot
+
+        add(element, participant) {
+            let member = members.get(element)
+            if (member?.leaving) {
+                // re-attached in the task that detached it (StrictMode replays
+                // the refs of mounted and moved fibers): it keeps its capture
+                member.leaving = false
+                if (!sameOptions(member.options, participant)) {
+                    member.options = participant
+                    group?.set(element, participant)
+                }
+            } else {
+                member = {
+                    options: participant,
+                    remove: live().add(element, participant),
+                    leaving: false,
+                }
+                members.set(element, member)
+                watch(element)
+            }
+            const self = member
+            return () => {
+                if (members.get(element) !== self || self.leaving) return
+                self.leaving = true
                 queueMicrotask(() => {
-                    if (pendingSnapshot === snapshot) pendingSnapshot = null
+                    if (!self.leaving || members.get(element) !== self) return
+                    members.delete(element)
+                    self.remove()
+                    if (members.size === 0) emptied()
                 })
-                return snapshot
             }
-            return pendingSnapshot
         },
-        play(snapshot, motion) {
-            if (!group || pendingSnapshot !== snapshot) {
-                if (pendingPlay && playSnapshot === snapshot) return pendingPlay
-                return null
+
+        set(element, participant) {
+            const member = members.get(element)
+            if (!member) return
+            member.options = participant
+            group?.set(element, participant)
+        },
+
+        update(fn) {
+            if (!hasDOM()) {
+                fn()
+                return Promise.resolve(NO_CHANGE)
             }
-            if (pendingPlay && playSnapshot === snapshot) return pendingPlay
-            pendingSnapshot = null
-            playSnapshot = snapshot
-            pendingPlay = new Promise<LayoutResult>((resolve, reject) => {
-                queueMicrotask(() => {
-                    if (playSnapshot === snapshot) {
-                        pendingPlay = null
-                        playSnapshot = null
-                    }
-                    if (!group) {
-                        resolve('disposed')
-                        return
-                    }
-                    void group.play(snapshot, motion).then(resolve, reject)
-                })
-            })
-            return pendingPlay
+            // an earlier commit's pending flush keeps its own capture
+            run()
+            capturedSinceCheck = true
+            const report = live().update(() => flushSync(fn))
+            // the commit inside `fn` was flushed by `update` itself
+            queued = false
+            touched = false
+            return report
         },
+
         finish() {
             group?.finish()
         },
-        attach(next) {
-            group = next
-            for (const [element, options] of pending) {
-                addNow(element, options)
+
+        recreate(next) {
+            options = next
+            if (!group) return
+            group.dispose()
+            group = createLayoutGroup(options)
+            for (const [element, member] of members) {
+                member.remove = group.add(element, member.options)
             }
-            pending.clear()
         },
+
         dispose() {
-            pendingSnapshot = null
-            pendingPlay = null
-            playSnapshot = null
-            for (const cleanup of cleanups.values()) cleanup()
-            cleanups.clear()
-            pending.clear()
+            queued = false
+            touched = false
             group?.dispose()
             group = null
+            members.clear()
+            observer?.disconnect()
+            observer = null
         },
     }
+    emptied()
+    return scope
 }
 
-export const LayoutContext = createContext<LayoutFacade | null>(null)
+/* ───────────────────────── implicit root ───────────────────────── */
 
-export interface LayoutConfigValue {
-    readonly motion?: LayoutMotion | undefined
-    readonly reducedMotion?: ReducedMotionPolicy | undefined
+const roots = new Map<Clock | undefined, WeakMap<Document, LayoutScope>>()
+
+/**
+ * The implicit root scope of `(clock, document)` (§7.2): created on first
+ * use, disposed when its last participant leaves, independent of every other
+ * pair. `undefined` is the default clock.
+ */
+export function rootScope(
+    clock: Clock | undefined,
+    doc: Document
+): LayoutScope {
+    let byDocument = roots.get(clock)
+    if (!byDocument) {
+        byDocument = new WeakMap()
+        roots.set(clock, byDocument)
+    }
+    const partition = byDocument
+    let scope = partition.get(doc)
+    if (!scope) {
+        const created: LayoutScope = createLayoutScope(
+            clock ? { clock } : {},
+            () => {
+                if (partition.get(doc) !== created) return
+                partition.delete(doc)
+                created.dispose()
+            }
+        )
+        scope = created
+        partition.set(doc, scope)
+    }
+    return scope
 }
 
-export const LayoutConfigContext = createContext<LayoutConfigValue>({})
+/** The root scope of `(clock, document)` if it exists. */
+export function peekRootScope(
+    clock: Clock | undefined,
+    doc: Document
+): LayoutScope | undefined {
+    return roots.get(clock)?.get(doc)
+}
+
+/* ───────────────────────── contexts ───────────────────────── */
+
+export interface LayoutContextValue {
+    readonly scope: LayoutScope
+    /** Joined ids of the enclosing groups; prefixes every `layoutId`. */
+    readonly namespace: string | undefined
+    /** The enclosing groups' `motion`, merged outermost first. */
+    readonly motion: LayoutMotion | undefined
+}
+
+export const LayoutContext = createContext<LayoutContextValue | null>(null)
+
+/** The group's scope, else the implicit root of the element's document (created). */
+export function scopeOf(
+    context: LayoutContextValue | null,
+    element?: Element | null
+): LayoutScope {
+    return (
+        context?.scope ??
+        rootScope(undefined, element?.ownerDocument ?? document)
+    )
+}
+
+/**
+ * Like {@link scopeOf}, but never creates a root: renders and effects only
+ * touch and flush scopes that have participants (registration creates them).
+ */
+export function existingScope(
+    context: LayoutContextValue | null,
+    element?: Element | null
+): LayoutScope | undefined {
+    if (context) return context.scope
+    if (!hasDOM()) return undefined
+    return peekRootScope(undefined, element?.ownerDocument ?? document)
+}
+
+/** `motion` fields of `over` replace those of `base`, field by field. */
+export function mergeMotion(
+    base: LayoutMotion | undefined,
+    over: LayoutMotion | undefined
+): LayoutMotion | undefined {
+    if (!base) return over
+    if (!over) return base
+    return {
+        ...base,
+        ...(over.duration !== undefined && { duration: over.duration }),
+        ...(over.delay !== undefined && { delay: over.delay }),
+        ...(over.timing !== undefined && { timing: over.timing }),
+    }
+}
 
 export interface PresenceContextValue {
     readonly key: string
@@ -164,5 +371,3 @@ export function assignRef<T>(ref: Ref<T> | undefined, value: T | null): void {
         ;(ref as { current: T | null }).current = value
     }
 }
-
-export type { ReactNode }

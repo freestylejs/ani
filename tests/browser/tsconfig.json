@@ -3,6 +3,7 @@
     "include": ["./**/*", "./*.d.ts"],
     "compilerOptions": {
         "noEmit": true,
+        "jsx": "react-jsx",
         "allowImportingTsExtensions": true,
         "verbatimModuleSyntax": true,
         "lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -15,6 +16,9 @@
             ],
             "@freestylejs/ani-layout": ["packages/layout/src/index.ts"],
             "@freestylejs/ani-react": ["packages/react/src/index.ts"],
+            "@freestylejs/ani-react/layout": [
+                "packages/react/src/layout/index.ts"
+            ],
             "@freestylejs/ani-vue": ["packages/vue/src/index.ts"],
             "@freestylejs/ani-solid": ["packages/solid/src/index.ts"],
             "@freestylejs/ani-svelte": ["packages/svelte/src/index.ts"],

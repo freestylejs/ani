@@ -23,7 +23,13 @@ import {
     useState,
 } from 'react'
 import { useIsoLayoutEffect } from '../ani/owned'
-import { PresenceContext, type PresenceContextValue } from './context'
+import {
+    existingScope,
+    hasDOM,
+    LayoutContext,
+    PresenceContext,
+    type PresenceContextValue,
+} from './context'
 
 export interface AnimatePresenceProps {
     children?: ReactNode
@@ -69,6 +75,12 @@ function childrenEntries(
  * exits; it never clones a child or creates a wrapper element.
  */
 export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
+    const layout = useContext(LayoutContext)
+    // render: the before-boxes of the scope its children live in (§4.1)
+    existingScope(layout)?.touch()
+    useIsoLayoutEffect(() => {
+        existingScope(layout)?.commit()
+    })
     const [entries, setEntries] = useState<readonly PresenceEntry<ReactNode>[]>(
         []
     )
@@ -218,6 +230,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
             ) {
                 if (committedKeys.current.has(entry.key)) {
                     if (typeof console !== 'undefined') {
+                        // biome-ignore lint/suspicious/noConsole: development warning
                         console.warn(
                             `[ani-react/layout] AnimatePresence has no usePresence registrant for "${String(entry.key)}"; releasing it now.`
                         )
@@ -256,6 +269,91 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     )
 }
 
+const px = (value: string): number => Number.parseFloat(value) || 0
+
+/** A computed value other than its initial one (`''` where not computed). */
+const set = (value: string | undefined, initial = 'none'): boolean =>
+    value !== undefined && value !== '' && value !== initial
+
+/** Whether `style` makes its element the containing block of absolute descendants. */
+function containsAbsolute(style: CSSStyleDeclaration): boolean {
+    return (
+        set(style.position, 'static') ||
+        set(style.transform) ||
+        set(style.translate) ||
+        set(style.scale) ||
+        set(style.rotate) ||
+        set(style.filter) ||
+        set(style.backdropFilter) ||
+        set(style.perspective) ||
+        /layout|paint|strict|content/.test(style.contain) ||
+        /size/.test(style.containerType ?? '') ||
+        /transform|translate|scale|rotate|filter|perspective/.test(
+            style.willChange
+        )
+    )
+}
+
+/**
+ * The exiting element's box as `position: absolute` offsets in its
+ * containing block (§7.2 popLayout): the nearest ancestor that contains
+ * absolute descendants, else the initial containing block. Rect based, so a
+ * scaled containing block is divided out.
+ */
+function popBox(element: HTMLElement): {
+    left: number
+    top: number
+    width: number
+    height: number
+} {
+    const rect = element.getBoundingClientRect()
+    let block: HTMLElement | null = null
+    let style: CSSStyleDeclaration | null = null
+    for (let node = element.parentElement; node; node = node.parentElement) {
+        const candidate = getComputedStyle(node)
+        if (containsAbsolute(candidate)) {
+            block = node
+            style = candidate
+            break
+        }
+    }
+    if (!block || !style) {
+        const view = element.ownerDocument.defaultView
+        return {
+            left: rect.left + (view?.scrollX ?? 0),
+            top: rect.top + (view?.scrollY ?? 0),
+            width: rect.width,
+            height: rect.height,
+        }
+    }
+    const outer = block.getBoundingClientRect()
+    const borderLeft = px(style.borderLeftWidth)
+    const borderTop = px(style.borderTopWidth)
+    // the border-box size before transforms, exact
+    let width = px(style.width)
+    let height = px(style.height)
+    if (style.boxSizing !== 'border-box') {
+        width +=
+            px(style.paddingLeft) +
+            px(style.paddingRight) +
+            borderLeft +
+            px(style.borderRightWidth)
+        height +=
+            px(style.paddingTop) +
+            px(style.paddingBottom) +
+            borderTop +
+            px(style.borderBottomWidth)
+    }
+    const sx = width > 0 ? outer.width / width : 1
+    const sy = height > 0 ? outer.height / height : 1
+    return {
+        left: (rect.left - outer.left) / sx - borderLeft + block.scrollLeft,
+        top: (rect.top - outer.top) / sy - borderTop + block.scrollTop,
+        width: rect.width / sx,
+        height: rect.height / sy,
+    }
+}
+
 export interface UsePresenceResult<E extends HTMLElement> {
     ref: RefCallback<E>
     style: CSSProperties | undefined
@@ -283,13 +381,6 @@ export function usePresence<
     const elementRef = useRef<E | null>(null)
     const handle = useRef<PresenceHandle | null>(null)
     const registration = useRef<number | null>(null)
-    const popBox = useRef<{
-        left: number
-        top: number
-        width: number
-        height: number
-    } | null>(null)
-
     const detach = useMemo(
         () => () => {
             handle.current?.dispose()
@@ -339,42 +430,7 @@ export function usePresence<
         return detach
     }, [attach, detach])
 
-    useIsoLayoutEffect(() => {
-        const current = contextRef.current
-        const element = elementRef.current
-        if (!current?.popLayout || !element || !current.present) return
-        const rect = element.getBoundingClientRect()
-        const parent = element.offsetParent as HTMLElement | null
-        if (parent) {
-            const parentRect = parent.getBoundingClientRect()
-            popBox.current = {
-                left:
-                    rect.left -
-                    parentRect.left -
-                    parent.clientLeft +
-                    parent.scrollLeft,
-                top:
-                    rect.top -
-                    parentRect.top -
-                    parent.clientTop +
-                    parent.scrollTop,
-                width: rect.width,
-                height: rect.height,
-            }
-        } else {
-            popBox.current = {
-                left:
-                    rect.left +
-                    (typeof window === 'undefined' ? 0 : window.scrollX),
-                top:
-                    rect.top +
-                    (typeof window === 'undefined' ? 0 : window.scrollY),
-                width: rect.width,
-                height: rect.height,
-            }
-        }
-    })
-
+    const [applyInitial, setApplyInitial] = useState(true)
     useIsoLayoutEffect(() => {
         const current = contextRef.current
         const active = handle.current
@@ -387,7 +443,11 @@ export function usePresence<
                 }
             })
         } else if (current.willEnter) {
-            void active.enter()
+            // the initial style stays a prop until the enter is done: React
+            // would otherwise clear the values the enter is writing
+            void active.enter().then(() => {
+                if (contextRef.current?.present) setApplyInitial(false)
+            })
         }
     }, [context?.present, context?.willEnter, context?.token])
 
@@ -400,24 +460,19 @@ export function usePresence<
                 : undefined,
         [context?.willEnter, motion.initial]
     )
-    const [applyInitial, setApplyInitial] = useState(true)
-    useEffect(() => {
-        if (!applyInitial) return
-        setApplyInitial(false)
-    }, [applyInitial])
-    const popStyle: CSSProperties | undefined =
-        context && !context.present && context.popLayout
-            ? {
-                  position: 'absolute',
-                  left: popBox.current?.left ?? 0,
-                  top: popBox.current?.top ?? 0,
-                  width: popBox.current?.width ?? 0,
-                  height: popBox.current?.height ?? 0,
-                  margin: 0,
-                  boxSizing: 'border-box',
-                  pointerEvents: 'none',
-              }
-            : undefined
+    // measured in the render that exits, before React mutates the DOM
+    const popping = context !== null && !context.present && context.popLayout
+    const popStyle = useMemo<CSSProperties | undefined>(() => {
+        const element = elementRef.current
+        if (!popping || !element || !hasDOM()) return undefined
+        return {
+            position: 'absolute',
+            ...popBox(element),
+            margin: 0,
+            boxSizing: 'border-box',
+            pointerEvents: 'none',
+        }
+    }, [popping, context?.token])
 
     return {
         ref,
