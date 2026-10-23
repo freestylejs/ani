@@ -47,31 +47,52 @@ Found during CP8 and fixed:
 - **CP6 trial defects** J-016, J-032 (`cdd2c6a`, `732d1c4`), J-033, J-034 (`a6c2a1d`,
   `3757638`), each with a frame-level regression case in three browsers.
 
+## CP8 trial fixes (J-032, J-035, J-036)
+
+Trial `cp8_final_trial_result.md` (frozen `1a244e3`) failed on J-032 (S0), J-035 (S0) and
+J-036 (S1); J-016, J-033 and J-034 were closed. The fixes are in `4eeed91` (engine and tests)
+and `74da464` (ARCHITECTURE §3.1, §5.3 and §5.4, drift K23). The proof is in `cp4_engine.md`,
+"Fix proof report for the CP8 trial".
+
+- **J-032.** A kept track keeps its presence matrices and takes its CSS box from the current
+  flush. In `layout:J32B` (the trial's case) the child stays at (60, w 40) and stays on the
+  independent path every frame in all three browsers.
+- **J-035.** An anchored node takes its parent as its own flush space draws it, both for
+  placement and for the keep test. `layout:J35` and `layout:J35B` (depth 2) cover it: B is
+  (120, w 40), every frame is on `R + 100 − W/2`, and a no-op flush keeps every track.
+- **J-036.** Each parent map is `corr ∘ Ω_parent`, at 4 compositions per layer. On the
+  trial's chain that is 4(N−1)−1 compositions, where the old code needed N(N−1)/2. The user
+  approved the §5.3 statement "O(N) map arithmetic per frame, plus a constant per layer" on
+  2026-10-24.
+
+The new cases fail on the old engine with the trial's numbers: 60 → 35 px and 120 → 100 px.
+
 ## T8.2 Fresh clone
 
-`git bundle` of `layout/final` at `00fbbde`, cloned on june-wsl into an empty directory
+`git bundle` of `layout/final` at `74da464`, cloned on june-wsl into an empty directory
 (`~/ani-v2/lay-fresh`), then:
 
 | Step | Command | Result |
 |---|---|---|
 | Install | `pnpm install --frozen-lockfile` | exit 0 |
 | CI | `pnpm test:ci` (biome, typecheck, build incl. `next build`, vitest coverage) | exit 0 |
-| Chromium | `pnpm test:browser --coverage` | 125 passed, 0 failed; engine coverage 94.67 / 85.84 / 98.03 / 97.49 |
-| Firefox | `pnpm test:browser --browser firefox` | 123 passed, 2 skipped (Chromium-only CDP cases), 0 failed |
-| WebKit | `pnpm test:browser --browser webkit` | 123 passed, 2 skipped, 0 failed |
+| Chromium | `pnpm test:browser --coverage` | 128 passed, 0 failed; engine coverage 94.69 / 85.84 / 98.01 / 97.53 |
+| Firefox | `pnpm test:browser --browser firefox` | 126 passed, 2 skipped (Chromium-only CDP cases), 0 failed |
+| WebKit | `pnpm test:browser --browser webkit` | 126 passed, 2 skipped, 0 failed |
 | Size | `pnpm size` | all 8 scenarios PASS (everything 22,910 / 23,700 gzip) |
 
-The same gate at `2f98f1a` (before the trial fixes) was also green (124 Chromium, coverage
-94.43 / 86.19 / 97.85 / 97.38).
+Also at `74da464`, on the mirror: `pnpm test:waapi-trace` passed. The docs smoke test
+(`docs_showcase.mjs`) passed in all three browsers on the fresh build at `1a244e3`; the docs
+and fixtures have not changed since.
 
 ## V8
 
-All green at `00fbbde`. Verdict of this review: **PASS**, subject to the tribunal.
+All green at `74da464`. Verdict of this review: **PASS**, subject to the tribunal.
 
 ## Residual risks
 
-- An anchored node (`layoutAnchor`) is placed relative to its parent's drawn track box, not
-  through the parent's presence layer (`cp4_engine.md`, J-032 section).
+- A crossfade follower is drawn at its lead's box in the lead's flush space; if their flushes
+  saw different presence layers, the follower is drawn without that difference.
 - J-029: a render that knows no document yet touches every live implicit root; J-031: text
   changes and ancestors above a participant's parent are not observed (`cp5_react.md`).
 - A retained removed lead's own presence layer is taken as last measured (it is gone and

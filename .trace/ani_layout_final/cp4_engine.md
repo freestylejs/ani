@@ -270,3 +270,121 @@ Trial: `cp6_acceptance_trial_result.md`. Clarification K22.
     `layout:COST` frame p95 at 300 nested movers 0.665 ms (was 0.68).
 - **Residual risk.** An anchored node (`layoutAnchor`) is still placed relative to its parent's
   drawn track box, not through the parent's layer, as before.
+
+## Fix proof report for the CP8 trial (J-032, J-035, J-036)
+
+Trial: `cp8_final_trial_result.md` (frozen `1a244e3`). Clarification K23; ARCHITECTURE §3.1,
+§5.3, §5.4. Commits `4eeed91` (engine and tests), `74da464` (authority).
+
+**J-032: a kept track took its CSS box from its plan.**
+
+- *Root cause.* The frame node of a kept track kept its whole frozen `Geometry`, including the
+  CSS box `X = Q(L)` and origin of its plan. What K20b/K22 need frozen is only the presence
+  matrices. A parent retargeted after its layer changed moved the child's CSS box (left
+  100 → −25 under a parent left 200 → 300) while the child's A, in its own flush's space,
+  stayed (280, w 32). So the pose was solved for a box the browser no longer had: 60 → 35 px.
+- *Change.* `scope.ts` `keptGeometry`: a kept frame node takes the current CSS box and origin,
+  with the inner map rebuilt from the frozen presence matrix. It rests on the planned A, which
+  is already computed from the current CSS box (`plannedBoxes`).
+- *Regression.* `layout:J32B` is the trial's exact case. At the flush the child stays where the
+  user saw it, (60, w 40). It is then checked every frame against the independent path: the
+  parent `R(t)` (B 40 → A 300, vx 200), the kept child track `C = 280·min(1, 0.2 + DT + t)`
+  drawn through the parent's layer, `x = R + 1.25·(C − R)`, w 40. A no-op flush at frame 20
+  gives `no-change`; the child settles at (275, w 40) with identity styles.
+
+**J-035: an anchored child used its parent's box in the parent's space.**
+
+- *Root cause.* `drawnBoxes`/`drawnVelocities` placed an anchored node on its parent's drawn
+  box, which lives in the parent's flush space (scaleX 0.8: w 160). A child planned after the
+  layer changed lives in its own flush's space (scaleX 1: w 200), so its anchor point was 20 px
+  left of the parent's visual centre. The keep test (`targetMoved`) mixed the same two spaces:
+  the child's A in its own space against the parent's A in the parent's. That made a kept
+  anchored child retarget at every flush.
+- *Change.* `solve.ts` `drawnMotion`: an anchored node with layers (its own or its parent's)
+  takes its parent's box and velocity through `corrᵢ ∘ corr_parent⁻¹` (moving maps, so the
+  velocity is exact). `scope.ts` `plannedBoxes` also returns the parent's A through the same
+  ancestors (`PlanNode.parentPlanned`), and `plan.ts` `targetMoved` compares with it.
+- *Regressions.* `layout:J35` is the trial's case: parent 0.8 → 1, centred child 40 → 60. B is
+  (120, w 40) and every frame is on `R + 100 − W/2`, with `R = 200·min(1, 0.2 + DT + t)` and
+  `W = 40 + 20t − 20t(1 − t)²`. A no-op flush gives `no-change`; the child settles at (270,
+  w 60), identity. `layout:J35B` is the same at depth 2: the layer is the grandparent's, and
+  a kept participant sits between.
+
+**J-036: each mixed-epoch node recomposed its whole ancestor chain.**
+
+- *Change.* `solve.ts` `epochs`: every full map `Mₐ` is the map carrying `Lₐ` onto the drawn
+  box, which needs no chain. With `Ωₐ = corrₐ⁻¹ ∘ Mₐ` (a's full map under every ancestor's own
+  inner map), a node with layers `Γₐ = Qₐ⁻¹ ∘ Qₐ′` sees its parent through
+  `corr ∘ Ω_parent`, with `corr = Π Ωₐ∘Γₐ∘Ωₐ⁻¹` root first. This is the product rule for
+  substituting inner maps inside a chain of 1-D affine maps. It is exact, not an
+  approximation, and the random-tree oracle below checks it against the browser chain.
+  `reconcileLayers` uses the same recurrence over moving maps (`movingParents`).
+  `SolveNode.inners` is replaced by `layers`.
+- *Accounting.* Per frame, each node costs one map from its drawn box and one inverse to
+  solve its pose. A node with layers adds 2 compositions per layer, plus one for `corr ∘ Ω` and
+  one for `Ω`. Total: O(N) plus a constant per layer. `solve_cost.test.ts` counts `compose`
+  calls on the trial's chain (N nested participants, each planned at its own flush under a
+  different root layer): exactly **4(N−1)−1** for N = 25, 50, 100, 200, i.e. 95, 195, 395,
+  795. The trial measured 300, 1,225 and 4,950 for N = 25, 50, 100 with the old code. A frame
+  without layers composes nothing. Layers are computed once per frame array, at the flush.
+- *Authority.* Strict O(N) for every input is impossible under K22. If every ancestor's
+  presence matrix changes between every two flushes, the N parent maps are independent
+  products. The user approved the §5.3 statement "O(N) map arithmetic per frame, plus a
+  constant per layer" on 2026-10-24 (the amendment route of the disposition). A layer exists
+  only for a (node, ancestor) pair whose presence transform changed between their flushes.
+
+**Pure tests** (`solve.test.ts`, describe "a node composes its ancestors at its own flush"):
+
+- Over 300 random trees with random layers (> 500 layered nodes), every node's drawn box
+  equals the independent browser chain recomposed with its own layers' inner transforms,
+  relative error < 1e-9.
+- Over 400 random trees, every anchored node is shifted by exactly the difference between the
+  parent's anchor point as its layers draw it (browser chain) and as drawn without layers.
+- Over 200 random trees with layers, anchored velocities match finite differences, < 1e-3
+  relative, with corner instants skipped by a two-step check.
+- Layers that restore the ancestors' own inner maps change nothing (200 trees).
+- The J-035 case closed-form, at t = 0, 0.1, 0.5, 0.9 and 1.
+
+**Sensitivity.** With `scope.ts`, `solve.ts` and `plan.ts` from `0c20425` substituted on the
+mirror, Chromium and Firefox give:
+
+- J32B: `drawn x 35 … differs from x 60 by 25.000 px` (the trial's 60 → 35).
+- J35 and J35B: `drawn x 100 … differs from x 120 by 20.000 px` (the trial's 120 → 100).
+- J32 still passes.
+
+The current sources were then restored.
+
+**Results** (current sources, max error per frame):
+
+| Case | Chromium | Firefox | WebKit |
+|---|---|---|---|
+| J32 | 0.0000 | 0.0000 | 0.0000 px |
+| J32B | 0.0001 | 0.0124 | 0.0000 px |
+| J35 | 0.0001 | 0.0179 | 0.0001 px |
+| J35B | 0.0001 | 0.0179 | 0.0001 px |
+
+Other runs:
+
+- `pnpm vitest run`: 137 files, 1,607 tests.
+- `pnpm test:browser --coverage` (Chromium, all modules): 128 passed. Engine coverage
+  94.69 / 85.84 / 98.01 / 97.53 against floors 90 / 80 / 95 / 92.
+- Firefox and WebKit: 126 passed, 2 skipped by design, 0 failed.
+- `pnpm test:waapi-trace`: passed (WAAPI draws 5 / RAF 0 during the 120 ms block).
+- `layout:COST`, 300 nested movers frame p95: 0.640 / 0.900 / 0.650 ms (C/F/W). Reads at
+  1,000 participants: 2.5 / 3.0 / 3.0 ms.
+- tsc `--noUnusedLocals --noUnusedParameters` is clean; `pnpm check` is clean.
+
+**Authority mapping.**
+
+- §3.3 invariants 1 and 4 (first frame is B; continuous in position and velocity) and 5 (no
+  retarget without a moved A): J32B, J35 and J35B, each with a no-op flush.
+- §3.1 (track space; kept tracks): J-032.
+- §5.3 (projection, cost): J-036.
+- §5.4 (anchor placement in the node's space; keep test): J-035.
+- T3.3/V3 (pure solver), T4.1/T4.3/V4 (engine, regressions).
+
+**Residual risks.**
+
+- A crossfade follower is drawn at its lead's box in the lead's flush space. If their flushes
+  saw different presence layers, the follower is drawn without that difference.
+- Layers are found by walking each frame node's ancestor chain once per flush, as before.
