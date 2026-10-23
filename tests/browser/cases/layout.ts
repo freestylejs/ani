@@ -1171,13 +1171,19 @@ export async function J16(): Promise<string> {
             h.root,
             'left: 0; top: 100px; width: 40px; height: 40px; transform-origin: 0 0;'
         )
+        const sprung = node(
+            h.root,
+            'left: 0; top: 200px; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        const spring = { m: 1, k: 200, c: 20 }
         h.add(e)
         h.add(late, { motion: { delay: 0.5 } })
-        const before = [pageBox(e), pageBox(late)]
+        h.add(sprung, { motion: { timing: timing.spring(spring) } })
+        const elements = [e, late, sprung]
+        const before = elements.map(pageBox)
         h.group.capture()
-        e.style.left = '200px'
-        late.style.left = '200px'
-        const after = [pageBox(e), pageBox(late)]
+        for (const element of elements) element.style.left = '200px'
+        const after = elements.map(pageBox)
         const done = report(h.group.flush())
         const tracks = [
             spec(before[0]!, after[0]!, { duration: 1, timing: linear }),
@@ -1186,6 +1192,19 @@ export async function J16(): Promise<string> {
                 delay: 0.5,
                 timing: linear,
             }),
+            spec(before[2]!, after[2]!, {
+                duration: 1,
+                timing: timing.spring(spring),
+            }),
+        ]
+        // equal effective options: defaults, inherited fields, key order
+        const equivalent: LayoutOptions[] = [
+            {},
+            { layout: true },
+            { motion: { duration: 1 } },
+            { motion: { delay: 0 } },
+            { motion: { timing: timing.linear() } },
+            { radius: false },
         ]
         let worst = 0
         let sets = 0
@@ -1193,7 +1212,7 @@ export async function J16(): Promise<string> {
             h.mc,
             120,
             (elapsed) => {
-                ;[e, late].forEach((element, i) => {
+                elements.forEach((element, i) => {
                     worst = Math.max(
                         worst,
                         expectAt(
@@ -1205,9 +1224,13 @@ export async function J16(): Promise<string> {
                 })
                 if (Math.round(elapsed / DT) % 4 === 3) {
                     h.group.capture()
-                    h.group.set(e, {})
-                    h.group.set(e, { layout: true })
-                    h.group.set(late, { motion: { delay: 0.5 } })
+                    h.group.set(e, equivalent[sets % equivalent.length]!)
+                    h.group.set(late, { motion: { delay: 0.5, duration: 1 } })
+                    h.group.set(sprung, {
+                        motion: {
+                            timing: timing.spring({ c: 20, k: 200, m: 1 }),
+                        },
+                    })
                     void h.group.flush()
                     sets += 1
                 }
@@ -1215,7 +1238,7 @@ export async function J16(): Promise<string> {
             () => done.value !== null
         )
         expectEqual(done.value!.status, 'ended', 'never interrupted')
-        return `${sets} flushes with unchanged/equivalent options (inside the delay too); on the oracle, max error ${worst.toFixed(4)} px`
+        return `${sets} flushes with equivalent options (defaults, inherited fields, spring key order; inside the delay too); on the oracle, max error ${worst.toFixed(4)} px`
     } finally {
         h.dispose()
     }
@@ -1453,6 +1476,7 @@ export async function J19(): Promise<string> {
         )
         h.add(e)
         h.add(late, { motion: { delay: 0.5 } })
+        const o = pageBox(h.root)
         h.group.capture()
         e.style.left = '200px'
         late.style.left = '200px'
@@ -1468,10 +1492,41 @@ export async function J19(): Promise<string> {
             'interrupted',
             'the long run is replaced'
         )
+        // re-planned clamped from the drawn box and velocity: the moving node
+        // 1 s → 0.1 s from x 38.4 at 200 px/s; the node still in its delay
+        // (at rest) 0.5 + 1 s → 1/30 + 1/15 s
+        const tracks = [
+            spec(at(o, 38.4, 0, 40, 40), at(o, 200, 0, 40, 40), {
+                duration: 0.1,
+                timing: linear,
+                velocity: { x: 200, y: 0, w: 0, h: 0 },
+                fx: 0.5,
+                fy: 0.5,
+            }),
+            spec(at(o, 0, 60, 40, 40), at(o, 200, 60, 40, 40), {
+                duration: 1 / 15,
+                delay: 1 / 30,
+                timing: linear,
+                fx: 0.5,
+                fy: 0.5,
+            }),
+        ]
+        let worst = 0
         const count = await frames(
             h.mc,
             40,
-            noCheck,
+            (elapsed) => {
+                ;[e, late].forEach((element, i) => {
+                    worst = Math.max(
+                        worst,
+                        expectAt(
+                            element,
+                            expectedBox(tracks[i]!, elapsed),
+                            `clamped ${i} at ${elapsed.toFixed(3)} s`
+                        )
+                    )
+                })
+            },
             () => second.value !== null
         )
         expectEqual(second.value!.status, 'ended', 'clamped run')
@@ -1481,7 +1536,7 @@ export async function J19(): Promise<string> {
         expectEqual(e.style.cssText, styles[0], 'restored')
         expectEqual(late.style.cssText, styles[1], 'delayed node restored')
         expectEqual(h.mc.clock.size, 0, 'no subscriber')
-        return `toggle at 0.19 s: the active and the delayed track end within ${count} frames (≤ 0.1 s); restored, unsubscribed`
+        return `toggle at 0.19 s: the active and the delayed track re-planned clamped, on the oracle every frame within ${worst.toFixed(4)} px, end within ${count} frames (≤ 0.1 s); restored, unsubscribed`
     } finally {
         h.dispose()
     }
@@ -1535,6 +1590,68 @@ export async function J20(): Promise<string> {
     } finally {
         h.dispose()
     }
+    // a presence layer changed above the lead before it left: the handoff is
+    // the box (and the position and size velocity) the user saw at removal
+    let carried = 0
+    const c = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(c.root)
+        const parent = node(
+            c.root,
+            'left: 100px; top: 0; width: 300px; height: 100px; transform: scale(0.8); transform-origin: 0 0;'
+        )
+        const a = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        c.add(parent)
+        const removeA = c.group.add(a, { layoutId: 'x' })
+        c.group.capture()
+        await c.group.flush()
+        c.group.capture()
+        a.style.left = '200px'
+        a.style.width = '100px'
+        void c.group.flush()
+        await frames(c.mc, 13, noCheck)
+        // visual 100 → 260 and 32 → 80 wide under scale 0.8, at 0.192 s
+        expectAt(a, at(o, 130.72, 0, 41.216, 32), 'drawn under 0.8', 0.01)
+        parent.style.transform = 'none'
+        // the same poses through scale 1: local 138.4, 51.52 wide
+        expectAt(a, at(o, 138.4, 0, 51.52, 40), 'drawn under 1', 0.01)
+        removeA()
+        a.remove()
+        const b = node(
+            c.root,
+            'left: 400px; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        c.add(b, { layoutId: 'x' })
+        const done = report(c.group.flush())
+        // 160 px/s and 48 px/s under 0.8 are 200 and 60 under 1
+        const track = spec(at(o, 138.4, 0, 51.52, 40), at(o, 400, 0, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 60, h: 0 },
+        })
+        await frames(
+            c.mc,
+            80,
+            (elapsed) => {
+                carried = Math.max(
+                    carried,
+                    expectAt(
+                        b,
+                        expectedBox(track, elapsed),
+                        `carried t=${elapsed}`
+                    )
+                )
+            },
+            () => done.value !== null
+        )
+        expectEqual(done.value!.status, 'ended', 'carried handoff run')
+        expectEqual(b.style.translate, '', 'carried handoff restored')
+    } finally {
+        c.dispose()
+    }
     // expired: no handoff
     const g = harness({ motion: { duration: 1, timing: linear }, retain: 0.02 })
     try {
@@ -1557,7 +1674,7 @@ export async function J20(): Promise<string> {
         g.add(b, { layoutId: 'x' })
         await g.group.flush()
         expectAt(b, at(o, 400, 0, 40, 40), 'no handoff after retain', 0.01)
-        return 'handoff at x = 38.4 with 200 px/s on the oracle every frame; none after retain'
+        return `handoff at x = 38.4 with 200 px/s on the oracle every frame; through a changed parent layer (0.8 → 1) at x = 138.4, w = 51.52 with 200 / 60 px/s, max error ${carried.toFixed(4)} px; none after retain`
     } finally {
         g.dispose()
     }
@@ -1580,9 +1697,12 @@ async function endRun(
 export async function J21(): Promise<string> {
     const linear = timing.linear()
     const lines: string[] = []
+    let worst = 0
+    let corners = 0
     for (const end of ['settle', 'finish', 'dispose'] as const) {
         const h = harness({ motion: { duration: 0.5, timing: linear } })
         try {
+            const o = pageBox(h.root)
             const e = node(
                 h.root,
                 'left: 0; top: 0; width: 40px; height: 40px; border-radius: 8px; transform-origin: 0 0;'
@@ -1596,14 +1716,50 @@ export async function J21(): Promise<string> {
             await frames(h.mc, 13, noCheck)
             h.group.capture()
             h.group.set(e, { radius: true })
-            // a changed option retargets: the run to wait for is this one
+            // a changed option retargets: the run to wait for is this one,
+            // from the drawn box at 0.192 s and its velocity
             const done = report(h.group.flush())
-            await frames(h.mc, 2, noCheck)
+            const track = spec(
+                at(o, 76.8, 0, 55.36, 40),
+                at(o, 200, 0, 80, 40),
+                {
+                    duration: 0.5,
+                    timing: linear,
+                    velocity: { x: 400, y: 0, w: 80, h: 0 },
+                }
+            )
+            let k = 0
+            const check = () => {
+                const elapsed = k++ * DT
+                const want = expectedBox(track, elapsed)
+                worst = Math.max(
+                    worst,
+                    expectAt(e, want, `${end} at ${elapsed.toFixed(3)} s`)
+                )
+                // the corners counter the pose's scale: 8 px as drawn
+                const corner = e.style
+                    .getPropertyValue('border-top-left-radius')
+                    .split(' ')
+                    .map(Number.parseFloat)
+                const rx = corner[0]! * (want.w / 80)
+                const ry = (corner[1] ?? corner[0]!) * (want.h / 40)
+                corners = Math.max(corners, Math.abs(rx - 8), Math.abs(ry - 8))
+                if (!(corners <= 0.05)) {
+                    throw new Error(
+                        `${end} at ${elapsed.toFixed(3)} s: drawn corner ${rx} × ${ry} px, not 8 px`
+                    )
+                }
+            }
+            await frames(h.mc, 2, check)
             expectEqual(
                 e.style.getPropertyPriority('border-top-left-radius'),
                 'important',
                 'corners owned mid-run'
             )
+            if (end === 'settle') {
+                await frames(h.mc, 120, check, () => done.value !== null)
+                expectEqual(done.value?.status, 'ended', 'settled run')
+            }
             await endRun(h, done, end)
             expectEqual(
                 e.style.cssText,
@@ -1615,13 +1771,14 @@ export async function J21(): Promise<string> {
             h.dispose()
         }
     }
-    return `radius turned on mid-run, restored after ${lines.join(', ')}`
+    return `radius turned on mid-run: on the oracle every frame within ${worst.toFixed(4)} px, drawn corners 8 px within ${corners.toFixed(4)} px; restored after ${lines.join(', ')}`
 }
 
 /** J-022: an inline authored change during a run applies after it (settle, finish, dispose). */
 export async function J22(): Promise<string> {
     const linear = timing.linear()
     const lines: string[] = []
+    let worst = 0
     for (const end of ['settle', 'finish', 'dispose'] as const) {
         const h = harness({ motion: { duration: 0.5, timing: linear } })
         try {
@@ -1638,9 +1795,34 @@ export async function J22(): Promise<string> {
             // the author writes inline mid-run (React does this on a re-render)
             e.style.translate = '20px 0px'
             e.style.scale = '1.5'
+            // the inline write replaces the owned declaration until the flush in
+            // this same task (no paint between). The authored values are taken
+            // in as the composition to restore; the run keeps its frozen one,
+            // so the track goes on unchanged (4 → 204 px)
             h.group.capture()
             void h.group.flush()
-            await frames(h.mc, 2, noCheck)
+            const track = spec(at(o, 4, 0, 40, 40), at(o, 204, 0, 40, 40), {
+                duration: 0.5,
+                timing: linear,
+            })
+            let k = 13
+            const check = () => {
+                const elapsed = k++ * DT
+                // released at the end: the authored composition applies
+                const want =
+                    elapsed >= 0.5
+                        ? at(o, 220, 0, 60, 60)
+                        : expectedBox(track, elapsed)
+                worst = Math.max(
+                    worst,
+                    expectAt(e, want, `${end} at ${elapsed.toFixed(3)} s`)
+                )
+            }
+            await frames(h.mc, 2, check)
+            if (end === 'settle') {
+                await frames(h.mc, 120, check, () => done.value !== null)
+                expectEqual(done.value?.status, 'ended', 'the run goes on')
+            }
             await endRun(h, done, end)
             const authored = document.createElement('div').style
             authored.translate = '20px 0px'
@@ -1661,7 +1843,7 @@ export async function J22(): Promise<string> {
             h.dispose()
         }
     }
-    return `inline translate 4px → 20px and scale 1 → 1.5 mid-run applied after ${lines.join(', ')}`
+    return `inline translate 4px → 20px and scale 1 → 1.5 mid-run: the run keeps its frozen composition, on the oracle every frame within ${worst.toFixed(4)} px; applied after ${lines.join(', ')}`
 }
 
 /** J-023: unregistering or disconnecting a moving node cancels it; the rest of its run goes on. */
@@ -1777,6 +1959,7 @@ export async function J23(): Promise<string> {
 /** J-025: B of a driven node is what the user saw through a presence layer changed since the last flush. */
 export async function J25(): Promise<string> {
     const linear = timing.linear()
+    let summary = ''
     const h = harness({ motion: { duration: 1, timing: linear } })
     try {
         const o = pageBox(h.root)
@@ -1827,9 +2010,64 @@ export async function J25(): Promise<string> {
             style.replace('200px', '300px'),
             'identity settle'
         )
-        return `after scale 0.8 → 1: B = (${(seen.x - o.x).toFixed(1)}, w ${seen.w}); continuous, on the oracle within ${worst.toFixed(4)} px`
+        summary = `after scale 0.8 → 1: B = (${(seen.x - o.x).toFixed(1)}, w ${seen.w}); continuous, on the oracle within ${worst.toFixed(4)} px`
     } finally {
         h.dispose()
+    }
+    // the child's own layer changes under a moving parent: the parent's motion
+    // stays a translation of the child (200 px/s, not 200 / 0.8)
+    const m = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(m.root)
+        const parent = node(
+            m.root,
+            'left: 0; top: 0; width: 300px; height: 100px; transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform: scale(0.8); transform-origin: 0 0;'
+        )
+        m.add(parent)
+        m.add(child)
+        m.group.capture()
+        parent.style.left = '200px'
+        void m.group.flush()
+        await frames(m.mc, 13, noCheck)
+        expectAt(child, at(o, 38.4, 0, 32, 32), 'riding under 0.8', 0.01)
+        child.style.transform = 'scale(1)'
+        const seen = at(o, 38.4, 0, 40, 40)
+        expectAt(child, seen, 'drawn through scale 1', 0.01)
+        m.group.capture()
+        child.style.left = '100px'
+        const second = report(m.group.flush())
+        expectAt(child, seen, 'B is what the user saw (x 38.4, w 40)', 0.01)
+        const track = spec(seen, at(o, 300, 0, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 0, h: 0 },
+        })
+        let worst = 0
+        const count = await frames(
+            m.mc,
+            120,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        child,
+                        expectedBox(track, elapsed),
+                        `own layer t=${elapsed}`
+                    )
+                )
+            },
+            () => second.value !== null
+        )
+        expectEqual(second.value?.status, 'ended', 'own-layer run')
+        expectEqual(child.style.translate, '', 'own-layer translate restored')
+        expectEqual(child.style.scale, '', 'own-layer scale restored')
+        return `${summary}; own scale 0.8 → 1 under a parent moving 200 px/s: B = (38.4, w 40) with vx 200, ${count} frames on the oracle within ${worst.toFixed(4)} px, identity settle`
+    } finally {
+        m.dispose()
     }
 }
 
