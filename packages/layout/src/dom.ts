@@ -307,11 +307,8 @@ export const POSE_PROPERTIES = ['translate', 'scale'] as const
 export const OPACITY_PROPERTIES = ['opacity'] as const
 export { RADIUS_PROPERTIES }
 
-/** Inline declarations as they were before layout owned them. */
-export type Saved = ReadonlyMap<
-    string,
-    readonly [value: string, priority: string]
->
+/** Inline declarations as they were before layout owned them (or as the author last set them). */
+export type Saved = Map<string, readonly [value: string, priority: string]>
 
 export function save(
     element: HTMLElement,
@@ -333,16 +330,47 @@ export function save(
  */
 export function restore(element: HTMLElement, saved: Saved): void {
     for (const [property, [value, priority]] of saved) {
-        if (value === '') element.style.removeProperty(property)
-        else element.style.setProperty(property, value, priority)
+        put(element, property, value, priority)
     }
 }
 
-/** Writes one owned declaration (important, so stylesheet rules cannot override it mid-run). */
-export function write(
+/** Sets one inline declaration; an empty value removes it. */
+export function put(
     element: HTMLElement,
     property: string,
-    value: string
+    value: string,
+    priority: string
 ): void {
-    element.style.setProperty(property, value, 'important')
+    if (value === '') element.style.removeProperty(property)
+    else element.style.setProperty(property, value, priority)
+}
+
+/** Owned declarations are important, so stylesheet rules cannot override them mid-run. */
+export const OWNED_PRIORITY = 'important'
+
+/**
+ * Takes in what the author set inline on an owned property since layout
+ * last wrote it (an inline write replaces the important declaration), so the
+ * settle restores the author's latest value (§6). Returns whether it did.
+ */
+export function adoptAuthored(
+    element: HTMLElement,
+    saved: Saved,
+    written: Map<string, string>
+): boolean {
+    let adopted = false
+    for (const [property, [value, priority]] of saved) {
+        const now = element.style.getPropertyValue(property)
+        const nowPriority = element.style.getPropertyPriority(property)
+        // an important declaration is layout's own (written, or written and
+        // queued for restore); an author's inline write replaces it plainly
+        const replaced =
+            nowPriority !== OWNED_PRIORITY &&
+            (written.has(property) || now !== value || nowPriority !== priority)
+        if (!replaced) continue
+        saved.set(property, [now, nowPriority])
+        written.delete(property)
+        adopted = true
+    }
+    return adopted
 }

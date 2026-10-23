@@ -21,12 +21,15 @@ export function createRaf(
     driver: FrameDriver
 ): Realizer {
     let running = false
+    let finished = false
     const animatable: Animatable = {
         update(dt) {
-            if (!driver.update(dt)) realizer.stop()
+            finished = !driver.update(dt)
         },
+        // the last frame's writes (settle restores) land in its commit
         commit() {
             driver.commit()
+            if (finished) realizer.stop()
         },
     }
     const realizer: Realizer = {
@@ -34,6 +37,7 @@ export function createRaf(
             return running
         },
         start() {
+            finished = false
             if (running) return
             running = true
             clock.subscribe(animatable)
