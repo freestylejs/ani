@@ -520,11 +520,20 @@ export function usePresence<
     optionsRef.current = options
     const elementRef = useRef<E | null>(null)
     const handle = useRef<PresenceHandle | null>(null)
+    /** The element `handle` animates. */
+    const bound = useRef<E | null>(null)
     const registration = useRef<number | null>(null)
-    const detach = useMemo(
+    /** The phase started on `handle` (`token:present:willEnter`). */
+    const started = useRef<string | null>(null)
+    /** A detach waiting for the end of the task. */
+    const detaching = useRef(false)
+
+    const release = useMemo(
         () => () => {
             handle.current?.dispose()
             handle.current = null
+            bound.current = null
+            started.current = null
             const current = contextRef.current
             if (registration.current !== null) {
                 current?.unregister(registration.current)
@@ -534,19 +543,39 @@ export function usePresence<
         []
     )
 
+    // StrictMode replays the refs and effects of mounted and moved fibers
+    // (K17): a detach waits until the end of the task, and a re-attach of the
+    // same element in that task keeps the handle, its running enter or exit,
+    // its registration and its holds.
+    const detach = useMemo(
+        () => () => {
+            if (!handle.current || detaching.current) return
+            detaching.current = true
+            queueMicrotask(() => {
+                if (!detaching.current) return
+                detaching.current = false
+                release()
+            })
+        },
+        [release]
+    )
+
     const attach = useMemo(
         () => (element: E) => {
             const current = contextRef.current
             if (!current) return
-            detach()
+            detaching.current = false
+            if (handle.current && bound.current === element) return
+            release()
             handle.current = createPresence(
                 element,
                 motionRef.current,
                 optionsRef.current
             )
+            bound.current = element
             registration.current = current.register()
         },
-        [detach]
+        [release]
     )
 
     const ref = useMemo<RefCallback<E>>(
@@ -564,9 +593,7 @@ export function usePresence<
 
     useIsoLayoutEffect(() => {
         if (!contextRef.current) return
-        if (elementRef.current && !handle.current) {
-            attach(elementRef.current)
-        }
+        if (elementRef.current) attach(elementRef.current)
         return detach
     }, [attach, detach])
 
@@ -575,8 +602,16 @@ export function usePresence<
         const current = contextRef.current
         const active = handle.current
         if (!current || !active) return
+        const phase = `${current.token}:${current.present}:${current.willEnter}`
+        // a replayed effect: the phase already runs on this handle
+        if (started.current === phase) return
+        started.current = phase
+        // a settled run of a replaced handle or of an earlier phase is stale
+        const live = () =>
+            handle.current === active && started.current === phase
         if (!current.present) {
             void active.exit().then((result) => {
+                if (!live()) return
                 if (result === 'exited' || result === 'timeout') {
                     const id = registration.current
                     if (id !== null) current.reportExit(id, current.token)
@@ -586,7 +621,9 @@ export function usePresence<
             // the initial style stays a prop until the enter is done: React
             // would otherwise clear the values the enter is writing
             void active.enter().then(() => {
-                if (contextRef.current?.present) setApplyInitial(false)
+                if (live() && contextRef.current?.present) {
+                    setApplyInitial(false)
+                }
             })
         }
     }, [context?.present, context?.willEnter, context?.token])

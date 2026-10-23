@@ -1396,3 +1396,216 @@ export async function J27(): Promise<string> {
     if (failures.length > 0) throw new Error(failures.join('; '))
     return results.join('; ')
 }
+
+/* ── presence across a StrictMode replay (J-028) ── */
+
+const replayMotion = {
+    present: { opacity: 1, translateY: 0, scaleX: 1 },
+    initial: { opacity: 0, translateY: 14, scaleX: 0.8 },
+    enter: ani({
+        to: { opacity: 1, translateY: 0, scaleX: 1 },
+        duration: 1,
+        timing: timing.linear(),
+    }),
+    exit: ani({
+        to: { opacity: 0, translateY: 0, scaleX: 1 },
+        duration: 1,
+        timing: timing.linear(),
+    }),
+}
+
+function ReplayItem({ id }: { id: string }): ReactNode {
+    const presence = usePresence(replayMotion, { clock: toastClock!.clock })
+    const ref = useLayout<HTMLDivElement>({
+        layout: 'position',
+        ref: presence.ref,
+    })
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: 100,
+            height: 30,
+            flex: 'none',
+            transformOrigin: '0 0',
+            background: 'rgb(40, 40, 40)',
+            ...presence.style,
+        },
+    })
+}
+
+function ReplayList({
+    ids,
+    onExit,
+}: {
+    ids: readonly string[]
+    onExit: (key: string) => void
+}): ReactNode {
+    return h(
+        StrictMode,
+        null,
+        h(
+            LayoutGroup,
+            { clock: toastClock!.clock },
+            h(
+                Column,
+                null,
+                h(
+                    AnimatePresence,
+                    { initial: false, onExitComplete: onExit },
+                    ids.map((id) => h(ReplayItem, { key: id, id }))
+                )
+            )
+        )
+    )
+}
+
+/** Presence's opacity, translateY and scaleX on `element`, and its drawn width. */
+function presencePose(element: Element): number[] {
+    const m = matrixOf(element)
+    return [
+        Number(getComputedStyle(element).opacity),
+        m[5]!,
+        m[0]!,
+        element.getBoundingClientRect().width,
+    ]
+}
+
+function expectPose(element: Element, want: number[], label: string): number {
+    const got = presencePose(element)
+    const error = Math.max(...got.map((value, i) => Math.abs(value - want[i]!)))
+    // opacity, transform and Firefox's 1/60 px width
+    if (!(error <= 0.02)) {
+        throw new Error(
+            `${label}: opacity/translateY/scaleX/width ${got.map((v) => v.toFixed(4)).join('/')}, expected ${want.map((v) => v.toFixed(4)).join('/')}`
+        )
+    }
+    return error
+}
+
+/** J-028 (a): two items enter for 1 s; a reorder at 0.2 s moves `a`. */
+async function replayMidEnter(): Promise<string> {
+    const mc = createManualClock()
+    toastClock = mc
+    const view = mountRoot()
+    const app = (ids: readonly string[]) =>
+        h(ReplayList, { ids, onExit: () => undefined })
+    const enter = (t: number) => [t, 14 * (1 - t), 0.8 + 0.2 * t, 80 + 20 * t]
+    try {
+        await view.render(app([]))
+        // both enter from opacity 0, translateY 14, scaleX 0.8
+        await view.render(app(['a', 'b']))
+        mc.frame(200)
+        let error = 0
+        for (const id of ['a', 'b']) {
+            error = Math.max(
+                error,
+                expectPose(byId(view.host, id), enter(0.2), `${id} at 0.2 s`)
+            )
+        }
+        // React replays the moved fiber's refs and effects; time stands still
+        await view.render(app(['b', 'a']))
+        for (const id of ['a', 'b']) {
+            error = Math.max(
+                error,
+                expectPose(
+                    byId(view.host, id),
+                    enter(0.2),
+                    `${id} after the reorder`
+                )
+            )
+        }
+        for (let frame = 1; frame <= 50; frame++) {
+            mc.frame(FRAME_MS)
+            await microtasks()
+            const elapsed = 0.2 + frame * DT
+            for (const id of ['a', 'b']) {
+                error = Math.max(
+                    error,
+                    expectPose(
+                        byId(view.host, id),
+                        enter(Math.min(1, elapsed)),
+                        `${id} entering at ${elapsed.toFixed(3)} s`
+                    )
+                )
+            }
+        }
+        await settleAll(mc, view.host)
+        expectEqual(mc.clock.size, 0, 'no subscriber left')
+        return `mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error ${error.toFixed(4)})`
+    } finally {
+        view.dispose()
+        toastClock = null
+    }
+}
+
+/** J-028 (b): `b` exits for 1 s; a reorder at 0.2 s moves it: [a, (b), c] → [c, a, (b)]. */
+async function replayMidExit(): Promise<string> {
+    const mc = createManualClock()
+    toastClock = mc
+    const view = mountRoot()
+    const exits: Array<{ key: string; at: number }> = []
+    let elapsed = 0
+    const app = (ids: readonly string[]) =>
+        h(ReplayList, {
+            ids,
+            onExit: (key) => exits.push({ key, at: elapsed }),
+        })
+    const exit = (t: number) => [1 - t, 0, 1, 100]
+    try {
+        await view.render(app(['a', 'b', 'c']))
+        await view.render(app(['a', 'c']))
+        mc.frame(200)
+        elapsed = 0.2
+        const b = byId(view.host, 'b')
+        let error = expectPose(b, exit(0.2), 'b exiting at 0.2 s')
+        await view.render(app(['c', 'a']))
+        expectEqual(b.isConnected, true, 'b still exiting after the reorder')
+        error = Math.max(error, expectPose(b, exit(0.2), 'b after the reorder'))
+        for (let frame = 1; frame <= 60; frame++) {
+            mc.frame(FRAME_MS)
+            elapsed = 0.2 + frame * DT
+            await microtasks()
+            await macrotask()
+            if (!b.isConnected) break
+            error = Math.max(
+                error,
+                expectPose(
+                    b,
+                    exit(Math.min(1, elapsed)),
+                    `b at ${elapsed.toFixed(3)} s`
+                )
+            )
+        }
+        expectEqual(
+            exits.map((e) => e.key),
+            ['b'],
+            'one exit completion'
+        )
+        const releasedAt = exits[0]!.at
+        if (!(releasedAt >= 1 - 1e-9 && releasedAt <= 1 + 3 * DT)) {
+            throw new Error(`b released at ${releasedAt} s, expected ≈ 1 s`)
+        }
+        await settleAll(mc, view.host)
+        expectEqual(mc.clock.size, 0, 'no presence or layout subscriber left')
+        return `mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at ${releasedAt.toFixed(3)} s (max error ${error.toFixed(4)}); nothing subscribed after the settle`
+    } finally {
+        view.dispose()
+        toastClock = null
+    }
+}
+
+/** J-028: a moved fiber's ref/effect replay keeps presence's running enter and exit. */
+export async function J28(): Promise<string> {
+    const results: string[] = []
+    const failures: string[] = []
+    for (const run of [replayMidEnter, replayMidExit]) {
+        try {
+            results.push(await run())
+        } catch (error) {
+            failures.push((error as Error).message)
+        }
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '))
+    return results.join('; ')
+}
