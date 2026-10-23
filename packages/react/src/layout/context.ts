@@ -84,6 +84,64 @@ export function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * Declarations layout (`!important` poses, crossfade opacity, owned corners),
+ * presence and Core (`transform`, `opacity`) write while they animate: they
+ * never change a layout box, so changing them is no trigger-contract miss.
+ */
+const OWNED_STYLE = new Set([
+    'translate',
+    'scale',
+    'transform',
+    'opacity',
+    'border-radius',
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+])
+
+/** An inline style's declarations other than the owned ones, normalized. */
+function authoredStyle(text: string | null): string {
+    if (!text) return ''
+    return text
+        .split(';')
+        .map((declaration) => declaration.trim())
+        .filter(
+            (declaration) =>
+                declaration !== '' &&
+                !OWNED_STYLE.has(
+                    declaration.slice(0, declaration.indexOf(':')).trim()
+                )
+        )
+        .sort()
+        .join(';')
+}
+
+/**
+ * Whether a batch of mutations around participants can have moved one: any
+ * node added or removed, any `class` change, and a `style` change beyond the
+ * owned declarations (compared from each element's first old value to now).
+ */
+function movesLayout(records: readonly MutationRecord[]): boolean {
+    const styles = new Map<Element, string | null>()
+    for (const record of records) {
+        if (record.type !== 'attributes' || record.attributeName !== 'style') {
+            return true
+        }
+        const target = record.target as Element
+        if (!styles.has(target)) styles.set(target, record.oldValue)
+    }
+    for (const [target, old] of styles) {
+        if (
+            authoredStyle(old) !== authoredStyle(target.getAttribute('style'))
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
+/**
  * Timings are compared by value: the same class with equal parameters, in any
  * key order (a timing written inline is a new object every render). Core
  * timings keep their parameters in `opt` and derive the rest of their fields
@@ -181,26 +239,35 @@ export function createLayoutScope(
         })
     }
 
+    const observed = new Set<Element>()
     const watch = (element: HTMLElement): void => {
         if (!DEV || typeof MutationObserver === 'undefined') return
-        observer ??= new MutationObserver(() => {
-            if (members.size === 0) return
+        observer ??= new MutationObserver((records) => {
+            if (warned || !movesLayout(records)) return
+            // nothing left on screen to jump (an unmount of the whole scope)
+            if (![...members.keys()].some((element) => element.isConnected)) {
+                return
+            }
             if (capturedSinceCheck) {
                 capturedSinceCheck = false
                 return
             }
-            if (warned) return
             warned = true
             // biome-ignore lint/suspicious/noConsole: development warning
             console.warn(TRIGGER_WARNING)
         })
-        observer.observe(element, {
+        // the parent's subtree: the parent itself, the participants and
+        // their siblings, with everything inside them
+        const parent = element.parentElement
+        if (!parent || observed.has(parent)) return
+        observed.add(parent)
+        observer.observe(parent, {
+            childList: true,
+            subtree: true,
             attributes: true,
-            attributeFilter: ['class'],
+            attributeFilter: ['class', 'style'],
+            attributeOldValue: true,
         })
-        if (element.parentElement) {
-            observer.observe(element.parentElement, { childList: true })
-        }
     }
 
     const scope: LayoutScope = {
@@ -294,6 +361,7 @@ export function createLayoutScope(
             members.clear()
             observer?.disconnect()
             observer = null
+            observed.clear()
         },
     }
     emptied()
