@@ -564,6 +564,10 @@ nothing.
 - **Layers:** pure property tests on `solve`/`plan` (random trees to depth 5, within 1e-9);
   deterministic browser tests on a manual clock (0.5 px per frame); a few real-clock tests
   (jank, read counts, frame cost).
+- **Coverage:** each file is measured where its tests run. The pure modules count in the
+  jsdom coverage of `pnpm test:ci`; the DOM engine (`scope.ts`, `dom.ts`, `realize/*`) needs
+  real layout, so its coverage is the V8 coverage of every Chromium case page, mapped to the
+  sources and gated by a full `pnpm test:browser --coverage` run (CI's browser job).
 
 | Row | Frame-level assertion |
 |---|---|
