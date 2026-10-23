@@ -33,7 +33,8 @@ const DEFINE = {
 
 /**
  * How a page module is built: against React 18.3 instead of 19, and/or with
- * its `*_fixture.ts` files compiled by the React Compiler (as an app would).
+ * the showcase fixtures (`*_fixtures.tsx`) compiled by the React Compiler, as
+ * an app would compile them.
  */
 export interface BrowserVariant {
     readonly react18?: boolean
@@ -49,10 +50,11 @@ function reactCompiler(react18: boolean): Plugin {
     return {
         name: 'react-compiler',
         setup(builder) {
-            builder.onLoad({ filter: /_fixture\.ts$/ }, async (args) => {
+            builder.onLoad({ filter: /_fixtures\.tsx$/ }, async (args) => {
                 const source = await readFile(args.path, 'utf8')
                 const stripped = await transform(source, {
-                    loader: 'ts',
+                    loader: 'tsx',
+                    jsx: 'automatic',
                     format: 'esm',
                 })
                 const compiled = await transformAsync(stripped.code, {
@@ -69,9 +71,10 @@ function reactCompiler(react18: boolean): Plugin {
                         ],
                     ],
                 })
-                if (!compiled?.code) {
+                // a compiled component reads the compiler's memo cache
+                if (!compiled?.code?.includes('compiler-runtime')) {
                     throw new Error(
-                        `React Compiler produced no output for ${args.path}`
+                        `React Compiler compiled nothing in ${args.path}`
                     )
                 }
                 return { contents: compiled.code, loader: 'js' }
