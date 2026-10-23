@@ -31,7 +31,7 @@ function code(fn: () => unknown): string | null {
 
 describe('motion: validation throws ANI_INVALID_OPTIONS synchronously', () => {
     const bad: [string, unknown][] = [
-        ['layout: "box"', { layout: 'box' }],
+        ['layout: "both"', { layout: 'both' }],
         ['layout: false', { layout: false }],
         ['empty layoutId', { layoutId: '' }],
         ['anchor outside 0..1', { layoutAnchor: { x: 1.2, y: 0 } }],
