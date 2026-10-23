@@ -32,6 +32,7 @@ const MODULES = [
     'layout',
     'react_layout',
     'acceptance',
+    'regressions',
     'spike',
     'spike_r18',
     'spike_rc',
