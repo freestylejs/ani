@@ -1,6 +1,8 @@
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { type BuildOptions, build } from 'esbuild'
+import { transformAsync } from '@babel/core'
+import { type BuildOptions, build, type Plugin, transform } from 'esbuild'
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 
@@ -29,14 +31,69 @@ const DEFINE = {
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
 }
 
-async function bundle(options: BuildOptions): Promise<string> {
+/**
+ * How a page module is built: against React 18.3 instead of 19, and/or with
+ * its `*_fixture.ts` files compiled by the React Compiler (as an app would).
+ */
+export interface BrowserVariant {
+    readonly react18?: boolean
+    readonly compiler?: boolean
+}
+
+const REACT_18_ALIAS: Record<string, string> = {
+    react: 'react-18',
+    'react-dom': 'react-dom-18',
+}
+
+function reactCompiler(react18: boolean): Plugin {
+    return {
+        name: 'react-compiler',
+        setup(builder) {
+            builder.onLoad({ filter: /_fixture\.ts$/ }, async (args) => {
+                const source = await readFile(args.path, 'utf8')
+                const stripped = await transform(source, {
+                    loader: 'ts',
+                    format: 'esm',
+                })
+                const compiled = await transformAsync(stripped.code, {
+                    filename: args.path,
+                    babelrc: false,
+                    configFile: false,
+                    plugins: [
+                        [
+                            'babel-plugin-react-compiler',
+                            {
+                                target: react18 ? '18' : '19',
+                                panicThreshold: 'all_errors',
+                            },
+                        ],
+                    ],
+                })
+                if (!compiled?.code) {
+                    throw new Error(
+                        `React Compiler produced no output for ${args.path}`
+                    )
+                }
+                return { contents: compiled.code, loader: 'js' }
+            })
+        },
+    }
+}
+
+async function bundle(
+    options: BuildOptions,
+    variant: BrowserVariant = {}
+): Promise<string> {
     const result = await build({
         bundle: true,
         write: false,
         format: 'esm',
-        alias: ALIAS,
+        alias: variant.react18 ? { ...ALIAS, ...REACT_18_ALIAS } : ALIAS,
         define: DEFINE,
         logLevel: 'silent',
+        plugins: variant.compiler
+            ? [reactCompiler(variant.react18 === true)]
+            : [],
         ...options,
     })
     if (result.warnings.length > 0) {
@@ -51,12 +108,18 @@ async function bundle(options: BuildOptions): Promise<string> {
 }
 
 /** Bundles a page-side module (ESM, real browser conditions). */
-export function bundleForBrowser(entry: string): Promise<string> {
-    return bundle({
-        entryPoints: [entry],
-        platform: 'browser',
-        conditions: ['browser'],
-    })
+export function bundleForBrowser(
+    entry: string,
+    variant: BrowserVariant = {}
+): Promise<string> {
+    return bundle(
+        {
+            entryPoints: [entry],
+            platform: 'browser',
+            conditions: ['browser'],
+        },
+        variant
+    )
 }
 
 /**
