@@ -660,11 +660,177 @@ export async function RL6(): Promise<string> {
             1,
             'warned once per scope'
         )
-        return `memoized subtree: snapped with one warning; update(fn) on the oracle, max error ${error.toFixed(4)} px`
+        const attributes = await parentAttributeWarnings(warnings)
+        return `memoized subtree: snapped with one warning; update(fn) on the oracle, max error ${error.toFixed(4)} px; ${attributes}`
     } finally {
         console.warn = warn
         view.dispose()
     }
+}
+
+/* ── RL6 (J-031): the parent's class and style ── */
+
+const flex = { w: 40, h: 50 }
+
+function FlexItem({ id }: { id: string }): ReactNode {
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: flex.w,
+            height: flex.h,
+            flex: 'none',
+            background: '#888',
+        },
+    })
+}
+
+const MemoFlexItem = memo(FlexItem)
+
+const flip: { set: ((row: boolean) => void) | null } = { set: null }
+
+/** State above the participants, written into their flex parent's class or style. */
+function FlexOwner({
+    by,
+    memoized,
+}: {
+    by: 'class' | 'style'
+    memoized: boolean
+}): ReactNode {
+    const [row, setRow] = useState(false)
+    useLayoutEffect(() => {
+        flip.set = setRow
+    }, [])
+    const item = memoized ? MemoFlexItem : FlexItem
+    const presence = memoized ? MemoPresenceFlexItem : PresenceFlexItem
+    return h(
+        'div',
+        by === 'class'
+            ? { className: row ? 'rl6-row' : 'rl6-column' }
+            : {
+                  style: {
+                      display: 'flex',
+                      flexDirection: row ? 'row' : 'column',
+                  },
+              },
+        h(item, { id: 'a' }),
+        h(item, { id: 'b' }),
+        h(presence, { id: 'p' })
+    )
+}
+
+/** A participant with presence: its enter writes transform and opacity every frame. */
+function PresenceFlexItem({ id }: { id: string }): ReactNode {
+    const presence = usePresence(replayMotion, { clock: toastClock!.clock })
+    const ref = useLayout<HTMLDivElement>({ ref: presence.ref })
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: flex.w,
+            height: flex.h,
+            flex: 'none',
+            background: '#444',
+            ...presence.style,
+        },
+    })
+}
+
+const MemoPresenceFlexItem = memo(PresenceFlexItem)
+
+/**
+ * J-031: a memoized subtree under a parent whose class or style changes
+ * warns exactly once per scope; a captured change (participants render) and
+ * the frames it animates (layout poses, presence transform and opacity) do
+ * not warn.
+ */
+async function parentAttributeWarnings(warnings: string[]): Promise<string> {
+    const sheet = document.createElement('style')
+    sheet.textContent =
+        '.rl6-column { display: flex; flex-direction: column } .rl6-row { display: flex; flex-direction: row }'
+    document.head.append(sheet)
+    const count = () =>
+        warnings.filter((w) => w.includes('useLayoutGroup().update')).length
+    const results: string[] = []
+    try {
+        for (const by of ['class', 'style'] as const) {
+            for (const memoized of [false, true]) {
+                const mc = createManualClock()
+                toastClock = mc
+                const view = mountRoot()
+                const before = count()
+                try {
+                    await view.render(
+                        h(
+                            LayoutGroup,
+                            { clock: mc.clock },
+                            h(
+                                AnimatePresence,
+                                { initial: true },
+                                h(FlexOwner, { key: 'owner', by, memoized })
+                            )
+                        )
+                    )
+                    const origin = pageBox(view.host)
+                    const b = byId(view.host, 'b')
+                    const from = pageBox(b)
+                    expectEqual(
+                        [from.x - origin.x, from.y - origin.y],
+                        [0, flex.h],
+                        `${by}: b in the column`
+                    )
+                    flushSync(() => flip.set!(true))
+                    await microtasks()
+                    await macrotask()
+                    const moved = byId(view.host, 'b')
+                    const to = pageBox(moved)
+                    // every frame of the enter and of the layout run
+                    await frames(mc, 70, () => undefined)
+                    await settleAll(mc, view.host)
+                    const added = count() - before
+                    if (memoized) {
+                        // not captured: b jumped, with one warning
+                        expectEqual(
+                            [to.x - origin.x, to.y - origin.y],
+                            [flex.w, 0],
+                            `${by}: b jumped to the row`
+                        )
+                        expectEqual(added, 1, `${by}: one warning`)
+                        // a second change in the same scope: still one
+                        flushSync(() => flip.set!(false))
+                        await microtasks()
+                        await macrotask()
+                        expectEqual(
+                            count() - before,
+                            1,
+                            `${by}: warned once per scope`
+                        )
+                        results.push(
+                            `memoized ${by}: b (0, 50) → (40, 0) with ${added} warning`
+                        )
+                    } else {
+                        // captured: b drawn where it was, then animated
+                        expectEqual(
+                            [to.x - origin.x, to.y - origin.y],
+                            [0, flex.h],
+                            `${by}: b at its old place at t = 0`
+                        )
+                        expectEqual(added, 0, `${by}: captured, no warning`)
+                        results.push(
+                            `rendered ${by}: animated, ${added} warnings`
+                        )
+                    }
+                } finally {
+                    view.dispose()
+                    toastClock = null
+                }
+            }
+        }
+    } finally {
+        sheet.remove()
+    }
+    return results.join(', ')
 }
 
 /** RL7: an unrelated re-render every third frame leaves the trajectory identical. */

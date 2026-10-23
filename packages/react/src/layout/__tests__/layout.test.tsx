@@ -645,6 +645,92 @@ describe('react layout adapter', () => {
         }
     })
 
+    it('J-031: warns once for a memoized parent class or style change, not for captured, update or owned writes', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
+        const MemoItem = memo(Item)
+        let flip: ((on: boolean) => void) | null = null
+        let control: ReturnType<typeof useLayoutGroup> | null = null
+        /** The state lives above memoized participants, in the parent's attributes. */
+        function Owner({ by }: { by: 'class' | 'style' }) {
+            const [row, set] = useState(false)
+            flip = set
+            control = useLayoutGroup()
+            return (
+                <ul
+                    {...(by === 'class'
+                        ? { className: row ? 'row' : 'column' }
+                        : { style: { flexDirection: row ? 'row' : 'column' } })}
+                >
+                    <MemoItem id="a" />
+                    <MemoItem id="b" />
+                </ul>
+            )
+        }
+        const warnings = () =>
+            warn.mock.calls.filter((call) =>
+                String(call[0]).includes('useLayoutGroup().update')
+            ).length
+        for (const by of ['class', 'style'] as const) {
+            warn.mockClear()
+            const view = await mount(
+                <LayoutGroup>
+                    <Owner by={by} />
+                </LayoutGroup>
+            )
+            try {
+                await settle()
+                const list = view.container.querySelector('ul')!
+                const item = list.querySelector('li')!
+                // owned writes: layout's poses and corners, presence's
+                // transform and opacity, on participants and on the parent
+                await act(async () => {
+                    item.style.setProperty('opacity', '0.5', 'important')
+                    item.style.setProperty('border-radius', '4px', 'important')
+                    item.style.setProperty('translate', '4px 0px', 'important')
+                    list.style.transform = 'scale(0.9)'
+                    list.style.opacity = '0.8'
+                })
+                await settle()
+                await act(async () => {
+                    item.style.removeProperty('opacity')
+                    item.style.removeProperty('border-radius')
+                    item.style.removeProperty('translate')
+                    list.style.removeProperty('transform')
+                    list.style.removeProperty('opacity')
+                })
+                await settle()
+                expect(warnings()).toBe(0)
+                // the same change through update(fn)
+                await act(async () => {
+                    await control!.update(() => flip!(true))
+                })
+                await settle()
+                expect(warnings()).toBe(0)
+                // a captured commit: the group re-renders its participants
+                await view.rerender(
+                    <LayoutGroup>
+                        <Owner by={by} />
+                    </LayoutGroup>
+                )
+                await settle()
+                expect(warnings()).toBe(0)
+                // no participant renders the change: one warning
+                await act(async () => {
+                    flip!(false)
+                })
+                await settle()
+                expect(warnings()).toBe(1)
+                await act(async () => {
+                    flip!(true)
+                })
+                await settle()
+                expect(warnings()).toBe(1)
+            } finally {
+                await view.unmount()
+            }
+        }
+    })
+
     it('forwards a ref and moves it when the ref prop changes', async () => {
         function Child({
             target,
