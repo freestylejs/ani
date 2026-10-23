@@ -273,9 +273,15 @@ export function createLayoutScope(
     const scope: LayoutScope = {
         touch() {
             if (!hasDOM()) return
-            live().capture()
             touched = true
             capturedSinceCheck = true
+            // a render after the commit's layout effects, before its flush:
+            // the open capture holds that commit's before-boxes. Capturing
+            // now would refresh it (a time-sliced render took it in an
+            // earlier task) with the after-boxes; the flush's hand-off
+            // captures for this render instead (K14)
+            if (queued) return
+            live().capture()
         },
 
         commit() {

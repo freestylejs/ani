@@ -607,7 +607,19 @@ describe('react layout adapter', () => {
 
         fake!.calls.length = 0
         scope.commit()
-        // the next render starts in the commit's task, before the flush
+        // the next render starts in the commit's task, before the flush: it
+        // must not refresh the commit's capture (React 18 time slicing took
+        // it in an earlier task); the flush hands it a fresh one
+        scope.touch()
+        await Promise.resolve()
+        expect(fake!.calls).toEqual(['flush', 'capture'])
+
+        // a time-sliced render: touched in one task, committed in a later
+        // one that also starts the next render
+        fake!.calls.length = 0
+        scope.touch()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        scope.commit()
         scope.touch()
         await Promise.resolve()
         expect(fake!.calls).toEqual(['capture', 'flush', 'capture'])
