@@ -6,6 +6,9 @@ export const pageOptions = {}
 
 export const knownFailures: Record<string, string> = {}
 
+/** The heap and layout-count probes read Chromium's DevTools protocol. */
+export const chromiumOnly = ['C1', 'C2']
+
 const CYCLES = 10_000
 const BATCH = 100
 // The heap of a fresh page grows once during its first ~2,000 cycles (JIT
