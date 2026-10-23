@@ -385,6 +385,89 @@ Other runs:
 
 **Residual risks.**
 
-- A crossfade follower is drawn at its lead's box in the lead's flush space. If their flushes
-  saw different presence layers, the follower is drawn without that difference.
+- (Was: a crossfade follower drawn at its lead's box in the lead's space. The CP8 re-trial
+  showed it as J-037, which is fixed in the next section.)
 - Layers are found by walking each frame node's ancestor chain once per flush, as before.
+
+## Fix proof report for the CP8 re-trial (J-037)
+
+Trial: `cp8_final_retrial_trial_result.md` (frozen `5f1ec4c`). It closed J-032, J-035 and
+J-036. Clarification K24; ARCHITECTURE §3.1, §5.6. Commits `4cfc353` (engine and tests),
+`9f319b1` (authority).
+
+- *Root cause.*
+  - Only a `keep` action kept its frame space (presence matrices) across a flush. A
+    continuing follower (`follow`, not a new start) got the current ancestry and geometry at
+    every flush, while its kept lead stayed in the space of the handoff flush. After the
+    parent's layer changed (scaleX 0.8 → 1), a no-op flush moved the follower into the
+    current space and drew it there at the lead's old-space box: 140, w 52 → 132, w 41.6.
+  - The follower also copied its lead's box and rate without converting between their spaces.
+    A lead retargeted into the new space, with its follower still in the old one, exposes
+    this.
+- *Change.*
+  - `scope.ts`, frame build: a continuing follower keeps its frame space like a kept track
+    (`keptGeometry`: frozen matrices, current CSS box).
+  - `solve.ts`, `drawnMotion`: a follower takes its lead's box and velocity through
+    `seenFrom(follower, lead)` = `corr_follower ∘ corr_lead⁻¹`, the conversion an anchored
+    node uses for its parent (moving maps, so the rate is exact).
+  - One guard: a lead with a layer at its own follower (the follower is a layered ancestor of
+    the lead) would need the follower's own box to convert, so that conversion is skipped
+    instead of recursing.
+- *Regressions* (`tests/browser/cases/layout.ts`, `crossfadeUnderLayer`). Each case checks
+  every frame against the closed form, the lead and follower opacities against τ and 1 − τ,
+  the presence release and the lead's opacity hand-back at the fade's end (τ = 1), restored
+  lead styles, the follower held at opacity 0, and zero clock subscribers after dispose.
+  - `J37`: the trial's case. Parent at left 100 with scaleX 0.8; old child 40×40 with
+    `layoutId: 'pair'` exiting; new child at left 200, 100×40. At τ = 0.2 the layer becomes
+    1, then a no-op flush. Both nodes stay at (140, w 52) across the flush, the flush reports
+    `no-change`, and both follow `x = 100 + 200τ`, `w = 40 + 60τ`.
+  - `J37Control`: the same without the flush.
+  - `J37Moving`: the layer is on a grandparent moving 100 → 200, with a plain participant
+    between: `x = 100 + 300τ`.
+  - `J37Retarget`: the lead moves (left 250) instead of the no-op. It is retargeted from
+    (140, w 52) at vx 200 and vw 60 toward (350, w 100) in the new space, while its follower
+    continues in the old space; the fade keeps its timeline.
+- *Pure test* (`solve.test.ts`). Over 300 random layered trees with random follower/lead pairs
+  in either list order (> 50 each), every follower's browser box equals its lead's in the
+  space the layers are relative to (every element's own inner transform), relative error
+  < 1e-9. Follower rates match finite differences.
+
+**Sensitivity** (Chromium and Firefox):
+
+- With the `5f1ec4c` engine, J37 fails with `follower after the no-op flush: drawn x 132 …
+  w 41.6 … differs from x 140, w 52 by 10.400 px`, the trial's numbers. J37Moving fails the
+  same way at x 152 against 160. The control passes.
+- With only the follower conversion removed (fix 1 kept), J37Retarget fails with `follower
+  at the retarget: … by 13.000 px`, and the pure test fails at seed 1 (0.355 relative).
+
+**Results** (current sources, max error per frame):
+
+| Case | Chromium | Firefox | WebKit |
+|---|---|---|---|
+| J37 | 0.0000 | 0.0067 | 0.0000 px |
+| J37Control | 0.0000 | 0.0067 | 0.0000 px |
+| J37Moving | 0.0000 | 0.0067 | 0.0000 px |
+| J37Retarget | 0.0001 | 0.0082 | 0.0001 px |
+
+Opacities are within 0.0000 of the fade, and the release comes at τ 1.000 in every case.
+
+Other runs:
+
+- `pnpm vitest run`: 137 files, 1,608 tests.
+- `pnpm test:browser --coverage` (Chromium, all modules): 132 passed; engine coverage 94.69 /
+  85.88 / 98.01 / 97.53.
+- Firefox and WebKit: 130 passed, 2 skipped by design.
+- `pnpm test:waapi-trace`: passed.
+- COST: commit reads 2.3 / 3.0 / 3.0 ms; 300 nested movers frame p95 0.675 / 0.850 / 0.700
+  ms (C/F/W).
+- `pnpm check` and tsc `--noUnusedLocals --noUnusedParameters` are clean.
+
+**Authority mapping.**
+
+- §3.3 invariants 1 and 4: J37 (no-op) and J37Retarget (continuous at the retarget).
+- §5.6 (both nodes draw at the lead's box; release; complementary opacities): all four cases.
+- §3.1 (kept space, current CSS box): J37 and J37Moving.
+- T3.3/V3 (pure follower coherence), T4.1/T4.3/V4 (regressions).
+
+**Residual risk.** A follower that is a layered ancestor of its own lead (an exiting element
+containing its replacement) is drawn at the lead's box without the conversion.

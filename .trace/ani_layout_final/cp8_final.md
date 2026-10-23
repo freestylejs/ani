@@ -67,32 +67,50 @@ and `74da464` (ARCHITECTURE §3.1, §5.3 and §5.4, drift K23). The proof is in 
 
 The new cases fail on the old engine with the trial's numbers: 60 → 35 px and 120 → 100 px.
 
+## CP8 re-trial fix (J-037)
+
+The re-trial `cp8_final_retrial_trial_result.md` (frozen `5f1ec4c`) closed J-032, J-035 and
+J-036, accepted the approved §5.3 statement, and kept J-016, J-033 and J-034 closed. It found
+J-037 (S0): a no-op flush after a layer change moved a continuing crossfade follower,
+140, w 52 → 132, w 41.6.
+
+Fixed in `4cfc353` and `9f319b1` (K24): a continuing follower keeps its flush's space like a
+kept track, and a follower takes its lead's box through `corr_f ∘ corr_l⁻¹`. Coverage:
+
+- `layout:J37`, `J37Control`, `J37Moving` and `J37Retarget`: every frame, opacities, release
+  and cleanup, in three browsers.
+- A pure test of layered follower pairs in either order, with rates.
+
+On the `5f1ec4c` engine J37 fails with the trial's numbers. With only the conversion removed,
+J37Retarget fails by 13 px. The proof is in `cp4_engine.md`, "Fix proof report for the CP8
+re-trial".
+
 ## T8.2 Fresh clone
 
-`git bundle` of `layout/final` at `74da464`, cloned on june-wsl into an empty directory
+`git bundle` of `layout/final` at `9f319b1`, cloned on june-wsl into an empty directory
 (`~/ani-v2/lay-fresh`), then:
 
 | Step | Command | Result |
 |---|---|---|
 | Install | `pnpm install --frozen-lockfile` | exit 0 |
 | CI | `pnpm test:ci` (biome, typecheck, build incl. `next build`, vitest coverage) | exit 0 |
-| Chromium | `pnpm test:browser --coverage` | 128 passed, 0 failed; engine coverage 94.69 / 85.84 / 98.01 / 97.53 |
-| Firefox | `pnpm test:browser --browser firefox` | 126 passed, 2 skipped (Chromium-only CDP cases), 0 failed |
-| WebKit | `pnpm test:browser --browser webkit` | 126 passed, 2 skipped, 0 failed |
+| Chromium | `pnpm test:browser --coverage` | 132 passed, 0 failed; engine coverage 94.69 / 85.88 / 98.01 / 97.53 |
+| Firefox | `pnpm test:browser --browser firefox` | 130 passed, 2 skipped (Chromium-only CDP cases), 0 failed |
+| WebKit | `pnpm test:browser --browser webkit` | 130 passed, 2 skipped, 0 failed |
 | Size | `pnpm size` | all 8 scenarios PASS (everything 22,910 / 23,700 gzip) |
 
-Also at `74da464`, on the mirror: `pnpm test:waapi-trace` passed. The docs smoke test
-(`docs_showcase.mjs`) passed in all three browsers on the fresh build at `1a244e3`; the docs
+Also at the `4cfc353` code (`9f319b1` changes docs only), on the mirror:
+`pnpm test:waapi-trace` passed. The docs smoke test (`docs_showcase.mjs`) passed in all three browsers on the fresh build at `1a244e3`; the docs
 and fixtures have not changed since.
 
 ## V8
 
-All green at `74da464`. Verdict of this review: **PASS**, subject to the tribunal.
+All green at `9f319b1`. Verdict of this review: **PASS**, subject to the tribunal.
 
 ## Residual risks
 
-- A crossfade follower is drawn at its lead's box in the lead's flush space; if their flushes
-  saw different presence layers, the follower is drawn without that difference.
+- A crossfade follower that is a layered ancestor of its own lead (an exiting element that
+  contains its replacement) is drawn at the lead's box without the space conversion.
 - J-029: a render that knows no document yet touches every live implicit root; J-031: text
   changes and ancestors above a participant's parent are not observed (`cp5_react.md`).
 - A retained removed lead's own presence layer is taken as last measured (it is gone and
