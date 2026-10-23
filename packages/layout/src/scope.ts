@@ -329,8 +329,6 @@ function leadWeight(fade: DriveFade): number {
     return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, e))
 }
 
-const IDENTITY_POSE = { tx: 0, ty: 0, sx: 1, sy: 1 }
-
 function noop(): void {
     // a removal after dispose has nothing to undo
 }
