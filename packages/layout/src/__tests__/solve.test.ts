@@ -900,6 +900,76 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
         expect(checked).toBeGreaterThan(100)
     })
 
+    it('a follower is drawn at its lead in the space both share, in either order, with its rate (random trees with layers, J-037)', () => {
+        let before = 0
+        let after = 0
+        let rates = 0
+        for (let seed = 1; seed <= 300; seed++) {
+            const built = randomTree(seed)
+            const layered = withLayers(built, seed)
+            const nodes = [...layered.nodes]
+            const random = rng(seed * 31)
+            const above = (a: number, b: number) => {
+                for (let k = nodes[b]!.parent; k >= 0; k = nodes[k]!.parent)
+                    if (k === a) return true
+                return false
+            }
+            const pairs: [number, number][] = []
+            for (let f = 0; f < nodes.length; f++) {
+                if (random() > 0.3) continue
+                const l = Math.floor(random() * nodes.length)
+                if (
+                    l === f ||
+                    above(f, l) ||
+                    above(l, f) ||
+                    pairs.some(([pf, pl]) => pf === l || pl === f || pf === f)
+                )
+                    continue
+                nodes[f] = { ...nodes[f]!, follow: l }
+                pairs.push([f, l])
+            }
+            const solved = solve(nodes)
+            const poses = solved.map((x) => x.pose)
+            const h = 1e-6
+            const shift = (dt: number) =>
+                nodes.map((n) => ({ ...n, elapsed: n.elapsed + dt }))
+            const lo = drawnBoxes(shift(-h))
+            const hi = drawnBoxes(shift(h))
+            const lo2 = drawnBoxes(shift(-h / 2))
+            const hi2 = drawnBoxes(shift(h / 2))
+            const analytic = drawnVelocities(nodes)
+            for (const [f, l] of pairs) {
+                // the browser chain with every element's own inner transform:
+                // the space every layer is relative to
+                const fb = rendered(f, built.dom, poses)
+                const lb = rendered(l, built.dom, poses)
+                const scale = 1 + Math.abs(lb.x) + lb.w
+                expect(
+                    maxDiff(fb, lb) / scale,
+                    `seed ${seed} follower ${f} lead ${l}`
+                ).toBeLessThan(1e-9)
+                if (f < l) before++
+                else after++
+                const fd = (a: Box[], b: Box[], step: number) => ({
+                    x: (b[f]!.x - a[f]!.x) / (2 * step),
+                    y: (b[f]!.y - a[f]!.y) / (2 * step),
+                    w: (b[f]!.w - a[f]!.w) / (2 * step),
+                    h: (b[f]!.h - a[f]!.h) / (2 * step),
+                })
+                const coarse = fd(lo, hi, h)
+                if (relative(coarse, fd(lo2, hi2, h / 2)) > 1e-4) continue
+                expect(
+                    relative(coarse, analytic[f]!),
+                    `seed ${seed} follower ${f} rate`
+                ).toBeLessThan(1e-3)
+                rates++
+            }
+        }
+        expect(before).toBeGreaterThan(50)
+        expect(after).toBeGreaterThan(50)
+        expect(rates).toBeGreaterThan(100)
+    })
+
     it("a child planned after its parent's layer changed is drawn through that layer, not the frozen one", () => {
         const motion = resolveMotion([{ duration: 1, timing: timing.linear() }])
         // the parent's track was planned under scaleX(0.8); its layer is 1 now
