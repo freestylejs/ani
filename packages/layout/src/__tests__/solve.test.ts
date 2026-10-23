@@ -1,12 +1,20 @@
 import { type TimingFunction, timing } from '@freestylejs/ani-core'
 import { describe, expect, it } from 'vitest'
-import { aboutOrigin, compose, IDENTITY_MAP, mapBox } from '../geometry'
+import {
+    aboutOrigin,
+    type Box,
+    compose,
+    IDENTITY_MAP,
+    invert,
+    mapBox,
+} from '../geometry'
 import { resolveMotion } from '../motion'
 import {
     type AnchorRule,
     createTrack,
     drawnBoxes,
     drawnVelocities,
+    type Layer,
     type SolveNode,
     solve,
     trackEnded,
@@ -720,18 +728,79 @@ describe('solve: CP3 trial regressions', () => {
     })
 })
 
-describe('solve: a node composes its ancestors at its own flush (CP6 trial J-032)', () => {
-    it("inners equal to the ancestors' own change nothing (random trees)", () => {
+describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 trial J-032, CP8 trial J-035/J-036)', () => {
+    type Sub = Map<number, { tx: number; ty: number; sx: number; sy: number }>
+
+    /** Random layers: ancestors of some nodes with the inner transform of another flush. */
+    function withLayers(built: Built, seed: number) {
+        const random = rng(seed * 7919)
+        const subs: Sub[] = []
+        const nodes = built.nodes.map((node) => {
+            const sub: Sub = new Map()
+            const layers: Layer[] = []
+            const chain: number[] = []
+            for (let k = node.parent; k >= 0; k = built.nodes[k]!.parent)
+                chain.unshift(k)
+            for (const k of chain) {
+                if (random() >= 0.4) continue
+                const q = {
+                    tx: random() * 60 - 30,
+                    ty: random() * 60 - 30,
+                    sx: 0.5 + random(),
+                    sy: 0.5 + random(),
+                }
+                const d = built.dom[k]!
+                sub.set(k, q)
+                layers.push({
+                    at: k,
+                    map: compose(
+                        invert(built.nodes[k]!.inner),
+                        aboutOrigin(q, d.ox, d.oy)
+                    ),
+                })
+            }
+            subs.push(sub)
+            return { ...node, layers: layers.length > 0 ? layers : null }
+        })
+        return { nodes, subs }
+    }
+
+    /**
+     * What the browser draws for `i` with the inner transforms of `sub` on its
+     * ancestors (and on `i` itself with `self`), independent of the solver.
+     */
+    function renderedIn(
+        i: number,
+        dom: readonly ONode[],
+        poses: readonly { tx: number; ty: number; sx: number; sy: number }[],
+        sub: Sub,
+        self = false
+    ): OBox {
+        let box = dom[i]!.css
+        for (let j = i; j >= 0; j = dom[j]!.parent) {
+            const n = dom[j]!
+            box = applyPose(
+                ((self || j !== i) && sub.get(j)) || n.inner,
+                n.ox,
+                n.oy,
+                box
+            )
+            box = applyPose(poses[j]!, n.ox, n.oy, box)
+        }
+        return box
+    }
+
+    it("layers that restore the ancestors' own inner maps change nothing (random trees)", () => {
         for (let seed = 1; seed <= 200; seed++) {
             const { nodes } = randomTree(seed)
-            const withInners = nodes.map((node) => {
-                const inners = []
+            const same = nodes.map((node) => {
+                const layers: Layer[] = []
                 for (let k = node.parent; k >= 0; k = nodes[k]!.parent)
-                    inners.unshift(nodes[k]!.inner)
-                return { ...node, inners: node.parent >= 0 ? inners : null }
+                    layers.unshift({ at: k, map: IDENTITY_MAP })
+                return { ...node, layers: layers.length > 0 ? layers : null }
             })
             const a = solve(nodes)
-            const b = solve(withInners)
+            const b = solve(same)
             a.forEach((s, i) => {
                 const t = b[i]!
                 expect(Math.abs(s.pose.tx - t.pose.tx)).toBeLessThan(1e-9)
@@ -740,6 +809,95 @@ describe('solve: a node composes its ancestors at its own flush (CP6 trial J-032
                 expect(Math.abs(s.pose.sy - t.pose.sy)).toBeLessThan(1e-12)
             })
         }
+    })
+
+    it('every node is drawn on its track through its own layers: the browser chain recomposed (random trees, random layers)', () => {
+        let layered = 0
+        for (let seed = 1; seed <= 300; seed++) {
+            const built = randomTree(seed)
+            const { nodes, subs } = withLayers(built, seed)
+            const solved = solve(nodes)
+            const poses = solved.map((s) => s.pose)
+            solved.forEach((s, i) => {
+                if (subs[i]!.size > 0) layered++
+                const seen = renderedIn(i, built.dom, poses, subs[i]!)
+                const scale = 1 + Math.abs(s.drawn.x) + s.drawn.w
+                expect(
+                    maxDiff(seen, s.drawn) / scale,
+                    `seed ${seed} node ${i}`
+                ).toBeLessThan(1e-9)
+            })
+        }
+        expect(layered).toBeGreaterThan(500)
+    })
+
+    it("an anchored node is placed on its parent's anchor point as its own layers draw the parent (random trees, J-035)", () => {
+        let checked = 0
+        for (let seed = 1; seed <= 400; seed++) {
+            const built = randomTree(seed)
+            const { nodes, subs } = withLayers(built, seed)
+            const plainNodes = nodes.map((node) => ({ ...node, layers: null }))
+            const plainDrawn = drawnBoxes(plainNodes)
+            const solved = solve(nodes)
+            const poses = solved.map((s) => s.pose)
+            nodes.forEach((node, i) => {
+                const rule = node.track?.anchor
+                const parent = node.parent
+                if (!rule || parent < 0 || nodes[parent]!.track?.anchor) return
+                // the parent as this node's layers draw it, from the browser chain
+                const P = renderedIn(parent, built.dom, poses, subs[i]!, true)
+                const P0 = plainDrawn[parent]!
+                const shiftX = P.x + rule.u * P.w - (P0.x + rule.u * P0.w)
+                const shiftY = P.y + rule.v * P.h - (P0.y + rule.v * P0.h)
+                const d = solved[i]!.drawn
+                const d0 = plainDrawn[i]!
+                const scale = 1 + Math.abs(d.x) + d.w
+                expect(
+                    Math.max(
+                        Math.abs(d.x - (d0.x + shiftX)),
+                        Math.abs(d.y - (d0.y + shiftY)),
+                        Math.abs(d.w - d0.w),
+                        Math.abs(d.h - d0.h)
+                    ) / scale,
+                    `seed ${seed} node ${i}`
+                ).toBeLessThan(1e-9)
+                if (subs[i]!.size > 0 || subs[parent]!.size > 0) checked++
+            })
+        }
+        expect(checked).toBeGreaterThan(50)
+    })
+
+    it('analytic velocities match finite differences with layers (random trees)', () => {
+        let checked = 0
+        for (let seed = 500; seed < 700; seed++) {
+            const { nodes } = withLayers(randomTree(seed), seed)
+            const h = 1e-6
+            const shift = (dt: number) =>
+                nodes.map((n) => ({ ...n, elapsed: n.elapsed + dt }))
+            const lo = drawnBoxes(shift(-h))
+            const hi = drawnBoxes(shift(h))
+            const lo2 = drawnBoxes(shift(-h / 2))
+            const hi2 = drawnBoxes(shift(h / 2))
+            const analytic = drawnVelocities(nodes)
+            nodes.forEach((node, i) => {
+                if (!node.track?.anchor || node.parent < 0) return
+                const fd = (a: Box[], b: Box[], step: number) => ({
+                    x: (b[i]!.x - a[i]!.x) / (2 * step),
+                    y: (b[i]!.y - a[i]!.y) / (2 * step),
+                    w: (b[i]!.w - a[i]!.w) / (2 * step),
+                    h: (b[i]!.h - a[i]!.h) / (2 * step),
+                })
+                const coarse = fd(lo, hi, h)
+                // a corner of a piecewise channel anywhere it depends on
+                if (relative(coarse, fd(lo2, hi2, h / 2)) > 1e-4) return
+                expect(
+                    relative(coarse, analytic[i]!),
+                    `seed ${seed} node ${i}`
+                ).toBeLessThan(1e-3)
+                checked++
+            })
+        }
+        expect(checked).toBeGreaterThan(100)
     })
 
     it("a child planned after its parent's layer changed is drawn through that layer, not the frozen one", () => {
@@ -755,7 +913,7 @@ describe('solve: a node composes its ancestors at its own flush (CP6 trial J-032
             parent: 0,
             track: createTrack(b, css, null, 0, 0, true, motion, null),
             elapsed: 0.3,
-            inners: [IDENTITY_MAP],
+            layers: [{ at: 0, map: compose(invert(frozen), IDENTITY_MAP) }],
         })
         const solved = solve([parent, child])
         const drawn = { x: 40 + 60 * 0.3, y: 0, w: 40, h: 40 }
@@ -767,7 +925,7 @@ describe('solve: a node composes its ancestors at its own flush (CP6 trial J-032
         expect(maxDiff(mapBox(actual, css), drawn)).toBeLessThan(TOL)
         expect(maxDiff(mapBox(solved[1]!.map, css), drawn)).toBeLessThan(TOL)
         // composed with the frozen layer instead, it would be 1 / 0.8 wide
-        const stale = solve([parent, { ...child, inners: null }])
+        const stale = solve([parent, { ...child, layers: null }])
         expect(
             mapBox(
                 compose(
@@ -777,5 +935,83 @@ describe('solve: a node composes its ancestors at its own flush (CP6 trial J-032
                 css
             ).w
         ).toBeCloseTo(50, 9)
+    })
+
+    it("a centred anchored child planned after its parent's layer changed stays on the parent's visual centre (J-035)", () => {
+        const motion = resolveMotion([{ duration: 1, timing: timing.linear() }])
+        // the parent's track was planned under scaleX(0.8) about its left edge; its layer is 1 now
+        const frozen = aboutOrigin({ tx: 0, ty: 0, sx: 0.8, sy: 1 }, 200, 0)
+        const parentCss = { x: 200, y: 0, w: 200, h: 100 }
+        const parentTrack = createTrack(
+            { x: 0, y: 0, w: 160, h: 100 },
+            { x: 200, y: 0, w: 160, h: 100 },
+            null,
+            0,
+            0,
+            true,
+            motion,
+            null
+        )
+        const parent = rootNode(
+            { x: 200, y: 0, w: 160, h: 100 },
+            {
+                box: mapBox(frozen, parentCss),
+                ox: 200,
+                inner: frozen,
+                track: parentTrack,
+            }
+        )
+        // the child: 40 → 60 wide, its centre on the parent's (offset 0)
+        const css = { x: 270, y: 30, w: 60, h: 40 }
+        const rule: AnchorRule = {
+            u: 0.5,
+            v: 0.5,
+            fromX: 0,
+            fromY: 0,
+            toX: 0,
+            toY: 0,
+            kx: 0,
+            ky: 0,
+        }
+        const child = rootNode(css, {
+            parent: 0,
+            fx: 0.5,
+            fy: 0.5,
+            track: createTrack(
+                { x: 120, y: 30, w: 40, h: 40 },
+                css,
+                null,
+                0.5,
+                0.5,
+                true,
+                motion,
+                rule
+            ),
+            layers: [{ at: 0, map: compose(invert(frozen), IDENTITY_MAP) }],
+        })
+        for (const t of [0, 0.1, 0.5, 0.9, 1]) {
+            const nodes = [
+                { ...parent, elapsed: 0.22 + t },
+                { ...child, elapsed: t },
+            ]
+            const solved = solve(nodes)
+            const R = 200 * Math.min(1, 0.22 + t)
+            const W = 40 + 20 * t
+            // the browser: parent pose ∘ scaleX(1), then the child's pose
+            const parentMap = compose(
+                aboutOrigin(solved[0]!.pose, 200, 0),
+                IDENTITY_MAP
+            )
+            const seen = mapBox(
+                compose(
+                    parentMap,
+                    aboutOrigin(solved[1]!.pose, css.x + 30, css.y + 20)
+                ),
+                css
+            )
+            expect(seen.x).toBeCloseTo(R + 100 - W / 2, 9)
+            expect(seen.w).toBeCloseTo(W, 9)
+            expect(mapBox(parentMap, parentCss).x + 100).toBeCloseTo(R + 100, 9)
+        }
     })
 })

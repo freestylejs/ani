@@ -2248,6 +2248,201 @@ export async function J32(): Promise<string> {
     }
 }
 
+/**
+ * CP8 trial J-032: a kept track keeps the presence matrices it was planned
+ * with, not its CSS box. The parent, retargeted after its layer changed
+ * (scaleX 0.8 → 1), moves the child's CSS box while the child's A in its own
+ * flush's space is unchanged: the child keeps its track from exactly what the
+ * user saw, drawn through the parent's current layer.
+ */
+export async function J32B(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const parent = node(
+            h.root,
+            'left: 0; top: 0; width: 200px; height: 40px; transform: scaleX(0.8); transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(parent)
+        h.add(child)
+        h.group.capture()
+        parent.style.left = '200px'
+        child.style.left = '100px'
+        void h.group.flush()
+        h.mc.frame(FRAME_MS)
+        h.mc.frame(200)
+        await settleMicrotasks()
+        parent.style.transform = 'scaleX(1)'
+        const seen = pageBox(child)
+        expectAt(child, at(o, 60, 0, 40, 40), 'drawn through scaleX(1)', 0.01)
+        h.group.capture()
+        // the child's A in its own flush's space stays (280, w 32)
+        parent.style.left = '300px'
+        child.style.left = '-25px'
+        const second = report(h.group.flush())
+        expectAt(child, seen, 'the kept child stays where the user saw it')
+        const parentTrack = spec(
+            at(o, 40, 0, 200, 40),
+            at(o, 300, 0, 200, 40),
+            {
+                duration: 1,
+                timing: linear,
+                velocity: { x: 200, y: 0, w: 0, h: 0 },
+            }
+        )
+        let worst = 0
+        let parentWorst = 0
+        let frame = 0
+        let noop: { value: LayoutReport | null } | null = null
+        const count = await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                const R = expectedBox(parentTrack, elapsed).x - o.x
+                // the kept child track, and the parent's layer (1 / 0.8 about its drawn left)
+                const C = 280 * Math.min(1, 0.2 + DT + elapsed)
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        child,
+                        at(o, R + 1.25 * (C - R), 0, 40, 40),
+                        `child t=${elapsed.toFixed(3)}`
+                    )
+                )
+                parentWorst = Math.max(
+                    parentWorst,
+                    expectAt(
+                        parent,
+                        at(o, R, 0, 200, 40),
+                        `parent t=${elapsed.toFixed(3)}`
+                    )
+                )
+                if (frame === 20) {
+                    h.group.capture()
+                    noop = report(h.group.flush())
+                }
+                frame += 1
+            },
+            () => second.value !== null
+        )
+        expectEqual(
+            (noop as { value: LayoutReport | null } | null)?.value?.status,
+            'no-change',
+            'the no-op flush keeps both tracks'
+        )
+        expectEqual(second.value?.status, 'ended', 'parent run')
+        expectAt(child, at(o, 275, 0, 40, 40), 'child at rest', 0.01)
+        expectEqual(child.style.translate, '', 'child translate restored')
+        expectEqual(child.style.scale, '', 'child scale restored')
+        return `parent retargeted after scaleX 0.8 → 1 moves the kept child's CSS box: the child stays at (${(seen.x - o.x).toFixed(1)}, w ${seen.w}) and keeps its track through the parent's layer; ${count} frames: child within ${worst.toFixed(4)} px, parent within ${parentWorst.toFixed(4)} px; no-op flush kept both; identity settle`
+    } finally {
+        h.dispose()
+    }
+}
+
+/**
+ * CP8 trial J-035: an anchored child planned after its parent's layer
+ * changed is placed on the parent's anchor point as it draws the parent: in
+ * its own flush's space, through the parent's current layer. With `depth`,
+ * the layer is a grandparent's and the parent is a kept participant between.
+ */
+async function anchoredUnderLayer(depth: 1 | 2): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const scaled = node(
+            h.root,
+            'left: 0; top: 0; width: 200px; height: 100px; transform: scaleX(0.8); transform-origin: 0 0;'
+        )
+        const parent =
+            depth === 1
+                ? scaled
+                : node(
+                      scaled,
+                      'left: 0; top: 0; width: 200px; height: 100px; transform-origin: 0 0;'
+                  )
+        const child = node(
+            parent,
+            'left: 80px; top: 30px; width: 40px; height: 40px;'
+        )
+        h.add(scaled)
+        if (depth === 2) h.add(parent)
+        h.add(child, { layoutAnchor: { x: 0.5, y: 0.5 } })
+        h.group.capture()
+        scaled.style.left = '200px'
+        void h.group.flush()
+        h.mc.frame(FRAME_MS)
+        h.mc.frame(200)
+        await settleMicrotasks()
+        scaled.style.transform = 'scaleX(1)'
+        const seen = pageBox(child)
+        expectAt(child, at(o, 120, 30, 40, 40), 'centred on the parent', 0.01)
+        h.group.capture()
+        child.style.left = '70px'
+        child.style.width = '60px'
+        const second = report(h.group.flush())
+        expectAt(child, seen, 'B is what the user saw (x 120, w 40)')
+        let worst = 0
+        let frame = 0
+        let noop: { value: LayoutReport | null } | null = null
+        const count = await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                const t = Math.min(1, elapsed)
+                const R = 200 * Math.min(1, 0.2 + DT + elapsed)
+                const W = 40 + 20 * t - 20 * t * (1 - t) ** 2
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        child,
+                        at(o, R + 100 - W / 2, 30, W, 40),
+                        `child t=${elapsed.toFixed(3)}`
+                    )
+                )
+                expectAt(
+                    parent,
+                    at(o, R, 0, 200, 100),
+                    `parent t=${elapsed.toFixed(3)}`
+                )
+                if (frame === 20) {
+                    h.group.capture()
+                    noop = report(h.group.flush())
+                }
+                frame += 1
+            },
+            () => second.value !== null
+        )
+        expectEqual(
+            (noop as { value: LayoutReport | null } | null)?.value?.status,
+            'no-change',
+            'the no-op flush keeps every track'
+        )
+        expectEqual(second.value?.status, 'ended', 'child run')
+        await frames(h.mc, 30, noCheck)
+        expectAt(child, at(o, 270, 30, 60, 40), 'child at rest', 0.01)
+        expectEqual(child.style.translate, '', 'child translate restored')
+        expectEqual(child.style.scale, '', 'child scale restored')
+        return `${depth === 1 ? 'parent' : 'grandparent'} layer 0.8 → 1, centred child 40 → 60 wide: B = (${(seen.x - o.x).toFixed(1)}, w ${seen.w}); ${count} frames centred on the parent's visual centre within ${worst.toFixed(4)} px; no-op flush kept every track; identity settle`
+    } finally {
+        h.dispose()
+    }
+}
+
+export function J35(): Promise<string> {
+    return anchoredUnderLayer(1)
+}
+
+export function J35B(): Promise<string> {
+    return anchoredUnderLayer(2)
+}
+
 /* ───────────────────────── View Transitions ───────────────────────── */
 
 export async function VT1(): Promise<string> {

@@ -72,6 +72,8 @@ import {
     drawnBoxes,
     drawnVelocities,
     type Fade,
+    type Layer,
+    movingParents,
     type Solved,
     type SolveNode,
     solve,
@@ -253,50 +255,39 @@ function innerOf(au: Authored, m: Matrix, ox: number, oy: number): Map2 {
 }
 
 /**
- * Per frame node, the inner maps of its ancestors (root first) at its own
- * flush, or `null` when its parent's map is solved with exactly those: the
- * presence matrices each node's map composes are its ancestors' at its
- * flush (`ancestry`) and its own frozen one.
+ * Per frame node, its ancestors (root first) whose presence matrix at the
+ * flush that planned it differs from the one frozen with their own geometry
+ * (§3.1), or `null` when there are none.
  */
-function epochInners(at: readonly FrameNode[]): (Map2[] | null)[] {
-    // the common case: every recorded matrix is the ancestor's own
-    const own = at.every((node) => {
-        for (let k = node.parent; k >= 0; k = at[k]!.parent) {
-            const m = node.ancestry.get(at[k]!.p)
-            if (m && !sameMatrix(m, at[k]!.geometry.matrix)) return false
-        }
-        return true
-    })
-    if (own) return at.map(() => null)
-    const used: Map<Participant, Matrix>[] = []
+function epochLayers(at: readonly FrameNode[]): (Layer[] | null)[] {
     return at.map((node) => {
-        const parentUsed =
-            node.parent >= 0
-                ? used[node.parent]!
-                : new Map<Participant, Matrix>()
-        const chain: number[] = []
-        for (let k = node.parent; k >= 0; k = at[k]!.parent) chain.unshift(k)
-        const differs = chain.some((k) => {
+        let layers: Layer[] | null = null
+        for (let k = node.parent; k >= 0; k = at[k]!.parent) {
+            const g = at[k]!.geometry
             const m = node.ancestry.get(at[k]!.p)
-            return m !== undefined && !sameMatrix(m, parentUsed.get(at[k]!.p)!)
-        })
-        const mine = new Map<Participant, Matrix>()
-        let inners: Map2[] | null = null
-        if (differs) {
-            inners = chain.map((k) => {
-                const a = at[k]!
-                const m = node.ancestry.get(a.p) ?? parentUsed.get(a.p)!
-                mine.set(a.p, m)
-                const g = a.geometry
-                return innerOf(g.authored, m, g.ox, g.oy)
+            if (!m || sameMatrix(m, g.matrix)) continue
+            layers ??= []
+            layers.unshift({
+                at: k,
+                map: compose(
+                    invert(g.inner),
+                    innerOf(g.authored, m, g.ox, g.oy)
+                ),
             })
-        } else {
-            for (const [a, m] of parentUsed) mine.set(a, m)
         }
-        mine.set(node.p, node.geometry.matrix)
-        used.push(mine)
-        return inners
+        return layers
     })
+}
+
+/**
+ * A kept track's geometry at a new flush: the CSS box and origin as they are
+ * now, under the presence matrix frozen with the track (§3.1, §5.5), at rest
+ * on `a`, its A in that space.
+ */
+function keptGeometry(was: Geometry, now: Geometry, a: Box): Geometry {
+    const css = mapBox(invert(now.inner), now.box)
+    const inner = innerOf(now.authored, was.matrix, now.ox, now.oy)
+    return { ...now, a, box: mapBox(inner, css), inner, matrix: was.matrix }
 }
 
 interface Retained {
@@ -484,19 +475,19 @@ export function createLayoutGroup(
 
     let epochs: {
         at: readonly FrameNode[]
-        inners: (Map2[] | null)[]
+        layers: (Layer[] | null)[]
     } | null = null
 
-    /** `epochInners` of a frame, computed once per frame array. */
-    function innersOf(at: readonly FrameNode[]): (Map2[] | null)[] {
-        if (epochs?.at !== at) epochs = { at, inners: epochInners(at) }
-        return epochs.inners
+    /** `epochLayers` of a frame, computed once per frame array. */
+    function layersOf(at: readonly FrameNode[]): (Layer[] | null)[] {
+        if (epochs?.at !== at) epochs = { at, layers: epochLayers(at) }
+        return epochs.layers
     }
 
     function solveNodes(at: FrameNode[]): SolveNode[] {
         const index = new Map<Participant, number>()
         at.forEach((node, i) => index.set(node.p, i))
-        const inners = innersOf(at)
+        const layers = layersOf(at)
         return at.map((node, i) => {
             const d = node.p.drive
             const g = node.geometry
@@ -526,7 +517,7 @@ export function createLayoutGroup(
                         : -1,
                 fade,
                 radius: live && node.p.options.radius ? g.radius : null,
-                inners: inners[i] ?? null,
+                layers: layers[i] ?? null,
             }
         })
     }
@@ -982,62 +973,57 @@ export function createLayoutGroup(
             return false
         })
         if (!changed) return
-        const inners = innersOf(frame)
-        const poses: MovingMap[] = []
+        // each node's full map as solved, with its rate (read before any is carried)
+        const ontos = frame.map((node) => {
+            const g = node.geometry
+            return movingOnto(
+                mapBox(invert(g.inner), g.box),
+                drawn.get(node.p) ?? g.a,
+                velocity.get(node.p) ?? ZERO_VELOCITY
+            )
+        })
+        /** The parent map a node was solved with: its ancestors at its flush's layers. */
+        const parentWas = movingParents(
+            layersOf(frame).map((layers, k) => ({
+                parent: frame[k]!.parent,
+                layers,
+            })),
+            (k) =>
+                ontos[k] ??
+                composeMoving(parentWas(k), still(frame[k]!.geometry.inner))
+        )
         const before: MovingMap[] = []
         const after: MovingMap[] = []
-        /** The parent map a node was solved with: its ancestors' poses at its flush's layers. */
-        const parentWasOf = (k: number): MovingMap => {
-            const node = frame[k]!
-            const epoch = inners[k]
-            if (node.parent < 0) return STILL_IDENTITY
-            if (!epoch) return before[node.parent]!
-            const chain: number[] = []
-            for (let a = node.parent; a >= 0; a = frame[a]!.parent)
-                chain.unshift(a)
-            let map = STILL_IDENTITY
-            chain.forEach((a, j) => {
-                map = composeMoving(
-                    composeMoving(map, poses[a]!),
-                    still(epoch[j]!)
-                )
-            })
-            return map
-        }
         frame.forEach((node, k) => {
             const g = node.geometry
             const m = current.get(node.p) ?? g.matrix
             const au = node.p.drive?.authored ?? g.authored
             const inner = innerOf(au, m, g.ox, g.oy)
-            const parentWas = parentWasOf(k)
             const parentNow =
                 node.parent >= 0 ? after[node.parent]! : STILL_IDENTITY
-            const css = mapBox(invert(g.inner), g.box)
-            const onto = movingOnto(
-                css,
-                drawn.get(node.p) ?? g.a,
-                velocity.get(node.p) ?? ZERO_VELOCITY
-            )
+            const onto = ontos[k]
             if (!onto) {
-                poses.push(STILL_IDENTITY)
-                before.push(composeMoving(parentWas, still(g.inner)))
+                before.push(composeMoving(parentWas(k), still(g.inner)))
                 after.push(composeMoving(parentNow, still(inner)))
                 return
             }
             // `onto` is the full map parent ∘ pose ∘ inner: the pose, with its rate
             const pose = composeMoving(
-                invertMoving(parentWas),
+                invertMoving(parentWas(k)),
                 composeMoving(onto, still(invert(g.inner)))
             )
             const next = composeMoving(
                 composeMoving(parentNow, pose),
                 still(inner)
             )
-            poses.push(pose)
             before.push(onto)
             after.push(next)
             if (!node.p.drive) return
-            const seen = carry(next, css, ZERO_VELOCITY)
+            const seen = carry(
+                next,
+                mapBox(invert(g.inner), g.box),
+                ZERO_VELOCITY
+            )
             drawn.set(node.p, seen.box)
             velocity.set(node.p, seen.velocity)
         })
@@ -1211,10 +1197,14 @@ export function createLayoutGroup(
         }
 
         /**
-         * Every node's A under the presence matrices frozen with the running
-         * tracks (§3.1): what A is if only the layout changed. Parents first.
+         * Every running track's A, and its parent's, under the presence
+         * matrices frozen with the track (§3.1): what A is if only the layout
+         * changed. Parents first.
          */
-        const plannedBoxes = (): (Box | null)[] => {
+        const plannedBoxes = (): ({
+            own: Box
+            parent: Box | null
+        } | null)[] => {
             const rests: (Map2 | null)[] = []
             const matrices: (Matrix | null)[] = []
             /** The rest map of `i`'s ancestors under the matrices of its own flush. */
@@ -1264,7 +1254,14 @@ export function createLayoutGroup(
                 if (!was) return null
                 const css = mapBox(invert(g.inner), g.box)
                 const base = epochRest(i, was.ancestry, parentRest)
-                return mapBox(base, mapBox(inner, css))
+                const gp = parent >= 0 ? geometry[parent] : null
+                return {
+                    own: mapBox(base, mapBox(inner, css)),
+                    // the parent's CSS box through the same ancestors
+                    parent: gp
+                        ? mapBox(base, mapBox(invert(gp.inner), gp.box))
+                        : null,
+                }
             })
         }
 
@@ -1328,7 +1325,8 @@ export function createLayoutGroup(
                     moving,
                     track: moving ? d!.track : null,
                     trackTarget: moving ? d!.target : null,
-                    planned: moving ? planned[i]! : null,
+                    planned: moving ? (planned[i]?.own ?? null) : null,
+                    parentPlanned: moving ? (planned[i]?.parent ?? null) : null,
                     mode: options.layout ?? true,
                     anchor: options.layoutAnchor ?? null,
                     motion: motionOf(p, reduced),
@@ -1663,9 +1661,10 @@ export function createLayoutGroup(
             if (!inFrame[i]) return
             frameIndex.set(i, next.length)
             const parent = parents[i]!
-            // a kept track keeps the geometry it was planned with and the
-            // layers of that flush: a presence transform changed since stays
-            // a visual layer over it (§3.1); a new one starts in this flush's
+            // a kept track keeps the presence matrices it was planned with,
+            // its own and its ancestors': a presence transform changed since
+            // stays a visual layer over it (§3.1); its CSS box is the current
+            // one. A new track starts in this flush's space.
             const kept = actions[i]!.kind === 'keep' ? frozen.get(p) : undefined
             let ancestry = kept?.ancestry
             if (!ancestry) {
@@ -1678,7 +1677,13 @@ export function createLayoutGroup(
             next.push({
                 p,
                 parent: parent >= 0 ? frameIndex.get(parent)! : -1,
-                geometry: kept?.geometry ?? geometry[i]!,
+                geometry: kept
+                    ? keptGeometry(
+                          kept.geometry,
+                          geometry[i]!,
+                          nodes[i]!.planned ?? kept.geometry.a
+                      )
+                    : geometry[i]!,
                 ancestry,
             })
         })
