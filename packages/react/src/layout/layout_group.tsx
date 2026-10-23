@@ -1,135 +1,143 @@
+import { DEV } from '@freestylejs/ani-core'
+import type { LayoutGroupOptions } from '@freestylejs/ani-layout'
 import {
-    type LayoutGroup as CoreLayoutGroup,
-    createLayoutGroup,
-    type LayoutGroupOptions,
-    type LayoutSnapshot,
-} from '@freestylejs/ani-layout'
-import { Component, createElement, type ReactNode, useContext } from 'react'
+    createElement,
+    type ReactNode,
+    useContext,
+    useMemo,
+    useRef,
+} from 'react'
+
+import { useIsoLayoutEffect } from '../ani/owned'
 import {
-    createLayoutFacade,
-    LayoutConfigContext,
-    type LayoutConfigValue,
+    createLayoutScope,
+    hasDOM,
     LayoutContext,
-    type LayoutFacade,
+    type LayoutContextValue,
+    type LayoutScope,
+    mergeMotion,
 } from './context'
 
 export interface LayoutGroupProps extends LayoutGroupOptions {
+    /** Namespaces the `layoutId`s of this group's participants. */
+    id?: string
     children?: ReactNode
-    /** Absent: every boundary update opens a transaction. */
-    deps?: readonly unknown[]
 }
 
-function changed(
-    previous: readonly unknown[] | undefined,
-    next: readonly unknown[] | undefined
-): boolean {
-    if (!previous || !next || previous.length !== next.length) return true
-    for (let i = 0; i < previous.length; i++) {
-        if (!Object.is(previous[i], next[i])) return true
-    }
-    return false
-}
+/** Read from the outermost group only; a change re-creates the scope. */
+const SCOPE_OPTIONS = [
+    'clock',
+    'reducedMotion',
+    'threshold',
+    'maxNodes',
+    'retain',
+    'onSnap',
+] as const
 
-interface BoundaryProps extends LayoutGroupProps {
-    readonly outer: LayoutFacade | null
-    readonly config: LayoutConfigValue
-}
-
-class LayoutBoundary extends Component<BoundaryProps> {
-    private readonly facade: LayoutFacade
-
-    constructor(props: BoundaryProps) {
-        super(props)
-        this.facade = props.outer ?? createLayoutFacade()
-    }
-
-    override componentDidMount(): void {
-        if (this.props.outer) return
-        const motion = this.props.motion ?? this.props.config.motion
-        const reducedMotion =
-            this.props.reducedMotion ?? this.props.config.reducedMotion
-        const options: LayoutGroupOptions = {
-            ...(motion !== undefined && { motion }),
-            ...(this.props.clock !== undefined && {
-                clock: this.props.clock,
-            }),
-            ...(reducedMotion !== undefined && { reducedMotion }),
-            ...(this.props.threshold !== undefined && {
-                threshold: this.props.threshold,
-            }),
-            ...(this.props.maxAnimated !== undefined && {
-                maxAnimated: this.props.maxAnimated,
-            }),
-            ...(this.props.maxBoxes !== undefined && {
-                maxBoxes: this.props.maxBoxes,
-            }),
-            ...(this.props.onError !== undefined && {
-                onError: this.props.onError,
-            }),
-        }
-        const group: CoreLayoutGroup = createLayoutGroup(options)
-        this.facade.attach(group)
-    }
-
-    override componentWillUnmount(): void {
-        if (!this.props.outer) this.facade.dispose()
-    }
-
-    override getSnapshotBeforeUpdate(
-        previous: BoundaryProps
-    ): LayoutSnapshot | null {
-        if (!this.facade.group) return null
-        if (!changed(previous.deps, this.props.deps)) return null
-        return this.facade.capture()
-    }
-
-    override componentDidUpdate(
-        _previous: BoundaryProps,
-        _state: unknown,
-        snapshot: LayoutSnapshot | null
-    ): void {
-        if (!snapshot || !this.facade.group) return
-        void this.facade
-            .play(snapshot, this.props.motion ?? this.props.config.motion)
-            ?.catch((error: unknown) => this.props.onError?.(error))
-    }
-
-    override render(): ReactNode {
-        return createElement(
-            LayoutContext.Provider,
-            { value: this.facade },
-            this.props.children
-        )
-    }
+interface Owned {
+    readonly scope: LayoutScope
+    /** The scope options it was created with (`onSnap` excluded). */
+    key: readonly unknown[]
+    disposing: boolean
 }
 
 /**
- * DOM-less layout boundary. The outermost group owns the transaction and the
- * core layout group; nested groups join the outer group and act as boundaries.
+ * DOM-less layout scope. The outermost group owns the scope; nested groups
+ * join it, namespace `layoutId`s with `id` and supply `motion` defaults.
+ * Rendering the group captures; its commit flushes.
  */
-export interface LayoutConfigProps extends LayoutConfigValue {
-    children?: ReactNode
-}
+export function LayoutGroup(props: LayoutGroupProps): ReactNode {
+    const parent = useContext(LayoutContext)
+    const onSnap = useRef(props.onSnap)
+    onSnap.current = props.onSnap
+    const owned = useRef<Owned | null>(null)
+    const key = [
+        props.clock,
+        props.reducedMotion,
+        props.threshold,
+        props.maxNodes,
+        props.retain,
+    ]
 
-/** Defaults inherited by descendant LayoutGroups. */
-export function LayoutConfig(props: LayoutConfigProps): ReactNode {
-    const parent = useContext(LayoutConfigContext)
-    const value: LayoutConfigValue = {
-        ...parent,
-        ...(props.motion !== undefined && { motion: props.motion }),
+    const options = (): LayoutGroupOptions => ({
+        ...(props.clock !== undefined && { clock: props.clock }),
         ...(props.reducedMotion !== undefined && {
             reducedMotion: props.reducedMotion,
         }),
+        ...(props.threshold !== undefined && { threshold: props.threshold }),
+        ...(props.maxNodes !== undefined && { maxNodes: props.maxNodes }),
+        ...(props.retain !== undefined && { retain: props.retain }),
+        onSnap: (element, reason) => onSnap.current?.(element, reason),
+    })
+
+    if (!parent && !owned.current) {
+        owned.current = {
+            scope: createLayoutScope(options()),
+            key,
+            disposing: false,
+        }
     }
-    return createElement(
-        LayoutConfigContext.Provider,
-        { value },
-        props.children
+    const scope = parent ? parent.scope : owned.current!.scope
+
+    // render: the before-boxes (§4.1)
+    if (hasDOM()) scope.touch()
+
+    if (
+        DEV &&
+        parent &&
+        SCOPE_OPTIONS.some((name) => props[name] !== undefined)
+    ) {
+        warnNested()
+    }
+
+    useIsoLayoutEffect(() => {
+        const current = owned.current
+        if (parent || !current) return
+        if (!key.every((value, i) => Object.is(value, current.key[i]))) {
+            current.key = key
+            current.scope.recreate(options())
+        }
+    })
+
+    useIsoLayoutEffect(() => {
+        scope.commit()
+    })
+
+    // the outermost group disposes its scope; a StrictMode re-run keeps it
+    useIsoLayoutEffect(() => {
+        const current = owned.current
+        if (parent || !current) return
+        current.disposing = false
+        return () => {
+            current.disposing = true
+            queueMicrotask(() => {
+                if (current.disposing) current.scope.dispose()
+            })
+        }
+    }, [parent])
+
+    const namespace =
+        props.id === undefined
+            ? parent?.namespace
+            : parent?.namespace === undefined
+              ? props.id
+              : `${parent.namespace}/${props.id}`
+    const motion = mergeMotion(parent?.motion, props.motion)
+    const value = useMemo<LayoutContextValue>(
+        () => ({ scope, namespace, motion }),
+        // `motion` by value: an inline object is new every render
+        [scope, namespace, motion?.duration, motion?.delay, motion?.timing]
     )
+    return createElement(LayoutContext.Provider, { value }, props.children)
 }
 
-export function LayoutGroup(props: LayoutGroupProps): ReactNode {
-    const outer = useContext(LayoutContext)
-    const config = useContext(LayoutConfigContext)
-    return createElement(LayoutBoundary, { ...props, outer, config })
+let nestedWarned = false
+
+function warnNested(): void {
+    if (nestedWarned) return
+    nestedWarned = true
+    // biome-ignore lint/suspicious/noConsole: development warning
+    console.warn(
+        `[ani-react/layout] A nested LayoutGroup joins its outermost group's scope: ${SCOPE_OPTIONS.join(', ')} are read from the outermost group only. Set them there.`
+    )
 }

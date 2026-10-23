@@ -1,62 +1,88 @@
-import type {
-    LayoutParticipantOptions,
-    LayoutResult,
-} from '@freestylejs/ani-layout'
+import type { LayoutOptions, LayoutReport } from '@freestylejs/ani-layout'
 import { type Ref, type RefCallback, useContext, useMemo, useRef } from 'react'
-import { flushSync } from 'react-dom'
 
 import { useIsoLayoutEffect } from '../ani/owned'
-import { assignRef, LayoutContext } from './context'
+import {
+    assignRef,
+    existingScope,
+    hasDOM,
+    LayoutContext,
+    type LayoutContextValue,
+    type LayoutScope,
+    mergeMotion,
+    sameOptions,
+    scopeOf,
+} from './context'
 
-function participantOptions(
-    options: LayoutParticipantOptions
-): LayoutParticipantOptions {
+export interface UseLayoutOptions<E extends HTMLElement> extends LayoutOptions {
+    ref?: Ref<E>
+}
+
+/** The participant's options with its groups' namespace and `motion` applied. */
+function resolve(
+    options: LayoutOptions,
+    context: LayoutContextValue | null
+): LayoutOptions {
+    const motion = mergeMotion(context?.motion, options.motion)
+    const layoutId =
+        options.layoutId !== undefined && context?.namespace !== undefined
+            ? `${context.namespace}/${options.layoutId}`
+            : options.layoutId
     return {
         ...(options.layout !== undefined && { layout: options.layout }),
-        ...(options.layoutId !== undefined && { layoutId: options.layoutId }),
+        ...(layoutId !== undefined && { layoutId }),
         ...(options.layoutAnchor !== undefined && {
             layoutAnchor: options.layoutAnchor,
         }),
         ...(options.layoutCrossfade !== undefined && {
             layoutCrossfade: options.layoutCrossfade,
         }),
-        ...(options.motion !== undefined && { motion: options.motion }),
-        ...(options.layoutDependency !== undefined && {
+        ...('layoutDependency' in options && {
             layoutDependency: options.layoutDependency,
         }),
+        ...(options.radius !== undefined && { radius: options.radius }),
+        ...(motion !== undefined && { motion }),
     }
 }
 
-export interface UseLayoutOptions<E extends HTMLElement>
-    extends LayoutParticipantOptions {
-    ref?: Ref<E>
+interface Registration {
+    readonly scope: LayoutScope
+    readonly remove: () => void
+    options: LayoutOptions
 }
 
 /**
- * Declares the element a participant of the nearest LayoutGroup.
- * The returned callback is stable for the component's lifetime.
+ * Makes the element a participant of the nearest `LayoutGroup`'s scope, or of
+ * the implicit root scope of its document. Every render captures the
+ * before-boxes; the commit's layout effect queues the scope's one flush. The
+ * returned callback is stable while the scope is.
  */
 export function useLayout<E extends HTMLElement = HTMLElement>(
     options: UseLayoutOptions<E> = {}
 ): RefCallback<E> {
     const context = useContext(LayoutContext)
+    const element = useRef<E | null>(null)
     const latest = useRef(options)
     latest.current = options
-    const element = useRef<E | null>(null)
-    const cleanup = useRef<(() => void) | null>(null)
+    const resolved = resolve(options, context)
+    const latestResolved = useRef(resolved)
+    latestResolved.current = resolved
+    const registration = useRef<Registration | null>(null)
     const previousRef = useRef(options.ref)
 
+    // render: the before-boxes of the whole scope (§4.1)
+    existingScope(context, element.current)?.touch()
+
     useIsoLayoutEffect(() => {
-        if (!context || !element.current) return
-        context.set(element.current, participantOptions(latest.current))
-    }, [
-        context,
-        options.layout,
-        options.layoutId,
-        options.layoutAnchor,
-        options.motion,
-        options.layoutDependency,
-    ])
+        const current = registration.current
+        if (current && element.current) {
+            if (!sameOptions(current.options, latestResolved.current)) {
+                current.options = latestResolved.current
+                current.scope.set(element.current, current.options)
+            }
+        }
+        ;(current?.scope ?? existingScope(context, element.current))?.commit()
+    })
 
     useIsoLayoutEffect(() => {
         const previous = previousRef.current
@@ -66,73 +92,51 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
         previousRef.current = latest.current.ref
     }, [options.ref])
 
-    useIsoLayoutEffect(() => {
-        if (!context) return
-        cleanup.current?.()
-        cleanup.current = null
-        if (element.current) {
-            cleanup.current = context.add(
-                element.current,
-                participantOptions(latest.current)
-            )
-        }
-        return () => {
-            cleanup.current?.()
-            cleanup.current = null
-        }
-    }, [context])
-
-    return useMemo(
-        () => (next: E | null) => {
-            cleanup.current?.()
-            cleanup.current = null
-            if (!next) {
-                assignRef(latest.current.ref, null)
-                element.current = null
-                return
-            }
+    const scope = context?.scope
+    return useMemo<RefCallback<E>>(
+        () => (next) => {
+            registration.current?.remove()
+            registration.current = null
             element.current = next
             assignRef(latest.current.ref, next)
-            if (!context) return
-            cleanup.current = context.add(
-                next,
-                participantOptions(latest.current)
-            )
+            if (!next) return
+            // the namespace and motion reach a registration through `set`
+            const target = scope ?? scopeOf(null, next)
+            const participant = latestResolved.current
+            registration.current = {
+                scope: target,
+                remove: target.add(next, participant),
+                options: participant,
+            }
         },
-        [context]
+        [scope]
     )
 }
 
 export interface LayoutGroupControl {
-    update(fn: () => void): Promise<LayoutResult>
+    /** `capture()` → `flushSync(fn)` → `flush()`, for changes no participant renders. */
+    update(fn: () => void): Promise<LayoutReport>
+    /** Every track of the scope jumps to its end and settles. */
     finish(): void
 }
 
-/**
- * Escape hatch for changes no boundary sees. `update` runs the mutation under
- * flushSync so React commits before the new layout is measured.
- */
+/** The nearest scope's control: the `LayoutGroup`'s, or the implicit root's. */
 export function useLayoutGroup(): LayoutGroupControl {
     const context = useContext(LayoutContext)
+    const scope = context?.scope
     return useMemo(
         () => ({
             update(fn) {
-                if (!context) {
+                if (!hasDOM()) {
                     fn()
-                    return Promise.resolve('no-change')
+                    return Promise.resolve({ status: 'no-change', snapped: [] })
                 }
-                const snapshot = context.capture()
-                if (!snapshot) {
-                    fn()
-                    return Promise.resolve('no-change')
-                }
-                flushSync(fn)
-                return context.play(snapshot) ?? Promise.resolve('no-change')
+                return (scope ?? scopeOf(null)).update(fn)
             },
             finish() {
-                context?.finish()
+                ;(scope ?? existingScope(null))?.finish()
             },
         }),
-        [context]
+        [scope]
     )
 }

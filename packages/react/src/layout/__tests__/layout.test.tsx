@@ -1,1149 +1,487 @@
 // @vitest-environment jsdom
 
 import * as a from '@freestylejs/ani-core'
-import type { LayoutGroup as CoreLayoutGroup } from '@freestylejs/ani-layout'
-import {
-    type CSSProperties,
-    createRef,
-    type RefObject,
-    StrictMode,
-    useContext,
-    useEffect,
-    useLayoutEffect,
-    useState,
-} from 'react'
-import { renderToString } from 'react-dom/server'
+import type {
+    LayoutGroup as CoreLayoutGroup,
+    LayoutGroupOptions,
+    LayoutOptions,
+    LayoutReport,
+} from '@freestylejs/ani-layout'
+import { createRef, type RefObject, StrictMode, useState } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createManualClock } from '../../../../core/src/testing/index'
 import { act, mount } from '../../__tests__/helpers'
-import {
-    AnimatePresence,
-    LayoutConfig,
-    LayoutGroup,
-    useLayout,
-    useLayoutGroup,
-    usePresence,
-    usePresenceControl,
-} from '..'
-import {
-    createLayoutFacade,
-    LayoutContext,
-    type LayoutFacade,
-} from '../context'
+import { LayoutGroup, useLayout, useLayoutGroup } from '..'
+import { createLayoutScope, rootScope } from '../context'
 
-function animateSpyClear(): void {
-    ;(
-        Element.prototype.animate as unknown as { mockClear?: () => void }
-    ).mockClear?.()
+/** A recording stand-in for the core group: the adapter calls only its public API. */
+interface Fake {
+    readonly options: LayoutGroupOptions
+    readonly members: Map<HTMLElement, LayoutOptions>
+    readonly calls: string[]
+    disposed: boolean
 }
 
-function installLayoutDom(): void {
-    ;(globalThis as unknown as { CSS: { supports: () => boolean } }).CSS = {
-        supports: () => true,
-    }
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
-        configurable: true,
-        get() {
-            return 20
-        },
-    })
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-        configurable: true,
-        get() {
-            return 20
-        },
-    })
-    Element.prototype.getBoundingClientRect = function () {
-        const left = Number.parseFloat((this as HTMLElement).style.left || '0')
-        return {
-            left,
-            top: 0,
-            x: left,
-            y: 0,
-            right: left + 20,
-            bottom: 20,
-            width: 20,
-            height: 20,
-            toJSON: () => ({}),
-        } as DOMRect
-    }
-    ;(
-        Element.prototype as unknown as {
-            animate: (keyframes: Keyframe[]) => Animation
-        }
-    ).animate = vi.fn(() => {
-        let resolve!: (value: Animation) => void
-        const finished = new Promise<Animation>((done) => {
-            resolve = done
-        })
-        const animation = {
-            finished,
-            cancel: vi.fn(() => resolve(animation as unknown as Animation)),
-            finish: vi.fn(() => resolve(animation as unknown as Animation)),
-        }
-        queueMicrotask(() => resolve(animation as unknown as Animation))
-        return animation as unknown as Animation
-    })
-}
+const recorder = vi.hoisted(() => ({
+    fakes: [] as Fake[],
+    onCapture: null as (() => void) | null,
+    onFlush: null as (() => void) | null,
+}))
 
-beforeEach(installLayoutDom)
+vi.mock('@freestylejs/ani-layout', async (original) => {
+    const actual = await original<typeof import('@freestylejs/ani-layout')>()
+    const NO_CHANGE: LayoutReport = { status: 'no-change', snapped: [] }
+    return {
+        ...actual,
+        createLayoutGroup(options: LayoutGroupOptions = {}): CoreLayoutGroup {
+            const fake: Fake = {
+                options,
+                members: new Map(),
+                calls: [],
+                disposed: false,
+            }
+            recorder.fakes.push(fake)
+            const group: CoreLayoutGroup = {
+                add(element, layoutOptions) {
+                    fake.calls.push('add')
+                    fake.members.set(element, layoutOptions ?? {})
+                    return () => {
+                        fake.calls.push('remove')
+                        fake.members.delete(element)
+                    }
+                },
+                set(element, layoutOptions) {
+                    fake.calls.push('set')
+                    fake.members.set(element, layoutOptions)
+                },
+                capture() {
+                    fake.calls.push('capture')
+                    recorder.onCapture?.()
+                },
+                flush() {
+                    fake.calls.push('flush')
+                    recorder.onFlush?.()
+                    return Promise.resolve(NO_CHANGE)
+                },
+                update(mutate) {
+                    group.capture()
+                    mutate()
+                    return group.flush()
+                },
+                finish() {
+                    fake.calls.push('finish')
+                },
+                dispose() {
+                    fake.calls.push('dispose')
+                    fake.disposed = true
+                },
+                stats: { captures: 0, reads: 0, tracks: 0 },
+            }
+            return group
+        },
+    }
+})
 
-afterEach(() => {
+const flushes = (fake: Fake): number =>
+    fake.calls.filter((call) => call === 'flush').length
+
+/** The groups that hold participants (StrictMode may create a spare one in render). */
+const live = (): Fake[] =>
+    recorder.fakes.filter((fake) => !fake.disposed && fake.members.size > 0)
+
+const settle = () => act(async () => undefined)
+const noop = (): void => undefined
+
+beforeEach(() => {
+    recorder.fakes.length = 0
+    recorder.onCapture = null
+    recorder.onFlush = null
+})
+
+afterEach(async () => {
+    await settle()
     document.body.innerHTML = ''
-    delete (Element.prototype as unknown as { animate?: unknown }).animate
-    delete (globalThis as unknown as { CSS?: unknown }).CSS
     vi.restoreAllMocks()
 })
 
+function Item({ id, ...options }: { id: string } & LayoutOptions) {
+    const ref = useLayout<HTMLLIElement>(options)
+    return <li ref={ref} data-id={id} />
+}
+
+function List({ ids, ...group }: { ids: string[] } & LayoutGroupOptions) {
+    return (
+        <LayoutGroup {...group}>
+            <ul>
+                {ids.map((id) => (
+                    <Item key={id} id={id} />
+                ))}
+            </ul>
+        </LayoutGroup>
+    )
+}
+
+const order = (container: HTMLElement): string =>
+    [...container.querySelectorAll('li')].map((li) => li.dataset.id).join('')
+
 describe('react layout adapter', () => {
-    it('registers refs and flips on a LayoutGroup boundary update', async () => {
-        const items = [{ id: 'a' }, { id: 'b' }]
-        function Row({ item, index }: { item: { id: string }; index: number }) {
-            const ref = useLayout<HTMLLIElement>()
-            return (
-                <li
-                    ref={ref}
-                    data-id={item.id}
-                    style={{ position: 'absolute', left: index * 40 }}
-                />
-            )
-        }
-        function List({ list }: { list: typeof items }) {
-            return (
-                <LayoutGroup deps={[list]}>
-                    <ul>
-                        {list.map((item, index) => (
-                            <Row key={item.id} item={item} index={index} />
-                        ))}
-                    </ul>
-                </LayoutGroup>
-            )
-        }
-
-        const view = await mount(<List list={items} />)
+    it('captures in render, before React mutates, and flushes once per commit', async () => {
+        const view = await mount(<List ids={['a', 'b', 'c']} />)
         try {
-            expect(view.container.querySelector('ul')).not.toBeNull()
-            expect(view.container.querySelectorAll('li')).toHaveLength(2)
-            expect(Element.prototype.animate).toHaveBeenCalledTimes(0)
-            await view.rerender(<List list={[items[1]!, items[0]!]} />)
-            expect(Element.prototype.animate).toHaveBeenCalled()
-            const frames = (
-                Element.prototype.animate as unknown as {
-                    mock: { calls: Array<[Keyframe[]]> }
-                }
-            ).mock.calls[0]![0]
-            expect(frames[0]).toHaveProperty('translate')
+            const [fake] = live()
+            expect(live()).toHaveLength(1)
+            expect(fake!.members.size).toBe(3)
+            const seen: string[] = []
+            recorder.onCapture = () => seen.push(order(view.container))
+            recorder.onFlush = () => seen.push(`flush ${order(view.container)}`)
+            const before = flushes(fake!)
+
+            await view.rerender(<List ids={['c', 'a', 'b']} />)
+            await settle()
+
+            expect(flushes(fake!) - before).toBe(1)
+            // every capture saw the old DOM; the flush the new one
+            expect(seen.at(-1)).toBe('flush cab')
+            expect(seen.slice(0, -1).length).toBeGreaterThan(0)
+            expect(new Set(seen.slice(0, -1))).toEqual(new Set(['abc']))
         } finally {
             await view.unmount()
         }
     })
 
-    it('keeps an exiting child mounted until its exit completes', async () => {
-        const clock = createManualClock()
-        const exits: string[] = []
-        const motion = {
-            present: { opacity: 1 },
-            initial: { opacity: 0 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Row({ id }: { id: string }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return <li ref={presence.ref} data-id={id} />
-        }
-        function List({ ids }: { ids: string[] }) {
-            return (
-                <AnimatePresence
-                    initial={false}
-                    onExitComplete={(key) => exits.push(key)}
-                >
-                    {ids.map((id) => (
-                        <Row key={id} id={id} />
-                    ))}
-                </AnimatePresence>
-            )
-        }
-
-        const view = await mount(<List ids={['a', 'b']} />)
+    it('keeps one scope under StrictMode and flushes once per commit', async () => {
+        const view = await mount(
+            <StrictMode>
+                <List ids={['a', 'b']} />
+            </StrictMode>
+        )
         try {
-            expect(view.container.querySelectorAll('li')).toHaveLength(2)
-            await view.rerender(<List ids={['a']} />)
-            expect(view.container.querySelector('[data-id="b"]')).not.toBeNull()
-            await act(async () => {
-                clock.frames(20)
-            })
-            expect(view.container.querySelector('[data-id="b"]')).toBeNull()
-            expect(exits).toHaveLength(1)
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('survives StrictMode remount and still flips', async () => {
-        const items = [{ id: 'a' }, { id: 'b' }]
-        function Row({ index }: { index: number }) {
-            const ref = useLayout<HTMLLIElement>()
-            return (
-                <li
-                    ref={ref}
-                    style={{ position: 'absolute', left: index * 40 }}
-                />
-            )
-        }
-        function List({ list }: { list: typeof items }) {
-            return (
+            await settle()
+            expect(live()).toHaveLength(1)
+            const [fake] = live()
+            expect(fake!.disposed).toBe(false)
+            const before = flushes(fake!)
+            await view.rerender(
                 <StrictMode>
-                    <LayoutGroup deps={[list]}>
-                        <ul>
-                            {list.map((item, index) => (
-                                <Row key={item.id} index={index} />
-                            ))}
-                        </ul>
-                    </LayoutGroup>
+                    <List ids={['b', 'a']} />
                 </StrictMode>
             )
-        }
-        const view = await mount(<List list={items} />)
-        try {
-            await view.rerender(<List list={[items[1]!, items[0]!]} />)
-            expect(Element.prototype.animate).toHaveBeenCalled()
+            await settle()
+            expect(flushes(fake!) - before).toBe(1)
+            expect(fake!.disposed).toBe(false)
         } finally {
             await view.unmount()
         }
-    })
-
-    it('keeps the same node when a key re-enters during exit', async () => {
-        const clock = createManualClock()
-        const motion = {
-            present: { opacity: 1 },
-            initial: { opacity: 0 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Row({ id }: { id: string }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return <li ref={presence.ref} data-id={id} style={presence.style} />
-        }
-        function List({ ids }: { ids: string[] }) {
-            return (
-                <AnimatePresence initial={false} mode="popLayout">
-                    {ids.map((id) => (
-                        <Row key={id} id={id} />
-                    ))}
-                </AnimatePresence>
+        await settle()
+        expect(
+            recorder.fakes.every(
+                (fake) => fake.disposed || fake.members.size === 0
             )
-        }
-        const view = await mount(<List ids={['a', 'b']} />)
-        try {
-            const before = view.container.querySelector(
-                '[data-id="b"]'
-            ) as HTMLElement
-            await view.rerender(<List ids={['a']} />)
-            expect(
-                (view.container.querySelector('[data-id="b"]') as HTMLElement)
-                    .style.position
-            ).toBe('absolute')
-            await view.rerender(<List ids={['a', 'b']} />)
-            expect(view.container.querySelector('[data-id="b"]')).toBe(before)
-            expect(before.style.position).not.toBe('absolute')
-            await act(async () => {
-                clock.frames(20)
-            })
-            expect(view.container.querySelector('[data-id="b"]')).toBe(before)
-        } finally {
-            await view.unmount()
-        }
+        ).toBe(true)
     })
 
-    it('composes a forwarded ref and exposes safe no-context fallbacks', async () => {
-        const forwarded = createRef<HTMLDivElement>()
-        function Inside() {
-            const ref = useLayout<HTMLDivElement>({ ref: forwarded })
-            return <div ref={ref} data-test="inside" />
-        }
-        const view = await mount(
-            <LayoutGroup>
-                <Inside />
-            </LayoutGroup>
-        )
-        try {
-            expect(forwarded.current?.getAttribute('data-test')).toBe('inside')
-        } finally {
-            await view.unmount()
-        }
-
-        let called = false
-        function Outside() {
-            const control = useLayoutGroup()
-            const safety = usePresenceControl()
-            const ref = useLayout<HTMLDivElement>()
-            const presence = usePresence({
-                present: { opacity: 1 },
-                exit: a.ani({ to: { opacity: 0 }, duration: 0.1 }),
-            })
-            useEffect(() => {
-                void control.update(() => {
-                    called = true
-                })
-            }, [control])
-            expect(safety.isPresent).toBe(true)
-            expect(typeof safety.safeToRemove).toBe('function')
-            expect(presence.style).toBeUndefined()
-            return <div ref={ref} />
-        }
-        const outside = await mount(<Outside />)
-        try {
-            expect(called).toBe(true)
-        } finally {
-            await outside.unmount()
-        }
+    it('disposes the outermost scope on unmount', async () => {
+        const view = await mount(<List ids={['a']} />)
+        const [fake] = live()
+        await view.unmount()
+        await settle()
+        expect(fake!.disposed).toBe(true)
     })
 
-    it('deduplicates nested LayoutGroup boundaries into one transaction', async () => {
-        const items = [{ id: 'a' }, { id: 'b' }]
-        function Row({ index }: { index: number }) {
-            const ref = useLayout<HTMLLIElement>()
+    it('nests groups into one scope: namespaced ids, merged motion, a warning for scope options', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
+        const spring = a.timing.spring({ m: 1, k: 300, c: 30 })
+        function App() {
             return (
-                <li
-                    ref={ref}
-                    style={{ position: 'absolute', left: index * 40 }}
-                />
-            )
-        }
-        function List({ list }: { list: typeof items }) {
-            return (
-                <LayoutGroup deps={[list]}>
-                    <LayoutGroup deps={[list]}>
-                        <ul>
-                            {list.map((item, index) => (
-                                <Row key={item.id} index={index} />
-                            ))}
-                        </ul>
+                <LayoutGroup id="page" motion={{ duration: 0.5 }}>
+                    <LayoutGroup
+                        id="card"
+                        motion={{ delay: 0.1 }}
+                        threshold={4}
+                    >
+                        <Item
+                            id="x"
+                            layoutId="hero"
+                            motion={{ timing: spring }}
+                        />
                     </LayoutGroup>
                 </LayoutGroup>
             )
         }
-        const view = await mount(<List list={items} />)
+        const view = await mount(<App />)
         try {
-            await view.rerender(<List list={[items[1]!, items[0]!]} />)
-            expect(Element.prototype.animate).toHaveBeenCalledTimes(2)
+            expect(live()).toHaveLength(1)
+            const [options] = [...live()[0]!.members.values()]
+            expect(options).toEqual({
+                layoutId: 'page/card/hero',
+                motion: { duration: 0.5, delay: 0.1, timing: spring },
+            })
+            // the nested threshold is not a scope option
+            expect(live()[0]!.options.threshold).toBeUndefined()
+            expect(warn).toHaveBeenCalledWith(
+                expect.stringContaining('nested LayoutGroup')
+            )
         } finally {
             await view.unmount()
         }
     })
 
-    it('flushes an imperative descendant update between capture and play', async () => {
-        function Child() {
-            const control = useLayoutGroup()
-            const [left, setLeft] = useState(0)
-            const ref = useLayout<HTMLDivElement>()
-            useEffect(() => {
-                queueMicrotask(() => {
-                    void control.update(() => setLeft(40))
-                })
-            }, [control])
-            return <div ref={ref} style={{ position: 'absolute', left }} />
+    it('re-creates the scope when a scope option changes by value; onSnap is always the latest', async () => {
+        const first = vi.fn()
+        const second = vi.fn()
+        const view = await mount(
+            <List ids={['a', 'b']} threshold={2} onSnap={first} />
+        )
+        try {
+            const [old] = live()
+            await view.rerender(
+                <List ids={['a', 'b']} threshold={2} onSnap={second} />
+            )
+            expect(live()).toEqual([old])
+            const element = document.querySelector('li') as HTMLElement
+            old!.options.onSnap?.(element, 'culled')
+            expect(first).not.toHaveBeenCalled()
+            expect(second).toHaveBeenCalledWith(element, 'culled')
+
+            await view.rerender(
+                <List ids={['a', 'b']} threshold={3} onSnap={second} />
+            )
+            await settle()
+            expect(old!.disposed).toBe(true)
+            const [next] = live()
+            expect(next).not.toBe(old)
+            expect(next!.options.threshold).toBe(3)
+            expect(next!.members.size).toBe(2)
+        } finally {
+            await view.unmount()
         }
+    })
+
+    it('calls set only when a participant option changes by value', async () => {
+        function App({ layout }: { layout: 'position' | 'size' }) {
+            return (
+                <LayoutGroup>
+                    <Item
+                        id="a"
+                        layout={layout}
+                        layoutAnchor={{ x: 0.5, y: 0 }}
+                        // a new timing object every render, equal by value
+                        motion={{
+                            timing: a.timing.spring({ m: 1, k: 200, c: 20 }),
+                        }}
+                    />
+                </LayoutGroup>
+            )
+        }
+        const view = await mount(<App layout="position" />)
+        try {
+            const [fake] = live()
+            await view.rerender(<App layout="position" />)
+            expect(fake!.calls).not.toContain('set')
+            await view.rerender(<App layout="size" />)
+            expect(fake!.calls.filter((call) => call === 'set')).toHaveLength(1)
+            expect([...fake!.members.values()][0]!.layout).toBe('size')
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('passes layoutDependency through on every change', async () => {
+        function App({ dependency }: { dependency: number }) {
+            return (
+                <LayoutGroup>
+                    <Item id="a" layoutDependency={dependency} />
+                </LayoutGroup>
+            )
+        }
+        const view = await mount(<App dependency={1} />)
+        try {
+            const [fake] = live()
+            await view.rerender(<App dependency={1} />)
+            expect(fake!.calls).not.toContain('set')
+            await view.rerender(<App dependency={2} />)
+            expect([...fake!.members.values()][0]).toEqual({
+                layoutDependency: 2,
+            })
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('joins an implicit root per document, disposed when its last participant leaves', async () => {
+        const main = await mount(
+            <ul>
+                <Item id="a" />
+                <Item id="b" />
+            </ul>
+        )
+        const other = document.implementation.createHTMLDocument('other')
+        const container = other.createElement('div')
+        other.body.appendChild(container)
+        const root = createRoot(container)
+        try {
+            await act(async () => {
+                root.render(<Item id="c" />)
+            })
+            expect(live()).toHaveLength(2)
+            const mainFake = live().find((fake) => fake.members.size === 2)!
+            const otherFake = live().find((fake) => fake.members.size === 1)!
+            expect([...otherFake.members.keys()][0]!.ownerDocument).toBe(other)
+
+            await act(async () => {
+                root.unmount()
+            })
+            await settle()
+            expect(otherFake.disposed).toBe(true)
+            expect(mainFake.disposed).toBe(false)
+        } finally {
+            await main.unmount()
+        }
+        await settle()
+        expect(
+            recorder.fakes.every(
+                (fake) => fake.disposed || fake.members.size === 0
+            )
+        ).toBe(true)
+    })
+
+    it('keeps implicit roots of different clocks apart', () => {
+        const first = a.createClock()
+        const second = a.createClock()
+        expect(rootScope(first, document)).toBe(rootScope(first, document))
+        expect(rootScope(first, document)).not.toBe(rootScope(second, document))
+        expect(rootScope(undefined, document)).not.toBe(
+            rootScope(first, document)
+        )
+    })
+
+    it('useLayoutGroup().update: capture, flushSync, one flush', async () => {
+        let control: ReturnType<typeof useLayoutGroup> | null = null
+        let setIds: ((ids: string[]) => void) | null = null
+        function App() {
+            const [ids, set] = useState(['a', 'b'])
+            setIds = set
+            control = useLayoutGroup()
+            return (
+                <ul>
+                    {ids.map((id) => (
+                        <Item key={id} id={id} />
+                    ))}
+                </ul>
+            )
+        }
+        // the state lives above the group: no participant renders the change
         const view = await mount(
             <LayoutGroup>
-                <Child />
+                <App />
             </LayoutGroup>
         )
         try {
-            expect(Element.prototype.animate).toHaveBeenCalled()
-            expect(
-                (view.container.firstElementChild as HTMLElement).style.left
-            ).toBe('40px')
+            const [fake] = live()
+            const seen: string[] = []
+            recorder.onCapture = () => seen.push(order(view.container))
+            recorder.onFlush = () => seen.push(`flush ${order(view.container)}`)
+            const before = flushes(fake!)
+            let report: LayoutReport | null = null
+            await act(async () => {
+                report = await control!.update(() => setIds!(['b', 'a']))
+            })
+            await settle()
+            expect(report).toEqual({ status: 'no-change', snapped: [] })
+            expect(flushes(fake!) - before).toBe(1)
+            expect(seen[0]).toBe('ab')
+            expect(seen.at(-1)).toBe('flush ba')
         } finally {
             await view.unmount()
         }
     })
 
-    it('transfers a forwarded ref when the ref prop changes', async () => {
-        const first = createRef<HTMLDivElement>()
-        const second = createRef<HTMLDivElement>()
+    it('hands a render after the commit a fresh capture (K14)', async () => {
+        const scope = createLayoutScope({})
+        scope.add(document.createElement('div'), {})
+        const [fake] = recorder.fakes
+        fake!.calls.length = 0
+
+        scope.commit()
+        await Promise.resolve()
+        expect(fake!.calls).toEqual(['flush'])
+
+        fake!.calls.length = 0
+        scope.commit()
+        // the next render starts in the commit's task, before the flush
+        scope.touch()
+        await Promise.resolve()
+        expect(fake!.calls).toEqual(['capture', 'flush', 'capture'])
+
+        fake!.calls.length = 0
+        scope.touch()
+        scope.commit()
+        scope.commit()
+        await Promise.resolve()
+        expect(fake!.calls).toEqual(['capture', 'flush'])
+        scope.dispose()
+    })
+
+    it('warns once when the DOM around participants changed without a capture', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
+        const view = await mount(<List ids={['a', 'b']} />)
+        try {
+            await settle()
+            const list = view.container.querySelector('ul')!
+            // a rendered change captures: no warning
+            await view.rerender(<List ids={['b', 'a']} />)
+            await settle()
+            expect(warn).not.toHaveBeenCalled()
+            // a change no participant rendered
+            list.appendChild(document.createElement('li'))
+            await settle()
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(warn.mock.calls[0]![0]).toContain('useLayoutGroup().update')
+            list.lastElementChild!.className = 'wide'
+            list.appendChild(document.createElement('li'))
+            await settle()
+            expect(warn).toHaveBeenCalledTimes(1)
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('forwards a ref and moves it when the ref prop changes', async () => {
         function Child({
             target,
         }: {
             target: RefObject<HTMLDivElement | null>
         }) {
             const ref = useLayout<HTMLDivElement>({ ref: target })
-            return <div ref={ref} />
+            return <div ref={ref} data-test="inside" />
         }
-        const view = await mount(<Child target={first} />)
-        try {
-            expect(first.current).not.toBeNull()
-            await view.rerender(<Child target={second} />)
-            expect(first.current).toBeNull()
-            expect(second.current).not.toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('waits for every registrant before releasing a key', async () => {
-        const clock = createManualClock()
-        const short = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.1,
-                timing: a.timing.linear(),
-            }),
-        }
-        const long = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.3,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Pair() {
-            const first = usePresence(short, { clock: clock.clock })
-            const second = usePresence(long, { clock: clock.clock })
-            return (
-                <>
-                    <div ref={first.ref} data-part="short" />
-                    <div ref={second.ref} data-part="long" />
-                </>
-            )
-        }
-        function App({ show }: { show: boolean }) {
-            return (
-                <AnimatePresence initial={false}>
-                    {show && <Pair key="pair" />}
-                </AnimatePresence>
-            )
-        }
-        const view = await mount(<App show={true} />)
-        try {
-            await view.rerender(<App show={false} />)
-            await act(async () => {
-                clock.frames(10)
-            })
-            expect(
-                view.container.querySelector('[data-part="short"]')
-            ).not.toBeNull()
-            await act(async () => {
-                clock.frames(20)
-            })
-            expect(
-                view.container.querySelector('[data-part="long"]')
-            ).toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('releases a custom exit through the control watchdog', async () => {
-        vi.useFakeTimers()
-        function Content() {
-            const control = usePresenceControl({ maxExitMs: 10 })
-            return <div data-custom={true}>{String(control.isPresent)}</div>
-        }
-        function App({ show }: { show: boolean }) {
-            return (
-                <AnimatePresence initial={false}>
-                    {show && <Content key="custom" />}
-                </AnimatePresence>
-            )
-        }
-        const view = await mount(<App show={true} />)
-        try {
-            await view.rerender(<App show={false} />)
-            expect(view.container.querySelector('[data-custom]')).not.toBeNull()
-            await act(async () => {
-                vi.advanceTimersByTime(11)
-            })
-            expect(view.container.querySelector('[data-custom]')).toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('keeps distinct boundary transactions separate across microtasks', async () => {
-        const group = {
-            capture: vi.fn(() => ({})),
-            play: vi.fn(() => Promise.resolve('ended')),
-            dispose: vi.fn(),
-        } as unknown as CoreLayoutGroup
-        const facade = createLayoutFacade()
-        facade.attach(group)
-        const first = facade.capture()
-        const firstRun = facade.play(first!)
-        const second = facade.capture()
-        const secondRun = facade.play(second!)
-        expect(firstRun).not.toBe(secondRun)
-        await Promise.all([firstRun, secondRun])
-        expect(group.play).toHaveBeenCalledTimes(2)
-        facade.dispose()
-    })
-
-    it('transfers a replacement ref and participant options in the layout phase', async () => {
         const first = createRef<HTMLDivElement>()
         const second = createRef<HTMLDivElement>()
-        let observed = false
-        let observedOptions: unknown
-        let facade: LayoutFacade | null = null
-        let setSpy: ReturnType<typeof vi.spyOn> | null = null
-        function Capture() {
-            facade = useContext(LayoutContext)
-            return null
-        }
-        function Child({
-            target,
-            layout,
-            layoutId,
-        }: {
-            target: RefObject<HTMLDivElement | null>
-            layout: 'position' | 'box'
-            layoutId?: string | undefined
-        }) {
-            const ref = useLayout<HTMLDivElement>({
-                ref: target,
-                layout,
-                ...(layoutId !== undefined && { layoutId }),
-            })
-            return <div ref={ref} />
-        }
-        function Parent({
-            target,
-            layout,
-            layoutId,
-        }: {
-            target: RefObject<HTMLDivElement | null>
-            layout: 'position' | 'box'
-            layoutId?: string | undefined
-        }) {
-            useLayoutEffect(() => {
-                observed = target.current !== null
-                observedOptions = setSpy?.mock.calls.at(-1)?.[1]
-            }, [target])
-            return (
-                <LayoutGroup>
-                    <Capture />
-                    <Child
-                        target={target}
-                        layout={layout}
-                        layoutId={layoutId}
-                    />
-                </LayoutGroup>
-            )
-        }
-        const view = await mount(<Parent target={first} layout="position" />)
+        const view = await mount(<Child target={first} />)
         try {
-            setSpy = vi.spyOn(facade!.group!, 'set')
-            await view.rerender(
-                <Parent target={second} layout="box" layoutId="hero" />
-            )
-            expect(observed).toBe(true)
+            expect(first.current?.dataset.test).toBe('inside')
+            await view.rerender(<Child target={second} />)
             expect(first.current).toBeNull()
-            expect(second.current).not.toBeNull()
-            expect(observedOptions).toMatchObject({
-                layout: 'box',
-                layoutId: 'hero',
-            })
+            expect(second.current?.dataset.test).toBe('inside')
         } finally {
             await view.unmount()
         }
+        expect(second.current).toBeNull()
     })
 
-    it('keeps a newer control watchdog when an old completion runs', async () => {
-        vi.useFakeTimers()
-        let oldSafe: (() => void) | null = null
-        function Content() {
-            const control = usePresenceControl({ maxExitMs: 10 })
-            if (!oldSafe) oldSafe = control.safeToRemove
-            return <div data-custom="true" />
+    it('moves a participant between scopes when a group appears above it', async () => {
+        function App({ grouped }: { grouped: boolean }) {
+            const item = <Item key="a" id="a" />
+            return grouped ? <LayoutGroup>{item}</LayoutGroup> : item
         }
-        function App({ show }: { show: boolean }) {
-            return (
-                <AnimatePresence initial={false}>
-                    {show && <Content key="custom" />}
-                </AnimatePresence>
-            )
-        }
-        const view = await mount(<App show={true} />)
+        const view = await mount(<App grouped={false} />)
         try {
-            await view.rerender(<App show={false} />)
-            await view.rerender(<App show={true} />)
-            await view.rerender(<App show={false} />)
-            oldSafe!()
-            await act(async () => {
-                vi.advanceTimersByTime(11)
-            })
-            expect(view.container.querySelector('[data-custom]')).toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('propagates a playback rejection and keeps the facade usable', async () => {
-        const play = vi
-            .fn()
-            .mockRejectedValueOnce(new Error('playback failed'))
-            .mockResolvedValue('ended')
-        const group = {
-            capture: vi.fn(() => ({})),
-            play,
-            dispose: vi.fn(),
-        } as unknown as CoreLayoutGroup
-        const facade = createLayoutFacade()
-        facade.attach(group)
-        const first = facade.capture()
-        await expect(facade.play(first!)).rejects.toThrow('playback failed')
-        const second = facade.capture()
-        await expect(facade.play(second!)).resolves.toBe('ended')
-        expect(play).toHaveBeenCalledTimes(2)
-        facade.dispose()
-    })
-
-    it('returns motion.initial as SSR/first-enter style and clears it at rest', async () => {
-        const motion = {
-            present: { opacity: 1, translateY: 0 },
-            initial: { opacity: 0, translateY: 8 },
-            exit: a.ani({
-                to: { opacity: 0, translateY: 8 },
-                duration: 0.1,
-                timing: a.timing.linear(),
-            }),
-        }
-        let captured: CSSProperties | undefined
-        function Row() {
-            const presence = usePresence(motion)
-            captured = presence.style
-            return <div ref={presence.ref} style={presence.style} />
-        }
-        const markup = renderToString(
-            <AnimatePresence initial={true}>
-                <Row key="row" />
-            </AnimatePresence>
-        )
-        expect(markup).toContain('opacity:0')
-
-        const view = await mount(
-            <AnimatePresence initial={true}>
-                <Row key="row" />
-            </AnimatePresence>
-        )
-        try {
-            expect(captured).toBeUndefined()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('pops an exiting child out of flow until its exit completes', async () => {
-        const clock = createManualClock()
-        const motion = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Row({ id, left }: { id: string; left: number }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return (
-                <div
-                    ref={presence.ref}
-                    data-id={id}
-                    style={{
-                        position: 'relative',
-                        left,
-                        height: 20,
-                        ...presence.style,
-                    }}
-                />
-            )
-        }
-        function List({ ids }: { ids: string[] }) {
-            return (
-                <AnimatePresence initial={false} mode="popLayout">
-                    {ids.map((id, index) => (
-                        <Row key={id} id={id} left={index * 40} />
-                    ))}
-                </AnimatePresence>
-            )
-        }
-        const view = await mount(<List ids={['a', 'b']} />)
-        try {
-            await view.rerender(<List ids={['b']} />)
-            const exiting = view.container.querySelector(
-                '[data-id="a"]'
-            ) as HTMLElement
-            expect(exiting).not.toBeNull()
-            expect(exiting.style.position).toBe('absolute')
-            expect(exiting.style.pointerEvents).toBe('none')
-            await act(async () => {
-                clock.frames(20)
-            })
-            expect(view.container.querySelector('[data-id="a"]')).toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('refreshes popLayout geometry when a present child moves and resizes', async () => {
-        const clock = createManualClock()
-        const motion = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Row({ width }: { width: number }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return (
-                <div
-                    ref={presence.ref}
-                    data-id="row"
-                    style={{
-                        position: 'relative',
-                        width,
-                        height: 20,
-                        ...presence.style,
-                    }}
-                />
-            )
-        }
-        function App({ show, width }: { show: boolean; width: number }) {
-            return (
-                <AnimatePresence initial={false} mode="popLayout">
-                    {show && <Row key="row" width={width} />}
-                </AnimatePresence>
-            )
-        }
-        const view = await mount(<App show={true} width={20} />)
-        try {
-            const row = view.container.querySelector(
-                '[data-id="row"]'
-            ) as HTMLElement
-            row.getBoundingClientRect = () =>
-                ({
-                    left: 80,
-                    top: 10,
-                    x: 80,
-                    y: 10,
-                    right: 120,
-                    bottom: 30,
-                    width: 40,
-                    height: 20,
-                    toJSON: () => ({}),
-                }) as DOMRect
-            await view.rerender(<App show={true} width={40} />)
-            await view.rerender(<App show={false} width={40} />)
-            const exiting = view.container.querySelector(
-                '[data-id="row"]'
-            ) as HTMLElement
-            expect(exiting.style.left).toBe('80px')
-            expect(exiting.style.top).toBe('10px')
-            expect(exiting.style.width).toBe('40px')
-            await act(async () => {
-                clock.frames(20)
-            })
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('uses the offset parent border and scroll offsets for popLayout', async () => {
-        const clock = createManualClock()
-        const motion = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        let bump = 0
-        function Row({ value }: { value: number }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return (
-                <div
-                    ref={presence.ref}
-                    data-id="row"
-                    style={{ height: 20, ...presence.style }}
-                    data-bump={value}
-                />
-            )
-        }
-        function App({ show }: { show: boolean }) {
-            return (
-                <div
-                    data-parent="true"
-                    style={{ position: 'relative', width: 200, height: 100 }}
-                >
-                    <AnimatePresence initial={false} mode="popLayout">
-                        {show && <Row key="row" value={bump} />}
-                    </AnimatePresence>
-                </div>
-            )
-        }
-        const view = await mount(<App show={true} />)
-        try {
-            const row = view.container.querySelector(
-                '[data-id="row"]'
-            ) as HTMLElement
-            const parent = view.container.querySelector(
-                '[data-parent="true"]'
-            ) as HTMLElement
-            row.getBoundingClientRect = () =>
-                ({
-                    left: 30,
-                    top: 10,
-                    x: 30,
-                    y: 10,
-                    right: 70,
-                    bottom: 30,
-                    width: 40,
-                    height: 20,
-                    toJSON: () => ({}),
-                }) as DOMRect
-            parent.getBoundingClientRect = () =>
-                ({
-                    left: 0,
-                    top: 0,
-                    x: 0,
-                    y: 0,
-                    right: 200,
-                    bottom: 100,
-                    width: 200,
-                    height: 100,
-                    toJSON: () => ({}),
-                }) as DOMRect
-            Object.defineProperty(row, 'offsetParent', {
-                configurable: true,
-                get: () => parent,
-            })
-            Object.defineProperty(parent, 'clientLeft', {
-                configurable: true,
-                value: 10,
-            })
-            Object.defineProperty(parent, 'clientTop', {
-                configurable: true,
-                value: 2,
-            })
-            Object.defineProperty(parent, 'scrollLeft', {
-                configurable: true,
-                value: 5,
-            })
-            Object.defineProperty(parent, 'scrollTop', {
-                configurable: true,
-                value: 3,
-            })
-            bump += 1
-            await view.rerender(<App show={true} />)
-            await view.rerender(<App show={false} />)
-            const exiting = view.container.querySelector(
-                '[data-id="row"]'
-            ) as HTMLElement
-            expect(exiting.style.left).toBe('25px')
-            expect(exiting.style.top).toBe('11px')
-            await act(async () => {
-                clock.frames(20)
-            })
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('honors React layoutDependency changes and LayoutConfig duration', async () => {
-        function Row({
-            left,
-            dependency,
-        }: {
-            left: number
-            dependency: string
-        }) {
-            const ref = useLayout<HTMLDivElement>({
-                layoutDependency: dependency,
-            })
-            return (
-                <div
-                    ref={ref}
-                    style={{
-                        position: 'absolute',
-                        left,
-                        width: 10,
-                        height: 10,
-                    }}
-                />
-            )
-        }
-        function App({
-            left,
-            dependency,
-        }: {
-            left: number
-            dependency: string
-        }) {
-            return (
-                <LayoutConfig motion={{ duration: 0.1 }}>
-                    <LayoutGroup deps={[left, dependency]}>
-                        <Row left={left} dependency={dependency} />
-                    </LayoutGroup>
-                </LayoutConfig>
-            )
-        }
-        const view = await mount(<App left={0} dependency="a" />)
-        try {
-            animateSpyClear()
-            const calls = () =>
-                (
-                    Element.prototype.animate as unknown as {
-                        mock: { calls: unknown[] }
-                    }
-                ).mock.calls.length
-            const counts: number[] = []
-            for (const [left, dependency] of [
-                [20, 'a'],
-                [40, 'b'],
-                [60, 'b'],
-                [80, 'a'],
-            ] as const) {
-                const before = calls()
-                await view.rerender(<App left={left} dependency={dependency} />)
-                counts.push(calls() - before)
-            }
-            expect(counts).toEqual([0, 1, 0, 1])
-            const options = (
-                Element.prototype.animate as unknown as {
-                    mock: {
-                        calls: Array<[Keyframe[], KeyframeAnimationOptions]>
-                    }
-                }
-            ).mock.calls.at(-1)![1]
-            expect(options.duration).toBe(100)
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('does not render a never-committed child as a wait ghost', async () => {
-        const clock = createManualClock()
-        const motion = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Row({ id }: { id: string }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return (
-                <div ref={presence.ref} data-id={id} style={presence.style} />
-            )
-        }
-        function App({ ids }: { ids: string[] }) {
-            return (
-                <AnimatePresence initial={false} mode="wait">
-                    {ids.map((id) => (
-                        <Row key={id} id={id} />
-                    ))}
-                </AnimatePresence>
-            )
-        }
-        const view = await mount(<App ids={['a']} />)
-        try {
-            await view.rerender(<App ids={['b']} />)
-            await view.rerender(<App ids={['c']} />)
-            await act(async () => undefined)
-            expect(view.container.querySelector('[data-id="b"]')).toBeNull()
-            await act(async () => {
-                clock.frames(20)
-            })
-            expect(view.container.querySelector('[data-id="c"]')).not.toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('shares custom presence data with the child and supports SSR wrappers', () => {
-        const motion = {
-            present: { opacity: 1 },
-            exit: a.ani({ to: { opacity: 0 }, duration: 0.1 }),
-        }
-        function Row() {
-            const presence = usePresence(motion)
-            return (
-                <div ref={presence.ref} data-custom={String(presence.custom)} />
-            )
-        }
-        const markup = renderToString(
-            <LayoutConfig motion={{ duration: 0.1 }}>
-                <AnimatePresence custom="urgent">
-                    <Row key="row" />
-                </AnimatePresence>
-            </LayoutConfig>
-        )
-        expect(markup).toContain('data-custom="urgent"')
-    })
-
-    it('renders no wrapper DOM and produces SSR markup without boundaries', () => {
-        const markup = renderToString(
-            <LayoutGroup>
-                <ul>
-                    <AnimatePresence>
-                        <li key="a">A</li>
-                    </AnimatePresence>
-                </ul>
-            </LayoutGroup>
-        )
-        expect(markup).toBe('<ul><li>A</li></ul>')
-    })
-})
-
-describe('react layout config and wait mode', () => {
-    it('inherits LayoutConfig and delays a new child in wait mode', async () => {
-        const clock = createManualClock()
-        const motion = {
-            present: { opacity: 1 },
-            exit: a.ani({
-                to: { opacity: 0 },
-                duration: 0.2,
-                timing: a.timing.linear(),
-            }),
-        }
-        function Row({ id }: { id: string }) {
-            const presence = usePresence(motion, { clock: clock.clock })
-            return (
-                <div ref={presence.ref} data-id={id} style={presence.style} />
-            )
-        }
-        function App({ ids }: { ids: string[] }) {
-            return (
-                <LayoutConfig motion={{ duration: 0.1 }}>
-                    <AnimatePresence initial={false} mode="wait">
-                        {ids.map((id) => (
-                            <Row key={id} id={id} />
-                        ))}
-                    </AnimatePresence>
-                </LayoutConfig>
-            )
-        }
-        const view = await mount(<App ids={['a']} />)
-        try {
-            await view.rerender(<App ids={['b']} />)
-            expect(view.container.querySelector('[data-id="b"]')).toBeNull()
-            await act(async () => {
-                clock.frames(20)
-            })
-            expect(view.container.querySelector('[data-id="b"]')).not.toBeNull()
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('merges nested LayoutConfig defaults and ignores explicit undefined', async () => {
-        function Row({ left }: { left: number }) {
-            const ref = useLayout<HTMLDivElement>()
-            return (
-                <div
-                    ref={ref}
-                    style={{
-                        position: 'absolute',
-                        left,
-                        width: 10,
-                        height: 10,
-                    }}
-                />
-            )
-        }
-        function App({
-            left,
-            innerMotion,
-        }: {
-            left: number
-            innerMotion?: { duration?: number } | undefined
-        }) {
-            return (
-                <LayoutConfig motion={{ duration: 0.2 }}>
-                    <LayoutConfig motion={innerMotion}>
-                        <LayoutGroup deps={[left]}>
-                            <Row left={left} />
-                        </LayoutGroup>
-                    </LayoutConfig>
-                </LayoutConfig>
-            )
-        }
-        const view = await mount(<App left={0} innerMotion={undefined} />)
-        try {
-            animateSpyClear()
-            await view.rerender(<App left={20} innerMotion={undefined} />)
-            let options = (
-                Element.prototype.animate as unknown as {
-                    mock: {
-                        calls: Array<[Keyframe[], KeyframeAnimationOptions]>
-                    }
-                }
-            ).mock.calls.at(-1)![1]
-            expect(options.duration).toBe(200)
-            animateSpyClear()
-            await view.rerender(
-                <App left={40} innerMotion={{ duration: 0.4 }} />
-            )
-            options = (
-                Element.prototype.animate as unknown as {
-                    mock: {
-                        calls: Array<[Keyframe[], KeyframeAnimationOptions]>
-                    }
-                }
-            ).mock.calls.at(-1)![1]
-            expect(options.duration).toBe(400)
-        } finally {
-            await view.unmount()
-        }
-    })
-
-    it('mounts new layout features under StrictMode without duplicate runs', async () => {
-        function Row({ left }: { left: number }) {
-            const ref = useLayout<HTMLDivElement>()
-            return (
-                <div
-                    ref={ref}
-                    style={{
-                        position: 'absolute',
-                        left,
-                        width: 10,
-                        height: 10,
-                    }}
-                />
-            )
-        }
-        function App({ left }: { left: number }) {
-            return (
-                <StrictMode>
-                    <LayoutConfig motion={{ duration: 0.1 }}>
-                        <LayoutGroup deps={[left]}>
-                            <Row left={left} />
-                        </LayoutGroup>
-                    </LayoutConfig>
-                </StrictMode>
-            )
-        }
-        const view = await mount(<App left={0} />)
-        try {
-            animateSpyClear()
-            await view.rerender(<App left={20} />)
-            const calls = (
-                Element.prototype.animate as unknown as {
-                    mock: { calls: unknown[] }
-                }
-            ).mock.calls.length
-            expect(calls).toBe(1)
+            const [root] = live()
+            await view.rerender(<App grouped={true} />)
+            await settle()
+            expect(root!.members.size).toBe(0)
+            expect(live()).toHaveLength(1)
+            expect(live()[0]).not.toBe(root)
         } finally {
             await view.unmount()
         }
