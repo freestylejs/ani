@@ -23,6 +23,7 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         moving: false,
         track: null,
         trackTarget: null,
+        planned: null,
         mode: true,
         anchor: null,
         motion,

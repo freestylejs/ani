@@ -1004,6 +1004,9 @@ export function createLayoutGroup(
 
         // the engine's own state before this flush
         if (waapi) syncAnimations()
+        /** Each frame node's geometry as its running track was planned. */
+        const frozen = new Map<Participant, Geometry>()
+        for (const node of frame) frozen.set(node.p, node.geometry)
         const nowSolve = solveNodes(frame)
         const drawn = new Map<Participant, Box>()
         const velocity = new Map<Participant, BoxVelocity>()
@@ -1103,8 +1106,47 @@ export function createLayoutGroup(
             return ids
         }
 
-        const planNodes = (): PlanNode[] =>
-            list.map((p, i) => {
+        /**
+         * Every node's A under the presence matrices frozen with the running
+         * tracks (§3.1): what A is if only the layout changed. Parents first.
+         */
+        const plannedBoxes = (): (Box | null)[] => {
+            const rests: (Map2 | null)[] = []
+            return list.map((p, i) => {
+                const g = geometry[i]
+                const parent = parents[i]!
+                const parentRest =
+                    parent >= 0
+                        ? (rests[parent] ??
+                          geometry[parent]?.rest ??
+                          IDENTITY_MAP)
+                        : IDENTITY_MAP
+                if (!g) {
+                    rests.push(null)
+                    return null
+                }
+                const was = frozen.get(p)
+                const m = (was ?? g).matrix
+                const au = p.drive?.authored ?? g.authored
+                const inner = aboutOrigin(
+                    {
+                        tx: au.tx + au.sx * m.e,
+                        ty: au.ty + au.sy * m.f,
+                        sx: au.sx * m.a,
+                        sy: au.sy * m.d,
+                    },
+                    g.ox,
+                    g.oy
+                )
+                rests.push(compose(parentRest, inner))
+                const css = mapBox(invert(g.inner), g.box)
+                return was ? mapBox(parentRest, mapBox(inner, css)) : null
+            })
+        }
+
+        const planNodes = (): PlanNode[] => {
+            const planned = plannedBoxes()
+            return list.map((p, i) => {
                 const g = geometry[i]
                 const a = g?.a ?? rects[i]!
                 const d = p.drive
@@ -1162,6 +1204,7 @@ export function createLayoutGroup(
                     moving,
                     track: moving ? d!.track : null,
                     trackTarget: moving ? d!.target : null,
+                    planned: moving ? planned[i]! : null,
                     mode: options.layout ?? true,
                     anchor: options.layoutAnchor ?? null,
                     motion: motionOf(p, reduced),
@@ -1183,6 +1226,7 @@ export function createLayoutGroup(
                             : -1,
                 }
             })
+        }
 
         // 2. plan; measure what it animates; plan again until nothing new
         let nodes = planNodes()
@@ -1495,10 +1539,13 @@ export function createLayoutGroup(
             if (!inFrame[i]) return
             frameIndex.set(i, next.length)
             const parent = parents[i]!
+            // a kept track keeps the geometry it was planned with: a presence
+            // transform changed since stays a visual layer over it (§3.1)
+            const kept = actions[i]!.kind === 'keep' ? frozen.get(p) : undefined
             next.push({
                 p,
                 parent: parent >= 0 ? frameIndex.get(parent)! : -1,
-                geometry: geometry[i]!,
+                geometry: kept ?? geometry[i]!,
             })
         })
         frame = next

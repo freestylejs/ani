@@ -45,9 +45,7 @@ import { expectClose, expectEqual } from './assert'
 
 export const pageOptions = {}
 
-export const knownFailures: Record<string, string> = {
-    E5: "engine (packages/layout/src/scope.ts), not the adapter: a flush that leaves a running 'position' track untouched re-freezes the node's presence transform, so the re-render that ends t1's enter at 0.4 s (frame 25) jumps t1/t2 (t2 width 298.50 → 295.22 px) and replaces the tracks of t3/t4 (t3 off by 11.6 px a frame later); every add frame before it and the whole exit phase are on the expectation. Reported with a vanilla repro in cp5_react.md (CP5 trial fix proof, E-1).",
-}
+export const knownFailures: Record<string, string> = {}
 
 const FRAME_MS = 16
 const DT = FRAME_MS / 1000
