@@ -100,7 +100,8 @@ inner maps *as of that flush*, and only a change since then is a layer over it. 
 records its participant ancestors' matrices when it is planned; a node planned later than a
 kept ancestor (a child retargeted under a parent whose layer changed) composes that
 ancestor with the newer matrix, while the ancestor's own track keeps its older one. A kept
-track keeps those matrices, its own and its ancestors', but not its CSS box: `Lₙ` and `Oₙ`
+track (and a continuing crossfade follower, §5.6) keeps those matrices, its own and its
+ancestors', but not its CSS box: `Lₙ` and `Oₙ`
 are read again at every flush, so a parent that moved a node's CSS box without moving its A
 in the track's space leaves the track exactly where it was.
 
@@ -336,7 +337,9 @@ its velocity.
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting
   under presence, the box moved by at least `threshold` (or the pair is reversing, below),
   and neither node sets `layoutCrossfade: false`. Both nodes draw at the lead's box; the
-  opacities are `w` and `1 − w`, with `w = from + (1 − from)·clamp(e(τ), 0, 1)` on the lead's
+  follower takes it as its own flush space draws the lead (§3.1, §5.3: `corr_f ∘ corr_l⁻¹`),
+  and a continuing follower keeps the space of the flush that started it, like a kept track.
+  The opacities are `w` and `1 − w`, with `w = from + (1 − from)·clamp(e(τ), 0, 1)` on the lead's
   timeline and `from = 0` for a new handoff.
 - **Reversal.** When the new lead is the follower of the running crossfade (a menu reopened
   while it closes), the pair keeps crossfading however little it moves, and `from` is the
