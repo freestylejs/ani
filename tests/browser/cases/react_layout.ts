@@ -1162,3 +1162,237 @@ export async function J26(): Promise<string> {
         view.dispose()
     }
 }
+
+/* ── popLayout: the CSS box of a transformed exit (J-027) ── */
+
+function PopRow({ clock }: { clock: Clock }): ReactNode {
+    const presence = usePresence(
+        {
+            present: { opacity: 1, translateY: 0, scale: 1 },
+            initial: { opacity: 1, translateY: 28, scale: 0.6 },
+            enter: ani({
+                to: { opacity: 1, translateY: 0, scale: 1 },
+                duration: 1,
+                timing: timing.linear(),
+            }),
+            // holds the transform it starts from: the pop must not move it
+            exit: ani({
+                to: { opacity: 0, translateY: 14, scale: 0.8 },
+                duration: 0.2,
+                timing: timing.linear(),
+            }),
+        },
+        { clock }
+    )
+    return h('div', {
+        ref: presence.ref,
+        'data-id': 'pop',
+        style: {
+            width: 100,
+            height: 50,
+            transformOrigin: '0 0',
+            background: 'rgb(40, 40, 40)',
+            ...presence.style,
+        },
+    })
+}
+
+function PopBlock({ clock, show }: { clock: Clock; show: boolean }): ReactNode {
+    return h(
+        'div',
+        {
+            'data-block': true,
+            style: {
+                position: 'relative',
+                boxSizing: 'border-box',
+                width: 400,
+                height: 300,
+                padding: '80px 0 0 50px',
+            },
+        },
+        h(
+            AnimatePresence,
+            { initial: true, mode: 'popLayout' },
+            show ? h(PopRow, { key: 'pop', clock }) : null
+        )
+    )
+}
+
+function SlideRow(): ReactNode {
+    const presence = usePresence(
+        {
+            present: { opacity: 1 },
+            exit: ani({
+                to: { opacity: 0 },
+                duration: 1,
+                timing: timing.linear(),
+            }),
+        },
+        { clock: toastClock!.clock }
+    )
+    const ref = useLayout<HTMLDivElement>({ ref: presence.ref })
+    return h('div', {
+        ref,
+        'data-id': 'slide',
+        style: {
+            width: 100,
+            height: 50,
+            flex: 'none',
+            background: 'rgb(40, 40, 40)',
+            ...presence.style,
+        },
+    })
+}
+
+function SlideBlock({
+    spacer,
+    show,
+}: {
+    spacer: boolean
+    show: boolean
+}): ReactNode {
+    return h(
+        LayoutGroup,
+        {
+            clock: toastClock!.clock,
+            motion: { duration: 1, timing: timing.linear() },
+        },
+        h(
+            'div',
+            {
+                style: {
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: 400,
+                    height: 300,
+                },
+            },
+            spacer ? h('div', { style: { height: 30, flex: 'none' } }) : null,
+            h(
+                AnimatePresence,
+                { initial: false, mode: 'popLayout' },
+                show ? h(SlideRow, { key: 'slide' }) : null
+            )
+        )
+    )
+}
+
+/** J-027 (a): an exit that interrupts the enter: translateY(14px) scale(0.8) about 0 0. */
+async function popMidEnter(): Promise<string> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    try {
+        await view.render(h(PopBlock, { clock: mc.clock, show: true }))
+        mc.frame(250)
+        mc.frame(250)
+        const origin = pageBox(view.host.querySelector('[data-block]')!)
+        const drawn = {
+            x: origin.x + 50,
+            y: origin.y + 94,
+            w: 80,
+            h: 40,
+        }
+        const row = byId(view.host, 'pop')
+        expectAt(row, drawn, 'mid-enter at 0.5 s')
+        await view.render(h(PopBlock, { clock: mc.clock, show: false }))
+        const pop = {
+            left: row.style.left,
+            top: row.style.top,
+            width: row.style.width,
+            height: row.style.height,
+        }
+        let error = expectAt(
+            row,
+            drawn,
+            `popped in place (lifted to ${JSON.stringify(pop)})`
+        )
+        expectEqual(
+            pop,
+            { left: '50px', top: '80px', width: '100px', height: '50px' },
+            'the CSS box, lifted'
+        )
+        let released = Number.NaN
+        for (let frame = 1; frame <= 20; frame++) {
+            mc.frame(FRAME_MS)
+            await microtasks()
+            await macrotask()
+            if (!row.isConnected) {
+                released = frame * DT
+                break
+            }
+            error = Math.max(error, expectAt(row, drawn, `exit frame ${frame}`))
+        }
+        if (!(released >= 0.2 - 1e-9 && released <= 0.2 + 2 * DT)) {
+            throw new Error(`exit released at ${released} s, expected ≈ 0.2 s`)
+        }
+        return `mid-enter exit: lifted to ${pop.left}/${pop.top} ${pop.width} × ${pop.height}, drawn (50, 94, 80, 40) until the release at ${released.toFixed(3)} s (error ${error.toFixed(4)} px)`
+    } finally {
+        view.dispose()
+    }
+}
+
+/** J-027 (b): an exit during a layout run: the lifted node keeps its track. */
+async function popMidLayout(): Promise<string> {
+    const lc = createManualClock()
+    toastClock = lc
+    const view = mountRoot()
+    try {
+        await view.render(h(SlideBlock, { spacer: false, show: true }))
+        const node = byId(view.host, 'slide')
+        const before = pageBox(node)
+        await view.render(h(SlideBlock, { spacer: true, show: true }))
+        const track = spec(
+            before,
+            { ...before, y: before.y + 30 },
+            { duration: 1, timing: timing.linear() }
+        )
+        lc.frame(0)
+        lc.frame(200)
+        let elapsed = 0.2
+        let error = expectAt(node, expectedBox(track, elapsed), 'at 0.2 s')
+        await view.render(h(SlideBlock, { spacer: true, show: false }))
+        expectEqual(node.style.position, 'absolute', 'popped')
+        const top = node.style.top
+        error = Math.max(
+            error,
+            expectAt(
+                node,
+                expectedBox(track, elapsed),
+                `popped in place (lifted to top ${top})`
+            )
+        )
+        for (let frame = 1; frame <= 30; frame++) {
+            lc.frame(FRAME_MS)
+            elapsed += DT
+            error = Math.max(
+                error,
+                expectAt(
+                    node,
+                    expectedBox(track, elapsed),
+                    `exiting at ${elapsed.toFixed(3)} s (lifted to top ${top})`
+                )
+            )
+        }
+        expectEqual(top, '30px', 'lifted to its CSS box')
+        return `mid-layout exit: lifted to top ${top}, on its track through ${elapsed.toFixed(3)} s (error ${error.toFixed(4)} px)`
+    } finally {
+        view.dispose()
+        toastClock = null
+    }
+}
+
+/** J-027: popLayout lifts the CSS box, not the drawn one: mid-enter and mid-layout exits stay put. */
+export async function J27(): Promise<string> {
+    const results: string[] = []
+    const failures: string[] = []
+    for (const run of [popMidEnter, popMidLayout]) {
+        try {
+            results.push(await run())
+        } catch (error) {
+            failures.push((error as Error).message)
+        }
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '))
+    return results.join('; ')
+}
