@@ -176,3 +176,37 @@ Re-run after the fixes (remote mirror, frozen tree of the CP5 commit):
 Residual risks: an author's inline write with `!important` to `translate`/`scale` is not
 recognised as authored (React cannot produce one). The presence velocity itself is not part
 of a reconciled B's velocity, only the change of scale.
+
+## Fix proof report for the CP5 trial, engine defects (`cp5_react_trial_result.md`, frozen `8211c7c`)
+
+The React adapter defects (J-026–J-029, J-031, the adapter half of J-016 and the React half of
+J-030) are proved in `cp5_react.md`. This section covers the engine.
+
+| Defect | Root cause | Correction | Files and tests |
+|---|---|---|---|
+| J-016 | `sameTrackOptions` compared the unresolved option objects: `{}` vs `{ motion: { duration: 1 } }` under a group duration of 1, and spring parameters in another key order, read as changes | Motion is compared after merging the group's motion and the defaults (`mergeMotion`, also the base of `resolveMotion`); timings compare by class plus `opt` by structural, key-order-free equality (`sameData`); a timing without `opt` (linear) compares its own fields | `motion.ts`, `scope.ts` (`add`/`set` pass the group motion). `motion.test.ts` "track option equality (J-016)": defaults, inherited fields, spring key order, bezier, and genuine changes in every field. Browser `J16`: a third node with a spring; every 4th frame a flush with a rotating set of equivalent options (`{}`, `{ layout: true }`, `{ motion: { duration: 1 } }`, `{ motion: { delay: 0 } }`, `{ motion: { timing: timing.linear() } }`, `{ radius: false }`) and the spring in another key order |
+| J-020 | A removed lead's retained box and velocity came from the frozen geometry; a parent layer changed before the removal was not applied | The retained entry keeps the participant it was drawn under; the next flush measures that parent and carries the box and velocity through its current layers with the same machinery as J-025 (`Retained.parent`, `carriers` in the measured set) | `scope.ts`. Browser `J20`, new part: parent at x 100 with `scale(0.8)`, child left 0 → 200 and width 40 → 100; at 0.192 s the parent goes to scale 1, the child is removed and its id added at x 400. The handoff starts at (138.4, w 51.52) with 200 / 60 px/s, every frame on the oracle. `plan.test.ts` "J-030: the retained size velocity is handed off too" |
+| J-025 | `reconcileLayers` scaled the whole velocity by the size ratio of the old and new drawn box, so a child's own scale change scaled its parent's translation | Each frame node's full map is recovered *with its rate* from its drawn box and velocity (`movingOnto`); the pose and its rate follow (`parent⁻¹ ∘ full ∘ inner⁻¹`) and are recomposed through the current maps (`composeMoving`, exact product rule). `MovingMap`, `composeMoving`, `invertMoving`, `movingOnto` and `carry` are in `geometry.ts` | `geometry.ts`, `scope.ts`. `geometry.test.ts` "moving maps" against central differences. Browser `J25`, new part: parent left 0 → 200; child `scale(0.8)` → 1 and left 0 → 100 at 0.192 s; B = (38.4, w 40) with vx 200 and every frame on the oracle |
+| J-030 (engine) | Missing frame proof | `J19`: the clamped re-plan of the moving node (1 s → 0.1 s from x 38.4 at 200 px/s) and of the node in its delay (0.5 + 1 s → 1/30 + 1/15 s) is on the oracle every frame. `J21`: per-frame rects and drawn corners (8 px within 0.0010 px) after `radius` turns on. `J22`: the run keeps its frozen composition every frame, then the authored box applies at release | `tests/browser/cases/layout.ts` |
+
+Before / after (Chromium; the counterexamples of the trial):
+
+| Case | Before (frozen `8211c7c` engine) | After |
+|---|---|---|
+| J16 equivalent options | `never interrupted: expected "ended", received "interrupted"` | ended, max error 0.0003 px |
+| J20 handoff through a changed parent layer | first frame at (130.72, w 41.216, h 32): 10.304 px off | (138.4, w 51.52, h 40), 0.0000 px |
+| J25 own layer under a moving parent | 0.775 px off at the first frame (velocity 250) | 0.0000 px every frame (velocity 200) |
+
+The new browser cases were run against the frozen engine sources to show they fail there.
+
+| Case | Chromium / Firefox / WebKit, max error per frame |
+|---|---|
+| J16 | 0.0003 / 0.0146 / 0.0000 px |
+| J19 | 0.0000 / 0.0069 / 0.0000 px |
+| J20 | 0.0000 / 0.0084 / 0.0000 px |
+| J21 | 0.0000 / 0.0149 / 0.0001 px; corners 0.0000 / 0.0010 / 0.0000 px |
+| J22 | 0.0000 / 0.0000 / 0.0000 px |
+| J25 | 0.0000 / 0.0083 / 0.0000 px |
+
+Residual risk: the removed element's own presence layer is taken as last measured (it is
+gone and cannot be read).
