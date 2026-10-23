@@ -33,8 +33,6 @@ export interface Pose {
 
 export const IDENTITY_MAP: Map2 = { x: { k: 1, b: 0 }, y: { k: 1, b: 0 } }
 
-export const IDENTITY_POSE: Pose = { tx: 0, ty: 0, sx: 1, sy: 1 }
-
 /** `outer ∘ inner`: apply `inner` first. */
 export function compose(outer: Map2, inner: Map2): Map2 {
     return {
@@ -111,5 +109,94 @@ export function unmapOwn(rect: Box, own: OwnTransform): Box {
         y: rect.y - own.ty - own.oy * (1 - own.ky),
         w: rect.w / own.kx,
         h: rect.h / own.ky,
+    }
+}
+
+/**
+ * A map and its time derivative: `rate` holds `dk/dt` and `db/dt` per axis.
+ * Composing these is exact, so a box's velocity survives a change of the
+ * layers it is drawn through.
+ */
+export interface MovingMap {
+    readonly map: Map2
+    readonly rate: Map2
+}
+
+const ZERO_RATE: Map2 = { x: { k: 0, b: 0 }, y: { k: 0, b: 0 } }
+
+export const STILL_IDENTITY: MovingMap = { map: IDENTITY_MAP, rate: ZERO_RATE }
+
+export function still(map: Map2): MovingMap {
+    return { map, rate: ZERO_RATE }
+}
+
+/** `outer ∘ inner` and its derivative (product rule). */
+export function composeMoving(outer: MovingMap, inner: MovingMap): MovingMap {
+    const rate = (o: Affine, ro: Affine, i: Affine, ri: Affine): Affine => ({
+        k: ro.k * i.k + o.k * ri.k,
+        b: ro.k * i.b + o.k * ri.b + ro.b,
+    })
+    return {
+        map: compose(outer.map, inner.map),
+        rate: {
+            x: rate(outer.map.x, outer.rate.x, inner.map.x, inner.rate.x),
+            y: rate(outer.map.y, outer.rate.y, inner.map.y, inner.rate.y),
+        },
+    }
+}
+
+export function invertMoving(m: MovingMap): MovingMap {
+    // d(1/k) = −k′/k², d(−b/k) = (b·k′ − b′·k)/k²
+    const rate = (a: Affine, r: Affine): Affine => ({
+        k: -r.k / (a.k * a.k),
+        b: (a.b * r.k - r.b * a.k) / (a.k * a.k),
+    })
+    return {
+        map: invert(m.map),
+        rate: { x: rate(m.map.x, m.rate.x), y: rate(m.map.y, m.rate.y) },
+    }
+}
+
+/**
+ * The moving map that carries the fixed `box` onto `drawn`, which moves at
+ * `velocity`; `null` for an empty box.
+ */
+export function movingOnto(
+    box: Box,
+    drawn: Box,
+    velocity: Box
+): MovingMap | null {
+    if (!(box.w > 0) || !(box.h > 0)) return null
+    const kx = drawn.w / box.w
+    const ky = drawn.h / box.h
+    const rx = velocity.w / box.w
+    const ry = velocity.h / box.h
+    return {
+        map: {
+            x: { k: kx, b: drawn.x - kx * box.x },
+            y: { k: ky, b: drawn.y - ky * box.y },
+        },
+        rate: {
+            x: { k: rx, b: velocity.x - rx * box.x },
+            y: { k: ry, b: velocity.y - ry * box.y },
+        },
+    }
+}
+
+/** `m` applied to a box moving at `velocity`: the drawn box and its velocity. */
+export function carry(
+    m: MovingMap,
+    box: Box,
+    velocity: Box
+): { box: Box; velocity: Box } {
+    const { map, rate } = m
+    return {
+        box: mapBox(map, box),
+        velocity: {
+            x: rate.x.k * box.x + rate.x.b + map.x.k * velocity.x,
+            y: rate.y.k * box.y + rate.y.b + map.y.k * velocity.y,
+            w: rate.x.k * box.w + map.x.k * velocity.w,
+            h: rate.y.k * box.h + map.y.k * velocity.h,
+        },
     }
 }

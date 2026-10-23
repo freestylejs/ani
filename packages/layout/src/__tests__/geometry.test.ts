@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
     aboutOrigin,
+    carry,
     compose,
+    composeMoving,
     IDENTITY_MAP,
     invert,
+    invertMoving,
+    type Map2,
+    type MovingMap,
     mapBox,
+    movingOnto,
     ownMap,
     poseFor,
     unmapOwn,
@@ -69,5 +75,81 @@ describe('geometry', () => {
                 maxDiff(unmapOwn(mapBox(ownMap(b, own), b), own), b)
             ).toBeLessThan(1e-9)
         }
+    })
+})
+
+describe('geometry: moving maps', () => {
+    // maps that move linearly in time: k(t) = k + k′t, b(t) = b + b′t
+    const at = (m: MovingMap, t: number): Map2 => ({
+        x: { k: m.map.x.k + m.rate.x.k * t, b: m.map.x.b + m.rate.x.b * t },
+        y: { k: m.map.y.k + m.rate.y.k * t, b: m.map.y.b + m.rate.y.b * t },
+    })
+    const derivative = (f: (t: number) => Map2): Map2 => {
+        const h = 1e-6
+        const a = f(-h)
+        const b = f(h)
+        const d = (u: number, v: number) => (v - u) / (2 * h)
+        return {
+            x: { k: d(a.x.k, b.x.k), b: d(a.x.b, b.x.b) },
+            y: { k: d(a.y.k, b.y.k), b: d(a.y.b, b.y.b) },
+        }
+    }
+    const outer: MovingMap = {
+        map: { x: { k: 0.8, b: 20 }, y: { k: 1.2, b: -5 } },
+        rate: { x: { k: 0.3, b: 200 }, y: { k: -0.1, b: 15 } },
+    }
+    const inner: MovingMap = {
+        map: { x: { k: 1.5, b: 7 }, y: { k: 0.5, b: 3 } },
+        rate: { x: { k: -0.2, b: 40 }, y: { k: 0.4, b: -9 } },
+    }
+    const close = (got: Map2, want: Map2) => {
+        for (const axis of ['x', 'y'] as const) {
+            expect(got[axis].k).toBeCloseTo(want[axis].k, 6)
+            expect(got[axis].b).toBeCloseTo(want[axis].b, 6)
+        }
+    }
+
+    it('compose and invert carry the exact derivative', () => {
+        close(
+            composeMoving(outer, inner).rate,
+            derivative((t) => compose(at(outer, t), at(inner, t)))
+        )
+        close(
+            invertMoving(outer).rate,
+            derivative((t) => invert(at(outer, t)))
+        )
+        const round = composeMoving(invertMoving(outer), outer)
+        close(round.map, IDENTITY_MAP)
+        close(round.rate, { x: { k: 0, b: 0 }, y: { k: 0, b: 0 } })
+    })
+
+    it('movingOnto and carry: a box moving at a velocity, through a moving map', () => {
+        const css = { x: 10, y: 20, w: 40, h: 30 }
+        const drawn = { x: 50, y: 60, w: 80, h: 45 }
+        const velocity = { x: 200, y: -30, w: 60, h: 12 }
+        const onto = movingOnto(css, drawn, velocity)!
+        expect(mapBox(onto.map, css)).toEqual(drawn)
+        const self = carry(onto, css, { x: 0, y: 0, w: 0, h: 0 })
+        for (const key of ['x', 'y', 'w', 'h'] as const) {
+            expect(self.box[key]).toBeCloseTo(drawn[key], 9)
+            expect(self.velocity[key]).toBeCloseTo(velocity[key], 9)
+        }
+        // through a moving outer map: d/dt outer(t)(box(t))
+        const moved = carry(outer, drawn, velocity)
+        const boxAt = (t: number) =>
+            mapBox(at(outer, t), {
+                x: drawn.x + velocity.x * t,
+                y: drawn.y + velocity.y * t,
+                w: drawn.w + velocity.w * t,
+                h: drawn.h + velocity.h * t,
+            })
+        const h = 1e-6
+        for (const key of ['x', 'y', 'w', 'h'] as const) {
+            expect(moved.velocity[key]).toBeCloseTo(
+                (boxAt(h)[key] - boxAt(-h)[key]) / (2 * h),
+                5
+            )
+        }
+        expect(movingOnto({ ...css, w: 0 }, drawn, velocity)).toBeNull()
     })
 })

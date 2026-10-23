@@ -19,10 +19,13 @@ import {
     sameValue,
 } from './context'
 
-export interface LayoutGroupProps extends LayoutGroupOptions {
+/** Every option may also be passed as `undefined` (the default), as React props are. */
+export type LayoutGroupProps = {
+    readonly [K in keyof LayoutGroupOptions]?: LayoutGroupOptions[K] | undefined
+} & {
     /** Namespaces the `layoutId`s of this group's participants. */
-    id?: string
-    children?: ReactNode
+    readonly id?: string | undefined
+    readonly children?: ReactNode
 }
 
 /** Read from the outermost group only; a change re-creates the scope. */

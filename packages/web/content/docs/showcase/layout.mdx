@@ -1,16 +1,29 @@
 ---
 title: Layout Showcase
-description: A reduced 2D layout lab for anchors, shared identity, presence and gallery poses.
+description: Six live layout demos built on @freestylejs/ani-react/layout - anchors, shared elements, presence and a gallery.
 ---
 
-Ani compiles measured DOM changes into compositor-native transforms. This lab
-keeps the surface small enough to inspect: resize an anchored surface, hand off a
-shared identity, open a folder, move a product card, stack notifications and
-change a gallery pose. Every demo is live and uses the public
-`@freestylejs/ani-react/layout` API.
+Each demo below is plain React with the public `@freestylejs/ani-react/layout` API: elements
+marked with `useLayout`, `LayoutGroup`, and `AnimatePresence` with `usePresence`. There are no
+capture or play calls. Interrupt any of them mid-flight: every element continues from where it
+is drawn. The [Layout guide](/en/docs/guides/layout) explains the API.
 
-The scope is the bounded 2D contract: depth-1 projection, shared `layoutId`,
-`popLayout` presence and a reduced gallery. Full 3D/drag/scroll-observer rows are
-explicitly out of scope.
+- **E1 Layout Anchor.** A parent grows while its child, anchored with
+  `layoutAnchor: { x: 0.5, y: 0.5 }`, stays centred on the parent's drawn centre on every frame.
+  The child keeps its size until its own 0.8 second delay has passed.
+- **E2 Create Button.** A compact button opens into a creation menu. The surface, label and
+  icon share `layoutId`s with the menu, so the two crossfade as one element, and the label stays
+  sharp with `layout: 'position'`. Close and reopen it mid-flight.
+- **E3 iOS Folder.** Four tiles move from a small folder icon into the open folder through shared
+  `layoutId`s, while the other items enter from the folder's position at a fifth of their size,
+  one after another.
+- **E4 App Store.** A product card opens into a detail view through three nested ids: the
+  surface, the image and the title. The title keeps its text size (`'position'`) and the corners
+  keep their radius (`radius: true`).
+- **E5 Notifications.** A toast stack where `useLayout` and `usePresence` share each element.
+  New toasts enter while the others slide; a removed toast exits in place under
+  `mode="popLayout"` while its siblings close the gap from the first frame.
+- **Gallery.** Sixteen tiles switch between a grid and a list, and any tile opens a detail view
+  that shares its `layoutId`.
 
 <LayoutShowcase />

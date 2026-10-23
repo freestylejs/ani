@@ -24,16 +24,23 @@ import {
     scrollOffsets,
     viewportBox,
 } from './dom'
-import { hasDOM } from './feature'
+import { hasDOM, supportsLinearEasing } from './feature'
 import {
     aboutOrigin,
     type Box,
+    carry,
     compose,
+    composeMoving,
     IDENTITY_MAP,
     invert,
+    invertMoving,
     type Map2,
+    type MovingMap,
     mapBox,
+    movingOnto,
     ownMap,
+    STILL_IDENTITY,
+    still,
     unmapOwn,
 } from './geometry'
 import {
@@ -59,6 +66,7 @@ import {
 } from './plan'
 import { exitingPresence, presenceOf } from './presence_link'
 import { createRaf } from './realize/raf'
+import { elapsedOf, play } from './realize/waapi'
 import {
     type BoxVelocity,
     drawnBoxes,
@@ -69,6 +77,7 @@ import {
     solve,
     type Track,
     trackEnded,
+    ZERO_VELOCITY,
 } from './solve'
 import type {
     LayoutGroup,
@@ -146,6 +155,8 @@ interface Geometry {
 
 interface DriveFade {
     readonly role: 'lead' | 'follower'
+    /** The lead's weight at the start (§5.6): 0, or the opacity a reversed pair had. */
+    readonly from: number
     elapsed: number
     /** Its first clock update has happened (independent of the track's). */
     started: boolean
@@ -213,6 +224,17 @@ interface FrameNode {
     readonly geometry: Geometry
 }
 
+interface Retained {
+    readonly box: Box
+    readonly velocity: BoxVelocity | null
+    readonly until: number
+    /**
+     * The participant the lead was drawn under, until the next flush carries
+     * the box through its current presence layers (§5.6).
+     */
+    readonly parent: Participant | null
+}
+
 interface Write {
     readonly element: HTMLElement
     readonly property: string
@@ -229,6 +251,7 @@ const GROUP_KEYS = [
     'maxNodes',
     'retain',
     'onSnap',
+    'engine',
 ] as const
 
 function validateGroupOptions(options: unknown): void {
@@ -290,6 +313,30 @@ function validateGroupOptions(options: unknown): void {
     if (value.onSnap !== undefined && typeof value.onSnap !== 'function') {
         throw invalidOptions('type', 'onSnap must be a function.')
     }
+    const engine = value.engine
+    if (engine !== undefined && engine !== 'raf' && engine !== 'waapi') {
+        throw invalidOptions(
+            'type',
+            `engine must be 'raf' or 'waapi', received ${String(engine)}.`
+        )
+    }
+}
+
+/**
+ * The WAAPI engine animates top-level `'position'` participants only (§10);
+ * anything else throws when it is registered, never degrades.
+ */
+function validateWaapiOptions(options: LayoutOptions | undefined): void {
+    const reject = (what: string) =>
+        invalidOptions(
+            'type',
+            `the 'waapi' engine animates layout: 'position' participants only; ${what} needs the 'raf' engine.`
+        )
+    if (options?.layout !== 'position')
+        throw reject(`layout: ${JSON.stringify(options?.layout ?? true)}`)
+    if (options.layoutAnchor !== undefined) throw reject('layoutAnchor')
+    if (options.layoutId !== undefined) throw reject('layoutId')
+    if (options.radius) throw reject('radius')
 }
 
 function format(n: number): string {
@@ -301,7 +348,12 @@ function fadeEnded(fade: DriveFade): boolean {
     return fade.elapsed >= fade.duration
 }
 
-const IDENTITY_POSE = { tx: 0, ty: 0, sx: 1, sy: 1 }
+/** The lead's weight of a running fade now (the follower shows its complement). */
+function leadWeight(fade: DriveFade): number {
+    if (fade.duration <= 0) return 1
+    const e = fade.curve.value(Math.max(0, fade.elapsed) / fade.duration)
+    return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, e))
+}
 
 function noop(): void {
     // a removal after dispose has nothing to undo
@@ -326,6 +378,12 @@ export function createLayoutGroup(
     const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES
     const retain = options.retain ?? DEFAULT_RETAIN
     const groupMotion: LayoutMotion | undefined = options.motion
+    const waapi = options.engine === 'waapi'
+    /** The running animation of each WAAPI track, with the track it draws. */
+    const animations = new Map<
+        Participant,
+        { readonly animation: Animation; readonly track: Track }
+    >()
 
     const registry = new Map<HTMLElement, Participant>()
     let sequence = 0
@@ -336,14 +394,7 @@ export function createLayoutGroup(
     /** Previous lead per `layoutId`. */
     const leads = new Map<string, Participant>()
     /** Drawn boxes and velocities of leads removed within `retain` seconds. */
-    const retained = new Map<
-        string,
-        {
-            readonly box: Box
-            readonly velocity: BoxVelocity | null
-            readonly until: number
-        }
-    >()
+    const retained = new Map<string, Retained>()
     const warned = new Set<string>()
     const stats = { captures: 0, reads: 0, tracks: 0 }
 
@@ -367,6 +418,7 @@ export function createLayoutGroup(
                 live && d.fade
                     ? {
                           role: d.fade.role,
+                          from: d.fade.from,
                           elapsed: Math.max(0, d.fade.elapsed),
                           duration: d.fade.duration,
                           curve: d.fade.curve,
@@ -477,12 +529,67 @@ export function createLayoutGroup(
     function settle(p: Participant, cancelled = false): void {
         const d = p.drive
         if (!d) return
+        stopAnimation(p)
         if (cancelled) cancelRunNode(p)
         else finishRunNode(p)
         d.release?.()
         p.drive = null
         if (p.geometry) p.lastBox = p.geometry.a
         queueRestore(p.element, d)
+    }
+
+    /* ───────────────────────── WAAPI (§10) ───────────────────────── */
+
+    function stopAnimation(p: Participant): void {
+        const running = animations.get(p)
+        if (!running) return
+        animations.delete(p)
+        running.animation.cancel()
+    }
+
+    /** Each WAAPI track's elapsed time is its animation's. */
+    function syncAnimations(): void {
+        for (const [p, { animation }] of animations) {
+            if (p.drive) p.drive.elapsed = elapsedOf(animation)
+        }
+    }
+
+    /**
+     * One animation per track that does not have one: from the track's start
+     * pose to the authored translate, keeping the running ones.
+     */
+    function playTracks(): void {
+        for (const node of frame) {
+            const p = node.p
+            const d = p.drive
+            if (d?.kind !== 'track' || !d.track) continue
+            if (animations.get(p)?.track === d.track) continue
+            stopAnimation(p)
+            const track = d.track
+            const start = drawnBoxes(solveNodes([{ ...node, parent: -1 }]))[0]!
+            const a = node.geometry.a
+            const au = d.authored
+            const animation = play(
+                p.element,
+                {
+                    from: [start.x - a.x + au.tx, start.y - a.y + au.ty],
+                    to: [au.tx, au.ty],
+                    duration: track.duration,
+                    delay: track.delay,
+                    curve: track.curve,
+                },
+                () => {
+                    if (animations.get(p)?.animation !== animation) return
+                    d.elapsed = track.delay + track.duration
+                    settle(p)
+                    commitWrites()
+                    frame = frame.filter((n) => n.p.drive !== null)
+                    stats.tracks = animations.size
+                }
+            )
+            animations.set(p, { animation, track })
+        }
+        stats.tracks = animations.size
     }
 
     function restoreOpacity(element: HTMLElement, d: Drive): void {
@@ -751,16 +858,24 @@ export function createLayoutGroup(
     /**
      * B of a driven node is its drawn box as the user sees it now: through the
      * presence layers as they are at this flush, not as they were frozen at the
-     * last one (§3.1). Only the presence matrix can differ (it is not React's,
-     * so the commit did not change it); the poses are the engine's own.
+     * last one (§3.1). Only the presence matrices can differ (they are not
+     * React's, so the commit did not change them); the poses are the engine's
+     * own. Each pose is recovered with its rate from the drawn box and its
+     * velocity, then composed through the current layers, so a velocity is
+     * carried exactly (§5.5): a parent's motion stays a translation whatever
+     * the child's own scale. A lead removed since the last flush is carried
+     * through its parent's current layers the same way (§5.6).
      */
     function reconcileLayers(
         index: ReadonlyMap<Participant, number>,
         geometry: readonly (Geometry | null)[],
-        nowSolve: readonly SolveNode[],
         drawn: Map<Participant, Box>,
         velocity: Map<Participant, BoxVelocity>
     ): void {
+        const pending = [...retained].filter(([, entry]) => entry.parent)
+        for (const [id, entry] of pending) {
+            retained.set(id, { ...entry, parent: null })
+        }
         if (frame.length === 0) return
         const current = frame.map((node) => {
             const i = index.get(node.p)
@@ -775,8 +890,8 @@ export function createLayoutGroup(
             )
         })
         if (!changed) return
-        const solved = solve(nowSolve)
-        const maps: Map2[] = []
+        const before: MovingMap[] = []
+        const after: MovingMap[] = []
         frame.forEach((node, k) => {
             const g = node.geometry
             const m = current[k] ?? g.matrix
@@ -791,29 +906,53 @@ export function createLayoutGroup(
                 g.ox,
                 g.oy
             )
-            const parent = node.parent >= 0 ? maps[node.parent]! : IDENTITY_MAP
-            const pose = node.p.drive ? solved[k]!.pose : IDENTITY_POSE
-            const map = compose(
-                compose(parent, aboutOrigin(pose, g.ox, g.oy)),
-                inner
+            const parentWas =
+                node.parent >= 0 ? before[node.parent]! : STILL_IDENTITY
+            const parentNow =
+                node.parent >= 0 ? after[node.parent]! : STILL_IDENTITY
+            const css = mapBox(invert(g.inner), g.box)
+            const onto = movingOnto(
+                css,
+                drawn.get(node.p) ?? g.a,
+                velocity.get(node.p) ?? ZERO_VELOCITY
             )
-            maps.push(map)
-            if (!node.p.drive) return
-            const seen = mapBox(map, mapBox(invert(g.inner), g.box))
-            const was = drawn.get(node.p)
-            drawn.set(node.p, seen)
-            const v = velocity.get(node.p)
-            if (v && was && was.w > 0 && was.h > 0) {
-                const rx = seen.w / was.w
-                const ry = seen.h / was.h
-                velocity.set(node.p, {
-                    x: v.x * rx,
-                    y: v.y * ry,
-                    w: v.w * rx,
-                    h: v.h * ry,
-                })
+            if (!onto) {
+                before.push(composeMoving(parentWas, still(g.inner)))
+                after.push(composeMoving(parentNow, still(inner)))
+                return
             }
+            // `onto` is the full map parent ∘ pose ∘ inner: the pose, with its rate
+            const pose = composeMoving(
+                invertMoving(parentWas),
+                composeMoving(onto, still(invert(g.inner)))
+            )
+            const next = composeMoving(
+                composeMoving(parentNow, pose),
+                still(inner)
+            )
+            before.push(onto)
+            after.push(next)
+            if (!node.p.drive) return
+            const seen = carry(next, css, ZERO_VELOCITY)
+            drawn.set(node.p, seen.box)
+            velocity.set(node.p, seen.velocity)
         })
+        for (const [id, entry] of pending) {
+            const k = frame.findIndex((node) => node.p === entry.parent)
+            if (k < 0 || entry.parent?.removed) continue
+            const shift = composeMoving(after[k]!, invertMoving(before[k]!))
+            const moved = carry(
+                shift,
+                entry.box,
+                entry.velocity ?? ZERO_VELOCITY
+            )
+            retained.set(id, {
+                box: moved.box,
+                velocity: entry.velocity ? moved.velocity : null,
+                until: entry.until,
+                parent: null,
+            })
+        }
     }
 
     function flush(): Promise<LayoutReport> {
@@ -860,8 +999,11 @@ export function createLayoutGroup(
             const parent = parentOf.get(p)
             return parent ? index.get(parent)! : -1
         })
+        const hasChild = list.map(() => false)
+        for (const parent of parents) if (parent >= 0) hasChild[parent] = true
 
         // the engine's own state before this flush
+        if (waapi) syncAnimations()
         const nowSolve = solveNodes(frame)
         const drawn = new Map<Participant, Box>()
         const velocity = new Map<Participant, BoxVelocity>()
@@ -919,14 +1061,21 @@ export function createLayoutGroup(
             }
             return added
         }
-        // every node with a driven node at or above it divides out poses
+        // every node with a driven node at or above it divides out poses; the
+        // parent of a lead removed since the last flush carries its box
+        const carriers = new Set<Participant | null>()
+        for (const entry of retained.values()) carriers.add(entry.parent)
         const chained: boolean[] = []
         list.forEach((p, i) => {
             const parent = parents[i]!
-            chained.push(p.drive !== null || (parent >= 0 && chained[parent]!))
+            chained.push(
+                p.drive !== null ||
+                    carriers.has(p) ||
+                    (parent >= 0 && chained[parent]!)
+            )
         })
         measureNodes(chained)
-        reconcileLayers(index, geometry, nowSolve, drawn, velocity)
+        reconcileLayers(index, geometry, drawn, velocity)
 
         const reduced = reducedMode()
         const ids = new Map<string, IdHistory>()
@@ -973,6 +1122,13 @@ export function createLayoutGroup(
                 const holding = moving && d!.elapsed < d!.track!.delay
                 const options = p.options
                 let unsupported = g?.unsupported ?? null
+                if (waapi && !unsupported) {
+                    if (parents[i]! >= 0 || hasChild[i])
+                        unsupported =
+                            "a nested participant (the 'waapi' engine)"
+                    else if (!supportsLinearEasing())
+                        unsupported = 'no CSS linear() easing'
+                }
                 if (!unsupported && (a.w <= 0 || a.h <= 0))
                     unsupported = 'zero size'
                 if (!unsupported && before) {
@@ -998,8 +1154,11 @@ export function createLayoutGroup(
                     fx: g?.fx ?? 0.5,
                     fy: g?.fy ?? 0.5,
                     before,
+                    // the WAAPI engine has no velocity term (§10)
                     velocity:
-                        moving && !holding ? (velocity.get(p) ?? null) : null,
+                        moving && !holding && !waapi
+                            ? (velocity.get(p) ?? null)
+                            : null,
                     moving,
                     track: moving ? d!.track : null,
                     trackTarget: moving ? d!.target : null,
@@ -1175,8 +1334,10 @@ export function createLayoutGroup(
                 existing.kind = kind
                 return existing
             }
-            const all = [...POSE_PROPERTIES, ...properties]
-            if (p.options.radius && g.radius) all.push(...RADIUS_PROPERTIES)
+            // the WAAPI engine writes no inline style
+            const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
+            if (!waapi && p.options.radius && g.radius)
+                all.push(...RADIUS_PROPERTIES)
             const d: Drive = {
                 kind,
                 track: null,
@@ -1195,6 +1356,17 @@ export function createLayoutGroup(
             p.drive = d
             return d
         }
+
+        // a pair that reverses mid-crossfade (the follower becomes the lead
+        // again) continues from the opacities it shows: nothing pops (§5.6)
+        const fadeFrom = new Map<number, number>()
+        actions.forEach((action, i) => {
+            if (action.kind !== 'track' || !action.fadeLead) return
+            const fade = list[i]!.drive?.fade
+            if (fade?.role === 'follower' && !fadeEnded(fade)) {
+                fadeFrom.set(i, 1 - leadWeight(fade))
+            }
+        })
 
         actions.forEach((action, i) => {
             const p = list[i]!
@@ -1255,6 +1427,7 @@ export function createLayoutGroup(
                     drive.fade = action.fadeLead
                         ? {
                               role: 'lead',
+                              from: fadeFrom.get(i) ?? 0,
                               elapsed: -action.track.delay,
                               started: false,
                               duration: action.track.duration,
@@ -1290,6 +1463,7 @@ export function createLayoutGroup(
                     drive.lead = lead
                     drive.fade = {
                         role: 'follower',
+                        from: fadeFrom.get(action.lead) ?? 0,
                         elapsed: -(track?.delay ?? 0),
                         started: false,
                         duration: track?.duration ?? 0,
@@ -1329,11 +1503,16 @@ export function createLayoutGroup(
         })
         frame = next
 
-        // the pose at each node's current time (t = 0 for a new track)
-        const running = frame.length > 0 && step(null)
-        commitWrites()
-        if (running) realizer.start()
-        else realizer.stop()
+        if (waapi) {
+            commitWrites()
+            playTracks()
+        } else {
+            // the pose at each node's current time (t = 0 for a new track)
+            const running = frame.length > 0 && step(null)
+            commitWrites()
+            if (running) realizer.start()
+            else realizer.stop()
+        }
 
         for (const { element, reason } of snapped)
             options.onSnap?.(element, reason)
@@ -1359,6 +1538,7 @@ export function createLayoutGroup(
         if (!d) return null
         const at = frame.findIndex((node) => node.p === p)
         if (at < 0) return null
+        if (waapi) syncAnimations()
         const nodes = solveNodes(frame)
         const box = drawnBoxes(nodes)[at]
         if (!box) return null
@@ -1421,7 +1601,7 @@ export function createLayoutGroup(
             if (d.track) d.elapsed = d.track.delay + d.track.duration
             if (d.fade) d.fade.elapsed = d.fade.duration
         }
-        if (status === 'ended') {
+        if (status === 'ended' && !waapi) {
             step(null)
             commitWrites()
         }
@@ -1439,11 +1619,31 @@ export function createLayoutGroup(
     const group: LayoutGroup = {
         add(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
+            if (waapi) {
+                validateWaapiOptions(layoutOptions)
+                for (const other of registry.keys()) {
+                    if (
+                        other !== element &&
+                        (other.contains(element) || element.contains(other))
+                    ) {
+                        throw invalidOptions(
+                            'type',
+                            "the 'waapi' engine animates top-level participants only; a nested participant needs the 'raf' engine."
+                        )
+                    }
+                }
+            }
             if (disposed) return noop
             let p = registry.get(element)
             if (p) {
                 // only a change that draws another track retargets (§3.3 inv. 5)
-                if (!sameTrackOptions(p.options, layoutOptions ?? {}))
+                if (
+                    !sameTrackOptions(
+                        p.options,
+                        layoutOptions ?? {},
+                        groupMotion
+                    )
+                )
                     p.changed = true
                 p.options = layoutOptions ?? {}
                 p.motion = null
@@ -1480,6 +1680,7 @@ export function createLayoutGroup(
                             box,
                             velocity: motion?.velocity ?? null,
                             until: now() + retain * 1000,
+                            parent: motion ? self.parent : null,
                         })
                 }
                 const d = self.drive
@@ -1487,6 +1688,7 @@ export function createLayoutGroup(
                     // unmount cancels its track (§9): the run reports
                     // 'disposed' if nothing else of it is left
                     cancelRunNode(self)
+                    stopAnimation(self)
                     d.release?.()
                     self.drive = null
                     pending = pending.filter((w) => w.element !== element)
@@ -1509,9 +1711,11 @@ export function createLayoutGroup(
 
         set(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
+            if (waapi) validateWaapiOptions(layoutOptions)
             const p = registry.get(element)
             if (!p) return
-            if (!sameTrackOptions(p.options, layoutOptions)) p.changed = true
+            if (!sameTrackOptions(p.options, layoutOptions, groupMotion))
+                p.changed = true
             p.options = layoutOptions
             p.motion = null
         },
