@@ -900,9 +900,10 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
         expect(checked).toBeGreaterThan(100)
     })
 
-    it('a follower is drawn at its lead in the space both share, in either order, with its rate (random trees with layers, J-037)', () => {
+    it('a follower is drawn at its lead as its own flush draws its ancestors, in either order, with its rate (random trees with layers, J-037/J-038)', () => {
         let before = 0
         let after = 0
+        let apart = 0
         let rates = 0
         for (let seed = 1; seed <= 300; seed++) {
             const built = randomTree(seed)
@@ -939,10 +940,22 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
             const hi2 = drawnBoxes(shift(h / 2))
             const analytic = drawnVelocities(nodes)
             for (const [f, l] of pairs) {
-                // the browser chain with every element's own inner transform:
-                // the space every layer is relative to
-                const fb = rendered(f, built.dom, poses)
-                const lb = rendered(l, built.dom, poses)
+                // the browser chain: the follower as its flush saw its
+                // ancestors; the lead with those same ancestors, and every
+                // other element as the lead's flush saw it
+                const fb = renderedIn(f, built.dom, poses, layered.subs[f]!)
+                const seen: Sub = new Map(layered.subs[l]!)
+                for (
+                    let k = built.nodes[l]!.parent;
+                    k >= 0;
+                    k = nodes[k]!.parent
+                ) {
+                    if (!above(k, f)) continue
+                    const q = layered.subs[f]!.get(k)
+                    if (q) seen.set(k, q)
+                    else seen.delete(k)
+                }
+                const lb = renderedIn(l, built.dom, poses, seen)
                 const scale = 1 + Math.abs(lb.x) + lb.w
                 expect(
                     maxDiff(fb, lb) / scale,
@@ -950,6 +963,13 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
                 ).toBeLessThan(1e-9)
                 if (f < l) before++
                 else after++
+                if (
+                    [
+                        ...layered.subs[f]!.keys(),
+                        ...layered.subs[l]!.keys(),
+                    ].some((k) => !above(k, f) || !above(k, l))
+                )
+                    apart++
                 const fd = (a: Box[], b: Box[], step: number) => ({
                     x: (b[f]!.x - a[f]!.x) / (2 * step),
                     y: (b[f]!.y - a[f]!.y) / (2 * step),
@@ -967,7 +987,94 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
         }
         expect(before).toBeGreaterThan(50)
         expect(after).toBeGreaterThan(50)
+        expect(apart).toBeGreaterThan(50)
         expect(rates).toBeGreaterThan(100)
+    })
+
+    it('a new follower under a changed layer is drawn at a lead outside that parent as is (J-038)', () => {
+        const motion = resolveMotion([{ duration: 1, timing: timing.linear() }])
+        // the parent's track was planned under scaleX(0.8); its layer is 1 now
+        const frozen = aboutOrigin({ tx: 0, ty: 0, sx: 0.8, sy: 1 }, 200, 0)
+        const parentCss = { x: 200, y: 0, w: 300, h: 100 }
+        const parent = rootNode(
+            { x: 200, y: 0, w: 240, h: 100 },
+            {
+                box: mapBox(frozen, parentCss),
+                ox: 200,
+                inner: frozen,
+                track: createTrack(
+                    { x: 120, y: 0, w: 240, h: 100 },
+                    { x: 200, y: 0, w: 240, h: 100 },
+                    { x: 100, y: 0, w: 0, h: 0 },
+                    0,
+                    0,
+                    true,
+                    motion,
+                    null
+                ),
+                elapsed: 0.25,
+            }
+        )
+        // the follower, planned in this flush: its view of the parent is 1
+        const follower = rootNode(
+            { x: 200, y: 0, w: 40, h: 40 },
+            {
+                parent: 0,
+                follow: 2,
+                layers: [{ at: 0, map: compose(invert(frozen), IDENTITY_MAP) }],
+            }
+        )
+        // the new lead, top level, from the follower's box B
+        const lead = rootNode(
+            { x: 400, y: 0, w: 100, h: 40 },
+            {
+                track: createTrack(
+                    { x: 120, y: 0, w: 40, h: 40 },
+                    { x: 400, y: 0, w: 100, h: 40 },
+                    { x: 100, y: 0, w: 0, h: 0 },
+                    0,
+                    0,
+                    true,
+                    motion,
+                    null
+                ),
+                elapsed: 0.3,
+            }
+        )
+        for (const nodes of [
+            [parent, follower, lead],
+            // the lead first: its index moves
+            [
+                lead,
+                parent,
+                {
+                    ...follower,
+                    parent: 1,
+                    follow: 0,
+                    layers: [{ at: 1, map: follower.layers![0]!.map }],
+                },
+            ],
+        ]) {
+            const solved = solve(nodes)
+            const boxes = drawnBoxes(nodes)
+            const velocities = drawnVelocities(nodes)
+            const f = nodes.findIndex((n) => n.follow >= 0)
+            const l = nodes[f]!.follow
+            expect(boxes[f]).toEqual(boxes[l])
+            expect(velocities[f]).toEqual(velocities[l])
+            // as the browser draws it: the parent's pose under its current layer 1
+            const p = nodes[f]!.parent
+            const actual = compose(
+                aboutOrigin(solved[p]!.pose, 200, 0),
+                aboutOrigin(solved[f]!.pose, 200, 0)
+            )
+            expect(
+                maxDiff(
+                    mapBox(actual, { x: 200, y: 0, w: 40, h: 40 }),
+                    boxes[l]!
+                )
+            ).toBeLessThan(TOL)
+        }
     })
 
     it("a child planned after its parent's layer changed is drawn through that layer, not the frozen one", () => {
