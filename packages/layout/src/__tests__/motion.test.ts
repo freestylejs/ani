@@ -1,0 +1,149 @@
+import { isAniError, timing } from '@freestylejs/ani-core'
+import { describe, expect, it } from 'vitest'
+import {
+    clampMotion,
+    curveOf,
+    resolveMotion,
+    validateLayoutOptions,
+    validateMotion,
+    validateReducedMotion,
+} from '../motion'
+
+function code(fn: () => unknown): string | null {
+    try {
+        fn()
+        return null
+    } catch (error) {
+        return isAniError(error) ? error.code : 'not an AniError'
+    }
+}
+
+describe('motion: validation throws ANI_INVALID_OPTIONS synchronously', () => {
+    const bad: [string, unknown][] = [
+        ['layout: "box"', { layout: 'box' }],
+        ['layout: false', { layout: false }],
+        ['empty layoutId', { layoutId: '' }],
+        ['anchor outside 0..1', { layoutAnchor: { x: 1.2, y: 0 } }],
+        ['anchor missing y', { layoutAnchor: { x: 0.5 } }],
+        ['non-boolean crossfade', { layoutCrossfade: 'yes' }],
+        ['non-boolean radius', { radius: 1 }],
+        ['unknown option', { layoutRoot: true }],
+        ['negative duration', { motion: { duration: -1 } }],
+        ['NaN delay', { motion: { delay: Number.NaN } }],
+        [
+            'infinite duration',
+            { motion: { duration: Number.POSITIVE_INFINITY } },
+        ],
+        ['not a timing', { motion: { timing: 'ease' } }],
+        [
+            'stateful timing',
+            {
+                motion: {
+                    timing: timing.dynamicSpring({ m: 1, k: 100, c: 10 }),
+                },
+            },
+        ],
+        ['unknown motion key', { motion: { easing: 1 } }],
+        ['not an object', 'fast'],
+    ]
+    for (const [name, value] of bad) {
+        it(name, () => {
+            expect(code(() => validateLayoutOptions(value))).toBe(
+                'ANI_INVALID_OPTIONS'
+            )
+        })
+    }
+
+    it('accepts every valid option', () => {
+        expect(
+            code(() =>
+                validateLayoutOptions({
+                    layout: 'position',
+                    layoutId: 'a',
+                    layoutAnchor: { x: 0, y: 1 },
+                    layoutCrossfade: false,
+                    layoutDependency: Symbol('d'),
+                    radius: true,
+                    motion: {
+                        duration: 0,
+                        delay: 0.1,
+                        timing: timing.spring({ m: 1, k: 100, c: 10 }),
+                    },
+                })
+            )
+        ).toBeNull()
+        expect(code(() => validateLayoutOptions(undefined))).toBeNull()
+        expect(code(() => validateMotion({}))).toBeNull()
+    })
+
+    it('reduced-motion policies', () => {
+        expect(validateReducedMotion(undefined)).toBe('jump')
+        expect(validateReducedMotion('ignore')).toBe('ignore')
+        expect(validateReducedMotion({ maxDuration: 0.2 })).toEqual({
+            maxDuration: 0.2,
+        })
+        expect(code(() => validateReducedMotion({ maxDuration: 0 }))).toBe(
+            'ANI_INVALID_OPTIONS'
+        )
+        expect(code(() => validateReducedMotion('skip'))).toBe(
+            'ANI_INVALID_OPTIONS'
+        )
+    })
+})
+
+describe('motion: defaults, merge and clamp', () => {
+    it('defaults: 0.35 s, no delay, ease-out', () => {
+        const m = resolveMotion([])
+        expect(m.duration).toBe(0.35)
+        expect(m.delay).toBe(0)
+        expect(m.curve.slope0).toBeCloseTo(1 / 0.58, 4)
+    })
+
+    it('later layers win field by field', () => {
+        const fn = timing.linear()
+        const m = resolveMotion([
+            { duration: 1, delay: 0.5 },
+            { duration: 0.2 },
+            undefined,
+            { timing: fn },
+        ])
+        expect(m).toMatchObject({ duration: 0.2, delay: 0.5 })
+        expect(m.curve).toBe(curveOf(fn))
+    })
+
+    it('maxDuration scales delay + duration to fit; shorter runs untouched', () => {
+        const m = resolveMotion([{ duration: 0.6, delay: 0.2 }])
+        const c = clampMotion(m, 0.2)
+        expect(c.duration).toBeCloseTo(0.15, 12)
+        expect(c.delay).toBeCloseTo(0.05, 12)
+        expect(clampMotion(m, 1)).toBe(m)
+    })
+})
+
+describe('motion: curves', () => {
+    it('are normalized to e(0) = 0 and e(1) = 1, including a spring', () => {
+        for (const fn of [
+            timing.linear(),
+            timing.easeInOut(),
+            timing.spring({ m: 1, k: 50, c: 3 }),
+        ]) {
+            const curve = curveOf(fn)
+            expect(curve.value(0)).toBe(0)
+            expect(curve.value(1)).toBe(1)
+            expect(curve.value(-1)).toBe(0)
+            expect(curve.value(2)).toBe(1)
+        }
+    })
+
+    it('a spring starts at rest; linear has slope 1', () => {
+        expect(curveOf(timing.linear()).slope0).toBeCloseTo(1, 6)
+        expect(
+            Math.abs(curveOf(timing.spring({ m: 1, k: 200, c: 20 })).slope0)
+        ).toBeLessThan(0.05)
+    })
+
+    it('is cached per timing instance', () => {
+        const fn = timing.ease()
+        expect(curveOf(fn)).toBe(curveOf(fn))
+    })
+})
