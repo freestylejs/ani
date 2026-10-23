@@ -45,6 +45,26 @@ export function Box() {
 | `useAniStates(config)` | Own a state machine and animate an element. |
 | `useFollow(initial, options?)` | Own a spring follower and animate an element. |
 
+## Layout animation
+
+`@freestylejs/ani-react/layout` animates layout changes on every commit. It needs the optional peer `@freestylejs/ani-layout`:
+
+```sh
+npm install @freestylejs/ani-layout
+```
+
+```tsx
+import { useLayout } from '@freestylejs/ani-react/layout'
+
+function Item({ label }: { label: string }) {
+    // animates whenever a commit moves this element
+    const ref = useLayout<HTMLLIElement>({ layout: 'position' })
+    return <li ref={ref}>{label}</li>
+}
+```
+
+It also exports `LayoutGroup`, `useLayoutGroup`, `AnimatePresence`, `usePresence` and `usePresenceControl`. See the [Layout guide](https://freestyle-ani.vercel.app/en/docs/guides/layout).
+
 ## Documentation
 
 Visit [ani](https://freestyle-ani.vercel.app/en/docs/react/use-timeline) to read the documentation.
