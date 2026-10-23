@@ -11,7 +11,7 @@ import {
     type Route,
     webkit,
 } from 'playwright'
-import { bundleForBrowser } from './bundle.ts'
+import { type BrowserVariant, bundleForBrowser } from './bundle.ts'
 import { renderToMarkup } from './ssr.ts'
 
 declare global {
@@ -32,7 +32,17 @@ const MODULES = [
     'layout',
     'react_layout',
     'cpc',
+    'spike',
+    'spike_r18',
+    'spike_rc',
+    'spike_r18c',
 ] as const
+/** Modules built against React 18.3 and/or with the React Compiler. */
+const VARIANTS: Partial<Record<(typeof MODULES)[number], BrowserVariant>> = {
+    spike_r18: { react18: true },
+    spike_rc: { compiler: true },
+    spike_r18c: { react18: true, compiler: true },
+}
 const CASE_TIMEOUT_MS = 10_000
 const LOAD_TIMEOUT_MS = 10_000
 
@@ -273,7 +283,8 @@ async function inspect(
     name: ModuleName
 ): Promise<CaseModule> {
     const code = await bundleForBrowser(
-        fileURLToPath(new URL(`./cases/${name}.ts`, import.meta.url))
+        fileURLToPath(new URL(`./cases/${name}.ts`, import.meta.url)),
+        VARIANTS[name]
     )
     const module: CaseModule = {
         name,
