@@ -89,7 +89,7 @@ export interface Solved {
 /** Velocity of a drawn box, px per second for x, y, w, h. */
 export type BoxVelocity = Box
 
-const ZERO_VELOCITY: BoxVelocity = { x: 0, y: 0, w: 0, h: 0 }
+export const ZERO_VELOCITY: BoxVelocity = { x: 0, y: 0, w: 0, h: 0 }
 
 export function channelsOf(box: Box, fx: number, fy: number): Channels {
     return [box.x + fx * box.w, box.y + fy * box.h, box.w, box.h]
