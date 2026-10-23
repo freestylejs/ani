@@ -15,6 +15,7 @@ import { rootNode } from './nodes'
 import {
     applyPose,
     easing,
+    easingSlope0,
     expectedBox,
     maxDiff,
     NO_POSE,
@@ -139,19 +140,32 @@ function randomTree(seed: number): Built {
             const v = random()
             const parentBefore = specs[parent]!.before
             const parentAfter = nodes[parent]!.a
+            const fromX =
+                before.x + u * before.w - (parentBefore.x + u * parentBefore.w)
+            const fromY =
+                before.y + v * before.h - (parentBefore.y + v * parentBefore.h)
+            const toX = a.x + u * a.w - (parentAfter.x + u * parentAfter.w)
+            const toY = a.y + v * a.h - (parentAfter.y + v * parentAfter.h)
+            // a moving node carries its velocity relative to the parent's anchor point
+            const pv = specs[parent]!.velocity ?? { x: 0, y: 0, w: 0, h: 0 }
+            const s0 = easingSlope0(fn)
+            const kx = velocity
+                ? (velocity.x + u * velocity.w - (pv.x + u * pv.w)) * duration +
+                  (fromX - toX) * s0
+                : 0
+            const ky = velocity
+                ? (velocity.y + v * velocity.h - (pv.y + v * pv.h)) * duration +
+                  (fromY - toY) * s0
+                : 0
             rule = {
                 u,
                 v,
-                fromX:
-                    before.x +
-                    u * before.w -
-                    (parentBefore.x + u * parentBefore.w),
-                fromY:
-                    before.y +
-                    v * before.h -
-                    (parentBefore.y + v * parentBefore.h),
-                toX: a.x + u * a.w - (parentAfter.x + u * parentAfter.w),
-                toY: a.y + v * a.h - (parentAfter.y + v * parentAfter.h),
+                kx,
+                ky,
+                fromX,
+                fromY,
+                toX,
+                toY,
             }
         }
         const track = createTrack(
@@ -209,19 +223,22 @@ function oracleDrawn(built: Built): OBox[] {
         const t = node.elapsed - spec.delay
         const tau = t <= 0 ? 0 : Math.min(1, t / spec.duration)
         const rest = 1 - easing(spec.timing, tau)
+        const bump = tau > 0 && tau < 1 ? tau * (1 - tau) ** 2 : 0
         out.push({
             x:
                 parent.x +
                 anchor.u * parent.w -
                 anchor.u * own.w +
                 rule.toX +
-                (rule.fromX - rule.toX) * rest,
+                (rule.fromX - rule.toX) * rest +
+                rule.kx * bump,
             y:
                 parent.y +
                 anchor.v * parent.h -
                 anchor.v * own.h +
                 rule.toY +
-                (rule.fromY - rule.toY) * rest,
+                (rule.fromY - rule.toY) * rest +
+                rule.ky * bump,
             w: own.w,
             h: own.h,
         })
@@ -611,5 +628,62 @@ describe('solve: crossfade and radius', () => {
         const r = solved[0]!.radius!
         expect(r[0]! * (drawn.w / a.w)).toBeCloseTo(20, 12)
         expect(r[1]! * (drawn.h / a.h)).toBeCloseTo(20, 12)
+    })
+})
+
+describe('solve: CP3 trial regressions', () => {
+    const motion = resolveMotion([{ duration: 1, timing: timing.linear() }])
+
+    it('J-009: a follower listed before its lead is drawn at the lead, with its velocity', () => {
+        const a = { x: 200, y: 0, w: 400, h: 100 }
+        const lead = rootNode(a, {
+            track: createTrack(
+                { x: 10, y: 0, w: 80, h: 100 },
+                a,
+                null,
+                0,
+                0,
+                true,
+                motion,
+                null
+            ),
+            elapsed: 0.5,
+        })
+        const follower = rootNode({ x: 10, y: 0, w: 80, h: 100 }, { follow: 1 })
+        for (const nodes of [
+            [follower, lead],
+            [{ ...lead }, { ...follower, follow: 0 }],
+        ]) {
+            const boxes = drawnBoxes(nodes)
+            const velocities = drawnVelocities(nodes)
+            expect(boxes[0]).toEqual(boxes[1])
+            expect(velocities[0]).toEqual(velocities[1])
+            const leadIndex = nodes[0]!.follow >= 0 ? 1 : 0
+            expect(boxes[leadIndex]!.x).toBeCloseTo(105, 12)
+            expect(velocities[leadIndex]!.x).toBeCloseTo(190, 9)
+        }
+    })
+
+    it('J-015: a subpixel endpoint is exact; the floor is the smaller endpoint below one pixel', () => {
+        const b = { x: 0, y: 0, w: 10, h: 10 }
+        const a = { x: 0, y: 0, w: 0.5, h: 0.5 }
+        const track = createTrack(
+            b,
+            a,
+            { x: 0, y: 0, w: -100, h: -100 },
+            0,
+            0,
+            true,
+            motion,
+            null
+        )
+        let low = Number.POSITIVE_INFINITY
+        for (let e = 0; e <= 1.0001; e += 0.01) {
+            const box = drawnBoxes([rootNode(a, { track, elapsed: e })])[0]!
+            low = Math.min(low, box.w)
+        }
+        expect(low).toBeCloseTo(0.5, 12)
+        expect(drawnBoxes([rootNode(a, { track, elapsed: 1 })])[0]!.w).toBe(0.5)
+        expect(drawnBoxes([rootNode(a, { track, elapsed: 0 })])[0]!.w).toBe(10)
     })
 })

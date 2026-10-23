@@ -1,4 +1,4 @@
-import { isAniError, timing } from '@freestylejs/ani-core'
+import { isAniError, TimingFunction, timing } from '@freestylejs/ani-core'
 import { describe, expect, it } from 'vitest'
 import {
     clampMotion,
@@ -8,6 +8,16 @@ import {
     validateMotion,
     validateReducedMotion,
 } from '../motion'
+
+/** e(τ) = √τ: an infinite initial slope no momentum term can cancel. */
+class SqrtTiming extends TimingFunction {
+    override step(time: number) {
+        return {
+            value: Math.sqrt(Math.max(0, Math.min(1, time))),
+            endOfAnimation: time >= 1,
+        }
+    }
+}
 
 function code(fn: () => unknown): string | null {
     try {
@@ -44,6 +54,21 @@ describe('motion: validation throws ANI_INVALID_OPTIONS synchronously', () => {
             },
         ],
         ['unknown motion key', { motion: { easing: 1 } }],
+        [
+            'a bezier that starts vertically (CP3 trial J-014)',
+            {
+                motion: {
+                    timing: timing.bezier({
+                        p2: { x: 0, y: 1 },
+                        p3: { x: 1, y: 1 },
+                    }),
+                },
+            },
+        ],
+        [
+            'a custom timing that starts vertically',
+            { motion: { timing: new SqrtTiming() } },
+        ],
         ['not an object', 'fast'],
     ]
     for (const [name, value] of bad) {

@@ -19,7 +19,7 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         fx: 0.5,
         fy: 0.5,
         before: { x: 100, y: 100, w: 100, h: 50 },
-        velocity: { x: 0, y: 0, w: 0, h: 0 },
+        velocity: null,
         moving: false,
         track: null,
         trackTarget: null,
@@ -382,6 +382,8 @@ describe('plan: nesting and anchors', () => {
             fromY: 0,
             toX: 0,
             toY: 0,
+            kx: 0,
+            ky: 0,
         })
         expect(action.track.delay).toBe(0.8)
         void child
@@ -455,5 +457,168 @@ describe('plan: snaps', () => {
         )
         expect(result.status).toBe('stale')
         expect(result.snapped).toEqual([{ index: 1, reason: 'stale' }])
+    })
+})
+
+describe('plan: CP3 trial regressions', () => {
+    const linear = resolveMotion([{ duration: 1, timing: timing.linear() }])
+    const box = (x: number, w = 20): Box => ({ x, y: 0, w, h: 20 })
+
+    it('J-010: an anchor without a participant parent is ignored; the node moves by its mode', () => {
+        const result = plan(
+            input([
+                node({
+                    a: box(100),
+                    before: box(0),
+                    anchor: { x: 0, y: 0 },
+                    motion: linear,
+                }),
+            ])
+        )
+        const action = result.actions[0]!
+        if (action.kind !== 'track') throw new Error('expected a track')
+        expect(action.track.anchor).toBeNull()
+        const at = drawnBoxes([
+            rootNode(box(100), { track: action.track, elapsed: 0.5 }),
+        ])[0]!
+        expect(at.x).toBeCloseTo(50, 12)
+    })
+
+    it('J-010: an anchored child whose offset changes under a stationary parent animates', () => {
+        const parent = { x: 0, y: 0, w: 400, h: 100 }
+        const result = plan(
+            input([
+                node({ a: parent, before: parent }),
+                node({
+                    parent: 0,
+                    a: box(100),
+                    before: box(0),
+                    anchor: { x: 0, y: 0 },
+                    motion: linear,
+                }),
+            ])
+        )
+        expect(result.actions.map((a) => a.kind)).toEqual(['none', 'track'])
+    })
+
+    it('J-010: a running anchored track whose offset target moved is retargeted, an unchanged one kept', () => {
+        const parent = { x: 0, y: 0, w: 400, h: 100 }
+        const first = plan(
+            input([
+                node({ a: parent, before: parent }),
+                node({
+                    parent: 0,
+                    a: box(100),
+                    before: box(0),
+                    anchor: { x: 0, y: 0 },
+                    motion: linear,
+                }),
+            ])
+        ).actions[1]!
+        if (first.kind !== 'track') throw new Error('expected a track')
+        const running = (a: Box) =>
+            node({
+                parent: 0,
+                a,
+                before: box(50),
+                anchor: { x: 0, y: 0 },
+                motion: linear,
+                moving: true,
+                track: first.track,
+                trackTarget: box(100),
+                velocity: { x: 100, y: 0, w: 0, h: 0 },
+            })
+        const parentNode = node({ a: parent, before: parent })
+        expect(
+            plan(input([parentNode, running(box(100))])).actions[1]!.kind
+        ).toBe('keep')
+        expect(
+            plan(input([parentNode, running(box(200))])).actions[1]!.kind
+        ).toBe('track')
+    })
+
+    it('J-011: an anchored retarget keeps the incoming visual velocity', () => {
+        const parent = { x: 0, y: 0, w: 400, h: 100 }
+        const parentNode = node({ a: parent, before: parent })
+        const result = plan(
+            input([
+                parentNode,
+                node({
+                    parent: 0,
+                    a: box(200, 40),
+                    before: box(50),
+                    anchor: { x: 0, y: 0 },
+                    motion: linear,
+                    moving: true,
+                    velocity: { x: 100, y: 0, w: 0, h: 0 },
+                }),
+            ])
+        )
+        const action = result.actions[1]!
+        if (action.kind !== 'track') throw new Error('expected a track')
+        const nodes = [
+            rootNode(parent),
+            { ...rootNode(box(200, 40), { track: action.track }), parent: 0 },
+        ]
+        expect(drawnBoxes(nodes)[1]!.x).toBeCloseTo(50, 12)
+        expect(drawnVelocities(nodes)[1]!.x).toBeCloseTo(100, 9)
+        const h = 1e-7
+        const later = nodes.map((n) => ({ ...n, elapsed: h }))
+        expect((drawnBoxes(later)[1]!.x - 50) / h).toBeCloseTo(100, 3)
+    })
+
+    it('J-012: a registered node that becomes the lead takes over the departing lead (handoff + crossfade)', () => {
+        const ids = new Map<string, IdHistory>([
+            ['x', { lead: 1, retained: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'x',
+                        order: 1,
+                        a: box(10, 80),
+                        before: box(10, 80),
+                    }),
+                    node({
+                        layoutId: 'x',
+                        order: 2,
+                        a: box(200, 300),
+                        before: box(200, 300),
+                        exiting: true,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.leads.get('x')).toBe(0)
+        const action = result.actions[0]!
+        if (action.kind !== 'track') throw new Error('expected a track')
+        expect(action.fadeLead).toBe(true)
+        expect(result.actions[1]).toEqual({
+            kind: 'follow',
+            lead: 0,
+            start: true,
+        })
+        const at = drawnBoxes([
+            rootNode(box(10, 80), { fx: 0.5, fy: 0.5, track: action.track }),
+        ])[0]!
+        expect(at.x).toBeCloseTo(200, 12)
+        expect(at.w).toBeCloseTo(300, 12)
+    })
+
+    it('J-013: an offscreen child under a visible mover is culled before the cap and stays counter-projected', () => {
+        const result = plan(
+            input(
+                [
+                    node({ a: box(100), before: box(0) }),
+                    node({ parent: 0, a: box(2000), before: box(2100) }),
+                ],
+                { maxNodes: 1 }
+            )
+        )
+        expect(result.status).toBe('run')
+        expect(result.actions.map((a) => a.kind)).toEqual(['track', 'static'])
+        expect(result.snapped).toEqual([{ index: 1, reason: 'culled' }])
     })
 })
