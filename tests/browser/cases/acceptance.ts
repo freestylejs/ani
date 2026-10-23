@@ -31,6 +31,7 @@ import {
     expectAt,
     expectUnmoved,
     frames,
+    framesUntilDone,
     mountRoot,
     offset,
     pageBox,
@@ -53,6 +54,22 @@ function centre(box: OBox): [number, number] {
 
 function opacity(element: Element): number {
     return Number(getComputedStyle(element).opacity)
+}
+
+/** The computed text styles that set an element's glyph metrics. */
+function fontOf(element: Element): string {
+    const s = getComputedStyle(element)
+    return [
+        s.fontFamily,
+        s.fontSize,
+        s.fontWeight,
+        s.fontStyle,
+        s.fontStretch,
+        s.lineHeight,
+        s.letterSpacing,
+        s.wordSpacing,
+        s.textTransform,
+    ].join(' | ')
 }
 
 /** The presence part of `transform`: [scaleX, translateY]. */
@@ -90,7 +107,7 @@ export async function E1Anchor(): Promise<string> {
         let worst = 0
         let centreError = 0
         let started = Number.NaN
-        await frames(
+        await framesUntilDone(
             mc,
             120,
             (t) => {
@@ -199,7 +216,7 @@ export async function E2Create(): Promise<string> {
         await toggle(false)
         await frames(mc, 31, check) // reopen at 500 ms
         await toggle(true)
-        await frames(
+        await framesUntilDone(
             mc,
             90,
             check,
@@ -228,7 +245,12 @@ export async function E2Create(): Promise<string> {
 
 /* ───────────────────────── E3 ───────────────────────── */
 
-/** E3: four shared tiles from the folder to the panel; items at scale 0.2 with a stagger; reopen at 500 ms. */
+/**
+ * E3: four shared tiles from the folder to the panel on the oracle; the
+ * non-shared items enter from the measured folder origin at scale 0.2, each
+ * on its own staggered enter path every frame, and every run settles; reopen
+ * at 500 ms.
+ */
 export async function E3Folder(): Promise<string> {
     const mc = createManualClock()
     const view = mountRoot()
@@ -242,6 +264,7 @@ export async function E3Folder(): Promise<string> {
         )
     const key = (e: HTMLElement) =>
         `${e.closest('[data-folder]')?.getAttribute('data-folder')}/${e.dataset.layoutId}`
+    const done = () => settled(view.host) && mc.clock.size === 0
     try {
         await view.render(app(false))
         const stage = pageBox(q(view.host, '[data-fixture="folder"]'))
@@ -249,43 +272,160 @@ export async function E3Folder(): Promise<string> {
             const t = folderTile(i, open)
             return offset(stage, { x: t.x, y: t.y, w: t.size, h: t.size })
         }
+        // the point the items grow out of: the folder's measured centre
+        const [ox, oy] = centre(pageBox(q(view.host, '[data-folder="closed"]')))
+        // the enter path, derived here and not by the presence runtime: item
+        // k holds scale 0.2 for k staggers, then follows the fixture's
+        // spring (its own step function, from 0.2 to 1 over the enter
+        // duration) about the folder origin. An enter's timeline starts at
+        // the commit, so the harness frame at elapsed t (whose layout dt is
+        // 0) is one frame into it: `p = t + DT`.
+        const enterScale = (k: number, p: number) => {
+            const local = p - k * E3.stagger
+            if (local <= 0) return E3.enterScale
+            const r = SPRING.step(local, {
+                dt: 0,
+                from: E3.enterScale,
+                to: 1,
+                duration: E3.enterDuration,
+            })
+            return r.endOfAnimation ? 1 : r.value
+        }
+        const enterBox = (k: number, scale: number): OBox => {
+            const b = at(E3.shared + k, true)
+            return {
+                x: ox + scale * (b.x - ox),
+                y: oy + scale * (b.y - oy),
+                w: scale * b.w,
+                h: scale * b.h,
+            }
+        }
+        let enterFirst = 0
+        let enterPath = 0
+        let stagger = 0
+        const allStarts: string[] = []
+        /** Every frame of one opening: the items on their enter paths, then settled. */
+        const enter = async (
+            label: string,
+            check: (t: number) => void = () => undefined
+        ) => {
+            const items = [
+                ...view.host.querySelectorAll<HTMLElement>(
+                    '[data-folder-item]'
+                ),
+            ]
+            expectEqual(items.length, E3.others, `${label}: items mounted`)
+            items.forEach((item, k) => {
+                expectEqual(item.dataset.folderItem, String(k), 'item order')
+                // the first frame: scale 0.2, on the folder origin
+                expectClose(
+                    pageBox(item).w / E3.open.tile,
+                    E3.enterScale,
+                    0.02,
+                    `${label}: item ${k} enter scale`
+                )
+                enterFirst = Math.max(
+                    enterFirst,
+                    expectAt(
+                        item,
+                        enterBox(k, E3.enterScale),
+                        `${label}: item ${k} first frame on the folder origin`
+                    )
+                )
+            })
+            const starts = items.map(() => Number.NaN)
+            await framesUntilDone(
+                mc,
+                90,
+                (t) => {
+                    check(t)
+                    items.forEach((item, k) => {
+                        if (!item.isConnected) {
+                            throw new Error(`${label}: item ${k} left`)
+                        }
+                        enterPath = Math.max(
+                            enterPath,
+                            expectAt(
+                                item,
+                                enterBox(k, enterScale(k, t + DT)),
+                                `${label}: item ${k} enter t=${t}`
+                            )
+                        )
+                        const scale = pageBox(item).w / E3.open.tile
+                        if (
+                            Number.isNaN(starts[k]!) &&
+                            scale - E3.enterScale > 1e-3
+                        ) {
+                            starts[k] = t + DT
+                        }
+                    })
+                },
+                done,
+                `${label}: the enter`
+            )
+            items.forEach((item, k) => {
+                if (!Number.isFinite(starts[k]!)) {
+                    throw new Error(
+                        `${label}: item ${k} never started its enter`
+                    )
+                }
+                // the first moving frame of its timeline is within one frame after
+                // k staggers
+                const late = starts[k]! - k * E3.stagger
+                if (!(late > 0 && late <= DT + 1e-9)) {
+                    throw new Error(
+                        `${label}: item ${k} started at ${starts[k]} s, not within one frame after ${k * E3.stagger} s`
+                    )
+                }
+                if (k > 0) {
+                    stagger = Math.max(
+                        stagger,
+                        Math.abs(starts[k]! - starts[k - 1]! - E3.stagger)
+                    )
+                }
+                expectAt(
+                    item,
+                    at(E3.shared + k, true),
+                    `${label}: item ${k} final`,
+                    0.01
+                )
+            })
+            if (!(stagger <= DT + 1e-9)) {
+                throw new Error(
+                    `${label}: stagger off by ${stagger} s (starts ${starts.join(', ')})`
+                )
+            }
+            allStarts.push(
+                `${label} ${starts.map((s) => s.toFixed(3)).join('/')}`
+            )
+        }
         await view.render(app(true))
         // the first frame: the shared tiles are where the folder showed them
         let first = 0
-        tiles('open').forEach((tile, i) => {
+        const shared = tiles('open')
+        shared.forEach((tile, i) => {
             first = Math.max(
                 first,
                 expectAt(tile, at(i, false), `tile ${i} first frame`)
             )
         })
-        const starts: number[] = []
-        const full = E3.open.tile
-        for (const item of view.host.querySelectorAll('[data-folder-item]')) {
-            expectClose(
-                pageBox(item).w / full,
-                E3.enterScale,
-                0.02,
-                'item enter scale'
-            )
-        }
-        await frames(
-            mc,
-            90,
-            (t) => {
-                for (const item of view.host.querySelectorAll<HTMLElement>(
-                    '[data-folder-item]'
-                )) {
-                    const k = Number(item.dataset.folderItem)
-                    if (
-                        starts[k] === undefined &&
-                        pageBox(item).w > full * E3.enterScale * 1.02
-                    ) {
-                        starts[k] = t
-                    }
-                }
-            },
-            () => settled(view.host) && mc.clock.size === 0
+        // then on their tracks from the folder to the panel every frame
+        const tracks = shared.map((_, i) =>
+            spec(at(i, false), at(i, true), motion)
         )
+        let worst = 0
+        await enter('open', (t) => {
+            shared.forEach((tile, i) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        tile,
+                        expectedBox(tracks[i]!, t),
+                        `tile ${i} t=${t}`
+                    )
+                )
+            })
+        })
         let final = 0
         tiles('open').forEach((tile, i) => {
             final = Math.max(
@@ -293,18 +433,6 @@ export async function E3Folder(): Promise<string> {
                 expectAt(tile, at(i, true), `tile ${i} final`, 0.01)
             )
         })
-        let stagger = 0
-        for (let k = 1; k < E3.others; k++) {
-            stagger = Math.max(
-                stagger,
-                Math.abs(starts[k]! - starts[0]! - k * E3.stagger)
-            )
-        }
-        if (stagger > DT + 1e-9) {
-            throw new Error(
-                `stagger off by ${stagger} s (starts ${starts.join(', ')})`
-            )
-        }
         // close, then reopen at 500 ms: nothing jumps at either commit
         let jumps = 0
         const before = picture(view.host, '[data-layout-id]', key)
@@ -314,19 +442,14 @@ export async function E3Folder(): Promise<string> {
         const mid = picture(view.host, '[data-layout-id]', key)
         await view.render(app(true))
         jumps = Math.max(jumps, expectUnmoved(mid, 'reopen at 500 ms'))
-        await frames(
-            mc,
-            120,
-            () => undefined,
-            () => settled(view.host) && mc.clock.size === 0
-        )
+        await enter('reopen')
         tiles('open').forEach((tile, i) => {
             final = Math.max(
                 final,
                 expectAt(tile, at(i, true), `tile ${i} after reopen`, 0.01)
             )
         })
-        return `tiles: first frame within ${first.toFixed(4)} px, final within ${final.toFixed(4)} px; items at scale 0.2; stagger within ${stagger.toFixed(3)} s; close/reopen without a jump (${jumps.toFixed(4)} px)`
+        return `tiles: first frame within ${first.toFixed(4)} px, on the oracle every frame (max ${worst.toFixed(4)} px), final within ${final.toFixed(4)} px; items: first frame at scale 0.2 on the folder origin within ${enterFirst.toFixed(4)} px, on their enter paths every frame (max ${enterPath.toFixed(4)} px), starts ${allStarts.join('; ')} s, stagger within ${stagger.toFixed(3)} s; open and reopen settle; close/reopen without a jump (${jumps.toFixed(4)} px)`
     } finally {
         view.dispose()
     }
@@ -387,9 +510,17 @@ export async function E4Card(): Promise<string> {
         const cardBox = pageBox(card)
         const imageBox = pageBox(q(card, `[data-layout-id="card-${i}-image"]`))
         const titleBox = pageBox(q(card, `[data-layout-id="card-${i}-title"]`))
+        const gridFont = fontOf(q(card, `[data-layout-id="card-${i}-title"]`))
         titleSize = titleBox
         await view.render(app(i))
         const detail = q(view.host, `[data-card-detail="${i}"]`)
+        // J-033: the title's text styles do not depend on its container (a
+        // button in the grid, a div in the detail), so its metrics match
+        expectEqual(
+            fontOf(q(detail, `[data-layout-id="card-${i}-title"]`)),
+            gridFont,
+            'title text styles, detail vs grid'
+        )
         // the first frame: each nested id starts from the card's own box
         expectAt(detail, cardBox, 'surface first frame')
         expectAt(
@@ -400,7 +531,7 @@ export async function E4Card(): Promise<string> {
         const title = pageBox(q(detail, `[data-layout-id="card-${i}-title"]`))
         expectClose(title.x, titleBox.x, TOL, 'title first frame x')
         expectClose(title.y, titleBox.y, TOL, 'title first frame y')
-        await frames(
+        await framesUntilDone(
             mc,
             90,
             check,
@@ -412,6 +543,17 @@ export async function E4Card(): Promise<string> {
             offset(stage, { x, y, w: width, h: height }),
             'detail final',
             0.01
+        )
+        // the title measures the same at rest in the detail as in the grid
+        const restTitle = pageBox(
+            q(detail, `[data-layout-id="card-${i}-title"]`)
+        )
+        expectClose(restTitle.w, titleBox.w, TOL, 'title width, detail vs grid')
+        expectClose(
+            restTitle.h,
+            titleBox.h,
+            TOL,
+            'title height, detail vs grid'
         )
         // close, and reopen while it closes
         let jumps = 0
@@ -428,7 +570,7 @@ export async function E4Card(): Promise<string> {
         tick = 0
         await view.render(app(i))
         jumps = Math.max(jumps, expectUnmoved(before, 'reopen'))
-        await frames(
+        await framesUntilDone(
             mc,
             120,
             check,
@@ -437,7 +579,7 @@ export async function E4Card(): Promise<string> {
         phase = 'final close'
         tick = 0
         await view.render(app(null))
-        await frames(
+        await framesUntilDone(
             mc,
             120,
             check,
@@ -452,7 +594,7 @@ export async function E4Card(): Promise<string> {
         if (coverage > TOL)
             throw new Error(`image coverage gap ${coverage} px at ${where}`)
         if (pinned > TOL) throw new Error(`title size moved by ${pinned} px`)
-        return `nested ids from their own boxes; image coverage within ${coverage.toFixed(4)} px; title size pinned within ${pinned.toFixed(4)} px; close/reopen without a jump (${jumps.toFixed(4)} px)`
+        return `nested ids from their own boxes; title ${titleBox.w.toFixed(3)} px wide in the grid, ${restTitle.w.toFixed(3)} px in the detail, same text styles; image coverage within ${coverage.toFixed(4)} px; title size pinned within ${pinned.toFixed(4)} px; close/reopen without a jump (${jumps.toFixed(4)} px)`
     } finally {
         view.dispose()
     }
@@ -510,7 +652,7 @@ export async function E5Toasts(): Promise<string> {
                 )
             })
         }
-        await frames(
+        await framesUntilDone(
             mc,
             120,
             () => undefined,
@@ -555,7 +697,7 @@ export async function E5Toasts(): Promise<string> {
         const popped = before.get(leaving)!.box
         let worst = 0
         let removedAt = Number.NaN
-        await frames(
+        await framesUntilDone(
             mc,
             60,
             (t) => {
@@ -638,7 +780,7 @@ export async function Gallery(): Promise<string> {
             const tracks = Array.from({ length: GALLERY.count }, (_, i) =>
                 spec(box(i, from), box(i, to), motion)
             )
-            await frames(
+            await framesUntilDone(
                 mc,
                 90,
                 (t) => {
@@ -656,17 +798,41 @@ export async function Gallery(): Promise<string> {
                 () => settled(view.host) && mc.clock.size === 0
             )
         }
-        // the detail takes over tile 5's id
+        // the detail takes over tile 5's id, and gives it back: each leg on
+        // the track from the measured box before the commit to the measured
+        // layout box after it, every frame
+        const fixture = q(view.host, '[data-fixture="gallery"]')
+        const layoutBox = (element: HTMLElement): OBox => {
+            expectEqual(element.offsetParent, fixture, 'offset parent')
+            return offset(stage, {
+                x: element.offsetLeft,
+                y: element.offsetTop,
+                w: element.offsetWidth,
+                h: element.offsetHeight,
+            })
+        }
         const k = 5
         const from = pageBox(tile(k))
         await view.render(app('grid', k))
         const detail = q(view.host, `[data-gallery-detail="${k}"]`)
         expectAt(detail, from, 'detail first frame')
-        await frames(
+        const opening = spec(from, layoutBox(detail), motion)
+        let detailWorst = 0
+        await framesUntilDone(
             mc,
             90,
-            () => undefined,
-            () => settled(view.host) && mc.clock.size === 0
+            (t) => {
+                detailWorst = Math.max(
+                    detailWorst,
+                    expectAt(
+                        detail,
+                        expectedBox(opening, t),
+                        `detail opening t=${t}`
+                    )
+                )
+            },
+            () => settled(view.host) && mc.clock.size === 0,
+            'detail opening'
         )
         const size = GALLERY.detail.size
         expectAt(
@@ -675,15 +841,29 @@ export async function Gallery(): Promise<string> {
             'detail final',
             0.01
         )
+        const open = pageBox(detail)
         await view.render(app('grid'))
-        await frames(
+        const back = tile(k)
+        expectAt(back, open, 'tile return first frame')
+        const returning = spec(open, layoutBox(back), motion)
+        await framesUntilDone(
             mc,
             120,
-            () => undefined,
-            () => settled(view.host) && mc.clock.size === 0
+            (t) => {
+                detailWorst = Math.max(
+                    detailWorst,
+                    expectAt(
+                        back,
+                        expectedBox(returning, t),
+                        `tile return t=${t}`
+                    )
+                )
+            },
+            () => settled(view.host) && mc.clock.size === 0,
+            'detail return'
         )
         expectAt(tile(k), from, 'tile back', 0.01)
-        return `16 tiles grid ↔ list on the oracle every frame (max ${worst.toFixed(4)} px); detail from tile ${k} and back`
+        return `16 tiles grid ↔ list on the oracle every frame (max ${worst.toFixed(4)} px); detail from tile ${k} and back on the oracle every frame (max ${detailWorst.toFixed(4)} px)`
     } finally {
         view.dispose()
     }
@@ -710,7 +890,7 @@ export async function Honest(): Promise<string> {
             await view.render(h(CreateFixture, { open, clock: mc.clock }))
             const wrapper = q(view.host, '[data-layout-id="create"]')
             nested(wrapper, E2.ids.slice(1), `E2 ${open ? 'menu' : 'button'}`)
-            await frames(
+            await framesUntilDone(
                 mc,
                 90,
                 () => undefined,
@@ -728,7 +908,7 @@ export async function Honest(): Promise<string> {
                 Array.from({ length: E3.shared }, (_, i) => `folder-tile-${i}`),
                 'E3'
             )
-            await frames(
+            await framesUntilDone(
                 mc,
                 90,
                 () => undefined,
@@ -748,7 +928,7 @@ export async function Honest(): Promise<string> {
                     `E4 card ${i}`
                 )
             }
-            await frames(
+            await framesUntilDone(
                 mc,
                 120,
                 () => undefined,
