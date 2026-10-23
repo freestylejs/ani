@@ -2626,6 +2626,174 @@ export function J37Retarget(): Promise<string> {
     return crossfadeUnderLayer('retarget')
 }
 
+/**
+ * CP8 re-trial J-038: a crossfade that starts after the follower's moving
+ * parent changed its layer (scaleX 0.8 → 1), with the new lead outside that
+ * parent ('external'): the follower is drawn at its lead as is, so both start
+ * at the follower's visual B. 'shared' puts the lead in the same parent;
+ * 'unchanged' keeps the layer at 0.8.
+ */
+async function crossfadeAcrossLayer(
+    variant: 'external' | 'shared' | 'unchanged'
+): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const parent = node(
+            h.root,
+            'left: 100px; top: 0; width: 300px; height: 100px; transform: scaleX(0.8); transform-origin: 0 0;'
+        )
+        h.add(parent)
+        const old = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(old, { layoutId: 'pair' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+        // the parent moves 100 → 200 over 1 s; at 0.2 s its layer becomes 1
+        h.group.capture()
+        parent.style.left = '200px'
+        const moved = report(h.group.flush())
+        h.mc.frame(FRAME_MS)
+        h.mc.frame(200)
+        await settleMicrotasks()
+        const width = variant === 'unchanged' ? 32 : 40
+        const wide = variant === 'unchanged' ? 240 : 300
+        if (variant !== 'unchanged') parent.style.transform = 'scaleX(1)'
+        const b = at(o, 120, 0, width, 40)
+        expectAt(old, b, 'follower B', 0.01)
+        // the handoff: a new crossfade from B at the parent's vx 100
+        h.group.capture()
+        let tau = -1
+        let exitedAt = -1
+        void presence.exit().then(() => {
+            exitedAt = tau
+        })
+        const lead =
+            variant === 'shared'
+                ? node(
+                      parent,
+                      'left: 200px; top: 0; width: 100px; height: 40px; transform-origin: 0 0;'
+                  )
+                : node(
+                      h.root,
+                      'left: 400px; top: 0; width: 100px; height: 40px; transform-origin: 0 0;'
+                  )
+        const authored = lead.style.cssText
+        h.add(lead, { layoutId: 'pair' })
+        const run = report(h.group.flush())
+        await settleMicrotasks()
+        expectAt(lead, b, 'lead at the handoff', 0.01)
+        expectAt(old, b, 'follower at the handoff', 0.01)
+        expectEqual(old.style.opacity, '1', 'follower opacity at the handoff')
+        expectEqual(lead.style.opacity, '0', 'lead opacity at the handoff')
+        // A: the shared parent's A is 200 wide 300 (layer 1); the root's is 400
+        const a = at(o, 400, 0, 100, 40)
+        const track = spec(b, a, {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 100, y: 0, w: 0, h: 0 },
+        })
+        let worst = 0
+        let fade = 0
+        let restoredAt = -1
+        const count = await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                tau = elapsed
+                // the kept parent stays on its own timeline, under its layer
+                const p = 0.2 + DT + elapsed
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        parent,
+                        at(o, 100 + 100 * Math.min(1, p), 0, wide, 100),
+                        `parent τ=${p.toFixed(3)}`
+                    )
+                )
+                const box = expectedBox(track, elapsed)
+                worst = Math.max(
+                    worst,
+                    expectAt(lead, box, `lead τ=${tau.toFixed(3)}`)
+                )
+                const lo = Number(getComputedStyle(lead).opacity)
+                if (old.style.opacity !== '0') {
+                    worst = Math.max(
+                        worst,
+                        expectAt(old, box, `follower τ=${tau.toFixed(3)}`)
+                    )
+                    const fo = Number(getComputedStyle(old).opacity)
+                    if (tau < 1) {
+                        fade = Math.max(
+                            fade,
+                            Math.abs(lo - tau),
+                            Math.abs(fo - (1 - tau))
+                        )
+                    }
+                }
+                if (restoredAt < 0 && lead.style.opacity === '') {
+                    restoredAt = tau
+                }
+            },
+            () => run.value !== null && exitedAt >= 0
+        )
+        if (fade > 0.01) throw new Error(`opacities off the fade by ${fade}`)
+        if (!(exitedAt >= 1 - 1e-9 && exitedAt <= 1 + 2 * DT)) {
+            throw new Error(
+                `presence released at τ ${exitedAt}, not at the fade's end`
+            )
+        }
+        if (!(restoredAt >= 1 - 1e-9 && restoredAt <= 1 + 2 * DT)) {
+            throw new Error(
+                `lead opacity given back at τ ${restoredAt}, not at the fade's end`
+            )
+        }
+        expectEqual(run.value?.status, 'ended', 'the crossfade run')
+        expectEqual(
+            JSON.stringify(run.value?.snapped ?? []),
+            '[]',
+            'nothing snapped'
+        )
+        expectAt(lead, a, 'lead at rest', 0.01)
+        expectEqual(lead.style.cssText, authored, 'lead restored')
+        expectEqual(old.style.opacity, '0', 'follower held invisible')
+        expectEqual(moved.value?.status, 'interrupted', 'the parent run')
+        presence.dispose()
+        await frames(h.mc, 3, noCheck)
+        expectEqual(h.mc.clock.size, 0, 'zero subscribers')
+        return `${variant}: pair at B (120, w ${width}) at the handoff; ${count} frames on the track from B at vx 100 to (400, w 100) within ${worst.toFixed(4)} px; opacities within ${fade.toFixed(4)}; release at τ ${exitedAt.toFixed(3)}; zero subscribers`
+    } finally {
+        h.dispose()
+    }
+}
+
+export function J38(): Promise<string> {
+    return crossfadeAcrossLayer('external')
+}
+
+export function J38Shared(): Promise<string> {
+    return crossfadeAcrossLayer('shared')
+}
+
+export function J38Unchanged(): Promise<string> {
+    return crossfadeAcrossLayer('unchanged')
+}
+
 /* ───────────────────────── View Transitions ───────────────────────── */
 
 export async function VT1(): Promise<string> {

@@ -291,18 +291,23 @@ function epochs<M>(
 ) {
     const omegas: (M | undefined)[] = new Array(nodes.length)
     const corrs: (M | null | undefined)[] = new Array(nodes.length)
+    /** The correction of a run of layers, root first: `Π (Ωₐ ∘ Γₐ ∘ Ωₐ⁻¹)`. */
+    const through = (layers: readonly Layer[]): M | null => {
+        let c: M | null = null
+        for (const layer of layers) {
+            const o = omega(layer.at)
+            const step = alg.compose(
+                alg.compose(o, alg.lift(layer.map)),
+                alg.invert(o)
+            )
+            c = c === null ? step : alg.compose(c, step)
+        }
+        return c
+    }
     const corr = (i: number): M | null => {
         let c = corrs[i]
         if (c === undefined) {
-            c = null
-            for (const layer of nodes[i]!.layers ?? []) {
-                const o = omega(layer.at)
-                const step = alg.compose(
-                    alg.compose(o, alg.lift(layer.map)),
-                    alg.invert(o)
-                )
-                c = c === null ? step : alg.compose(c, step)
-            }
+            c = through(nodes[i]!.layers ?? [])
             corrs[i] = c
         }
         return c
@@ -318,6 +323,7 @@ function epochs<M>(
     }
     return {
         corr,
+        through,
         parent(i: number): M {
             const parent = nodes[i]!.parent
             if (parent < 0) return alg.id
@@ -325,6 +331,33 @@ function epochs<M>(
             return c === null ? omega(parent) : alg.compose(c, omega(parent))
         },
     }
+}
+
+/** Pre-order ranks at which each node's subtree is entered and left. */
+function treeSpans(nodes: readonly EpochNode[]): {
+    enter: number[]
+    exit: number[]
+} {
+    const children: number[][] = nodes.map(() => [])
+    const stack: number[] = []
+    nodes.forEach((node, i) => {
+        if (node.parent >= 0) children[node.parent]!.push(i)
+        else stack.push(i)
+    })
+    const enter: number[] = new Array(nodes.length)
+    const exit: number[] = new Array(nodes.length)
+    let rank = 0
+    while (stack.length > 0) {
+        const k = stack.pop()!
+        // `~k`: the subtree of `k` is done
+        if (k < 0) {
+            exit[~k] = rank++
+            continue
+        }
+        enter[k] = rank++
+        stack.push(~k, ...children[k]!)
+    }
+    return { enter, exit }
 }
 
 /** `epochs` over moving maps: carries a box with its velocity (§5.5). */
@@ -385,9 +418,30 @@ function drawnMotion(
             },
         }
     }
+    let spans: ReturnType<typeof treeSpans> | null = null
+    /** Whether `a` is `j` or one of its ancestors. */
+    const encloses = (a: number, j: number): boolean => {
+        spans ??= treeSpans(nodes)
+        return (
+            spans.enter[a]! <= spans.enter[j]! &&
+            spans.exit[j]! <= spans.exit[a]!
+        )
+    }
+    /** The correction of a non-empty root-first run of node `i`'s layers. */
+    const shift = (i: number, layers: readonly Layer[]): MovingMap => {
+        maps ??= epochs(nodes, full, MOVING)
+        return (
+            layers.length === nodes[i]!.layers!.length
+                ? maps.corr(i)
+                : maps.through(layers)
+        )!
+    }
     /**
      * The drawn box and velocity of `j` (an anchored node's parent, or a
-     * follower's lead) as node `i`'s epoch draws them: `corrᵢ ∘ corrⱼ⁻¹`.
+     * follower's lead) as node `i`'s epoch draws them: every ancestor of `i`
+     * as `i`'s flush saw it, every other presence as `j` was drawn with. Only
+     * the layers at the ancestors of `i` that draw `j` (or at `j` itself)
+     * convert: `corrᵢ ∘ corrⱼ⁻¹` over those (§5.4, §5.6).
      */
     const seenFrom = (i: number, j: number): { box: Box; velocity: Box } => {
         const known = sources[i]
@@ -395,17 +449,17 @@ function drawnMotion(
         const box = boxAt(j)
         const velocity = rates ? velocityAt(j) : ZERO_VELOCITY
         let seen = { box, velocity }
-        // a layer of `j` at `i` itself would need `i`'s own box: drawn as is
-        const layered =
-            (nodes[i]!.layers || nodes[j]!.layers) &&
-            !nodes[j]!.layers?.some((layer) => layer.at === i)
-        if (layered) {
-            maps ??= epochs(nodes, full, MOVING)
-            const own = maps.corr(i)
-            const theirs = maps.corr(j)
-            let shift = own ?? STILL_IDENTITY
-            if (theirs) shift = composeMoving(shift, invertMoving(theirs))
-            seen = carry(shift, box, velocity)
+        // both runs are the root-first part of each chain down to where the
+        // two part: a deeper layer of `j` (at `i` itself too) is kept as is
+        const own = nodes[i]!.layers?.filter((layer) => encloses(layer.at, j))
+        const theirs = nodes[j]!.layers?.filter(
+            (layer) => layer.at !== i && encloses(layer.at, i)
+        )
+        if (own?.length || theirs?.length) {
+            let map = own?.length ? shift(i, own) : STILL_IDENTITY
+            if (theirs?.length)
+                map = composeMoving(map, invertMoving(shift(j, theirs)))
+            seen = carry(map, box, velocity)
         }
         sources[i] = seen
         return seen
