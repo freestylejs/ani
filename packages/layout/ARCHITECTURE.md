@@ -193,9 +193,11 @@ stale; it snaps with `'stale'` and never guesses.
 - After that, tracks advance by the clock's `dt` (lag-smoothed, time-scaled), exactly like
   every other Ani animation.
 - The read phase is unused; `update` solves; `commit` writes only declarations whose value
-  changed.
+  changed. Every restore (a settle, a lead giving back its opacity) is queued in `update` and
+  written in `commit`; in a flush, every restore is written after the last read.
 - A node settles when its own track ended and no ancestor still animates: its saved inline
-  declarations are restored byte for byte. The scope unsubscribes when no track is left.
+  declarations are restored byte for byte (with the author's latest inline values, §6). The
+  scope unsubscribes after the commit of the frame in which no track is left.
 
 ## 5. Solver
 
@@ -276,8 +278,17 @@ not move keeps `V = A` and is counter-projected), so nesting never distorts it.
 ### 5.5 Interruption
 
 A new flush while tracks run never reads animated state. B for a driven node is its current
-drawn box and `v` its current velocity. Only a node whose A moved by at least `threshold`
-(or whose options changed) gets a new track; every other node keeps its track untouched.
+drawn box and `v` its current velocity, both seen through the presence layers as they are at
+this flush: a presence `transform` that changed since the last flush changed what the user
+sees, so the drawn box is mapped through the current presence matrices (the poses are the
+engine's own; the presence matrix is read with the other computed values of active nodes).
+Only a node whose A moved by at least `threshold`, or whose track options changed, gets a new
+track; every other node keeps its track untouched. Track options are compared by value:
+`layout`, `layoutAnchor`, `radius` and `motion` (a timing by its class and parameters, so an
+inline `timing.spring({…})` equals the previous render's). `layoutId`, `layoutCrossfade` and
+`layoutDependency` act at the flush and never restart a track. A reduced-motion mode that
+changed since a track was planned (§9) re-plans it at the next flush, from its drawn box with
+its velocity.
 
 ### 5.6 Shared `layoutId` and crossfade
 
@@ -287,14 +298,19 @@ drawn box and `v` its current velocity. Only a node whose A moved by at least `t
   or leaves the scope), the new lead's B and velocity are the departing node's drawn box and
   velocity. This holds even when the new lead was already registered.
   - An exiting lead gives its live drawn box.
-  - A removed lead gives the box retained for `retain` seconds (default 1) after its removal.
+  - A removed lead gives the box and velocity retained for `retain` seconds (default 1)
+    after its removal (the velocity only if its own track was moving, not holding a delay).
   - A previous lead that is still live and not exiting does not hand off (duplicate id).
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting
   under presence, the box moved by at least `threshold`, and neither node sets
   `layoutCrossfade: false`. Both nodes draw at the lead's box; the opacities are `w` and
   `1 − w`, with `w = clamp(e(τ), 0, 1)` on the lead's timeline.
-- The follower is held at opacity 0 until presence unmounts it, and presence's release waits
-  for the crossfade to end. Nothing pops back to opacity 1.
+- The follower is held at opacity 0 (where it was drawn when the fade ended) until presence
+  unmounts it, and presence's release waits for the crossfade to end. Nothing pops back to
+  opacity 1.
+- A lead retargeted during its crossfade (same lead, A moved) keeps the fade: its timeline,
+  the follower's and the release stay one, so the opacities stay complementary; the lead
+  gives its opacity back when the fade ends, not when its new track ends.
 - If presence animates `opacity` on a crossfade node (its `present` record names `opacity`),
   the pair hands off without a crossfade and a development warning is printed.
 - Two live, non-exiting nodes with one id print a development warning; the newest leads and
@@ -310,11 +326,11 @@ any total scale. The declaration is restored on settle.
 
 | Property | Owner | Rule |
 |---|---|---|
-| `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. A CSS transition configured on them (`translate`, `scale` or `all`, which would animate layout's own writes) or a running CSS animation of them snaps the node with a development warning naming the fix (e.g. Tailwind `transition-colors` instead of `transition`). |
+| `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. Layout writes them `!important`; an author's inline write during the run (React re-rendering a `style` prop) replaces that declaration, so it is recognised by its priority and taken in at the next flush or settle: the run keeps its frozen composition and the author's value is what the settle restores. A CSS transition configured on them (`translate`, `scale` or `all`, which would animate layout's own writes) or a running CSS animation of them snaps the node with a development warning naming the fix (e.g. Tailwind `transition-colors` instead of `transition`). |
 | `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes. |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
-| `border-radius` | Layout when `radius: true` | Restored on settle. |
+| `border-radius` | Layout when `radius: true` | Saved when layout first owns it (also when `radius` turns on mid-run), restored on settle; turning `radius` off gives the corners back at once. |
 | `rotate`, skew, non-translation ancestor transforms | Author | The subtree snaps with `'unsupported'`. |
 
 Presence and layout meet only inside the package: `createPresence` registers its element,
@@ -417,6 +433,23 @@ usePresenceControl(options?): { isPresent, safeToRemove }
   (memoized children below), place the `LayoutGroup` inside that component, or wrap the change
   in `useLayoutGroup().update(fn)`. A development-only `MutationObserver` warns once per scope
   when the DOM around its participants changed with no capture.
+- **Adapter mechanics.** A render of a participant, group or `AnimatePresence` calls
+  `capture()` on its scope (only on a scope that exists: registration creates an implicit
+  root). Their layout effects queue one microtask per scope that calls `flush()`, followed by
+  `capture()` when a render touched the scope after the commit's last layout effect (§4.1
+  hand-off). Participant options are compared by value (§5.5); only a change calls `set`.
+  `useLayoutGroup().update(fn)` flushes a pending commit's flush first, then runs
+  `capture()` → `flushSync(fn)` → `flush()`.
+- **StrictMode.** React 19 replays the ref callbacks and effects of fibers it mounts *and*
+  moves (a reorder). A participant's removal therefore waits until the end of the task: a
+  re-attach of the same element in that task keeps its registration and its captured B. The
+  outermost group disposes its scope one microtask after its layout effect's cleanup, unless
+  the effect re-ran.
+- **Presence styles.** `usePresence().style` carries `motion.initial` from the first render
+  until the enter has finished, so React never clears the values the enter is writing (a
+  re-render that dropped them would show the present state for a frame and read as a layout
+  change). Under `popLayout`, the exiting render measures the box relative to its containing
+  block (§6) and the style lifts it there.
 
 ```tsx
 // List reorder: mark the items, nothing else
@@ -463,6 +496,8 @@ group API.
 | Reduced motion `{ maxDuration }` | Delay + duration scaled down to fit, in `motion.ts` only | — |
 | Reduced motion `'ignore'` | Plays in full | — |
 | `dispose()` or unmount | Tracks cancelled, inline styles restored, presence holds released | status `'disposed'` |
+| A moving participant unregistered, or gone from the document at a flush | Its track is cancelled and its styles restored at once (pending writes for it dropped); the rest of its run goes on; a run left with no node resolves `'disposed'`; the scope unsubscribes when nothing else moves | status `'disposed'` (a run of only such nodes) |
+| Reduced motion toggled during a run | The next flush applies the current mode to running tracks: `'jump'` finishes them, `maxDuration` re-plans them clamped from their drawn box and velocity | — |
 | `finish()` | Every track jumps to A and settles | status `'ended'` |
 | No DOM (SSR), first client commit | No-op; hydration never animates | — |
 
@@ -524,7 +559,8 @@ movers ≤ 2 ms p95.
   (documented, development warning).
 - The velocity term is a continuity device, not spring physics.
 - Text under scale re-rasterizes and can look soft mid-flight.
-- An authored `translate`/`scale` change during a run applies after settle.
+- An authored `translate`/`scale` change during a run applies after settle (one jump at the
+  settle, from the frozen composition to the author's value).
 - A presence `transform` that animates during a layout run is a visual layer on top of the
   tracks of its element and its participant descendants, like on its other children (§3.1).
 - A size channel whose carried velocity would take it below one pixel loses that part of the
