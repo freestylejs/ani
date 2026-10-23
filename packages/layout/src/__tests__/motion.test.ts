@@ -166,6 +166,34 @@ describe('motion: track option equality (J-016)', () => {
         ).toBe(false)
     })
 
+    it('an omitted timing is the default ease-out (CP6 trial J-016)', () => {
+        const explicit = { motion: { timing: timing.easeOut() } }
+        for (const g of [undefined, { duration: 1 }, { delay: 0.1 }]) {
+            expect(sameTrackOptions({}, explicit, g)).toBe(true)
+            expect(sameTrackOptions(explicit, {}, g)).toBe(true)
+            expect(
+                sameTrackOptions(
+                    { motion: { duration: 0.5 } },
+                    { motion: { duration: 0.5, timing: timing.easeOut() } },
+                    g
+                )
+            ).toBe(true)
+        }
+        // the group's timing is inherited instead of the default
+        expect(
+            sameTrackOptions({}, explicit, { timing: timing.linear() })
+        ).toBe(false)
+        for (const other of [
+            timing.easeIn(),
+            timing.linear(),
+            timing.spring({ m: 1, k: 170, c: 26 }),
+        ]) {
+            expect(sameTrackOptions({}, { motion: { timing: other } })).toBe(
+                false
+            )
+        }
+    })
+
     it('compares timing parameters independently of key order', () => {
         const a = { motion: { timing: timing.spring({ m: 1, k: 200, c: 20 }) } }
         const b = { motion: { timing: timing.spring({ c: 20, k: 200, m: 1 }) } }

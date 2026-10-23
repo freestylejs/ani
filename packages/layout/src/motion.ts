@@ -320,11 +320,15 @@ function sameTiming(a: unknown, b: unknown): boolean {
 interface MergedMotion {
     readonly duration: number
     readonly delay: number
-    /** `undefined`: the default timing. */
-    readonly timing: TimingFunction | undefined
+    readonly timing: TimingFunction
 }
 
-/** Field-wise merge, later layers win, defaults filled in. */
+let defaultTiming: TimingFunction | null = null
+
+/**
+ * Field-wise merge, later layers win, defaults filled in (the default timing
+ * too: an omitted timing and an explicit `timing.easeOut()` draw one track).
+ */
 function mergeMotion(
     layers: readonly (LayoutMotion | undefined)[]
 ): MergedMotion {
@@ -337,7 +341,8 @@ function mergeMotion(
         if (layer.delay !== undefined) delay = layer.delay
         if (layer.timing !== undefined) fn = layer.timing
     }
-    return { duration, delay, timing: fn }
+    defaultTiming ??= timing.easeOut()
+    return { duration, delay, timing: fn ?? defaultTiming }
 }
 
 /**
@@ -396,15 +401,12 @@ export function curveOf(fn: TimingFunction): Curve {
     return curve
 }
 
-let defaultTiming: TimingFunction | null = null
-
 /** The merged motion of validated layers, later layers win. */
 export function resolveMotion(
     layers: readonly (LayoutMotion | undefined)[]
 ): Motion {
     const { duration, delay, timing: fn } = mergeMotion(layers)
-    defaultTiming ??= timing.easeOut()
-    return { duration, delay, curve: curveOf(fn ?? defaultTiming) }
+    return { duration, delay, curve: curveOf(fn) }
 }
 
 /** `{ maxDuration }`: delay + duration scaled down to fit; shorter runs untouched. */
