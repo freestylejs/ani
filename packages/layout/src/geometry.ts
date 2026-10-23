@@ -33,8 +33,6 @@ export interface Pose {
 
 export const IDENTITY_MAP: Map2 = { x: { k: 1, b: 0 }, y: { k: 1, b: 0 } }
 
-export const IDENTITY_POSE: Pose = { tx: 0, ty: 0, sx: 1, sy: 1 }
-
 /** `outer ∘ inner`: apply `inner` first. */
 export function compose(outer: Map2, inner: Map2): Map2 {
     return {
