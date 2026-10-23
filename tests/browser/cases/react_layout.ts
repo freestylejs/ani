@@ -985,7 +985,11 @@ async function rerenderMidRun(
         const subscribers = mc.clock.size
         error = Math.max(
             error,
-            expectAt(mover(), expectedBox(track, elapsed), 'at the re-render')
+            expectAt(
+                mover(),
+                expectedBox(track, elapsed),
+                `at the re-render (${subscribers} clock subscribers)`
+            )
         )
         const late: OBox[] = []
         for (let i = 0; i < 2; i++) {
@@ -1106,4 +1110,55 @@ export async function J16(): Promise<string> {
         throw new Error(`{} → {"duration":0.5} did not retarget: ${changed}`)
     }
     return `${results.join('; ')}; every frame on the first track; {} → {"duration":0.5} retargets`
+}
+
+/** J-026: an equal scope policy object keeps the scope and its run; a changed one re-creates it. */
+export async function J26(): Promise<string> {
+    const linear = timing.linear()
+    const motion = { duration: 1, timing: linear }
+    const app = (
+        mc: ManualClock,
+        x: number,
+        reducedMotion: { maxDuration: number }
+    ) =>
+        h(
+            LayoutGroup,
+            { clock: mc.clock, motion, reducedMotion },
+            h(Mover, { x, motion: undefined })
+        )
+    const stable = { maxDuration: 0.1 }
+    const mc = createManualClock()
+    const { at, error, subscribers } = await rerenderMidRun(
+        mc,
+        // the re-render at 0.2 s passes a new object with the same value
+        (x, late) => app(mc, x, late ? { maxDuration: 0.1 } : stable),
+        linear
+    )
+    expectEqual(subscribers, 1, 'the run kept its subscription')
+
+    // a changed value re-creates the scope: the run is disposed and restored
+    const changed = createManualClock()
+    const view = mountRoot()
+    try {
+        await view.render(app(changed, 0, stable))
+        const before = pageBox(byId(view.host, 'mover'))
+        await view.render(app(changed, 200, stable))
+        changed.frame(0)
+        changed.frame(200)
+        expectClose(
+            pageBox(byId(view.host, 'mover')).x - before.x,
+            40,
+            TOL,
+            'x at 0.2 s'
+        )
+        expectEqual(changed.clock.size, 1, 'running')
+        await view.render(app(changed, 200, { maxDuration: 0.2 }))
+        const x = pageBox(byId(view.host, 'mover')).x - before.x
+        expectClose(x, 200, TOL, 're-created: the layout box')
+        expectEqual(changed.clock.size, 0, 're-created: no subscriber')
+        expectEqual(byId(view.host, 'mover').style.translate, '', 'restored')
+        return `equal { maxDuration: 0.1 }: x ${at.map((v) => v.toFixed(3)).join('/')} at 0.2/0.22/0.24 s, every frame on the first track (error ${error.toFixed(4)} px), one subscriber; { maxDuration: 0.2 } re-creates: x ${x.toFixed(3)}, ${changed.clock.size} subscribers`
+    } finally {
+        view.dispose()
+    }
 }
