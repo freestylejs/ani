@@ -99,7 +99,10 @@ through the presence matrices of that flush, so `Mπ` composes the ancestors' po
 inner maps *as of that flush*, and only a change since then is a layer over it. Each node
 records its participant ancestors' matrices when it is planned; a node planned later than a
 kept ancestor (a child retargeted under a parent whose layer changed) composes that
-ancestor with the newer matrix, while the ancestor's own track keeps its older one.
+ancestor with the newer matrix, while the ancestor's own track keeps its older one. A kept
+track keeps those matrices, its own and its ancestors', but not its CSS box: `Lₙ` and `Oₙ`
+are read again at every flush, so a parent that moved a node's CSS box without moving its A
+in the track's space leaves the track exactly where it was.
 
 ### 3.2 Data
 
@@ -261,7 +264,16 @@ V′ = Mπ⁻¹(V),   s = V′_w / X_w,   t = V′_x − O_x − s·(X_x − O_x
 ```
 
 The track's origin fraction is `(O_x − L_x) / L_w`, the transform origin's place in the box
-(an affine `Qₙ` keeps it). Depth is unlimited and the cost is O(N) arithmetic per frame.
+(an affine `Qₙ` keeps it). Depth is unlimited.
+
+`Mπ` is the parent's map in the node's own flush space (§3.1). Every full map is the map that
+carries `Lₐ` onto the drawn box, so it needs no chain. Let `Ωₐ` be `a`'s full map with every
+ancestor's own frozen inner map. A node whose flush saw ancestors `a` with other presence
+matrices (a *layer*, `Γₐ = Qₐ⁻¹ ∘ Qₐ′`) uses `Mπ = corr ∘ Ω_parent`, where
+`corr = Π Ωₐ ∘ Γₐ ∘ Ωₐ⁻¹` over its layers, root first, and `Ωₐ = corrₐ⁻¹ ∘ Mₐ`. The cost per
+frame is O(N) map arithmetic, plus a constant per layer. A layer is a pair (node, ancestor)
+whose presence transform changed between their two flushes, so a run without a presence
+change has none.
 Every participant under an animating ancestor is solved each frame (a node whose own box did
 not move keeps `V = A` and is counter-projected), so nesting never distorts it.
 
@@ -270,7 +282,9 @@ not move keeps `V = A` and is counter-projected), so nesting never distorts it.
 `layoutAnchor {x, y}` (0–1) replaces the origin channels with an offset:
 
 - **Placement.** Every frame, the node's anchor point is placed on the parent participant's
-  drawn anchor point, plus the offset.
+  drawn anchor point, plus the offset. The parent is taken as the node's own flush space draws
+  it (§3.1, §5.3), and the keep test (§5.5) compares the offset target with the parent's A in
+  that same space.
 - **Offset path.** The offset moves from the initial discrepancy to the final one on the node's
   own timeline. It follows the channel equation of §5.1, including its delay and its momentum
   term. A moving node's `k` carries its velocity relative to the parent's anchor point, so an
