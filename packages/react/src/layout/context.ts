@@ -302,7 +302,13 @@ export function createLayoutScope(
 
 /* ───────────────────────── implicit root ───────────────────────── */
 
-const roots = new Map<Clock | undefined, WeakMap<Document, LayoutScope>>()
+interface Roots {
+    readonly byDocument: WeakMap<Document, LayoutScope>
+    /** The same scopes, iterable: those a render of unknown document touches. */
+    readonly live: Set<LayoutScope>
+}
+
+const roots = new Map<Clock | undefined, Roots>()
 
 /**
  * The implicit root scope of `(clock, document)` (§7.2): created on first
@@ -313,24 +319,26 @@ export function rootScope(
     clock: Clock | undefined,
     doc: Document
 ): LayoutScope {
-    let byDocument = roots.get(clock)
-    if (!byDocument) {
-        byDocument = new WeakMap()
-        roots.set(clock, byDocument)
+    let partition = roots.get(clock)
+    if (!partition) {
+        partition = { byDocument: new WeakMap(), live: new Set() }
+        roots.set(clock, partition)
     }
-    const partition = byDocument
-    let scope = partition.get(doc)
+    const { byDocument, live } = partition
+    let scope = byDocument.get(doc)
     if (!scope) {
         const created: LayoutScope = createLayoutScope(
             clock ? { clock } : {},
             () => {
-                if (partition.get(doc) !== created) return
-                partition.delete(doc)
+                if (byDocument.get(doc) !== created) return
+                byDocument.delete(doc)
+                live.delete(created)
                 created.dispose()
             }
         )
         scope = created
-        partition.set(doc, scope)
+        byDocument.set(doc, scope)
+        live.add(scope)
     }
     return scope
 }
@@ -340,7 +348,7 @@ export function peekRootScope(
     clock: Clock | undefined,
     doc: Document
 ): LayoutScope | undefined {
-    return roots.get(clock)?.get(doc)
+    return roots.get(clock)?.byDocument.get(doc)
 }
 
 /* ───────────────────────── contexts ───────────────────────── */
@@ -379,6 +387,29 @@ export function existingScope(
     return peekRootScope(undefined, element?.ownerDocument ?? document)
 }
 
+/**
+ * The existing scopes a render touches when it knows its DOM only by
+ * `documents` (§4.1, §7.2): the group's scope, else the implicit roots of
+ * those documents. A render that knows no document yet (a first render,
+ * `AnimatePresence` before any registration) touches every implicit root:
+ * touching one too many costs a read, missing one loses the change.
+ */
+export function existingScopes(
+    context: LayoutContextValue | null,
+    documents: Iterable<Document>
+): LayoutScope[] {
+    if (context) return [context.scope]
+    if (!hasDOM()) return []
+    const found: LayoutScope[] = []
+    let known = false
+    for (const doc of documents) {
+        known = true
+        const scope = peekRootScope(undefined, doc)
+        if (scope && !found.includes(scope)) found.push(scope)
+    }
+    return known ? found : [...(roots.get(undefined)?.live ?? [])]
+}
+
 /** `motion` fields of `over` replace those of `base`, field by field. */
 export function mergeMotion(
     base: LayoutMotion | undefined,
@@ -401,7 +432,8 @@ export interface PresenceContextValue {
     readonly willEnter: boolean
     readonly popLayout: boolean
     readonly custom?: unknown
-    readonly register: () => number
+    /** Registers an exit to wait for, with its element's document if it has one. */
+    readonly register: (document?: Document) => number
     readonly unregister: (id: number) => void
     readonly settle: () => void
     readonly reportExit: (id: number, token: number) => void
