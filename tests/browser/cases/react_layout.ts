@@ -12,6 +12,7 @@ import {
 import {
     AnimatePresence,
     LayoutGroup,
+    type LayoutGroupProps,
     useLayout,
     useLayoutGroup,
     usePresence,
@@ -929,4 +930,180 @@ export async function RL8(): Promise<string> {
     } finally {
         view.dispose()
     }
+}
+
+/* ── equal options and policies keep the run (J-016, J-026) ── */
+
+function Mover({
+    x,
+    motion,
+}: {
+    x: number
+    motion: LayoutGroupProps['motion']
+}): ReactNode {
+    const ref = useLayout<HTMLDivElement>(motion ? { motion } : {})
+    return h('div', {
+        ref,
+        'data-id': 'mover',
+        style: {
+            marginLeft: x,
+            width: 40,
+            height: 40,
+            background: 'rgb(136, 136, 136)',
+        },
+    })
+}
+
+/**
+ * Moves the mover 0 → 200 px over 1 s, re-renders the same geometry with the
+ * `late` props at 0.2 s, then draws two 0.02 s frames and the rest of the run.
+ * Every frame is checked against the oracle of the first track: an equal
+ * option or policy never restarts it (§3.3 invariant 5).
+ */
+async function rerenderMidRun(
+    mc: ManualClock,
+    app: (x: number, late: boolean) => ReactNode,
+    fn: TimingFunction
+): Promise<{ at: readonly number[]; error: number; subscribers: number }> {
+    const view = mountRoot()
+    try {
+        await view.render(app(0, false))
+        const mover = () => byId(view.host, 'mover')
+        const before = pageBox(mover())
+        await view.render(app(200, false))
+        const track = spec(
+            before,
+            { ...before, x: before.x + 200 },
+            { duration: 1, timing: fn }
+        )
+        mc.frame(0)
+        mc.frame(200)
+        let elapsed = 0.2
+        let error = expectAt(mover(), expectedBox(track, elapsed), 'at 0.2 s')
+        const at = [pageBox(mover()).x - before.x]
+        await view.render(app(200, true))
+        const subscribers = mc.clock.size
+        error = Math.max(
+            error,
+            expectAt(mover(), expectedBox(track, elapsed), 'at the re-render')
+        )
+        const late: OBox[] = []
+        for (let i = 0; i < 2; i++) {
+            mc.frame(20)
+            late.push(pageBox(mover()))
+            at.push(late[i]!.x - before.x)
+        }
+        late.forEach((box, i) => {
+            const want = expectedBox(track, elapsed + 0.02 * (i + 1))
+            const diff = maxDiff(box, want)
+            if (!(diff <= TOL)) {
+                throw new Error(
+                    `restarted: x at 0.2/0.22/0.24 s = ${at.map((x) => x.toFixed(6)).join('/')}, the first track gives ${[0, 1, 2].map((k) => (expectedBox(track, elapsed + 0.02 * k).x - before.x).toFixed(6)).join('/')}`
+                )
+            }
+            error = Math.max(error, diff)
+        })
+        elapsed += 0.04
+        while (elapsed < 1) {
+            mc.frame(FRAME_MS)
+            elapsed += DT
+            error = Math.max(
+                error,
+                expectAt(
+                    mover(),
+                    expectedBox(track, elapsed),
+                    `at ${elapsed.toFixed(3)} s`
+                )
+            )
+        }
+        await microtasks()
+        expectEqual(mover().style.translate, '', 'settled')
+        expectEqual(mc.clock.size, 0, 'no subscriber left')
+        return { at, error, subscribers }
+    } finally {
+        view.dispose()
+    }
+}
+
+/** J-016: equivalent participant motion (defaults, inherited, key order) keeps the track. */
+export async function J16(): Promise<string> {
+    const linear = timing.linear()
+    const spring = (order: 'mkc' | 'ckm') =>
+        order === 'mkc'
+            ? timing.spring({ m: 1, k: 200, c: 20 })
+            : timing.spring({ c: 20, k: 200, m: 1 })
+    const runs: Array<{
+        label: string
+        app: (mc: ManualClock, x: number, late: boolean) => ReactNode
+        fn: TimingFunction
+    }> = [
+        ...[{ duration: 1 }, { delay: 0 }].map((late) => ({
+            label: `{} → ${JSON.stringify(late)}`,
+            app: (mc: ManualClock, x: number, changed: boolean) =>
+                h(
+                    LayoutGroup,
+                    {
+                        clock: mc.clock,
+                        motion: { duration: 1, timing: linear },
+                    },
+                    h(Mover, { x, motion: changed ? late : undefined })
+                ),
+            fn: linear,
+        })),
+        {
+            // a spring with its parameters in another key order
+            label: 'spring {m,k,c} → {c,k,m}',
+            app: (mc, x, changed) =>
+                h(
+                    LayoutGroup,
+                    { clock: mc.clock },
+                    h(Mover, {
+                        x,
+                        motion: {
+                            duration: 1,
+                            timing: spring(changed ? 'ckm' : 'mkc'),
+                        },
+                    })
+                ),
+            fn: spring('mkc'),
+        },
+    ]
+    const results: string[] = []
+    const failures: string[] = []
+    for (const run of runs) {
+        const mc = createManualClock()
+        try {
+            const { at, error, subscribers } = await rerenderMidRun(
+                mc,
+                (x, late) => run.app(mc, x, late),
+                run.fn
+            )
+            expectEqual(subscribers, 1, 'the run kept its subscription')
+            results.push(
+                `${run.label}: x ${at.map((x) => x.toFixed(3)).join('/')} (error ${error.toFixed(4)} px)`
+            )
+        } catch (error) {
+            failures.push(`${run.label}: ${(error as Error).message}`)
+        }
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '))
+    // a genuine change still retargets
+    const mc = createManualClock()
+    const changed = await rerenderMidRun(
+        mc,
+        (x, late) =>
+            h(
+                LayoutGroup,
+                { clock: mc.clock, motion: { duration: 1, timing: linear } },
+                h(Mover, { x, motion: late ? { duration: 0.5 } : undefined })
+            ),
+        linear
+    ).then(
+        () => 'kept',
+        (error: Error) => error.message
+    )
+    if (!changed.startsWith('restarted')) {
+        throw new Error(`{} → {"duration":0.5} did not retarget: ${changed}`)
+    }
+    return `${results.join('; ')}; every frame on the first track; {} → {"duration":0.5} retargets`
 }

@@ -1,4 +1,9 @@
-import { type Clock, DEV } from '@freestylejs/ani-core'
+import {
+    type Clock,
+    DEV,
+    type TimingFunction,
+    timing,
+} from '@freestylejs/ani-core'
 import {
     createLayoutGroup,
     type LayoutGroup,
@@ -44,50 +49,90 @@ interface Member {
 const TRIGGER_WARNING =
     '[ani-react/layout] The DOM around layout participants changed in a commit that rendered none of them, so nothing was captured and the change did not animate. Render a participant, LayoutGroup or AnimatePresence in that commit (put the LayoutGroup inside the component that owns the state), or wrap the change in useLayoutGroup().update(fn).'
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null
+
+/** Same own enumerable fields, each equal by {@link sameValue}, in any key order. */
+function sameFields(
+    a: Record<string, unknown>,
+    b: Record<string, unknown>
+): boolean {
+    const keys = Object.keys(a)
+    return (
+        keys.length === Object.keys(b).length &&
+        keys.every((key) => Object.hasOwn(b, key) && sameValue(a[key], b[key]))
+    )
+}
+
 /**
- * Timings are compared by value: the same class with equal `opt` (a timing
- * written inline is a new object every render).
+ * Equal by value: plain objects and arrays field by field, in any key order;
+ * anything else by identity (`Object.is`).
  */
-function sameTiming(a: unknown, b: unknown): boolean {
-    if (a === b) return true
+export function sameValue(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) return true
+    if (!isObject(a) || !isObject(b)) return false
+    const proto = Object.getPrototypeOf(a)
     if (
-        typeof a !== 'object' ||
-        typeof b !== 'object' ||
-        a === null ||
-        b === null ||
-        a.constructor !== b.constructor ||
-        !('opt' in a) ||
-        !('opt' in b)
+        proto !== Object.getPrototypeOf(b) ||
+        (proto !== Object.prototype &&
+            proto !== Array.prototype &&
+            proto !== null)
     ) {
         return false
     }
-    return JSON.stringify(a.opt) === JSON.stringify(b.opt)
+    return sameFields(a, b)
 }
 
+/**
+ * Timings are compared by value: the same class with equal parameters, in any
+ * key order (a timing written inline is a new object every render). Core
+ * timings keep their parameters in `opt` and derive the rest of their fields
+ * from it; a timing without `opt` is compared field by field.
+ */
+function sameTiming(a: unknown, b: unknown): boolean {
+    if (a === b) return true
+    if (!isObject(a) || !isObject(b) || a.constructor !== b.constructor) {
+        return false
+    }
+    return 'opt' in a || 'opt' in b ? sameValue(a.opt, b.opt) : sameFields(a, b)
+}
+
+/** The layout defaults (§7.1): an omitted field equals its default. */
+const DEFAULT_DURATION = 0.35
+let defaultTiming: TimingFunction | null = null
+
+/** Equal when they draw the same track: omitted fields are their defaults. */
 function sameMotion(
     a: LayoutMotion | undefined,
     b: LayoutMotion | undefined
 ): boolean {
     if (a === b) return true
-    if (!a || !b) return false
-    return (
-        a.duration === b.duration &&
-        a.delay === b.delay &&
-        sameTiming(a.timing, b.timing)
-    )
+    if (
+        (a?.duration ?? DEFAULT_DURATION) !==
+            (b?.duration ?? DEFAULT_DURATION) ||
+        (a?.delay ?? 0) !== (b?.delay ?? 0)
+    ) {
+        return false
+    }
+    if (a?.timing === b?.timing) return true
+    defaultTiming ??= timing.easeOut()
+    return sameTiming(a?.timing ?? defaultTiming, b?.timing ?? defaultTiming)
 }
 
-/** Equal options keep a running track; a change retargets it (§5.5). */
+/**
+ * Equal options keep a running track; a change retargets it (§5.5). Compared
+ * by effect: an omitted option equals its default, a timing its parameters.
+ */
 export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
     return (
-        a.layout === b.layout &&
+        (a.layout ?? true) === (b.layout ?? true) &&
         a.layoutId === b.layoutId &&
         a.layoutAnchor?.x === b.layoutAnchor?.x &&
         a.layoutAnchor?.y === b.layoutAnchor?.y &&
-        a.layoutCrossfade === b.layoutCrossfade &&
+        (a.layoutCrossfade ?? true) === (b.layoutCrossfade ?? true) &&
         'layoutDependency' in a === 'layoutDependency' in b &&
         Object.is(a.layoutDependency, b.layoutDependency) &&
-        a.radius === b.radius &&
+        (a.radius ?? false) === (b.radius ?? false) &&
         sameMotion(a.motion, b.motion)
     )
 }
