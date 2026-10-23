@@ -62,35 +62,37 @@ For a participant `n`:
 
 | Name | Meaning |
 |---|---|
-| **Inner map Qₙ** | The element's own authored `translate`/`scale` and its inline `transform` (presence), about its `transform-origin`. Not owned by layout. |
-| **Pose Pₙ** | Layout's own `(t, s)` per axis, about the `transform-origin`. Owned by layout. |
-| **Layout box Lₙ** | The CSS box with every participant pose and every inner map removed. |
-| **Drawn box Vₙ** | Where the element appears with every pose applied and every inner map removed. |
+| **Local frame** | The coordinates the element's own transforms act in: its parent participant's frame before that parent's transforms (the page for a top-level participant; non-participant ancestors may only translate, §6). |
+| **CSS box Lₙ, origin Oₙ** | The element's border box and its `transform-origin` point, in the local frame. |
+| **Inner map Qₙ** | The element's own authored `translate`/`scale` and its inline `transform` (presence), about `Oₙ`. Not owned by layout; frozen at the flush. |
+| **Box Xₙ = Qₙ(Lₙ)** | What layout's pose moves, in the local frame. |
+| **Pose Pₙ** | Layout's own `(t, s)` per axis, about `Oₙ`. Owned by layout. |
+| **Full map Mₙ** | `Mₙ = Mπ ∘ Pₙ ∘ Qₙ`, where `Mπ` is the parent participant's full map (identity for a top-level participant). |
+| **Visual box** | `Mₙ(Lₙ)`: what the user sees, in page coordinates. |
 
 CSS composes `translate · rotate · scale · transform`. Layout writes the *outer* map
 (`translate = t + s·authoredTranslate`, `scale = s·authoredScale`) and presence's
-`transform` stays inside, so the inner maps are a visual layer *inside* layout motion:
+`transform` stays inside, so `Pₙ ∘ Qₙ` is exactly what the browser applies.
 
-- **Measurement** divides every known map out along the participant chain, outermost
-  first: `L = (Pₙ∘Qₙ)⁻¹ ∘ … ∘ (P_root∘Q_root)⁻¹ (rect)`, using the poses the engine last
-  wrote, so no owned style is touched before a read.
-- **Projection** composes poses only: `Mₙ = Mπ ∘ Pₙ`, where `Mπ` is the parent
-  participant's map. The browser then applies each inner map inside its element's pose.
+**Track space is the visual space.** Every track runs between two visual boxes — what the
+user saw before the change and what they will see at rest after it:
 
-At rest every pose is the identity and `V = L`.
+- **B** is the visual box at capture, measured as it is (the rect, nothing divided out), or
+  the engine's own drawn box for a node it drives.
+- **A** is the visual box at rest: the rect at the flush with only the poses the engine last
+  wrote divided out, outermost first (`Mπ` and `Pₙ` as last written). Inner maps stay in, so
+  no owned style is touched before a read.
+- **Projection** draws the track's box `V(t)` exactly: `Pₙ` solves `Pₙ(Xₙ) = Mπ⁻¹(V)` with
+  `Mπ` the parent's *full* map — its frozen inner map and its current pose (§5.3).
 
-**Visual space.** The rect a user sees is `R = (P_root∘Q_root) ∘ … ∘ (Pₙ∘Qₙ)(L)`. Every map
-is per-axis affine, and an affine map preserves interpolation, velocity scaling and the
-endpoints of a track. So while the inner maps of a node's participant ancestors are
-constant during a run (authored values always are, since they are frozen; presence is at
-rest or not on an ancestor), the visual rect is *exactly* the source decision's
-visual-space track from the visual B to the visual A — the same equation applied in visual
-coordinates. When a participant ancestor's presence `transform` animates *during* the run,
-that motion is applied to its participant descendants exactly as to its other children: it
-is a visual layer, and the descendants' tracks stay exact inside it. Folding a flush-time
-presence matrix into `Mπ` instead would leave a non-identity pose when the presence motion
-ends (a jump at settle), and following it per frame would need a DOM read per frame; both
-break an invariant (§3.3).
+At the end of a run `V = A` for every node, so every pose is the identity: the settle is
+exact even if an inner map changed during the run.
+
+**Inner maps that change during a run.** An authored `translate`/`scale` change applies after
+settle (§6). A presence `transform` that animates during the run is a visual layer: the
+browser applies the current matrix where the projection assumed the flush-time one, to the
+element and to everything inside it, exactly as to non-participant children. It ends with the
+presence motion and never leaves a pose behind.
 
 ### 3.2 Data
 
@@ -125,9 +127,9 @@ phases.
 ### 4.1 Capture (B)
 
 `capture()` reads every registered participant of the scope that the engine does not
-drive: `getBoundingClientRect`, page scroll, the inline `transform`, and the scroll
-position of each participant's scroll container. Driven nodes are not read: their drawn
-box is known exactly.
+drive: `getBoundingClientRect`, page scroll, and the scroll position of each participant's
+scroll container. The rect is B as it is (§3.1). Driven nodes are not read: their drawn box
+is known exactly.
 
 **Lifetime.** A scope has at most one capture. It belongs to the open epoch, which `flush()`
 closes:
@@ -137,7 +139,7 @@ closes:
 | `capture()` with no capture | Read; the capture is stamped with the current task. |
 | `capture()` in the task that took the capture | Reuse (StrictMode's second render, every further participant render of that pass). |
 | `capture()` in a later task | Read again (refresh), restamp. |
-| `flush()` | Consume the capture (if any) and close the epoch. |
+| `flush()` | Consume the capture (if any) and close the epoch. If a participant has rendered since the commit's last layout effect, hand that render a capture of the A just read, stamped as expired. |
 
 The task stamp expires at the end of the task that took it (a microtask queued by the
 capture), so every render pass that starts in a later task — a time-sliced render's next
@@ -148,6 +150,12 @@ any render of a root that another commit of the same root pre-empts, so no commi
 root can lie between such a capture and its consumer. Mutations from outside React or from
 another root are outside the trigger contract (§7.2).
 
+**Hand-off.** React's scheduler can run a commit and the start of the next render in one task,
+so the flush microtask runs after that render has already touched (and reused) the capture the
+flush consumes. A is the DOM that render is about to change, so the flush hands it a capture of
+A. Being expired, it is re-read by any later touch and is used only when that render touches
+nothing more before its commit.
+
 In React, the first render of a `useLayout` participant, a `LayoutGroup` or an
 `AnimatePresence` in an epoch calls `capture()`. React has not mutated the DOM yet, so this
 is the true before-box, not a remembered one.
@@ -156,10 +164,10 @@ is the true before-box, not a remembered one.
 
 `flush()` consumes the capture synchronously, reads before it writes:
 
-1. Read A for every participant (one layout): rect, inline `transform`, and for active
-   nodes the computed `translate`/`scale`/`rotate`/`transform-origin`/corner radii. Every
-   pose the engine last wrote and every inner map is divided out (§3.1); nothing is
-   restored or stripped first.
+1. Read A for every participant (one layout): the rect, and for active nodes the inline
+   `transform` and the computed `translate`/`scale`/`rotate`/`transform-origin`/corner
+   radii, which give `Lₙ`, `Oₙ` and `Qₙ` (frozen for the run). Only the poses the engine
+   last wrote are divided out (§3.1); nothing is restored or stripped first.
 2. Plan (§5) — pure.
 3. Write the pose of every engine node at its current time (the t = 0 pose of a new track
    reproduces B), then subscribe the scope's `Animatable` if any track exists.
@@ -201,16 +209,18 @@ With `τ = (elapsed − delay) / duration`, `D` the duration and `e` the timing 
 c(τ) = A + (B − A)·(1 − e(τ)) + k·τ·(1 − τ)²,   k = v·D + (B − A)·e′(0)
 ```
 
-- `c(0) = B` and `c(1) = A` for every timing, and `c′(0) = v` exactly
-  (`dc/dτ(0) = −(B − A)·e′(0) + k = v·D`, so `dc/dt(0) = v`).
-- `k` carries the incoming velocity `v`, the analytic central difference of the old track at
-  the retarget instant (zero for a node at rest). Core's `timing.spring` ignores a passed
-  velocity, so this term is the only way to keep velocity continuous. `k` is not clamped:
-  the bump `k·τ·(1 − τ)²` (at most `4|k|/27`, at τ = 1/3) is the carried momentum.
-- **Size floor.** The one physical limit: a size channel never drops below one pixel. If the
-  carried velocity would take a size channel below it, that channel's `k` is reduced to the
-  largest value that keeps it at one pixel; this is the only case where velocity is not
-  carried in full.
+- `c(0) = B` and `c(1) = A` for every timing.
+- `k` carries the incoming velocity `v` of a node that is **moving** at the flush (a retarget,
+  or a handoff from a moving node): `v` is the old track's analytic velocity at that instant,
+  and `dc/dτ(0) = −(B − A)·e′(0) + k = v·D`, so `c′(0) = v` exactly. A node **at rest** has no
+  incoming motion: `k = 0` and its path is exactly the timing curve (with `v = 0` the formula
+  would force a zero start velocity and turn every ease-out into an ease-in-out). Core's
+  `timing.spring` ignores a passed velocity, so this term is the only way to keep velocity
+  continuous. `k` is not clamped: the bump `k·τ·(1 − τ)²` (at most `4|k|/27`, at τ = 1/3) is
+  the carried momentum.
+- **Size floor.** The one physical limit: a size channel never drops below one pixel (the path
+  is floored where the carried velocity or a timing overshoot would take it lower). `c′(0) = v`
+  still holds; this is the only place a channel deviates from the equation.
 - **Delay.** `delay` applies to a node at rest at the flush: before it, the channels hold B.
   A node that is moving at the flush (a retarget) starts its new track at once, so its
   velocity is never dropped.
@@ -227,15 +237,17 @@ c(τ) = A + (B − A)·(1 − e(τ)) + k·τ·(1 − τ)²,   k = v·D + (B − 
 
 ### 5.3 Projection
 
-For node `n` with drawn box `V(t)`, layout box `A`, origin offset `o` and parent map `Mπ`:
+For node `n` with drawn (visual) box `V(t)`, box `X = Qₙ(Lₙ)`, origin `O` (both in the
+local frame) and parent full map `Mπ` (§3.1), per axis:
 
 ```
-V′ = Mπ⁻¹(V),   s = V′_w / A_w,   t = V′_x − A_x − o_x·(1 − s),   Mₙ = Mπ ∘ Tₙ
+V′ = Mπ⁻¹(V),   s = V′_w / X_w,   t = V′_x − O_x − s·(X_x − O_x),   Mₙ = Mπ ∘ Pₙ ∘ Qₙ
 ```
 
-Depth is unlimited and the cost is O(N) arithmetic per frame. Every participant under an
-animating ancestor is solved each frame (a node whose own box did not move keeps `V = A` and
-is counter-projected), so nesting never distorts it.
+The track's origin fraction is `(O_x − L_x) / L_w`, the transform origin's place in the box
+(an affine `Qₙ` keeps it). Depth is unlimited and the cost is O(N) arithmetic per frame.
+Every participant under an animating ancestor is solved each frame (a node whose own box did
+not move keeps `V = A` and is counter-projected), so nesting never distorts it.
 
 ### 5.4 Anchor
 
@@ -278,7 +290,7 @@ any total scale. The declaration is restored on settle.
 | Property | Owner | Rule |
 |---|---|---|
 | `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. A running CSS transition or animation on them snaps the node. |
-| `transform` | Presence and Core | Divided out of measurement. |
+| `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes. |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
 | `border-radius` | Layout when `radius: true` | Restored on settle. |
@@ -289,7 +301,7 @@ its exiting phase, whether its record names `opacity`, and a release hold
 (`presence_link.ts`). Adapters see none of it.
 
 **popLayout.** In the render where a child stops being present, `usePresence` measures its
-layout box relative to its real containing block (the nearest ancestor that establishes one
+CSS box relative to its real containing block (the nearest ancestor that establishes one
 for absolute positioning, or the initial containing block). The commit lifts it to
 `position: absolute` at that box, before the flush, so siblings are measured without the gap
 and move from t = 0.
@@ -456,9 +468,9 @@ nothing.
 
 - **Oracle:** at elapsed time t, every node's *visual* rect (the browser's
   `getBoundingClientRect` plus page scroll) equals its own track in page coordinates, with its
-  anchor rule applied (§3.1: with constant ancestor inner maps this is the visual-space
-  track; when an ancestor's presence animates during the run, the expected rect is that
-  track seen through the ancestors' current inner maps, which the test sets and knows).
+  anchor rule applied (§3.1). When a presence `transform` on the node or an ancestor
+  animates during the run, the expected rect is that track with the change of those inner
+  maps since the flush applied, which the test sets and knows.
 - **Layers:** pure property tests on `solve`/`plan` (random trees to depth 5, within 1e-9);
   deterministic browser tests on a manual clock (0.5 px per frame); a few real-clock tests
   (jank, read counts, frame cost).
@@ -492,7 +504,7 @@ movers ≤ 2 ms p95.
 - The velocity term is a continuity device, not spring physics.
 - Text under scale re-rasterizes and can look soft mid-flight.
 - An authored `translate`/`scale` change during a run applies after settle.
-- A participant's presence transform that animates while its participant descendants move is a
-  visual layer applied to them like to its other children (§3.1).
+- A presence `transform` that animates during a layout run is a visual layer on top of the
+  tracks of its element and its participant descendants, like on its other children (§3.1).
 - A size channel whose carried velocity would take it below one pixel loses that part of the
   velocity (§5.1).
