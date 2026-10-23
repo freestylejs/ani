@@ -28,12 +28,19 @@ import { hasDOM } from './feature'
 import {
     aboutOrigin,
     type Box,
+    carry,
     compose,
+    composeMoving,
     IDENTITY_MAP,
     invert,
+    invertMoving,
     type Map2,
+    type MovingMap,
     mapBox,
+    movingOnto,
     ownMap,
+    STILL_IDENTITY,
+    still,
     unmapOwn,
 } from './geometry'
 import {
@@ -69,6 +76,7 @@ import {
     solve,
     type Track,
     trackEnded,
+    ZERO_VELOCITY,
 } from './solve'
 import type {
     LayoutGroup,
@@ -213,6 +221,17 @@ interface FrameNode {
     readonly geometry: Geometry
 }
 
+interface Retained {
+    readonly box: Box
+    readonly velocity: BoxVelocity | null
+    readonly until: number
+    /**
+     * The participant the lead was drawn under, until the next flush carries
+     * the box through its current presence layers (§5.6).
+     */
+    readonly parent: Participant | null
+}
+
 interface Write {
     readonly element: HTMLElement
     readonly property: string
@@ -336,14 +355,7 @@ export function createLayoutGroup(
     /** Previous lead per `layoutId`. */
     const leads = new Map<string, Participant>()
     /** Drawn boxes and velocities of leads removed within `retain` seconds. */
-    const retained = new Map<
-        string,
-        {
-            readonly box: Box
-            readonly velocity: BoxVelocity | null
-            readonly until: number
-        }
-    >()
+    const retained = new Map<string, Retained>()
     const warned = new Set<string>()
     const stats = { captures: 0, reads: 0, tracks: 0 }
 
@@ -751,16 +763,24 @@ export function createLayoutGroup(
     /**
      * B of a driven node is its drawn box as the user sees it now: through the
      * presence layers as they are at this flush, not as they were frozen at the
-     * last one (§3.1). Only the presence matrix can differ (it is not React's,
-     * so the commit did not change it); the poses are the engine's own.
+     * last one (§3.1). Only the presence matrices can differ (they are not
+     * React's, so the commit did not change them); the poses are the engine's
+     * own. Each pose is recovered with its rate from the drawn box and its
+     * velocity, then composed through the current layers, so a velocity is
+     * carried exactly (§5.5): a parent's motion stays a translation whatever
+     * the child's own scale. A lead removed since the last flush is carried
+     * through its parent's current layers the same way (§5.6).
      */
     function reconcileLayers(
         index: ReadonlyMap<Participant, number>,
         geometry: readonly (Geometry | null)[],
-        nowSolve: readonly SolveNode[],
         drawn: Map<Participant, Box>,
         velocity: Map<Participant, BoxVelocity>
     ): void {
+        const pending = [...retained].filter(([, entry]) => entry.parent)
+        for (const [id, entry] of pending) {
+            retained.set(id, { ...entry, parent: null })
+        }
         if (frame.length === 0) return
         const current = frame.map((node) => {
             const i = index.get(node.p)
@@ -775,8 +795,8 @@ export function createLayoutGroup(
             )
         })
         if (!changed) return
-        const solved = solve(nowSolve)
-        const maps: Map2[] = []
+        const before: MovingMap[] = []
+        const after: MovingMap[] = []
         frame.forEach((node, k) => {
             const g = node.geometry
             const m = current[k] ?? g.matrix
@@ -791,29 +811,53 @@ export function createLayoutGroup(
                 g.ox,
                 g.oy
             )
-            const parent = node.parent >= 0 ? maps[node.parent]! : IDENTITY_MAP
-            const pose = node.p.drive ? solved[k]!.pose : IDENTITY_POSE
-            const map = compose(
-                compose(parent, aboutOrigin(pose, g.ox, g.oy)),
-                inner
+            const parentWas =
+                node.parent >= 0 ? before[node.parent]! : STILL_IDENTITY
+            const parentNow =
+                node.parent >= 0 ? after[node.parent]! : STILL_IDENTITY
+            const css = mapBox(invert(g.inner), g.box)
+            const onto = movingOnto(
+                css,
+                drawn.get(node.p) ?? g.a,
+                velocity.get(node.p) ?? ZERO_VELOCITY
             )
-            maps.push(map)
-            if (!node.p.drive) return
-            const seen = mapBox(map, mapBox(invert(g.inner), g.box))
-            const was = drawn.get(node.p)
-            drawn.set(node.p, seen)
-            const v = velocity.get(node.p)
-            if (v && was && was.w > 0 && was.h > 0) {
-                const rx = seen.w / was.w
-                const ry = seen.h / was.h
-                velocity.set(node.p, {
-                    x: v.x * rx,
-                    y: v.y * ry,
-                    w: v.w * rx,
-                    h: v.h * ry,
-                })
+            if (!onto) {
+                before.push(composeMoving(parentWas, still(g.inner)))
+                after.push(composeMoving(parentNow, still(inner)))
+                return
             }
+            // `onto` is the full map parent ∘ pose ∘ inner: the pose, with its rate
+            const pose = composeMoving(
+                invertMoving(parentWas),
+                composeMoving(onto, still(invert(g.inner)))
+            )
+            const next = composeMoving(
+                composeMoving(parentNow, pose),
+                still(inner)
+            )
+            before.push(onto)
+            after.push(next)
+            if (!node.p.drive) return
+            const seen = carry(next, css, ZERO_VELOCITY)
+            drawn.set(node.p, seen.box)
+            velocity.set(node.p, seen.velocity)
         })
+        for (const [id, entry] of pending) {
+            const k = frame.findIndex((node) => node.p === entry.parent)
+            if (k < 0 || entry.parent?.removed) continue
+            const shift = composeMoving(after[k]!, invertMoving(before[k]!))
+            const moved = carry(
+                shift,
+                entry.box,
+                entry.velocity ?? ZERO_VELOCITY
+            )
+            retained.set(id, {
+                box: moved.box,
+                velocity: entry.velocity ? moved.velocity : null,
+                until: entry.until,
+                parent: null,
+            })
+        }
     }
 
     function flush(): Promise<LayoutReport> {
@@ -919,14 +963,21 @@ export function createLayoutGroup(
             }
             return added
         }
-        // every node with a driven node at or above it divides out poses
+        // every node with a driven node at or above it divides out poses; the
+        // parent of a lead removed since the last flush carries its box
+        const carriers = new Set<Participant | null>()
+        for (const entry of retained.values()) carriers.add(entry.parent)
         const chained: boolean[] = []
         list.forEach((p, i) => {
             const parent = parents[i]!
-            chained.push(p.drive !== null || (parent >= 0 && chained[parent]!))
+            chained.push(
+                p.drive !== null ||
+                    carriers.has(p) ||
+                    (parent >= 0 && chained[parent]!)
+            )
         })
         measureNodes(chained)
-        reconcileLayers(index, geometry, nowSolve, drawn, velocity)
+        reconcileLayers(index, geometry, drawn, velocity)
 
         const reduced = reducedMode()
         const ids = new Map<string, IdHistory>()
@@ -1486,6 +1537,7 @@ export function createLayoutGroup(
                             box,
                             velocity: motion?.velocity ?? null,
                             until: now() + retain * 1000,
+                            parent: motion ? self.parent : null,
                         })
                 }
                 const d = self.drive

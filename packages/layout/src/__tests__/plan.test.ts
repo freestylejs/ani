@@ -653,6 +653,49 @@ describe('plan: CP3 trial regressions', () => {
         }
     })
 
+    it('J-030: the retained size velocity is handed off too (position and size momentum)', () => {
+        const linear = resolveMotion([
+            { duration: 1, delay: 0, timing: timing.linear() },
+        ])
+        const a: Box = { x: 400, y: 0, w: 40, h: 40 }
+        const ids = new Map<string, IdHistory>([
+            [
+                'x',
+                {
+                    lead: null,
+                    retained: { x: 138.4, y: 0, w: 51.52, h: 40 },
+                    retainedVelocity: { x: 200, y: 0, w: 60, h: 0 },
+                },
+            ],
+        ])
+        const result = plan(
+            input([node({ layoutId: 'x', a, before: null, motion: linear })], {
+                ids,
+            })
+        )
+        const action = result.actions[0]!
+        if (action.kind !== 'track') throw new Error('expected a track')
+        const at = (elapsed: number) =>
+            drawnBoxes([
+                rootNode(a, {
+                    fx: 0.5,
+                    fy: 0.5,
+                    track: action.track,
+                    elapsed,
+                }),
+            ])[0]!
+        expect(at(0)).toEqual({ x: 138.4, y: 0, w: 51.52, h: 40 })
+        // w: A + (B − A)(1 − τ) + kτ(1 − τ)², k = vD + (B − A) = 60 + 11.52
+        expect(at(0.02).w).toBeCloseTo(
+            40 + 11.52 * 0.98 + 71.52 * 0.02 * 0.98 ** 2,
+            9
+        )
+        for (const h of [1e-5, 1e-6, 1e-7]) {
+            expect((at(h).w - 51.52) / h).toBeCloseTo(60, 2)
+            expect((at(h).x - 138.4) / h).toBeCloseTo(200, 2)
+        }
+    })
+
     it('J-013: an offscreen child under a visible mover is culled before the cap and stays counter-projected', () => {
         const result = plan(
             input(
