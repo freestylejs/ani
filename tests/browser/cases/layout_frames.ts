@@ -111,6 +111,25 @@ export async function frames(
     return count
 }
 
+/**
+ * `frames` for a run that must complete: exhausting `limit` before `done()`
+ * holds throws instead of returning, so a row cannot pass on a run that never
+ * settled. Returns the frames run.
+ */
+export async function framesUntilDone(
+    mc: ManualClock,
+    limit: number,
+    check: (elapsed: number) => void,
+    done: () => boolean,
+    label = 'run'
+): Promise<number> {
+    const count = await frames(mc, limit, check, done)
+    if (!done()) {
+        throw new Error(`${label} did not settle within ${limit} frames`)
+    }
+    return count
+}
+
 /** A track with a centred origin, at rest, no delay. */
 export function spec(
     before: OBox,
