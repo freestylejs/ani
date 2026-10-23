@@ -1,4 +1,9 @@
-import { type Clock, DEV } from '@freestylejs/ani-core'
+import {
+    type Clock,
+    DEV,
+    type TimingFunction,
+    timing,
+} from '@freestylejs/ani-core'
 import {
     createLayoutGroup,
     type LayoutGroup,
@@ -44,50 +49,148 @@ interface Member {
 const TRIGGER_WARNING =
     '[ani-react/layout] The DOM around layout participants changed in a commit that rendered none of them, so nothing was captured and the change did not animate. Render a participant, LayoutGroup or AnimatePresence in that commit (put the LayoutGroup inside the component that owns the state), or wrap the change in useLayoutGroup().update(fn).'
 
+const isObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null
+
+/** Same own enumerable fields, each equal by {@link sameValue}, in any key order. */
+function sameFields(
+    a: Record<string, unknown>,
+    b: Record<string, unknown>
+): boolean {
+    const keys = Object.keys(a)
+    return (
+        keys.length === Object.keys(b).length &&
+        keys.every((key) => Object.hasOwn(b, key) && sameValue(a[key], b[key]))
+    )
+}
+
 /**
- * Timings are compared by value: the same class with equal `opt` (a timing
- * written inline is a new object every render).
+ * Equal by value: plain objects and arrays field by field, in any key order;
+ * anything else by identity (`Object.is`).
  */
-function sameTiming(a: unknown, b: unknown): boolean {
-    if (a === b) return true
+export function sameValue(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) return true
+    if (!isObject(a) || !isObject(b)) return false
+    const proto = Object.getPrototypeOf(a)
     if (
-        typeof a !== 'object' ||
-        typeof b !== 'object' ||
-        a === null ||
-        b === null ||
-        a.constructor !== b.constructor ||
-        !('opt' in a) ||
-        !('opt' in b)
+        proto !== Object.getPrototypeOf(b) ||
+        (proto !== Object.prototype &&
+            proto !== Array.prototype &&
+            proto !== null)
     ) {
         return false
     }
-    return JSON.stringify(a.opt) === JSON.stringify(b.opt)
+    return sameFields(a, b)
 }
 
+/**
+ * Declarations layout (`!important` poses, crossfade opacity, owned corners),
+ * presence and Core (`transform`, `opacity`) write while they animate: they
+ * never change a layout box, so changing them is no trigger-contract miss.
+ */
+const OWNED_STYLE = new Set([
+    'translate',
+    'scale',
+    'transform',
+    'opacity',
+    'border-radius',
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+])
+
+/** An inline style's declarations other than the owned ones, normalized. */
+function authoredStyle(text: string | null): string {
+    if (!text) return ''
+    return text
+        .split(';')
+        .map((declaration) => declaration.trim())
+        .filter(
+            (declaration) =>
+                declaration !== '' &&
+                !OWNED_STYLE.has(
+                    declaration.slice(0, declaration.indexOf(':')).trim()
+                )
+        )
+        .sort()
+        .join(';')
+}
+
+/**
+ * Whether a batch of mutations around participants can have moved one: any
+ * node added or removed, any `class` change, and a `style` change beyond the
+ * owned declarations (compared from each element's first old value to now).
+ */
+function movesLayout(records: readonly MutationRecord[]): boolean {
+    const styles = new Map<Element, string | null>()
+    for (const record of records) {
+        if (record.type !== 'attributes' || record.attributeName !== 'style') {
+            return true
+        }
+        const target = record.target as Element
+        if (!styles.has(target)) styles.set(target, record.oldValue)
+    }
+    for (const [target, old] of styles) {
+        if (
+            authoredStyle(old) !== authoredStyle(target.getAttribute('style'))
+        ) {
+            return true
+        }
+    }
+    return false
+}
+
+/**
+ * Timings are compared by value: the same class with equal parameters, in any
+ * key order (a timing written inline is a new object every render). Core
+ * timings keep their parameters in `opt` and derive the rest of their fields
+ * from it; a timing without `opt` is compared field by field.
+ */
+function sameTiming(a: unknown, b: unknown): boolean {
+    if (a === b) return true
+    if (!isObject(a) || !isObject(b) || a.constructor !== b.constructor) {
+        return false
+    }
+    return 'opt' in a || 'opt' in b ? sameValue(a.opt, b.opt) : sameFields(a, b)
+}
+
+/** The layout defaults (§7.1): an omitted field equals its default. */
+const DEFAULT_DURATION = 0.35
+let defaultTiming: TimingFunction | null = null
+
+/** Equal when they draw the same track: omitted fields are their defaults. */
 function sameMotion(
     a: LayoutMotion | undefined,
     b: LayoutMotion | undefined
 ): boolean {
     if (a === b) return true
-    if (!a || !b) return false
-    return (
-        a.duration === b.duration &&
-        a.delay === b.delay &&
-        sameTiming(a.timing, b.timing)
-    )
+    if (
+        (a?.duration ?? DEFAULT_DURATION) !==
+            (b?.duration ?? DEFAULT_DURATION) ||
+        (a?.delay ?? 0) !== (b?.delay ?? 0)
+    ) {
+        return false
+    }
+    if (a?.timing === b?.timing) return true
+    defaultTiming ??= timing.easeOut()
+    return sameTiming(a?.timing ?? defaultTiming, b?.timing ?? defaultTiming)
 }
 
-/** Equal options keep a running track; a change retargets it (§5.5). */
+/**
+ * Equal options keep a running track; a change retargets it (§5.5). Compared
+ * by effect: an omitted option equals its default, a timing its parameters.
+ */
 export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
     return (
-        a.layout === b.layout &&
+        (a.layout ?? true) === (b.layout ?? true) &&
         a.layoutId === b.layoutId &&
         a.layoutAnchor?.x === b.layoutAnchor?.x &&
         a.layoutAnchor?.y === b.layoutAnchor?.y &&
-        a.layoutCrossfade === b.layoutCrossfade &&
+        (a.layoutCrossfade ?? true) === (b.layoutCrossfade ?? true) &&
         'layoutDependency' in a === 'layoutDependency' in b &&
         Object.is(a.layoutDependency, b.layoutDependency) &&
-        a.radius === b.radius &&
+        (a.radius ?? false) === (b.radius ?? false) &&
         sameMotion(a.motion, b.motion)
     )
 }
@@ -136,34 +239,49 @@ export function createLayoutScope(
         })
     }
 
+    const observed = new Set<Element>()
     const watch = (element: HTMLElement): void => {
         if (!DEV || typeof MutationObserver === 'undefined') return
-        observer ??= new MutationObserver(() => {
-            if (members.size === 0) return
+        observer ??= new MutationObserver((records) => {
+            if (warned || !movesLayout(records)) return
+            // nothing left on screen to jump (an unmount of the whole scope)
+            if (![...members.keys()].some((element) => element.isConnected)) {
+                return
+            }
             if (capturedSinceCheck) {
                 capturedSinceCheck = false
                 return
             }
-            if (warned) return
             warned = true
             // biome-ignore lint/suspicious/noConsole: development warning
             console.warn(TRIGGER_WARNING)
         })
-        observer.observe(element, {
+        // the parent's subtree: the parent itself, the participants and
+        // their siblings, with everything inside them
+        const parent = element.parentElement
+        if (!parent || observed.has(parent)) return
+        observed.add(parent)
+        observer.observe(parent, {
+            childList: true,
+            subtree: true,
             attributes: true,
-            attributeFilter: ['class'],
+            attributeFilter: ['class', 'style'],
+            attributeOldValue: true,
         })
-        if (element.parentElement) {
-            observer.observe(element.parentElement, { childList: true })
-        }
     }
 
     const scope: LayoutScope = {
         touch() {
             if (!hasDOM()) return
-            live().capture()
             touched = true
             capturedSinceCheck = true
+            // a render after the commit's layout effects, before its flush:
+            // the open capture holds that commit's before-boxes. Capturing
+            // now would refresh it (a time-sliced render took it in an
+            // earlier task) with the after-boxes; the flush's hand-off
+            // captures for this render instead (K14)
+            if (queued) return
+            live().capture()
         },
 
         commit() {
@@ -249,6 +367,7 @@ export function createLayoutScope(
             members.clear()
             observer?.disconnect()
             observer = null
+            observed.clear()
         },
     }
     emptied()
@@ -257,7 +376,13 @@ export function createLayoutScope(
 
 /* ───────────────────────── implicit root ───────────────────────── */
 
-const roots = new Map<Clock | undefined, WeakMap<Document, LayoutScope>>()
+interface Roots {
+    readonly byDocument: WeakMap<Document, LayoutScope>
+    /** The same scopes, iterable: those a render of unknown document touches. */
+    readonly live: Set<LayoutScope>
+}
+
+const roots = new Map<Clock | undefined, Roots>()
 
 /**
  * The implicit root scope of `(clock, document)` (§7.2): created on first
@@ -268,24 +393,26 @@ export function rootScope(
     clock: Clock | undefined,
     doc: Document
 ): LayoutScope {
-    let byDocument = roots.get(clock)
-    if (!byDocument) {
-        byDocument = new WeakMap()
-        roots.set(clock, byDocument)
+    let partition = roots.get(clock)
+    if (!partition) {
+        partition = { byDocument: new WeakMap(), live: new Set() }
+        roots.set(clock, partition)
     }
-    const partition = byDocument
-    let scope = partition.get(doc)
+    const { byDocument, live } = partition
+    let scope = byDocument.get(doc)
     if (!scope) {
         const created: LayoutScope = createLayoutScope(
             clock ? { clock } : {},
             () => {
-                if (partition.get(doc) !== created) return
-                partition.delete(doc)
+                if (byDocument.get(doc) !== created) return
+                byDocument.delete(doc)
+                live.delete(created)
                 created.dispose()
             }
         )
         scope = created
-        partition.set(doc, scope)
+        byDocument.set(doc, scope)
+        live.add(scope)
     }
     return scope
 }
@@ -295,7 +422,7 @@ export function peekRootScope(
     clock: Clock | undefined,
     doc: Document
 ): LayoutScope | undefined {
-    return roots.get(clock)?.get(doc)
+    return roots.get(clock)?.byDocument.get(doc)
 }
 
 /* ───────────────────────── contexts ───────────────────────── */
@@ -334,6 +461,29 @@ export function existingScope(
     return peekRootScope(undefined, element?.ownerDocument ?? document)
 }
 
+/**
+ * The existing scopes a render touches when it knows its DOM only by
+ * `documents` (§4.1, §7.2): the group's scope, else the implicit roots of
+ * those documents. A render that knows no document yet (a first render,
+ * `AnimatePresence` before any registration) touches every implicit root:
+ * touching one too many costs a read, missing one loses the change.
+ */
+export function existingScopes(
+    context: LayoutContextValue | null,
+    documents: Iterable<Document>
+): LayoutScope[] {
+    if (context) return [context.scope]
+    if (!hasDOM()) return []
+    const found: LayoutScope[] = []
+    let known = false
+    for (const doc of documents) {
+        known = true
+        const scope = peekRootScope(undefined, doc)
+        if (scope && !found.includes(scope)) found.push(scope)
+    }
+    return known ? found : [...(roots.get(undefined)?.live ?? [])]
+}
+
 /** `motion` fields of `over` replace those of `base`, field by field. */
 export function mergeMotion(
     base: LayoutMotion | undefined,
@@ -356,7 +506,8 @@ export interface PresenceContextValue {
     readonly willEnter: boolean
     readonly popLayout: boolean
     readonly custom?: unknown
-    readonly register: () => number
+    /** Registers an exit to wait for, with its element's document if it has one. */
+    readonly register: (document?: Document) => number
     readonly unregister: (id: number) => void
     readonly settle: () => void
     readonly reportExit: (id: number, token: number) => void

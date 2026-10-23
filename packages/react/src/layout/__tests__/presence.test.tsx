@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import * as a from '@freestylejs/ani-core'
-import type { CSSProperties } from 'react'
+import { type CSSProperties, StrictMode } from 'react'
 import { renderToString } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../../core/src/testing/index'
@@ -45,7 +45,8 @@ function rect(left: number, top: number, width: number, height: number) {
 /** A popLayout child inside `block`, exited after its geometry is stubbed. */
 async function popInside(
     blockStyle: CSSProperties,
-    stub: (row: HTMLElement, block: HTMLElement) => void
+    stub: (row: HTMLElement, block: HTMLElement) => void,
+    rowStyle: CSSProperties = { height: 20 }
 ): Promise<Record<'left' | 'top' | 'width' | 'height', string>> {
     const clock = createManualClock()
     function Row() {
@@ -54,7 +55,7 @@ async function popInside(
             <div
                 ref={presence.ref}
                 data-id="row"
-                style={{ height: 20, ...presence.style }}
+                style={{ ...rowStyle, ...presence.style }}
             />
         )
     }
@@ -587,7 +588,9 @@ describe('react presence', () => {
             (row, block) => {
                 row.getBoundingClientRect = rect(30, 10, 40, 20)
                 block.getBoundingClientRect = rect(0, 0, 400, 200)
-            }
+            },
+            // drawn 20 px tall at scale 2
+            { height: 10 }
         )
         expect(style.left).toBe('15px')
         expect(style.top).toBe('5px')
@@ -601,5 +604,216 @@ describe('react presence', () => {
         })
         expect(style.left).toBe(`${30 + window.scrollX}px`)
         expect(style.top).toBe(`${10 + window.scrollY}px`)
+    })
+
+    it('J-027: takes the own transform of the element back out of the popLayout box', async () => {
+        // CSS box left 50 / top 80 / 100 × 50 in a positioned block; presence
+        // draws it through translateY(14px) scale(0.8) about 0 0
+        const style = await popInside(
+            {
+                position: 'relative',
+                width: 400,
+                height: 300,
+                boxSizing: 'border-box',
+            },
+            (row, block) => {
+                row.getBoundingClientRect = rect(50, 94, 80, 40)
+                block.getBoundingClientRect = rect(0, 0, 400, 300)
+            },
+            {
+                width: 100,
+                height: 50,
+                transform: 'matrix(0.8, 0, 0, 0.8, 0, 14)',
+                transformOrigin: '0px 0px',
+            }
+        )
+        expect(style).toEqual({
+            left: '50px',
+            top: '80px',
+            width: '100px',
+            height: '50px',
+        })
+    })
+
+    it('J-027: inverts an own transform about a centred origin inside a scaled block', async () => {
+        // block scale 2; CSS box 10 / 20 / 60 × 30, scaleX 0.5 about its centre
+        // and translateY 5: drawn (2·(10 + 15), 2·(20 + 5), 2·30, 2·30)
+        const style = await popInside(
+            {
+                transform: 'scale(2)',
+                width: 200,
+                height: 100,
+                boxSizing: 'border-box',
+            },
+            (row, block) => {
+                row.getBoundingClientRect = rect(50, 50, 60, 60)
+                block.getBoundingClientRect = rect(0, 0, 400, 200)
+            },
+            {
+                width: 60,
+                height: 30,
+                transform: 'matrix(0.5, 0, 0, 1, 0, 5)',
+                transformOrigin: '30px 15px',
+            }
+        )
+        expect(style).toEqual({
+            left: '10px',
+            top: '20px',
+            width: '60px',
+            height: '30px',
+        })
+    })
+
+    it('J-028: keeps a running enter and exit across a StrictMode moved-fiber replay', async () => {
+        const clock = createManualClock()
+        const exits: string[] = []
+        const motion = {
+            present: { opacity: 1, translateY: 0, scaleX: 1 },
+            initial: { opacity: 0, translateY: 14, scaleX: 0.8 },
+            enter: a.ani({
+                to: { opacity: 1, translateY: 0, scaleX: 1 },
+                duration: 1,
+                timing: a.timing.linear(),
+            }),
+            exit: a.ani({
+                to: { opacity: 0, translateY: 0, scaleX: 1 },
+                duration: 1,
+                timing: a.timing.linear(),
+            }),
+        }
+        function Row({ id }: { id: string }) {
+            const presence = usePresence(motion, { clock: clock.clock })
+            return <li ref={presence.ref} data-id={id} style={presence.style} />
+        }
+        function List({ ids }: { ids: string[] }) {
+            return (
+                <StrictMode>
+                    <AnimatePresence
+                        initial={false}
+                        onExitComplete={(key) => exits.push(key)}
+                    >
+                        {ids.map((id) => (
+                            <Row key={id} id={id} />
+                        ))}
+                    </AnimatePresence>
+                </StrictMode>
+            )
+        }
+        const row = (id: string) =>
+            view.container.querySelector(`[data-id="${id}"]`) as HTMLElement
+        /** opacity, translateY, scaleX as written */
+        const pose = (id: string) => {
+            const style = row(id).style
+            const y = /translateY\(([-\d.e]+)px\)/.exec(style.transform)
+            const sx = /scaleX\(([-\d.e]+)\)/.exec(style.transform)
+            return [Number(style.opacity), Number(y?.[1]), Number(sx?.[1])]
+        }
+        const expectPose = (id: string, want: number[]) =>
+            pose(id).forEach((value, i) =>
+                expect(value).toBeCloseTo(want[i]!, 9)
+            )
+        const view = await mount(<List ids={[]} />)
+        try {
+            // both enter for 1 s from opacity 0, translateY 14, scaleX 0.8
+            await view.rerender(<List ids={['a', 'b']} />)
+            await act(async () => {
+                clock.frame(200)
+            })
+            expectPose('a', [0.2, 11.2, 0.84])
+            expectPose('b', [0.2, 11.2, 0.84])
+            // a reorder moves `a`: its ref and effects replay, time stands still
+            await view.rerender(<List ids={['b', 'a']} />)
+            expectPose('a', [0.2, 11.2, 0.84])
+            expectPose('b', [0.2, 11.2, 0.84])
+            await act(async () => {
+                clock.frame(200)
+            })
+            expectPose('a', [0.4, 8.4, 0.88])
+            expectPose('b', [0.4, 8.4, 0.88])
+
+            // finish the enters, then exit `a` and move it mid-exit
+            await act(async () => {
+                clock.frames(60)
+            })
+            await view.rerender(<List ids={['b', 'c']} />)
+            await act(async () => {
+                clock.frame(200)
+            })
+            expectPose('a', [0.8, 0, 1])
+            // [b, (a), c] → [c, b, (a)]: `a` moves
+            await view.rerender(<List ids={['c', 'b']} />)
+            expect(row('a')).not.toBeNull()
+            expectPose('a', [0.8, 0, 1])
+            await act(async () => {
+                clock.frame(200)
+            })
+            expectPose('a', [0.6, 0, 1])
+            expect(exits).toEqual([])
+            await act(async () => {
+                clock.frames(40)
+            })
+            expect(row('a')).toBeNull()
+            expect(exits).toEqual(['a'])
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('J-028: an inline merged ref (new every render) keeps the running enter', async () => {
+        const clock = createManualClock()
+        const motion = {
+            present: { opacity: 1 },
+            initial: { opacity: 0 },
+            enter: a.ani({
+                to: { opacity: 1 },
+                duration: 1,
+                timing: a.timing.linear(),
+            }),
+            exit: a.ani({ to: { opacity: 0 }, duration: 0.2 }),
+        }
+        const seen: Array<HTMLElement | null> = []
+        function Row({ tick }: { tick: number }) {
+            const presence = usePresence(motion, { clock: clock.clock })
+            return (
+                <div
+                    // React calls the previous callback with null, this one
+                    // with the element, in every commit
+                    ref={(element: HTMLDivElement | null) => {
+                        seen.push(element)
+                        presence.ref(element)
+                    }}
+                    data-id="row"
+                    data-tick={tick}
+                    style={presence.style}
+                />
+            )
+        }
+        function App({ show, tick }: { show: boolean; tick: number }) {
+            return (
+                <AnimatePresence initial={false}>
+                    {show && <Row key="row" tick={tick} />}
+                </AnimatePresence>
+            )
+        }
+        const view = await mount(<App show={false} tick={0} />)
+        try {
+            await view.rerender(<App show={true} tick={0} />)
+            await act(async () => {
+                clock.frame(200)
+            })
+            const row = view.container.querySelector(
+                '[data-id="row"]'
+            ) as HTMLElement
+            expect(Number(row.style.opacity)).toBeCloseTo(0.2, 9)
+            await view.rerender(<App show={true} tick={1} />)
+            expect(seen).toContain(null)
+            expect(Number(row.style.opacity)).toBeCloseTo(0.2, 9)
+            await act(async () => {
+                clock.frame(200)
+            })
+            expect(Number(row.style.opacity)).toBeCloseTo(0.4, 9)
+        } finally {
+            await view.unmount()
+        }
     })
 })

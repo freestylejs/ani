@@ -7,11 +7,18 @@ import type {
     LayoutOptions,
     LayoutReport,
 } from '@freestylejs/ani-layout'
-import { createRef, type RefObject, StrictMode, useState } from 'react'
+import { createRef, memo, type RefObject, StrictMode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createManualClock } from '../../../../core/src/testing/index'
 import { act, mount } from '../../__tests__/helpers'
-import { LayoutGroup, useLayout, useLayoutGroup } from '..'
+import {
+    AnimatePresence,
+    LayoutGroup,
+    useLayout,
+    useLayoutGroup,
+    usePresence,
+} from '..'
 import { createLayoutScope, rootScope } from '../context'
 
 /** A recording stand-in for the core group: the adapter calls only its public API. */
@@ -257,6 +264,33 @@ describe('react layout adapter', () => {
         }
     })
 
+    it('J-026: keeps the scope for an equal policy object, re-creates it for a changed one', async () => {
+        const view = await mount(
+            <List ids={['a', 'b']} reducedMotion={{ maxDuration: 0.1 }} />
+        )
+        try {
+            const [old] = live()
+            // a fresh object with the same value
+            await view.rerender(
+                <List ids={['a', 'b']} reducedMotion={{ maxDuration: 0.1 }} />
+            )
+            await settle()
+            expect(old!.disposed).toBe(false)
+            expect(live()).toEqual([old])
+
+            await view.rerender(
+                <List ids={['a', 'b']} reducedMotion={{ maxDuration: 0.2 }} />
+            )
+            await settle()
+            expect(old!.disposed).toBe(true)
+            const [next] = live()
+            expect(next!.options.reducedMotion).toEqual({ maxDuration: 0.2 })
+            expect(next!.members.size).toBe(2)
+        } finally {
+            await view.unmount()
+        }
+    })
+
     it('calls set only when a participant option changes by value', async () => {
         function App({ layout }: { layout: 'position' | 'size' }) {
             return (
@@ -283,6 +317,73 @@ describe('react layout adapter', () => {
             expect([...fake!.members.values()][0]!.layout).toBe('size')
         } finally {
             await view.unmount()
+        }
+    })
+
+    it('J-016: compares motion by effect: defaults, inherited fields, timings in any key order', async () => {
+        function App({ motion }: { motion?: LayoutOptions['motion'] }) {
+            return (
+                <LayoutGroup
+                    motion={{ duration: 1, timing: a.timing.linear() }}
+                >
+                    <Item id="a" {...(motion !== undefined && { motion })} />
+                </LayoutGroup>
+            )
+        }
+        const sets = (fake: Fake) =>
+            fake.calls.filter((call) => call === 'set').length
+        const view = await mount(<App />)
+        try {
+            const [fake] = live()
+            // equal to what the participant already draws: no `set`
+            for (const motion of [
+                { duration: 1 },
+                { delay: 0 },
+                { duration: 1, delay: 0, timing: a.timing.linear() },
+                {},
+            ]) {
+                await view.rerender(<App motion={motion} />)
+            }
+            expect(sets(fake!)).toBe(0)
+            // a real change still reaches the scope
+            await view.rerender(<App motion={{ delay: 0.1 }} />)
+            expect(sets(fake!)).toBe(1)
+        } finally {
+            await view.unmount()
+        }
+
+        function Spring({ order }: { order: 'mkc' | 'ckm' | 'k' }) {
+            const spring =
+                order === 'mkc'
+                    ? a.timing.spring({ m: 1, k: 200, c: 20 })
+                    : order === 'ckm'
+                      ? a.timing.spring({ c: 20, k: 200, m: 1 })
+                      : a.timing.spring({ m: 1, k: 210, c: 20 })
+            return (
+                <LayoutGroup>
+                    <Item id="b" motion={{ timing: spring }} />
+                    <Item
+                        id="c"
+                        // the default timing, written out
+                        motion={
+                            order === 'mkc'
+                                ? {}
+                                : { duration: 0.35, timing: a.timing.easeOut() }
+                        }
+                    />
+                </LayoutGroup>
+            )
+        }
+        const springs = await mount(<Spring order="mkc" />)
+        try {
+            const fake = live().at(-1)!
+            await springs.rerender(<Spring order="ckm" />)
+            await springs.rerender(<Spring order="mkc" />)
+            expect(sets(fake)).toBe(0)
+            await springs.rerender(<Spring order="k" />)
+            expect(sets(fake)).toBe(1)
+        } finally {
+            await springs.unmount()
         }
     })
 
@@ -343,6 +444,104 @@ describe('react layout adapter', () => {
                 (fake) => fake.disposed || fake.members.size === 0
             )
         ).toBe(true)
+    })
+
+    it('J-029: AnimatePresence touches the implicit root of the document of its children', async () => {
+        const clock = createManualClock()
+        const fade = {
+            present: { opacity: 1 },
+            exit: a.ani({
+                to: { opacity: 0 },
+                duration: 0.1,
+                timing: a.timing.linear(),
+            }),
+        }
+        function Row() {
+            const presence = usePresence(fade, { clock: clock.clock })
+            return <li ref={presence.ref} data-id="row" />
+        }
+        const Sibling = memo(function Sibling() {
+            return <Item id="sibling" />
+        })
+        let add: ((on: boolean) => void) | null = null
+        function Adder() {
+            const [on, set] = useState(false)
+            add = set
+            return on ? <Item id="added" /> : null
+        }
+        function App({ show }: { show: boolean }) {
+            return (
+                <ul>
+                    <Adder />
+                    <AnimatePresence initial={false}>
+                        {show && <Row key="row" />}
+                    </AnimatePresence>
+                    <Sibling />
+                </ul>
+            )
+        }
+        // a root in the main document exists too
+        const main = await mount(
+            <ul>
+                <Item id="m" />
+            </ul>
+        )
+        const other = document.implementation.createHTMLDocument('other')
+        const container = other.createElement('div')
+        other.body.appendChild(container)
+        const root = createRoot(container)
+        try {
+            await act(async () => {
+                root.render(<App show={true} />)
+            })
+            const otherFake = live().find(
+                (fake) => [...fake.members.keys()][0]!.ownerDocument === other
+            )!
+            const mainFake = live().find((fake) => fake !== otherFake)!
+            await act(async () => {
+                root.render(<App show={false} />)
+            })
+            otherFake.calls.length = 0
+            mainFake.calls.length = 0
+            const seen: boolean[] = []
+            recorder.onCapture = () =>
+                seen.push(other.querySelector('[data-id="row"]') !== null)
+            // the exit ends: the settle commit renders AnimatePresence only
+            await act(async () => {
+                clock.frames(10)
+            })
+            await settle()
+            expect(other.querySelector('[data-id="row"]')).toBeNull()
+            // captured before React removed the row, flushed after
+            expect(otherFake.calls).toEqual(['capture', 'flush'])
+            expect(seen).toEqual([true])
+            expect(mainFake.calls).toEqual([])
+
+            // a participant's first render knows no document yet: it touches
+            // every implicit root, so the memoized sibling it pushes is captured
+            otherFake.calls.length = 0
+            seen.length = 0
+            recorder.onCapture = () =>
+                seen.push(other.querySelector('[data-id="added"]') !== null)
+            await act(async () => {
+                add!(true)
+            })
+            await settle()
+            expect(otherFake.calls).toEqual(['capture', 'add', 'flush'])
+            // every capture (one per root) saw the DOM before the add
+            expect(seen.length).toBeGreaterThan(0)
+            expect(seen).not.toContain(true)
+
+            // each root is still disposed on its own
+            await act(async () => {
+                root.unmount()
+            })
+            await settle()
+            expect(otherFake.disposed).toBe(true)
+            expect(mainFake.disposed).toBe(false)
+        } finally {
+            await main.unmount()
+        }
     })
 
     it('keeps implicit roots of different clocks apart', () => {
@@ -408,7 +607,19 @@ describe('react layout adapter', () => {
 
         fake!.calls.length = 0
         scope.commit()
-        // the next render starts in the commit's task, before the flush
+        // the next render starts in the commit's task, before the flush: it
+        // must not refresh the commit's capture (React 18 time slicing took
+        // it in an earlier task); the flush hands it a fresh one
+        scope.touch()
+        await Promise.resolve()
+        expect(fake!.calls).toEqual(['flush', 'capture'])
+
+        // a time-sliced render: touched in one task, committed in a later
+        // one that also starts the next render
+        fake!.calls.length = 0
+        scope.touch()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        scope.commit()
         scope.touch()
         await Promise.resolve()
         expect(fake!.calls).toEqual(['capture', 'flush', 'capture'])
@@ -443,6 +654,92 @@ describe('react layout adapter', () => {
             expect(warn).toHaveBeenCalledTimes(1)
         } finally {
             await view.unmount()
+        }
+    })
+
+    it('J-031: warns once for a memoized parent class or style change, not for captured, update or owned writes', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
+        const MemoItem = memo(Item)
+        let flip: ((on: boolean) => void) | null = null
+        let control: ReturnType<typeof useLayoutGroup> | null = null
+        /** The state lives above memoized participants, in the parent's attributes. */
+        function Owner({ by }: { by: 'class' | 'style' }) {
+            const [row, set] = useState(false)
+            flip = set
+            control = useLayoutGroup()
+            return (
+                <ul
+                    {...(by === 'class'
+                        ? { className: row ? 'row' : 'column' }
+                        : { style: { flexDirection: row ? 'row' : 'column' } })}
+                >
+                    <MemoItem id="a" />
+                    <MemoItem id="b" />
+                </ul>
+            )
+        }
+        const warnings = () =>
+            warn.mock.calls.filter((call) =>
+                String(call[0]).includes('useLayoutGroup().update')
+            ).length
+        for (const by of ['class', 'style'] as const) {
+            warn.mockClear()
+            const view = await mount(
+                <LayoutGroup>
+                    <Owner by={by} />
+                </LayoutGroup>
+            )
+            try {
+                await settle()
+                const list = view.container.querySelector('ul')!
+                const item = list.querySelector('li')!
+                // owned writes: layout's poses and corners, presence's
+                // transform and opacity, on participants and on the parent
+                await act(async () => {
+                    item.style.setProperty('opacity', '0.5', 'important')
+                    item.style.setProperty('border-radius', '4px', 'important')
+                    item.style.setProperty('translate', '4px 0px', 'important')
+                    list.style.transform = 'scale(0.9)'
+                    list.style.opacity = '0.8'
+                })
+                await settle()
+                await act(async () => {
+                    item.style.removeProperty('opacity')
+                    item.style.removeProperty('border-radius')
+                    item.style.removeProperty('translate')
+                    list.style.removeProperty('transform')
+                    list.style.removeProperty('opacity')
+                })
+                await settle()
+                expect(warnings()).toBe(0)
+                // the same change through update(fn)
+                await act(async () => {
+                    await control!.update(() => flip!(true))
+                })
+                await settle()
+                expect(warnings()).toBe(0)
+                // a captured commit: the group re-renders its participants
+                await view.rerender(
+                    <LayoutGroup>
+                        <Owner by={by} />
+                    </LayoutGroup>
+                )
+                await settle()
+                expect(warnings()).toBe(0)
+                // no participant renders the change: one warning
+                await act(async () => {
+                    flip!(false)
+                })
+                await settle()
+                expect(warnings()).toBe(1)
+                await act(async () => {
+                    flip!(true)
+                })
+                await settle()
+                expect(warnings()).toBe(1)
+            } finally {
+                await view.unmount()
+            }
         }
     })
 

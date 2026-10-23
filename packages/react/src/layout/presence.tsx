@@ -24,7 +24,7 @@ import {
 } from 'react'
 import { useIsoLayoutEffect } from '../ani/owned'
 import {
-    existingScope,
+    existingScopes,
     hasDOM,
     LayoutContext,
     PresenceContext,
@@ -76,10 +76,16 @@ function childrenEntries(
  */
 export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     const layout = useContext(LayoutContext)
-    // render: the before-boxes of the scope its children live in (§4.1)
-    existingScope(layout)?.touch()
+    /** The documents its children's elements registered from. */
+    const documents = useRef(new Set<Document>())
+    // render: the before-boxes of the scopes its children live in (§4.1),
+    // also in a render that only settles an exit and renders no participant
+    const touched = existingScopes(layout, documents.current)
+    for (const scope of touched) scope.touch()
+    const touchedRef = useRef(touched)
+    touchedRef.current = touched
     useIsoLayoutEffect(() => {
-        existingScope(layout)?.commit()
+        for (const scope of touchedRef.current) scope.commit()
     })
     const [entries, setEntries] = useState<readonly PresenceEntry<ReactNode>[]>(
         []
@@ -182,7 +188,8 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
     )
 
     const register = useMemo(
-        () => (key: PresenceKey) => {
+        () => (key: PresenceKey, document?: Document) => {
+            if (document) documents.current.add(document)
             const id = ++nextRegistrant.current
             let ids = registrants.current.get(key)
             if (!ids) {
@@ -251,7 +258,7 @@ export function AnimatePresence(props: AnimatePresenceProps): ReactNode {
                     willEnter: willEnter.current.get(entry.key) ?? true,
                     popLayout: props.mode === 'popLayout',
                     custom: props.custom,
-                    register: () => register(entry.key),
+                    register: (document) => register(entry.key, document),
                     unregister: (id) => unregister(entry.key, id),
                     settle: () => settle(entry.key, entry.token),
                     reportExit: (id) => reportExit(entry.key, id, entry.token),
@@ -294,11 +301,130 @@ function containsAbsolute(style: CSSStyleDeclaration): boolean {
     )
 }
 
+/** The border-box size of a computed style, before transforms (0 where not computed). */
+function borderBox(style: CSSStyleDeclaration): {
+    width: number
+    height: number
+} {
+    let width = px(style.width)
+    let height = px(style.height)
+    if (style.boxSizing !== 'border-box') {
+        width +=
+            px(style.paddingLeft) +
+            px(style.paddingRight) +
+            px(style.borderLeftWidth) +
+            px(style.borderRightWidth)
+        height +=
+            px(style.paddingTop) +
+            px(style.paddingBottom) +
+            px(style.borderTopWidth) +
+            px(style.borderBottomWidth)
+    }
+    return { width, height }
+}
+
+/** A 2D affine map `[a, b, c, d, e, f]`: `x′ = a·x + c·y + e`, `y′ = b·x + d·y + f`. */
+type Affine = readonly [number, number, number, number, number, number]
+
+const IDENTITY: Affine = [1, 0, 0, 1, 0, 0]
+
+function compose(m: Affine, n: Affine): Affine {
+    return [
+        m[0] * n[0] + m[2] * n[1],
+        m[1] * n[0] + m[3] * n[1],
+        m[0] * n[2] + m[2] * n[3],
+        m[1] * n[2] + m[3] * n[3],
+        m[0] * n[4] + m[2] * n[5] + m[4],
+        m[1] * n[4] + m[3] * n[5] + m[5],
+    ]
+}
+
+const shift = (x: number, y: number): Affine => [1, 0, 0, 1, x, y]
+
+/** A length of a computed `translate` / `transform-origin`; `%` of `size`. */
+const length = (value: string | undefined, size: number): number =>
+    value?.endsWith('%') ? (px(value) / 100) * size : px(value ?? '0')
+
+const ANGLE: Record<string, number> = {
+    deg: Math.PI / 180,
+    grad: Math.PI / 200,
+    rad: 1,
+    turn: 2 * Math.PI,
+}
+
+/** A computed `rotate` about the z axis, in radians (0 for a 3D axis). */
+function angle(value: string): number {
+    const parts = value.trim().split(/\s+/)
+    const axis = parts.slice(0, -1)
+    if (
+        axis.length > 0 &&
+        axis.join(' ') !== 'z' &&
+        axis.join(' ') !== '0 0 1'
+    ) {
+        return 0
+    }
+    const match = /^(-?[\d.e+-]+)([a-z]+)$/.exec(parts[parts.length - 1] ?? '')
+    return match ? Number(match[1]) * (ANGLE[match[2]!] ?? 0) : 0
+}
+
+/** A computed `transform` (`matrix()`, or the 2D part of `matrix3d()`). */
+function matrix(value: string): Affine {
+    const match = /^matrix(3d)?\(([^)]*)\)$/.exec(value)
+    if (!match) return IDENTITY
+    const n = match[2]!.split(',').map(Number)
+    const m: Affine = match[1]
+        ? [n[0]!, n[1]!, n[4]!, n[5]!, n[12]!, n[13]!]
+        : [n[0]!, n[1]!, n[2]!, n[3]!, n[4]!, n[5]!]
+    return m.every(Number.isFinite) ? m : IDENTITY
+}
+
 /**
- * The exiting element's box as `position: absolute` offsets in its
- * containing block (§7.2 popLayout): the nearest ancestor that contains
- * absolute descendants, else the initial containing block. Rect based, so a
- * scaled containing block is divided out.
+ * The element's own transforms as one map of its border box (`width` ×
+ * `height`, local coordinates from its top left corner): `translate`,
+ * `rotate`, `scale` and `transform` about `transform-origin`, as CSS
+ * composes them. Presence's `transform` and layout's pose are among them.
+ */
+function ownMap(
+    style: CSSStyleDeclaration,
+    width: number,
+    height: number
+): Affine {
+    const origin = (style.transformOrigin || '50% 50%').split(/\s+/)
+    const ox = length(origin[0], width)
+    const oy = length(origin[1], height)
+    let map = shift(ox, oy)
+    if (set(style.translate)) {
+        const [x, y] = style.translate.split(/\s+/)
+        map = compose(map, shift(length(x, width), length(y, height)))
+    }
+    if (set(style.rotate)) {
+        const r = angle(style.rotate)
+        map = compose(map, [
+            Math.cos(r),
+            Math.sin(r),
+            -Math.sin(r),
+            Math.cos(r),
+            0,
+            0,
+        ])
+    }
+    if (set(style.scale)) {
+        const factor = (value: string) =>
+            value.endsWith('%') ? px(value) / 100 : px(value)
+        const [x = '1', y = x] = style.scale.split(/\s+/)
+        map = compose(map, [factor(x), 0, 0, factor(y), 0, 0])
+    }
+    if (set(style.transform)) map = compose(map, matrix(style.transform))
+    return compose(map, shift(-ox, -oy))
+}
+
+/**
+ * The exiting element's CSS box as `position: absolute` offsets in its
+ * containing block (§6, §7.2 popLayout): the nearest ancestor that contains
+ * absolute descendants, else the initial containing block. Measured from the
+ * rect, so the block's scale is divided out and the element's own transforms
+ * (presence's `transform`, layout's pose, authored ones) are taken back out:
+ * the lifted element keeps them, and draws exactly where it was.
  */
 function popBox(element: HTMLElement): {
     left: number
@@ -308,50 +434,71 @@ function popBox(element: HTMLElement): {
 } {
     const rect = element.getBoundingClientRect()
     let block: HTMLElement | null = null
-    let style: CSSStyleDeclaration | null = null
+    let blockStyle: CSSStyleDeclaration | null = null
     for (let node = element.parentElement; node; node = node.parentElement) {
         const candidate = getComputedStyle(node)
         if (containsAbsolute(candidate)) {
             block = node
-            style = candidate
+            blockStyle = candidate
             break
         }
     }
-    if (!block || !style) {
+    // the drawn rect in the block's padding-box coordinates
+    let left: number
+    let top: number
+    let sx = 1
+    let sy = 1
+    if (!block || !blockStyle) {
         const view = element.ownerDocument.defaultView
-        return {
-            left: rect.left + (view?.scrollX ?? 0),
-            top: rect.top + (view?.scrollY ?? 0),
-            width: rect.width,
-            height: rect.height,
-        }
+        left = rect.left + (view?.scrollX ?? 0)
+        top = rect.top + (view?.scrollY ?? 0)
+    } else {
+        const outer = block.getBoundingClientRect()
+        // the border-box size before transforms, exact
+        const size = borderBox(blockStyle)
+        sx = size.width > 0 ? outer.width / size.width : 1
+        sy = size.height > 0 ? outer.height / size.height : 1
+        left =
+            (rect.left - outer.left) / sx -
+            px(blockStyle.borderLeftWidth) +
+            block.scrollLeft
+        top =
+            (rect.top - outer.top) / sy -
+            px(blockStyle.borderTopWidth) +
+            block.scrollTop
     }
-    const outer = block.getBoundingClientRect()
-    const borderLeft = px(style.borderLeftWidth)
-    const borderTop = px(style.borderTopWidth)
-    // the border-box size before transforms, exact
-    let width = px(style.width)
-    let height = px(style.height)
-    if (style.boxSizing !== 'border-box') {
-        width +=
-            px(style.paddingLeft) +
-            px(style.paddingRight) +
-            borderLeft +
-            px(style.borderRightWidth)
-        height +=
-            px(style.paddingTop) +
-            px(style.paddingBottom) +
-            borderTop +
-            px(style.borderBottomWidth)
+    const drawnWidth = rect.width / sx
+    const drawnHeight = rect.height / sy
+    const style = getComputedStyle(element)
+    const own = borderBox(style)
+    // the CSS size where computed, else the drawn one through the own scale
+    const unscale = ownMap(style, drawnWidth, drawnHeight)
+    const width =
+        own.width > 0
+            ? own.width
+            : unscale[1] === 0 && unscale[2] === 0 && unscale[0] !== 0
+              ? drawnWidth / Math.abs(unscale[0])
+              : drawnWidth
+    const height =
+        own.height > 0
+            ? own.height
+            : unscale[1] === 0 && unscale[2] === 0 && unscale[3] !== 0
+              ? drawnHeight / Math.abs(unscale[3])
+              : drawnHeight
+    // the drawn rect is the bounding box of the own map's corners
+    const map = ownMap(style, width, height)
+    let minX = Number.POSITIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    for (const [x, y] of [
+        [0, 0],
+        [width, 0],
+        [0, height],
+        [width, height],
+    ] as const) {
+        minX = Math.min(minX, map[0] * x + map[2] * y + map[4])
+        minY = Math.min(minY, map[1] * x + map[3] * y + map[5])
     }
-    const sx = width > 0 ? outer.width / width : 1
-    const sy = height > 0 ? outer.height / height : 1
-    return {
-        left: (rect.left - outer.left) / sx - borderLeft + block.scrollLeft,
-        top: (rect.top - outer.top) / sy - borderTop + block.scrollTop,
-        width: rect.width / sx,
-        height: rect.height / sy,
-    }
+    return { left: left - minX, top: top - minY, width, height }
 }
 
 export interface UsePresenceResult<E extends HTMLElement> {
@@ -380,11 +527,20 @@ export function usePresence<
     optionsRef.current = options
     const elementRef = useRef<E | null>(null)
     const handle = useRef<PresenceHandle | null>(null)
+    /** The element `handle` animates. */
+    const bound = useRef<E | null>(null)
     const registration = useRef<number | null>(null)
-    const detach = useMemo(
+    /** The phase started on `handle` (`token:present:willEnter`). */
+    const started = useRef<string | null>(null)
+    /** A detach waiting for the end of the task. */
+    const detaching = useRef(false)
+
+    const release = useMemo(
         () => () => {
             handle.current?.dispose()
             handle.current = null
+            bound.current = null
+            started.current = null
             const current = contextRef.current
             if (registration.current !== null) {
                 current?.unregister(registration.current)
@@ -394,19 +550,39 @@ export function usePresence<
         []
     )
 
+    // StrictMode replays the refs and effects of mounted and moved fibers
+    // (K17): a detach waits until the end of the task, and a re-attach of the
+    // same element in that task keeps the handle, its running enter or exit,
+    // its registration and its holds.
+    const detach = useMemo(
+        () => () => {
+            if (!handle.current || detaching.current) return
+            detaching.current = true
+            queueMicrotask(() => {
+                if (!detaching.current) return
+                detaching.current = false
+                release()
+            })
+        },
+        [release]
+    )
+
     const attach = useMemo(
         () => (element: E) => {
             const current = contextRef.current
             if (!current) return
-            detach()
+            detaching.current = false
+            if (handle.current && bound.current === element) return
+            release()
             handle.current = createPresence(
                 element,
                 motionRef.current,
                 optionsRef.current
             )
-            registration.current = current.register()
+            bound.current = element
+            registration.current = current.register(element.ownerDocument)
         },
-        [detach]
+        [release]
     )
 
     const ref = useMemo<RefCallback<E>>(
@@ -424,9 +600,7 @@ export function usePresence<
 
     useIsoLayoutEffect(() => {
         if (!contextRef.current) return
-        if (elementRef.current && !handle.current) {
-            attach(elementRef.current)
-        }
+        if (elementRef.current) attach(elementRef.current)
         return detach
     }, [attach, detach])
 
@@ -435,8 +609,16 @@ export function usePresence<
         const current = contextRef.current
         const active = handle.current
         if (!current || !active) return
+        const phase = `${current.token}:${current.present}:${current.willEnter}`
+        // a replayed effect: the phase already runs on this handle
+        if (started.current === phase) return
+        started.current = phase
+        // a settled run of a replaced handle or of an earlier phase is stale
+        const live = () =>
+            handle.current === active && started.current === phase
         if (!current.present) {
             void active.exit().then((result) => {
+                if (!live()) return
                 if (result === 'exited' || result === 'timeout') {
                     const id = registration.current
                     if (id !== null) current.reportExit(id, current.token)
@@ -446,7 +628,9 @@ export function usePresence<
             // the initial style stays a prop until the enter is done: React
             // would otherwise clear the values the enter is writing
             void active.enter().then(() => {
-                if (contextRef.current?.present) setApplyInitial(false)
+                if (live() && contextRef.current?.present) {
+                    setApplyInitial(false)
+                }
             })
         }
     }, [context?.present, context?.willEnter, context?.token])

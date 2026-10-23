@@ -4,7 +4,12 @@
 // picture must not move while time stands still.
 
 import type { Clock } from '@freestylejs/ani-core'
-import { ani, type TimingFunction, timing } from '@freestylejs/ani-core'
+import {
+    ani,
+    defaultClock,
+    type TimingFunction,
+    timing,
+} from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -12,6 +17,7 @@ import {
 import {
     AnimatePresence,
     LayoutGroup,
+    type LayoutGroupProps,
     useLayout,
     useLayoutGroup,
     usePresence,
@@ -39,7 +45,9 @@ import { expectClose, expectEqual } from './assert'
 
 export const pageOptions = {}
 
-export const knownFailures: Record<string, string> = {}
+export const knownFailures: Record<string, string> = {
+    E5: "engine (packages/layout/src/scope.ts), not the adapter: a flush that leaves a running 'position' track untouched re-freezes the node's presence transform, so the re-render that ends t1's enter at 0.4 s (frame 25) jumps t1/t2 (t2 width 298.50 → 295.22 px) and replaces the tracks of t3/t4 (t3 off by 11.6 px a frame later); every add frame before it and the whole exit phase are on the expectation. Reported with a vanilla repro in cp5_react.md (CP5 trial fix proof, E-1).",
+}
 
 const FRAME_MS = 16
 const DT = FRAME_MS / 1000
@@ -654,11 +662,177 @@ export async function RL6(): Promise<string> {
             1,
             'warned once per scope'
         )
-        return `memoized subtree: snapped with one warning; update(fn) on the oracle, max error ${error.toFixed(4)} px`
+        const attributes = await parentAttributeWarnings(warnings)
+        return `memoized subtree: snapped with one warning; update(fn) on the oracle, max error ${error.toFixed(4)} px; ${attributes}`
     } finally {
         console.warn = warn
         view.dispose()
     }
+}
+
+/* ── RL6 (J-031): the parent's class and style ── */
+
+const flex = { w: 40, h: 50 }
+
+function FlexItem({ id }: { id: string }): ReactNode {
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: flex.w,
+            height: flex.h,
+            flex: 'none',
+            background: '#888',
+        },
+    })
+}
+
+const MemoFlexItem = memo(FlexItem)
+
+const flip: { set: ((row: boolean) => void) | null } = { set: null }
+
+/** State above the participants, written into their flex parent's class or style. */
+function FlexOwner({
+    by,
+    memoized,
+}: {
+    by: 'class' | 'style'
+    memoized: boolean
+}): ReactNode {
+    const [row, setRow] = useState(false)
+    useLayoutEffect(() => {
+        flip.set = setRow
+    }, [])
+    const item = memoized ? MemoFlexItem : FlexItem
+    const presence = memoized ? MemoPresenceFlexItem : PresenceFlexItem
+    return h(
+        'div',
+        by === 'class'
+            ? { className: row ? 'rl6-row' : 'rl6-column' }
+            : {
+                  style: {
+                      display: 'flex',
+                      flexDirection: row ? 'row' : 'column',
+                  },
+              },
+        h(item, { id: 'a' }),
+        h(item, { id: 'b' }),
+        h(presence, { id: 'p' })
+    )
+}
+
+/** A participant with presence: its enter writes transform and opacity every frame. */
+function PresenceFlexItem({ id }: { id: string }): ReactNode {
+    const presence = usePresence(replayMotion, { clock: toastClock!.clock })
+    const ref = useLayout<HTMLDivElement>({ ref: presence.ref })
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: flex.w,
+            height: flex.h,
+            flex: 'none',
+            background: '#444',
+            ...presence.style,
+        },
+    })
+}
+
+const MemoPresenceFlexItem = memo(PresenceFlexItem)
+
+/**
+ * J-031: a memoized subtree under a parent whose class or style changes
+ * warns exactly once per scope; a captured change (participants render) and
+ * the frames it animates (layout poses, presence transform and opacity) do
+ * not warn.
+ */
+async function parentAttributeWarnings(warnings: string[]): Promise<string> {
+    const sheet = document.createElement('style')
+    sheet.textContent =
+        '.rl6-column { display: flex; flex-direction: column } .rl6-row { display: flex; flex-direction: row }'
+    document.head.append(sheet)
+    const count = () =>
+        warnings.filter((w) => w.includes('useLayoutGroup().update')).length
+    const results: string[] = []
+    try {
+        for (const by of ['class', 'style'] as const) {
+            for (const memoized of [false, true]) {
+                const mc = createManualClock()
+                toastClock = mc
+                const view = mountRoot()
+                const before = count()
+                try {
+                    await view.render(
+                        h(
+                            LayoutGroup,
+                            { clock: mc.clock },
+                            h(
+                                AnimatePresence,
+                                { initial: true },
+                                h(FlexOwner, { key: 'owner', by, memoized })
+                            )
+                        )
+                    )
+                    const origin = pageBox(view.host)
+                    const b = byId(view.host, 'b')
+                    const from = pageBox(b)
+                    expectEqual(
+                        [from.x - origin.x, from.y - origin.y],
+                        [0, flex.h],
+                        `${by}: b in the column`
+                    )
+                    flushSync(() => flip.set!(true))
+                    await microtasks()
+                    await macrotask()
+                    const moved = byId(view.host, 'b')
+                    const to = pageBox(moved)
+                    // every frame of the enter and of the layout run
+                    await frames(mc, 70, () => undefined)
+                    await settleAll(mc, view.host)
+                    const added = count() - before
+                    if (memoized) {
+                        // not captured: b jumped, with one warning
+                        expectEqual(
+                            [to.x - origin.x, to.y - origin.y],
+                            [flex.w, 0],
+                            `${by}: b jumped to the row`
+                        )
+                        expectEqual(added, 1, `${by}: one warning`)
+                        // a second change in the same scope: still one
+                        flushSync(() => flip.set!(false))
+                        await microtasks()
+                        await macrotask()
+                        expectEqual(
+                            count() - before,
+                            1,
+                            `${by}: warned once per scope`
+                        )
+                        results.push(
+                            `memoized ${by}: b (0, 50) → (40, 0) with ${added} warning`
+                        )
+                    } else {
+                        // captured: b drawn where it was, then animated
+                        expectEqual(
+                            [to.x - origin.x, to.y - origin.y],
+                            [0, flex.h],
+                            `${by}: b at its old place at t = 0`
+                        )
+                        expectEqual(added, 0, `${by}: captured, no warning`)
+                        results.push(
+                            `rendered ${by}: animated, ${added} warnings`
+                        )
+                    }
+                } finally {
+                    view.dispose()
+                    toastClock = null
+                }
+            }
+        }
+    } finally {
+        sheet.remove()
+    }
+    return results.join(', ')
 }
 
 /** RL7: an unrelated re-render every third frame leaves the trajectory identical. */
@@ -704,20 +878,33 @@ export async function RL7(): Promise<string> {
 
 /* ── E5 notifications: presence and layout on one element ── */
 
+// plan.md E5: enter y 14 px / scaleX 0.8 / opacity 0; exit y 10 px /
+// scaleX 0.9 / 0.2 s; spring; origin centre-bottom; layout 'position';
+// popLayout; five adds 80 ms apart
 const TOAST = { w: 300, h: 48, gap: 8 }
+const TOAST_SPRING = timing.spring({ m: 1, k: 170, c: 26 })
+const TOAST_ENTER = 0.4
+const TOAST_EXIT = 0.2
+const TOAST_LAYOUT = 0.4
+
+type ToastPose = { opacity: number; translateY: number; scaleX: number }
+
+const TOAST_PRESENT: ToastPose = { opacity: 1, translateY: 0, scaleX: 1 }
+const TOAST_INITIAL: ToastPose = { opacity: 0, translateY: 14, scaleX: 0.8 }
+const TOAST_EXITED: ToastPose = { opacity: 0, translateY: 10, scaleX: 0.9 }
 
 const toastMotion = {
-    present: { opacity: 1, translateY: 0, scaleX: 1 },
-    initial: { opacity: 0, translateY: -20, scaleX: 0.9 },
+    present: TOAST_PRESENT,
+    initial: TOAST_INITIAL,
     enter: ani({
-        to: { opacity: 1, translateY: 0, scaleX: 1 },
-        duration: 0.3,
-        timing: timing.linear(),
+        to: TOAST_PRESENT,
+        duration: TOAST_ENTER,
+        timing: TOAST_SPRING,
     }),
     exit: ani({
-        to: { opacity: 0, translateY: 0, scaleX: 0.5 },
-        duration: 0.2,
-        timing: timing.linear(),
+        to: TOAST_EXITED,
+        duration: TOAST_EXIT,
+        timing: TOAST_SPRING,
     }),
 }
 
@@ -738,6 +925,7 @@ function Toast({ id }: { id: string }): ReactNode {
                 width: TOAST.w,
                 height: TOAST.h,
                 flex: 'none',
+                transformOrigin: 'center bottom',
                 background: 'rgb(40, 40, 40)',
                 ...presence.style,
             },
@@ -749,7 +937,10 @@ function Toast({ id }: { id: string }): ReactNode {
 function Toasts({ ids }: { ids: readonly string[] }): ReactNode {
     return h(
         LayoutGroup,
-        { clock: toastClock!.clock },
+        {
+            clock: toastClock!.clock,
+            motion: { duration: TOAST_LAYOUT, timing: TOAST_SPRING },
+        },
         h(
             'div',
             {
@@ -790,106 +981,372 @@ function matrixOf(element: Element): number[] {
         .map((n) => Number.parseFloat(n))
 }
 
-/** E5: five adds 80 ms apart, then a popLayout exit with scaleX. */
+/**
+ * Presence's pose `t` seconds into a transition from `from` to `to`: the
+ * timeline evaluates the spring per property over the duration and ends on
+ * `to` (Core's timing, not the layout solver).
+ */
+function toastPose(
+    from: ToastPose,
+    to: ToastPose,
+    duration: number,
+    t: number
+): ToastPose {
+    const at = (key: keyof ToastPose) =>
+        t <= 0
+            ? from[key]
+            : t >= duration
+              ? to[key]
+              : TOAST_SPRING.step(t, {
+                    dt: 0,
+                    from: from[key],
+                    to: to[key],
+                    duration,
+                }).value
+    return {
+        opacity: at('opacity'),
+        translateY: at('translateY'),
+        scaleX: at('scaleX'),
+    }
+}
+
+/** A CSS box drawn through presence's pose about its centre-bottom origin. */
+function throughPose(css: OBox, pose: ToastPose): OBox {
+    const ox = css.x + css.w / 2
+    return {
+        x: ox - (pose.scaleX * css.w) / 2,
+        y: css.y + pose.translateY,
+        w: pose.scaleX * css.w,
+        h: css.h,
+    }
+}
+
+interface ToastModel {
+    readonly id: string
+    slot: number
+    /** Frame count at the commit that started its presence transition. */
+    start: number
+    from: ToastPose
+    to: ToastPose
+    duration: number
+    /** Its layout track: planned at frame `flush`, drawn through `q0`. */
+    track: { spec: OTrackSpec; flush: number; q0: OBox } | null
+}
+
+/**
+ * The independent expectation for a toast after `frame` frames: presence's
+ * pose (its timeline advances by the frame time from its first frame on),
+ * and in 'position' mode the layout track moves that box by `V(t) − q0`, the
+ * track drawn relative to the inner box it was planned against (§3.1, §11).
+ * A track's first frame has `dt = 0` (§4.3).
+ */
+function toastExpected(
+    host: HTMLElement,
+    toast: ToastModel,
+    frame: number
+): { box: OBox; pose: ToastPose; moving: OBox | null } {
+    const pose = toastPose(
+        toast.from,
+        toast.to,
+        toast.duration,
+        (frame - toast.start) * DT
+    )
+    const inner = throughPose(toastSlot(host, toast.slot), pose)
+    const track = toast.track
+    if (!track) return { box: inner, pose, moving: null }
+    const t = Math.max(0, frame - track.flush - 1) * DT
+    const v = expectedBox(track.spec, t)
+    // the track's velocity (box per second), while it runs
+    let moving: OBox | null = null
+    if (t < track.spec.duration) {
+        const dt = 1e-4
+        const a = expectedBox(track.spec, Math.max(0, t - dt))
+        const b = expectedBox(track.spec, t + dt)
+        const span = t + dt - Math.max(0, t - dt)
+        moving = {
+            x: (b.x - a.x) / span,
+            y: (b.y - a.y) / span,
+            w: 0,
+            h: 0,
+        }
+    }
+    return {
+        box: {
+            x: inner.x + v.x - track.q0.x,
+            y: inner.y + v.y - track.q0.y,
+            w: inner.w,
+            h: inner.h,
+        },
+        pose,
+        moving,
+    }
+}
+
+/**
+ * Checks every toast's drawn box, presence transform and opacity; a
+ * mismatch is recorded in `failures` (the run goes on, so one report shows
+ * every frame that is off).
+ */
+function expectToasts(
+    host: HTMLElement,
+    toasts: readonly ToastModel[],
+    frame: number,
+    label: string,
+    failures: string[]
+): number {
+    let error = 0
+    for (const toast of toasts) {
+        const element = byId(host, toast.id)
+        const want = toastExpected(host, toast, frame)
+        try {
+            error = Math.max(
+                error,
+                expectAt(element, want.box, `${label}: ${toast.id} drawn`)
+            )
+            const m = matrixOf(element)
+            expectClose(
+                m[0]!,
+                want.pose.scaleX,
+                1e-3,
+                `${label}: ${toast.id} scaleX`
+            )
+            expectClose(
+                m[5]!,
+                want.pose.translateY,
+                1e-2,
+                `${label}: ${toast.id} translateY`
+            )
+            expectClose(
+                Number(getComputedStyle(element).opacity),
+                want.pose.opacity,
+                1e-2,
+                `${label}: ${toast.id} opacity`
+            )
+        } catch (failure) {
+            failures.push(`frame ${frame} ${(failure as Error).message}`)
+        }
+    }
+    return error
+}
+
+/**
+ * E5: five adds 80 ms apart, every frame of every enter and every layout
+ * track (interrupted ones with their velocity) on the expectation; then a
+ * popLayout exit of the middle toast.
+ */
 export async function E5(): Promise<string> {
     const mc = createManualClock()
     toastClock = mc
     const view = mountRoot()
+    let frame = 0
+    const step = async () => {
+        mc.frame(FRAME_MS)
+        frame++
+        await microtasks()
+        await macrotask()
+    }
     try {
         await view.render(h(Toasts, { ids: [] }))
-        const ids: string[] = []
-        let enterChecks = 0
+        const toasts: ToastModel[] = []
+        const failures: string[] = []
+        let error = 0
+        let interrupted = 0
         for (let n = 1; n <= 5; n++) {
-            const before = picture(view.host)
-            ids.unshift(`t${n}`)
-            await view.render(h(Toasts, { ids: [...ids] }))
-            // existing toasts did not jump: the flush drew them where they were
-            for (const [id, box] of before) {
-                expectAt(byId(view.host, id), box, `add ${n}: ${id} at flush`)
-            }
-            // first frame equals the enter transform
-            const entering = byId(view.host, `t${n}`)
-            const m = matrixOf(entering)
-            expectClose(m[0]!, 0.9, 1e-3, `t${n} enter scaleX`)
-            expectClose(m[5]!, -20, 1e-3, `t${n} enter translateY`)
-            expectClose(
-                Number(getComputedStyle(entering).opacity),
-                0,
-                1e-3,
-                `t${n} enter opacity`
-            )
-            enterChecks++
-            // 80 ms until the next add
-            await frames(mc, 5, () => {
-                for (const element of view.host.querySelectorAll('[data-id]')) {
-                    const box = pageBox(element)
-                    if (![box.x, box.y, box.w, box.h].every(Number.isFinite)) {
-                        throw new Error('non-finite box')
-                    }
+            // every toast below the new one moves down one slot at this flush
+            for (const toast of toasts) {
+                const now = toastExpected(view.host, toast, frame)
+                toast.slot++
+                const pose = now.pose
+                const after = throughPose(
+                    toastSlot(view.host, toast.slot),
+                    pose
+                )
+                if (now.moving) interrupted++
+                toast.track = {
+                    spec: spec(now.box, after, {
+                        mode: 'position',
+                        duration: TOAST_LAYOUT,
+                        timing: TOAST_SPRING as TimingFunction,
+                        velocity: now.moving,
+                    }),
+                    flush: frame,
+                    q0: after,
                 }
+            }
+            toasts.unshift({
+                id: `t${n}`,
+                slot: 0,
+                start: frame,
+                from: TOAST_INITIAL,
+                to: TOAST_PRESENT,
+                duration: TOAST_ENTER,
+                track: null,
             })
+            await view.render(h(Toasts, { ids: toasts.map((t) => t.id) }))
+            // the flush draws t = 0: no jump, the new toast at its initial pose
+            error = Math.max(
+                error,
+                expectToasts(
+                    view.host,
+                    toasts,
+                    frame,
+                    `add ${n} at the flush`,
+                    failures
+                )
+            )
+            // 80 ms until the next add
+            for (let k = 0; k < 5; k++) {
+                await step()
+                error = Math.max(
+                    error,
+                    expectToasts(
+                        view.host,
+                        toasts,
+                        frame,
+                        `add ${n}, frame ${k + 1}`,
+                        failures
+                    )
+                )
+            }
+        }
+        // the rest of every enter and track, frame by frame
+        for (let k = 0; k < 40; k++) {
+            await step()
+            error = Math.max(
+                error,
+                expectToasts(
+                    view.host,
+                    toasts,
+                    frame,
+                    `settling, frame ${k + 1}`,
+                    failures
+                )
+            )
         }
         await settleAll(mc, view.host)
-        ids.forEach((id, i) =>
+        toasts.forEach((toast, i) =>
             expectAt(
-                byId(view.host, id),
+                byId(view.host, toast.id),
                 toastSlot(view.host, i),
-                `${id} settled`
+                `${toast.id} settled`
             )
         )
+        const adds = `5 adds 80 ms apart: every enter (spring, ${TOAST_ENTER} s, centre-bottom) and every layout track (${interrupted} interrupted with their velocity) on the expectation every frame, max error ${error.toFixed(4)} px`
 
         // remove the middle toast: popLayout, siblings final at t = 0
-        const leaving = ids[2]!
+        const leaving = toasts[2]!
         const before = picture(view.host)
-        const rest = ids.filter((id) => id !== leaving)
-        await view.render(h(Toasts, { ids: rest }))
-        const exiting = byId(view.host, leaving)
+        const rest = toasts.filter((toast) => toast !== leaving)
+        await view.render(h(Toasts, { ids: rest.map((t) => t.id) }))
+        const exiting = byId(view.host, leaving.id)
         expectEqual(exiting.style.position, 'absolute', 'popped out of flow')
-        expectAt(exiting, before.get(leaving)!, 'popped in place')
-        const tracks = rest.map((id, i) => {
-            const element = byId(view.host, id)
+        expectAt(exiting, before.get(leaving.id)!, 'popped in place')
+        rest.forEach((toast, i) => {
+            const element = byId(view.host, toast.id)
             // the layout box is final at t = 0 (offsets ignore transforms)
             expectClose(
                 element.offsetTop,
                 i * (TOAST.h + TOAST.gap),
                 0.5,
-                `${id} layout final at t = 0`
+                `${toast.id} layout final at t = 0`
             )
-            expectAt(element, before.get(id)!, `${id} unmoved at flush`)
-            return spec(before.get(id)!, toastSlot(view.host, i), {
-                mode: 'position',
-            })
+            const now = toastExpected(view.host, toast, frame)
+            toast.slot = i
+            const after = toastSlot(view.host, i)
+            toast.track = {
+                spec: spec(now.box, after, {
+                    mode: 'position',
+                    duration: TOAST_LAYOUT,
+                    timing: TOAST_SPRING as TimingFunction,
+                }),
+                flush: frame,
+                q0: after,
+            }
         })
-        const bottom = before.get(leaving)!.y + TOAST.h
-        const centre = before.get(leaving)!.x + TOAST.w / 2
-        let error = 0
+        // the exit: from the present pose, about its popped CSS box
+        const popped = before.get(leaving.id)!
+        leaving.start = frame
+        leaving.from = TOAST_PRESENT
+        leaving.to = TOAST_EXITED
+        leaving.duration = TOAST_EXIT
+        let exitError = 0
         let removedAt = Number.NaN
-        await frames(mc, 40, (elapsed) => {
-            rest.forEach((id, i) => {
-                error = Math.max(
-                    error,
-                    expectAt(
-                        byId(view.host, id),
-                        expectedBox(tracks[i]!, elapsed),
-                        `${id} at ${elapsed.toFixed(3)} s`
-                    )
+        let lowest = 0
+        for (let k = 0; k < 40; k++) {
+            if (k > 0) await step()
+            const elapsed = (frame - leaving.start) * DT
+            exitError = Math.max(
+                exitError,
+                expectToasts(
+                    view.host,
+                    rest,
+                    frame,
+                    `exit frame ${k}`,
+                    failures
                 )
-            })
+            )
             const element = view.host.querySelector<HTMLElement>(
-                `[data-id="${leaving}"]`
+                `[data-id="${leaving.id}"]`
             )
             if (!element) {
                 if (Number.isNaN(removedAt)) removedAt = elapsed
-                return
+                continue
             }
+            const pose = toastPose(
+                TOAST_PRESENT,
+                TOAST_EXITED,
+                TOAST_EXIT,
+                elapsed
+            )
+            const want = throughPose(popped, pose)
+            exitError = Math.max(
+                exitError,
+                expectAt(
+                    element,
+                    want,
+                    `${leaving.id} exiting at ${elapsed.toFixed(3)} s`
+                )
+            )
+            expectClose(
+                Number(getComputedStyle(element).opacity),
+                pose.opacity,
+                1e-2,
+                `${leaving.id} opacity at ${elapsed.toFixed(3)} s`
+            )
+            // centre-bottom origin: scaleX never moves the bottom edge
             const box = pageBox(element)
-            expectClose(box.y + box.h, bottom, 1, 'bottom edge under scaleX')
-            expectClose(box.x + box.w / 2, centre, 1, 'centre under scaleX')
-        })
-        if (!(removedAt >= 0.2 - 1e-9 && removedAt <= 0.2 + 3 * DT)) {
-            throw new Error(`exit released at ${removedAt} s, expected ≈ 0.2 s`)
+            lowest = Math.max(
+                lowest,
+                Math.abs(
+                    box.y + box.h - (popped.y + popped.h + pose.translateY)
+                )
+            )
         }
-        return `5 adds 80 ms apart (${enterChecks} enter first frames, no jumps); exit released at ${removedAt.toFixed(3)} s; siblings on the oracle, max error ${error.toFixed(4)} px`
+        if (
+            !(
+                removedAt >= TOAST_EXIT - 1e-9 &&
+                removedAt <= TOAST_EXIT + 2 * DT
+            )
+        ) {
+            throw new Error(
+                `exit released at ${removedAt} s, expected ≈ ${TOAST_EXIT} s`
+            )
+        }
+        expectClose(lowest, 0, 1, 'bottom edge under scaleX')
+        await settleAll(mc, view.host)
+        expectEqual(mc.clock.size, 0, 'nothing subscribed after the settle')
+        if (failures.length > 0) {
+            const first = new Map<string, string>()
+            for (const failure of failures) {
+                const toast = /: (t\d) /.exec(failure)?.[1] ?? ''
+                if (!first.has(toast)) first.set(toast, failure)
+            }
+            const exitPhase = failures.filter((f) => f.includes(' exit frame '))
+            throw new Error(
+                `${failures.length} of the per-frame checks are off (${exitPhase.length} in the exit phase), from frame ${/^frame (\d+)/.exec(failures[0]!)?.[1]}; first per toast: ${[...first.values()].join('; ')}`
+            )
+        }
+        return `${adds}; exit (y 10, scaleX 0.9, ${TOAST_EXIT} s spring) on the expectation every frame, bottom edge within ${lowest.toFixed(4)} px, released at ${removedAt.toFixed(3)} s; siblings final at t = 0 and on their tracks, max error ${exitError.toFixed(4)} px`
     } finally {
         view.dispose()
         toastClock = null
@@ -928,5 +1385,842 @@ export async function RL8(): Promise<string> {
         return `implicit root: mid-run at ${middle.y.toFixed(1)} between ${from.y} and ${to.y}; settled and restored`
     } finally {
         view.dispose()
+    }
+}
+
+/* ── equal options and policies keep the run (J-016, J-026) ── */
+
+function Mover({
+    x,
+    motion,
+}: {
+    x: number
+    motion: LayoutGroupProps['motion']
+}): ReactNode {
+    const ref = useLayout<HTMLDivElement>(motion ? { motion } : {})
+    return h('div', {
+        ref,
+        'data-id': 'mover',
+        style: {
+            marginLeft: x,
+            width: 40,
+            height: 40,
+            background: 'rgb(136, 136, 136)',
+        },
+    })
+}
+
+/**
+ * Moves the mover 0 → 200 px over 1 s, re-renders the same geometry with the
+ * `late` props at 0.2 s, then draws two 0.02 s frames and the rest of the run.
+ * Every frame is checked against the oracle of the first track: an equal
+ * option or policy never restarts it (§3.3 invariant 5).
+ */
+async function rerenderMidRun(
+    mc: ManualClock,
+    app: (x: number, late: boolean) => ReactNode,
+    fn: TimingFunction
+): Promise<{ at: readonly number[]; error: number; subscribers: number }> {
+    const view = mountRoot()
+    try {
+        await view.render(app(0, false))
+        const mover = () => byId(view.host, 'mover')
+        const before = pageBox(mover())
+        await view.render(app(200, false))
+        const track = spec(
+            before,
+            { ...before, x: before.x + 200 },
+            { duration: 1, timing: fn }
+        )
+        mc.frame(0)
+        mc.frame(200)
+        let elapsed = 0.2
+        let error = expectAt(mover(), expectedBox(track, elapsed), 'at 0.2 s')
+        const at = [pageBox(mover()).x - before.x]
+        await view.render(app(200, true))
+        const subscribers = mc.clock.size
+        error = Math.max(
+            error,
+            expectAt(
+                mover(),
+                expectedBox(track, elapsed),
+                `at the re-render (${subscribers} clock subscribers)`
+            )
+        )
+        const late: OBox[] = []
+        for (let i = 0; i < 2; i++) {
+            mc.frame(20)
+            late.push(pageBox(mover()))
+            at.push(late[i]!.x - before.x)
+        }
+        late.forEach((box, i) => {
+            const want = expectedBox(track, elapsed + 0.02 * (i + 1))
+            const diff = maxDiff(box, want)
+            if (!(diff <= TOL)) {
+                throw new Error(
+                    `restarted: x at 0.2/0.22/0.24 s = ${at.map((x) => x.toFixed(6)).join('/')}, the first track gives ${[0, 1, 2].map((k) => (expectedBox(track, elapsed + 0.02 * k).x - before.x).toFixed(6)).join('/')}`
+                )
+            }
+            error = Math.max(error, diff)
+        })
+        elapsed += 0.04
+        while (elapsed < 1) {
+            mc.frame(FRAME_MS)
+            elapsed += DT
+            error = Math.max(
+                error,
+                expectAt(
+                    mover(),
+                    expectedBox(track, elapsed),
+                    `at ${elapsed.toFixed(3)} s`
+                )
+            )
+        }
+        await microtasks()
+        expectEqual(mover().style.translate, '', 'settled')
+        expectEqual(mc.clock.size, 0, 'no subscriber left')
+        return { at, error, subscribers }
+    } finally {
+        view.dispose()
+    }
+}
+
+/** J-016: equivalent participant motion (defaults, inherited, key order) keeps the track. */
+export async function J16(): Promise<string> {
+    const linear = timing.linear()
+    const spring = (order: 'mkc' | 'ckm') =>
+        order === 'mkc'
+            ? timing.spring({ m: 1, k: 200, c: 20 })
+            : timing.spring({ c: 20, k: 200, m: 1 })
+    const runs: Array<{
+        label: string
+        app: (mc: ManualClock, x: number, late: boolean) => ReactNode
+        fn: TimingFunction
+    }> = [
+        ...[{ duration: 1 }, { delay: 0 }].map((late) => ({
+            label: `{} → ${JSON.stringify(late)}`,
+            app: (mc: ManualClock, x: number, changed: boolean) =>
+                h(
+                    LayoutGroup,
+                    {
+                        clock: mc.clock,
+                        motion: { duration: 1, timing: linear },
+                    },
+                    h(Mover, { x, motion: changed ? late : undefined })
+                ),
+            fn: linear,
+        })),
+        {
+            // a spring with its parameters in another key order
+            label: 'spring {m,k,c} → {c,k,m}',
+            app: (mc, x, changed) =>
+                h(
+                    LayoutGroup,
+                    { clock: mc.clock },
+                    h(Mover, {
+                        x,
+                        motion: {
+                            duration: 1,
+                            timing: spring(changed ? 'ckm' : 'mkc'),
+                        },
+                    })
+                ),
+            fn: spring('mkc'),
+        },
+    ]
+    const results: string[] = []
+    const failures: string[] = []
+    for (const run of runs) {
+        const mc = createManualClock()
+        try {
+            const { at, error, subscribers } = await rerenderMidRun(
+                mc,
+                (x, late) => run.app(mc, x, late),
+                run.fn
+            )
+            expectEqual(subscribers, 1, 'the run kept its subscription')
+            results.push(
+                `${run.label}: x ${at.map((x) => x.toFixed(3)).join('/')} (error ${error.toFixed(4)} px)`
+            )
+        } catch (error) {
+            failures.push(`${run.label}: ${(error as Error).message}`)
+        }
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '))
+    // a genuine change still retargets
+    const mc = createManualClock()
+    const changed = await rerenderMidRun(
+        mc,
+        (x, late) =>
+            h(
+                LayoutGroup,
+                { clock: mc.clock, motion: { duration: 1, timing: linear } },
+                h(Mover, { x, motion: late ? { duration: 0.5 } : undefined })
+            ),
+        linear
+    ).then(
+        () => 'kept',
+        (error: Error) => error.message
+    )
+    if (!changed.startsWith('restarted')) {
+        throw new Error(`{} → {"duration":0.5} did not retarget: ${changed}`)
+    }
+    return `${results.join('; ')}; every frame on the first track; {} → {"duration":0.5} retargets`
+}
+
+/** J-026: an equal scope policy object keeps the scope and its run; a changed one re-creates it. */
+export async function J26(): Promise<string> {
+    const linear = timing.linear()
+    const motion = { duration: 1, timing: linear }
+    const app = (
+        mc: ManualClock,
+        x: number,
+        reducedMotion: { maxDuration: number }
+    ) =>
+        h(
+            LayoutGroup,
+            { clock: mc.clock, motion, reducedMotion },
+            h(Mover, { x, motion: undefined })
+        )
+    const stable = { maxDuration: 0.1 }
+    const mc = createManualClock()
+    const { at, error, subscribers } = await rerenderMidRun(
+        mc,
+        // the re-render at 0.2 s passes a new object with the same value
+        (x, late) => app(mc, x, late ? { maxDuration: 0.1 } : stable),
+        linear
+    )
+    expectEqual(subscribers, 1, 'the run kept its subscription')
+
+    // a changed value re-creates the scope: the run is disposed and restored
+    const changed = createManualClock()
+    const view = mountRoot()
+    try {
+        await view.render(app(changed, 0, stable))
+        const before = pageBox(byId(view.host, 'mover'))
+        await view.render(app(changed, 200, stable))
+        changed.frame(0)
+        changed.frame(200)
+        expectClose(
+            pageBox(byId(view.host, 'mover')).x - before.x,
+            40,
+            TOL,
+            'x at 0.2 s'
+        )
+        expectEqual(changed.clock.size, 1, 'running')
+        await view.render(app(changed, 200, { maxDuration: 0.2 }))
+        const x = pageBox(byId(view.host, 'mover')).x - before.x
+        expectClose(x, 200, TOL, 're-created: the layout box')
+        expectEqual(changed.clock.size, 0, 're-created: no subscriber')
+        expectEqual(byId(view.host, 'mover').style.translate, '', 'restored')
+        return `equal { maxDuration: 0.1 }: x ${at.map((v) => v.toFixed(3)).join('/')} at 0.2/0.22/0.24 s, every frame on the first track (error ${error.toFixed(4)} px), one subscriber; { maxDuration: 0.2 } re-creates: x ${x.toFixed(3)}, ${changed.clock.size} subscribers`
+    } finally {
+        view.dispose()
+    }
+}
+
+/* ── popLayout: the CSS box of a transformed exit (J-027) ── */
+
+function PopRow({ clock }: { clock: Clock }): ReactNode {
+    const presence = usePresence(
+        {
+            present: { opacity: 1, translateY: 0, scale: 1 },
+            initial: { opacity: 1, translateY: 28, scale: 0.6 },
+            enter: ani({
+                to: { opacity: 1, translateY: 0, scale: 1 },
+                duration: 1,
+                timing: timing.linear(),
+            }),
+            // holds the transform it starts from: the pop must not move it
+            exit: ani({
+                to: { opacity: 0, translateY: 14, scale: 0.8 },
+                duration: 0.2,
+                timing: timing.linear(),
+            }),
+        },
+        { clock }
+    )
+    return h('div', {
+        ref: presence.ref,
+        'data-id': 'pop',
+        style: {
+            width: 100,
+            height: 50,
+            transformOrigin: '0 0',
+            background: 'rgb(40, 40, 40)',
+            ...presence.style,
+        },
+    })
+}
+
+function PopBlock({ clock, show }: { clock: Clock; show: boolean }): ReactNode {
+    return h(
+        'div',
+        {
+            'data-block': true,
+            style: {
+                position: 'relative',
+                boxSizing: 'border-box',
+                width: 400,
+                height: 300,
+                padding: '80px 0 0 50px',
+            },
+        },
+        h(
+            AnimatePresence,
+            { initial: true, mode: 'popLayout' },
+            show ? h(PopRow, { key: 'pop', clock }) : null
+        )
+    )
+}
+
+function SlideRow(): ReactNode {
+    const presence = usePresence(
+        {
+            present: { opacity: 1 },
+            exit: ani({
+                to: { opacity: 0 },
+                duration: 1,
+                timing: timing.linear(),
+            }),
+        },
+        { clock: toastClock!.clock }
+    )
+    const ref = useLayout<HTMLDivElement>({ ref: presence.ref })
+    return h('div', {
+        ref,
+        'data-id': 'slide',
+        style: {
+            width: 100,
+            height: 50,
+            flex: 'none',
+            background: 'rgb(40, 40, 40)',
+            ...presence.style,
+        },
+    })
+}
+
+function SlideBlock({
+    spacer,
+    show,
+}: {
+    spacer: boolean
+    show: boolean
+}): ReactNode {
+    return h(
+        LayoutGroup,
+        {
+            clock: toastClock!.clock,
+            motion: { duration: 1, timing: timing.linear() },
+        },
+        h(
+            'div',
+            {
+                style: {
+                    position: 'relative',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: 400,
+                    height: 300,
+                },
+            },
+            spacer ? h('div', { style: { height: 30, flex: 'none' } }) : null,
+            h(
+                AnimatePresence,
+                { initial: false, mode: 'popLayout' },
+                show ? h(SlideRow, { key: 'slide' }) : null
+            )
+        )
+    )
+}
+
+/** J-027 (a): an exit that interrupts the enter: translateY(14px) scale(0.8) about 0 0. */
+async function popMidEnter(): Promise<string> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    try {
+        await view.render(h(PopBlock, { clock: mc.clock, show: true }))
+        mc.frame(250)
+        mc.frame(250)
+        const origin = pageBox(view.host.querySelector('[data-block]')!)
+        const drawn = {
+            x: origin.x + 50,
+            y: origin.y + 94,
+            w: 80,
+            h: 40,
+        }
+        const row = byId(view.host, 'pop')
+        expectAt(row, drawn, 'mid-enter at 0.5 s')
+        await view.render(h(PopBlock, { clock: mc.clock, show: false }))
+        const pop = {
+            left: row.style.left,
+            top: row.style.top,
+            width: row.style.width,
+            height: row.style.height,
+        }
+        let error = expectAt(
+            row,
+            drawn,
+            `popped in place (lifted to ${JSON.stringify(pop)})`
+        )
+        expectEqual(
+            pop,
+            { left: '50px', top: '80px', width: '100px', height: '50px' },
+            'the CSS box, lifted'
+        )
+        let released = Number.NaN
+        for (let frame = 1; frame <= 20; frame++) {
+            mc.frame(FRAME_MS)
+            await microtasks()
+            await macrotask()
+            if (!row.isConnected) {
+                released = frame * DT
+                break
+            }
+            error = Math.max(error, expectAt(row, drawn, `exit frame ${frame}`))
+        }
+        if (!(released >= 0.2 - 1e-9 && released <= 0.2 + 2 * DT)) {
+            throw new Error(`exit released at ${released} s, expected ≈ 0.2 s`)
+        }
+        return `mid-enter exit: lifted to ${pop.left}/${pop.top} ${pop.width} × ${pop.height}, drawn (50, 94, 80, 40) until the release at ${released.toFixed(3)} s (error ${error.toFixed(4)} px)`
+    } finally {
+        view.dispose()
+    }
+}
+
+/** J-027 (b): an exit during a layout run: the lifted node keeps its track. */
+async function popMidLayout(): Promise<string> {
+    const lc = createManualClock()
+    toastClock = lc
+    const view = mountRoot()
+    try {
+        await view.render(h(SlideBlock, { spacer: false, show: true }))
+        const node = byId(view.host, 'slide')
+        const before = pageBox(node)
+        await view.render(h(SlideBlock, { spacer: true, show: true }))
+        const track = spec(
+            before,
+            { ...before, y: before.y + 30 },
+            { duration: 1, timing: timing.linear() }
+        )
+        lc.frame(0)
+        lc.frame(200)
+        let elapsed = 0.2
+        let error = expectAt(node, expectedBox(track, elapsed), 'at 0.2 s')
+        await view.render(h(SlideBlock, { spacer: true, show: false }))
+        expectEqual(node.style.position, 'absolute', 'popped')
+        const top = node.style.top
+        error = Math.max(
+            error,
+            expectAt(
+                node,
+                expectedBox(track, elapsed),
+                `popped in place (lifted to top ${top})`
+            )
+        )
+        for (let frame = 1; frame <= 30; frame++) {
+            lc.frame(FRAME_MS)
+            elapsed += DT
+            error = Math.max(
+                error,
+                expectAt(
+                    node,
+                    expectedBox(track, elapsed),
+                    `exiting at ${elapsed.toFixed(3)} s (lifted to top ${top})`
+                )
+            )
+        }
+        expectEqual(top, '30px', 'lifted to its CSS box')
+        return `mid-layout exit: lifted to top ${top}, on its track through ${elapsed.toFixed(3)} s (error ${error.toFixed(4)} px)`
+    } finally {
+        view.dispose()
+        toastClock = null
+    }
+}
+
+/** J-027: popLayout lifts the CSS box, not the drawn one: mid-enter and mid-layout exits stay put. */
+export async function J27(): Promise<string> {
+    const results: string[] = []
+    const failures: string[] = []
+    for (const run of [popMidEnter, popMidLayout]) {
+        try {
+            results.push(await run())
+        } catch (error) {
+            failures.push((error as Error).message)
+        }
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '))
+    return results.join('; ')
+}
+
+/* ── presence across a StrictMode replay (J-028) ── */
+
+const replayMotion = {
+    present: { opacity: 1, translateY: 0, scaleX: 1 },
+    initial: { opacity: 0, translateY: 14, scaleX: 0.8 },
+    enter: ani({
+        to: { opacity: 1, translateY: 0, scaleX: 1 },
+        duration: 1,
+        timing: timing.linear(),
+    }),
+    exit: ani({
+        to: { opacity: 0, translateY: 0, scaleX: 1 },
+        duration: 1,
+        timing: timing.linear(),
+    }),
+}
+
+function ReplayItem({ id }: { id: string }): ReactNode {
+    const presence = usePresence(replayMotion, { clock: toastClock!.clock })
+    const ref = useLayout<HTMLDivElement>({
+        layout: 'position',
+        ref: presence.ref,
+    })
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: 100,
+            height: 30,
+            flex: 'none',
+            transformOrigin: '0 0',
+            background: 'rgb(40, 40, 40)',
+            ...presence.style,
+        },
+    })
+}
+
+function ReplayList({
+    ids,
+    onExit,
+}: {
+    ids: readonly string[]
+    onExit: (key: string) => void
+}): ReactNode {
+    return h(
+        StrictMode,
+        null,
+        h(
+            LayoutGroup,
+            { clock: toastClock!.clock },
+            h(
+                Column,
+                null,
+                h(
+                    AnimatePresence,
+                    { initial: false, onExitComplete: onExit },
+                    ids.map((id) => h(ReplayItem, { key: id, id }))
+                )
+            )
+        )
+    )
+}
+
+/** Presence's opacity, translateY and scaleX on `element`, and its drawn width. */
+function presencePose(element: Element): number[] {
+    const m = matrixOf(element)
+    return [
+        Number(getComputedStyle(element).opacity),
+        m[5]!,
+        m[0]!,
+        element.getBoundingClientRect().width,
+    ]
+}
+
+function expectPose(element: Element, want: number[], label: string): number {
+    const got = presencePose(element)
+    const error = Math.max(...got.map((value, i) => Math.abs(value - want[i]!)))
+    // opacity, transform and Firefox's 1/60 px width
+    if (!(error <= 0.02)) {
+        throw new Error(
+            `${label}: opacity/translateY/scaleX/width ${got.map((v) => v.toFixed(4)).join('/')}, expected ${want.map((v) => v.toFixed(4)).join('/')}`
+        )
+    }
+    return error
+}
+
+/** J-028 (a): two items enter for 1 s; a reorder at 0.2 s moves `a`. */
+async function replayMidEnter(): Promise<string> {
+    const mc = createManualClock()
+    toastClock = mc
+    const view = mountRoot()
+    const app = (ids: readonly string[]) =>
+        h(ReplayList, { ids, onExit: () => undefined })
+    const enter = (t: number) => [t, 14 * (1 - t), 0.8 + 0.2 * t, 80 + 20 * t]
+    try {
+        await view.render(app([]))
+        // both enter from opacity 0, translateY 14, scaleX 0.8
+        await view.render(app(['a', 'b']))
+        mc.frame(200)
+        let error = 0
+        for (const id of ['a', 'b']) {
+            error = Math.max(
+                error,
+                expectPose(byId(view.host, id), enter(0.2), `${id} at 0.2 s`)
+            )
+        }
+        // React replays the moved fiber's refs and effects; time stands still
+        await view.render(app(['b', 'a']))
+        for (const id of ['a', 'b']) {
+            error = Math.max(
+                error,
+                expectPose(
+                    byId(view.host, id),
+                    enter(0.2),
+                    `${id} after the reorder`
+                )
+            )
+        }
+        for (let frame = 1; frame <= 50; frame++) {
+            mc.frame(FRAME_MS)
+            await microtasks()
+            const elapsed = 0.2 + frame * DT
+            for (const id of ['a', 'b']) {
+                error = Math.max(
+                    error,
+                    expectPose(
+                        byId(view.host, id),
+                        enter(Math.min(1, elapsed)),
+                        `${id} entering at ${elapsed.toFixed(3)} s`
+                    )
+                )
+            }
+        }
+        await settleAll(mc, view.host)
+        expectEqual(mc.clock.size, 0, 'no subscriber left')
+        return `mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error ${error.toFixed(4)})`
+    } finally {
+        view.dispose()
+        toastClock = null
+    }
+}
+
+/** J-028 (b): `b` exits for 1 s; a reorder at 0.2 s moves it: [a, (b), c] → [c, a, (b)]. */
+async function replayMidExit(): Promise<string> {
+    const mc = createManualClock()
+    toastClock = mc
+    const view = mountRoot()
+    const exits: Array<{ key: string; at: number }> = []
+    let elapsed = 0
+    const app = (ids: readonly string[]) =>
+        h(ReplayList, {
+            ids,
+            onExit: (key) => exits.push({ key, at: elapsed }),
+        })
+    const exit = (t: number) => [1 - t, 0, 1, 100]
+    try {
+        await view.render(app(['a', 'b', 'c']))
+        await view.render(app(['a', 'c']))
+        mc.frame(200)
+        elapsed = 0.2
+        const b = byId(view.host, 'b')
+        let error = expectPose(b, exit(0.2), 'b exiting at 0.2 s')
+        await view.render(app(['c', 'a']))
+        expectEqual(b.isConnected, true, 'b still exiting after the reorder')
+        error = Math.max(error, expectPose(b, exit(0.2), 'b after the reorder'))
+        for (let frame = 1; frame <= 60; frame++) {
+            mc.frame(FRAME_MS)
+            elapsed = 0.2 + frame * DT
+            await microtasks()
+            await macrotask()
+            if (!b.isConnected) break
+            error = Math.max(
+                error,
+                expectPose(
+                    b,
+                    exit(Math.min(1, elapsed)),
+                    `b at ${elapsed.toFixed(3)} s`
+                )
+            )
+        }
+        expectEqual(
+            exits.map((e) => e.key),
+            ['b'],
+            'one exit completion'
+        )
+        const releasedAt = exits[0]!.at
+        if (!(releasedAt >= 1 - 1e-9 && releasedAt <= 1 + 3 * DT)) {
+            throw new Error(`b released at ${releasedAt} s, expected ≈ 1 s`)
+        }
+        await settleAll(mc, view.host)
+        expectEqual(mc.clock.size, 0, 'no presence or layout subscriber left')
+        return `mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at ${releasedAt.toFixed(3)} s (max error ${error.toFixed(4)}); nothing subscribed after the settle`
+    } finally {
+        view.dispose()
+        toastClock = null
+    }
+}
+
+/** J-028: a moved fiber's ref/effect replay keeps presence's running enter and exit. */
+export async function J28(): Promise<string> {
+    const results: string[] = []
+    const failures: string[] = []
+    for (const run of [replayMidEnter, replayMidExit]) {
+        try {
+            results.push(await run())
+        } catch (error) {
+            failures.push((error as Error).message)
+        }
+    }
+    if (failures.length > 0) throw new Error(failures.join('; '))
+    return results.join('; ')
+}
+
+/* ── AnimatePresence routes to its document's implicit root (J-029) ── */
+
+const fadeExit = {
+    present: { opacity: 1 },
+    exit: ani({ to: { opacity: 0 }, duration: 0.1, timing: timing.linear() }),
+}
+
+function FadeRow(): ReactNode {
+    const presence = usePresence(fadeExit, { clock: toastClock!.clock })
+    return h('div', {
+        ref: presence.ref,
+        'data-id': 'row',
+        style: { width: 100, height: 50, flex: 'none' },
+    })
+}
+
+const Sibling = memo(function Sibling(): ReactNode {
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        'data-id': 'sibling',
+        style: { width: 100, height: 40, flex: 'none', background: '#888' },
+    })
+})
+
+/** No LayoutGroup: a sync exit above a memoized participant of the implicit root. */
+function ImplicitStack({ show }: { show: boolean }): ReactNode {
+    return h(
+        Column,
+        null,
+        h(
+            AnimatePresence,
+            { initial: false },
+            show ? h(FadeRow, { key: 'row' }) : null
+        ),
+        h(Sibling)
+    )
+}
+
+interface Frame {
+    readonly doc: Document
+    readonly root: Root
+    readonly remove: () => void
+}
+
+async function frameRoot(): Promise<Frame> {
+    const iframe = document.createElement('iframe')
+    iframe.style.cssText = 'width: 400px; height: 300px; border: 0;'
+    const loaded = new Promise<void>((resolve) =>
+        iframe.addEventListener('load', () => resolve(), { once: true })
+    )
+    document.body.append(iframe)
+    await loaded
+    const doc = iframe.contentDocument!
+    doc.body.style.margin = '0'
+    const host = doc.createElement('div')
+    doc.body.append(host)
+    return { doc, root: createRoot(host), remove: () => iframe.remove() }
+}
+
+/** The sibling's drawn offset from its column, and its owned translate. */
+function siblingState(doc: Document): { y: number; translate: string } {
+    const sibling = doc.querySelector<HTMLElement>('[data-id="sibling"]')!
+    const column = sibling.parentElement!
+    return {
+        y:
+            sibling.getBoundingClientRect().top -
+            column.getBoundingClientRect().top,
+        translate: sibling.style.translate,
+    }
+}
+
+/** Exits the row (0.1 s on the manual clock) and drains its settle commit. */
+async function exitRow(
+    mc: ManualClock,
+    doc: Document,
+    render: (show: boolean) => void
+): Promise<void> {
+    render(false)
+    await microtasks()
+    for (let frame = 0; frame < 20; frame++) {
+        mc.frame(FRAME_MS)
+        await microtasks()
+        await macrotask()
+        if (!doc.querySelector('[data-id="row"]')) break
+    }
+    await microtasks()
+    if (doc.querySelector('[data-id="row"]'))
+        throw new Error('row not released')
+}
+
+/** J-029: the settle commit of an exit captures the implicit root of the exiting element's document. */
+export async function J29(): Promise<string> {
+    const mc = createManualClock()
+    toastClock = mc
+    const main = mountRoot()
+    const frame = await frameRoot()
+    // the default layout clock stands still: t = 0 stays on screen
+    defaultClock.pause()
+    try {
+        const renderMain = (show: boolean) =>
+            flushSync(() => main.root.render(h(ImplicitStack, { show })))
+        const renderFrame = (show: boolean) =>
+            flushSync(() => frame.root.render(h(ImplicitStack, { show })))
+        renderMain(true)
+        renderFrame(true)
+        await microtasks()
+        const states: string[] = []
+        const failures: string[] = []
+        for (const [label, doc, render] of [
+            ['main document', document, renderMain],
+            ['iframe', frame.doc, renderFrame],
+        ] as const) {
+            expectEqual(
+                siblingState(doc).y,
+                50,
+                `${label}: sibling below the row`
+            )
+            await exitRow(mc, doc, render)
+            const state = siblingState(doc)
+            states.push(
+                `${label} y ${state.y} (translate ${state.translate || 'none'})`
+            )
+            if (state.y !== 50 || state.translate !== '0px 50px') {
+                failures.push(
+                    `${label}: the sibling jumped to y ${state.y} (translate '${state.translate}') at t = 0`
+                )
+            }
+        }
+        if (failures.length > 0) throw new Error(failures.join('; '))
+        // both animate and settle on their own once time runs
+        defaultClock.resume()
+        await sleep(600)
+        for (const [label, doc] of [
+            ['main document', document],
+            ['iframe', frame.doc],
+        ] as const) {
+            const state = siblingState(doc)
+            expectEqual(state, { y: 0, translate: '' }, `${label}: settled`)
+        }
+        // the iframe's root goes with its last participant; the main one stays
+        flushSync(() => frame.root.unmount())
+        await microtasks()
+        renderMain(true)
+        await microtasks()
+        expectEqual(
+            siblingState(document).translate,
+            '0px -50px',
+            'main still animates'
+        )
+        return `${states.join(', ')} at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left`
+    } finally {
+        defaultClock.resume()
+        frame.remove()
+        main.dispose()
+        toastClock = null
     }
 }

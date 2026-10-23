@@ -16,6 +16,7 @@ import {
     type LayoutContextValue,
     type LayoutScope,
     mergeMotion,
+    sameValue,
 } from './context'
 
 /** Every option may also be passed as `undefined` (the default), as React props are. */
@@ -96,7 +97,9 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
     useIsoLayoutEffect(() => {
         const current = owned.current
         if (parent || !current) return
-        if (!key.every((value, i) => Object.is(value, current.key[i]))) {
+        // by value: an inline `reducedMotion={{ maxDuration }}` is a new
+        // object every render and must not dispose a running scope
+        if (!key.every((value, i) => sameValue(value, current.key[i]))) {
             current.key = key
             current.scope.recreate(options())
         }
