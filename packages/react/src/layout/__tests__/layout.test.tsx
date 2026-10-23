@@ -257,6 +257,33 @@ describe('react layout adapter', () => {
         }
     })
 
+    it('J-026: keeps the scope for an equal policy object, re-creates it for a changed one', async () => {
+        const view = await mount(
+            <List ids={['a', 'b']} reducedMotion={{ maxDuration: 0.1 }} />
+        )
+        try {
+            const [old] = live()
+            // a fresh object with the same value
+            await view.rerender(
+                <List ids={['a', 'b']} reducedMotion={{ maxDuration: 0.1 }} />
+            )
+            await settle()
+            expect(old!.disposed).toBe(false)
+            expect(live()).toEqual([old])
+
+            await view.rerender(
+                <List ids={['a', 'b']} reducedMotion={{ maxDuration: 0.2 }} />
+            )
+            await settle()
+            expect(old!.disposed).toBe(true)
+            const [next] = live()
+            expect(next!.options.reducedMotion).toEqual({ maxDuration: 0.2 })
+            expect(next!.members.size).toBe(2)
+        } finally {
+            await view.unmount()
+        }
+    })
+
     it('calls set only when a participant option changes by value', async () => {
         function App({ layout }: { layout: 'position' | 'size' }) {
             return (
