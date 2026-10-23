@@ -139,7 +139,7 @@ closes:
 | `capture()` with no capture | Read; the capture is stamped with the current task. |
 | `capture()` in the task that took the capture | Reuse (StrictMode's second render, every further participant render of that pass). |
 | `capture()` in a later task | Read again (refresh), restamp. |
-| `flush()` | Consume the capture (if any) and close the epoch. If a participant has rendered since the commit's last layout effect, hand that render a capture of the A just read, stamped as expired. |
+| `flush()` | Consume the capture (if any) and close the epoch. |
 
 The task stamp expires at the end of the task that took it (a microtask queued by the
 capture), so every render pass that starts in a later task — a time-sliced render's next
@@ -152,9 +152,11 @@ another root are outside the trigger contract (§7.2).
 
 **Hand-off.** React's scheduler can run a commit and the start of the next render in one task,
 so the flush microtask runs after that render has already touched (and reused) the capture the
-flush consumes. A is the DOM that render is about to change, so the flush hands it a capture of
-A. Being expired, it is re-read by any later touch and is used only when that render touches
-nothing more before its commit.
+flush consumes. The React adapter sees layout effects, so it knows when a participant rendered
+after the commit's last layout effect. In that case it calls `capture()` right after
+`flush()`, in the same microtask. That read sees every node the engine does not drive at its
+after-box A, which is the before-box of the render in progress. The scope needs no hidden hook,
+and the extra read happens only in this interleaving.
 
 In React, the first render of a `useLayout` participant, a `LayoutGroup` or an
 `AnimatePresence` in an epoch calls `capture()`. React has not mutated the DOM yet, so this
@@ -218,14 +220,19 @@ c(τ) = A + (B − A)·(1 − e(τ)) + k·τ·(1 − τ)²,   k = v·D + (B − 
   `timing.spring` ignores a passed velocity, so this term is the only way to keep velocity
   continuous. `k` is not clamped: the bump `k·τ·(1 − τ)²` (at most `4|k|/27`, at τ = 1/3) is
   the carried momentum.
-- **Size floor.** The one physical limit: a size channel never drops below one pixel (the path
-  is floored where the carried velocity or a timing overshoot would take it lower). `c′(0) = v`
-  still holds; this is the only place a channel deviates from the equation.
+- **Size floor.** The one physical limit: a size channel never drops below one pixel, or below
+  its smaller endpoint when that is under one pixel, since `c(0) = B` and `c(1) = A` are exact
+  (the path is floored where the carried velocity or a timing overshoot would take it lower).
+  `c′(0) = v` still holds; this is the only place a channel deviates from the equation.
 - **Delay.** `delay` applies to a node at rest at the flush: before it, the channels hold B.
   A node that is moving at the flush (a retarget) starts its new track at once, so its
   velocity is never dropped.
-- Timing must be stateless. A stateful timing (`timing.dynamicSpring`) throws
-  `ANI_INVALID_OPTIONS`.
+- Timing must be stateless and start with a finite slope `e′(0)`. Otherwise
+  `ANI_INVALID_OPTIONS` is thrown when the option is given:
+  - A stateful timing (`timing.dynamicSpring`).
+  - A curve that starts vertically. Examples: a bezier with `x1 = 0` and `y1 ≠ 0`, or a custom
+    timing whose initial secants do not converge.
+  - Reason: `k` must be finite to carry velocity.
 
 ### 5.2 Modes
 
@@ -251,10 +258,20 @@ not move keeps `V = A` and is counter-projected), so nesting never distorts it.
 
 ### 5.4 Anchor
 
-`layoutAnchor {x, y}` (0–1) replaces the origin channels: the node's anchor point is placed
-on the parent participant's drawn anchor point every frame, plus an offset that moves from
-the initial discrepancy to the final one on the node's own timeline (zero when the anchor
-points coincide, as in E1). Without a parent participant the anchor is ignored.
+`layoutAnchor {x, y}` (0–1) replaces the origin channels with an offset:
+
+- **Placement.** Every frame, the node's anchor point is placed on the parent participant's
+  drawn anchor point, plus the offset.
+- **Offset path.** The offset moves from the initial discrepancy to the final one on the node's
+  own timeline. It follows the channel equation of §5.1, including its delay and its momentum
+  term. A moving node's `k` carries its velocity relative to the parent's anchor point, so an
+  anchored retarget keeps its visual velocity. The offset is zero when the anchor points
+  coincide, as in E1.
+- **When it moves.** An anchored node has moved when its size or its offset changed by at least
+  `threshold`. It also moves whenever its parent moves. A running anchored track is kept only
+  while its size target and offset target are unchanged.
+- **Without a parent participant** the anchor is ignored: the node animates by its `layout`
+  mode.
 
 ### 5.5 Interruption
 
@@ -266,8 +283,12 @@ drawn box and `v` its current velocity. Only a node whose A moved by at least `t
 
 - Per id the scope keeps one **lead** (newest connected, non-exiting registrant) and at most
   one **follower** (a registrant exiting under presence).
-- **Handoff:** a new lead's B is the departing node's drawn box: from the live follower, or
-  from a box retained for `retain` seconds (default 1) after its removal.
+- **Handoff.** When the lead changes because the previous lead departs (exits under presence,
+  or leaves the scope), the new lead's B and velocity are the departing node's drawn box and
+  velocity. This holds even when the new lead was already registered.
+  - An exiting lead gives its live drawn box.
+  - A removed lead gives the box retained for `retain` seconds (default 1) after its removal.
+  - A previous lead that is still live and not exiting does not hand off (duplicate id).
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting
   under presence, the box moved by at least `threshold`, and neither node sets
   `layoutCrossfade: false`. Both nodes draw at the lead's box; the opacities are `w` and
@@ -289,7 +310,7 @@ any total scale. The declaration is restored on settle.
 
 | Property | Owner | Rule |
 |---|---|---|
-| `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. A running CSS transition or animation on them snaps the node. |
+| `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. A CSS transition configured on them (`translate`, `scale` or `all`, which would animate layout's own writes) or a running CSS animation of them snaps the node with a development warning naming the fix (e.g. Tailwind `transition-colors` instead of `transition`). |
 | `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes. |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
@@ -434,9 +455,9 @@ group API.
 
 | Condition | Behaviour | Reason |
 |---|---|---|
-| Both boxes outside the viewport ± 10 % | That node jumps, uncounted | `'culled'` |
+| Both boxes outside the viewport ± 10 % (the union of B and A) | That node jumps, uncounted toward `maxNodes`; under a moving ancestor it is still counter-projected | `'culled'` |
 | Visible movers exceed `maxNodes` | The whole flush snaps | `'capped'` |
-| Rotate, skew, non-translation ancestor transform, unparseable inline transform or authored value, running CSS transition/animation on `translate`/`scale`, zero size, `display: contents`, scale outside 1/50–50 | That subtree snaps | `'unsupported'` |
+| Rotate, skew, a non-translation transform on a non-participant ancestor (detected by the border box's size), unparseable transform or authored value, a CSS transition or animation on `translate`/`scale` (§6), zero size, `display: contents`/`inline`, a size change beyond 50× | That subtree snaps | `'unsupported'` |
 | An inner scroll container moved between capture and flush | The flush snaps | `'stale'` |
 | Reduced motion with policy `'jump'` (default) | No tracks; active tracks finish at once; no clock subscription | `'reduced'` |
 | Reduced motion `{ maxDuration }` | Delay + duration scaled down to fit, in `motion.ts` only | — |

@@ -113,7 +113,10 @@ and commit semantics; the browser runner (`tests/browser/run.ts`); vitest root c
   unsupported detection), `presence_link.ts`, `realize/raf.ts` (first `dt` = 0), `scope.ts`
   (registry, capture refresh, flush, runs, finish, dispose, stats, warnings).
 - T4.2 Public `types.ts`/`index.ts`; delete `layout_group.ts`, `projection/*`, `easing.ts` users
-  other than View Transitions, old tests and the CPC browser harness; fresh-clone typecheck fixed.
+  other than View Transitions, old tests and the CPC browser harness. The layout package, the
+  browser tests of the `layout` module and every other package typecheck. The React adapter's
+  layout module (`packages/react/src/layout`, browser module `react_layout`) still targets the
+  deleted engine; CP5 replaces it, and its typecheck is a V5 gate.
 - T4.3 Browser module `layout` (manual clock): flat move, nested depth 3 with mixed modes,
   anchor, delay, interruption with velocity, layoutId handoff and crossfade with presence,
   a participant ancestor with a constant and with an animating presence transform (§3.1),
