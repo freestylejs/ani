@@ -34,6 +34,13 @@ export interface LayoutGroupOptions {
     /** Seconds a removed `layoutId` lead's box stays available for a handoff. Default: 1. */
     readonly retain?: number
     readonly onSnap?: (element: HTMLElement, reason: SnapReason) => void
+    /**
+     * Default: `'raf'`, every track on the clock. `'waapi'` runs each track as
+     * a compositor animation (smooth while the main thread is blocked): only
+     * top-level `layout: 'position'` participants without `layoutAnchor`,
+     * `layoutId` or `radius`, no velocity term, on the document timeline.
+     */
+    readonly engine?: 'raf' | 'waapi'
 }
 
 export type LayoutStatus =

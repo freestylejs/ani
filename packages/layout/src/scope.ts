@@ -24,7 +24,7 @@ import {
     scrollOffsets,
     viewportBox,
 } from './dom'
-import { hasDOM } from './feature'
+import { hasDOM, supportsLinearEasing } from './feature'
 import {
     aboutOrigin,
     type Box,
@@ -66,6 +66,7 @@ import {
 } from './plan'
 import { exitingPresence, presenceOf } from './presence_link'
 import { createRaf } from './realize/raf'
+import { elapsedOf, play } from './realize/waapi'
 import {
     type BoxVelocity,
     drawnBoxes,
@@ -250,6 +251,7 @@ const GROUP_KEYS = [
     'maxNodes',
     'retain',
     'onSnap',
+    'engine',
 ] as const
 
 function validateGroupOptions(options: unknown): void {
@@ -311,6 +313,30 @@ function validateGroupOptions(options: unknown): void {
     if (value.onSnap !== undefined && typeof value.onSnap !== 'function') {
         throw invalidOptions('type', 'onSnap must be a function.')
     }
+    const engine = value.engine
+    if (engine !== undefined && engine !== 'raf' && engine !== 'waapi') {
+        throw invalidOptions(
+            'type',
+            `engine must be 'raf' or 'waapi', received ${String(engine)}.`
+        )
+    }
+}
+
+/**
+ * The WAAPI engine animates top-level `'position'` participants only (§10);
+ * anything else throws when it is registered, never degrades.
+ */
+function validateWaapiOptions(options: LayoutOptions | undefined): void {
+    const reject = (what: string) =>
+        invalidOptions(
+            'type',
+            `the 'waapi' engine animates layout: 'position' participants only; ${what} needs the 'raf' engine.`
+        )
+    if (options?.layout !== 'position')
+        throw reject(`layout: ${JSON.stringify(options?.layout ?? true)}`)
+    if (options.layoutAnchor !== undefined) throw reject('layoutAnchor')
+    if (options.layoutId !== undefined) throw reject('layoutId')
+    if (options.radius) throw reject('radius')
 }
 
 function format(n: number): string {
@@ -352,6 +378,12 @@ export function createLayoutGroup(
     const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES
     const retain = options.retain ?? DEFAULT_RETAIN
     const groupMotion: LayoutMotion | undefined = options.motion
+    const waapi = options.engine === 'waapi'
+    /** The running animation of each WAAPI track, with the track it draws. */
+    const animations = new Map<
+        Participant,
+        { readonly animation: Animation; readonly track: Track }
+    >()
 
     const registry = new Map<HTMLElement, Participant>()
     let sequence = 0
@@ -497,12 +529,67 @@ export function createLayoutGroup(
     function settle(p: Participant, cancelled = false): void {
         const d = p.drive
         if (!d) return
+        stopAnimation(p)
         if (cancelled) cancelRunNode(p)
         else finishRunNode(p)
         d.release?.()
         p.drive = null
         if (p.geometry) p.lastBox = p.geometry.a
         queueRestore(p.element, d)
+    }
+
+    /* ───────────────────────── WAAPI (§10) ───────────────────────── */
+
+    function stopAnimation(p: Participant): void {
+        const running = animations.get(p)
+        if (!running) return
+        animations.delete(p)
+        running.animation.cancel()
+    }
+
+    /** Each WAAPI track's elapsed time is its animation's. */
+    function syncAnimations(): void {
+        for (const [p, { animation }] of animations) {
+            if (p.drive) p.drive.elapsed = elapsedOf(animation)
+        }
+    }
+
+    /**
+     * One animation per track that does not have one: from the track's start
+     * pose to the authored translate, keeping the running ones.
+     */
+    function playTracks(): void {
+        for (const node of frame) {
+            const p = node.p
+            const d = p.drive
+            if (d?.kind !== 'track' || !d.track) continue
+            if (animations.get(p)?.track === d.track) continue
+            stopAnimation(p)
+            const track = d.track
+            const start = drawnBoxes(solveNodes([{ ...node, parent: -1 }]))[0]!
+            const a = node.geometry.a
+            const au = d.authored
+            const animation = play(
+                p.element,
+                {
+                    from: [start.x - a.x + au.tx, start.y - a.y + au.ty],
+                    to: [au.tx, au.ty],
+                    duration: track.duration,
+                    delay: track.delay,
+                    curve: track.curve,
+                },
+                () => {
+                    if (animations.get(p)?.animation !== animation) return
+                    d.elapsed = track.delay + track.duration
+                    settle(p)
+                    commitWrites()
+                    frame = frame.filter((n) => n.p.drive !== null)
+                    stats.tracks = animations.size
+                }
+            )
+            animations.set(p, { animation, track })
+        }
+        stats.tracks = animations.size
     }
 
     function restoreOpacity(element: HTMLElement, d: Drive): void {
@@ -912,8 +999,11 @@ export function createLayoutGroup(
             const parent = parentOf.get(p)
             return parent ? index.get(parent)! : -1
         })
+        const hasChild = list.map(() => false)
+        for (const parent of parents) if (parent >= 0) hasChild[parent] = true
 
         // the engine's own state before this flush
+        if (waapi) syncAnimations()
         const nowSolve = solveNodes(frame)
         const drawn = new Map<Participant, Box>()
         const velocity = new Map<Participant, BoxVelocity>()
@@ -1032,6 +1122,13 @@ export function createLayoutGroup(
                 const holding = moving && d!.elapsed < d!.track!.delay
                 const options = p.options
                 let unsupported = g?.unsupported ?? null
+                if (waapi && !unsupported) {
+                    if (parents[i]! >= 0 || hasChild[i])
+                        unsupported =
+                            "a nested participant (the 'waapi' engine)"
+                    else if (!supportsLinearEasing())
+                        unsupported = 'no CSS linear() easing'
+                }
                 if (!unsupported && (a.w <= 0 || a.h <= 0))
                     unsupported = 'zero size'
                 if (!unsupported && before) {
@@ -1057,8 +1154,11 @@ export function createLayoutGroup(
                     fx: g?.fx ?? 0.5,
                     fy: g?.fy ?? 0.5,
                     before,
+                    // the WAAPI engine has no velocity term (§10)
                     velocity:
-                        moving && !holding ? (velocity.get(p) ?? null) : null,
+                        moving && !holding && !waapi
+                            ? (velocity.get(p) ?? null)
+                            : null,
                     moving,
                     track: moving ? d!.track : null,
                     trackTarget: moving ? d!.target : null,
@@ -1234,8 +1334,10 @@ export function createLayoutGroup(
                 existing.kind = kind
                 return existing
             }
-            const all = [...POSE_PROPERTIES, ...properties]
-            if (p.options.radius && g.radius) all.push(...RADIUS_PROPERTIES)
+            // the WAAPI engine writes no inline style
+            const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
+            if (!waapi && p.options.radius && g.radius)
+                all.push(...RADIUS_PROPERTIES)
             const d: Drive = {
                 kind,
                 track: null,
@@ -1401,11 +1503,16 @@ export function createLayoutGroup(
         })
         frame = next
 
-        // the pose at each node's current time (t = 0 for a new track)
-        const running = frame.length > 0 && step(null)
-        commitWrites()
-        if (running) realizer.start()
-        else realizer.stop()
+        if (waapi) {
+            commitWrites()
+            playTracks()
+        } else {
+            // the pose at each node's current time (t = 0 for a new track)
+            const running = frame.length > 0 && step(null)
+            commitWrites()
+            if (running) realizer.start()
+            else realizer.stop()
+        }
 
         for (const { element, reason } of snapped)
             options.onSnap?.(element, reason)
@@ -1431,6 +1538,7 @@ export function createLayoutGroup(
         if (!d) return null
         const at = frame.findIndex((node) => node.p === p)
         if (at < 0) return null
+        if (waapi) syncAnimations()
         const nodes = solveNodes(frame)
         const box = drawnBoxes(nodes)[at]
         if (!box) return null
@@ -1493,7 +1601,7 @@ export function createLayoutGroup(
             if (d.track) d.elapsed = d.track.delay + d.track.duration
             if (d.fade) d.fade.elapsed = d.fade.duration
         }
-        if (status === 'ended') {
+        if (status === 'ended' && !waapi) {
             step(null)
             commitWrites()
         }
@@ -1511,6 +1619,20 @@ export function createLayoutGroup(
     const group: LayoutGroup = {
         add(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
+            if (waapi) {
+                validateWaapiOptions(layoutOptions)
+                for (const other of registry.keys()) {
+                    if (
+                        other !== element &&
+                        (other.contains(element) || element.contains(other))
+                    ) {
+                        throw invalidOptions(
+                            'type',
+                            "the 'waapi' engine animates top-level participants only; a nested participant needs the 'raf' engine."
+                        )
+                    }
+                }
+            }
             if (disposed) return noop
             let p = registry.get(element)
             if (p) {
@@ -1566,6 +1688,7 @@ export function createLayoutGroup(
                     // unmount cancels its track (§9): the run reports
                     // 'disposed' if nothing else of it is left
                     cancelRunNode(self)
+                    stopAnimation(self)
                     d.release?.()
                     self.drive = null
                     pending = pending.filter((w) => w.element !== element)
@@ -1588,6 +1711,7 @@ export function createLayoutGroup(
 
         set(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
+            if (waapi) validateWaapiOptions(layoutOptions)
             const p = registry.get(element)
             if (!p) return
             if (!sameTrackOptions(p.options, layoutOptions, groupMotion))

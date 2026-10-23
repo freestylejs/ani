@@ -81,6 +81,7 @@ with `x1 = 0` and `y1 ≠ 0` throw.
 | `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
 | `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
 | `onSnap` | — | `(element, reason) => void`, called for every element that jumped. |
+| `engine` | `'raf'` | `'waapi'` runs each move as a compositor animation, smooth while the main thread is blocked: top-level `layout: 'position'` participants only (no `layoutAnchor`, `layoutId` or `radius`; anything else throws), no velocity across a retarget, on the document timeline rather than the Ani clock. |
 
 Invalid options throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS`, from
 `createLayoutGroup`, `add` or `set`, never inside a frame.

@@ -37,7 +37,8 @@
         "pkg:version": "changeset version",
         "pkg:publish": "changeset publish",
         "pre-commit": "pnpm check",
-        "test:docs-showcase": "node tests/browser/docs_showcase.mjs"
+        "test:docs-showcase": "node tests/browser/docs_showcase.mjs",
+        "test:waapi-trace": "node tests/browser/waapi_trace.ts"
     },
     "packageManager": "pnpm@10.20.0",
     "devDependencies": {
