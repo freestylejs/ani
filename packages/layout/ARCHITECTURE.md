@@ -282,10 +282,15 @@ drawn box and `v` its current velocity, both seen through the presence layers as
 this flush: a presence `transform` that changed since the last flush changed what the user
 sees, so the drawn box is mapped through the current presence matrices (the poses are the
 engine's own; the presence matrix is read with the other computed values of active nodes).
-Only a node whose A moved by at least `threshold`, or whose track options changed, gets a new
-track; every other node keeps its track untouched. Track options are compared by value:
-`layout`, `layoutAnchor`, `radius` and `motion` (a timing by its class and parameters, so an
-inline `timing.spring({…})` equals the previous render's). `layoutId`, `layoutCrossfade` and
+Each pose is recovered *with its rate* from the drawn box and velocity, and recomposed through
+the current maps (maps with time derivatives compose exactly by the product rule), so the
+velocity is carried exactly: a parent's motion stays a translation of the child whatever the
+child's own scale became. Only a node whose A moved by at least `threshold`, or whose track
+options changed, gets a new track; every other node keeps its track untouched. Track options
+are compared by their *effective* value under the group's motion: `layout`, `layoutAnchor`,
+`radius` and `motion` with the defaults and the group's fields merged in (`{}` equals
+`{ motion: { delay: 0 } }`), a timing by its class and parameters in any key order, so an
+inline `timing.spring({…})` equals the previous render's. `layoutId`, `layoutCrossfade` and
 `layoutDependency` act at the flush and never restart a track. A reduced-motion mode that
 changed since a track was planned (§9) re-plans it at the next flush, from its drawn box with
 its velocity.
@@ -300,11 +305,17 @@ its velocity.
   - An exiting lead gives its live drawn box.
   - A removed lead gives the box and velocity retained for `retain` seconds (default 1)
     after its removal (the velocity only if its own track was moving, not holding a delay).
+    The next flush carries them through its parent participant's current presence layers, as
+    §5.5 does for driven nodes; the removed element's own layer stays as last measured.
   - A previous lead that is still live and not exiting does not hand off (duplicate id).
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting
-  under presence, the box moved by at least `threshold`, and neither node sets
-  `layoutCrossfade: false`. Both nodes draw at the lead's box; the opacities are `w` and
-  `1 − w`, with `w = clamp(e(τ), 0, 1)` on the lead's timeline.
+  under presence, the box moved by at least `threshold` (or the pair is reversing, below),
+  and neither node sets `layoutCrossfade: false`. Both nodes draw at the lead's box; the
+  opacities are `w` and `1 − w`, with `w = from + (1 − from)·clamp(e(τ), 0, 1)` on the lead's
+  timeline and `from = 0` for a new handoff.
+- **Reversal.** When the new lead is the follower of the running crossfade (a menu reopened
+  while it closes), the pair keeps crossfading however little it moves, and `from` is the
+  opacity the new lead shows: no opacity pops and no box jumps.
 - The follower is held at opacity 0 (where it was drawn when the fade ended) until presence
   unmounts it, and presence's release waits for the crossfade to end. Nothing pops back to
   opacity 1.
@@ -375,6 +386,7 @@ interface LayoutGroupOptions {
   readonly maxNodes?: number                     // visible movers, default 300
   readonly retain?: number                       // seconds, default 1
   readonly onSnap?: (element: HTMLElement, reason: SnapReason) => void
+  readonly engine?: 'raf' | 'waapi'              // default 'raf' (§10)
 }
 
 type SnapReason = 'culled' | 'capped' | 'unsupported' | 'stale' | 'reduced'
@@ -460,9 +472,10 @@ function Item({ item }) {
 
 // Toast stack: CSS lays the list out; presence and layout share the element
 function Toast({ toast }) {
-  const layout = useLayout({ layout: 'position' })
   const presence = usePresence(toastMotion)
-  return <li ref={mergeRefs(layout, presence.ref)} style={presence.style}>{toast.text}</li>
+  // `ref` forwards the element: one stable ref (an inline merged ref would be new per render)
+  const ref = useLayout({ layout: 'position', ref: presence.ref })
+  return <li ref={ref} style={presence.style}>{toast.text}</li>
 }
 ```
 
@@ -477,11 +490,12 @@ function Toast({ toast }) {
 | Shell | `dom.ts` | Every DOM read, every owned-style write and byte-exact restore. |
 | Shell | `scope.ts` | Registry, epochs, runs, lifecycle; the public `LayoutGroup`. |
 | Shell | `realize/raf.ts` | The one `Animatable`. |
+| Shell | `realize/waapi.ts` | The WAAPI engine's animations and sampled easing (§10). |
 | Shell | `presence_link.ts` | Package-internal presence registry (§6). |
 | Kept | `presence.ts`, `presence_state.ts`, `view_transition.ts`, `feature.ts`, `easing.ts` | Presence, View Transitions. |
 
-The pure modules import nothing from the DOM or the clock. Only `dom.ts` touches the DOM
-for layout and only `realize/*` touches the clock. The React adapter calls only the public
+The pure modules import nothing from the DOM or the clock. Only `dom.ts` reads layout and
+writes owned styles, and only `realize/*` realizes tracks (the clock, `Element.animate`). The React adapter calls only the public
 group API.
 
 ## 9. Failure, snap and reduced motion
@@ -506,15 +520,30 @@ printed once per scope for `'unsupported'`, `'capped'` and `'stale'` (actionable
 `'culled'` and `'reduced'` are normal operation and stay silent. Reduced motion is read from
 the scope's clock at every flush.
 
-## 10. WAAPI engine (optional, gated)
+## 10. WAAPI engine (`engine: 'waapi'`)
 
-Same plan, realized with `Element.animate()`: depth-0 tracks only (no participant ancestor
-that animates), `'position'` mode, no anchor, no velocity term; anything else throws at
-`add`/`set`. It never writes `startTime`: animations are created in the flush and start at
-the browser's pending-play time, so the first painted frame is τ = 0. It ships only if
-(1) the RAF-vs-WAAPI differential is ≤ 0.5 px per frame, (2) the 120 ms block test is ≤ 6 %,
-and (3) a trace shows compositor-only frames during a block. If any gate fails, it does not
-ship.
+An explicit group option, for flat moves that must stay smooth while the main thread is
+blocked. Same plan, realized with `Element.animate()` (`realize/waapi.ts`):
+
+- **Shape.** Top-level `layout: 'position'` participants only, without `layoutAnchor`,
+  `layoutId` or `radius`; anything else throws `ANI_INVALID_OPTIONS` at `add`/`set` (a nested
+  participant included), never degrades. A nesting that appears later in the DOM snaps as
+  `'unsupported'`. There is no velocity term: a retarget starts from the drawn box at rest.
+- **Realization.** Each track is one `translate` animation from its start pose to the authored
+  translate, with the track's curve sampled into a CSS `linear()` easing (stops chosen so a
+  move is drawn within 0.05 px), its delay and `fill: 'backwards'`. It is created in the flush
+  and held at τ = 0, then played from the next animation frame without a `startTime`: the
+  first painted frame is τ = 0 in every browser (Gecko and WebKit would otherwise count a
+  block right after the flush as elapsed time). It writes no inline style; settle, `finish`,
+  `dispose`, removal and reduced motion cancel the animation.
+- **Time.** A track's elapsed time is its animation's `currentTime`, read wherever the scope
+  needs a drawn box (the next flush's B, a removal). The animations run on the document
+  timeline, not on the Ani clock: they do not follow its time scale; reduced motion is still
+  read from the clock at each flush.
+- **Gates (all met).** (1) RAF-vs-WAAPI differential ≤ 0.5 px per frame (`waapi:W1`, seeking
+  the paused animation to each frame's time); (2) the first painted frame after a 120 ms
+  block ≤ 6 % (`waapi:W3`); (3) a Chromium trace shows compositor frames drawing during a
+  120 ms block, where the RAF engine draws none (`pnpm test:waapi-trace`).
 
 ## 11. Acceptance
 
@@ -548,11 +577,15 @@ per property, byte-identical final inline style, no subscription left.
 
 Cost gates: reads per commit = 2N rects plus one computed-style read per active node; zero
 reads on steady frames; commit reads at 1,000 participants ≤ 4 ms; steady frame at 300 nested
-movers ≤ 2 ms p95.
+movers ≤ 2 ms p95. The whole commit and the steady frame with every participant moving are
+recorded at 50, 300 and 1,000 participants.
 
 ## 12. Accepted risks
 
 - Nested layout motion is not compositor-smooth while the main thread is blocked.
+- The WAAPI engine reads a retarget's B from `currentTime` on the main thread; under jank the
+  compositor may have drawn ahead of it, so a retarget during jank can step back by the
+  frames the main thread missed. It does not follow the Ani clock's time scale.
 - Render-phase reads bend React's purity norm (reads only) and can force a layout during render
   when the DOM is dirty.
 - A state change that renders no participant, group or `AnimatePresence` does not animate
