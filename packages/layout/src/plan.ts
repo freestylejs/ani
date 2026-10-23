@@ -38,6 +38,12 @@ export interface PlanNode {
     /** The running own track and its target, kept when A did not move. */
     readonly track: Track | null
     readonly trackTarget: Box | null
+    /**
+     * A under the presence layers the running track was planned with (§3.1):
+     * a presence transform that changed since is a visual layer, not a move,
+     * so keep or retarget is judged on this box. `null`: judged on `a`.
+     */
+    readonly planned: Box | null
     readonly mode: LayoutMode
     readonly anchor: LayoutAnchor | null
     readonly motion: Motion
@@ -261,19 +267,20 @@ function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
 function targetMoved(node: PlanNode, parentAfter: Box | undefined): number {
     const target = node.trackTarget!
     const rule = node.track!.anchor
+    const a = node.planned ?? node.a
     if (rule && node.anchor && parentAfter) {
         const size = Math.max(
-            Math.abs(target.w - node.a.w),
-            Math.abs(target.h - node.a.h)
+            Math.abs(target.w - a.w),
+            Math.abs(target.h - a.h)
         )
-        const to = anchorOffsetOf(node.anchor, node.a, parentAfter)
+        const to = anchorOffsetOf(node.anchor, a, parentAfter)
         return Math.max(
             size,
             Math.abs(to.x - rule.toX),
             Math.abs(to.y - rule.toY)
         )
     }
-    return moved(target, node.a, node)
+    return moved(target, a, node)
 }
 
 export function plan(input: PlanInput): Plan {
@@ -391,7 +398,7 @@ export function plan(input: PlanInput): Plan {
             node.track &&
             node.trackTarget &&
             !node.optionsChanged &&
-            targetMoved(node, parentAfter) < threshold
+            targetMoved(node, parentNode?.planned ?? parentAfter) < threshold
         ) {
             own = KEEP
         } else if (

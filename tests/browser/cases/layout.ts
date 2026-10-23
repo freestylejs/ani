@@ -2391,3 +2391,73 @@ export async function SCALE(): Promise<string> {
     }
     return lines.join('; ')
 }
+
+/**
+ * E-1 (CP5 fix proof): a presence transform animating under a running
+ * track is a visual layer; a flush that changes no layout box (a re-render)
+ * changes nothing on screen and replaces no track, whether the presence
+ * change alone moves the box below or above the threshold.
+ */
+export async function PRESENCE_LAYER(): Promise<string> {
+    const linear = timing.linear()
+    const run = async (
+        presence: (s: number) => string,
+        noOpFlush: boolean
+    ): Promise<{ boxes: OBox[]; status: string }> => {
+        const h = harness({ motion: { duration: 1, timing: linear } })
+        try {
+            const e = node(
+                h.root,
+                'left: 0; top: 0; width: 300px; height: 48px; transform-origin: 50% 100%;'
+            )
+            e.style.transform = presence(0.9)
+            h.add(e, { layout: 'position' })
+            h.group.capture()
+            e.style.top = '56px'
+            const done = report(h.group.flush())
+            const boxes: OBox[] = []
+            for (let k = 0; k < 70; k++) {
+                // the presence advances 0.9 → 1 over the first ten frames
+                if (k <= 10) e.style.transform = presence(0.9 + k * 0.01)
+                if (noOpFlush && k === 5) {
+                    h.group.capture()
+                    void h.group.flush()
+                }
+                h.mc.frame(FRAME_MS)
+                boxes.push(pageBox(e))
+                await settleMicrotasks()
+            }
+            return { boxes, status: done.value?.status ?? 'running' }
+        } finally {
+            h.dispose()
+        }
+    }
+    const lines: string[] = []
+    for (const [name, presence] of [
+        ['scaleX', (s: number) => `scaleX(${s})`],
+        [
+            'scaleX + translateY',
+            (s: number) =>
+                `translateY(${((1 - s) * 140).toFixed(3)}px) scaleX(${s})`,
+        ],
+    ] as const) {
+        const control = await run(presence, false)
+        const test = await run(presence, true)
+        let worst = 0
+        control.boxes.forEach((box, k) => {
+            worst = Math.max(worst, maxDiff(box, test.boxes[k]!))
+        })
+        if (!(worst <= 0.02)) {
+            throw new Error(
+                `${name}: a no-op flush changed the trajectory by ${worst} px`
+            )
+        }
+        expectEqual(
+            test.status,
+            control.status,
+            `${name}: the run is not replaced`
+        )
+        lines.push(`${name} ${worst.toFixed(4)} px`)
+    }
+    return `a no-op flush while the presence animates: trajectory identical to the run without it (${lines.join(', ')}); the track is kept`
+}
