@@ -286,6 +286,73 @@ describe('react layout adapter', () => {
         }
     })
 
+    it('J-016: compares motion by effect: defaults, inherited fields, timings in any key order', async () => {
+        function App({ motion }: { motion?: LayoutOptions['motion'] }) {
+            return (
+                <LayoutGroup
+                    motion={{ duration: 1, timing: a.timing.linear() }}
+                >
+                    <Item id="a" {...(motion !== undefined && { motion })} />
+                </LayoutGroup>
+            )
+        }
+        const sets = (fake: Fake) =>
+            fake.calls.filter((call) => call === 'set').length
+        const view = await mount(<App />)
+        try {
+            const [fake] = live()
+            // equal to what the participant already draws: no `set`
+            for (const motion of [
+                { duration: 1 },
+                { delay: 0 },
+                { duration: 1, delay: 0, timing: a.timing.linear() },
+                {},
+            ]) {
+                await view.rerender(<App motion={motion} />)
+            }
+            expect(sets(fake!)).toBe(0)
+            // a real change still reaches the scope
+            await view.rerender(<App motion={{ delay: 0.1 }} />)
+            expect(sets(fake!)).toBe(1)
+        } finally {
+            await view.unmount()
+        }
+
+        function Spring({ order }: { order: 'mkc' | 'ckm' | 'k' }) {
+            const spring =
+                order === 'mkc'
+                    ? a.timing.spring({ m: 1, k: 200, c: 20 })
+                    : order === 'ckm'
+                      ? a.timing.spring({ c: 20, k: 200, m: 1 })
+                      : a.timing.spring({ m: 1, k: 210, c: 20 })
+            return (
+                <LayoutGroup>
+                    <Item id="b" motion={{ timing: spring }} />
+                    <Item
+                        id="c"
+                        // the default timing, written out
+                        motion={
+                            order === 'mkc'
+                                ? {}
+                                : { duration: 0.35, timing: a.timing.easeOut() }
+                        }
+                    />
+                </LayoutGroup>
+            )
+        }
+        const springs = await mount(<Spring order="mkc" />)
+        try {
+            const fake = live().at(-1)!
+            await springs.rerender(<Spring order="ckm" />)
+            await springs.rerender(<Spring order="mkc" />)
+            expect(sets(fake)).toBe(0)
+            await springs.rerender(<Spring order="k" />)
+            expect(sets(fake)).toBe(1)
+        } finally {
+            await springs.unmount()
+        }
+    })
+
     it('passes layoutDependency through on every change', async () => {
         function App({ dependency }: { dependency: number }) {
             return (
