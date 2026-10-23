@@ -31,9 +31,9 @@ export interface PlanNode {
     readonly fy: number
     /** Visual box before the change; `null` for a node new to the scope. */
     readonly before: Box | null
-    /** Drawn-box velocity now (zero at rest). */
-    readonly velocity: BoxVelocity
-    /** Driven by a running own track. */
+    /** Drawn-box velocity now; `null` at rest (including a track's delay hold). */
+    readonly velocity: BoxVelocity | null
+    /** Has a running own track (it may still hold its delay). */
     readonly moving: boolean
     /** The running own track and its target, kept when A did not move. */
     readonly track: Track | null
@@ -109,17 +109,42 @@ const KEEP: Action = { kind: 'keep' }
 const STATIC: Action = { kind: 'static' }
 const CULL_MARGIN = 0.1
 
-/** How far a box moved in the channels its mode animates. */
+function anchorPoint(anchor: LayoutAnchor, box: Box) {
+    return { x: box.x + anchor.x * box.w, y: box.y + anchor.y * box.h }
+}
+
+/** A box's offset from its parent's anchor point (§5.4). */
+function anchorOffsetOf(
+    anchor: LayoutAnchor,
+    box: Box,
+    parent: Box
+): { x: number; y: number } {
+    const b = anchorPoint(anchor, box)
+    const p = anchorPoint(anchor, parent)
+    return { x: b.x - p.x, y: b.y - p.y }
+}
+
+/**
+ * How far a box moved in the channels its mode animates. An anchored node
+ * (one with a participant parent, whose boxes are given) moves by its size and
+ * by its offset from the parent's anchor point.
+ */
 export function moved(
     from: Box,
     to: Box,
-    node: Pick<PlanNode, 'mode' | 'anchor' | 'fx' | 'fy'>
+    node: Pick<PlanNode, 'mode' | 'anchor' | 'fx' | 'fy'>,
+    parentFrom?: Box,
+    parentTo?: Box
 ): number {
     const b = channelsOf(from, node.fx, node.fy)
     const a = channelsOf(to, node.fx, node.fy)
     const origin = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]))
     const size = Math.max(Math.abs(b[2] - a[2]), Math.abs(b[3] - a[3]))
-    if (node.anchor) return size
+    if (node.anchor && parentFrom && parentTo) {
+        const ob = anchorOffsetOf(node.anchor, from, parentFrom)
+        const oa = anchorOffsetOf(node.anchor, to, parentTo)
+        return Math.max(size, Math.abs(ob.x - oa.x), Math.abs(ob.y - oa.y))
+    }
     if (node.mode === 'position') return origin
     if (node.mode === 'size') return size
     return Math.max(origin, size)
@@ -140,28 +165,41 @@ function visible(before: Box, after: Box, viewport: Box): boolean {
     )
 }
 
+/**
+ * The offset path of an anchored node. A moving node carries its velocity
+ * relative to the parent's anchor point: `k = v·D + (from − to)·e′(0)`.
+ */
 function anchorRule(
     anchor: LayoutAnchor,
     before: Box,
     after: Box,
     parentBefore: Box,
-    parentAfter: Box
+    parentAfter: Box,
+    velocity: BoxVelocity | null,
+    parentVelocity: BoxVelocity | null,
+    motion: Motion
 ): AnchorRule {
-    const point = (box: Box) => ({
-        x: box.x + anchor.x * box.w,
-        y: box.y + anchor.y * box.h,
-    })
-    const b = point(before)
-    const pb = point(parentBefore)
-    const a = point(after)
-    const pa = point(parentAfter)
+    const from = anchorOffsetOf(anchor, before, parentBefore)
+    const to = anchorOffsetOf(anchor, after, parentAfter)
+    let kx = 0
+    let ky = 0
+    if (velocity) {
+        const pv = parentVelocity ?? { x: 0, y: 0, w: 0, h: 0 }
+        const vx = velocity.x + anchor.x * velocity.w - (pv.x + anchor.x * pv.w)
+        const vy = velocity.y + anchor.y * velocity.h - (pv.y + anchor.y * pv.h)
+        const slope = motion.curve.slope0
+        kx = vx * motion.duration + (from.x - to.x) * slope
+        ky = vy * motion.duration + (from.y - to.y) * slope
+    }
     return {
         u: anchor.x,
         v: anchor.y,
-        fromX: b.x - pb.x,
-        fromY: b.y - pb.y,
-        toX: a.x - pa.x,
-        toY: a.y - pa.y,
+        fromX: from.x,
+        fromY: from.y,
+        toX: to.x,
+        toY: to.y,
+        kx,
+        ky,
     }
 }
 
@@ -198,17 +236,41 @@ function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
         let follower = -1
         if (previous !== index) {
             if (previous === null) {
+                // the previous lead left the scope: its retained box
                 handoff = history?.retained ?? null
-            } else {
+            } else if (input.nodes[previous]!.exiting) {
                 const old = input.nodes[previous]!
                 handoff = old.before ?? old.a
-                if (old.moving) handoffVelocity = old.velocity
-                if (old.exiting) follower = previous
+                handoffVelocity = old.velocity
+                follower = previous
             }
+            // a previous lead that is still live keeps its own motion (duplicate id)
         }
         leads.push({ id, index, handoff, handoffVelocity, follower })
     }
     return leads
+}
+
+/**
+ * How far a running track's target is from the new A: its box target, and for
+ * an anchored track its offset target from the parent's new anchor point.
+ */
+function targetMoved(node: PlanNode, parentAfter: Box | undefined): number {
+    const target = node.trackTarget!
+    const rule = node.track!.anchor
+    if (rule && node.anchor && parentAfter) {
+        const size = Math.max(
+            Math.abs(target.w - node.a.w),
+            Math.abs(target.h - node.a.h)
+        )
+        const to = anchorOffsetOf(node.anchor, node.a, parentAfter)
+        return Math.max(
+            size,
+            Math.abs(to.x - rule.toX),
+            Math.abs(to.y - rule.toY)
+        )
+    }
+    return moved(target, node.a, node)
 }
 
 export function plan(input: PlanInput): Plan {
@@ -240,14 +302,12 @@ export function plan(input: PlanInput): Plan {
     // effective before-box and carried velocity: a new lead starts from the
     // box it takes over, moving if that node was moving
     const before = nodes.map((node) => node.before)
-    const carried: (BoxVelocity | null)[] = nodes.map((node) =>
-        node.moving ? node.velocity : null
-    )
+    const carried: (BoxVelocity | null)[] = nodes.map((node) => node.velocity)
     const fadeLead = new Set<number>()
     const newFollower = new Map<number, number>()
     for (const lead of leadList) {
         const node = nodes[lead.index]!
-        if (lead.handoff === null || node.before !== null) continue
+        if (lead.handoff === null) continue
         before[lead.index] = lead.handoff
         carried[lead.index] = lead.handoffVelocity
         if (lead.follower < 0) continue
@@ -288,8 +348,19 @@ export function plan(input: PlanInput): Plan {
         const node = nodes[i]!
         const b = before[i]!
         const underMotion = ancestorAnimated[i]!
+        const parentIndex = node.parent
+        // an anchor needs a participant parent; without one it is ignored
+        const anchored = node.anchor !== null && parentIndex >= 0
+        const parentNode = anchored ? nodes[parentIndex]! : null
+        const parentBefore = parentNode
+            ? (before[parentIndex] ?? parentNode.a)
+            : undefined
+        const parentAfter = parentNode?.a
+        // without parent boxes `moved` ignores the anchor
+        const movedFrom = (from: Box) =>
+            moved(from, node.a, node, parentBefore, parentAfter)
         if (unsupported[i]) {
-            if (node.moving || (b && moved(b, node.a, node) >= threshold)) {
+            if (node.moving || (b && movedFrom(b) >= threshold)) {
                 snapped.push({ index: i, reason: 'unsupported' })
             }
             return NONE
@@ -305,8 +376,6 @@ export function plan(input: PlanInput): Plan {
             return { kind: 'follow', lead: node.following, start: false }
         }
         if (node.skip) return underMotion ? STATIC : NONE
-        const parentIndex = node.parent
-        const anchored = node.anchor !== null && parentIndex >= 0
         const parentMoves =
             anchored &&
             (animated[parentIndex]! || ancestorAnimated[parentIndex]!)
@@ -316,12 +385,12 @@ export function plan(input: PlanInput): Plan {
             node.track &&
             node.trackTarget &&
             !node.optionsChanged &&
-            moved(node.trackTarget, node.a, node) < threshold
+            targetMoved(node, parentAfter) < threshold
         ) {
             own = KEEP
         } else if (
             node.moving ||
-            (b !== null && moved(b, node.a, node) >= threshold) ||
+            (b !== null && movedFrom(b) >= threshold) ||
             parentMoves
         ) {
             const from = b ?? node.a
@@ -329,14 +398,16 @@ export function plan(input: PlanInput): Plan {
             // a moving node starts at once so its velocity is never dropped
             const motion = velocity ? { ...node.motion, delay: 0 } : node.motion
             let rule: AnchorRule | null = null
-            if (anchored) {
-                const parent = nodes[parentIndex]!
+            if (parentNode) {
                 rule = anchorRule(
                     node.anchor!,
                     from,
                     node.a,
-                    before[parentIndex] ?? parent.a,
-                    parent.a
+                    parentBefore!,
+                    parentNode.a,
+                    velocity,
+                    parentNode.velocity,
+                    motion
                 )
             }
             own = {
@@ -355,9 +426,11 @@ export function plan(input: PlanInput): Plan {
             }
         }
         if (own.kind === 'none') return underMotion ? STATIC : NONE
-        if (!underMotion && !visible(b ?? node.a, node.a, input.viewport)) {
+        // a path wholly outside the viewport jumps, uncounted; under a moving
+        // ancestor it is still counter-projected
+        if (!visible(b ?? node.a, node.a, input.viewport)) {
             snapped.push({ index: i, reason: 'culled' })
-            return NONE
+            return underMotion ? STATIC : NONE
         }
         return own
     }

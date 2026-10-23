@@ -137,6 +137,12 @@ export function validateMotion(value: unknown, label = 'motion'): void {
             `${label}.timing must be stateless; a stateful timing such as timing.dynamicSpring cannot be evaluated at an arbitrary time. Use timing.spring.`
         )
     }
+    if (!Number.isFinite(curveOf(fn as TimingFunction).slope0)) {
+        throw invalidOptions(
+            'range',
+            `${label}.timing must start with a finite slope so a moving node keeps its velocity; a bezier with x1 = 0 and y1 ≠ 0 starts vertically.`
+        )
+    }
 }
 
 const OPTION_KEYS = [
@@ -245,6 +251,20 @@ function rawSlope0(fn: TimingFunction): number | null {
     return null
 }
 
+/**
+ * `e′(0)` of a custom timing from forward differences; `Infinity` when they
+ * do not converge (a vertical start).
+ */
+function convergedSlope0(value: (tau: number) => number): number {
+    const secant = (h: number) => (value(h) - value(0)) / h
+    const coarse = secant(1e-5)
+    const fine = secant(1e-6)
+    if (!Number.isFinite(fine)) return Number.POSITIVE_INFINITY
+    return Math.abs(fine - coarse) <= 1e-2 * Math.max(1, Math.abs(fine))
+        ? fine
+        : Number.POSITIVE_INFINITY
+}
+
 const curves = new WeakMap<TimingFunction, Curve>()
 
 /** The normalized curve of a stateless timing (cached per instance). */
@@ -267,9 +287,7 @@ export function curveOf(fn: TimingFunction): Curve {
     }
     const exact = rawSlope0(fn)
     const slope0 =
-        exact === null || !Number.isFinite(exact)
-            ? numericSlope(0)
-            : exact + r0 + (1 - r1)
+        exact === null ? convergedSlope0(value) : exact + r0 + (1 - r1)
     const slope = (tau: number): number => {
         if (tau < 0 || tau > 1) return 0
         return tau === 0 ? slope0 : numericSlope(tau)

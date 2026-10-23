@@ -18,7 +18,11 @@ import type { Curve, LayoutMode, Motion } from './motion'
 /** Origin point x, origin point y, width, height. */
 export type Channels = readonly [number, number, number, number]
 
-/** `layoutAnchor`: an offset from the parent's anchor point, moving `from → to`. */
+/**
+ * `layoutAnchor`: an offset from the parent's anchor point, moving
+ * `from → to` on the node's own timeline like a channel, with the momentum
+ * term `k` carrying the incoming relative velocity of a moving node.
+ */
 export interface AnchorRule {
     readonly u: number
     readonly v: number
@@ -26,6 +30,8 @@ export interface AnchorRule {
     readonly fromY: number
     readonly toX: number
     readonly toY: number
+    readonly kx: number
+    readonly ky: number
 }
 
 export interface Track {
@@ -156,7 +162,7 @@ function channelAt(track: Track, i: number, tau: number): number {
     if (tau >= 1) return a
     const e = track.curve.value(tau)
     const c = a + (b - a) * (1 - e) + track.k[i]! * tau * (1 - tau) * (1 - tau)
-    // size floor: a box never collapses below one pixel
+    // size floor: one pixel, or the smaller endpoint when that is below it
     return i < 2 ? c : Math.max(c, Math.min(1, a, b))
 }
 
@@ -190,106 +196,125 @@ function ownBox(track: Track, elapsed: number): Box {
     }
 }
 
+function offsetAt(
+    from: number,
+    to: number,
+    k: number,
+    curve: Curve,
+    tau: number
+): number {
+    if (tau <= 0) return from
+    if (tau >= 1) return to
+    return to + (from - to) * (1 - curve.value(tau)) + k * tau * (1 - tau) ** 2
+}
+
 function anchorOffset(rule: AnchorRule, track: Track, elapsed: number) {
     const tau = progress(track, elapsed)
-    const rest = 1 - track.curve.value(tau)
     return {
-        x: rule.toX + (rule.fromX - rule.toX) * rest,
-        y: rule.toY + (rule.fromY - rule.toY) * rest,
+        x: offsetAt(rule.fromX, rule.toX, rule.kx, track.curve, tau),
+        y: offsetAt(rule.fromY, rule.toY, rule.ky, track.curve, tau),
     }
 }
 
-/** Drawn boxes of every node (parents first). */
+function offsetVelocity(
+    from: number,
+    to: number,
+    k: number,
+    track: Track,
+    tau: number
+): number {
+    if (track.duration <= 0 || tau < 0 || tau >= 1) return 0
+    const d =
+        -(from - to) * track.curve.slope(tau) + k * (1 - tau) * (1 - 3 * tau)
+    return d / track.duration
+}
+
+/**
+ * Drawn boxes of every node. A follower is drawn at its lead and an anchored
+ * node relative to its parent, whatever their order in `nodes`.
+ */
 export function drawnBoxes(nodes: readonly SolveNode[]): Box[] {
-    const drawn: Box[] = []
-    for (let i = 0; i < nodes.length; i++) {
+    const drawn: (Box | undefined)[] = new Array(nodes.length)
+    const at = (i: number): Box => {
+        const known = drawn[i]
+        if (known) return known
         const node = nodes[i]!
-        if (node.follow >= 0) {
-            drawn.push(drawn[node.follow] ?? node.a)
-            continue
-        }
         const track = node.track
-        if (!track) {
-            drawn.push(node.a)
-            continue
+        let box: Box
+        if (node.follow >= 0) {
+            box = at(node.follow)
+        } else if (track) {
+            box = ownBox(track, node.elapsed)
+            if (track.anchor && node.parent >= 0) {
+                const parent = at(node.parent)
+                const off = anchorOffset(track.anchor, track, node.elapsed)
+                const { u, v } = track.anchor
+                box = {
+                    x: parent.x + u * parent.w - u * box.w + off.x,
+                    y: parent.y + v * parent.h - v * box.h + off.y,
+                    w: box.w,
+                    h: box.h,
+                }
+            }
+        } else {
+            box = node.a
         }
-        const box = ownBox(track, node.elapsed)
-        const parent = node.parent >= 0 ? drawn[node.parent] : undefined
-        if (track.anchor && parent) {
-            const off = anchorOffset(track.anchor, track, node.elapsed)
-            const u = track.anchor.u
-            const v = track.anchor.v
-            drawn.push({
-                x: parent.x + u * parent.w - u * box.w + off.x,
-                y: parent.y + v * parent.h - v * box.h + off.y,
-                w: box.w,
-                h: box.h,
-            })
-            continue
-        }
-        drawn.push(box)
+        drawn[i] = box
+        return box
     }
-    return drawn
+    for (let i = 0; i < nodes.length; i++) at(i)
+    return drawn as Box[]
 }
 
-/** Analytic velocity of every node's drawn box (parents first). */
+/** Analytic velocity of every node's drawn box, in any order (see `drawnBoxes`). */
 export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
-    const velocity: BoxVelocity[] = []
-    for (let i = 0; i < nodes.length; i++) {
+    const velocity: (BoxVelocity | undefined)[] = new Array(nodes.length)
+    const at = (i: number): BoxVelocity => {
+        const known = velocity[i]
+        if (known) return known
         const node = nodes[i]!
-        if (node.follow >= 0) {
-            velocity.push(velocity[node.follow] ?? ZERO_VELOCITY)
-            continue
-        }
         const track = node.track
-        if (!track || isHolding(track, node.elapsed)) {
-            const parent = node.parent >= 0 ? velocity[node.parent] : undefined
-            if (track?.anchor && parent) {
-                velocity.push({
-                    x: parent.x + track.anchor.u * parent.w,
-                    y: parent.y + track.anchor.v * parent.h,
-                    w: 0,
-                    h: 0,
-                })
-            } else {
-                velocity.push(ZERO_VELOCITY)
-            }
-            continue
-        }
-        const tau = progress(track, node.elapsed)
-        const w = channelVelocity(track, 2, tau)
-        const h = channelVelocity(track, 3, tau)
-        const parent = node.parent >= 0 ? velocity[node.parent] : undefined
-        if (track.anchor && parent) {
+        let v: BoxVelocity
+        if (node.follow >= 0) {
+            v = at(node.follow)
+        } else if (track) {
+            const holding = isHolding(track, node.elapsed)
+            const tau = progress(track, node.elapsed)
+            const w = holding ? 0 : channelVelocity(track, 2, tau)
+            const h = holding ? 0 : channelVelocity(track, 3, tau)
             const rule = track.anchor
-            const slope =
-                tau < 1 && track.duration > 0
-                    ? track.curve.slope(tau) / track.duration
-                    : 0
-            velocity.push({
-                x:
-                    parent.x +
-                    rule.u * parent.w -
-                    rule.u * w -
-                    (rule.fromX - rule.toX) * slope,
-                y:
-                    parent.y +
-                    rule.v * parent.h -
-                    rule.v * h -
-                    (rule.fromY - rule.toY) * slope,
-                w,
-                h,
-            })
-            continue
+            if (rule && node.parent >= 0) {
+                const parent = at(node.parent)
+                const ox = holding
+                    ? 0
+                    : offsetVelocity(rule.fromX, rule.toX, rule.kx, track, tau)
+                const oy = holding
+                    ? 0
+                    : offsetVelocity(rule.fromY, rule.toY, rule.ky, track, tau)
+                v = {
+                    x: parent.x + rule.u * parent.w - rule.u * w + ox,
+                    y: parent.y + rule.v * parent.h - rule.v * h + oy,
+                    w,
+                    h,
+                }
+            } else if (holding) {
+                v = ZERO_VELOCITY
+            } else {
+                v = {
+                    x: channelVelocity(track, 0, tau) - track.fx * w,
+                    y: channelVelocity(track, 1, tau) - track.fy * h,
+                    w,
+                    h,
+                }
+            }
+        } else {
+            v = ZERO_VELOCITY
         }
-        velocity.push({
-            x: channelVelocity(track, 0, tau) - track.fx * w,
-            y: channelVelocity(track, 1, tau) - track.fy * h,
-            w,
-            h,
-        })
+        velocity[i] = v
+        return v
     }
-    return velocity
+    for (let i = 0; i < nodes.length; i++) at(i)
+    return velocity as BoxVelocity[]
 }
 
 function fadeWeight(fade: Fade): number {
