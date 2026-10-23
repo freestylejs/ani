@@ -353,8 +353,8 @@ function onto(css: Box, drawn: Box): Map2 {
 /**
  * Drawn boxes of every node and, with `rates`, their analytic velocities. A
  * follower is drawn at its lead and an anchored node relative to its parent,
- * whatever their order in `nodes`; the parent as the anchored node's own
- * epoch draws it (§5.4).
+ * whatever their order in `nodes`, each as its own epoch draws the other
+ * (§5.4, §5.6).
  */
 function drawnMotion(
     nodes: readonly SolveNode[],
@@ -362,7 +362,7 @@ function drawnMotion(
 ): { boxes: Box[]; velocities: BoxVelocity[] } {
     const boxes: (Box | undefined)[] = new Array(nodes.length)
     const velocities: (BoxVelocity | undefined)[] = new Array(nodes.length)
-    const parents: ({ box: Box; velocity: Box } | undefined)[] = new Array(
+    const sources: ({ box: Box; velocity: Box } | undefined)[] = new Array(
         nodes.length
     )
     let maps: ReturnType<typeof epochs<MovingMap>> | null = null
@@ -385,23 +385,29 @@ function drawnMotion(
             },
         }
     }
-    /** The parent's drawn box and velocity in node `i`'s epoch: `corrᵢ ∘ corr_parent⁻¹`. */
-    const parentOf = (i: number): { box: Box; velocity: Box } => {
-        const known = parents[i]
+    /**
+     * The drawn box and velocity of `j` (an anchored node's parent, or a
+     * follower's lead) as node `i`'s epoch draws them: `corrᵢ ∘ corrⱼ⁻¹`.
+     */
+    const seenFrom = (i: number, j: number): { box: Box; velocity: Box } => {
+        const known = sources[i]
         if (known) return known
-        const node = nodes[i]!
-        const box = boxAt(node.parent)
-        const velocity = rates ? velocityAt(node.parent) : ZERO_VELOCITY
+        const box = boxAt(j)
+        const velocity = rates ? velocityAt(j) : ZERO_VELOCITY
         let seen = { box, velocity }
-        if (node.layers || nodes[node.parent]!.layers) {
+        // a layer of `j` at `i` itself would need `i`'s own box: drawn as is
+        const layered =
+            (nodes[i]!.layers || nodes[j]!.layers) &&
+            !nodes[j]!.layers?.some((layer) => layer.at === i)
+        if (layered) {
             maps ??= epochs(nodes, full, MOVING)
             const own = maps.corr(i)
-            const theirs = maps.corr(node.parent)
+            const theirs = maps.corr(j)
             let shift = own ?? STILL_IDENTITY
             if (theirs) shift = composeMoving(shift, invertMoving(theirs))
             seen = carry(shift, box, velocity)
         }
-        parents[i] = seen
+        sources[i] = seen
         return seen
     }
     const boxAt = (i: number): Box => {
@@ -411,11 +417,11 @@ function drawnMotion(
         const track = node.track
         let box: Box
         if (node.follow >= 0) {
-            box = boxAt(node.follow)
+            box = seenFrom(i, node.follow).box
         } else if (track) {
             box = ownBox(track, node.elapsed)
             if (track.anchor && node.parent >= 0) {
-                const parent = parentOf(i).box
+                const parent = seenFrom(i, node.parent).box
                 const off = anchorOffset(track.anchor, track, node.elapsed)
                 const { u, v } = track.anchor
                 box = {
@@ -438,7 +444,7 @@ function drawnMotion(
         const track = node.track
         let v: BoxVelocity
         if (node.follow >= 0) {
-            v = velocityAt(node.follow)
+            v = seenFrom(i, node.follow).velocity
         } else if (track) {
             const holding = isHolding(track, node.elapsed)
             const tau = progress(track, node.elapsed)
@@ -446,7 +452,7 @@ function drawnMotion(
             const h = holding ? 0 : channelVelocity(track, 3, tau)
             const rule = track.anchor
             if (rule && node.parent >= 0) {
-                const parent = parentOf(i).velocity
+                const parent = seenFrom(i, node.parent).velocity
                 const ox = holding
                     ? 0
                     : offsetVelocity(rule.fromX, rule.toX, rule.kx, track, tau)

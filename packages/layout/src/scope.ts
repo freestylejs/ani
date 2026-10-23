@@ -1661,11 +1661,16 @@ export function createLayoutGroup(
             if (!inFrame[i]) return
             frameIndex.set(i, next.length)
             const parent = parents[i]!
-            // a kept track keeps the presence matrices it was planned with,
-            // its own and its ancestors': a presence transform changed since
-            // stays a visual layer over it (§3.1); its CSS box is the current
-            // one. A new track starts in this flush's space.
-            const kept = actions[i]!.kind === 'keep' ? frozen.get(p) : undefined
+            // a kept track (or a continuing follower) keeps the presence
+            // matrices it was planned with, its own and its ancestors': a
+            // presence transform changed since stays a visual layer over it
+            // (§3.1); its CSS box is the current one. A new track starts in
+            // this flush's space.
+            const action = actions[i]!
+            const continues =
+                action.kind === 'keep' ||
+                (action.kind === 'follow' && !action.start)
+            const kept = continues ? frozen.get(p) : undefined
             let ancestry = kept?.ancestry
             if (!ancestry) {
                 const now = new Map<Participant, Matrix>()

@@ -2443,6 +2443,189 @@ export function J35B(): Promise<string> {
     return anchoredUnderLayer(2)
 }
 
+/**
+ * CP8 re-trial J-037: a continuing crossfade follower keeps the space of the
+ * flush that started it, and is drawn at its lead as its own space draws the
+ * lead. The pair runs under a parent whose layer changes mid-run (scaleX
+ * 0.8 → 1); a no-op flush must change nothing ('noop'). The same run without
+ * it is the control; 'moving' puts the layer on a moving grandparent, with a
+ * plain participant between; 'retarget' moves the lead instead, so the lead
+ * starts in the new space while its follower continues in the old one.
+ */
+async function crossfadeUnderLayer(
+    variant: 'noop' | 'control' | 'moving' | 'retarget'
+): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const scaled = node(
+            h.root,
+            'left: 100px; top: 0; width: 300px; height: 100px; transform: scaleX(0.8); transform-origin: 0 0;'
+        )
+        h.add(scaled)
+        let parent = scaled
+        if (variant === 'moving') {
+            parent = node(
+                scaled,
+                'left: 0; top: 0; width: 300px; height: 100px; transform-origin: 0 0;'
+            )
+            h.add(parent)
+        }
+        const old = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(old, { layoutId: 'pair' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+        h.group.capture()
+        let tau = 0
+        let exitedAt = -1
+        void presence.exit().then(() => {
+            exitedAt = tau
+        })
+        const lead = node(
+            parent,
+            'left: 200px; top: 0; width: 100px; height: 40px; transform-origin: 0 0;'
+        )
+        let authored = lead.style.cssText
+        h.add(lead, { layoutId: 'pair' })
+        // 'moving': the grandparent moves 100 → 200 with the pair
+        if (variant === 'moving') scaled.style.left = '200px'
+        const run = report(h.group.flush())
+        h.mc.frame(FRAME_MS)
+        h.mc.frame(200)
+        await settleMicrotasks()
+        scaled.style.transform = 'scaleX(1)'
+        // the track in the 0.8 space: x 100 + 160τ (moving: 100 + 260τ), w
+        // 32 + 48τ; the layer, 1 / 0.8 about the scaled element's drawn left
+        const slope = variant === 'moving' ? 300 : 200
+        const want = (t: number) =>
+            at(o, 100 + slope * Math.min(1, t), 0, 40 + 60 * Math.min(1, t), 40)
+        expectAt(lead, want(0.2), 'lead after the layer change', 0.01)
+        expectAt(old, want(0.2), 'follower after the layer change', 0.01)
+        let current = run
+        let path = want
+        if (variant === 'retarget') {
+            // from (140, w 52) at vx 200, vw 60 to (350, w 100), in the new space
+            h.group.capture()
+            lead.style.left = '250px'
+            authored = authored.replace('left: 200px', 'left: 250px')
+            current = report(h.group.flush())
+            await settleMicrotasks()
+            expectEqual(run.value?.status, 'interrupted', 'the first run')
+            expectAt(lead, want(0.2), 'lead at the retarget', 0.01)
+            expectAt(old, want(0.2), 'follower at the retarget', 0.01)
+            const track = spec(want(0.2), at(o, 350, 0, 100, 40), {
+                duration: 1,
+                timing: linear,
+                velocity: { x: 200, y: 0, w: 60, h: 0 },
+            })
+            path = (t: number) => expectedBox(track, t - 0.2 - DT)
+        } else if (variant !== 'control') {
+            h.group.capture()
+            const noop = report(h.group.flush())
+            await settleMicrotasks()
+            expectEqual(noop.value?.status, 'no-change', 'the no-op flush')
+            expectAt(lead, want(0.2), 'lead after the no-op flush', 0.01)
+            expectAt(old, want(0.2), 'follower after the no-op flush', 0.01)
+        }
+        let worst = 0
+        let fade = 0
+        let restoredAt = -1
+        const count = await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                tau = 0.2 + DT + elapsed
+                const box = path(tau)
+                worst = Math.max(
+                    worst,
+                    expectAt(lead, box, `lead τ=${tau.toFixed(3)}`)
+                )
+                const lo = Number(getComputedStyle(lead).opacity)
+                if (old.style.opacity !== '0') {
+                    worst = Math.max(
+                        worst,
+                        expectAt(old, box, `follower τ=${tau.toFixed(3)}`)
+                    )
+                    const fo = Number(getComputedStyle(old).opacity)
+                    if (tau < 1) {
+                        fade = Math.max(
+                            fade,
+                            Math.abs(lo - tau),
+                            Math.abs(fo - (1 - tau))
+                        )
+                    }
+                }
+                if (restoredAt < 0 && lead.style.opacity === '') {
+                    restoredAt = tau
+                }
+            },
+            () => current.value !== null && exitedAt >= 0
+        )
+        if (fade > 0.01) throw new Error(`opacities off the fade by ${fade}`)
+        if (!(exitedAt >= 1 - 1e-9 && exitedAt <= 1 + 2 * DT)) {
+            throw new Error(
+                `presence released at τ ${exitedAt}, not at the fade's end`
+            )
+        }
+        if (!(restoredAt >= 1 - 1e-9 && restoredAt <= 1 + 2 * DT)) {
+            throw new Error(
+                `lead opacity given back at τ ${restoredAt}, not at the fade's end`
+            )
+        }
+        if (variant === 'retarget') {
+            await frames(h.mc, 120, noCheck, () => lead.style.translate === '')
+            expectAt(lead, at(o, 350, 0, 100, 40), 'lead at rest', 0.01)
+        } else {
+            expectAt(lead, want(1), 'lead at rest', 0.01)
+        }
+        expectEqual(current.value?.status, 'ended', 'the run')
+        expectEqual(lead.style.cssText, authored, 'lead restored')
+        expectEqual(old.style.opacity, '0', 'follower held invisible')
+        presence.dispose()
+        await frames(h.mc, 3, noCheck)
+        expectEqual(h.mc.clock.size, 0, 'zero subscribers')
+        const on =
+            variant === 'retarget'
+                ? 'the retargeted lead track (vx 200, vw 60 → 350, w 100)'
+                : `x = 100 + ${slope}τ, w = 40 + 60τ`
+        return `${variant}: pair at (${(want(0.2).x - o.x).toFixed(1)}, w ${want(0.2).w.toFixed(1)}) after the layer change${variant === 'control' ? '' : variant === 'retarget' ? ' and the lead retarget' : ' and the no-op flush'}; ${count} frames on ${on} within ${worst.toFixed(4)} px; opacities within ${fade.toFixed(4)}; release at τ ${exitedAt.toFixed(3)}; zero subscribers`
+    } finally {
+        h.dispose()
+    }
+}
+
+export function J37(): Promise<string> {
+    return crossfadeUnderLayer('noop')
+}
+
+export function J37Control(): Promise<string> {
+    return crossfadeUnderLayer('control')
+}
+
+export function J37Moving(): Promise<string> {
+    return crossfadeUnderLayer('moving')
+}
+
+export function J37Retarget(): Promise<string> {
+    return crossfadeUnderLayer('retarget')
+}
+
 /* ───────────────────────── View Transitions ───────────────────────── */
 
 export async function VT1(): Promise<string> {
