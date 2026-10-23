@@ -5,6 +5,7 @@ import { useIsoLayoutEffect } from '../ani/owned'
 import {
     assignRef,
     existingScope,
+    existingScopes,
     hasDOM,
     LayoutContext,
     type LayoutContextValue,
@@ -70,8 +71,15 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
     const registration = useRef<Registration | null>(null)
     const previousRef = useRef(options.ref)
 
-    // render: the before-boxes of the whole scope (§4.1)
-    existingScope(context, element.current)?.touch()
+    // render: the before-boxes of the whole scope (§4.1); a first render
+    // knows no document yet and touches every implicit root
+    const touched = existingScopes(
+        context,
+        element.current ? [element.current.ownerDocument] : []
+    )
+    for (const scope of touched) scope.touch()
+    const touchedRef = useRef(touched)
+    touchedRef.current = touched
 
     useIsoLayoutEffect(() => {
         const current = registration.current
@@ -81,7 +89,8 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
                 current.scope.set(element.current, current.options)
             }
         }
-        ;(current?.scope ?? existingScope(context, element.current))?.commit()
+        current?.scope.commit()
+        for (const scope of touchedRef.current) scope.commit()
     })
 
     useIsoLayoutEffect(() => {
