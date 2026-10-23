@@ -4,7 +4,7 @@ import { supportsLinearEasing } from './feature'
 const EASING_SAMPLES = 48
 
 /** Samples a core timing function for both CSS and analytic plan evaluation. */
-export function easingValues(timingFunction: TimingFunction): number[] {
+function easingValues(timingFunction: TimingFunction): number[] {
     const samples: number[] = []
     const context = {
         dt: 0,

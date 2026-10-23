@@ -6,95 +6,73 @@ import type {
     ReducedMotionPolicy,
     Resolver,
     RunResult,
-    TimingFunction,
 } from '@freestylejs/ani-core'
+import type { LayoutMotion, LayoutOptions } from './motion'
+import type { SnapReason } from './plan'
 
 /* ───────────────────────── Layout ───────────────────────── */
 
-export interface LayoutMotion {
-    /** Segment duration in seconds. Default: 0.35. */
-    readonly duration?: number
-    /** Core timing function. Springs are sampled to CSS `linear()`. */
-    readonly timing?: TimingFunction
-}
-
-export type LayoutMode = 'position' | 'box' | 'size' | 'preserve-aspect'
-
-export interface LayoutAnchor {
-    readonly x: number
-    readonly y: number
-}
-
-export interface LayoutParticipantOptions {
-    /**
-     * Default: 'position' translates only. 'box' adds scale + radius.
-     * 'size' scales around the origin with position snap. 'preserve-aspect'
-     * applies one uniform scale. If box motion is unavailable/capped for
-     * 'size' or 'preserve-aspect', the participant snaps (it never degrades to
-     * a zero-translate position animation).
-     */
-    readonly layout?: LayoutMode
-    /** Shared identity within the layout root. */
-    readonly layoutId?: string
-    /** Normalized transform anchor for box motion; default is computed origin. */
-    readonly layoutAnchor?: LayoutAnchor
-    /** Duplicate layoutId crossfade; default true. */
-    readonly layoutCrossfade?: boolean
-    /** Per-participant timing; defaults to the group motion. */
-    readonly motion?: LayoutMotion
-    /** If supplied, equal previous/current values suppress this participant's run. */
-    readonly layoutDependency?: unknown
-}
+export type {
+    LayoutAnchor,
+    LayoutMode,
+    LayoutMotion,
+    LayoutOptions,
+} from './motion'
+export type { SnapReason } from './plan'
 
 export interface LayoutGroupOptions {
+    /** Default: `defaultClock`. Its `reducedMotion` is read at every flush. */
+    readonly clock?: Clock
+    /** Defaults for every participant's `motion`, merged field by field. */
     readonly motion?: LayoutMotion
-    /** Read for a synchronous reduced-motion decision. */
-    readonly clock?: Pick<Clock, 'reducedMotion'>
-    /** Default: 'jump'. Evaluated at play time. */
+    /** Default: `'jump'`. */
     readonly reducedMotion?: ReducedMotionPolicy
-    /** CSS px per axis below which a box counts as unchanged. Default: 1. */
+    /** Px a box must move to animate. Default: 1. */
     readonly threshold?: number
-    /** Visible movers per change. Above this the whole change snaps. Default: 300. */
-    readonly maxAnimated?: number
-    /** `box` nodes per change. Extras fall back to `position`. Default: 16. */
-    readonly maxBoxes?: number
-    readonly onError?: (error: unknown, element?: HTMLElement) => void
+    /** Visible movers per flush; above it the whole flush snaps. Default: 300. */
+    readonly maxNodes?: number
+    /** Seconds a removed `layoutId` lead's box stays available for a handoff. Default: 1. */
+    readonly retain?: number
+    readonly onSnap?: (element: HTMLElement, reason: SnapReason) => void
 }
 
-export type LayoutResult =
+export type LayoutStatus =
     | 'ended'
-    | 'no-change'
     | 'interrupted'
-    | 'finished'
-    | 'disposed'
-    | 'stale'
-    | 'yielded'
-    | 'capped'
+    | 'no-change'
     | 'reduced'
-    | 'unsupported'
+    | 'capped'
+    | 'stale'
+    | 'disposed'
 
-declare const layoutSnapshot: unique symbol
-
-/** Opaque, single-use. Expires in the next task after capture. */
-export interface LayoutSnapshot {
-    readonly [layoutSnapshot]: true
+export interface LayoutReport {
+    readonly status: LayoutStatus
+    readonly snapped: readonly {
+        readonly element: HTMLElement
+        readonly reason: SnapReason
+    }[]
 }
 
 export interface LayoutGroup {
-    /** Register a target. Returns an idempotent remove that restores owned styles. */
-    add(element: HTMLElement, options?: LayoutParticipantOptions): () => void
-    /** Update a participant's mode/id without remove/add churn. */
-    set(element: HTMLElement, options: LayoutParticipantOptions): void
-    /** capture → mutate() → play. `mutate` must be synchronous. */
-    update(mutate: () => void, motion?: LayoutMotion): Promise<LayoutResult>
-    /** Adapter interface. Read-only. */
-    capture(): LayoutSnapshot
-    /** Adapter interface. After mutation, before paint. */
-    play(snapshot: LayoutSnapshot, motion?: LayoutMotion): Promise<LayoutResult>
-    /** Jump the active run to the final layout and restore owned styles. */
+    /** Registers a participant. Returns an idempotent remove that restores its owned styles. */
+    add(element: HTMLElement, options?: LayoutOptions): () => void
+    /** Replaces a participant's options. */
+    set(element: HTMLElement, options: LayoutOptions): void
+    /** Reads the before-boxes; reused within the task, re-read in a later one. */
+    capture(): void
+    /** Reads the after-boxes, plans and starts the run. Never rejects. */
+    flush(): Promise<LayoutReport>
+    /** `capture()` → `mutate()` → `flush()`. A throwing `mutate` discards the capture and rethrows. */
+    update(mutate: () => void): Promise<LayoutReport>
+    /** Every track jumps to its end and settles. */
     finish(): void
-    readonly active: boolean
+    /** Cancels every track, restores every owned style, releases presence holds. */
     dispose(): void
+    readonly stats: {
+        readonly captures: number
+        readonly reads: number
+        readonly tracks: number
+    }
 }
 
 /* ─────────────────────── Presence state ─────────────────────── */

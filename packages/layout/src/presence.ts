@@ -8,6 +8,7 @@ import {
     type StateProps,
     timing,
 } from '@freestylejs/ani-core'
+import { linkPresence } from './presence_link'
 import type {
     PresenceExitResult,
     PresenceHandle,
@@ -83,6 +84,18 @@ export function createPresence<G extends GroupableRecord>(
     let timer: ReturnType<typeof setTimeout> | null = null
     let resolveExit: ((result: PresenceExitResult) => void) | null = null
     let exitPromise: Promise<PresenceExitResult> | null = null
+    // layout crossfades this exit must outlive (presence_link.ts)
+    const holds = new Set<Promise<void>>()
+    const unlink = linkPresence(element, {
+        get exiting() {
+            return phase === 'exiting'
+        },
+        opacity: 'opacity' in motion.present,
+        hold(until) {
+            holds.add(until)
+            void until.then(() => holds.delete(until))
+        },
+    })
 
     const clearTimer = (): void => {
         if (timer !== null) {
@@ -166,15 +179,18 @@ export function createPresence<G extends GroupableRecord>(
             })
             exitPromise = promise
             resolveExit = resolve
-            void machine.transitionTo('exit').then((result) => {
-                if (
-                    disposed ||
-                    phase !== 'exiting' ||
-                    generation !== exitGeneration
-                ) {
-                    return
+            const current = () =>
+                !disposed &&
+                phase === 'exiting' &&
+                generation === exitGeneration
+            void machine.transitionTo('exit').then(async (result) => {
+                if (!current()) return
+                const exit = exitResult(result)
+                // the release waits for every crossfade on this element
+                while (exit === 'exited' && holds.size > 0 && current()) {
+                    await Promise.all(holds)
                 }
-                finishExit(exitResult(result))
+                if (current()) finishExit(exit)
             })
             armWatchdog(generation)
             return promise
@@ -189,6 +205,7 @@ export function createPresence<G extends GroupableRecord>(
             finishExit('disposed')
             phase = 'exited'
             offTransition()
+            unlink()
             unbind?.()
             unbind = null
             machine.dispose()

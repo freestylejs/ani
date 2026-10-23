@@ -31,7 +31,6 @@ const MODULES = [
     'svelte',
     'layout',
     'react_layout',
-    'cpc',
     'spike',
     'spike_r18',
     'spike_rc',

@@ -45,6 +45,7 @@
         "@biomejs/biome": "2.4.9",
         "@changesets/cli": "2.30.0",
         "@freestylejs/config": "1.2.5",
+        "@types/babel__core": "7.20.5",
         "@types/node": "25.5.0",
         "@vitest/coverage-v8": "4.1.2",
         "babel-plugin-react-compiler": "^1.0.0",
