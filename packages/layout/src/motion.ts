@@ -267,10 +267,39 @@ function convergedSlope0(value: (tau: number) => number): number {
 
 const curves = new WeakMap<TimingFunction, Curve>()
 
-/** The normalized curve of a stateless timing (cached per instance). */
+/** Structural equality of plain data, independent of key order. */
+function sameData(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) return true
+    if (
+        typeof a !== 'object' ||
+        typeof b !== 'object' ||
+        a === null ||
+        b === null ||
+        Array.isArray(a) !== Array.isArray(b)
+    ) {
+        return false
+    }
+    const ak = Object.keys(a)
+    const bk = Object.keys(b)
+    if (ak.length !== bk.length) return false
+    for (const key of ak) {
+        if (!Object.hasOwn(b, key)) return false
+        if (
+            !sameData(
+                (a as Record<string, unknown>)[key],
+                (b as Record<string, unknown>)[key]
+            )
+        ) {
+            return false
+        }
+    }
+    return true
+}
+
 /**
- * Timings compared by value: the same class with equal `opt` (a timing written
- * inline is a new object on every call).
+ * Timings compared by value: the same class with equal `opt`, whatever its
+ * key order, or, for a timing without `opt` (linear), equal own fields (a
+ * timing written inline is a new object on every call).
  */
 function sameTiming(a: unknown, b: unknown): boolean {
     if (a === b) return true
@@ -279,35 +308,65 @@ function sameTiming(a: unknown, b: unknown): boolean {
         typeof b !== 'object' ||
         a === null ||
         b === null ||
-        a.constructor !== b.constructor ||
-        !('opt' in a) ||
-        !('opt' in b)
+        a.constructor !== b.constructor
     ) {
         return false
     }
-    return JSON.stringify(a.opt) === JSON.stringify(b.opt)
+    return 'opt' in a || 'opt' in b
+        ? 'opt' in a && 'opt' in b && sameData(a.opt, b.opt)
+        : sameData(a, b)
+}
+
+interface MergedMotion {
+    readonly duration: number
+    readonly delay: number
+    /** `undefined`: the default timing. */
+    readonly timing: TimingFunction | undefined
+}
+
+/** Field-wise merge, later layers win, defaults filled in. */
+function mergeMotion(
+    layers: readonly (LayoutMotion | undefined)[]
+): MergedMotion {
+    let duration = DEFAULT_DURATION
+    let delay = 0
+    let fn: TimingFunction | undefined
+    for (const layer of layers) {
+        if (!layer) continue
+        if (layer.duration !== undefined) duration = layer.duration
+        if (layer.delay !== undefined) delay = layer.delay
+        if (layer.timing !== undefined) fn = layer.timing
+    }
+    return { duration, delay, timing: fn }
 }
 
 /**
- * Whether two option sets draw the same track: mode, anchor, motion and
- * radius. A change of any of them retargets a running track (§5.5); equal
- * options keep it (§3.3 invariant 5). `layoutId`, `layoutCrossfade` and
- * `layoutDependency` act at the flush and never restart a track.
+ * Whether two option sets draw the same track under the group's motion:
+ * mode, anchor, effective motion and radius. A change of any of them
+ * retargets a running track (§5.5); equal effective options keep it (§3.3
+ * invariant 5), so `{}` and `{ motion: { delay: 0 } }` are the same track.
+ * `layoutId`, `layoutCrossfade` and `layoutDependency` act at the flush and
+ * never restart a track.
  */
-export function sameTrackOptions(a: LayoutOptions, b: LayoutOptions): boolean {
-    const am = a.motion
-    const bm = b.motion
+export function sameTrackOptions(
+    a: LayoutOptions,
+    b: LayoutOptions,
+    group?: LayoutMotion
+): boolean {
+    const am = mergeMotion([group, a.motion])
+    const bm = mergeMotion([group, b.motion])
     return (
         (a.layout ?? true) === (b.layout ?? true) &&
         a.layoutAnchor?.x === b.layoutAnchor?.x &&
         a.layoutAnchor?.y === b.layoutAnchor?.y &&
         (a.radius ?? false) === (b.radius ?? false) &&
-        am?.duration === bm?.duration &&
-        am?.delay === bm?.delay &&
-        sameTiming(am?.timing, bm?.timing)
+        am.duration === bm.duration &&
+        am.delay === bm.delay &&
+        sameTiming(am.timing, bm.timing)
     )
 }
 
+/** The normalized curve of a stateless timing (cached per instance). */
 export function curveOf(fn: TimingFunction): Curve {
     const cached = curves.get(fn)
     if (cached) return cached
@@ -339,24 +398,13 @@ export function curveOf(fn: TimingFunction): Curve {
 
 let defaultTiming: TimingFunction | null = null
 
-/** Field-wise merge, later layers win; every layer must already be validated. */
+/** The merged motion of validated layers, later layers win. */
 export function resolveMotion(
     layers: readonly (LayoutMotion | undefined)[]
 ): Motion {
-    let duration = DEFAULT_DURATION
-    let delay = 0
-    let fn: TimingFunction | undefined
-    for (const layer of layers) {
-        if (!layer) continue
-        if (layer.duration !== undefined) duration = layer.duration
-        if (layer.delay !== undefined) delay = layer.delay
-        if (layer.timing !== undefined) fn = layer.timing
-    }
-    if (!fn) {
-        defaultTiming ??= timing.easeOut()
-        fn = defaultTiming
-    }
-    return { duration, delay, curve: curveOf(fn) }
+    const { duration, delay, timing: fn } = mergeMotion(layers)
+    defaultTiming ??= timing.easeOut()
+    return { duration, delay, curve: curveOf(fn ?? defaultTiming) }
 }
 
 /** `{ maxDuration }`: delay + duration scaled down to fit; shorter runs untouched. */

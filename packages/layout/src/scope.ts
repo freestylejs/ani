@@ -1443,7 +1443,13 @@ export function createLayoutGroup(
             let p = registry.get(element)
             if (p) {
                 // only a change that draws another track retargets (§3.3 inv. 5)
-                if (!sameTrackOptions(p.options, layoutOptions ?? {}))
+                if (
+                    !sameTrackOptions(
+                        p.options,
+                        layoutOptions ?? {},
+                        groupMotion
+                    )
+                )
                     p.changed = true
                 p.options = layoutOptions ?? {}
                 p.motion = null
@@ -1511,7 +1517,8 @@ export function createLayoutGroup(
             validateLayoutOptions(layoutOptions)
             const p = registry.get(element)
             if (!p) return
-            if (!sameTrackOptions(p.options, layoutOptions)) p.changed = true
+            if (!sameTrackOptions(p.options, layoutOptions, groupMotion))
+                p.changed = true
             p.options = layoutOptions
             p.motion = null
         },
