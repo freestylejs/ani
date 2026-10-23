@@ -1,7 +1,12 @@
 // Layout engine in real browsers on a manual clock: every frame of every node
 // against the independent oracle (ARCHITECTURE.md §11), plus snaps, reduced
 // motion, lifecycle, byte-exact restore and read discipline (plan T4.3).
-import { ani, type TimingFunction, timing } from '@freestylejs/ani-core'
+import {
+    ani,
+    isAniError,
+    type TimingFunction,
+    timing,
+} from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -2463,4 +2468,188 @@ export async function PRESENCE_LAYER(): Promise<string> {
         lines.push(`${name} ${worst.toFixed(4)} px`)
     }
     return `a no-op flush while the presence animates: trajectory identical to the run without it (${lines.join(', ')}); the track is kept`
+}
+
+function errorCode(fn: () => void): string {
+    try {
+        fn()
+    } catch (error) {
+        return isAniError(error) ? error.code : String(error)
+    }
+    return 'no error'
+}
+
+/** Group options are validated at creation; re-adding an element replaces its options. */
+export async function OPTIONS(): Promise<string> {
+    const invalid: [string, unknown][] = [
+        ['not an object', 3],
+        ['null', null],
+        ['unknown key', { maxnodes: 10 }],
+        ['clock', { clock: {} }],
+        ['threshold < 0', { threshold: -1 }],
+        ['threshold NaN', { threshold: Number.NaN }],
+        ['threshold Infinity', { threshold: Number.POSITIVE_INFINITY }],
+        ['maxNodes fraction', { maxNodes: 1.5 }],
+        ['maxNodes < 0', { maxNodes: -1 }],
+        ['retain < 0', { retain: -0.1 }],
+        ['retain NaN', { retain: Number.NaN }],
+        ['onSnap', { onSnap: 'log' }],
+        ['engine', { engine: 'css' }],
+        ['reducedMotion', { reducedMotion: 'sometimes' }],
+        ['motion', { motion: { duration: -1 } }],
+    ]
+    for (const [name, options] of invalid) {
+        expectEqual(
+            errorCode(() => createLayoutGroup(options as LayoutGroupOptions)),
+            'ANI_INVALID_OPTIONS',
+            name
+        )
+    }
+    // the boundaries are valid
+    createLayoutGroup({ threshold: 0, maxNodes: 0, retain: 0 }).dispose()
+    createLayoutGroup({ retain: Number.POSITIVE_INFINITY }).dispose()
+
+    // re-adding replaces the options of the same participant; either remove
+    // removes it once
+    const h = harness({ motion: { duration: 0.4, timing: timing.linear() } })
+    const a = node(h.root, 'left: 0; top: 0; width: 40px; height: 40px;')
+    const removeFirst = h.group.add(a, { layout: 'size' })
+    const removeSecond = h.group.add(a, { layout: 'position' })
+    try {
+        h.group.capture()
+        a.style.left = '200px'
+        a.style.width = '80px'
+        void h.group.flush()
+        h.mc.frame(FRAME_MS)
+        expectEqual(h.group.stats.tracks, 1, 'one participant')
+        // 'position': the width is not animated (scale stays the identity)
+        expectEqual(a.style.scale, '1', 'the second options apply')
+        if (a.style.translate === '') throw new Error('no translate drawn')
+        removeFirst()
+        expectEqual(h.group.stats.tracks, 0, 'removed')
+        expectEqual(a.style.cssText.includes('translate'), false, 'restored')
+        removeSecond()
+        expectEqual(h.mc.clock.size, 0, 'no subscriber left')
+    } finally {
+        h.dispose()
+    }
+    return `${invalid.length} invalid group options throw ANI_INVALID_OPTIONS; boundaries accepted; re-add replaces options, either remove removes once`
+}
+
+/** Every cause `measure` snaps as 'unsupported', named in the warning; look-alikes still animate. */
+export async function CAUSES(): Promise<string> {
+    const sheet = document.createElement('style')
+    sheet.textContent = `
+@keyframes ani-causes-slide { from { translate: 0 0 } to { translate: 10px 0 } }
+@keyframes ani-causes-grow { from { scale: 1 } to { scale: 1.1 } }
+@keyframes ani-causes-fade { from { opacity: 1 } to { opacity: 0.5 } }`
+    document.head.append(sheet)
+    const warnings = silenceWarnings()
+    const BOX = 'left: 0; top: 0; width: 40px; height: 40px;'
+    // the element moves with an untransitioned wrapper: a transition on
+    // `all` would otherwise transition the move itself
+    const snaps: [string, string, string][] = [
+        [
+            'display: inline',
+            'position: static; display: inline;',
+            'display: inline',
+        ],
+        [
+            'transform rotate',
+            `${BOX} transform: rotate(10deg);`,
+            'rotation, skew',
+        ],
+        ['transform skew', `${BOX} transform: skewX(10deg);`, 'rotation, skew'],
+        [
+            'transition scale',
+            `${BOX} transition: scale 0.2s;`,
+            'CSS transition or animation',
+        ],
+        [
+            'transition all',
+            `${BOX} transition: all 0.2s;`,
+            'CSS transition or animation',
+        ],
+        [
+            'transition delay only',
+            `${BOX} transition: translate 0s 0.1s;`,
+            'CSS transition or animation',
+        ],
+        [
+            'animation translate',
+            `${BOX} animation: ani-causes-slide 10s linear infinite;`,
+            'CSS transition or animation',
+        ],
+        [
+            'animation scale',
+            `${BOX} animation: ani-causes-grow 10s linear infinite;`,
+            'CSS transition or animation',
+        ],
+    ]
+    const animates: [string, string][] = [
+        ['transition opacity', `${BOX} transition: opacity 0.2s;`],
+        ['transition translate 0s', `${BOX} transition: translate 0s;`],
+        [
+            'transitions listed, translate 0s',
+            `${BOX} transition: opacity 0.2s, translate 0s;`,
+        ],
+        [
+            'animation opacity',
+            `${BOX} animation: ani-causes-fade 10s linear infinite;`,
+        ],
+    ]
+    try {
+        for (const [name, css, cause] of snaps) {
+            warnings.messages.length = 0
+            const h = harness()
+            const wrapper = node(
+                h.root,
+                'left: 0; top: 0; width: 300px; height: 100px;'
+            )
+            const e = node(wrapper, css)
+            e.textContent = 'text'
+            h.add(e)
+            try {
+                h.group.capture()
+                wrapper.style.left = '200px'
+                const r = await h.group.flush()
+                expectEqual(
+                    r.snapped.map((s) => s.reason),
+                    ['unsupported'],
+                    name
+                )
+                expectEqual(e.style.translate, '', `${name}: nothing written`)
+                expectEqual(h.mc.clock.size, 0, `${name}: no subscriber`)
+                if (!warnings.messages.some((m) => m.includes(cause))) {
+                    throw new Error(
+                        `${name}: no warning naming "${cause}": ${warnings.messages.join(' | ')}`
+                    )
+                }
+            } finally {
+                h.dispose()
+            }
+        }
+        for (const [name, css] of animates) {
+            const h = harness({ motion: { duration: 0.2 } })
+            const e = node(h.root, css)
+            h.add(e)
+            try {
+                h.group.capture()
+                e.style.left = '200px'
+                const run = report(h.group.flush())
+                h.mc.frame(FRAME_MS)
+                expectEqual(h.group.stats.tracks, 1, `${name}: animates`)
+                h.group.finish()
+                await settleMicrotasks()
+                expectEqual(run.value?.status, 'ended', `${name}: ended`)
+                expectEqual(run.value?.snapped.length, 0, `${name}: no snap`)
+            } finally {
+                h.dispose()
+            }
+        }
+        return `${snaps.length} causes snap 'unsupported' and name themselves in the warning; ${animates.length} look-alikes animate`
+    } finally {
+        warnings.restore()
+        sheet.remove()
+    }
 }
