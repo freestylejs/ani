@@ -154,6 +154,8 @@ interface Geometry {
 
 interface DriveFade {
     readonly role: 'lead' | 'follower'
+    /** The lead's weight at the start (§5.6): 0, or the opacity a reversed pair had. */
+    readonly from: number
     elapsed: number
     /** Its first clock update has happened (independent of the track's). */
     started: boolean
@@ -320,6 +322,13 @@ function fadeEnded(fade: DriveFade): boolean {
     return fade.elapsed >= fade.duration
 }
 
+/** The lead's weight of a running fade now (the follower shows its complement). */
+function leadWeight(fade: DriveFade): number {
+    if (fade.duration <= 0) return 1
+    const e = fade.curve.value(Math.max(0, fade.elapsed) / fade.duration)
+    return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, e))
+}
+
 const IDENTITY_POSE = { tx: 0, ty: 0, sx: 1, sy: 1 }
 
 function noop(): void {
@@ -379,6 +388,7 @@ export function createLayoutGroup(
                 live && d.fade
                     ? {
                           role: d.fade.role,
+                          from: d.fade.from,
                           elapsed: Math.max(0, d.fade.elapsed),
                           duration: d.fade.duration,
                           curve: d.fade.curve,
@@ -1247,6 +1257,17 @@ export function createLayoutGroup(
             return d
         }
 
+        // a pair that reverses mid-crossfade (the follower becomes the lead
+        // again) continues from the opacities it shows: nothing pops (§5.6)
+        const fadeFrom = new Map<number, number>()
+        actions.forEach((action, i) => {
+            if (action.kind !== 'track' || !action.fadeLead) return
+            const fade = list[i]!.drive?.fade
+            if (fade?.role === 'follower' && !fadeEnded(fade)) {
+                fadeFrom.set(i, 1 - leadWeight(fade))
+            }
+        })
+
         actions.forEach((action, i) => {
             const p = list[i]!
             const g = geometry[i]
@@ -1306,6 +1327,7 @@ export function createLayoutGroup(
                     drive.fade = action.fadeLead
                         ? {
                               role: 'lead',
+                              from: fadeFrom.get(i) ?? 0,
                               elapsed: -action.track.delay,
                               started: false,
                               duration: action.track.duration,
@@ -1341,6 +1363,7 @@ export function createLayoutGroup(
                     drive.lead = lead
                     drive.fade = {
                         role: 'follower',
+                        from: fadeFrom.get(action.lead) ?? 0,
                         elapsed: -(track?.delay ?? 0),
                         started: false,
                         duration: track?.duration ?? 0,

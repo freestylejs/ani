@@ -593,7 +593,13 @@ describe('solve: crossfade and radius', () => {
             null
         ),
         elapsed: 0.25,
-        fade: { role: 'lead', elapsed: 0.25, duration: 1, curve: motion.curve },
+        fade: {
+            role: 'lead',
+            from: 0,
+            elapsed: 0.25,
+            duration: 1,
+            curve: motion.curve,
+        },
         radius: [20, 20, 20, 20, 20, 20, 20, 20],
     })
     const follower = rootNode(
@@ -604,6 +610,7 @@ describe('solve: crossfade and radius', () => {
             follow: 0,
             fade: {
                 role: 'follower',
+                from: 0,
                 elapsed: 0.25,
                 duration: 1,
                 curve: motion.curve,
@@ -620,6 +627,31 @@ describe('solve: crossfade and radius', () => {
         ).toBeLessThan(TOL)
         expect(solved[0]!.opacity! + solved[1]!.opacity!).toBeCloseTo(1, 12)
         expect(solved[0]!.opacity).toBeCloseTo(0.25, 12)
+    })
+
+    it('a reversed pair starts from the opacities it shows (no pop)', () => {
+        const from = 0.7
+        const at = (elapsed: number) =>
+            solve([
+                {
+                    ...lead,
+                    fade: { ...lead.fade!, from, elapsed },
+                },
+                {
+                    ...follower,
+                    fade: { ...follower.fade!, from, elapsed },
+                },
+            ])
+        const start = at(0)
+        expect(start[0]!.opacity).toBeCloseTo(0.7, 12)
+        expect(start[1]!.opacity).toBeCloseTo(0.3, 12)
+        const mid = at(0.5)
+        expect(mid[0]!.opacity! + mid[1]!.opacity!).toBeCloseTo(1, 12)
+        expect(mid[0]!.opacity).toBeCloseTo(
+            0.7 + 0.3 * motion.curve.value(0.5),
+            12
+        )
+        expect(at(1)[0]!.opacity).toBeCloseTo(1, 12)
     })
 
     it('keeps the on-screen corner radius under scale', () => {
