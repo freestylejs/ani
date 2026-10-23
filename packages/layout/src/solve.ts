@@ -77,6 +77,13 @@ export interface SolveNode {
     readonly fade: Fade | null
     /** Corner radii at A: tl-x, tl-y, tr-x, tr-y, br-x, br-y, bl-x, bl-y. */
     readonly radius: readonly number[] | null
+    /**
+     * The inner maps of its ancestors (root first) at the flush that planned
+     * this node, when they differ from those its parent's map was solved
+     * with: its track lives in that flush's visual space, and a presence
+     * layer changed since then draws over it (§3.1, §11).
+     */
+    readonly inners?: readonly Map2[] | null
 }
 
 export interface Solved {
@@ -326,6 +333,26 @@ function fadeWeight(fade: Fade): number {
     return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, w))
 }
 
+/** The ancestors' solved poses composed with `inners` instead of their own inner maps. */
+function epochMap(
+    nodes: readonly SolveNode[],
+    out: readonly Solved[],
+    parent: number,
+    inners: readonly Map2[]
+): Map2 {
+    const chain: number[] = []
+    for (let k = parent; k >= 0; k = nodes[k]!.parent) chain.unshift(k)
+    let map = IDENTITY_MAP
+    chain.forEach((k, j) => {
+        const a = nodes[k]!
+        map = compose(
+            compose(map, aboutOrigin(out[k]!.pose, a.ox, a.oy)),
+            inners[j]!
+        )
+    })
+    return map
+}
+
 /** Poses, opacities and radii of every node (parents first). */
 export function solve(nodes: readonly SolveNode[]): Solved[] {
     const drawn = drawnBoxes(nodes)
@@ -334,7 +361,11 @@ export function solve(nodes: readonly SolveNode[]): Solved[] {
         const node = nodes[i]!
         const box = drawn[i]!
         const parentMap =
-            node.parent >= 0 ? out[node.parent]!.map : IDENTITY_MAP
+            node.parent < 0
+                ? IDENTITY_MAP
+                : node.inners
+                  ? epochMap(nodes, out, node.parent, node.inners)
+                  : out[node.parent]!.map
         const local = mapBox(invert(parentMap), box)
         const pose = poseFor(local, node.box, node.ox, node.oy)
         const map = compose(

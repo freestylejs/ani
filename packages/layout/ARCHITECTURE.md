@@ -94,6 +94,13 @@ browser applies the current matrix where the projection assumed the flush-time o
 element and to everything inside it, exactly as to non-participant children. It ends with the
 presence motion and never leaves a pose behind.
 
+A track lives in the visual space of the flush that planned it: its B and A were measured
+through the presence matrices of that flush, so `Mπ` composes the ancestors' poses with their
+inner maps *as of that flush*, and only a change since then is a layer over it. Each node
+records its participant ancestors' matrices when it is planned; a node planned later than a
+kept ancestor (a child retargeted under a parent whose layer changed) composes that
+ancestor with the newer matrix, while the ancestor's own track keeps its older one.
+
 ### 3.2 Data
 
 | Data | Owner | Lifetime |
@@ -289,7 +296,8 @@ child's own scale became. Only a node whose A moved by at least `threshold`, or 
 options changed, gets a new track; every other node keeps its track untouched. That A is
 judged under the presence matrices its track was planned with: a presence `transform` that
 changed since is a visual layer (§3.1), not a move, so a re-render during a presence
-animation keeps the track, and a kept track keeps the geometry it was planned with. Track options
+animation keeps the track, and a kept track keeps the geometry and the ancestor matrices it
+was planned with (§3.1), while a node planned now starts in this flush's space. Track options
 are compared by their *effective* value under the group's motion: `layout`, `layoutAnchor`,
 `radius` and `motion` with the defaults and the group's fields merged in (`{}` equals
 `{ motion: { delay: 0 } }`), a timing by its class and parameters in any key order, so an

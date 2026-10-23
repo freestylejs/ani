@@ -210,3 +210,63 @@ The new browser cases were run against the frozen engine sources to show they fa
 
 Residual risk: the removed element's own presence layer is taken as last measured (it is
 gone and cannot be read).
+
+## Fix proof report for the CP6 trial, engine defects (J-016, J-032)
+
+Trial: `cp6_acceptance_trial_result.md`. Clarification K22.
+
+### J-016: omitted timing vs explicit default
+
+- **Root cause.** `mergeMotion` left an omitted timing `undefined`; `resolveMotion` drew it with
+  `timing.easeOut()`, but `sameTrackOptions` compared `undefined` with an explicit
+  `timing.easeOut()` and found a change, so the run restarted.
+- **Fix.** `packages/layout/src/motion.ts`: the merge fills the default timing once; resolution
+  and equality read the same merged value.
+- **Proof.**
+  - `motion.test.ts` "an omitted timing is the default ease-out": omitted ↔ explicit under no
+    group motion, a group duration and a group delay; a group timing, `easeIn`, `linear` and a
+    spring still differ.
+  - `layout:J16` default-timing leg (the trial's case): a group without a timing, x 0 → 200, the
+    participant toggled between `{}` and `{ motion: { timing: timing.easeOut() } }` every fourth
+    frame (16 toggles); every frame on the oracle's ease-out track, run `ended`; a control group
+    where `easeIn()` is set reports `interrupted`.
+    Chromium 0.0000 px, Firefox 0.0080 px, WebKit 0.0000 px. With the old `motion.ts` the leg
+    fails: "default timing kept: expected "ended", received "interrupted"".
+
+### J-032: a child retargeted under a kept parent whose layer changed
+
+- **Root cause.** E-1 kept an ancestor's frozen geometry (inner map under the old presence
+  matrix) while a child planned now was measured, and its B carried, through the ancestor's
+  current layer. The solver composed the child under the frozen matrix, so the change applied
+  twice (trial: w 40 → 50, 23.7 px off).
+- **Fix.** A track lives in the visual space of the flush that planned it (§3.1, §11 oracle):
+  - `FrameNode.ancestry` records the participant ancestors' presence matrices at that flush (a
+    kept node keeps its own, a new one takes the current ones);
+  - `epochInners` turns it into the ancestors' inner maps per node, `null` when they are the
+    ones its parent's map already uses (the common case: no allocation, computed once per frame
+    array);
+  - `solve` composes such a node's parent map from the ancestors' solved poses and those inner
+    maps (`SolveNode.inners`);
+  - `reconcileLayers` recovers each pose against that same parent map and also detects a change
+    of an ancestor since a node's flush; `plannedBoxes` judges keep vs retarget under the node's
+    own epoch.
+  The kept ancestor's own track still keeps its frozen matrix: a layer changed since its flush
+  stays a visual layer over it.
+- **Proof.**
+  - `solve.test.ts` "a node composes its ancestors at its own flush": 200 random trees with
+    `inners` equal to the ancestors' own give identical poses; the trial's geometry in the pure
+    solver draws the child at its track through the current layer (and at w 50 without
+    `inners`).
+  - `layout:J32` (the trial's repro: parent 200×100 under scaleX(0.8) moving 0 → 200, at 0.2 s
+    the layer goes to 1, the child retargets to left 100): at the flush B = (40, w 40); every
+    frame on the child's own track with vx 200 (expected 44.04752 at 0.02 s); at frame 10 the
+    layer returns to 0.8 and the child shows exactly that change since its flush (0.8 about the
+    parent's drawn left, w 32) while the parent shows none (w 160); a no-op flush at frame 20
+    keeps both tracks (`no-change`); identity settle.
+    Child / parent max error: Chromium 0.0000 / 0.0000 px, Firefox 0.0083 / 0.0000 px, WebKit
+    0.0000 / 0.0000 px. Before the fix: "B is what the user saw (x 40, w 40): drawn … w 50".
+  - Unchanged: `layout:PRESENCE_LAYER` (the original E-1), `J20`, `J25`, `react_layout:E5`, and
+    every layout, React, acceptance, regression and WAAPI module in Chromium (97 / 97);
+    `layout:COST` frame p95 at 300 nested movers 0.665 ms (was 0.68).
+- **Residual risk.** An anchored node (`layoutAnchor`) is still placed relative to its parent's
+  drawn track box, not through the parent's layer, as before.

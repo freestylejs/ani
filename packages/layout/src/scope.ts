@@ -218,10 +218,85 @@ interface Capture {
     readonly scroll: ReadonlyMap<Element, readonly [number, number]>
 }
 
+type Matrix = Geometry['matrix']
+
 interface FrameNode {
     readonly p: Participant
     readonly parent: number
     readonly geometry: Geometry
+    /**
+     * The presence matrices of its participant ancestors at the flush that
+     * planned `geometry`: its track lives in that flush's visual space, so a
+     * layer changed since then draws over it (§3.1, §11).
+     */
+    readonly ancestry: ReadonlyMap<Participant, Matrix>
+}
+
+const NO_ANCESTRY: ReadonlyMap<Participant, Matrix> = new Map()
+
+function sameMatrix(a: Matrix, b: Matrix): boolean {
+    return a.a === b.a && a.d === b.d && a.e === b.e && a.f === b.f
+}
+
+/** The inner map `Q` (§3.1): authored translate/scale with a presence matrix, about the origin. */
+function innerOf(au: Authored, m: Matrix, ox: number, oy: number): Map2 {
+    return aboutOrigin(
+        {
+            tx: au.tx + au.sx * m.e,
+            ty: au.ty + au.sy * m.f,
+            sx: au.sx * m.a,
+            sy: au.sy * m.d,
+        },
+        ox,
+        oy
+    )
+}
+
+/**
+ * Per frame node, the inner maps of its ancestors (root first) at its own
+ * flush, or `null` when its parent's map is solved with exactly those: the
+ * presence matrices each node's map composes are its ancestors' at its
+ * flush (`ancestry`) and its own frozen one.
+ */
+function epochInners(at: readonly FrameNode[]): (Map2[] | null)[] {
+    // the common case: every recorded matrix is the ancestor's own
+    const own = at.every((node) => {
+        for (let k = node.parent; k >= 0; k = at[k]!.parent) {
+            const m = node.ancestry.get(at[k]!.p)
+            if (m && !sameMatrix(m, at[k]!.geometry.matrix)) return false
+        }
+        return true
+    })
+    if (own) return at.map(() => null)
+    const used: Map<Participant, Matrix>[] = []
+    return at.map((node) => {
+        const parentUsed =
+            node.parent >= 0
+                ? used[node.parent]!
+                : new Map<Participant, Matrix>()
+        const chain: number[] = []
+        for (let k = node.parent; k >= 0; k = at[k]!.parent) chain.unshift(k)
+        const differs = chain.some((k) => {
+            const m = node.ancestry.get(at[k]!.p)
+            return m !== undefined && !sameMatrix(m, parentUsed.get(at[k]!.p)!)
+        })
+        const mine = new Map<Participant, Matrix>()
+        let inners: Map2[] | null = null
+        if (differs) {
+            inners = chain.map((k) => {
+                const a = at[k]!
+                const m = node.ancestry.get(a.p) ?? parentUsed.get(a.p)!
+                mine.set(a.p, m)
+                const g = a.geometry
+                return innerOf(g.authored, m, g.ox, g.oy)
+            })
+        } else {
+            for (const [a, m] of parentUsed) mine.set(a, m)
+        }
+        mine.set(node.p, node.geometry.matrix)
+        used.push(mine)
+        return inners
+    })
 }
 
 interface Retained {
@@ -407,10 +482,22 @@ export function createLayoutGroup(
 
     /* ───────────────────────── frame ───────────────────────── */
 
+    let epochs: {
+        at: readonly FrameNode[]
+        inners: (Map2[] | null)[]
+    } | null = null
+
+    /** `epochInners` of a frame, computed once per frame array. */
+    function innersOf(at: readonly FrameNode[]): (Map2[] | null)[] {
+        if (epochs?.at !== at) epochs = { at, inners: epochInners(at) }
+        return epochs.inners
+    }
+
     function solveNodes(at: FrameNode[]): SolveNode[] {
         const index = new Map<Participant, number>()
         at.forEach((node, i) => index.set(node.p, i))
-        return at.map((node) => {
+        const inners = innersOf(at)
+        return at.map((node, i) => {
             const d = node.p.drive
             const g = node.geometry
             const live = d !== null && d.kind !== 'held'
@@ -439,6 +526,7 @@ export function createLayoutGroup(
                         : -1,
                 fade,
                 radius: live && node.p.options.radius ? g.radius : null,
+                inners: inners[i] ?? null,
             }
         })
     }
@@ -877,37 +965,51 @@ export function createLayoutGroup(
             retained.set(id, { ...entry, parent: null })
         }
         if (frame.length === 0) return
-        const current = frame.map((node) => {
+        const current = new Map<Participant, Matrix>()
+        for (const node of frame) {
             const i = index.get(node.p)
-            return i === undefined ? null : (geometry[i]?.matrix ?? null)
-        })
-        const changed = frame.some((node, k) => {
-            const m = current[k] ?? null
-            const f = node.geometry.matrix
-            return (
-                m !== null &&
-                (m.a !== f.a || m.d !== f.d || m.e !== f.e || m.f !== f.f)
-            )
+            const m = i === undefined ? null : geometry[i]?.matrix
+            if (m) current.set(node.p, m)
+        }
+        // a layer changed since a node's flush: its own or an ancestor's
+        const moved = (p: Participant, m: Matrix) => {
+            const now = current.get(p)
+            return now !== undefined && !sameMatrix(now, m)
+        }
+        const changed = frame.some((node) => {
+            if (moved(node.p, node.geometry.matrix)) return true
+            for (const [a, m] of node.ancestry) if (moved(a, m)) return true
+            return false
         })
         if (!changed) return
+        const inners = innersOf(frame)
+        const poses: MovingMap[] = []
         const before: MovingMap[] = []
         const after: MovingMap[] = []
+        /** The parent map a node was solved with: its ancestors' poses at its flush's layers. */
+        const parentWasOf = (k: number): MovingMap => {
+            const node = frame[k]!
+            const epoch = inners[k]
+            if (node.parent < 0) return STILL_IDENTITY
+            if (!epoch) return before[node.parent]!
+            const chain: number[] = []
+            for (let a = node.parent; a >= 0; a = frame[a]!.parent)
+                chain.unshift(a)
+            let map = STILL_IDENTITY
+            chain.forEach((a, j) => {
+                map = composeMoving(
+                    composeMoving(map, poses[a]!),
+                    still(epoch[j]!)
+                )
+            })
+            return map
+        }
         frame.forEach((node, k) => {
             const g = node.geometry
-            const m = current[k] ?? g.matrix
+            const m = current.get(node.p) ?? g.matrix
             const au = node.p.drive?.authored ?? g.authored
-            const inner = aboutOrigin(
-                {
-                    tx: au.tx + au.sx * m.e,
-                    ty: au.ty + au.sy * m.f,
-                    sx: au.sx * m.a,
-                    sy: au.sy * m.d,
-                },
-                g.ox,
-                g.oy
-            )
-            const parentWas =
-                node.parent >= 0 ? before[node.parent]! : STILL_IDENTITY
+            const inner = innerOf(au, m, g.ox, g.oy)
+            const parentWas = parentWasOf(k)
             const parentNow =
                 node.parent >= 0 ? after[node.parent]! : STILL_IDENTITY
             const css = mapBox(invert(g.inner), g.box)
@@ -917,6 +1019,7 @@ export function createLayoutGroup(
                 velocity.get(node.p) ?? ZERO_VELOCITY
             )
             if (!onto) {
+                poses.push(STILL_IDENTITY)
                 before.push(composeMoving(parentWas, still(g.inner)))
                 after.push(composeMoving(parentNow, still(inner)))
                 return
@@ -930,6 +1033,7 @@ export function createLayoutGroup(
                 composeMoving(parentNow, pose),
                 still(inner)
             )
+            poses.push(pose)
             before.push(onto)
             after.push(next)
             if (!node.p.drive) return
@@ -1004,9 +1108,9 @@ export function createLayoutGroup(
 
         // the engine's own state before this flush
         if (waapi) syncAnimations()
-        /** Each frame node's geometry as its running track was planned. */
-        const frozen = new Map<Participant, Geometry>()
-        for (const node of frame) frozen.set(node.p, node.geometry)
+        /** Each frame node as its running track was planned. */
+        const frozen = new Map<Participant, FrameNode>()
+        for (const node of frame) frozen.set(node.p, node)
         const nowSolve = solveNodes(frame)
         const drawn = new Map<Participant, Box>()
         const velocity = new Map<Participant, BoxVelocity>()
@@ -1112,6 +1216,31 @@ export function createLayoutGroup(
          */
         const plannedBoxes = (): (Box | null)[] => {
             const rests: (Map2 | null)[] = []
+            const matrices: (Matrix | null)[] = []
+            /** The rest map of `i`'s ancestors under the matrices of its own flush. */
+            const epochRest = (
+                i: number,
+                ancestry: ReadonlyMap<Participant, Matrix>,
+                fallback: Map2
+            ): Map2 => {
+                const chain: number[] = []
+                for (let k = parents[i]!; k >= 0; k = parents[k]!)
+                    chain.unshift(k)
+                const differs = chain.some((k) => {
+                    const m = ancestry.get(list[k]!)
+                    return m && matrices[k] && !sameMatrix(m, matrices[k]!)
+                })
+                if (!differs) return fallback
+                let rest = IDENTITY_MAP
+                for (const k of chain) {
+                    const ga = geometry[k]
+                    const m = ancestry.get(list[k]!) ?? matrices[k]
+                    if (!ga || !m) return fallback
+                    const au = list[k]!.drive?.authored ?? ga.authored
+                    rest = compose(rest, innerOf(au, m, ga.ox, ga.oy))
+                }
+                return rest
+            }
             return list.map((p, i) => {
                 const g = geometry[i]
                 const parent = parents[i]!
@@ -1123,24 +1252,19 @@ export function createLayoutGroup(
                         : IDENTITY_MAP
                 if (!g) {
                     rests.push(null)
+                    matrices.push(null)
                     return null
                 }
                 const was = frozen.get(p)
-                const m = (was ?? g).matrix
+                const m = (was?.geometry ?? g).matrix
                 const au = p.drive?.authored ?? g.authored
-                const inner = aboutOrigin(
-                    {
-                        tx: au.tx + au.sx * m.e,
-                        ty: au.ty + au.sy * m.f,
-                        sx: au.sx * m.a,
-                        sy: au.sy * m.d,
-                    },
-                    g.ox,
-                    g.oy
-                )
+                const inner = innerOf(au, m, g.ox, g.oy)
                 rests.push(compose(parentRest, inner))
+                matrices.push(m)
+                if (!was) return null
                 const css = mapBox(invert(g.inner), g.box)
-                return was ? mapBox(parentRest, mapBox(inner, css)) : null
+                const base = epochRest(i, was.ancestry, parentRest)
+                return mapBox(base, mapBox(inner, css))
             })
         }
 
@@ -1539,13 +1663,23 @@ export function createLayoutGroup(
             if (!inFrame[i]) return
             frameIndex.set(i, next.length)
             const parent = parents[i]!
-            // a kept track keeps the geometry it was planned with: a presence
-            // transform changed since stays a visual layer over it (§3.1)
+            // a kept track keeps the geometry it was planned with and the
+            // layers of that flush: a presence transform changed since stays
+            // a visual layer over it (§3.1); a new one starts in this flush's
             const kept = actions[i]!.kind === 'keep' ? frozen.get(p) : undefined
+            let ancestry = kept?.ancestry
+            if (!ancestry) {
+                const now = new Map<Participant, Matrix>()
+                for (let k = parent; k >= 0; k = parents[k]!) {
+                    if (inFrame[k]) now.set(list[k]!, geometry[k]!.matrix)
+                }
+                ancestry = now.size > 0 ? now : NO_ANCESTRY
+            }
             next.push({
                 p,
                 parent: parent >= 0 ? frameIndex.get(parent)! : -1,
-                geometry: kept ?? geometry[i]!,
+                geometry: kept?.geometry ?? geometry[i]!,
+                ancestry,
             })
         })
         frame = next
@@ -1627,6 +1761,7 @@ export function createLayoutGroup(
                 p: node.p,
                 parent: parent ? position.get(parent)! : -1,
                 geometry: node.geometry,
+                ancestry: node.ancestry,
             }
         })
     }
