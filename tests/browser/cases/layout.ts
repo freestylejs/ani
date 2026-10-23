@@ -2151,6 +2151,103 @@ export async function J25(): Promise<string> {
     }
 }
 
+/**
+ * CP6 trial J-032: a track is drawn in the visual space of the flush that
+ * planned it (§11 oracle). A child retargeted under a kept parent whose
+ * presence layer changed since the parent's flush starts from what the user
+ * saw and follows its own track; the parent keeps the layer over its track.
+ */
+export async function J32(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const parent = node(
+            h.root,
+            'left: 0; top: 0; width: 200px; height: 100px; transform: scaleX(0.8); transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(parent)
+        h.add(child)
+        h.group.capture()
+        parent.style.left = '200px'
+        void h.group.flush()
+        // the trial's repro: the first frame starts the track, the next is at 0.2 s
+        h.mc.frame(FRAME_MS)
+        h.mc.frame(200)
+        await settleMicrotasks()
+        // the presence layer changes; the parent's track is kept
+        parent.style.transform = 'scaleX(1)'
+        const seen = pageBox(child)
+        expectAt(child, at(o, 40, 0, 40, 40), 'drawn through scaleX(1)', 0.01)
+        h.group.capture()
+        child.style.left = '100px'
+        const second = report(h.group.flush())
+        expectAt(child, seen, 'B is what the user saw (x 40, w 40)')
+        const track = spec(seen, at(o, 300, 0, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 0, h: 0 },
+        })
+        let worst = 0
+        let parentWorst = 0
+        let frame = 0
+        let noop: { value: LayoutReport | null } | null = null
+        const count = await frames(
+            h.mc,
+            120,
+            (elapsed) => {
+                const tp = Math.min(1, 0.2 + DT + elapsed)
+                const px = 200 * tp
+                // from frame 10 the layer is back at scaleX(0.8): the child
+                // shows the change since its own flush (0.8 about the
+                // parent's drawn left), the parent none since its flush
+                const back = frame >= 10
+                const k = back ? 0.8 : 1
+                const own = expectedBox(track, elapsed)
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        child,
+                        at(o, px + k * (own.x - o.x - px), 0, k * 40, 40),
+                        `child t=${elapsed.toFixed(3)}`
+                    )
+                )
+                parentWorst = Math.max(
+                    parentWorst,
+                    expectAt(
+                        parent,
+                        at(o, px, 0, back ? 160 : 200, 100),
+                        `parent t=${elapsed.toFixed(3)}`
+                    )
+                )
+                if (frame === 9) parent.style.transform = 'scaleX(0.8)'
+                if (frame === 20) {
+                    // nothing changed but the layer: both tracks are kept
+                    h.group.capture()
+                    noop = report(h.group.flush())
+                }
+                frame += 1
+            },
+            () => second.value !== null
+        )
+        expectEqual(
+            (noop as { value: LayoutReport | null } | null)?.value?.status,
+            'no-change',
+            'the no-op flush keeps both tracks'
+        )
+        expectEqual(second.value?.status, 'ended', 'child run')
+        expectEqual(child.style.translate, '', 'child translate restored')
+        expectEqual(child.style.scale, '', 'child scale restored')
+        return `child retargeted under a kept parent after scaleX 0.8 → 1: B = (${(seen.x - o.x).toFixed(1)}, w ${seen.w}) with vx 200; layer back to 0.8 mid-run and a no-op flush (both kept); ${count} frames: child on its track with the layers since its flush within ${worst.toFixed(4)} px, parent within ${parentWorst.toFixed(4)} px; identity settle`
+    } finally {
+        h.dispose()
+    }
+}
+
 /* ───────────────────────── View Transitions ───────────────────────── */
 
 export async function VT1(): Promise<string> {

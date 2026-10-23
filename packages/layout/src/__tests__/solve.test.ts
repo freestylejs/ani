@@ -1,6 +1,6 @@
 import { type TimingFunction, timing } from '@freestylejs/ani-core'
 import { describe, expect, it } from 'vitest'
-import { aboutOrigin } from '../geometry'
+import { aboutOrigin, compose, IDENTITY_MAP, mapBox } from '../geometry'
 import { resolveMotion } from '../motion'
 import {
     type AnchorRule,
@@ -717,5 +717,65 @@ describe('solve: CP3 trial regressions', () => {
         expect(low).toBeCloseTo(0.5, 12)
         expect(drawnBoxes([rootNode(a, { track, elapsed: 1 })])[0]!.w).toBe(0.5)
         expect(drawnBoxes([rootNode(a, { track, elapsed: 0 })])[0]!.w).toBe(10)
+    })
+})
+
+describe('solve: a node composes its ancestors at its own flush (CP6 trial J-032)', () => {
+    it("inners equal to the ancestors' own change nothing (random trees)", () => {
+        for (let seed = 1; seed <= 200; seed++) {
+            const { nodes } = randomTree(seed)
+            const withInners = nodes.map((node) => {
+                const inners = []
+                for (let k = node.parent; k >= 0; k = nodes[k]!.parent)
+                    inners.unshift(nodes[k]!.inner)
+                return { ...node, inners: node.parent >= 0 ? inners : null }
+            })
+            const a = solve(nodes)
+            const b = solve(withInners)
+            a.forEach((s, i) => {
+                const t = b[i]!
+                expect(Math.abs(s.pose.tx - t.pose.tx)).toBeLessThan(1e-9)
+                expect(Math.abs(s.pose.ty - t.pose.ty)).toBeLessThan(1e-9)
+                expect(Math.abs(s.pose.sx - t.pose.sx)).toBeLessThan(1e-12)
+                expect(Math.abs(s.pose.sy - t.pose.sy)).toBeLessThan(1e-12)
+            })
+        }
+    })
+
+    it("a child planned after its parent's layer changed is drawn through that layer, not the frozen one", () => {
+        const motion = resolveMotion([{ duration: 1, timing: timing.linear() }])
+        // the parent's track was planned under scaleX(0.8); its layer is 1 now
+        const frozen = aboutOrigin({ tx: 0, ty: 0, sx: 0.8, sy: 1 }, 0, 0)
+        const parentBox = { x: 0, y: 0, w: 160, h: 100 }
+        const parent = rootNode(parentBox, { inner: frozen })
+        // the child's B and A were measured through scaleX(1)
+        const css = { x: 100, y: 0, w: 40, h: 40 }
+        const b = { x: 40, y: 0, w: 40, h: 40 }
+        const child = rootNode(css, {
+            parent: 0,
+            track: createTrack(b, css, null, 0, 0, true, motion, null),
+            elapsed: 0.3,
+            inners: [IDENTITY_MAP],
+        })
+        const solved = solve([parent, child])
+        const drawn = { x: 40 + 60 * 0.3, y: 0, w: 40, h: 40 }
+        // as the browser draws it: the parent's pose and its current layer
+        const actual = compose(
+            compose(aboutOrigin(solved[0]!.pose, 0, 0), IDENTITY_MAP),
+            aboutOrigin(solved[1]!.pose, css.x, css.y)
+        )
+        expect(maxDiff(mapBox(actual, css), drawn)).toBeLessThan(TOL)
+        expect(maxDiff(mapBox(solved[1]!.map, css), drawn)).toBeLessThan(TOL)
+        // composed with the frozen layer instead, it would be 1 / 0.8 wide
+        const stale = solve([parent, { ...child, inners: null }])
+        expect(
+            mapBox(
+                compose(
+                    IDENTITY_MAP,
+                    aboutOrigin(stale[1]!.pose, css.x, css.y)
+                ),
+                css
+            ).w
+        ).toBeCloseTo(50, 9)
     })
 })
