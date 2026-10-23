@@ -36,6 +36,7 @@ const SCOPE_OPTIONS = [
     'maxNodes',
     'retain',
     'onSnap',
+    'engine',
 ] as const
 
 interface Owned {
@@ -61,6 +62,7 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
         props.threshold,
         props.maxNodes,
         props.retain,
+        props.engine,
     ]
 
     const options = (): LayoutGroupOptions => ({
@@ -71,6 +73,7 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
         ...(props.threshold !== undefined && { threshold: props.threshold }),
         ...(props.maxNodes !== undefined && { maxNodes: props.maxNodes }),
         ...(props.retain !== undefined && { retain: props.retain }),
+        ...(props.engine !== undefined && { engine: props.engine }),
         onSnap: (element, reason) => onSnap.current?.(element, reason),
     })
 

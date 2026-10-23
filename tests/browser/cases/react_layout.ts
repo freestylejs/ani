@@ -2222,3 +2222,45 @@ export async function J29(): Promise<string> {
         toastClock = null
     }
 }
+
+/* ── engine="waapi" (§10) ── */
+
+function FlatItem({ id }: { id: string }): ReactNode {
+    const ref = useLayout<HTMLDivElement>({ layout: 'position' })
+    return h(
+        'div',
+        { ref, 'data-id': id, style: { width: 80, height: 30, marginTop: 4 } },
+        id
+    )
+}
+
+/** A group with `engine="waapi"`: a reorder runs as animations from the old boxes; no inline style. */
+export async function RL9(): Promise<string> {
+    const view = mountRoot()
+    const app = (order: string[]) =>
+        h(
+            LayoutGroup,
+            { engine: 'waapi', motion: { duration: 0.3 } },
+            order.map((id) => h(FlatItem, { key: id, id }))
+        )
+    try {
+        await view.render(app(['a', 'b']))
+        const a = byId(view.host, 'a')
+        const from = pageBox(a)
+        const style = a.style.cssText
+        await view.render(app(['b', 'a']))
+        expectAt(a, from, 'a at the commit')
+        const animations = a.getAnimations()
+        expectEqual(animations.length, 1, 'one animation')
+        expectEqual(a.style.cssText, style, 'no inline style written')
+        animations[0]!.finish()
+        await sleep(0)
+        expectEqual(a.getAnimations().length, 0, 'released')
+        const to = pageBox(a)
+        if (!(to.y > from.y + 20))
+            throw new Error(`a did not move: ${from.y} → ${to.y}`)
+        return `reorder from the old box as one WAAPI animation per item; no inline style; released at the end (${from.y} → ${to.y})`
+    } finally {
+        view.dispose()
+    }
+}
