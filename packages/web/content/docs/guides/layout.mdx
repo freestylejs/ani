@@ -285,8 +285,9 @@ A participant with no `LayoutGroup` above it joins an implicit root group, one p
 | `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
 | `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
 | `onSnap` | — | `(element, reason) => void` for every element that jumped. The latest prop is always called. |
+| `engine` | `'raf'` | `'waapi'` runs each move as a compositor animation that stays smooth while the main thread is blocked. Every participant must then be a top-level `layout: 'position'` element without `layoutAnchor`, `layoutId` or `radius` (anything else throws); a retarget carries no velocity, and the animations run on the document timeline rather than the Ani clock. |
 
-A change of `clock`, `reducedMotion`, `threshold`, `maxNodes` or `retain` creates a new group, and running animations jump to their end. Define these values once, outside the component, and pass the same objects on every render.
+A change of `clock`, `reducedMotion`, `threshold`, `maxNodes`, `retain` or `engine` creates a new group, and running animations jump to their end. Define these values once, outside the component, and pass the same objects on every render.
 
 ### When a change animates
 
