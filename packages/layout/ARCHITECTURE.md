@@ -365,17 +365,24 @@ its velocity.
   follower's ancestors that also draw the lead convert, `corr_f ∘ corr_l⁻¹` over those; a lead
   outside the follower's layered parent is taken as is. A continuing follower keeps the space
   of the flush that started it, like a kept track.
-  The opacities are `w` and `1 − w`, with `w = from + (1 − from)·clamp(e(τ), 0, 1)` on the lead's
-  timeline and `from = 0` for a new handoff.
+  Opacity uses the lead's eased progress `p = clamp(e(τ), 0, 1)` with
+  `in(p) = circOut(min(1, p / 0.5))`, `circOut(x) = √(1 − (1 − x)²)`, and
+  `out(p) = clamp((p − 0.5) / 0.45, 0, 1)`. The lead draws
+  `L = from_L + (1 − from_L)·in(p)` and the follower draws
+  `F = from_F·(1 − out(p))`. A new handoff starts with `from_L = 0` and
+  `from_F = 1`. Therefore an opaque new pair has source-over coverage
+  `1 − (1 − L)(1 − F) = 1` at every frame: the follower stays opaque through
+  `p = 0.5`, and the lead is opaque from `p = 0.5` onward.
 - **Reversal.** When the new lead is the follower of the running crossfade (a menu reopened
-  while it closes), the pair keeps crossfading however little it moves, and `from` is the
-  opacity the new lead shows: no opacity pops and no box jumps.
+  while it closes), the pair keeps crossfading however little it moves. `from_L` is the opacity
+  the new lead currently shows and `from_F` is the opacity the new follower currently shows:
+  neither layer pops, no box jumps, and pair coverage cannot decrease from the reversal frame.
 - The follower is held at opacity 0 (where it was drawn when the fade ended) until presence
   unmounts it, and presence's release waits for the crossfade to end. Nothing pops back to
   opacity 1.
 - A lead retargeted during its crossfade (same lead, A moved) keeps the fade: its timeline,
-  the follower's and the release stay one, so the opacities stay complementary; the lead
-  gives its opacity back when the fade ends, not when its new track ends.
+  the follower's and the release stay one, so the asymmetric opacity curves continue without
+  restarting; the lead gives its opacity back when the fade ends, not when its new track ends.
 - If presence animates `opacity` on a crossfade node (its `present` record names `opacity`),
   the pair hands off without a crossfade and a development warning is printed.
 - Two live, non-exiting nodes with one id print a development warning; the newest leads and
@@ -386,6 +393,23 @@ its velocity.
 `radius: true` reads the four corner radii of A once per flush and writes each corner as
 `r·A_w/V_w` / `r·A_h/V_h` (elliptical radii), so corners keep their on-screen radius under
 any total scale. The declaration is restored on settle.
+
+A shared `layoutId` handoff blends the on-screen corner shape when both the departing node and
+new lead have `radius: true`. Per corner and axis, let `ρ_A` be the new lead's authored radius
+resolved at A, and let `ρ_B` be the departing node's on-screen radius at the flush. A resting
+departing node supplies its freshly resolved authored radius; a driven node supplies the `ρ`
+it is currently drawing. A removed lead may supply that `ρ_B` from the value retained with its
+box and velocity for `retain` seconds. On the new lead's track timeline,
+`p = clamp(e(τ), 0, 1)` and `ρ(p) = ρ_B + (ρ_A − ρ_B)·p`. During a live crossfade both layers
+draw the same `ρ(p)` and each converts it to its own declaration with its own `A_w/V_w` or
+`A_h/V_h`, so their silhouettes are identical.
+
+A retarget or reversal during a radius blend starts the new blend from the `ρ` currently drawn;
+at `p = 1` the lead draws exactly `ρ_A`, so ending the blend, settling the track and restoring
+the authored declaration introduce no radius jump. There is no radius blend when either side
+lacks `radius: true`, nor for a resting node whose authored radius alone changed across a commit.
+The handoff source is derived only from values already measured or retained; radius blending
+adds no DOM read.
 
 ## 6. Property ownership on one element
 
@@ -623,14 +647,17 @@ nothing.
 | Row | Frame-level assertion |
 |---|---|
 | E1 Layout Anchor | Child centre on parent centre ≤ 0.5 px every frame; child stays 70 px until 0.8 s; child starts at 0.8 s ± one frame |
-| E2 Create Button | Opacity sum 1 ± 0.05 every frame; label glyph height constant ± 1 px; close and reopen at 100 ms and 500 ms |
+| E2 Create Button | Shared-pair source-over coverage ≥ 0.99 every frame; label glyph height constant ± 1 px; close and reopen at 100 ms and 500 ms |
 | E3 iOS Folder | Four shared tiles first and final rects; tile scale 0.2 ± 0.02; stagger ± one frame; reopen at 500 ms |
 | E4 App Store | Card, image and title nested ids; no gap > 0.5 px in image coverage; title size pinned; close and reopen |
 | E5 Notifications | First frame equals the enter transform; siblings final at t = 0 under popLayout; exit ≈ 0.2 s; bottom edge ± 1 px under scaleX; five adds 80 ms apart |
 | Reduced 2D Gallery | 16 tiles grid ↔ list, plus a detail view with a shared id |
 
 Regression tests: late start after a 120 ms block (≤ 6 %), unrelated re-render (identical
-trajectory), crossfade only on a real handoff with no pop to 1, velocity ≤ 5 % across a
+trajectory), crossfade only on a real handoff with no opacity pop and coverage preserved by the
+§5.6 asymmetric curves (including reversal and nested shared ids), shared-handoff radius blending
+with identical silhouettes (live and retained, including `%`/elliptical corners, no blend when
+one side opts out, and continuous retarget/reversal), velocity ≤ 5 % across a
 retarget under jank, reduced motion (zero writes, zero subscribers, mid-run toggle), showcase
 honesty, fractional boxes under scale within 0.05 px in every engine (`layout:REFBOX`, the
 WebKit reference box). The Motion-parity examples (`showcase` module) are checked the same

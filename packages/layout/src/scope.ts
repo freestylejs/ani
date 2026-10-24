@@ -73,8 +73,10 @@ import {
     drawnBoxes,
     drawnVelocities,
     type Fade,
+    fadeOpacity,
     type Layer,
     movingParents,
+    type RadiusBlend,
     type Solved,
     type SolveNode,
     solve,
@@ -158,7 +160,7 @@ interface Geometry {
 
 interface DriveFade {
     readonly role: 'lead' | 'follower'
-    /** The lead's weight at the start (§5.6): 0, or the opacity a reversed pair had. */
+    /** This layer's opacity at the start (§5.6). */
     readonly from: number
     elapsed: number
     /** Its first clock update has happened (independent of the track's). */
@@ -179,6 +181,8 @@ interface Drive {
      */
     started: boolean
     fade: DriveFade | null
+    /** On-screen radii mixed across a shared handoff (§5.7). */
+    radiusBlend: Pick<RadiusBlend, 'from' | 'to'> | null
     lead: Participant | null
     readonly saved: Saved
     readonly authored: Authored
@@ -297,6 +301,8 @@ function keptGeometry(was: Geometry, now: Geometry, a: Box): Geometry {
 interface Retained {
     readonly box: Box
     readonly velocity: BoxVelocity | null
+    /** The removed lead's on-screen radii, when it owned radius. */
+    readonly radius: readonly number[] | null
     readonly until: number
     /**
      * The participant the lead was drawn under, until the next flush carries
@@ -418,11 +424,15 @@ function fadeEnded(fade: DriveFade): boolean {
     return fade.elapsed >= fade.duration
 }
 
-/** The lead's weight of a running fade now (the follower shows its complement). */
-function leadWeight(fade: DriveFade): number {
-    if (fade.duration <= 0) return 1
-    const e = fade.curve.value(Math.max(0, fade.elapsed) / fade.duration)
-    return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, e))
+/** Current opacity of a running fade layer, sampled for reversal continuity. */
+function currentFadeOpacity(fade: DriveFade): number {
+    return fadeOpacity({
+        role: fade.role,
+        from: fade.from,
+        elapsed: Math.max(0, fade.elapsed),
+        duration: fade.duration,
+        curve: fade.curve,
+    })
 }
 
 function noop(): void {
@@ -523,6 +533,18 @@ export function createLayoutGroup(
                         : -1,
                 fade,
                 radius: live && node.p.options.radius ? g.radius : null,
+                radiusBlend: (() => {
+                    if (!live || !node.p.options.radius || !d.radiusBlend)
+                        return null
+                    const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
+                    const track = leadDrive?.track
+                    if (!track) return null
+                    return {
+                        ...d.radiusBlend,
+                        track,
+                        elapsed: leadDrive.elapsed,
+                    }
+                })(),
                 layers: layers[i] ?? null,
             }
         })
@@ -1047,6 +1069,7 @@ export function createLayoutGroup(
             retained.set(id, {
                 box: moved.box,
                 velocity: entry.velocity ? moved.velocity : null,
+                radius: entry.radius,
                 until: entry.until,
                 parent: null,
             })
@@ -1108,12 +1131,27 @@ export function createLayoutGroup(
         const nowSolve = solveNodes(frame)
         const drawn = new Map<Participant, Box>()
         const velocity = new Map<Participant, BoxVelocity>()
+        const drawnRadius = new Map<Participant, readonly number[]>()
         if (frame.length > 0) {
-            const boxes = drawnBoxes(nowSolve)
+            const solved = solve(nowSolve)
             const velocities = drawnVelocities(nowSolve)
             frame.forEach((node, i) => {
-                drawn.set(node.p, boxes[i]!)
+                const value = solved[i]!
+                const input = nowSolve[i]!
+                drawn.set(node.p, value.drawn)
                 velocity.set(node.p, velocities[i]!)
+                if (value.radius) {
+                    drawnRadius.set(
+                        node.p,
+                        value.radius.map(
+                            (r, j) =>
+                                r *
+                                (j % 2 === 0
+                                    ? value.drawn.w / input.a.w
+                                    : value.drawn.h / input.a.h)
+                        )
+                    )
+                }
             })
         }
 
@@ -1374,9 +1412,26 @@ export function createLayoutGroup(
             stale,
         })
         for (;;) {
-            const wanted = result.actions.map(
-                (action) => action.kind !== 'none'
+            const sharedRadiusLeads = new Set(
+                [...result.leads.values()].filter(
+                    (i) => list[i]!.options.radius === true
+                )
             )
+            const wanted = result.actions.map(
+                (action, i) =>
+                    action.kind !== 'none' || sharedRadiusLeads.has(i)
+            )
+            result.actions.forEach((action, i) => {
+                if (
+                    action.kind === 'track' &&
+                    action.handoffFrom !== undefined &&
+                    action.handoffFrom >= 0 &&
+                    list[i]!.options.radius === true &&
+                    list[action.handoffFrom]!.options.radius === true
+                ) {
+                    wanted[action.handoffFrom] = true
+                }
+            })
             const added = measureNodes(wanted)
             // the plan assumed a centred origin and support for every node it
             // had not measured; it is redone only when that assumption failed
@@ -1524,6 +1579,7 @@ export function createLayoutGroup(
                 elapsed: 0,
                 started: false,
                 fade: null,
+                radiusBlend: null,
                 lead: null,
                 saved: save(p.element, all),
                 authored: g.authored,
@@ -1536,15 +1592,66 @@ export function createLayoutGroup(
             return d
         }
 
-        // a pair that reverses mid-crossfade (the follower becomes the lead
-        // again) continues from the opacities it shows: nothing pops (§5.6)
-        const fadeFrom = new Map<number, number>()
+        // Radius handoff state is derived entirely from the pre-flush frame,
+        // the current flush's measurements, or a retained removed lead (§5.7).
+        const radiusBlendFrom = new Map<
+            number,
+            Pick<RadiusBlend, 'from' | 'to'>
+        >()
+        actions.forEach((action, i) => {
+            if (action.kind !== 'track' || list[i]!.options.radius !== true)
+                return
+            const target = geometry[i]?.radius
+            if (!target) return
+            let source: readonly number[] | null = null
+            if (action.handoffFrom !== undefined) {
+                if (action.handoffFrom >= 0) {
+                    const previous = list[action.handoffFrom]!
+                    if (previous.options.radius !== true) return
+                    source =
+                        drawnRadius.get(previous) ??
+                        geometry[action.handoffFrom]?.radius ??
+                        null
+                } else {
+                    const id = list[i]!.options.layoutId
+                    source =
+                        id === undefined
+                            ? null
+                            : (retained.get(id)?.radius ?? null)
+                }
+            } else if (list[i]!.drive?.radiusBlend) {
+                // A retarget of a running blend starts from what is painted.
+                source = drawnRadius.get(list[i]!) ?? null
+            }
+            if (!source) return
+            radiusBlendFrom.set(i, { from: source, to: target })
+        })
+
+        // A pair that reverses mid-crossfade swaps roles. Sample both
+        // layers before any drive is mutated so neither opacity pops (§5.6).
+        const fadeFrom = new Map<
+            number,
+            { readonly lead: number; readonly follower: number }
+        >()
         actions.forEach((action, i) => {
             if (action.kind !== 'track' || !action.fadeLead) return
-            const fade = list[i]!.drive?.fade
-            if (fade?.role === 'follower' && !fadeEnded(fade)) {
-                fadeFrom.set(i, 1 - leadWeight(fade))
-            }
+            const leadFade = list[i]!.drive?.fade
+            if (leadFade?.role !== 'follower' || fadeEnded(leadFade)) return
+            const followerIndex = actions.findIndex(
+                (candidate) =>
+                    candidate.kind === 'follow' &&
+                    candidate.start &&
+                    candidate.lead === i
+            )
+            const followerFade =
+                followerIndex >= 0 ? list[followerIndex]!.drive?.fade : null
+            fadeFrom.set(i, {
+                lead: currentFadeOpacity(leadFade),
+                follower:
+                    followerFade?.role === 'lead' && !fadeEnded(followerFade)
+                        ? currentFadeOpacity(followerFade)
+                        : 1,
+            })
         })
 
         actions.forEach((action, i) => {
@@ -1568,6 +1675,7 @@ export function createLayoutGroup(
                     const drive = startDrive(p, 'static', g!, [])
                     drive.track = null
                     drive.target = null
+                    drive.radiusBlend = null
                     return
                 }
                 case 'track': {
@@ -1580,7 +1688,7 @@ export function createLayoutGroup(
                     const wasFollower =
                         d?.kind === 'follow' || d?.kind === 'held'
                     // a lead retargeted mid-crossfade keeps its fade: the pair
-                    // stays complementary and the release follows it (§5.6)
+                    // stays on the same asymmetric timeline and release (§5.6)
                     const keptFade =
                         !action.fadeLead &&
                         d?.fade?.role === 'lead' &&
@@ -1609,10 +1717,11 @@ export function createLayoutGroup(
                     drive.started = continues
                     drive.mode = reduced
                     drive.lead = null
+                    drive.radiusBlend = radiusBlendFrom.get(i) ?? null
                     drive.fade = action.fadeLead
                         ? {
                               role: 'lead',
-                              from: fadeFrom.get(i) ?? 0,
+                              from: fadeFrom.get(i)?.lead ?? 0,
                               elapsed: -action.track.delay,
                               started: continues,
                               duration: action.track.duration,
@@ -1624,7 +1733,11 @@ export function createLayoutGroup(
                     return
                 }
                 case 'follow': {
-                    if (!action.start) return
+                    if (!action.start) {
+                        const blend = radiusBlendFrom.get(action.lead)
+                        if (blend && d) d.radiusBlend = blend
+                        return
+                    }
                     if (d?.run) {
                         const old = d.run
                         old.nodes.delete(p)
@@ -1654,9 +1767,10 @@ export function createLayoutGroup(
                     drive.elapsed = 0
                     drive.started = false
                     drive.lead = lead
+                    drive.radiusBlend = radiusBlendFrom.get(action.lead) ?? null
                     drive.fade = {
                         role: 'follower',
-                        from: fadeFrom.get(action.lead) ?? 0,
+                        from: fadeFrom.get(action.lead)?.follower ?? 1,
                         elapsed: -(track?.delay ?? 0),
                         started: continues,
                         duration: track?.duration ?? 0,
@@ -1748,26 +1862,38 @@ export function createLayoutGroup(
 
     /* ───────────────────────── lifecycle ───────────────────────── */
 
-    /** The drawn box of a driven node now, and its velocity while its own track moves. */
-    function currentMotion(
-        p: Participant
-    ): { box: Box; velocity: BoxVelocity | null } | null {
+    /** The drawn state of a driven node now, derived without a DOM read. */
+    function currentMotion(p: Participant): {
+        box: Box
+        velocity: BoxVelocity | null
+        radius: readonly number[] | null
+    } | null {
         const d = p.drive
         if (!d) return null
         const at = frame.findIndex((node) => node.p === p)
         if (at < 0) return null
         if (waapi) syncAnimations()
         const nodes = solveNodes(frame)
-        const box = drawnBoxes(nodes)[at]
-        if (!box) return null
+        const value = solve(nodes)[at]
+        if (!value) return null
+        const input = nodes[at]!
         const moving =
             d.kind === 'track' &&
             d.track !== null &&
             !trackEnded(d.track, d.elapsed) &&
             d.elapsed >= d.track.delay
         return {
-            box,
+            box: value.drawn,
             velocity: moving ? (drawnVelocities(nodes)[at] ?? null) : null,
+            radius: value.radius
+                ? value.radius.map(
+                      (r, j) =>
+                          r *
+                          (j % 2 === 0
+                              ? value.drawn.w / input.a.w
+                              : value.drawn.h / input.a.h)
+                  )
+                : null,
         }
     }
 
@@ -1898,6 +2024,12 @@ export function createLayoutGroup(
                         retained.set(id, {
                             box,
                             velocity: motion?.velocity ?? null,
+                            radius:
+                                self.options.radius === true
+                                    ? (motion?.radius ??
+                                      self.geometry?.radius ??
+                                      null)
+                                    : null,
                             until: now() + retain * 1000,
                             parent: motion ? self.parent : null,
                         })

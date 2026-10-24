@@ -24,6 +24,8 @@ import {
 } from '@freestylejs/ani-layout'
 import {
     expectedBox,
+    expectedCrossfade,
+    expectedRadiusBlend,
     maxDiff,
     type OBox,
     type OTrackSpec,
@@ -53,6 +55,47 @@ function node(parent: HTMLElement, css: string): HTMLElement {
     element.style.cssText = `position: absolute; box-sizing: border-box; ${css}`
     parent.append(element)
     return element
+}
+
+/** The four computed corner declarations converted back to on-screen x/y radii. */
+function screenRadii(element: HTMLElement): number[] {
+    const style = getComputedStyle(element)
+    const box = pageBox(element)
+    const sx = box.w / element.offsetWidth
+    const sy = box.h / element.offsetHeight
+    return [
+        style.borderTopLeftRadius,
+        style.borderTopRightRadius,
+        style.borderBottomRightRadius,
+        style.borderBottomLeftRadius,
+    ].flatMap((value) => {
+        const parts = value.split(' ')
+        const resolve = (part: string, size: number) =>
+            Number.parseFloat(part) * (part.includes('%') ? size / 100 : 1)
+        const x = resolve(parts[0]!, element.offsetWidth)
+        const y = resolve(parts[1] ?? parts[0]!, element.offsetHeight)
+        return [x * sx, y * sy]
+    })
+}
+
+function expectRadii(
+    element: HTMLElement,
+    want: readonly number[],
+    label: string
+): number {
+    const got = screenRadii(element)
+    const tolerance = navigator.userAgent.includes('Firefox') ? 0.03 : 0.01
+    let worst = 0
+    for (let i = 0; i < want.length; i++) {
+        const error = Math.abs(got[i]! - want[i]!)
+        worst = Math.max(worst, error)
+        if (error > tolerance) {
+            throw new Error(
+                `${label}: radius ${i} is ${got[i]}, expected ${want[i]} (error ${error})`
+            )
+        }
+    }
+    return worst
 }
 
 interface Harness {
@@ -706,7 +749,8 @@ export async function T5(): Promise<string> {
             duration: 0.3,
             timing: linear,
         })
-        let sumError = 0
+        let opacityError = 0
+        let coverageError = 0
         let worst = 0
         await frames(
             h.mc,
@@ -721,16 +765,26 @@ export async function T5(): Promise<string> {
                     worst,
                     expectAt(card, want, `follower t=${elapsed}`)
                 )
-                const a = Number(getComputedStyle(detail).opacity)
-                const b = Number(getComputedStyle(card).opacity)
-                sumError = Math.max(sumError, Math.abs(a + b - 1))
+                const leadOpacity = Number(getComputedStyle(detail).opacity)
+                const followerOpacity = Number(getComputedStyle(card).opacity)
+                const fade = expectedCrossfade(linear, elapsed / 0.3)
+                opacityError = Math.max(
+                    opacityError,
+                    Math.abs(leadOpacity - fade.lead),
+                    Math.abs(followerOpacity - fade.follower)
+                )
+                const coverage = 1 - (1 - leadOpacity) * (1 - followerOpacity)
+                coverageError = Math.max(coverageError, Math.abs(coverage - 1))
                 now = elapsed
             },
             () => done.value !== null && exited !== null
         )
         expectEqual(done.value!.status, 'ended', 'status')
         expectEqual(exited, 'exited', 'presence exit')
-        if (sumError > 0.05) throw new Error(`opacity sum off by ${sumError}`)
+        if (opacityError > 1e-5)
+            throw new Error(`crossfade opacity off by ${opacityError}`)
+        if (coverageError > 1e-5)
+            throw new Error(`crossfade coverage off by ${coverageError}`)
         if (!(exitedAt >= 0.3 - 1e-9)) {
             throw new Error(
                 `presence released at ${exitedAt} s, before the 0.3 s crossfade ended`
@@ -739,7 +793,7 @@ export async function T5(): Promise<string> {
         expectEqual(card.style.opacity, '0', 'follower held invisible')
         expectEqual(detail.style.cssText, detailStyle, 'lead restored')
         presence.dispose()
-        return `opacity sum within ${sumError.toFixed(4)}; max error ${worst.toFixed(4)} px; release at ${exitedAt.toFixed(3)} s`
+        return `crossfade opacity within ${opacityError.toFixed(6)}, coverage within ${coverageError.toFixed(6)}; max error ${worst.toFixed(4)} px; release at ${exitedAt.toFixed(3)} s`
     } finally {
         h.dispose()
     }
@@ -1551,7 +1605,7 @@ async function defaultTimingLeg(): Promise<string> {
     }
 }
 
-/** J-017: a lead retargeted mid-crossfade keeps its fade; the pair stays complementary. */
+/** J-017: a lead retargeted mid-crossfade keeps the asymmetric fade timeline. */
 export async function J17(): Promise<string> {
     const linear = timing.linear()
     const h = harness({ motion: { duration: 1, timing: linear } })
@@ -1590,18 +1644,25 @@ export async function J17(): Promise<string> {
         const authoredStyle = detail.style.cssText
         h.add(detail, { layoutId: 'hero' })
         const first = report(h.group.flush())
-        let sum = 0
-        const sumOff = () =>
-            Math.abs(
-                Number(getComputedStyle(detail).opacity) +
-                    Number(getComputedStyle(card).opacity) -
-                    1
+        let opacityError = 0
+        let coverageError = 0
+        const checkFade = () => {
+            const leadOpacity = Number(getComputedStyle(detail).opacity)
+            const followerOpacity = Number(getComputedStyle(card).opacity)
+            const want = expectedCrossfade(linear, fadeTime)
+            opacityError = Math.max(
+                opacityError,
+                Math.abs(leadOpacity - want.lead),
+                Math.abs(followerOpacity - want.follower)
             )
+            const coverage = 1 - (1 - leadOpacity) * (1 - followerOpacity)
+            coverageError = Math.max(coverageError, Math.abs(coverage - 1))
+        }
         let frame = 0
         await frames(h.mc, 31, () => {
             fadeTime = frame * DT
             frame += 1
-            sum = Math.max(sum, sumOff())
+            checkFade()
         })
         const drawn = expectedBox(
             spec(cardBox, at(o, 200, 0, 400, 80), {
@@ -1610,11 +1671,27 @@ export async function J17(): Promise<string> {
             }),
             30 * DT
         )
+        const beforeRetarget = [
+            Number(getComputedStyle(detail).opacity),
+            Number(getComputedStyle(card).opacity),
+        ] as const
         h.group.capture()
         detail.style.left = '400px'
         const detailStyle = authoredStyle.replace('left: 200px', 'left: 400px')
         const second = report(h.group.flush())
         expectAt(detail, drawn, 'lead continuous at the retarget')
+        expectClose(
+            Number(getComputedStyle(detail).opacity),
+            beforeRetarget[0],
+            1e-6,
+            'lead opacity continuous at retarget'
+        )
+        expectClose(
+            Number(getComputedStyle(card).opacity),
+            beforeRetarget[1],
+            1e-6,
+            'follower opacity continuous at retarget'
+        )
         await settleMicrotasks()
         expectEqual(first.value?.status, 'interrupted', 'first run')
         const track = spec(drawn, at(o, 400, 0, 400, 80), {
@@ -1646,14 +1723,17 @@ export async function J17(): Promise<string> {
                         )
                     )
                 }
-                sum = Math.max(sum, sumOff())
+                checkFade()
                 if (restoredAt < 0 && detail.style.opacity === '') {
                     restoredAt = fadeTime
                 }
             },
             () => second.value !== null
         )
-        if (sum > 0.01) throw new Error(`opacity sum off by ${sum}`)
+        if (opacityError > 1e-5)
+            throw new Error(`crossfade opacity off by ${opacityError}`)
+        if (coverageError > 1e-5)
+            throw new Error(`crossfade coverage off by ${coverageError}`)
         if (!(exitedAt >= 1 - 1e-9 && exitedAt <= 1 + 2 * DT)) {
             throw new Error(
                 `presence released at ${exitedAt} s, not at the fade's end (1 s)`
@@ -1668,7 +1748,7 @@ export async function J17(): Promise<string> {
         expectEqual(card.style.opacity, '0', 'follower held invisible')
         expectEqual(detail.style.cssText, detailStyle, 'lead restored')
         presence.dispose()
-        return `retarget at 0.48 s: opacity sum within ${sum.toFixed(4)}; pair on the oracle within ${worst.toFixed(4)} px; release and lead opacity at ${exitedAt.toFixed(3)} s`
+        return `retarget at 0.48 s: asymmetric opacity within ${opacityError.toFixed(6)}, coverage within ${coverageError.toFixed(6)}; pair on the oracle within ${worst.toFixed(4)} px; release and lead opacity at ${exitedAt.toFixed(3)} s`
     } finally {
         h.dispose()
     }
@@ -2806,13 +2886,12 @@ async function crossfadeUnderLayer(
                         expectAt(old, box, `follower τ=${tau.toFixed(3)}`)
                     )
                     const fo = Number(getComputedStyle(old).opacity)
-                    if (tau < 1) {
-                        fade = Math.max(
-                            fade,
-                            Math.abs(lo - tau),
-                            Math.abs(fo - (1 - tau))
-                        )
-                    }
+                    const wantFade = expectedCrossfade(linear, tau)
+                    fade = Math.max(
+                        fade,
+                        Math.abs(lo - wantFade.lead),
+                        Math.abs(fo - wantFade.follower)
+                    )
                 }
                 if (restoredAt < 0 && lead.style.opacity === '') {
                     restoredAt = tau
@@ -2982,13 +3061,12 @@ async function crossfadeAcrossLayer(
                         expectAt(old, box, `follower τ=${tau.toFixed(3)}`)
                     )
                     const fo = Number(getComputedStyle(old).opacity)
-                    if (tau < 1) {
-                        fade = Math.max(
-                            fade,
-                            Math.abs(lo - tau),
-                            Math.abs(fo - (1 - tau))
-                        )
-                    }
+                    const wantFade = expectedCrossfade(linear, tau)
+                    fade = Math.max(
+                        fade,
+                        Math.abs(lo - wantFade.lead),
+                        Math.abs(fo - wantFade.follower)
+                    )
                 }
                 if (restoredAt < 0 && lead.style.opacity === '') {
                     restoredAt = tau
@@ -3611,5 +3689,181 @@ export async function CAUSES(): Promise<string> {
     } finally {
         warnings.restore()
         sheet.remove()
+    }
+}
+
+/** P2-C: a live shared-id crossfade blends one on-screen elliptical radius on both layers. */
+export async function P2RadiusCrossfade(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    const h = harness({ motion: { duration, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        h.add(old, { layoutId: 'radius-live', radius: true })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void presence.exit()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 8px / 24px;'
+        )
+        h.add(lead, { layoutId: 'radius-live', radius: true })
+        const run = report(h.group.flush())
+        const from = [20, 12, 20, 12, 20, 12, 20, 12]
+        const to = [8, 24, 8, 24, 8, 24, 8, 24]
+        let worst = 0
+        const check = (elapsed: number) => {
+            const want = expectedRadiusBlend(
+                from,
+                to,
+                linear,
+                elapsed / duration
+            )
+            worst = Math.max(
+                worst,
+                expectRadii(lead, want, `lead radius t=${elapsed.toFixed(3)}`),
+                expectRadii(
+                    old,
+                    want,
+                    `follower radius t=${elapsed.toFixed(3)}`
+                )
+            )
+        }
+        check(0)
+        await frames(h.mc, 40, check, () => run.value !== null)
+        expectEqual(run.value?.status, 'ended', 'radius crossfade run')
+        presence.dispose()
+        return `live shared radius 20×12 → 8×24 on both layers within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P2-C: a removed lead carries its resolved percentage/elliptical radius through retain. */
+export async function P2RadiusRetained(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    const h = harness({ motion: { duration, timing: linear }, retain: 1 })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 50% / 25%;'
+        )
+        const removeOld = h.group.add(old, {
+            layoutId: 'radius-retained',
+            radius: true,
+        })
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        removeOld()
+        old.remove()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 10% / 50%;'
+        )
+        h.add(lead, { layoutId: 'radius-retained', radius: true })
+        const run = report(h.group.flush())
+        const from = [40, 10, 40, 10, 40, 10, 40, 10]
+        const to = [20, 50, 20, 50, 20, 50, 20, 50]
+        let worst = 0
+        const check = (elapsed: number) => {
+            const want = expectedRadiusBlend(
+                from,
+                to,
+                linear,
+                elapsed / duration
+            )
+            worst = Math.max(
+                worst,
+                expectRadii(
+                    lead,
+                    want,
+                    `retained radius t=${elapsed.toFixed(3)}`
+                )
+            )
+        }
+        check(0)
+        await frames(h.mc, 40, check, () => run.value !== null)
+        expectEqual(run.value?.status, 'ended', 'retained radius run')
+        return `retained %/elliptical radius 40×10 → 20×50 within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P2-C: radius blending is opt-in on both sides of a shared handoff. */
+export async function P2RadiusOptOut(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.4, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        h.add(old, { layoutId: 'radius-optout' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void presence.exit()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 8px / 24px;'
+        )
+        h.add(lead, { layoutId: 'radius-optout', radius: true })
+        const run = report(h.group.flush())
+        const own = [8, 24, 8, 24, 8, 24, 8, 24]
+        let worst = expectRadii(lead, own, 'opt-out radius t=0')
+        await frames(
+            h.mc,
+            40,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectRadii(
+                        lead,
+                        own,
+                        `opt-out radius t=${elapsed.toFixed(3)}`
+                    )
+                )
+            },
+            () => run.value !== null
+        )
+        expectEqual(run.value?.status, 'ended', 'opt-out radius run')
+        presence.dispose()
+        return `one-sided radius:true does not blend; lead stays 8×24 within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
     }
 }
