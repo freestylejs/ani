@@ -1428,6 +1428,9 @@ export function createLayoutGroup(
             stale,
         })
         for (;;) {
+            // A current shared lead with radius ownership is affected state for
+            // retention: refresh it in the ordinary read phase so a later
+            // removal can carry ρ_B without a removal-time or frame read.
             const sharedRadiusLeads = new Set(
                 [...result.leads.values()].filter(
                     (i) => list[i]!.options.radius === true
