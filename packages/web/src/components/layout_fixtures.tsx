@@ -26,11 +26,11 @@ import type { CSSProperties, ReactNode } from 'react'
 export const SPRING: TimingFunction = timing.spring({ m: 1, k: 170, c: 22 })
 export const DURATION = 0.5
 
-const INK = 'var(--color-fd-foreground, #1d1d1f)'
-const CARD = 'var(--color-fd-card, #ffffff)'
-const MUTED = 'var(--color-fd-muted, #eef0f4)'
-const ACCENT = 'var(--color-fd-primary, #5b5bd6)'
-const TILE_COLORS = [
+export const INK = 'var(--color-fd-foreground, #1d1d1f)'
+export const CARD = 'var(--color-fd-card, #ffffff)'
+export const MUTED = 'var(--color-fd-muted, #eef0f4)'
+export const ACCENT = 'var(--color-fd-primary, #5b5bd6)'
+export const TILE_COLORS = [
     '#5b5bd6',
     '#e5484d',
     '#30a46c',
@@ -42,7 +42,7 @@ const TILE_COLORS = [
 ]
 
 /** A presence that only waits: crossfading nodes must not animate opacity (§5.6). */
-const HOLD = {
+export const HOLD = {
     present: { translateY: 0 },
     exit: ani({
         to: { translateY: 0 },
@@ -52,16 +52,16 @@ const HOLD = {
 }
 
 /** Presence options for a fixture's clock (absent: the default clock). */
-function presenceClock(clock: Clock | undefined): { clock?: Clock } {
+export function presenceClock(clock: Clock | undefined): { clock?: Clock } {
     return clock ? { clock } : {}
 }
 
-interface FixtureProps {
+export interface FixtureProps {
     /** A manual clock in tests; the default clock in the showcase. */
     readonly clock?: Clock
 }
 
-function Stage({
+export function Stage({
     name,
     width,
     height,

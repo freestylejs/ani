@@ -24,7 +24,7 @@ await page.goto(`${baseUrl}/en/docs/showcase/layout`, {
 await page.waitForSelector('[data-layout-showcase]')
 await page.waitForTimeout(500)
 assert.equal(await page.title(), 'Layout Showcase')
-assert.equal(await page.locator('[data-showcase]').count(), 6)
+assert.equal(await page.locator('[data-showcase]').count(), 15)
 
 const card = (id) => page.locator(`[data-showcase="${id}"]`)
 const press = (id, name) =>
@@ -122,6 +122,87 @@ result.Gallery = await run('Gallery', 'Show as list', 1200)
 const listA = await tiles.nth(0).boundingBox()
 const listB = await tiles.nth(1).boundingBox()
 assert.ok(listB.y > listA.y + 20, 'list tiles are stacked')
+
+// Switch, Tabs, Accordion, Shuffle, Dialog, Stack: from their controls
+result.Switch = await run('Switch', 'Flip all', 700)
+result.Tabs = await run('Tabs', 'Next tab', 900)
+assert.equal(
+    await card('Tabs').locator('[role="tab"][aria-selected="true"]').count(),
+    1,
+    'Tabs: one selected tab'
+)
+result.Accordion = await run('Accordion', 'Open next', 900)
+result.Shuffle = await run('Shuffle', 'Shuffle', 900)
+result.Dialog = await run('Dialog', 'Next step', 1000)
+result.Stack = await run('Stack', 'Expand', 900)
+await run('Stack', 'Collapse', 900)
+
+// Smooth tabs: a real pointer sweeping across the bar
+{
+    await card('Smooth tabs').scrollIntoViewIfNeeded()
+    const items = card('Smooth tabs').locator('[data-nav]')
+    const first = await items.first().boundingBox()
+    const last = await items.last().boundingBox()
+    const y = first.y + first.height / 2
+    await page.mouse.move(first.x + 5, y)
+    await page.waitForTimeout(300)
+    await page.mouse.move(last.x + last.width - 5, y, { steps: 12 })
+    await page.waitForTimeout(40)
+    result['Smooth tabs'] = await owned('Smooth tabs')
+    assert.ok(result['Smooth tabs'] > 0, 'Smooth tabs: the pill moved')
+    await page.waitForTimeout(800)
+    await settled('Smooth tabs', 5000)
+    const pill = await card('Smooth tabs')
+        .locator('[data-lk="nav-highlight"]')
+        .boundingBox()
+    assert.ok(
+        Math.abs(pill.x - last.x) < 1 && Math.abs(pill.width - last.width) < 1,
+        'Smooth tabs: the pill lands on the hovered item'
+    )
+    await page.mouse.move(0, 0)
+    await page.waitForTimeout(800)
+}
+
+// Drag: a real mouse drag of the first row past the second
+{
+    await card('Drag').scrollIntoViewIfNeeded()
+    const rows = card('Drag').locator('[data-drag-row]')
+    const row = await rows.first().boundingBox()
+    const start = { x: row.x + 30, y: row.y + row.height / 2 }
+    await page.mouse.move(start.x, start.y)
+    await page.mouse.down()
+    await page.mouse.move(start.x, start.y + 70, { steps: 8 })
+    await page.waitForTimeout(40)
+    result.Drag = await owned('Drag')
+    assert.ok(result.Drag > 0, 'Drag: the other rows make room')
+    await page.mouse.up()
+    await page.waitForTimeout(900)
+    await settled('Drag', 5000)
+    assert.equal(
+        await rows.nth(1).getAttribute('data-drag-row'),
+        '0',
+        'Drag: the row was moved down one slot'
+    )
+}
+
+// To-do: add a task, tick it, remove it
+{
+    const todo = card('To-do')
+    await todo.getByLabel('New task').fill('Ship the showcase')
+    await press('To-do', 'Add')
+    await page.waitForTimeout(900)
+    assert.equal(await todo.locator('[data-todo]').count(), 4, 'To-do: added')
+    await todo.getByRole('checkbox', { name: 'Ship the showcase' }).click()
+    await page.waitForTimeout(40)
+    result['To-do'] = await owned('To-do')
+    assert.ok(result['To-do'] > 0, 'To-do: the ticked task moves down')
+    await page.waitForTimeout(900)
+    await settled('To-do', 5000)
+    await todo.getByRole('button', { name: 'Remove Ship the showcase' }).click()
+    await page.waitForTimeout(1000)
+    assert.equal(await todo.locator('[data-todo]').count(), 3, 'To-do: removed')
+    await settled('To-do', 5000)
+}
 
 assert.deepEqual(errors, [])
 if (browserName === 'chromium') {

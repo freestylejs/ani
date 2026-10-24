@@ -33,6 +33,7 @@ const MODULES = [
     'layout',
     'react_layout',
     'acceptance',
+    'showcase',
     'regressions',
     'waapi',
     'react_layout_r18',

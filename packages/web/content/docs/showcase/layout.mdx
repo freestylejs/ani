@@ -1,29 +1,52 @@
 ---
 title: Layout Showcase
-description: Six live layout demos built on @freestylejs/ani-react/layout - anchors, shared elements, presence and a gallery.
+description: Fifteen live layout examples built on @freestylejs/ani-react/layout - switches, tabs, lists, drag to reorder, shared elements, presence and anchors.
 ---
 
-Each demo below is plain React with the public `@freestylejs/ani-react/layout` API: elements
-marked with `useLayout`, `LayoutGroup`, and `AnimatePresence` with `usePresence`. There are no
-capture or play calls. Interrupt any of them mid-flight: every element continues from where it
-is drawn. The [Layout guide](/en/docs/guides/layout) explains the API.
+Each example below is plain React with the public `@freestylejs/ani-react/layout` API:
+elements marked with `useLayout`, `LayoutGroup`, and `AnimatePresence` with `usePresence`.
+There are no capture or play calls. Interrupt any of them mid-flight: every element continues
+from where it is drawn, with the speed it had. Open **Code** under an example for the pattern
+it uses. The [Layout guide](/en/docs/guides/layout) explains the API.
 
-- **E1 Layout Anchor.** A parent grows while its child, anchored with
-  `layoutAnchor: { x: 0.5, y: 0.5 }`, stays centred on the parent's drawn centre on every frame.
-  The child keeps its size until its own 0.8 second delay has passed.
-- **E2 Create Button.** A compact button opens into a creation menu. The surface, label and
-  icon share `layoutId`s with the menu, so the two crossfade as one element, and the label stays
-  sharp with `layout: 'position'`. Close and reopen it mid-flight.
-- **E3 iOS Folder.** Four tiles move from a small folder icon into the open folder through shared
-  `layoutId`s, while the other items enter from the folder's position at a fifth of their size,
-  one after another.
-- **E4 App Store.** A product card opens into a detail view through three nested ids: the
-  surface, the image and the title. The title keeps its text size (`'position'`) and the corners
-  keep their radius (`radius: true`).
-- **E5 Notifications.** A toast stack where `useLayout` and `usePresence` share each element.
-  New toasts enter while the others slide; a removed toast exits in place under
-  `mode="popLayout"` while its siblings close the gap from the first frame.
-- **Gallery.** Sixteen tiles switch between a grid and a list, and any tile opens a detail view
+The browser tests drive these same components on a manual clock in Chromium, Firefox and
+WebKit and check every frame of every marked element against an independent model of the
+motion, including changes made mid-flight.
+
+**Essentials**
+
+- **Switch.** Flexbox moves the knob; `useLayout()` on the knob draws the move.
+- **Tabs.** One underline with `layoutId`, rendered under the selected tab.
+- **Smooth tabs.** A highlight pill with `layoutId` and `radius: true` follows the pointer.
+- **Accordion.** The card resizes by layout and reveals its body; header and body use
+  `layout: 'position'` so their text never stretches.
+
+**Lists**
+
+- **Shuffle.** Reorder the array; every tile moves from where it is drawn.
+- **Drag to reorder.** Built on the public API: the row follows the pointer with its own
+  transform, and `useLayoutGroup().update()` draws it into its slot on release.
+- **To-do list.** Add, tick and remove under `AnimatePresence mode="popLayout"`.
+- **Stacked notifications.** A collapsed stack that fans out into a list.
+- **E5 Notifications.** `useLayout` and `usePresence` share each toast; a removed toast exits
+  in place while its siblings close the gap from the first frame.
+
+**Shared elements**
+
+- **E2 Create Button.** A button opens into a menu through shared `layoutId`s on the surface,
+  label and icon; the label keeps its glyph size with `layout: 'position'`.
+- **Family-style dialog.** A bottom sheet whose height follows its step, with steps swapped
+  under `popLayout`.
+- **E3 iOS Folder.** Four tiles move from the folder icon into the open folder through shared
+  `layoutId`s; the other items enter from the folder at a fifth of their size.
+- **E4 App Store.** A card opens into a detail view through three nested ids: surface, image
+  and title.
+- **Gallery.** Sixteen tiles switch between a grid and a list; any tile opens a detail view
   that shares its `layoutId`.
+
+**Precision**
+
+- **E1 Layout Anchor.** A child anchored with `layoutAnchor: { x: 0.5, y: 0.5 }` stays centred
+  on its growing parent at every frame, and keeps its size until its own delay has passed.
 
 <LayoutShowcase />
