@@ -604,7 +604,7 @@ group API.
 | Reduced motion `'ignore'` | Plays in full | — |
 | `dispose()` or unmount | Tracks cancelled, inline styles restored, presence holds released | status `'disposed'` |
 | A moving participant unregistered, or gone from the document at a flush | Its track is cancelled and its styles restored at once (pending writes for it dropped); the rest of its run goes on; a run left with no node resolves `'disposed'`; the scope unsubscribes when nothing else moves, once the task's microtasks have run (before any frame), so a handoff flushed in the same task keeps a continuous subscription (§4.3) | status `'disposed'` (a run of only such nodes) |
-| Reduced motion toggled during a run | The next flush applies the current mode to running tracks: `'jump'` finishes them, `maxDuration` re-plans them clamped from their drawn box and velocity | — |
+| Reduced motion toggled during a run | The next flush applies the current mode to running tracks: `'jump'` finishes them, `maxDuration` re-plans them clamped from their drawn box and velocity. A crossfade finished by `'jump'` ends as a completed fade: the lead gets its opacity back, and the exiting follower is held at opacity 0 until presence unmounts it (§5.6) | — |
 | `finish()` | Every track jumps to A and settles | status `'ended'` |
 | No DOM (SSR), first client commit | No-op; hydration never animates | — |
 
@@ -661,10 +661,10 @@ nothing.
 |---|---|
 | E1 Layout Anchor | Child centre on parent centre ≤ 0.5 px every frame; child stays 70 px until 0.8 s; child starts at 0.8 s ± one frame |
 | E2 Create Button | Shared-pair source-over coverage ≥ 0.99 every frame; label glyph height constant ± 1 px; close and reopen at 100 ms and 500 ms |
-| E3 iOS Folder | Four shared tiles first and final rects; tile scale 0.2 ± 0.02; stagger ± one frame; reopen at 500 ms |
+| E3 iOS Folder | Four shared tiles first and final rects; tile scale 0.2 ± 0.02; stagger ± one frame; reopen at 500 ms; the shared `folder` surface starts on the departing surface's box and follows its track, and the departing surface stays until its opacity is 0; above a shared tile pair only that pair, the surface or another tile pair paints; staggered items keep their aspect under the scaling surface; on-screen radii stay within their authored ends |
 | E4 App Store | Card, image and title nested ids; no gap > 0.5 px in image coverage; title size pinned; close and reopen |
 | E5 Notifications | First frame equals the enter transform; siblings final at t = 0 under popLayout; exit ≈ 0.2 s; bottom edge ± 1 px under scaleX; five adds 80 ms apart |
-| Reduced 2D Gallery | 16 tiles grid ↔ list, plus a detail view with a shared id |
+| Reduced 2D Gallery | 16 tiles grid ↔ list, plus a detail view with a shared id; on-screen radii of tile and detail stay within their authored ends every frame |
 
 Regression tests: late start after a 120 ms block (≤ 6 %), unrelated re-render (identical
 trajectory), crossfade only on a real handoff with no opacity pop and coverage preserved by the
