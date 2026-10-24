@@ -177,13 +177,29 @@ function FolderDemo() {
         <ShowcaseCard
             id="E3"
             title="Folder"
-            description="Four mini tiles grow into the open folder's icons; the other apps enter from the folder at scale 0.2 with a stagger."
-            tag="popLayout"
+            description="The closed folder and open panel share one radius-aware surface; four nested shared tiles inherit the group's single spring, while the five staggered apps are position-only layout participants so the surface never stretches them."
+            tag="nested ids + radius"
             controls={
                 <Control onClick={() => setOpen((v) => !v)}>
                     {open ? 'Close folder' : 'Open folder'}
                 </Control>
             }
+            code={`const surface = useLayout({
+    layoutId: 'folder',
+    radius: true,
+    ref: presence.ref,
+})
+const tile = useLayout({
+    layoutId: 'folder-tile-' + i,
+    radius: true,
+})
+const item = useLayout({ layout: 'position', ref: itemPresence.ref })
+
+<LayoutGroup motion={{ duration: DURATION, timing: SPRING }}>
+    <AnimatePresence mode="popLayout">
+        {open ? <Panel ref={surface} /> : <Folder ref={surface} />}
+    </AnimatePresence>
+</LayoutGroup>`}
         >
             <FolderFixture open={open} />
         </ShowcaseCard>
@@ -275,8 +291,8 @@ function GalleryDemo() {
         <ShowcaseCard
             id="Gallery"
             title="Gallery"
-            description={`${GALLERY.count} tiles move between a grid and a list in one layout group; a tile opens into a detail view that shares its id.`}
-            tag="grid / list"
+            description={`${GALLERY.count} radius-aware tiles move between a grid and a list; a tile and its detail view share the same id so the handoff keeps its corners stable.`}
+            tag="grid / list + radius"
             wide={true}
             controls={
                 <>
@@ -299,6 +315,15 @@ function GalleryDemo() {
                     </span>
                 </>
             }
+            code={`const tile = useLayout({
+    layoutId: 'gallery-' + i,
+    radius: true,
+})
+const detail = useLayout({
+    layoutId: 'gallery-' + i,
+    radius: true,
+    ref: presence.ref,
+})`}
         >
             <GalleryFixture view={view} detail={detail} onOpen={setDetail} />
         </ShowcaseCard>
