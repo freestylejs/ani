@@ -90,6 +90,8 @@ export type Action =
           readonly track: Track
           /** Starts a crossfade as its lead. */
           readonly fadeLead: boolean
+          /** Departing shared lead: live node index, -1 for retained removal, or no handoff. */
+          readonly handoffFrom: number | undefined
       }
     | { readonly kind: 'static' }
     | {
@@ -316,12 +318,14 @@ export function plan(input: PlanInput): Plan {
     const before = nodes.map((node) => node.before)
     const carried: (BoxVelocity | null)[] = nodes.map((node) => node.velocity)
     const fadeLead = new Set<number>()
+    const handoffFrom = new Map<number, number>()
     const newFollower = new Map<number, number>()
     for (const lead of leadList) {
         const node = nodes[lead.index]!
         if (lead.handoff === null) continue
         before[lead.index] = lead.handoff
         carried[lead.index] = lead.handoffVelocity
+        handoffFrom.set(lead.index, lead.follower)
         if (lead.follower < 0) continue
         const follower = nodes[lead.follower]!
         // a pair that reverses mid-crossfade keeps fading, however little
@@ -439,6 +443,7 @@ export function plan(input: PlanInput): Plan {
                     rule
                 ),
                 fadeLead: fadeLead.has(i),
+                handoffFrom: handoffFrom.get(i),
             }
         }
         if (own.kind === 'none') return underMotion ? STATIC : NONE

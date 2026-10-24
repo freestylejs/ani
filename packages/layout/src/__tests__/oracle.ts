@@ -33,6 +33,34 @@ export function easing(fn: TimingFunction, tau: number): number {
     return raw(tau) - raw(0) * (1 - tau) + (1 - raw(1)) * tau
 }
 
+/** §5.6 asymmetric crossfade, re-derived from the authority spec. */
+export function expectedCrossfade(
+    fn: TimingFunction,
+    tau: number,
+    fromLead = 0,
+    fromFollower = 1
+): { lead: number; follower: number } {
+    const p = Math.min(1, Math.max(0, easing(fn, tau)))
+    const x = Math.min(1, p / 0.5)
+    const incoming = Math.sqrt(1 - (1 - x) ** 2)
+    const outgoing = Math.min(1, Math.max(0, (p - 0.5) / 0.45))
+    return {
+        lead: fromLead + (1 - fromLead) * incoming,
+        follower: fromFollower * (1 - outgoing),
+    }
+}
+
+/** §5.7 on-screen radius blend, re-derived from the authority spec. */
+export function expectedRadiusBlend(
+    from: readonly number[],
+    to: readonly number[],
+    fn: TimingFunction,
+    tau: number
+): number[] {
+    const p = Math.min(1, Math.max(0, easing(fn, tau)))
+    return from.map((value, i) => value + (to[i]! - value) * p)
+}
+
 /**
  * e′(0) of the normalized curve: raw′(0) + raw(0) + (1 − raw(1)), with raw′(0)
  * derived by hand per core timing kind (linear 1; a spring released from rest

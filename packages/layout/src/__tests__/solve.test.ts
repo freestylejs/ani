@@ -25,6 +25,8 @@ import {
     easing,
     easingSlope0,
     expectedBox,
+    expectedCrossfade,
+    expectedRadiusBlend,
     maxDiff,
     NO_POSE,
     type OBox,
@@ -618,7 +620,7 @@ describe('solve: crossfade and radius', () => {
             follow: 0,
             fade: {
                 role: 'follower',
-                from: 0,
+                from: 1,
                 elapsed: 0.25,
                 duration: 1,
                 curve: motion.curve,
@@ -626,40 +628,46 @@ describe('solve: crossfade and radius', () => {
         }
     )
 
-    it('draws the follower at the lead box with opacities w and 1 − w', () => {
+    it('draws the follower at the lead box with the coverage-preserving crossfade', () => {
         const solved = solve([lead, follower])
         const dom = [plain(lead), plain(follower)]
         const poses = solved.map((s) => s.pose)
+        const want = expectedCrossfade(timing.linear(), 0.25)
         expect(
             maxDiff(rendered(0, dom, poses), rendered(1, dom, poses))
         ).toBeLessThan(TOL)
-        expect(solved[0]!.opacity! + solved[1]!.opacity!).toBeCloseTo(1, 12)
-        expect(solved[0]!.opacity).toBeCloseTo(0.25, 12)
+        expect(solved[0]!.opacity).toBeCloseTo(want.lead, 12)
+        expect(solved[1]!.opacity).toBeCloseTo(want.follower, 12)
+        const coverage =
+            1 - (1 - solved[0]!.opacity!) * (1 - solved[1]!.opacity!)
+        expect(coverage).toBeCloseTo(1, 12)
     })
 
-    it('a reversed pair starts from the opacities it shows (no pop)', () => {
-        const from = 0.7
+    it('a reversed pair starts from both opacities it shows (no pop)', () => {
+        const fromLead = 0.6
+        const fromFollower = 1
         const at = (elapsed: number) =>
             solve([
                 {
                     ...lead,
-                    fade: { ...lead.fade!, from, elapsed },
+                    fade: { ...lead.fade!, from: fromLead, elapsed },
                 },
                 {
                     ...follower,
-                    fade: { ...follower.fade!, from, elapsed },
+                    fade: { ...follower.fade!, from: fromFollower, elapsed },
                 },
             ])
-        const start = at(0)
-        expect(start[0]!.opacity).toBeCloseTo(0.7, 12)
-        expect(start[1]!.opacity).toBeCloseTo(0.3, 12)
-        const mid = at(0.5)
-        expect(mid[0]!.opacity! + mid[1]!.opacity!).toBeCloseTo(1, 12)
-        expect(mid[0]!.opacity).toBeCloseTo(
-            0.7 + 0.3 * motion.curve.value(0.5),
-            12
-        )
-        expect(at(1)[0]!.opacity).toBeCloseTo(1, 12)
+        for (const elapsed of [0, 0.25, 0.5, 0.75, 1]) {
+            const got = at(elapsed)
+            const want = expectedCrossfade(
+                timing.linear(),
+                elapsed,
+                fromLead,
+                fromFollower
+            )
+            expect(got[0]!.opacity).toBeCloseTo(want.lead, 12)
+            expect(got[1]!.opacity).toBeCloseTo(want.follower, 12)
+        }
     })
 
     it('keeps the on-screen corner radius under scale', () => {
@@ -668,6 +676,43 @@ describe('solve: crossfade and radius', () => {
         const r = solved[0]!.radius!
         expect(r[0]! * (drawn.w / a.w)).toBeCloseTo(20, 12)
         expect(r[1]! * (drawn.h / a.h)).toBeCloseTo(20, 12)
+    })
+
+    it('blends a shared handoff radius identically on both layers', () => {
+        const from = [20, 12, 20, 12, 20, 12, 20, 12]
+        const to = [8, 24, 8, 24, 8, 24, 8, 24]
+        for (const elapsed of [0, 0.25, 0.5, 0.75, 1]) {
+            const track = lead.track!
+            const pair = solve([
+                {
+                    ...lead,
+                    elapsed,
+                    radius: to,
+                    radiusBlend: { from, to, track, elapsed },
+                },
+                {
+                    ...follower,
+                    fade: null,
+                    radius: from,
+                    radiusBlend: { from, to, track, elapsed },
+                },
+            ])
+            const want = expectedRadiusBlend(from, to, timing.linear(), elapsed)
+            for (let i = 0; i < pair.length; i++) {
+                const node = i === 0 ? lead : follower
+                const got = pair[i]!
+                for (let j = 0; j < want.length; j++) {
+                    const axisScale =
+                        j % 2 === 0
+                            ? got.drawn.w / node.a.w
+                            : got.drawn.h / node.a.h
+                    expect(got.radius![j]! * axisScale).toBeCloseTo(
+                        want[j]!,
+                        12
+                    )
+                }
+            }
+        }
     })
 })
 

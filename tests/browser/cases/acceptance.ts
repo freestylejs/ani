@@ -161,7 +161,7 @@ export async function E1Anchor(): Promise<string> {
 
 /* ───────────────────────── E2 ───────────────────────── */
 
-/** E2: complementary opacities, constant glyph height, close/reopen at 100 ms and 500 ms. */
+/** E2: coverage-preserving crossfades, constant glyph height, close/reopen at 100 ms and 500 ms. */
 export async function E2Create(): Promise<string> {
     const mc = createManualClock()
     const view = mountRoot()
@@ -169,29 +169,20 @@ export async function E2Create(): Promise<string> {
     const ids = '[data-layout-id]'
     const key = (e: HTMLElement) =>
         `${e.closest('[data-create]')?.getAttribute('data-create')}/${e.dataset.layoutId}`
-    let worstSum = 0
+    let worstCoverage = 0
     let worstGlyph = 0
-    let worstStep = 0
+    let worstCommitJump = 0
     let jumps = 0
-    const last = new Map<Element, number>()
     const check = () => {
         for (const id of E2.ids) {
             const nodes = [
                 ...view.host.querySelectorAll(`[data-layout-id="${id}"]`),
             ]
             if (nodes.length === 2) {
-                worstSum = Math.max(
-                    worstSum,
-                    Math.abs(opacity(nodes[0]!) + opacity(nodes[1]!) - 1)
-                )
-            }
-            for (const node of nodes) {
-                const o = opacity(node)
-                const previous = last.get(node)
-                if (previous !== undefined) {
-                    worstStep = Math.max(worstStep, Math.abs(o - previous))
-                }
-                last.set(node, o)
+                const a = opacity(nodes[0]!)
+                const b = opacity(nodes[1]!)
+                const coverage = 1 - (1 - a) * (1 - b)
+                worstCoverage = Math.max(worstCoverage, Math.abs(coverage - 1))
             }
         }
         for (const label of view.host.querySelectorAll(
@@ -205,8 +196,18 @@ export async function E2Create(): Promise<string> {
     }
     const toggle = async (open: boolean) => {
         const before = picture(view.host, ids, key)
+        const beforeOpacity = new Map<Element, number>()
+        for (const element of view.host.querySelectorAll(ids))
+            beforeOpacity.set(element, opacity(element))
         await view.render(app(open))
         jumps = Math.max(jumps, expectUnmoved(before, `toggle ${open}`))
+        for (const [element, value] of beforeOpacity) {
+            if (!element.isConnected || !view.host.contains(element)) continue
+            worstCommitJump = Math.max(
+                worstCommitJump,
+                Math.abs(opacity(element) - value)
+            )
+        }
         check()
     }
     try {
@@ -222,11 +223,14 @@ export async function E2Create(): Promise<string> {
             check,
             () => settled(view.host) && mc.clock.size === 0
         )
-        if (worstSum > 0.05) throw new Error(`opacity sum off by ${worstSum}`)
+        if (worstCoverage > 1e-5)
+            throw new Error(`crossfade coverage off by ${worstCoverage}`)
         if (worstGlyph > 1)
             throw new Error(`label glyph height off by ${worstGlyph} px`)
-        if (worstStep > 0.25)
-            throw new Error(`an opacity popped by ${worstStep} in one frame`)
+        if (worstCommitJump > 1e-6)
+            throw new Error(
+                `an opacity popped at reversal by ${worstCommitJump}`
+            )
         expectEqual(
             view.host.querySelectorAll('[data-create]').length,
             1,
@@ -237,7 +241,7 @@ export async function E2Create(): Promise<string> {
             '[data-create="menu"] [data-layout-id="create-label"]'
         )
         expectEqual(label.style.opacity, '', 'label opacity given back')
-        return `opacity sums within ${worstSum.toFixed(4)}; glyph height within ${worstGlyph.toFixed(3)} px; largest opacity step ${worstStep.toFixed(3)}; no jump at a toggle (${jumps.toFixed(4)} px)`
+        return `crossfade coverage within ${worstCoverage.toFixed(6)}; glyph height within ${worstGlyph.toFixed(3)} px; reversal commit opacity jump ${worstCommitJump.toFixed(6)}; no geometry jump at a toggle (${jumps.toFixed(4)} px)`
     } finally {
         view.dispose()
     }
@@ -471,13 +475,16 @@ export async function E4Card(): Promise<string> {
     ]
     let coverage = 0
     let where = ''
+    let crossfadeCoverage = 0
+    let crossfadeWhere = ''
     let phase = 'open'
     let tick = 0
     let pinned = 0
     let titleSize: OBox | null = null
     const check = () => {
         tick += 1
-        for (const surface of surfaces()) {
+        const pair = surfaces()
+        for (const surface of pair) {
             const s = pageBox(surface)
             const image = pageBox(
                 q(surface, `[data-layout-id="card-${i}-image"]`)
@@ -500,6 +507,28 @@ export async function E4Card(): Promise<string> {
                     Math.abs(title.w - titleSize.w),
                     Math.abs(title.h - titleSize.h)
                 )
+            }
+        }
+        if (pair.length === 2) {
+            const coverageOf = (selector: string | null) => {
+                const alphas = pair.map((surface) => {
+                    const parent = opacity(surface)
+                    return selector
+                        ? parent * opacity(q(surface, selector))
+                        : parent
+                })
+                return 1 - (1 - alphas[0]!) * (1 - alphas[1]!)
+            }
+            for (const [name, selector] of [
+                ['surface', null],
+                ['image', `[data-layout-id="card-${i}-image"]`],
+                ['title', `[data-layout-id="card-${i}-title"]`],
+            ] as const) {
+                const error = Math.abs(coverageOf(selector) - 1)
+                if (error > crossfadeCoverage) {
+                    crossfadeCoverage = error
+                    crossfadeWhere = `${phase} frame ${tick} ${name}`
+                }
             }
         }
     }
@@ -593,8 +622,12 @@ export async function E4Card(): Promise<string> {
         )
         if (coverage > TOL)
             throw new Error(`image coverage gap ${coverage} px at ${where}`)
+        if (crossfadeCoverage > 1e-5)
+            throw new Error(
+                `nested crossfade coverage off by ${crossfadeCoverage} at ${crossfadeWhere}`
+            )
         if (pinned > TOL) throw new Error(`title size moved by ${pinned} px`)
-        return `nested ids from their own boxes; title ${titleBox.w.toFixed(3)} px wide in the grid, ${restTitle.w.toFixed(3)} px in the detail, same text styles; image coverage within ${coverage.toFixed(4)} px; title size pinned within ${pinned.toFixed(4)} px; close/reopen without a jump (${jumps.toFixed(4)} px)`
+        return `nested ids from their own boxes; title ${titleBox.w.toFixed(3)} px wide in the grid, ${restTitle.w.toFixed(3)} px in the detail, same text styles; image coverage within ${coverage.toFixed(4)} px; nested opacity coverage within ${crossfadeCoverage.toFixed(6)}; title size pinned within ${pinned.toFixed(4)} px; close/reopen without a jump (${jumps.toFixed(4)} px)`
     } finally {
         view.dispose()
     }

@@ -60,11 +60,21 @@ export interface Track {
 /** A crossfade timeline, started with the lead's motion at the handoff. */
 export interface Fade {
     readonly role: 'lead' | 'follower'
-    /** The lead's weight at the start: 0 for a new handoff, its current opacity for a reversal. */
+    /** This layer's opacity at the start: lead 0/follower 1 for a new handoff, current opacity on reversal. */
     readonly from: number
     readonly elapsed: number
     readonly duration: number
     readonly curve: Curve
+}
+
+export interface RadiusBlend {
+    /** Departing node's on-screen radii at the handoff. */
+    readonly from: readonly number[]
+    /** New lead's authored on-screen radii at A. */
+    readonly to: readonly number[]
+    /** The lead track whose eased progress drives the blend. */
+    readonly track: Track
+    readonly elapsed: number
 }
 
 export interface SolveNode {
@@ -87,6 +97,8 @@ export interface SolveNode {
     readonly fade: Fade | null
     /** Corner radii at A: tl-x, tl-y, tr-x, tr-y, br-x, br-y, bl-x, bl-y. */
     readonly radius: readonly number[] | null
+    /** Shared-handoff on-screen radius blend (§5.7). */
+    readonly radiusBlend?: RadiusBlend | null
     /**
      * The ancestors (root first) whose presence matrix at the flush that
      * planned this node differs from the one frozen with their own geometry:
@@ -176,6 +188,11 @@ function progress(track: Track, elapsed: number): number {
     if (t <= 0) return 0
     if (track.duration <= 0) return 1
     return Math.min(1, t / track.duration)
+}
+
+/** The clamped eased progress used by shared fades and radius handoffs. */
+export function trackEasedProgress(track: Track, elapsed: number): number {
+    return Math.min(1, Math.max(0, track.curve.value(progress(track, elapsed))))
 }
 
 /** Whether the track has reached A. */
@@ -558,11 +575,20 @@ export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
     return drawnMotion(nodes, true).velocities
 }
 
-/** The lead's weight `from + (1 − from)·clamp(e(τ))`; the follower's is its complement. */
-function fadeWeight(fade: Fade): number {
-    if (fade.duration <= 0) return 1
-    const w = fade.curve.value(fade.elapsed / fade.duration)
-    return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, w))
+/** §5.6 coverage-preserving opacity of one crossfade layer. */
+export function fadeOpacity(fade: Fade): number {
+    if (fade.duration <= 0) return fade.role === 'lead' ? 1 : 0
+    const p = Math.min(
+        1,
+        Math.max(0, fade.curve.value(fade.elapsed / fade.duration))
+    )
+    if (fade.role === 'lead') {
+        const x = Math.min(1, p / 0.5)
+        const incoming = Math.sqrt(1 - (1 - x) ** 2)
+        return fade.from + (1 - fade.from) * incoming
+    }
+    const outgoing = Math.min(1, Math.max(0, (p - 0.5) / 0.45))
+    return fade.from * (1 - outgoing)
 }
 
 /** Poses, opacities and radii of every node (parents first). */
@@ -574,16 +600,23 @@ export function solve(nodes: readonly SolveNode[]): Solved[] {
         const box = drawn[i]!
         const local = mapBox(invert(parentMap(i)), box)
         const pose = poseFor(local, node.box, node.ox, node.oy)
-        let opacity: number | null = null
-        if (node.fade) {
-            const w = fadeWeight(node.fade)
-            opacity = node.fade.role === 'lead' ? w : 1 - w
-        }
+        const opacity = node.fade ? fadeOpacity(node.fade) : null
         let radius: readonly number[] | null = null
-        if (node.radius) {
+        const onScreenRadius = node.radiusBlend
+            ? (() => {
+                  const p = trackEasedProgress(
+                      node.radiusBlend.track,
+                      node.radiusBlend.elapsed
+                  )
+                  return node.radiusBlend.from.map(
+                      (r, j) => r + (node.radiusBlend!.to[j]! - r) * p
+                  )
+              })()
+            : node.radius
+        if (onScreenRadius) {
             const kx = node.a.w / box.w
             const ky = node.a.h / box.h
-            radius = node.radius.map((r, j) => r * (j % 2 === 0 ? kx : ky))
+            radius = onScreenRadius.map((r, j) => r * (j % 2 === 0 ? kx : ky))
         }
         return { drawn: box, pose, map: fulls[i]!, opacity, radius }
     })

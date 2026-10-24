@@ -131,9 +131,11 @@ in the track's space leaves the track exactly where it was.
 
 ## 4. Commit and frame model
 
-Each commit costs one batched read before the mutation and one after. Every animation
-frame after that is arithmetic plus writes, inside the clock's `update` and `commit`
-phases.
+Each commit costs one batched read before the mutation and one after. The capture batch
+reads every undriven participant's rect and, after all rects, one computed style for each
+undriven participant with both `layoutId` and `radius: true`; the flush batch is unchanged.
+Every animation frame after that is arithmetic plus writes, inside the clock's `update` and
+`commit` phases.
 
 The one write-then-read of the engine is a capability probe, once per document when a scope
 is created (outside every flush and frame): whether the browser applies a percentage
@@ -144,8 +146,11 @@ document no scope was created for is probed at its first flush.
 
 `capture()` reads every registered participant of the scope that the engine does not
 drive: `getBoundingClientRect`, page scroll, and the scroll position of each participant's
-scroll container. The rect is B as it is (§3.1). Driven nodes are not read: their drawn box
-is known exactly.
+scroll container. The rect is B as it is (§3.1). After every rect is read, each such
+participant with both `layoutId` and `radius: true` gets one computed-style read; its four
+corner radii are resolved against its CSS border box at B and stored as B's radius. A participant
+without a `layoutId` or without `radius: true` adds no capture style read. Driven nodes are
+not read: their drawn box and drawn radius are known exactly.
 
 **Lifetime.** A scope has at most one capture. It belongs to the open epoch, which `flush()`
 closes:
@@ -365,17 +370,24 @@ its velocity.
   follower's ancestors that also draw the lead convert, `corr_f ∘ corr_l⁻¹` over those; a lead
   outside the follower's layered parent is taken as is. A continuing follower keeps the space
   of the flush that started it, like a kept track.
-  The opacities are `w` and `1 − w`, with `w = from + (1 − from)·clamp(e(τ), 0, 1)` on the lead's
-  timeline and `from = 0` for a new handoff.
+  Opacity uses the lead's eased progress `p = clamp(e(τ), 0, 1)` with
+  `in(p) = circOut(min(1, p / 0.5))`, `circOut(x) = √(1 − (1 − x)²)`, and
+  `out(p) = clamp((p − 0.5) / 0.45, 0, 1)`. The lead draws
+  `L = from_L + (1 − from_L)·in(p)` and the follower draws
+  `F = from_F·(1 − out(p))`. A new handoff starts with `from_L = 0` and
+  `from_F = 1`. Therefore an opaque new pair has source-over coverage
+  `1 − (1 − L)(1 − F) = 1` at every frame: the follower stays opaque through
+  `p = 0.5`, and the lead is opaque from `p = 0.5` onward.
 - **Reversal.** When the new lead is the follower of the running crossfade (a menu reopened
-  while it closes), the pair keeps crossfading however little it moves, and `from` is the
-  opacity the new lead shows: no opacity pops and no box jumps.
+  while it closes), the pair keeps crossfading however little it moves. `from_L` is the opacity
+  the new lead currently shows and `from_F` is the opacity the new follower currently shows:
+  neither layer pops, no box jumps, and pair coverage cannot decrease from the reversal frame.
 - The follower is held at opacity 0 (where it was drawn when the fade ended) until presence
   unmounts it, and presence's release waits for the crossfade to end. Nothing pops back to
   opacity 1.
 - A lead retargeted during its crossfade (same lead, A moved) keeps the fade: its timeline,
-  the follower's and the release stay one, so the opacities stay complementary; the lead
-  gives its opacity back when the fade ends, not when its new track ends.
+  the follower's and the release stay one, so the asymmetric opacity curves continue without
+  restarting; the lead gives its opacity back when the fade ends, not when its new track ends.
 - If presence animates `opacity` on a crossfade node (its `present` record names `opacity`),
   the pair hands off without a crossfade and a development warning is printed.
 - Two live, non-exiting nodes with one id print a development warning; the newest leads and
@@ -383,9 +395,34 @@ its velocity.
 
 ### 5.7 Radius
 
-`radius: true` reads the four corner radii of A once per flush and writes each corner as
+`radius: true` uses the author's four corner radii of A at every flush. When layout does not
+own a corner, its computed value is read with the node's other computed values. While layout
+owns it and its inline declaration still holds layout's own `!important` write, the authored
+length captured when ownership began is reused instead; percentages and `calc()` keep their
+length components and resolve against the current CSS box. A plain inline author replacement
+recognised by §6 becomes the source from that flush onward. Each corner is written as
 `r·A_w/V_w` / `r·A_h/V_h` (elliptical radii), so corners keep their on-screen radius under
 any total scale. The declaration is restored on settle.
+
+A shared `layoutId` handoff blends the on-screen corner shape when both the departing node and
+new lead have `radius: true`. Per corner and axis, let `ρ_A` be the new lead's authored radius
+resolved at A, and let `ρ_B` be the departing node's on-screen radius at the flush. Its source
+order is exact: (1) a driven departing node's currently drawn `ρ`; (2) the departing node's
+radius from the consumed capture, for a resting node; (3) its stored geometry from the last
+ordinary measurement, only as a fallback when no capture value exists. A removed lead keeps
+the radius from the same source as its retained box: drawn state when driven, otherwise the
+same capture that supplied `capture.rects`, then stored geometry as fallback. The retained
+radius lives with its box and velocity for `retain` seconds. On the new lead's track timeline,
+`p = clamp(e(τ), 0, 1)` and `ρ(p) = ρ_B + (ρ_A − ρ_B)·p`. During a live crossfade both layers
+draw the same `ρ(p)` and each converts it to its own declaration with its own `A_w/V_w` or
+`A_h/V_h`, so their silhouettes are identical.
+
+A retarget or reversal during a radius blend starts the new blend from the `ρ` currently drawn;
+at `p = 1` the lead draws exactly `ρ_A`, so ending the blend, settling the track and restoring
+the authored declaration introduce no radius jump. There is no radius blend when either side
+lacks `radius: true`. A style-only radius change made while a shared participant rests is
+therefore included by the next capture instead of using a lifetime bootstrap. Flushes add no
+radius-only measurement, and frames add no DOM read.
 
 ## 6. Property ownership on one element
 
@@ -395,7 +432,7 @@ any total scale. The declaration is restored on settle.
 | `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes (with its Typed OM value where the browser snaps the reference box, §5.3). |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
-| `border-radius` | Layout when `radius: true` | Saved when layout first owns it (also when `radius` turns on mid-run), restored on settle; turning `radius` off gives the corners back at once. |
+| `border-radius` | Layout when `radius: true` | A resting shared participant is read-only snapshotted at capture (§4.1); capture does not take ownership. Saved when layout first owns it (also when `radius` turns on mid-run), then frozen as the authored radius while the inline declaration still holds layout's own `!important` write (§5.7). An author's plain inline replacement is recognised by priority like `translate`/`scale`, used from the next flush and restored on settle. Turning `radius` off gives the corners back at once. |
 | `rotate`, skew, non-translation ancestor transforms | Author | The subtree snaps with `'unsupported'`. |
 
 Presence and layout meet only inside the package: `createPresence` registers its element,
@@ -623,25 +660,31 @@ nothing.
 | Row | Frame-level assertion |
 |---|---|
 | E1 Layout Anchor | Child centre on parent centre ≤ 0.5 px every frame; child stays 70 px until 0.8 s; child starts at 0.8 s ± one frame |
-| E2 Create Button | Opacity sum 1 ± 0.05 every frame; label glyph height constant ± 1 px; close and reopen at 100 ms and 500 ms |
+| E2 Create Button | Shared-pair source-over coverage ≥ 0.99 every frame; label glyph height constant ± 1 px; close and reopen at 100 ms and 500 ms |
 | E3 iOS Folder | Four shared tiles first and final rects; tile scale 0.2 ± 0.02; stagger ± one frame; reopen at 500 ms |
 | E4 App Store | Card, image and title nested ids; no gap > 0.5 px in image coverage; title size pinned; close and reopen |
 | E5 Notifications | First frame equals the enter transform; siblings final at t = 0 under popLayout; exit ≈ 0.2 s; bottom edge ± 1 px under scaleX; five adds 80 ms apart |
 | Reduced 2D Gallery | 16 tiles grid ↔ list, plus a detail view with a shared id |
 
 Regression tests: late start after a 120 ms block (≤ 6 %), unrelated re-render (identical
-trajectory), crossfade only on a real handoff with no pop to 1, velocity ≤ 5 % across a
-retarget under jank, reduced motion (zero writes, zero subscribers, mid-run toggle), showcase
-honesty, fractional boxes under scale within 0.05 px in every engine (`layout:REFBOX`, the
-WebKit reference box). The Motion-parity examples (`showcase` module) are checked the same
-way: every frame on the oracle from rest, and through mid-flight changes on a chain of oracle
-tracks that carries each track's velocity. Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
+trajectory), crossfade only on a real handoff with no opacity pop and coverage preserved by the
+§5.6 asymmetric curves (including reversal and nested shared ids), shared-handoff radius blending
+with identical silhouettes (live and retained, including `%`/elliptical corners, no blend when
+one side opts out, continuous retarget/reversal, and a resting style-only radius change captured
+before both retained and live handoffs), velocity ≤ 5 % across a retarget under jank, reduced
+motion (zero writes, zero subscribers, mid-run toggle), showcase honesty, fractional boxes under
+scale within 0.05 px in every engine (`layout:REFBOX`, the WebKit reference box). The
+Motion-parity examples (`showcase` module) are checked the same way: every frame on the oracle
+from rest, and through mid-flight changes on a chain of oracle tracks that carries each track's
+velocity. Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
 per property, byte-identical final inline style, no subscription left.
 
-Cost gates: reads per commit = 2N rects plus one computed-style read per active node; zero
-reads on steady frames; commit reads at 1,000 participants ≤ 4 ms; steady frame at 300 nested
-movers ≤ 2 ms p95. The whole commit and the steady frame with every participant moving are
-recorded at 50, 300 and 1,000 participants.
+Cost gates: the flush read set stays base-exact: 2N rects plus one computed-style read per active
+node. Capture adds exactly one computed-style read for each undriven shared `radius: true`
+participant, after all capture rects; unrelated-sibling and no-op flush counts therefore stay
+unchanged, and steady frames read zero. Commit reads at 1,000 participants ≤ 4 ms; steady frame
+at 300 nested movers ≤ 2 ms p95. The whole commit and the steady frame with every participant
+moving are recorded at 50, 300 and 1,000 participants.
 
 ## 12. Accepted risks
 
@@ -650,7 +693,11 @@ recorded at 50, 300 and 1,000 participants.
   compositor may have drawn ahead of it, so a retarget during jank can step back by the
   frames the main thread missed. It does not follow the Ani clock's time scale.
 - Render-phase reads bend React's purity norm (reads only) and can force a layout during render
-  when the DOM is dirty.
+  when the DOM is dirty. A capture also pays one computed-style read per undriven shared
+  `radius: true` participant so its B radius is current; this deliberate accuracy cost does not
+  recur in flush or frames.
+- A direct `flush()` with no capture cannot observe a resting style-only radius change; §5.7
+  falls back to the participant's last ordinary geometry in that case.
 - A state change that renders no participant, group or `AnimatePresence` does not animate
   (documented, development warning).
 - The velocity term is a continuity device, not spring physics.

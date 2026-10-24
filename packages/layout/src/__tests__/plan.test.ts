@@ -202,6 +202,7 @@ describe('plan: layoutId', () => {
         const lead = result.actions[1]!
         if (lead.kind !== 'track') throw new Error('expected a track')
         expect(lead.fadeLead).toBe(true)
+        expect(lead.handoffFrom).toBe(0)
         const first = drawnBoxes([
             rootNode(detailBox, {
                 fx: 0.5,
@@ -226,6 +227,7 @@ describe('plan: layoutId', () => {
         const lead = result.actions[0]!
         if (lead.kind !== 'track') throw new Error('expected a track')
         expect(lead.fadeLead).toBe(false)
+        expect(lead.handoffFrom).toBe(-1)
     })
 
     for (const [name, patch] of [
@@ -366,6 +368,7 @@ describe('plan: layoutId', () => {
         const lead = reversed.actions[1]!
         if (lead.kind !== 'track') throw new Error('expected a track')
         expect(lead.fadeLead).toBe(true)
+        expect(lead.handoffFrom).toBe(0)
         // control: a node that was not the follower gets no crossfade there
         const fresh = plan(input(nodes(-1), { ids }))
         expect(fresh.actions[1]!.kind).not.toBe('track')
