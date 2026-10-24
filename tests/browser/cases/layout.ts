@@ -48,6 +48,74 @@ function pageBox(element: Element): OBox {
     return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }
 }
 
+const CORNER_PROPERTIES = [
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+] as const
+
+function radiusTokens(value: string): string[] {
+    const tokens: string[] = []
+    let depth = 0
+    let current = ''
+    for (const ch of value) {
+        if (ch === '(') depth += 1
+        if (ch === ')') depth -= 1
+        if (ch === ' ' && depth === 0) {
+            if (current) tokens.push(current)
+            current = ''
+        } else {
+            current += ch
+        }
+    }
+    if (current) tokens.push(current)
+    return tokens
+}
+
+function radiusLength(token: string, basis: number): number {
+    const direct = Number.parseFloat(token)
+    if (!token.startsWith('calc(')) {
+        return token.endsWith('%') ? (direct * basis) / 100 : direct
+    }
+    let sign = 1
+    let value = 0
+    for (const part of token.slice(5, -1).trim().split(/\s+/)) {
+        if (part === '+' || part === '-') {
+            sign = part === '+' ? 1 : -1
+            continue
+        }
+        const n = Number.parseFloat(part)
+        value += sign * (part.endsWith('%') ? (n * basis) / 100 : n)
+        sign = 1
+    }
+    return value
+}
+
+function drawnRadiusError(
+    element: HTMLElement,
+    expected: readonly number[]
+): number {
+    const drawn = pageBox(element)
+    const style = getComputedStyle(element)
+    let worst = 0
+    CORNER_PROPERTIES.forEach((property, corner) => {
+        const parts = radiusTokens(style.getPropertyValue(property))
+        const x = radiusLength(parts[0]!, element.offsetWidth)
+        const y = radiusLength(parts[1] ?? parts[0]!, element.offsetHeight)
+        worst = Math.max(
+            worst,
+            Math.abs(
+                (x * drawn.w) / element.offsetWidth - expected[corner * 2]!
+            ),
+            Math.abs(
+                (y * drawn.h) / element.offsetHeight - expected[corner * 2 + 1]!
+            )
+        )
+    })
+    return worst
+}
+
 function node(parent: HTMLElement, css: string): HTMLElement {
     const element = document.createElement('div')
     element.style.cssText = `position: absolute; box-sizing: border-box; ${css}`
@@ -1037,6 +1105,380 @@ export async function T9(): Promise<string> {
 }
 
 /* ───────────────────────── snaps ───────────────────────── */
+
+function radiusTolerance(): number {
+    return navigator.userAgent.includes('Firefox') ? 0.03 : 0.01
+}
+
+function expectDrawnRadius(
+    element: HTMLElement,
+    expected: readonly number[],
+    label: string
+): number {
+    const error = drawnRadiusError(element, expected)
+    if (error > radiusTolerance()) {
+        throw new Error(
+            `${label}: on-screen radius off by ${error.toFixed(4)} px`
+        )
+    }
+    return error
+}
+
+type RadiusFlushKind = 'noop' | 'sibling' | 'retarget'
+
+async function radiusMultiFlush(kind: RadiusFlushKind): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.5, timing: linear } })
+    try {
+        const element = node(
+            h.root,
+            'left: 0; top: 0; width: 100px; height: 50px; border-radius: 12px; transform-origin: 0 0;'
+        )
+        const sibling = node(
+            h.root,
+            'left: 400px; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(element, { radius: true })
+        h.add(sibling)
+        h.group.capture()
+        element.style.left = '200px'
+        element.style.width = '200px'
+        element.style.height = '100px'
+        const expectedStyle = document.createElement('div')
+        expectedStyle.style.cssText = element.style.cssText
+        void h.group.flush()
+
+        const radii = [12, 12, 12, 12, 12, 12, 12, 12] as const
+        let worst = 0
+        await frames(h.mc, 9, () => {
+            worst = Math.max(
+                worst,
+                expectDrawnRadius(element, radii, `${kind}: first run`)
+            )
+        })
+
+        if (kind === 'noop') {
+            void h.group.flush()
+        } else {
+            h.group.capture()
+            if (kind === 'sibling') {
+                sibling.style.left = '520px'
+            } else {
+                element.style.left = '320px'
+                element.style.width = '260px'
+                element.style.height = '130px'
+                expectedStyle.style.left = '320px'
+                expectedStyle.style.width = '260px'
+                expectedStyle.style.height = '130px'
+            }
+            void h.group.flush()
+        }
+
+        const count = await frames(
+            h.mc,
+            100,
+            () => {
+                worst = Math.max(
+                    worst,
+                    expectDrawnRadius(element, radii, `${kind}: after flush`)
+                )
+            },
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(h.mc.clock.size, 0, `${kind}: settled`)
+        expectEqual(
+            element.style.cssText,
+            expectedStyle.style.cssText,
+            `${kind}: byte-identical inline style`
+        )
+        return `${kind}: ${count + 9} frames, radius within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P1: a no-op second flush must keep the author's radius. */
+export async function RADIUS_NOOP_FLUSH(): Promise<string> {
+    return radiusMultiFlush('noop')
+}
+
+/** P1: an unrelated sibling commit must not change a moving node's radius source. */
+export async function RADIUS_SIBLING_FLUSH(): Promise<string> {
+    return radiusMultiFlush('sibling')
+}
+
+/** P1: a real retarget must keep the author's radius while carrying motion. */
+export async function RADIUS_RETARGET_FLUSH(): Promise<string> {
+    return radiusMultiFlush('retarget')
+}
+
+/** P1: percentage, elliptical, per-corner, calc and stylesheet radii survive a multi-flush run. */
+export async function RADIUS_VALUE_KINDS(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.5, timing: linear } })
+    try {
+        const sheet = document.createElement('style')
+        sheet.textContent = `
+            .p1-radius-class {
+                border-top-left-radius: 15% 10%;
+                border-top-right-radius: 12px 6px;
+                border-bottom-right-radius: 10% 20%;
+                border-bottom-left-radius: 7px 9px;
+            }
+        `
+        h.root.append(sheet)
+
+        const percent = node(
+            h.root,
+            'left: 0; top: 0; width: 100px; height: 50px; border-radius: 25% / 10%; transform-origin: 0 0;'
+        )
+        const elliptical = node(
+            h.root,
+            'left: 0; top: 120px; width: 100px; height: 50px; border-radius: 24px / 12px; transform-origin: 0 0;'
+        )
+        const corners = node(
+            h.root,
+            'left: 0; top: 240px; width: 100px; height: 50px; border-radius: 4px 8px 12px 16px / 6px 10px 14px 18px; transform-origin: 0 0;'
+        )
+        const fromClass = node(
+            h.root,
+            'left: 0; top: 360px; width: 100px; height: 50px; transform-origin: 0 0;'
+        )
+        fromClass.className = 'p1-radius-class'
+
+        const cases = [
+            {
+                element: percent,
+                expected: [50, 10, 50, 10, 50, 10, 50, 10],
+                label: 'percent',
+            },
+            {
+                element: elliptical,
+                expected: [24, 12, 24, 12, 24, 12, 24, 12],
+                label: 'elliptical',
+            },
+            {
+                element: corners,
+                expected: [4, 6, 8, 10, 12, 14, 16, 18],
+                label: 'four corners',
+            },
+            {
+                element: fromClass,
+                expected: [30, 10, 12, 6, 20, 20, 7, 9],
+                label: 'stylesheet',
+            },
+        ] as const
+        for (const entry of cases) h.add(entry.element, { radius: true })
+
+        h.group.capture()
+        cases.forEach(({ element }, i) => {
+            element.style.left = '260px'
+            element.style.width = '200px'
+            element.style.height = '100px'
+            element.style.top = `${i * 140}px`
+        })
+        const authored = cases.map(({ element }) => element.style.cssText)
+        void h.group.flush()
+
+        let worst = 0
+        const check = (phase: string) => {
+            for (const entry of cases) {
+                worst = Math.max(
+                    worst,
+                    expectDrawnRadius(
+                        entry.element,
+                        entry.expected,
+                        `${entry.label}: ${phase}`
+                    )
+                )
+            }
+        }
+        await frames(h.mc, 9, () => check('first run'))
+        void h.group.flush()
+        const count = await frames(
+            h.mc,
+            100,
+            () => check('second flush'),
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(h.mc.clock.size, 0, 'value kinds settled')
+        cases.forEach(({ element }, i) => {
+            expectEqual(
+                element.style.cssText,
+                authored[i],
+                `${cases[i]!.label}: byte-identical inline style`
+            )
+        })
+
+        const calc = node(
+            h.root,
+            'left: 0; top: 560px; width: 100px; height: 50px; border-radius: calc(10% + 2px) / calc(20% + 1px); transform-origin: 0 0;'
+        )
+        h.add(calc, { radius: true })
+        h.group.capture()
+        calc.style.left = '260px'
+        calc.style.width = '200px'
+        calc.style.height = '100px'
+        const calcStyle = calc.style.cssText
+        void h.group.flush()
+        const calcRadius = [22, 21, 22, 21, 22, 21, 22, 21] as const
+        let calcWorst = 0
+        await frames(h.mc, 9, () => {
+            calcWorst = Math.max(
+                calcWorst,
+                expectDrawnRadius(calc, calcRadius, 'calc first run')
+            )
+        })
+        void h.group.flush()
+        const calcCount = await frames(
+            h.mc,
+            100,
+            () => {
+                calcWorst = Math.max(
+                    calcWorst,
+                    expectDrawnRadius(calc, calcRadius, 'calc second flush')
+                )
+            },
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(
+            calc.style.cssText,
+            calcStyle,
+            'calc byte-identical inline style'
+        )
+        return `${count + 9} frames × ${cases.length} value kinds within ${worst.toFixed(4)} px; calc ${calcCount + 9} frames within ${calcWorst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P1: a plain inline author replacement becomes the radius source at the next flush. */
+export async function RADIUS_AUTHOR_CHANGE(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.5, timing: linear } })
+    try {
+        const element = node(
+            h.root,
+            'left: 0; top: 0; width: 100px; height: 50px; border-radius: 12px / 8px; transform-origin: 0 0;'
+        )
+        h.add(element, { radius: true })
+        h.group.capture()
+        element.style.left = '200px'
+        element.style.width = '200px'
+        element.style.height = '100px'
+        const expectedStyle = document.createElement('div')
+        expectedStyle.style.cssText = element.style.cssText
+        void h.group.flush()
+
+        const before = [12, 8, 12, 8, 12, 8, 12, 8] as const
+        let worst = 0
+        await frames(h.mc, 9, () => {
+            worst = Math.max(
+                worst,
+                expectDrawnRadius(element, before, 'before author change')
+            )
+        })
+
+        h.group.capture()
+        element.style.setProperty('border-top-left-radius', '30px 10px')
+        expectedStyle.style.setProperty('border-top-left-radius', '30px 10px')
+        void h.group.flush()
+
+        const after = [30, 10, 12, 8, 12, 8, 12, 8] as const
+        worst = Math.max(
+            worst,
+            expectDrawnRadius(element, after, 'author change at flush')
+        )
+        const count = await frames(
+            h.mc,
+            100,
+            () => {
+                worst = Math.max(
+                    worst,
+                    expectDrawnRadius(element, after, 'after author change')
+                )
+            },
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(h.mc.clock.size, 0, 'author change settled')
+        expectEqual(
+            element.style.cssText,
+            expectedStyle.style.cssText,
+            'author change restored byte-identically'
+        )
+        return `${count + 9} frames, new authored corner from next flush; radius within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P1: reversing a shared-id crossfade re-measures owned followers without feeding back their radii. */
+export async function RADIUS_CROSSFADE_REVERSAL(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.4, timing: linear } })
+    const presenceMotion = {
+        present: { translateY: 0 },
+        exit: ani({
+            to: { translateY: 0 },
+            duration: 0.1,
+            timing: linear,
+        }),
+    } as const
+    try {
+        const card = node(
+            h.root,
+            'left: 20px; top: 20px; width: 100px; height: 60px; border-radius: 12px; transform-origin: 0 0;'
+        )
+        h.add(card, { layoutId: 'p1-radius', radius: true })
+        const cardPresence = createPresence(card, presenceMotion, {
+            clock: h.mc.clock,
+        })
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void cardPresence.exit()
+        const detail = node(
+            h.root,
+            'left: 300px; top: 120px; width: 320px; height: 180px; border-radius: 28px; transform-origin: 0 0;'
+        )
+        h.add(detail, { layoutId: 'p1-radius', radius: true })
+        const detailPresence = createPresence(detail, presenceMotion, {
+            clock: h.mc.clock,
+        })
+        void h.group.flush()
+
+        const cardRadius = [12, 12, 12, 12, 12, 12, 12, 12] as const
+        const detailRadius = [28, 28, 28, 28, 28, 28, 28, 28] as const
+        let worst = 0
+        const check = (phase: string) => {
+            worst = Math.max(
+                worst,
+                expectDrawnRadius(card, cardRadius, `card ${phase}`),
+                expectDrawnRadius(detail, detailRadius, `detail ${phase}`)
+            )
+        }
+        await frames(h.mc, 9, () => check('first fade'))
+
+        h.group.capture()
+        void cardPresence.enter()
+        void detailPresence.exit()
+        const reversed = report(h.group.flush())
+        check('reversal flush')
+        const count = await frames(
+            h.mc,
+            80,
+            () => check('reversed fade'),
+            () => reversed.value !== null
+        )
+        expectEqual(reversed.value?.status, 'ended', 'reversed crossfade')
+        cardPresence.dispose()
+        detailPresence.dispose()
+        return `${count + 9} frames across reversal, each layer radius within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
 
 /** Every snap reason the planner and the reads produce, with onSnap and the development warnings. */
 export async function T10(): Promise<string> {
