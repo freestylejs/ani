@@ -1036,7 +1036,8 @@ interface ToastModel {
  * pose (its timeline advances by the frame time from its first frame on),
  * and in 'position' mode the layout track moves that box by `V(t) − q0`, the
  * track drawn relative to the inner box it was planned against (§3.1, §11).
- * A track's first frame has `dt = 0` (§4.3).
+ * A track from rest shows elapsed 0 on its first frame; a track planned for a
+ * moving toast (with a velocity) continues the last painted frame's time (§4.3).
  */
 function toastExpected(
     host: HTMLElement,
@@ -1052,7 +1053,8 @@ function toastExpected(
     const inner = throughPose(toastSlot(host, toast.slot), pose)
     const track = toast.track
     if (!track) return { box: inner, pose, moving: null }
-    const t = Math.max(0, frame - track.flush - 1) * DT
+    const t =
+        Math.max(0, frame - track.flush - (track.spec.velocity ? 0 : 1)) * DT
     const v = expectedBox(track.spec, t)
     // the track's velocity (box per second), while it runs
     let moving: OBox | null = null

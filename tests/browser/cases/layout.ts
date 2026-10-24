@@ -148,6 +148,15 @@ function expectAt(
     return error
 }
 
+/**
+ * A track's elapsed time on the frame `elapsed` after its flush (§4.3): a
+ * track from rest shows elapsed 0 on its first frame; a track planned for a
+ * moving node (with a velocity) continues the last painted frame's time.
+ */
+function since(track: OTrackSpec, elapsed: number): number {
+    return track.velocity ? elapsed + DT : elapsed
+}
+
 function silenceWarnings(): { readonly messages: string[]; restore(): void } {
     const original = console.warn
     const messages: string[] = []
@@ -535,7 +544,7 @@ export async function T4(): Promise<string> {
                     worst,
                     expectAt(
                         element,
-                        expectedBox(retarget, elapsed),
+                        expectedBox(retarget, since(retarget, elapsed)),
                         `retarget t=${elapsed}`
                     )
                 )
@@ -543,11 +552,21 @@ export async function T4(): Promise<string> {
             () => second.value !== null
         )
         expectEqual(second.value!.status, 'ended', 'second run')
-        const v = (positions[2]! - positions[1]!) / DT
+        const v = (positions[1]! - positions[0]!) / DT
         const want =
             (expectedBox(retarget, 2 * DT).x - expectedBox(retarget, DT).x) / DT
         expectClose(v, want, 0.05 * Math.abs(want), 'carried velocity')
-        expectClose(positions[0]!, drawn.x, TOL, 'continuous position')
+        // §4.3: the first frame after the retarget continues the motion from
+        // the drawn box; it does not hold it for a frame
+        expectClose(
+            positions[0]! - drawn.x,
+            expectedBox(retarget, DT).x - drawn.x,
+            TOL,
+            'first frame advances by the carried motion'
+        )
+        if (Math.abs(positions[0]! - drawn.x) < 1) {
+            throw new Error('the retarget held a frame')
+        }
         return `retarget at ${drawn.x.toFixed(1)} px; first step ${v.toFixed(0)} px/s; max error ${worst.toFixed(4)} px`
     } finally {
         h.dispose()
@@ -1524,7 +1543,7 @@ export async function J17(): Promise<string> {
             (elapsed) => {
                 fadeTime = frame * DT
                 frame += 1
-                const want = expectedBox(track, elapsed)
+                const want = expectedBox(track, since(track, elapsed))
                 worst = Math.max(
                     worst,
                     expectAt(detail, want, `lead at ${elapsed.toFixed(3)} s`)
@@ -1722,7 +1741,7 @@ export async function J19(): Promise<string> {
                         worst,
                         expectAt(
                             element,
-                            expectedBox(tracks[i]!, elapsed),
+                            expectedBox(tracks[i]!, since(tracks[i]!, elapsed)),
                             `clamped ${i} at ${elapsed.toFixed(3)} s`
                         )
                     )
@@ -1782,7 +1801,11 @@ export async function J20(): Promise<string> {
             (elapsed) => {
                 worst = Math.max(
                     worst,
-                    expectAt(b, expectedBox(track, elapsed), `t=${elapsed}`)
+                    expectAt(
+                        b,
+                        expectedBox(track, since(track, elapsed)),
+                        `t=${elapsed}`
+                    )
                 )
             },
             () => done.value !== null
@@ -1841,7 +1864,7 @@ export async function J20(): Promise<string> {
                     carried,
                     expectAt(
                         b,
-                        expectedBox(track, elapsed),
+                        expectedBox(track, since(track, elapsed)),
                         `carried t=${elapsed}`
                     )
                 )
@@ -1932,7 +1955,7 @@ export async function J21(): Promise<string> {
             let k = 0
             const check = () => {
                 const elapsed = k++ * DT
-                const want = expectedBox(track, elapsed)
+                const want = expectedBox(track, since(track, elapsed))
                 worst = Math.max(
                     worst,
                     expectAt(e, want, `${end} at ${elapsed.toFixed(3)} s`)
@@ -2201,7 +2224,11 @@ export async function J25(): Promise<string> {
             (elapsed) => {
                 worst = Math.max(
                     worst,
-                    expectAt(child, expectedBox(track, elapsed), `t=${elapsed}`)
+                    expectAt(
+                        child,
+                        expectedBox(track, since(track, elapsed)),
+                        `t=${elapsed}`
+                    )
                 )
             },
             () => second.value !== null
@@ -2256,7 +2283,7 @@ export async function J25(): Promise<string> {
                     worst,
                     expectAt(
                         child,
-                        expectedBox(track, elapsed),
+                        expectedBox(track, since(track, elapsed)),
                         `own layer t=${elapsed}`
                     )
                 )
@@ -2328,7 +2355,7 @@ export async function J32(): Promise<string> {
                 // parent's drawn left), the parent none since its flush
                 const back = frame >= 10
                 const k = back ? 0.8 : 1
-                const own = expectedBox(track, elapsed)
+                const own = expectedBox(track, since(track, elapsed))
                 worst = Math.max(
                     worst,
                     expectAt(
@@ -2424,7 +2451,9 @@ export async function J32B(): Promise<string> {
             h.mc,
             120,
             (elapsed) => {
-                const R = expectedBox(parentTrack, elapsed).x - o.x
+                const R =
+                    expectedBox(parentTrack, since(parentTrack, elapsed)).x -
+                    o.x
                 // the kept child track, and the parent's layer (1 / 0.8 about its drawn left)
                 const C = 280 * Math.min(1, 0.2 + DT + elapsed)
                 worst = Math.max(
@@ -2655,7 +2684,7 @@ async function crossfadeUnderLayer(
                 timing: linear,
                 velocity: { x: 200, y: 0, w: 60, h: 0 },
             })
-            path = (t: number) => expectedBox(track, t - 0.2 - DT)
+            path = (t: number) => expectedBox(track, since(track, t - 0.2 - DT))
         } else if (variant !== 'control') {
             h.group.capture()
             const noop = report(h.group.flush())
@@ -2836,7 +2865,8 @@ async function crossfadeAcrossLayer(
             h.mc,
             120,
             (elapsed) => {
-                tau = elapsed
+                // the fade runs on its lead's timeline (§4.3, §5.6)
+                tau = since(track, elapsed)
                 // the kept parent stays on its own timeline, under its layer
                 const p = 0.2 + DT + elapsed
                 worst = Math.max(
@@ -2847,7 +2877,7 @@ async function crossfadeAcrossLayer(
                         `parent τ=${p.toFixed(3)}`
                     )
                 )
-                const box = expectedBox(track, elapsed)
+                const box = expectedBox(track, since(track, elapsed))
                 worst = Math.max(
                     worst,
                     expectAt(lead, box, `lead τ=${tau.toFixed(3)}`)

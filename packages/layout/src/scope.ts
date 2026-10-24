@@ -173,7 +173,10 @@ interface Drive {
     /** The A its track runs to. */
     target: Box | null
     elapsed: number
-    /** Its first clock update has happened (that one has `dt = 0`). */
+    /**
+     * Its time runs: every clock update advances it. A track from rest
+     * starts unstarted, so its first update has `dt = 0` (§4.3).
+     */
     started: boolean
     fade: DriveFade | null
     lead: Participant | null
@@ -1592,12 +1595,18 @@ export function createLayoutGroup(
                     )
                     if (wasFollower && !action.fadeLead)
                         restoreOpacity(p.element, drive)
+                    // a node painted moving continues from that frame's time:
+                    // B and its velocity are the drawn box and velocity of the
+                    // last painted frame, so a held first frame would stall it
+                    // (§4.3); a drive no frame has drawn yet is still at rest
+                    const continues =
+                        action.track.moving && (d?.started ?? true)
                     drive.release?.()
                     drive.release = null
                     drive.track = action.track
                     drive.target = nodes[i]!.a
                     drive.elapsed = 0
-                    drive.started = false
+                    drive.started = continues
                     drive.mode = reduced
                     drive.lead = null
                     drive.fade = action.fadeLead
@@ -1605,7 +1614,7 @@ export function createLayoutGroup(
                               role: 'lead',
                               from: fadeFrom.get(i) ?? 0,
                               elapsed: -action.track.delay,
-                              started: false,
+                              started: continues,
                               duration: action.track.duration,
                               curve: action.track.curve,
                           }
@@ -1626,6 +1635,14 @@ export function createLayoutGroup(
                     const leadAction = actions[action.lead]!
                     const track =
                         leadAction.kind === 'track' ? leadAction.track : null
+                    // in step with the lead's fade: the lead's own rule, from
+                    // its new drive or (not started yet) its previous one
+                    const continues =
+                        track !== null &&
+                        track.moving &&
+                        (lead.drive?.track === track
+                            ? lead.drive.started
+                            : (lead.drive?.started ?? true))
                     const drive = startDrive(
                         p,
                         'follow',
@@ -1641,7 +1658,7 @@ export function createLayoutGroup(
                         role: 'follower',
                         from: fadeFrom.get(action.lead) ?? 0,
                         elapsed: -(track?.delay ?? 0),
-                        started: false,
+                        started: continues,
                         duration: track?.duration ?? 0,
                         curve: track?.curve ?? nodes[i]!.motion.curve,
                     }
