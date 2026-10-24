@@ -56,6 +56,49 @@ function opacity(element: Element): number {
     return Number(getComputedStyle(element).opacity)
 }
 
+const cornerRadiusProperties = [
+    'borderTopLeftRadius',
+    'borderTopRightRadius',
+    'borderBottomRightRadius',
+    'borderBottomLeftRadius',
+] as const
+
+/** A layer's four CSS corner radii after all ancestor/own scales are applied. */
+function onScreenRadii(element: HTMLElement): number[] {
+    const box = element.getBoundingClientRect()
+    const sx = box.width / element.offsetWidth
+    const sy = box.height / element.offsetHeight
+    const style = getComputedStyle(element)
+    const out: number[] = []
+    for (const property of cornerRadiusProperties) {
+        const [x, y = x] = style[property]
+            .split(' ')
+            .map((value) => Number.parseFloat(value))
+        out.push(x! * sx, y! * sy)
+    }
+    return out
+}
+
+/** Allows at most 0.03 px outside the authored radius interval. */
+function expectRadiusBetween(
+    element: HTMLElement,
+    lo: number,
+    hi: number,
+    label: string
+): number {
+    let worst = 0
+    for (const radius of onScreenRadii(element)) {
+        const outside = radius < lo ? lo - radius : Math.max(0, radius - hi)
+        worst = Math.max(worst, outside)
+        if (outside > 0.03) {
+            throw new Error(
+                `${label}: on-screen radius ${radius.toFixed(4)} px is outside [${lo}, ${hi}] by ${outside.toFixed(4)} px`
+            )
+        }
+    }
+    return worst
+}
+
 /** The computed text styles that set an element's glyph metrics. */
 function fontOf(element: Element): string {
     const s = getComputedStyle(element)
@@ -272,6 +315,179 @@ export async function E3Folder(): Promise<string> {
     try {
         await view.render(app(false))
         const stage = pageBox(q(view.host, '[data-fixture="folder"]'))
+        const fixture = q(view.host, '[data-fixture="folder"]')
+        const surfaceLayoutBox = (element: HTMLElement): OBox => {
+            if (element.offsetParent !== fixture) {
+                throw new Error(
+                    'folder surface offset parent is not the fixture'
+                )
+            }
+            return offset(stage, {
+                x: element.offsetLeft,
+                y: element.offsetTop,
+                w: element.offsetWidth,
+                h: element.offsetHeight,
+            })
+        }
+        const surfaceLayers = () => [
+            ...view.host.querySelectorAll<HTMLElement>(
+                '[data-layout-id="folder"]'
+            ),
+        ]
+        let surfaceWorst = 0
+        let radiusWorst = 0
+        let aspectWorst = 0
+        const sharedLayoutIds = new Set(
+            Array.from({ length: E3.shared }, (_, i) => `folder-tile-${i}`)
+        )
+        const checkOcclusion = (label: string) => {
+            for (let i = 0; i < E3.shared; i++) {
+                const pair = [
+                    ...view.host.querySelectorAll<HTMLElement>(
+                        `[data-layout-id="folder-tile-${i}"]`
+                    ),
+                ]
+                if (pair.length === 0)
+                    throw new Error(`${label}: tile ${i} has no layer`)
+                const probe = pair.reduce((best, element) =>
+                    opacity(element) > opacity(best) ? element : best
+                )
+                const box = probe.getBoundingClientRect()
+                const stack = document.elementsFromPoint(
+                    box.left + box.width / 2,
+                    box.top + box.height / 2
+                )
+                const indexes = pair
+                    .map((element) => stack.indexOf(element))
+                    .filter((index) => index >= 0)
+                if (indexes.length === 0) {
+                    throw new Error(
+                        `${label}: tile ${i} is absent from elementsFromPoint`
+                    )
+                }
+                const below = Math.max(...indexes)
+                for (const element of stack.slice(0, below)) {
+                    if (pair.includes(element as HTMLElement)) continue
+                    if (element instanceof HTMLElement) {
+                        const layoutId = element.dataset.layoutId
+                        if (
+                            layoutId === 'folder' ||
+                            (layoutId !== undefined &&
+                                sharedLayoutIds.has(layoutId))
+                        )
+                            continue
+                    }
+                    const identity =
+                        element instanceof HTMLElement
+                            ? [
+                                  element.tagName,
+                                  element.dataset.layoutId
+                                      ? `layout=${element.dataset.layoutId}`
+                                      : '',
+                                  element.dataset.folder
+                                      ? `folder=${element.dataset.folder}`
+                                      : '',
+                                  element.dataset.folderItem
+                                      ? `item=${element.dataset.folderItem}`
+                                      : '',
+                                  element.dataset.lk
+                                      ? `lk=${element.dataset.lk}`
+                                      : '',
+                              ]
+                                  .filter(Boolean)
+                                  .join(' ')
+                            : element.nodeName
+                    throw new Error(
+                        `${label}: ${identity} at stack index ${stack.indexOf(element)} paints above folder-tile-${i}`
+                    )
+                }
+            }
+        }
+        const checkFolderFrame = (label: string, expected?: OBox) => {
+            checkOcclusion(label)
+            const surfaces = surfaceLayers()
+            if (surfaces.length === 0)
+                throw new Error(`${label}: shared folder surface is absent`)
+            for (const surface of surfaces) {
+                if (expected) {
+                    surfaceWorst = Math.max(
+                        surfaceWorst,
+                        expectAt(surface, expected, `${label}: surface`)
+                    )
+                }
+                radiusWorst = Math.max(
+                    radiusWorst,
+                    expectRadiusBetween(surface, 20, 28, `${label}: surface`)
+                )
+                for (const child of surface.querySelectorAll<HTMLElement>(
+                    '*'
+                )) {
+                    const participant =
+                        child.dataset.layoutId !== undefined ||
+                        child.dataset.lkMode !== undefined
+                    if (
+                        participant ||
+                        child.offsetWidth === 0 ||
+                        child.offsetHeight === 0
+                    )
+                        continue
+                    const box = child.getBoundingClientRect()
+                    const authored = child.offsetWidth / child.offsetHeight
+                    const drawn = box.width / box.height
+                    const error = Math.abs(drawn - authored)
+                    aspectWorst = Math.max(aspectWorst, error)
+                    if (error > 0.001) {
+                        throw new Error(
+                            `${label}: non-participating descendant aspect ratio changed by ${error}`
+                        )
+                    }
+                }
+            }
+            for (let i = 0; i < E3.shared; i++) {
+                for (const tile of view.host.querySelectorAll<HTMLElement>(
+                    `[data-layout-id="folder-tile-${i}"]`
+                )) {
+                    radiusWorst = Math.max(
+                        radiusWorst,
+                        expectRadiusBetween(tile, 6, 16, `${label}: tile ${i}`)
+                    )
+                }
+            }
+        }
+        const departure = (element: HTMLElement) => ({
+            element,
+            lastOpacity: opacity(element),
+            gone: false,
+        })
+        const checkDeparture = (
+            state: ReturnType<typeof departure>,
+            label: string
+        ) => {
+            if (state.element.isConnected) {
+                state.lastOpacity = opacity(state.element)
+                return
+            }
+            if (state.gone) return
+            const inline = Number.parseFloat(state.element.style.opacity)
+            const beforeUnmount = Number.isFinite(inline)
+                ? inline
+                : state.lastOpacity
+            expectClose(
+                beforeUnmount,
+                0,
+                1e-6,
+                `${label}: departing surface opacity before unmount`
+            )
+            state.gone = true
+        }
+        const expectDeparted = (
+            state: ReturnType<typeof departure>,
+            label: string
+        ) => {
+            checkDeparture(state, label)
+            if (!state.gone)
+                throw new Error(`${label}: departing surface never unmounted`)
+        }
         const at = (i: number, open: boolean): OBox => {
             const t = folderTile(i, open)
             return offset(stage, { x: t.x, y: t.y, w: t.size, h: t.size })
@@ -403,7 +619,48 @@ export async function E3Folder(): Promise<string> {
                 `${label} ${starts.map((s) => s.toFixed(3)).join('/')}`
             )
         }
+        const closedSurface = q(view.host, '[data-folder="closed"]')
+        const closedSurfaceBox = pageBox(closedSurface)
+        expectClose(
+            closedSurfaceBox.w,
+            E3.closed.size,
+            0.01,
+            'closed surface width'
+        )
+        expectClose(
+            closedSurfaceBox.h,
+            E3.closed.size,
+            0.01,
+            'closed surface height'
+        )
+        const leavingClosed = departure(closedSurface)
         await view.render(app(true))
+        const openSurface = q(view.host, '[data-folder="open"]')
+        const firstFrameProblems: string[] = []
+        try {
+            checkOcclusion('open frame 0')
+        } catch (error) {
+            firstFrameProblems.push(
+                `occlusion: ${error instanceof Error ? error.message : String(error)}`
+            )
+        }
+        try {
+            expectAt(openSurface, closedSurfaceBox, 'surface first frame')
+        } catch (error) {
+            firstFrameProblems.push(
+                `surface morph: ${error instanceof Error ? error.message : String(error)}`
+            )
+        }
+        if (firstFrameProblems.length > 0) {
+            throw new Error(firstFrameProblems.join('; '))
+        }
+        const openingSurface = spec(
+            closedSurfaceBox,
+            surfaceLayoutBox(openSurface),
+            motion
+        )
+        checkFolderFrame('open frame 0', closedSurfaceBox)
+        checkDeparture(leavingClosed, 'open frame 0')
         // the first frame: the shared tiles are where the folder showed them
         let first = 0
         const shared = tiles('open')
@@ -419,6 +676,8 @@ export async function E3Folder(): Promise<string> {
         )
         let worst = 0
         await enter('open', (t) => {
+            checkFolderFrame(`open t=${t}`, expectedBox(openingSurface, t))
+            checkDeparture(leavingClosed, 'open')
             shared.forEach((tile, i) => {
                 worst = Math.max(
                     worst,
@@ -430,6 +689,7 @@ export async function E3Folder(): Promise<string> {
                 )
             })
         })
+        expectDeparted(leavingClosed, 'open')
         let final = 0
         tiles('open').forEach((tile, i) => {
             final = Math.max(
@@ -437,23 +697,104 @@ export async function E3Folder(): Promise<string> {
                 expectAt(tile, at(i, true), `tile ${i} final`, 0.01)
             )
         })
-        // close, then reopen at 500 ms: nothing jumps at either commit
+
+        // A complete close has the same shared surface handoff in reverse.
         let jumps = 0
-        const before = picture(view.host, '[data-layout-id]', key)
+        const openAtRest = q(view.host, '[data-folder="open"]')
+        const openSurfaceBox = pageBox(openAtRest)
+        const leavingOpen = departure(openAtRest)
+        let before = picture(view.host, '[data-layout-id]', key)
         await view.render(app(false))
         jumps = Math.max(jumps, expectUnmoved(before, 'close'))
-        await frames(mc, 31, () => undefined)
+        const closedAfter = q(view.host, '[data-folder="closed"]')
+        expectAt(closedAfter, openSurfaceBox, 'surface close first frame')
+        const closingSurface = spec(
+            openSurfaceBox,
+            surfaceLayoutBox(closedAfter),
+            motion
+        )
+        checkFolderFrame('close frame 0', openSurfaceBox)
+        checkDeparture(leavingOpen, 'close frame 0')
+        await framesUntilDone(
+            mc,
+            90,
+            (t) => {
+                checkFolderFrame(`close t=${t}`, expectedBox(closingSurface, t))
+                checkDeparture(leavingOpen, 'close')
+            },
+            done,
+            'close'
+        )
+        expectDeparted(leavingOpen, 'close')
+
+        // Re-open from rest so the original item-enter acceptance still runs
+        // in both directions before the interruption case below.
+        const closedAtRest = q(view.host, '[data-folder="closed"]')
+        const closedAgainBox = pageBox(closedAtRest)
+        const leavingClosedAgain = departure(closedAtRest)
+        await view.render(app(true))
+        const openAgain = q(view.host, '[data-folder="open"]')
+        expectAt(openAgain, closedAgainBox, 'surface reopen first frame')
+        const reopeningSurface = spec(
+            closedAgainBox,
+            surfaceLayoutBox(openAgain),
+            motion
+        )
+        checkFolderFrame('reopen frame 0', closedAgainBox)
+        checkDeparture(leavingClosedAgain, 'reopen after close frame 0')
+        await enter('reopen after close', (t) => {
+            checkFolderFrame(
+                `reopen after close t=${t}`,
+                expectedBox(reopeningSurface, t)
+            )
+            checkDeparture(leavingClosedAgain, 'reopen after close')
+        })
+        expectDeparted(leavingClosedAgain, 'reopen after close')
+
+        // Close, then reopen at 500 ms: nothing jumps at either commit, and
+        // the shared layers are never hidden by a foreign element.
+        const openBeforeMid = q(view.host, '[data-folder="open"]')
+        const openBeforeMidBox = pageBox(openBeforeMid)
+        const leavingOpenMid = departure(openBeforeMid)
+        before = picture(view.host, '[data-layout-id]', key)
+        await view.render(app(false))
+        jumps = Math.max(jumps, expectUnmoved(before, 'close for reopen'))
+        const closedMid = q(view.host, '[data-folder="closed"]')
+        const midClosingSurface = spec(
+            openBeforeMidBox,
+            surfaceLayoutBox(closedMid),
+            motion
+        )
+        checkFolderFrame('mid-close frame 0', openBeforeMidBox)
+        checkDeparture(leavingOpenMid, 'mid-close frame 0')
+        await frames(mc, 31, (t) => {
+            checkFolderFrame(
+                `mid-close t=${t}`,
+                expectedBox(midClosingSurface, t)
+            )
+            checkDeparture(leavingOpenMid, 'mid-close')
+        })
         const mid = picture(view.host, '[data-layout-id]', key)
+        const leavingClosedMid = departure(closedMid)
         await view.render(app(true))
         jumps = Math.max(jumps, expectUnmoved(mid, 'reopen at 500 ms'))
-        await enter('reopen')
+        checkFolderFrame('reopen-mid-close frame 0')
+        checkDeparture(leavingOpenMid, 'mid-close interrupted at 500 ms')
+        checkDeparture(leavingClosedMid, 'reopen-mid-close frame 0')
+        await enter('reopen', (t) => {
+            checkFolderFrame(`reopen-mid-close t=${t}`)
+            checkDeparture(leavingOpenMid, 'mid-close interrupted at 500 ms')
+            checkDeparture(leavingClosedMid, 'reopen-mid-close')
+        })
+        checkDeparture(leavingOpenMid, 'mid-close interrupted at 500 ms')
+        expectDeparted(leavingClosedMid, 'reopen-mid-close')
         tiles('open').forEach((tile, i) => {
             final = Math.max(
                 final,
                 expectAt(tile, at(i, true), `tile ${i} after reopen`, 0.01)
             )
         })
-        return `tiles: first frame within ${first.toFixed(4)} px, on the oracle every frame (max ${worst.toFixed(4)} px), final within ${final.toFixed(4)} px; items: first frame at scale 0.2 on the folder origin within ${enterFirst.toFixed(4)} px, on their enter paths every frame (max ${enterPath.toFixed(4)} px), starts ${allStarts.join('; ')} s, stagger within ${stagger.toFixed(3)} s; open and reopen settle; close/reopen without a jump (${jumps.toFixed(4)} px)`
+        return `tiles: first frame within ${first.toFixed(4)} px, on the oracle every frame (max ${worst.toFixed(4)} px), final within ${final.toFixed(4)} px; surface on the oracle within ${surfaceWorst.toFixed(4)} px, no foreign occluder, radius bounds within ${radiusWorst.toFixed(4)} px, descendant aspect ratio within ${aspectWorst.toFixed(6)}; items: first frame at scale 0.2 on the folder origin within ${enterFirst.toFixed(4)} px, on their enter paths every frame (max ${enterPath.toFixed(4)} px), starts ${allStarts.join('; ')} s, stagger within ${stagger.toFixed(3)} s; open and reopen settle; close/reopen without a jump (${jumps.toFixed(4)} px)`
     } finally {
         view.dispose()
     }
@@ -805,6 +1146,7 @@ export async function Gallery(): Promise<string> {
         const box = (i: number, layout: 'grid' | 'list') =>
             offset(stage, galleryTile(i, layout))
         let worst = 0
+        let radiusWorst = 0
         for (const [from, to] of [
             ['grid', 'list'],
             ['list', 'grid'],
@@ -845,16 +1187,36 @@ export async function Gallery(): Promise<string> {
             })
         }
         const k = 5
+        const checkGalleryRadius = (
+            tileRadius: number,
+            label: string
+        ): void => {
+            for (const layer of view.host.querySelectorAll<HTMLElement>(
+                `[data-layout-id="gallery-${k}"]`
+            )) {
+                radiusWorst = Math.max(
+                    radiusWorst,
+                    expectRadiusBetween(
+                        layer,
+                        tileRadius,
+                        20,
+                        `${label}: gallery-${k}`
+                    )
+                )
+            }
+        }
         const from = pageBox(tile(k))
         await view.render(app('grid', k))
         const detail = q(view.host, `[data-gallery-detail="${k}"]`)
         expectAt(detail, from, 'detail first frame')
+        checkGalleryRadius(12, 'grid detail first frame')
         const opening = spec(from, layoutBox(detail), motion)
         let detailWorst = 0
         await framesUntilDone(
             mc,
             90,
             (t) => {
+                checkGalleryRadius(12, `grid detail opening t=${t}`)
                 detailWorst = Math.max(
                     detailWorst,
                     expectAt(
@@ -878,11 +1240,13 @@ export async function Gallery(): Promise<string> {
         await view.render(app('grid'))
         const back = tile(k)
         expectAt(back, open, 'tile return first frame')
+        checkGalleryRadius(12, 'grid detail return first frame')
         const returning = spec(open, layoutBox(back), motion)
         await framesUntilDone(
             mc,
             120,
             (t) => {
+                checkGalleryRadius(12, `grid detail return t=${t}`)
                 detailWorst = Math.max(
                     detailWorst,
                     expectAt(
@@ -896,7 +1260,43 @@ export async function Gallery(): Promise<string> {
             'detail return'
         )
         expectAt(tile(k), from, 'tile back', 0.01)
-        return `16 tiles grid ↔ list on the oracle every frame (max ${worst.toFixed(4)} px); detail from tile ${k} and back on the oracle every frame (max ${detailWorst.toFixed(4)} px)`
+
+        // Repeat the shared handoff from the rectangular list tile so the
+        // 8 px authored tile radius is covered as well as the grid's 12 px.
+        await view.render(app('list'))
+        await framesUntilDone(
+            mc,
+            90,
+            () => undefined,
+            () => settled(view.host) && mc.clock.size === 0,
+            'grid to list before detail radius'
+        )
+        const listFrom = pageBox(tile(k))
+        await view.render(app('list', k))
+        const listDetail = q(view.host, `[data-gallery-detail="${k}"]`)
+        expectAt(listDetail, listFrom, 'list detail first frame')
+        checkGalleryRadius(8, 'list detail first frame')
+        await framesUntilDone(
+            mc,
+            90,
+            (t) => checkGalleryRadius(8, `list detail opening t=${t}`),
+            () => settled(view.host) && mc.clock.size === 0,
+            'list detail opening'
+        )
+        const listOpen = pageBox(listDetail)
+        await view.render(app('list'))
+        const listBack = tile(k)
+        expectAt(listBack, listOpen, 'list tile return first frame')
+        checkGalleryRadius(8, 'list detail return first frame')
+        await framesUntilDone(
+            mc,
+            120,
+            (t) => checkGalleryRadius(8, `list detail return t=${t}`),
+            () => settled(view.host) && mc.clock.size === 0,
+            'list detail return'
+        )
+        expectAt(listBack, listFrom, 'list tile back', 0.01)
+        return `16 tiles grid ↔ list on the oracle every frame (max ${worst.toFixed(4)} px); detail from tile ${k} and back on the oracle every frame (max ${detailWorst.toFixed(4)} px); grid/list detail radius bounds within ${radiusWorst.toFixed(4)} px`
     } finally {
         view.dispose()
     }

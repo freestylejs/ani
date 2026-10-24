@@ -17,6 +17,7 @@ import {
 import {
     AnimatePresence,
     LayoutGroup,
+    type LayoutGroupProps,
     useLayout,
     usePresence,
 } from '@freestylejs/ani-react/layout'
@@ -337,15 +338,21 @@ export function folderTile(
 }
 
 function SharedTile({ i, open }: { i: number; open: boolean }) {
-    const ref = useLayout<HTMLDivElement>({ layoutId: `folder-tile-${i}` })
+    const ref = useLayout<HTMLDivElement>({
+        layoutId: `folder-tile-${i}`,
+        radius: true,
+    })
     const size = open ? E3.open.tile : E3.closed.tile
     return (
         <div
             ref={ref}
             data-layout-id={`folder-tile-${i}`}
+            data-lk={`folder-tile-${i}`}
             style={{
                 width: size,
                 height: size,
+                position: 'relative',
+                zIndex: 1,
                 borderRadius: open ? 16 : 6,
                 background: TILE_COLORS[i % TILE_COLORS.length],
             }}
@@ -377,10 +384,16 @@ function FolderItem({ i, clock }: { i: number; clock: Clock | undefined }) {
         },
         presenceClock(clock)
     )
+    const ref = useLayout<HTMLDivElement>({
+        layout: 'position',
+        ref: presence.ref,
+    })
     return (
         <div
-            ref={presence.ref}
+            ref={ref}
             data-folder-item={k}
+            data-lk={`folder-item-${k}`}
+            data-lk-mode="position"
             style={{
                 ...presence.style,
                 width: at.size,
@@ -396,11 +409,18 @@ function FolderItem({ i, clock }: { i: number; clock: Clock | undefined }) {
 
 function Folder({ clock }: { clock: Clock | undefined }) {
     const presence = usePresence(HOLD, presenceClock(clock))
+    const ref = useLayout<HTMLDivElement>({
+        layoutId: 'folder',
+        radius: true,
+        ref: presence.ref,
+    })
     const { size, padding, gap } = E3.closed
     return (
         <div
-            ref={presence.ref}
+            ref={ref}
             data-folder="closed"
+            data-layout-id="folder"
+            data-lk="folder-surface"
             style={{
                 ...presence.style,
                 display: 'grid',
@@ -423,11 +443,18 @@ function Folder({ clock }: { clock: Clock | undefined }) {
 
 function FolderPanel({ clock }: { clock: Clock | undefined }) {
     const presence = usePresence(HOLD, presenceClock(clock))
+    const ref = useLayout<HTMLDivElement>({
+        layoutId: 'folder',
+        radius: true,
+        ref: presence.ref,
+    })
     const { padding, tile, gap, columns } = E3.open
     return (
         <div
-            ref={presence.ref}
+            ref={ref}
             data-folder="open"
+            data-layout-id="folder"
+            data-lk="folder-surface"
             style={{
                 ...presence.style,
                 display: 'grid',
@@ -457,10 +484,15 @@ function FolderPanel({ clock }: { clock: Clock | undefined }) {
 export function FolderFixture({
     open,
     clock,
-}: FixtureProps & { open: boolean }) {
+    onSnap,
+}: FixtureProps & {
+    open: boolean
+    onSnap?: LayoutGroupProps['onSnap']
+}) {
     return (
         <LayoutGroup
             clock={clock}
+            onSnap={onSnap}
             motion={{ duration: DURATION, timing: SPRING }}
         >
             <Stage name="folder" width={340} height={260}>
@@ -786,13 +818,17 @@ function GalleryTile({
     view: 'grid' | 'list'
     onOpen?: ((i: number) => void) | undefined
 }) {
-    const ref = useLayout<HTMLButtonElement>({ layoutId: `gallery-${i}` })
+    const ref = useLayout<HTMLButtonElement>({
+        layoutId: `gallery-${i}`,
+        radius: true,
+    })
     const box = galleryTile(i, view)
     return (
         <button
             ref={ref}
             type="button"
             data-layout-id={`gallery-${i}`}
+            data-lk={`gallery-${i}`}
             data-tile={i}
             onClick={() => onOpen?.(i)}
             style={{
@@ -812,12 +848,14 @@ function GalleryDetail({ i, clock }: { i: number; clock: Clock | undefined }) {
     const presence = usePresence(HOLD, presenceClock(clock))
     const ref = useLayout<HTMLDivElement>({
         layoutId: `gallery-${i}`,
+        radius: true,
         ref: presence.ref,
     })
     return (
         <div
             ref={ref}
             data-layout-id={`gallery-${i}`}
+            data-lk={`gallery-${i}`}
             data-gallery-detail={i}
             style={{
                 ...presence.style,
@@ -838,10 +876,12 @@ export function GalleryFixture({
     detail,
     clock,
     onOpen,
+    onSnap,
 }: FixtureProps & {
     view: 'grid' | 'list'
     detail: number | null
     onOpen?: ((i: number) => void) | undefined
+    onSnap?: LayoutGroupProps['onSnap']
 }) {
     const { tile, gap, columns } = GALLERY.grid
     const list = GALLERY.list
@@ -856,6 +896,7 @@ export function GalleryFixture({
     return (
         <LayoutGroup
             clock={clock}
+            onSnap={onSnap}
             motion={{ duration: DURATION, timing: SPRING }}
         >
             <Stage

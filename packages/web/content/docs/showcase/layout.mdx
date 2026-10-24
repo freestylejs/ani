@@ -37,12 +37,13 @@ motion, including changes made mid-flight.
   label and icon; the label keeps its glyph size with `layout: 'position'`.
 - **Family-style dialog.** A bottom sheet whose height follows its step, with steps swapped
   under `popLayout`.
-- **E3 iOS Folder.** Four tiles move from the folder icon into the open folder through shared
-  `layoutId`s; the other items enter from the folder at a fifth of their size.
+- **E3 iOS Folder.** The closed icon and open panel are one shared, radius-aware surface; four
+  nested shared tiles morph inside it, while the five staggered items are position-only layout
+  participants so the surface can scale without stretching them.
 - **E4 App Store.** A card opens into a detail view through three nested ids: surface, image
   and title.
-- **Gallery.** Sixteen tiles switch between a grid and a list; any tile opens a detail view
-  that shares its `layoutId`.
+- **Gallery.** Sixteen radius-aware tiles switch between a grid and a list; any tile opens a
+  detail view that shares its `layoutId` and keeps the handoff's corners stable.
 
 **Precision**
 
