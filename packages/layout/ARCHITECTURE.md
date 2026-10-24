@@ -633,7 +633,9 @@ Regression tests: late start after a 120 ms block (≤ 6 %), unrelated re-render
 trajectory), crossfade only on a real handoff with no pop to 1, velocity ≤ 5 % across a
 retarget under jank, reduced motion (zero writes, zero subscribers, mid-run toggle), showcase
 honesty, fractional boxes under scale within 0.05 px in every engine (`layout:REFBOX`, the
-WebKit reference box). Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
+WebKit reference box). The Motion-parity examples (`showcase` module) are checked the same
+way: every frame on the oracle from rest, and through mid-flight changes on a chain of oracle
+tracks that carries each track's velocity. Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
 per property, byte-identical final inline style, no subscription left.
 
 Cost gates: reads per commit = 2N rects plus one computed-style read per active node; zero
