@@ -67,7 +67,7 @@ export function TodoList({ initial }: { initial: Todo[] }) {
 | `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant; see [Anchored children](#anchored-children). |
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
 | `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps to its new box instead of animating (not reported). Use it to animate only for the changes you name. |
-| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. |
+| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId` that both set it, the corners blend from one radius to the other. |
 | `motion` | — | `{ duration, delay, timing }` in seconds; see [Motion](#motion). |
 | `ref` | — | Another ref that receives the element. |
 
@@ -139,7 +139,8 @@ Elements with the same `layoutId` are one element to the user. When the element 
 
 -   **Lead.** Per id, the newest mounted element that is not exiting leads. Two mounted, non-exiting elements with one id print a development warning; the newest leads and the other animates on its own.
 -   **Handoff.** The new lead starts from the drawn box of the element it replaces: the live box of an element exiting under presence, or the box of a removed element, kept for `retain` seconds (default 1).
--   **Crossfade.** When the previous element is exiting under [presence](#presence) and the box moved, both draw at the lead's box while the lead fades in and the exiting element fades out, on the lead's curve. The exiting element stays invisible until presence removes it, and presence waits for the crossfade to end. `layoutCrossfade: false` on either element turns it off.
+-   **Crossfade.** When the previous element is exiting under [presence](#presence) and the box moved, both draw at the lead's box while the lead fades in and the exiting element fades out, on the lead's curve. The lead fades in over the first half and the exiting element fades out only after it, so the pair never shows what is behind it. The exiting element stays invisible until presence removes it, and presence waits for the crossfade to end. `layoutCrossfade: false` on either element turns it off.
+-   **Corners.** When both elements set `radius: true`, the corners blend from the radius the old element showed to the new element's own, on the same curve, so the shape changes with the box.
 -   **Opacity.** If the exiting element's presence animates `opacity` itself, there is no crossfade and a development warning is printed. Animate opacity on a child instead.
 
 A card that opens into a detail view, with the surface, the image and the title as three nested ids:

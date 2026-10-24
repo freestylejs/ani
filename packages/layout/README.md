@@ -62,7 +62,7 @@ const run = await group.flush() // read the boxes after it and start the run
 | `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant. |
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
 | `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps instead of animating. |
-| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. |
+| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId` that both set it, the corners blend from one radius to the other. |
 | `motion` | — | `{ duration, delay, timing }`, merged field by field over the group's `motion`. |
 
 `LayoutMotion`: `duration` in seconds (default `0.35`); `delay` in seconds (default `0`, applies
