@@ -566,7 +566,7 @@ group API.
 | Reduced motion `{ maxDuration }` | Delay + duration scaled down to fit, in `motion.ts` only | — |
 | Reduced motion `'ignore'` | Plays in full | — |
 | `dispose()` or unmount | Tracks cancelled, inline styles restored, presence holds released | status `'disposed'` |
-| A moving participant unregistered, or gone from the document at a flush | Its track is cancelled and its styles restored at once (pending writes for it dropped); the rest of its run goes on; a run left with no node resolves `'disposed'`; the scope unsubscribes when nothing else moves | status `'disposed'` (a run of only such nodes) |
+| A moving participant unregistered, or gone from the document at a flush | Its track is cancelled and its styles restored at once (pending writes for it dropped); the rest of its run goes on; a run left with no node resolves `'disposed'`; the scope unsubscribes when nothing else moves, once the task's microtasks have run (before any frame), so a handoff flushed in the same task keeps a continuous subscription (§4.3) | status `'disposed'` (a run of only such nodes) |
 | Reduced motion toggled during a run | The next flush applies the current mode to running tracks: `'jump'` finishes them, `maxDuration` re-plans them clamped from their drawn box and velocity | — |
 | `finish()` | Every track jumps to A and settles | status `'ended'` |
 | No DOM (SSR), first client commit | No-op; hydration never animates | — |

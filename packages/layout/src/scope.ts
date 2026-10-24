@@ -1915,15 +1915,22 @@ export function createLayoutGroup(
                     commitWrites()
                     rebuildFrame()
                     stats.tracks = countTracks()
-                    if (
-                        !frame.some(
-                            (node) =>
-                                node.p.drive !== null &&
-                                node.p.drive.kind !== 'held'
-                        )
-                    ) {
-                        realizer.stop()
-                    }
+                    // unsubscribe once this task's microtasks have run, unless
+                    // a flush among them (a handoff) started a run: stopping
+                    // now would make that flush re-subscribe, and the clock
+                    // gives a joining subscriber only the time since it
+                    // joined, a held or short first frame (§4.3)
+                    queueMicrotask(() => {
+                        if (
+                            !frame.some(
+                                (node) =>
+                                    node.p.drive !== null &&
+                                    node.p.drive.kind !== 'held'
+                            )
+                        ) {
+                            realizer.stop()
+                        }
+                    })
                 }
             }
         },

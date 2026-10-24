@@ -349,6 +349,93 @@ export async function ORIGINPCT(): Promise<string> {
     }
 }
 
+/**
+ * A moving lead removed and its successor flushed 10 ms into the frame
+ * interval, as a browser does: the scope's subscription continues, so the
+ * next frame (16 ms after the last) advances the new lead by a full frame
+ * (§4.3). Stopping at the removal re-subscribed it at the flush, and the
+ * clock gave a re-joined subscriber only the time since it joined (a held or
+ * short frame). A removal that leaves nothing moving still unsubscribes
+ * before the next frame, once the task's microtasks have run.
+ */
+export async function JOIN(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 1, timing: linear } })
+    try {
+        const o = pageBox(h.root)
+        const a = node(
+            h.root,
+            'left: 0; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        const removeA = h.group.add(a, { layoutId: 'x' })
+        h.group.capture()
+        await h.group.flush()
+        h.group.capture()
+        a.style.left = '200px'
+        void h.group.flush()
+        await frames(h.mc, 13, noCheck)
+        const left = pageBox(a)
+        // the handoff happens between two frames
+        h.mc.advance(10)
+        removeA()
+        a.remove()
+        const b = node(
+            h.root,
+            'left: 400px; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(b, { layoutId: 'x' })
+        const done = report(h.group.flush())
+        const track = spec(left, at(o, 400, 0, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 200, y: 0, w: 0, h: 0 },
+        })
+        h.mc.frame(FRAME_MS - 10)
+        const first = expectAt(
+            b,
+            expectedBox(track, DT),
+            'the first frame after the handoff advances a full frame',
+            0.01
+        )
+        let worst = first
+        await frames(
+            h.mc,
+            80,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectAt(
+                        b,
+                        expectedBox(track, 2 * DT + elapsed),
+                        `t=${elapsed}`
+                    )
+                )
+            },
+            () => done.value !== null
+        )
+        expectEqual(done.value!.status, 'ended', 'handoff run')
+        // the only mover removed: unsubscribed at the next frame
+        const c = node(
+            h.root,
+            'left: 0; top: 100px; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        const removeC = h.group.add(c)
+        h.group.capture()
+        c.style.left = '200px'
+        void h.group.flush()
+        await frames(h.mc, 3, noCheck)
+        expectEqual(h.mc.clock.size, 1, 'subscribed while it moves')
+        removeC()
+        expectEqual(c.style.translate, '', 'restored at the removal')
+        await settleMicrotasks()
+        expectEqual(h.mc.pending, 0, 'no frame requested')
+        expectEqual(h.mc.clock.size, 0, 'unsubscribed before the next frame')
+        return `handoff 10 ms into a frame: the next frame advances ${(expectedBox(track, DT).x - left.x).toFixed(2)} px (a full frame), the run on the oracle within ${worst.toFixed(4)} px; a lone removal unsubscribes before the next frame`
+    } finally {
+        h.dispose()
+    }
+}
+
 /** Nested depth 3, mixed modes and timings, a delay: every node on its own visual track. */
 export async function T2(): Promise<string> {
     const h = harness()
@@ -2088,7 +2175,13 @@ export async function J23(): Promise<string> {
             const done = report(h.group.flush())
             await frames(h.mc, 5, noCheck)
             remove()
-            expectEqual(h.mc.clock.size, 0, 'unsubscribed at once')
+            // before any frame: at the end of this task's microtasks (§4.3)
+            await settleMicrotasks()
+            expectEqual(
+                h.mc.clock.size,
+                0,
+                'unsubscribed before the next frame'
+            )
             expectEqual(h.group.stats.tracks, 0, 'no track left')
             expectEqual(e.style.cssText, style, 'restored at once')
             await settleMicrotasks()
@@ -2177,7 +2270,7 @@ export async function J23(): Promise<string> {
             h.dispose()
         }
     }
-    return `sole removal: 'disposed', unsubscribed and restored at once; partial removal: the rest on the oracle (${worst.toFixed(4)} px), 'ended' once; disconnected: 'disposed'`
+    return `sole removal: 'disposed', restored at once, unsubscribed before the next frame; partial removal: the rest on the oracle (${worst.toFixed(4)} px), 'ended' once; disconnected: 'disposed'`
 }
 
 /** J-025: B of a driven node is what the user saw through a presence layer changed since the last flush. */
@@ -3395,6 +3488,7 @@ export async function OPTIONS(): Promise<string> {
         expectEqual(h.group.stats.tracks, 0, 'removed')
         expectEqual(a.style.cssText.includes('translate'), false, 'restored')
         removeSecond()
+        await settleMicrotasks()
         expectEqual(h.mc.clock.size, 0, 'no subscriber left')
     } finally {
         h.dispose()
