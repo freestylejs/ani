@@ -390,7 +390,12 @@ its velocity.
 
 ### 5.7 Radius
 
-`radius: true` reads the four corner radii of A once per flush and writes each corner as
+`radius: true` uses the author's four corner radii of A at every flush. When layout does not
+own a corner, its computed value is read with the node's other computed values. While layout
+owns it and its inline declaration still holds layout's own `!important` write, the authored
+length captured when ownership began is reused instead; percentages and `calc()` keep their
+length components and resolve against the current CSS box. A plain inline author replacement
+recognised by §6 becomes the source from that flush onward. Each corner is written as
 `r·A_w/V_w` / `r·A_h/V_h` (elliptical radii), so corners keep their on-screen radius under
 any total scale. The declaration is restored on settle.
 
@@ -419,7 +424,7 @@ adds no DOM read.
 | `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes (with its Typed OM value where the browser snaps the reference box, §5.3). |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
-| `border-radius` | Layout when `radius: true` | Saved when layout first owns it (also when `radius` turns on mid-run), restored on settle; turning `radius` off gives the corners back at once. |
+| `border-radius` | Layout when `radius: true` | Saved when layout first owns it (also when `radius` turns on mid-run), then frozen as the authored radius while the inline declaration still holds layout's own `!important` write (§5.7). An author's plain inline replacement is recognised by priority like `translate`/`scale`, used from the next flush and restored on settle. Turning `radius` off gives the corners back at once. |
 | `rotate`, skew, non-translation ancestor transforms | Author | The subtree snaps with `'unsupported'`. |
 
 Presence and layout meet only inside the package: `createPresence` registers its element,

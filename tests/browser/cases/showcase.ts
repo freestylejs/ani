@@ -122,6 +122,30 @@ function origin(element: HTMLElement): [number, number] {
     return [x! / box.width, y! / box.height]
 }
 
+const DIALOG_RADIUS_PROPERTIES = [
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+] as const
+
+function dialogRadiusError(element: HTMLElement, expected: number): number {
+    const drawn = pageBox(element)
+    const style = getComputedStyle(element)
+    let worst = 0
+    for (const property of DIALOG_RADIUS_PROPERTIES) {
+        const parts = style.getPropertyValue(property).split(' ')
+        const x = Number.parseFloat(parts[0]!)
+        const y = Number.parseFloat(parts[1] ?? parts[0]!)
+        worst = Math.max(
+            worst,
+            Math.abs((x * drawn.w) / element.offsetWidth - expected),
+            Math.abs((y * drawn.h) / element.offsetHeight - expected)
+        )
+    }
+    return worst
+}
+
 interface Context {
     readonly view: Mounted
     readonly mc: ManualClock
@@ -926,6 +950,37 @@ export async function Dialog(): Promise<string> {
     })
     try {
         await ctx.view.render(app(0))
+
+        await ctx.view.render(app(1))
+        const radiusTolerance = navigator.userAgent.includes('Firefox')
+            ? 0.03
+            : 0.01
+        let radiusWorst = 0
+        const checkRadii = (label: string) => {
+            const sheet = q(ctx.view.host, '[data-dialog]')
+            const action = q(ctx.view.host, '[data-dialog-action]')
+            radiusWorst = Math.max(
+                radiusWorst,
+                dialogRadiusError(sheet, 28),
+                dialogRadiusError(action, 22)
+            )
+            if (radiusWorst > radiusTolerance) {
+                throw new Error(
+                    `${label}: dialog radius off by ${radiusWorst.toFixed(4)} px`
+                )
+            }
+        }
+        checkRadii('next-step flush')
+        const radiusFrames = await frames(
+            ctx.mc,
+            200,
+            (t) => checkRadii(`next-step t=${t.toFixed(3)}`),
+            () => idle(ctx)
+        )
+        if (!idle(ctx)) throw new Error('next-step radius run did not settle')
+
+        await ctx.view.render(app(0))
+        await rest(ctx, 'dialog radius reset')
         const runs = [
             await oracleRun(ctx, render(1), '0→1'),
             await oracleRun(ctx, render(2), '1→2'),
@@ -939,7 +994,7 @@ export async function Dialog(): Promise<string> {
         await rest(ctx, 'steps')
         await expectFresh(ctx, app(1), 'dialog')
         expectNoSnap(ctx)
-        return summary('family dialog', runs, chainText(c))
+        return `${summary('family dialog', runs, chainText(c))}; next-step sheet/button radii over ${radiusFrames} frames within ${radiusWorst.toFixed(4)} px`
     } finally {
         ctx.view.dispose()
     }
