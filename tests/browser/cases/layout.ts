@@ -24,6 +24,8 @@ import {
 } from '@freestylejs/ani-layout'
 import {
     expectedBox,
+    expectedCrossfade,
+    expectedRadiusBlend,
     maxDiff,
     type OBox,
     type OTrackSpec,
@@ -48,11 +50,120 @@ function pageBox(element: Element): OBox {
     return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }
 }
 
+const CORNER_PROPERTIES = [
+    'border-top-left-radius',
+    'border-top-right-radius',
+    'border-bottom-right-radius',
+    'border-bottom-left-radius',
+] as const
+
+function radiusTokens(value: string): string[] {
+    const tokens: string[] = []
+    let depth = 0
+    let current = ''
+    for (const ch of value) {
+        if (ch === '(') depth += 1
+        if (ch === ')') depth -= 1
+        if (ch === ' ' && depth === 0) {
+            if (current) tokens.push(current)
+            current = ''
+        } else {
+            current += ch
+        }
+    }
+    if (current) tokens.push(current)
+    return tokens
+}
+
+function radiusLength(token: string, basis: number): number {
+    const direct = Number.parseFloat(token)
+    if (!token.startsWith('calc(')) {
+        return token.endsWith('%') ? (direct * basis) / 100 : direct
+    }
+    let sign = 1
+    let value = 0
+    for (const part of token.slice(5, -1).trim().split(/\s+/)) {
+        if (part === '+' || part === '-') {
+            sign = part === '+' ? 1 : -1
+            continue
+        }
+        const n = Number.parseFloat(part)
+        value += sign * (part.endsWith('%') ? (n * basis) / 100 : n)
+        sign = 1
+    }
+    return value
+}
+
+function drawnRadiusError(
+    element: HTMLElement,
+    expected: readonly number[]
+): number {
+    const drawn = pageBox(element)
+    const style = getComputedStyle(element)
+    let worst = 0
+    CORNER_PROPERTIES.forEach((property, corner) => {
+        const parts = radiusTokens(style.getPropertyValue(property))
+        const x = radiusLength(parts[0]!, element.offsetWidth)
+        const y = radiusLength(parts[1] ?? parts[0]!, element.offsetHeight)
+        worst = Math.max(
+            worst,
+            Math.abs(
+                (x * drawn.w) / element.offsetWidth - expected[corner * 2]!
+            ),
+            Math.abs(
+                (y * drawn.h) / element.offsetHeight - expected[corner * 2 + 1]!
+            )
+        )
+    })
+    return worst
+}
+
 function node(parent: HTMLElement, css: string): HTMLElement {
     const element = document.createElement('div')
     element.style.cssText = `position: absolute; box-sizing: border-box; ${css}`
     parent.append(element)
     return element
+}
+
+/** The four computed corner declarations converted back to on-screen x/y radii. */
+function screenRadii(element: HTMLElement): number[] {
+    const style = getComputedStyle(element)
+    const box = pageBox(element)
+    const sx = box.w / element.offsetWidth
+    const sy = box.h / element.offsetHeight
+    return [
+        style.borderTopLeftRadius,
+        style.borderTopRightRadius,
+        style.borderBottomRightRadius,
+        style.borderBottomLeftRadius,
+    ].flatMap((value) => {
+        const parts = value.split(' ')
+        const resolve = (part: string, size: number) =>
+            Number.parseFloat(part) * (part.includes('%') ? size / 100 : 1)
+        const x = resolve(parts[0]!, element.offsetWidth)
+        const y = resolve(parts[1] ?? parts[0]!, element.offsetHeight)
+        return [x * sx, y * sy]
+    })
+}
+
+function expectRadii(
+    element: HTMLElement,
+    want: readonly number[],
+    label: string
+): number {
+    const got = screenRadii(element)
+    const tolerance = navigator.userAgent.includes('Firefox') ? 0.03 : 0.01
+    let worst = 0
+    for (let i = 0; i < want.length; i++) {
+        const error = Math.abs(got[i]! - want[i]!)
+        worst = Math.max(worst, error)
+        if (error > tolerance) {
+            throw new Error(
+                `${label}: radius ${i} is ${got[i]}, expected ${want[i]} (error ${error})`
+            )
+        }
+    }
+    return worst
 }
 
 interface Harness {
@@ -706,7 +817,8 @@ export async function T5(): Promise<string> {
             duration: 0.3,
             timing: linear,
         })
-        let sumError = 0
+        let opacityError = 0
+        let coverageError = 0
         let worst = 0
         await frames(
             h.mc,
@@ -721,16 +833,26 @@ export async function T5(): Promise<string> {
                     worst,
                     expectAt(card, want, `follower t=${elapsed}`)
                 )
-                const a = Number(getComputedStyle(detail).opacity)
-                const b = Number(getComputedStyle(card).opacity)
-                sumError = Math.max(sumError, Math.abs(a + b - 1))
+                const leadOpacity = Number(getComputedStyle(detail).opacity)
+                const followerOpacity = Number(getComputedStyle(card).opacity)
+                const fade = expectedCrossfade(linear, elapsed / 0.3)
+                opacityError = Math.max(
+                    opacityError,
+                    Math.abs(leadOpacity - fade.lead),
+                    Math.abs(followerOpacity - fade.follower)
+                )
+                const coverage = 1 - (1 - leadOpacity) * (1 - followerOpacity)
+                coverageError = Math.max(coverageError, Math.abs(coverage - 1))
                 now = elapsed
             },
             () => done.value !== null && exited !== null
         )
         expectEqual(done.value!.status, 'ended', 'status')
         expectEqual(exited, 'exited', 'presence exit')
-        if (sumError > 0.05) throw new Error(`opacity sum off by ${sumError}`)
+        if (opacityError > 1e-5)
+            throw new Error(`crossfade opacity off by ${opacityError}`)
+        if (coverageError > 1e-5)
+            throw new Error(`crossfade coverage off by ${coverageError}`)
         if (!(exitedAt >= 0.3 - 1e-9)) {
             throw new Error(
                 `presence released at ${exitedAt} s, before the 0.3 s crossfade ended`
@@ -739,7 +861,7 @@ export async function T5(): Promise<string> {
         expectEqual(card.style.opacity, '0', 'follower held invisible')
         expectEqual(detail.style.cssText, detailStyle, 'lead restored')
         presence.dispose()
-        return `opacity sum within ${sumError.toFixed(4)}; max error ${worst.toFixed(4)} px; release at ${exitedAt.toFixed(3)} s`
+        return `crossfade opacity within ${opacityError.toFixed(6)}, coverage within ${coverageError.toFixed(6)}; max error ${worst.toFixed(4)} px; release at ${exitedAt.toFixed(3)} s`
     } finally {
         h.dispose()
     }
@@ -1037,6 +1159,420 @@ export async function T9(): Promise<string> {
 }
 
 /* ───────────────────────── snaps ───────────────────────── */
+
+function radiusTolerance(): number {
+    return navigator.userAgent.includes('Firefox') ? 0.03 : 0.01
+}
+
+function expectDrawnRadius(
+    element: HTMLElement,
+    expected: readonly number[],
+    label: string
+): number {
+    const error = drawnRadiusError(element, expected)
+    if (error > radiusTolerance()) {
+        throw new Error(
+            `${label}: on-screen radius off by ${error.toFixed(4)} px`
+        )
+    }
+    return error
+}
+
+type RadiusFlushKind = 'noop' | 'sibling' | 'retarget'
+
+async function radiusMultiFlush(kind: RadiusFlushKind): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.5, timing: linear } })
+    try {
+        const element = node(
+            h.root,
+            'left: 0; top: 0; width: 100px; height: 50px; border-radius: 12px; transform-origin: 0 0;'
+        )
+        const sibling = node(
+            h.root,
+            'left: 400px; top: 0; width: 40px; height: 40px; transform-origin: 0 0;'
+        )
+        h.add(element, { radius: true })
+        h.add(sibling)
+        h.group.capture()
+        element.style.left = '200px'
+        element.style.width = '200px'
+        element.style.height = '100px'
+        const expectedStyle = document.createElement('div')
+        expectedStyle.style.cssText = element.style.cssText
+        void h.group.flush()
+
+        const radii = [12, 12, 12, 12, 12, 12, 12, 12] as const
+        let worst = 0
+        await frames(h.mc, 9, () => {
+            worst = Math.max(
+                worst,
+                expectDrawnRadius(element, radii, `${kind}: first run`)
+            )
+        })
+
+        if (kind === 'noop') {
+            void h.group.flush()
+        } else {
+            h.group.capture()
+            if (kind === 'sibling') {
+                sibling.style.left = '520px'
+            } else {
+                element.style.left = '320px'
+                element.style.width = '260px'
+                element.style.height = '130px'
+                expectedStyle.style.left = '320px'
+                expectedStyle.style.width = '260px'
+                expectedStyle.style.height = '130px'
+            }
+            void h.group.flush()
+        }
+
+        const count = await frames(
+            h.mc,
+            100,
+            () => {
+                worst = Math.max(
+                    worst,
+                    expectDrawnRadius(element, radii, `${kind}: after flush`)
+                )
+            },
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(h.mc.clock.size, 0, `${kind}: settled`)
+        expectEqual(
+            element.style.cssText,
+            expectedStyle.style.cssText,
+            `${kind}: byte-identical inline style`
+        )
+        return `${kind}: ${count + 9} frames, radius within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P1: a no-op second flush must keep the author's radius. */
+export async function RADIUS_NOOP_FLUSH(): Promise<string> {
+    return radiusMultiFlush('noop')
+}
+
+/** P1: an unrelated sibling commit must not change a moving node's radius source. */
+export async function RADIUS_SIBLING_FLUSH(): Promise<string> {
+    return radiusMultiFlush('sibling')
+}
+
+/** P1: a real retarget must keep the author's radius while carrying motion. */
+export async function RADIUS_RETARGET_FLUSH(): Promise<string> {
+    return radiusMultiFlush('retarget')
+}
+
+/** P1: percentage, elliptical, per-corner, calc and stylesheet radii survive a multi-flush run. */
+export async function RADIUS_VALUE_KINDS(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.5, timing: linear } })
+    try {
+        const sheet = document.createElement('style')
+        sheet.textContent = `
+            .p1-radius-class {
+                border-top-left-radius: 15% 10%;
+                border-top-right-radius: 12px 6px;
+                border-bottom-right-radius: 10% 20%;
+                border-bottom-left-radius: 7px 9px;
+            }
+        `
+        h.root.append(sheet)
+
+        const percent = node(
+            h.root,
+            'left: 0; top: 0; width: 100px; height: 50px; border-radius: 25% / 10%; transform-origin: 0 0;'
+        )
+        const elliptical = node(
+            h.root,
+            'left: 0; top: 120px; width: 100px; height: 50px; border-radius: 24px / 12px; transform-origin: 0 0;'
+        )
+        const corners = node(
+            h.root,
+            'left: 0; top: 240px; width: 100px; height: 50px; border-radius: 4px 8px 12px 16px / 6px 10px 14px 18px; transform-origin: 0 0;'
+        )
+        const fromClass = node(
+            h.root,
+            'left: 0; top: 360px; width: 100px; height: 50px; transform-origin: 0 0;'
+        )
+        fromClass.className = 'p1-radius-class'
+
+        const cases = [
+            {
+                element: percent,
+                expected: [50, 10, 50, 10, 50, 10, 50, 10],
+                label: 'percent',
+            },
+            {
+                element: elliptical,
+                expected: [24, 12, 24, 12, 24, 12, 24, 12],
+                label: 'elliptical',
+            },
+            {
+                element: corners,
+                expected: [4, 6, 8, 10, 12, 14, 16, 18],
+                label: 'four corners',
+            },
+            {
+                element: fromClass,
+                expected: [30, 10, 12, 6, 20, 20, 7, 9],
+                label: 'stylesheet',
+            },
+        ] as const
+        for (const entry of cases) h.add(entry.element, { radius: true })
+
+        h.group.capture()
+        cases.forEach(({ element }, i) => {
+            element.style.left = '260px'
+            element.style.width = '200px'
+            element.style.height = '100px'
+            element.style.top = `${i * 140}px`
+        })
+        const authored = cases.map(({ element }) => element.style.cssText)
+        void h.group.flush()
+
+        let worst = 0
+        const check = (phase: string) => {
+            for (const entry of cases) {
+                worst = Math.max(
+                    worst,
+                    expectDrawnRadius(
+                        entry.element,
+                        entry.expected,
+                        `${entry.label}: ${phase}`
+                    )
+                )
+            }
+        }
+        await frames(h.mc, 9, () => check('first run'))
+        void h.group.flush()
+        const count = await frames(
+            h.mc,
+            100,
+            () => check('second flush'),
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(h.mc.clock.size, 0, 'value kinds settled')
+        cases.forEach(({ element }, i) => {
+            expectEqual(
+                element.style.cssText,
+                authored[i],
+                `${cases[i]!.label}: byte-identical inline style`
+            )
+        })
+
+        const calc = node(
+            h.root,
+            'left: 0; top: 560px; width: 100px; height: 50px; border-radius: calc(10% + 2px) / calc(20% + 1px); transform-origin: 0 0;'
+        )
+        h.add(calc, { radius: true })
+        h.group.capture()
+        calc.style.left = '260px'
+        calc.style.width = '200px'
+        calc.style.height = '100px'
+        const calcStyle = calc.style.cssText
+        void h.group.flush()
+        const calcRadius = [22, 21, 22, 21, 22, 21, 22, 21] as const
+        let calcWorst = 0
+        await frames(h.mc, 9, () => {
+            calcWorst = Math.max(
+                calcWorst,
+                expectDrawnRadius(calc, calcRadius, 'calc first run')
+            )
+        })
+        void h.group.flush()
+        const calcCount = await frames(
+            h.mc,
+            100,
+            () => {
+                calcWorst = Math.max(
+                    calcWorst,
+                    expectDrawnRadius(calc, calcRadius, 'calc second flush')
+                )
+            },
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(
+            calc.style.cssText,
+            calcStyle,
+            'calc byte-identical inline style'
+        )
+        return `${count + 9} frames × ${cases.length} value kinds within ${worst.toFixed(4)} px; calc ${calcCount + 9} frames within ${calcWorst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P1: a plain inline author replacement becomes the radius source at the next flush. */
+export async function RADIUS_AUTHOR_CHANGE(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.5, timing: linear } })
+    try {
+        const element = node(
+            h.root,
+            'left: 0; top: 0; width: 100px; height: 50px; border-radius: 12px / 8px; transform-origin: 0 0;'
+        )
+        h.add(element, { radius: true })
+        h.group.capture()
+        element.style.left = '200px'
+        element.style.width = '200px'
+        element.style.height = '100px'
+        const expectedStyle = document.createElement('div')
+        expectedStyle.style.cssText = element.style.cssText
+        void h.group.flush()
+
+        const before = [12, 8, 12, 8, 12, 8, 12, 8] as const
+        let worst = 0
+        await frames(h.mc, 9, () => {
+            worst = Math.max(
+                worst,
+                expectDrawnRadius(element, before, 'before author change')
+            )
+        })
+
+        h.group.capture()
+        element.style.setProperty('border-top-left-radius', '30px 10px')
+        expectedStyle.style.setProperty('border-top-left-radius', '30px 10px')
+        void h.group.flush()
+
+        const after = [30, 10, 12, 8, 12, 8, 12, 8] as const
+        worst = Math.max(
+            worst,
+            expectDrawnRadius(element, after, 'author change at flush')
+        )
+        const count = await frames(
+            h.mc,
+            100,
+            () => {
+                worst = Math.max(
+                    worst,
+                    expectDrawnRadius(element, after, 'after author change')
+                )
+            },
+            () => h.mc.clock.size === 0
+        )
+        expectEqual(h.mc.clock.size, 0, 'author change settled')
+        expectEqual(
+            element.style.cssText,
+            expectedStyle.style.cssText,
+            'author change restored byte-identically'
+        )
+        return `${count + 9} frames, new authored corner from next flush; radius within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P1/P2: reversal keeps the authored sources while continuing from the shared drawn radius. */
+export async function RADIUS_CROSSFADE_REVERSAL(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    const h = harness({ motion: { duration, timing: linear } })
+    const presenceMotion = {
+        present: { translateY: 0 },
+        exit: ani({
+            to: { translateY: 0 },
+            duration: 0.1,
+            timing: linear,
+        }),
+    } as const
+    try {
+        const card = node(
+            h.root,
+            'left: 20px; top: 20px; width: 100px; height: 60px; border-radius: 12px; transform-origin: 0 0;'
+        )
+        const cardAuthoredStyle = card.style.cssText
+        h.add(card, { layoutId: 'p1-radius', radius: true })
+        const cardPresence = createPresence(card, presenceMotion, {
+            clock: h.mc.clock,
+        })
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void cardPresence.exit()
+        const detail = node(
+            h.root,
+            'left: 300px; top: 120px; width: 320px; height: 180px; border-radius: 28px; transform-origin: 0 0;'
+        )
+        h.add(detail, { layoutId: 'p1-radius', radius: true })
+        const detailPresence = createPresence(detail, presenceMotion, {
+            clock: h.mc.clock,
+        })
+        void h.group.flush()
+
+        const cardRadius = [12, 12, 12, 12, 12, 12, 12, 12] as const
+        const detailRadius = [28, 28, 28, 28, 28, 28, 28, 28] as const
+        let worst = 0
+        let firstElapsed = 0
+        const check = (want: readonly number[], phase: string, both = true) => {
+            worst = Math.max(worst, expectRadii(card, want, `card ${phase}`))
+            if (both)
+                worst = Math.max(
+                    worst,
+                    expectRadii(detail, want, `detail ${phase}`)
+                )
+        }
+        check(cardRadius, 'first fade t=0')
+        await frames(h.mc, 9, (elapsed) => {
+            firstElapsed = elapsed
+            check(
+                expectedRadiusBlend(
+                    cardRadius,
+                    detailRadius,
+                    linear,
+                    elapsed / duration
+                ),
+                `first fade t=${elapsed.toFixed(3)}`
+            )
+        })
+        const reversedFrom = expectedRadiusBlend(
+            cardRadius,
+            detailRadius,
+            linear,
+            firstElapsed / duration
+        )
+
+        h.group.capture()
+        void cardPresence.enter()
+        void detailPresence.exit()
+        const reversalStyle = document.createElement('div')
+        reversalStyle.style.cssText = cardAuthoredStyle
+        reversalStyle.style.transform = card.style.transform
+        const reversed = report(h.group.flush())
+        check(reversedFrom, 'reversal flush')
+        const count = await frames(
+            h.mc,
+            80,
+            (elapsed) =>
+                check(
+                    expectedRadiusBlend(
+                        reversedFrom,
+                        cardRadius,
+                        linear,
+                        (elapsed + DT) / duration
+                    ),
+                    `reversed fade t=${elapsed.toFixed(3)}`
+                ),
+            () => reversed.value !== null
+        )
+        expectEqual(reversed.value?.status, 'ended', 'reversed crossfade')
+        check(cardRadius, 'settled lead', false)
+        expectEqual(
+            card.style.cssText,
+            reversalStyle.style.cssText,
+            'reversed lead restores byte-identical authored style'
+        )
+        cardPresence.dispose()
+        detailPresence.dispose()
+        return `${count + 9} frames across reversal, shared radius continuous and lead settles byte-identically within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
 
 /** Every snap reason the planner and the reads produce, with onSnap and the development warnings. */
 export async function T10(): Promise<string> {
@@ -1551,7 +2087,7 @@ async function defaultTimingLeg(): Promise<string> {
     }
 }
 
-/** J-017: a lead retargeted mid-crossfade keeps its fade; the pair stays complementary. */
+/** J-017: a lead retargeted mid-crossfade keeps the asymmetric fade timeline. */
 export async function J17(): Promise<string> {
     const linear = timing.linear()
     const h = harness({ motion: { duration: 1, timing: linear } })
@@ -1590,18 +2126,25 @@ export async function J17(): Promise<string> {
         const authoredStyle = detail.style.cssText
         h.add(detail, { layoutId: 'hero' })
         const first = report(h.group.flush())
-        let sum = 0
-        const sumOff = () =>
-            Math.abs(
-                Number(getComputedStyle(detail).opacity) +
-                    Number(getComputedStyle(card).opacity) -
-                    1
+        let opacityError = 0
+        let coverageError = 0
+        const checkFade = () => {
+            const leadOpacity = Number(getComputedStyle(detail).opacity)
+            const followerOpacity = Number(getComputedStyle(card).opacity)
+            const want = expectedCrossfade(linear, fadeTime)
+            opacityError = Math.max(
+                opacityError,
+                Math.abs(leadOpacity - want.lead),
+                Math.abs(followerOpacity - want.follower)
             )
+            const coverage = 1 - (1 - leadOpacity) * (1 - followerOpacity)
+            coverageError = Math.max(coverageError, Math.abs(coverage - 1))
+        }
         let frame = 0
         await frames(h.mc, 31, () => {
             fadeTime = frame * DT
             frame += 1
-            sum = Math.max(sum, sumOff())
+            checkFade()
         })
         const drawn = expectedBox(
             spec(cardBox, at(o, 200, 0, 400, 80), {
@@ -1610,11 +2153,27 @@ export async function J17(): Promise<string> {
             }),
             30 * DT
         )
+        const beforeRetarget = [
+            Number(getComputedStyle(detail).opacity),
+            Number(getComputedStyle(card).opacity),
+        ] as const
         h.group.capture()
         detail.style.left = '400px'
         const detailStyle = authoredStyle.replace('left: 200px', 'left: 400px')
         const second = report(h.group.flush())
         expectAt(detail, drawn, 'lead continuous at the retarget')
+        expectClose(
+            Number(getComputedStyle(detail).opacity),
+            beforeRetarget[0],
+            1e-6,
+            'lead opacity continuous at retarget'
+        )
+        expectClose(
+            Number(getComputedStyle(card).opacity),
+            beforeRetarget[1],
+            1e-6,
+            'follower opacity continuous at retarget'
+        )
         await settleMicrotasks()
         expectEqual(first.value?.status, 'interrupted', 'first run')
         const track = spec(drawn, at(o, 400, 0, 400, 80), {
@@ -1646,14 +2205,17 @@ export async function J17(): Promise<string> {
                         )
                     )
                 }
-                sum = Math.max(sum, sumOff())
+                checkFade()
                 if (restoredAt < 0 && detail.style.opacity === '') {
                     restoredAt = fadeTime
                 }
             },
             () => second.value !== null
         )
-        if (sum > 0.01) throw new Error(`opacity sum off by ${sum}`)
+        if (opacityError > 1e-5)
+            throw new Error(`crossfade opacity off by ${opacityError}`)
+        if (coverageError > 1e-5)
+            throw new Error(`crossfade coverage off by ${coverageError}`)
         if (!(exitedAt >= 1 - 1e-9 && exitedAt <= 1 + 2 * DT)) {
             throw new Error(
                 `presence released at ${exitedAt} s, not at the fade's end (1 s)`
@@ -1668,7 +2230,7 @@ export async function J17(): Promise<string> {
         expectEqual(card.style.opacity, '0', 'follower held invisible')
         expectEqual(detail.style.cssText, detailStyle, 'lead restored')
         presence.dispose()
-        return `retarget at 0.48 s: opacity sum within ${sum.toFixed(4)}; pair on the oracle within ${worst.toFixed(4)} px; release and lead opacity at ${exitedAt.toFixed(3)} s`
+        return `retarget at 0.48 s: asymmetric opacity within ${opacityError.toFixed(6)}, coverage within ${coverageError.toFixed(6)}; pair on the oracle within ${worst.toFixed(4)} px; release and lead opacity at ${exitedAt.toFixed(3)} s`
     } finally {
         h.dispose()
     }
@@ -2806,13 +3368,12 @@ async function crossfadeUnderLayer(
                         expectAt(old, box, `follower τ=${tau.toFixed(3)}`)
                     )
                     const fo = Number(getComputedStyle(old).opacity)
-                    if (tau < 1) {
-                        fade = Math.max(
-                            fade,
-                            Math.abs(lo - tau),
-                            Math.abs(fo - (1 - tau))
-                        )
-                    }
+                    const wantFade = expectedCrossfade(linear, tau)
+                    fade = Math.max(
+                        fade,
+                        Math.abs(lo - wantFade.lead),
+                        Math.abs(fo - wantFade.follower)
+                    )
                 }
                 if (restoredAt < 0 && lead.style.opacity === '') {
                     restoredAt = tau
@@ -2982,13 +3543,12 @@ async function crossfadeAcrossLayer(
                         expectAt(old, box, `follower τ=${tau.toFixed(3)}`)
                     )
                     const fo = Number(getComputedStyle(old).opacity)
-                    if (tau < 1) {
-                        fade = Math.max(
-                            fade,
-                            Math.abs(lo - tau),
-                            Math.abs(fo - (1 - tau))
-                        )
-                    }
+                    const wantFade = expectedCrossfade(linear, tau)
+                    fade = Math.max(
+                        fade,
+                        Math.abs(lo - wantFade.lead),
+                        Math.abs(fo - wantFade.follower)
+                    )
                 }
                 if (restoredAt < 0 && lead.style.opacity === '') {
                     restoredAt = tau
@@ -3611,5 +4171,607 @@ export async function CAUSES(): Promise<string> {
     } finally {
         warnings.restore()
         sheet.remove()
+    }
+}
+
+/** P2-C: a live shared-id crossfade blends one on-screen elliptical radius on both layers. */
+export async function P2RadiusCrossfade(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    const h = harness({ motion: { duration, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        h.add(old, { layoutId: 'radius-live', radius: true })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void presence.exit()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 8px / 24px;'
+        )
+        h.add(lead, { layoutId: 'radius-live', radius: true })
+        const run = report(h.group.flush())
+        const from = [20, 12, 20, 12, 20, 12, 20, 12]
+        const to = [8, 24, 8, 24, 8, 24, 8, 24]
+        let worst = 0
+        const check = (elapsed: number) => {
+            const want = expectedRadiusBlend(
+                from,
+                to,
+                linear,
+                elapsed / duration
+            )
+            worst = Math.max(
+                worst,
+                expectRadii(lead, want, `lead radius t=${elapsed.toFixed(3)}`),
+                expectRadii(
+                    old,
+                    want,
+                    `follower radius t=${elapsed.toFixed(3)}`
+                )
+            )
+        }
+        check(0)
+        await frames(h.mc, 40, check, () => run.value !== null)
+        expectEqual(run.value?.status, 'ended', 'radius crossfade run')
+        presence.dispose()
+        return `live shared radius 20×12 → 8×24 on both layers within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P2-C amendment 3: a style-only resting radius change is captured at B for retained and live handoffs. */
+export async function P2RadiusCaptureAccuracy(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    let worst = 0
+
+    {
+        const h = harness({ motion: { duration, timing: linear }, retain: 1 })
+        try {
+            const old = node(
+                h.root,
+                'left: 20px; top: 20px; width: 100px; height: 60px; border-radius: 14px / 10px;'
+            )
+            const removeOld = h.group.add(old, {
+                layoutId: 'radius-capture-retained',
+                radius: true,
+            })
+            await h.group.flush()
+            old.style.borderRadius = '30px / 18px'
+            h.group.capture()
+            removeOld()
+            old.remove()
+            const lead = node(
+                h.root,
+                'left: 300px; top: 100px; width: 220px; height: 120px; border-radius: 8px / 24px;'
+            )
+            h.add(lead, {
+                layoutId: 'radius-capture-retained',
+                radius: true,
+            })
+            const run = report(h.group.flush())
+            const from = [30, 18, 30, 18, 30, 18, 30, 18]
+            const to = [8, 24, 8, 24, 8, 24, 8, 24]
+            worst = Math.max(
+                worst,
+                expectRadii(lead, from, 'retained style-only handoff t=0')
+            )
+            await frames(
+                h.mc,
+                40,
+                (elapsed) => {
+                    worst = Math.max(
+                        worst,
+                        expectRadii(
+                            lead,
+                            expectedRadiusBlend(
+                                from,
+                                to,
+                                linear,
+                                elapsed / duration
+                            ),
+                            `retained style-only handoff t=${elapsed.toFixed(3)}`
+                        )
+                    )
+                },
+                () => run.value !== null
+            )
+            expectEqual(run.value?.status, 'ended', 'retained capture run')
+        } finally {
+            h.dispose()
+        }
+    }
+
+    {
+        const h = harness({ motion: { duration, timing: linear } })
+        try {
+            const old = node(
+                h.root,
+                'left: 20px; top: 20px; width: 100px; height: 60px; border-radius: 12px / 9px;'
+            )
+            h.add(old, {
+                layoutId: 'radius-capture-live',
+                radius: true,
+            })
+            const presence = createPresence(
+                old,
+                {
+                    present: { translateY: 0 },
+                    exit: ani({
+                        to: { translateY: 0 },
+                        duration: 0.1,
+                        timing: linear,
+                    }),
+                },
+                { clock: h.mc.clock }
+            )
+            await h.group.flush()
+            old.style.borderRadius = '28px / 16px'
+            h.group.capture()
+            void presence.exit()
+            const lead = node(
+                h.root,
+                'left: 320px; top: 120px; width: 240px; height: 140px; border-radius: 6px / 22px;'
+            )
+            h.add(lead, { layoutId: 'radius-capture-live', radius: true })
+            const run = report(h.group.flush())
+            const from = [28, 16, 28, 16, 28, 16, 28, 16]
+            const to = [6, 22, 6, 22, 6, 22, 6, 22]
+            worst = Math.max(
+                worst,
+                expectRadii(lead, from, 'live lead style-only handoff t=0'),
+                expectRadii(old, from, 'live follower style-only handoff t=0')
+            )
+            await frames(
+                h.mc,
+                40,
+                (elapsed) => {
+                    const want = expectedRadiusBlend(
+                        from,
+                        to,
+                        linear,
+                        elapsed / duration
+                    )
+                    worst = Math.max(
+                        worst,
+                        expectRadii(
+                            lead,
+                            want,
+                            `live lead style-only handoff t=${elapsed.toFixed(3)}`
+                        ),
+                        expectRadii(
+                            old,
+                            want,
+                            `live follower style-only handoff t=${elapsed.toFixed(3)}`
+                        )
+                    )
+                },
+                () => run.value !== null
+            )
+            expectEqual(run.value?.status, 'ended', 'live capture run')
+            presence.dispose()
+        } finally {
+            h.dispose()
+        }
+    }
+
+    return `style-only resting radius captured for retained and live handoffs within ${worst.toFixed(4)} px`
+}
+
+/** P2-C read discipline: capture snapshots shared radii; flush and frame reads stay base. */
+export async function P2RadiusReadDiscipline(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.2, timing: linear } })
+    const probe = probeDom()
+    try {
+        const shared = [
+            node(
+                h.root,
+                'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+            ),
+            node(
+                h.root,
+                'left: 120px; top: 20px; width: 80px; height: 40px; border-radius: 14px;'
+            ),
+            node(
+                h.root,
+                'left: 220px; top: 20px; width: 80px; height: 40px; border-radius: 25%;'
+            ),
+        ]
+        const sibling = node(
+            h.root,
+            'left: 20px; top: 120px; width: 80px; height: 40px;'
+        )
+        const plain = node(
+            h.root,
+            'left: 120px; top: 120px; width: 80px; height: 40px; border-radius: 9px;'
+        )
+        shared.forEach((element, i) =>
+            h.add(element, {
+                layoutId: `radius-read-discipline-${i}`,
+                radius: true,
+            })
+        )
+        h.add(sibling)
+        h.add(plain, { radius: true })
+
+        probe.log.length = 0
+        probe.on = true
+        h.group.capture()
+        probe.on = false
+        const captureLog = [...probe.log]
+        const captureRects = captureLog.filter(
+            (entry) => entry === 'rect'
+        ).length
+        const captureStyles = captureLog.filter(
+            (entry) => entry === 'style'
+        ).length
+        expectEqual(captureRects, 5, 'capture rect reads')
+        expectEqual(captureStyles, 3, 'capture shared-radius style reads')
+        expectEqual(
+            captureLog.slice(0, 5).every((entry) => entry === 'rect') &&
+                captureLog.slice(5).every((entry) => entry === 'style'),
+            true,
+            `capture rects before styles (${captureLog.join(',')})`
+        )
+
+        probe.log.length = 0
+        probe.on = true
+        await h.group.flush()
+        probe.on = false
+        const noopRects = probe.log.filter((entry) => entry === 'rect').length
+        const noopStyles = probe.log.filter((entry) => entry === 'style').length
+        expectEqual(noopRects, 5, 'no-op flush rect reads match base')
+        expectEqual(noopStyles, 0, 'no-op flush style reads match base')
+
+        h.group.capture()
+        sibling.style.left = '160px'
+        probe.log.length = 0
+        probe.on = true
+        const second = report(h.group.flush())
+        probe.on = false
+        const rects = probe.log.filter((entry) => entry === 'rect').length
+        const styles = probe.log.filter((entry) => entry === 'style').length
+        expectEqual(rects, 5, 'flush rect reads match base')
+        expectEqual(styles, 1, 'flush computed-style reads match base')
+
+        probe.log.length = 0
+        probe.on = true
+        for (let i = 0; i < 5; i++) h.mc.frame(FRAME_MS)
+        probe.on = false
+        const frameReads = probe.log.filter((entry) => entry !== 'write').length
+        expectEqual(frameReads, 0, 'steady frame reads')
+
+        h.group.finish()
+        await settleMicrotasks()
+        expectEqual(second.value?.status, 'ended', 'sibling run')
+        return `capture ${captureRects} rects then ${captureStyles} styles; no-op flush ${noopRects} rects/${noopStyles} styles; unrelated flush ${rects} rects/${styles} style; frames ${frameReads} reads`
+    } finally {
+        probe.restore()
+        h.dispose()
+    }
+}
+
+/** P2-B: reduced-motion jump mid-crossfade finishes the fade endpoint before presence unmount. */
+export async function P2ReducedMidCrossfade(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.4, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 80px; opacity: 1;'
+        )
+        const oldStyle = old.style.cssText
+        const removeOld = h.group.add(old, { layoutId: 'reduced-crossfade' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        let exited: string | null = null
+        void presence.exit().then((value) => {
+            exited = value
+        })
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 240px; height: 180px; opacity: 1;'
+        )
+        const leadStyle = lead.style.cssText
+        h.add(lead, { layoutId: 'reduced-crossfade' })
+        const running = report(h.group.flush())
+        // Let presence's own 0.1 s exit finish while layout still holds it
+        // for the longer 0.4 s crossfade.
+        await frames(h.mc, 10, noCheck)
+
+        h.mc.setReducedMotion(true)
+        h.group.capture()
+        const reduced = await h.group.flush()
+        await settleMicrotasks()
+
+        expectEqual(reduced.status, 'reduced', 'reduced flush status')
+        expectEqual(running.value?.status, 'ended', 'active crossfade finished')
+        expectEqual(old.isConnected, true, 'follower still connected')
+        expectEqual(old.style.opacity, '0', 'follower held at opacity 0')
+        expectEqual(
+            getComputedStyle(old).opacity,
+            '0',
+            'follower computed opacity 0'
+        )
+        expectEqual(lead.style.cssText, leadStyle, 'lead restored')
+        expectEqual(exited, 'exited', 'presence released')
+        expectEqual(h.mc.clock.size, 0, 'no clock subscription')
+
+        const expectedUnmountStyle = document.createElement('div')
+        expectedUnmountStyle.style.cssText = oldStyle
+        expectedUnmountStyle.style.transform = old.style.transform
+        removeOld()
+        old.remove()
+        await settleMicrotasks()
+        expectEqual(
+            old.style.cssText,
+            expectedUnmountStyle.style.cssText,
+            'follower unmount restores byte-identically'
+        )
+        expectEqual(h.mc.clock.size, 0, 'unmount leaves no clock subscription')
+        presence.dispose()
+        return 'reduced mid-crossfade holds follower at 0, releases presence, restores byte-identically on unmount'
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P2-C: a removed lead carries its resolved percentage/elliptical radius through retain. */
+export async function P2RadiusRetained(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    const h = harness({ motion: { duration, timing: linear }, retain: 1 })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 50% / 25%;'
+        )
+        const removeOld = h.group.add(old, {
+            layoutId: 'radius-retained',
+            radius: true,
+        })
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        removeOld()
+        old.remove()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 10% / 50%;'
+        )
+        h.add(lead, { layoutId: 'radius-retained', radius: true })
+        const run = report(h.group.flush())
+        const from = [40, 10, 40, 10, 40, 10, 40, 10]
+        const to = [20, 50, 20, 50, 20, 50, 20, 50]
+        let worst = 0
+        const check = (elapsed: number) => {
+            const want = expectedRadiusBlend(
+                from,
+                to,
+                linear,
+                elapsed / duration
+            )
+            worst = Math.max(
+                worst,
+                expectRadii(
+                    lead,
+                    want,
+                    `retained radius t=${elapsed.toFixed(3)}`
+                )
+            )
+        }
+        check(0)
+        await frames(h.mc, 40, check, () => run.value !== null)
+        expectEqual(run.value?.status, 'ended', 'retained radius run')
+        return `retained %/elliptical radius 40×10 → 20×50 within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P2-C: radius blending is opt-in on both sides of a shared handoff. */
+export async function P2RadiusOptOut(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.4, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        h.add(old, { layoutId: 'radius-optout' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void presence.exit()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 8px / 24px;'
+        )
+        h.add(lead, { layoutId: 'radius-optout', radius: true })
+        const run = report(h.group.flush())
+        const own = [8, 24, 8, 24, 8, 24, 8, 24]
+        let worst = expectRadii(lead, own, 'opt-out radius t=0')
+        await frames(
+            h.mc,
+            40,
+            (elapsed) => {
+                worst = Math.max(
+                    worst,
+                    expectRadii(
+                        lead,
+                        own,
+                        `opt-out radius t=${elapsed.toFixed(3)}`
+                    )
+                )
+            },
+            () => run.value !== null
+        )
+        expectEqual(run.value?.status, 'ended', 'opt-out radius run')
+        presence.dispose()
+        return `one-sided radius:true does not blend; lead stays 8×24 within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** P2-C: retargeting the lead mid-blend restarts radius mixing from the radius currently drawn. */
+export async function P2RadiusRetarget(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    const h = harness({ motion: { duration, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        h.add(old, { layoutId: 'radius-retarget', radius: true })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void presence.exit()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 8px / 24px;'
+        )
+        const leadAuthoredStyle = lead.style.cssText
+        h.add(lead, { layoutId: 'radius-retarget', radius: true })
+        const first = report(h.group.flush())
+        const from = [20, 12, 20, 12, 20, 12, 20, 12]
+        const to = [8, 24, 8, 24, 8, 24, 8, 24]
+        let worst = 0
+        let firstElapsed = 0
+        const check = (
+            want: readonly number[],
+            phase: string,
+            follower = true
+        ) => {
+            worst = Math.max(worst, expectRadii(lead, want, `lead ${phase}`))
+            if (follower)
+                worst = Math.max(
+                    worst,
+                    expectRadii(old, want, `follower ${phase}`)
+                )
+        }
+        check(from, 'first blend t=0')
+        await frames(h.mc, 9, (elapsed) => {
+            firstElapsed = elapsed
+            check(
+                expectedRadiusBlend(from, to, linear, elapsed / duration),
+                `first blend t=${elapsed.toFixed(3)}`
+            )
+        })
+        const retargetFrom = expectedRadiusBlend(
+            from,
+            to,
+            linear,
+            firstElapsed / duration
+        )
+
+        h.group.capture()
+        lead.style.left = '420px'
+        lead.style.width = '240px'
+        lead.style.height = '120px'
+        const settledStyle = document.createElement('div')
+        settledStyle.style.cssText = leadAuthoredStyle
+        settledStyle.style.left = '420px'
+        settledStyle.style.width = '240px'
+        settledStyle.style.height = '120px'
+        const second = report(h.group.flush())
+        check(retargetFrom, 'retarget flush')
+        await settleMicrotasks()
+        expectEqual(first.value?.status, 'interrupted', 'first radius run')
+
+        const fadeRemaining = duration - firstElapsed
+        const count = await frames(
+            h.mc,
+            80,
+            (elapsed) => {
+                const sinceRetarget = elapsed + DT
+                const want = expectedRadiusBlend(
+                    retargetFrom,
+                    to,
+                    linear,
+                    sinceRetarget / duration
+                )
+                check(
+                    want,
+                    `retarget blend t=${elapsed.toFixed(3)}`,
+                    sinceRetarget <= fadeRemaining + 1e-9
+                )
+            },
+            () => second.value !== null
+        )
+        expectEqual(second.value?.status, 'ended', 'retarget radius run')
+        check(to, 'settled lead', false)
+        expectEqual(
+            lead.style.cssText,
+            settledStyle.style.cssText,
+            'retargeted lead restores byte-identical authored style'
+        )
+        presence.dispose()
+        return `${count + 9} frames across retarget, shared radius continuous and lead settles byte-identically within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
     }
 }

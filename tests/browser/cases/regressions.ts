@@ -252,7 +252,8 @@ export async function Crossfade(): Promise<string> {
         if (frame.length !== 2) return
         pairs += 1
         // the pair is complementary while both are drawn
-        expectClose(frame[0]! + frame[1]!, 1, 1e-3, `opacity sum frame ${f}`)
+        const coverage = 1 - (1 - frame[0]!) * (1 - frame[1]!)
+        expectClose(coverage, 1, 1e-3, `opacity coverage frame ${f}`)
     })
     return `${control.boxes.length} frames (${pairs} crossfading) re-rendered from above every third frame: boxes within ${worst.toFixed(4)} px, opacities within ${fade.toExponential(1)}; opacity 1 and unowned after`
 }

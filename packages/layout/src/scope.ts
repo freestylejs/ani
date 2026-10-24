@@ -17,6 +17,7 @@ import {
     pageScroll,
     put,
     RADIUS_PROPERTIES,
+    readRadius,
     resolveLen,
     type Saved,
     save,
@@ -73,8 +74,10 @@ import {
     drawnBoxes,
     drawnVelocities,
     type Fade,
+    fadeOpacity,
     type Layer,
     movingParents,
+    type RadiusBlend,
     type Solved,
     type SolveNode,
     solve,
@@ -151,6 +154,8 @@ interface Geometry {
     readonly authored: Authored
     /** Corner radii at A in px (x/y per corner), when `radius: true`. */
     readonly radius: readonly number[] | null
+    /** Authored radius lengths whose percentages resolve against this flush's CSS box. */
+    readonly radiusSource: readonly Len[] | null
     /** The presence part of the computed `transform` at this flush. */
     readonly matrix: Measured['matrix']
     readonly unsupported: string | null
@@ -158,7 +163,7 @@ interface Geometry {
 
 interface DriveFade {
     readonly role: 'lead' | 'follower'
-    /** The lead's weight at the start (§5.6): 0, or the opacity a reversed pair had. */
+    /** This layer's opacity at the start (§5.6). */
     readonly from: number
     elapsed: number
     /** Its first clock update has happened (independent of the track's). */
@@ -179,9 +184,13 @@ interface Drive {
      */
     started: boolean
     fade: DriveFade | null
+    /** On-screen radii mixed across a shared handoff (§5.7). */
+    radiusBlend: Pick<RadiusBlend, 'from' | 'to'> | null
     lead: Participant | null
     readonly saved: Saved
     readonly authored: Authored
+    /** Authored corner-radius lengths frozen while layout owns their declarations. */
+    radius: readonly Len[] | null
     /** The reduced-motion mode its track was planned under. */
     mode: string
     run: Run | null
@@ -219,6 +228,8 @@ interface Run {
 interface Capture {
     live: boolean
     readonly rects: Map<Participant, Box>
+    /** Resting shared radius:true participants' resolved radii at B. */
+    readonly radius: Map<Participant, readonly number[]>
     /** Participants driven at capture time (not read: B is their drawn box). */
     readonly driven: Set<Participant>
     readonly scroll: ReadonlyMap<Element, readonly [number, number]>
@@ -297,6 +308,8 @@ function keptGeometry(was: Geometry, now: Geometry, a: Box): Geometry {
 interface Retained {
     readonly box: Box
     readonly velocity: BoxVelocity | null
+    /** The removed lead's on-screen radii, when it owned radius. */
+    readonly radius: readonly number[] | null
     readonly until: number
     /**
      * The participant the lead was drawn under, until the next flush carries
@@ -418,11 +431,15 @@ function fadeEnded(fade: DriveFade): boolean {
     return fade.elapsed >= fade.duration
 }
 
-/** The lead's weight of a running fade now (the follower shows its complement). */
-function leadWeight(fade: DriveFade): number {
-    if (fade.duration <= 0) return 1
-    const e = fade.curve.value(Math.max(0, fade.elapsed) / fade.duration)
-    return fade.from + (1 - fade.from) * Math.min(1, Math.max(0, e))
+/** Current opacity of a running fade layer, sampled for reversal continuity. */
+function currentFadeOpacity(fade: DriveFade): number {
+    return fadeOpacity({
+        role: fade.role,
+        from: fade.from,
+        elapsed: Math.max(0, fade.elapsed),
+        duration: fade.duration,
+        curve: fade.curve,
+    })
 }
 
 function noop(): void {
@@ -523,6 +540,18 @@ export function createLayoutGroup(
                         : -1,
                 fade,
                 radius: live && node.p.options.radius ? g.radius : null,
+                radiusBlend: (() => {
+                    if (!live || !node.p.options.radius || !d.radiusBlend)
+                        return null
+                    const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
+                    const track = leadDrive?.track
+                    if (!track) return null
+                    return {
+                        ...d.radiusBlend,
+                        track,
+                        elapsed: leadDrive.elapsed,
+                    }
+                })(),
                 layers: layers[i] ?? null,
             }
         })
@@ -790,8 +819,10 @@ export function createLayoutGroup(
         if (disposed || !hasDOM()) return
         if (capture?.live) return
         const rects = new Map<Participant, Box>()
+        const radius = new Map<Participant, readonly number[]>()
         const driven = new Set<Participant>()
         const elements: HTMLElement[] = []
+        const radiusParticipants: Participant[] = []
         let scroll: readonly [number, number] | null = null
         for (const p of registry.values()) {
             if (!p.element.isConnected) continue
@@ -803,10 +834,19 @@ export function createLayoutGroup(
             scroll ??= pageScroll(p.element.ownerDocument)
             rects.set(p, pageRect(p.element, scroll))
             stats.reads += 1
+            if (p.options.layoutId !== undefined && p.options.radius === true) {
+                radiusParticipants.push(p)
+            }
+        }
+        for (const p of radiusParticipants) {
+            const value = readRadius(p.element)
+            stats.reads += 1
+            if (value) radius.set(p, value)
         }
         const current: Capture = {
             live: true,
             rects,
+            radius,
             driven,
             scroll: scrollOffsets(elements),
         }
@@ -916,6 +956,7 @@ export function createLayoutGroup(
                 fy: css.h > 0 ? m.origin[1] / css.h : 0.5,
                 authored,
                 radius,
+                radiusSource: m.radius,
                 matrix: m.matrix,
                 unsupported,
             },
@@ -1047,6 +1088,7 @@ export function createLayoutGroup(
             retained.set(id, {
                 box: moved.box,
                 velocity: entry.velocity ? moved.velocity : null,
+                radius: entry.radius,
                 until: entry.until,
                 parent: null,
             })
@@ -1108,12 +1150,27 @@ export function createLayoutGroup(
         const nowSolve = solveNodes(frame)
         const drawn = new Map<Participant, Box>()
         const velocity = new Map<Participant, BoxVelocity>()
+        const drawnRadius = new Map<Participant, readonly number[]>()
         if (frame.length > 0) {
-            const boxes = drawnBoxes(nowSolve)
+            const solved = solve(nowSolve)
             const velocities = drawnVelocities(nowSolve)
             frame.forEach((node, i) => {
-                drawn.set(node.p, boxes[i]!)
+                const value = solved[i]!
+                const input = nowSolve[i]!
+                drawn.set(node.p, value.drawn)
                 velocity.set(node.p, velocities[i]!)
+                if (value.radius) {
+                    drawnRadius.set(
+                        node.p,
+                        value.radius.map(
+                            (r, j) =>
+                                r *
+                                (j % 2 === 0
+                                    ? value.drawn.w / input.a.w
+                                    : value.drawn.h / input.a.h)
+                        )
+                    )
+                }
             })
         }
 
@@ -1145,13 +1202,24 @@ export function createLayoutGroup(
             for (let i = 0; i < list.length; i++) {
                 if (!wanted[i] || geometry[i]) continue
                 const p = list[i]!
-                const m = measure(
+                let m = measure(
                     p.element,
                     p.options.radius === true,
                     animatedNow,
                     snapsReference
                 )
                 stats.reads += 1
+                if (m.radius && p.drive?.radius) {
+                    const radius = [...m.radius]
+                    RADIUS_PROPERTIES.forEach((property, corner) => {
+                        if (!p.drive!.written.has(property)) return
+                        radius[corner * 2] = p.drive!.radius![corner * 2]!
+                        radius[corner * 2 + 1] =
+                            p.drive!.radius![corner * 2 + 1]!
+                    })
+                    m = { ...m, radius }
+                }
+                if (p.drive && p.options.radius) p.drive.radius = m.radius
                 const parent = parents[i]!
                 const { geometry: g, full } = resolveGeometry(
                     p,
@@ -1509,6 +1577,9 @@ export function createLayoutGroup(
                         existing.saved.delete(prop)
                         existing.written.delete(prop)
                     }
+                    existing.radius = null
+                } else if (p.options.radius) {
+                    existing.radius = g.radiusSource
                 }
                 existing.kind = kind
                 return existing
@@ -1524,9 +1595,11 @@ export function createLayoutGroup(
                 elapsed: 0,
                 started: false,
                 fade: null,
+                radiusBlend: null,
                 lead: null,
                 saved: save(p.element, all),
                 authored: g.authored,
+                radius: g.radiusSource,
                 mode: reduced,
                 run: null,
                 release: null,
@@ -1536,15 +1609,67 @@ export function createLayoutGroup(
             return d
         }
 
-        // a pair that reverses mid-crossfade (the follower becomes the lead
-        // again) continues from the opacities it shows: nothing pops (§5.6)
-        const fadeFrom = new Map<number, number>()
+        // Radius handoff state is derived entirely from the pre-flush frame,
+        // the current flush's measurements, or a retained removed lead (§5.7).
+        const radiusBlendFrom = new Map<
+            number,
+            Pick<RadiusBlend, 'from' | 'to'>
+        >()
+        actions.forEach((action, i) => {
+            if (action.kind !== 'track' || list[i]!.options.radius !== true)
+                return
+            const target = geometry[i]?.radius
+            if (!target) return
+            let source: readonly number[] | null = null
+            if (action.handoffFrom !== undefined) {
+                if (action.handoffFrom >= 0) {
+                    const previous = list[action.handoffFrom]!
+                    if (previous.options.radius !== true) return
+                    source =
+                        drawnRadius.get(previous) ??
+                        cap?.radius.get(previous) ??
+                        previous.geometry?.radius ??
+                        null
+                } else {
+                    const id = list[i]!.options.layoutId
+                    source =
+                        id === undefined
+                            ? null
+                            : (retained.get(id)?.radius ?? null)
+                }
+            } else if (list[i]!.drive?.radiusBlend) {
+                // A retarget of a running blend starts from what is painted.
+                source = drawnRadius.get(list[i]!) ?? null
+            }
+            if (!source) return
+            radiusBlendFrom.set(i, { from: source, to: target })
+        })
+
+        // A pair that reverses mid-crossfade swaps roles. Sample both
+        // layers before any drive is mutated so neither opacity pops (§5.6).
+        const fadeFrom = new Map<
+            number,
+            { readonly lead: number; readonly follower: number }
+        >()
         actions.forEach((action, i) => {
             if (action.kind !== 'track' || !action.fadeLead) return
-            const fade = list[i]!.drive?.fade
-            if (fade?.role === 'follower' && !fadeEnded(fade)) {
-                fadeFrom.set(i, 1 - leadWeight(fade))
-            }
+            const leadFade = list[i]!.drive?.fade
+            if (leadFade?.role !== 'follower' || fadeEnded(leadFade)) return
+            const followerIndex = actions.findIndex(
+                (candidate) =>
+                    candidate.kind === 'follow' &&
+                    candidate.start &&
+                    candidate.lead === i
+            )
+            const followerFade =
+                followerIndex >= 0 ? list[followerIndex]!.drive?.fade : null
+            fadeFrom.set(i, {
+                lead: currentFadeOpacity(leadFade),
+                follower:
+                    followerFade?.role === 'lead' && !fadeEnded(followerFade)
+                        ? currentFadeOpacity(followerFade)
+                        : 1,
+            })
         })
 
         actions.forEach((action, i) => {
@@ -1553,6 +1678,7 @@ export function createLayoutGroup(
             const d = p.drive
             switch (action.kind) {
                 case 'none':
+                    if (reduced === 'jump' && d?.fade) endFade(p)
                     // a crossfade follower stays invisible until presence removes it
                     if (d && (d.kind !== 'held' || !nodes[i]!.exiting))
                         settle(p)
@@ -1568,6 +1694,7 @@ export function createLayoutGroup(
                     const drive = startDrive(p, 'static', g!, [])
                     drive.track = null
                     drive.target = null
+                    drive.radiusBlend = null
                     return
                 }
                 case 'track': {
@@ -1580,7 +1707,7 @@ export function createLayoutGroup(
                     const wasFollower =
                         d?.kind === 'follow' || d?.kind === 'held'
                     // a lead retargeted mid-crossfade keeps its fade: the pair
-                    // stays complementary and the release follows it (§5.6)
+                    // stays on the same asymmetric timeline and release (§5.6)
                     const keptFade =
                         !action.fadeLead &&
                         d?.fade?.role === 'lead' &&
@@ -1609,10 +1736,11 @@ export function createLayoutGroup(
                     drive.started = continues
                     drive.mode = reduced
                     drive.lead = null
+                    drive.radiusBlend = radiusBlendFrom.get(i) ?? null
                     drive.fade = action.fadeLead
                         ? {
                               role: 'lead',
-                              from: fadeFrom.get(i) ?? 0,
+                              from: fadeFrom.get(i)?.lead ?? 0,
                               elapsed: -action.track.delay,
                               started: continues,
                               duration: action.track.duration,
@@ -1624,7 +1752,11 @@ export function createLayoutGroup(
                     return
                 }
                 case 'follow': {
-                    if (!action.start) return
+                    if (!action.start) {
+                        const blend = radiusBlendFrom.get(action.lead)
+                        if (blend && d) d.radiusBlend = blend
+                        return
+                    }
                     if (d?.run) {
                         const old = d.run
                         old.nodes.delete(p)
@@ -1654,9 +1786,10 @@ export function createLayoutGroup(
                     drive.elapsed = 0
                     drive.started = false
                     drive.lead = lead
+                    drive.radiusBlend = radiusBlendFrom.get(action.lead) ?? null
                     drive.fade = {
                         role: 'follower',
-                        from: fadeFrom.get(action.lead) ?? 0,
+                        from: fadeFrom.get(action.lead)?.follower ?? 1,
                         elapsed: -(track?.delay ?? 0),
                         started: continues,
                         duration: track?.duration ?? 0,
@@ -1748,26 +1881,38 @@ export function createLayoutGroup(
 
     /* ───────────────────────── lifecycle ───────────────────────── */
 
-    /** The drawn box of a driven node now, and its velocity while its own track moves. */
-    function currentMotion(
-        p: Participant
-    ): { box: Box; velocity: BoxVelocity | null } | null {
+    /** The drawn state of a driven node now, derived without a DOM read. */
+    function currentMotion(p: Participant): {
+        box: Box
+        velocity: BoxVelocity | null
+        radius: readonly number[] | null
+    } | null {
         const d = p.drive
         if (!d) return null
         const at = frame.findIndex((node) => node.p === p)
         if (at < 0) return null
         if (waapi) syncAnimations()
         const nodes = solveNodes(frame)
-        const box = drawnBoxes(nodes)[at]
-        if (!box) return null
+        const value = solve(nodes)[at]
+        if (!value) return null
+        const input = nodes[at]!
         const moving =
             d.kind === 'track' &&
             d.track !== null &&
             !trackEnded(d.track, d.elapsed) &&
             d.elapsed >= d.track.delay
         return {
-            box,
+            box: value.drawn,
             velocity: moving ? (drawnVelocities(nodes)[at] ?? null) : null,
+            radius: value.radius
+                ? value.radius.map(
+                      (r, j) =>
+                          r *
+                          (j % 2 === 0
+                              ? value.drawn.w / input.a.w
+                              : value.drawn.h / input.a.h)
+                  )
+                : null,
         }
     }
 
@@ -1898,6 +2043,13 @@ export function createLayoutGroup(
                         retained.set(id, {
                             box,
                             velocity: motion?.velocity ?? null,
+                            radius:
+                                self.options.radius === true
+                                    ? (motion?.radius ??
+                                      capture?.radius.get(self) ??
+                                      self.geometry?.radius ??
+                                      null)
+                                    : null,
                             until: now() + retain * 1000,
                             parent: motion ? self.parent : null,
                         })
