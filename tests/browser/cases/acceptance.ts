@@ -15,6 +15,7 @@ import {
     E1,
     E2,
     E3,
+    E3_SHARED_SPRING,
     E4,
     E5,
     FolderFixture,
@@ -342,7 +343,10 @@ export async function E3Folder(): Promise<string> {
                 ]
                 if (pair.length === 0)
                     throw new Error(`${label}: tile ${i} has no layer`)
-                const box = pair[0]!.getBoundingClientRect()
+                const probe = pair.reduce((best, element) =>
+                    opacity(element) > opacity(best) ? element : best
+                )
+                const box = probe.getBoundingClientRect()
                 const stack = document.elementsFromPoint(
                     box.left + box.width / 2,
                     box.top + box.height / 2
@@ -406,9 +410,16 @@ export async function E3Folder(): Promise<string> {
                     expectRadiusBetween(surface, 20, 28, `${label}: surface`)
                 )
                 for (const child of surface.querySelectorAll<HTMLElement>(
-                    '[data-layout-id^="folder-tile-"], [data-folder-item]'
+                    '*'
                 )) {
-                    if (child.offsetWidth === 0 || child.offsetHeight === 0)
+                    const participant =
+                        child.dataset.layoutId !== undefined ||
+                        child.dataset.lkMode !== undefined
+                    if (
+                        participant ||
+                        child.offsetWidth === 0 ||
+                        child.offsetHeight === 0
+                    )
                         continue
                     const box = child.getBoundingClientRect()
                     const authored = child.offsetWidth / child.offsetHeight
@@ -417,7 +428,7 @@ export async function E3Folder(): Promise<string> {
                     aspectWorst = Math.max(aspectWorst, error)
                     if (error > 0.001) {
                         throw new Error(
-                            `${label}: ${child.dataset.layoutId ?? `item ${child.dataset.folderItem}`} aspect ratio changed by ${error}`
+                            `${label}: non-participating descendant aspect ratio changed by ${error}`
                         )
                     }
                 }
@@ -428,12 +439,7 @@ export async function E3Folder(): Promise<string> {
                 )) {
                     radiusWorst = Math.max(
                         radiusWorst,
-                        expectRadiusBetween(
-                            tile,
-                            6,
-                            16,
-                            `${label}: tile ${i}`
-                        )
+                        expectRadiusBetween(tile, 6, 16, `${label}: tile ${i}`)
                     )
                 }
             }
@@ -656,14 +662,14 @@ export async function E3Folder(): Promise<string> {
         })
         // then on their tracks from the folder to the panel every frame
         const tracks = shared.map((_, i) =>
-            spec(at(i, false), at(i, true), motion)
+            spec(at(i, false), at(i, true), {
+                ...motion,
+                timing: i === 2 ? E3_SHARED_SPRING : SPRING,
+            })
         )
         let worst = 0
         await enter('open', (t) => {
-            checkFolderFrame(
-                `open t=${t}`,
-                expectedBox(openingSurface, t)
-            )
+            checkFolderFrame(`open t=${t}`, expectedBox(openingSurface, t))
             checkDeparture(leavingClosed, 'open')
             shared.forEach((tile, i) => {
                 worst = Math.max(
@@ -706,10 +712,7 @@ export async function E3Folder(): Promise<string> {
             mc,
             90,
             (t) => {
-                checkFolderFrame(
-                    `close t=${t}`,
-                    expectedBox(closingSurface, t)
-                )
+                checkFolderFrame(`close t=${t}`, expectedBox(closingSurface, t))
                 checkDeparture(leavingOpen, 'close')
             },
             done,

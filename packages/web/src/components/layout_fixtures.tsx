@@ -312,6 +312,12 @@ export const E3 = {
     enterDuration: 0.35,
 }
 
+export const E3_SHARED_SPRING: TimingFunction = timing.spring({
+    m: 1,
+    k: 170,
+    c: 20,
+})
+
 /** A tile's box in the stage, closed (inside the folder) or open. */
 export function folderTile(
     i: number,
@@ -338,9 +344,11 @@ export function folderTile(
 }
 
 function SharedTile({ i, open }: { i: number; open: boolean }) {
+    const sharedTiming = i === (open ? 2 : 1)
     const ref = useLayout<HTMLDivElement>({
         layoutId: `folder-tile-${i}`,
         radius: true,
+        motion: { timing: sharedTiming ? E3_SHARED_SPRING : SPRING },
     })
     const size = open ? E3.open.tile : E3.closed.tile
     return (
@@ -348,6 +356,7 @@ function SharedTile({ i, open }: { i: number; open: boolean }) {
             ref={ref}
             data-layout-id={`folder-tile-${i}`}
             data-lk={`folder-tile-${i}`}
+            data-lk-e3-shared={sharedTiming ? '' : undefined}
             style={{
                 width: size,
                 height: size,

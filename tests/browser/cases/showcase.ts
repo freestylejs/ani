@@ -42,6 +42,7 @@ import {
     TodoFixture,
 } from '../../../packages/web/src/components/layout_examples'
 import {
+    E3_SHARED_SPRING,
     FolderFixture,
     GalleryFixture,
 } from '../../../packages/web/src/components/layout_fixtures'
@@ -81,6 +82,12 @@ const MARKED = '[data-lk], [data-layout-id]'
 
 function markedKey(element: HTMLElement): string {
     return element.dataset.lk ?? element.dataset.layoutId!
+}
+
+function markedMotion(element: HTMLElement, motion: Motion): Motion {
+    return element.dataset.lkE3Shared === undefined
+        ? motion
+        : { ...motion, timing: E3_SHARED_SPRING }
 }
 
 function identity(transform: string): boolean {
@@ -319,7 +326,12 @@ async function oracleRun(
         const [fx, fy] = origin(end.element)
         const mode =
             end.element.dataset.lkMode === 'position' ? 'position' : true
-        const track = spec(from[0]!.box, end.box, { ...motion, fx, fy, mode })
+        const track = spec(from[0]!.box, end.box, {
+            ...markedMotion(end.element, motion),
+            fx,
+            fy,
+            mode,
+        })
         let checked = false
         for (const [t, shot] of shots) {
             for (const entry of shot.get(key) ?? []) {
@@ -357,6 +369,7 @@ interface Target {
     readonly fx: number
     readonly fy: number
     readonly mode: true | 'position'
+    readonly e3SharedTiming: boolean
 }
 
 /**
@@ -386,6 +399,7 @@ async function layoutOf(
                 fx,
                 fy,
                 mode: element.dataset.lkMode === 'position' ? 'position' : true,
+                e3SharedTiming: element.dataset.lkE3Shared !== undefined,
             })
         }
         return out
@@ -481,6 +495,9 @@ async function chainRun(
                 track: {
                     ...spec(drawn, to.box, {
                         ...motion,
+                        ...(to.e3SharedTiming && {
+                            timing: E3_SHARED_SPRING,
+                        }),
                         fx: to.fx,
                         fy: to.fy,
                         mode: to.mode,
@@ -621,8 +638,10 @@ export async function Gallery(): Promise<string> {
     const ctx = context()
     const app = (view: 'grid' | 'list', detail: number | null = null) =>
         h(GalleryFixture, { view, detail, ...ctx.props })
-    const render = (view: 'grid' | 'list', detail: number | null = null) => () =>
-        ctx.view.render(app(view, detail))
+    const render =
+        (view: 'grid' | 'list', detail: number | null = null) =>
+        () =>
+            ctx.view.render(app(view, detail))
     const to = (
         view: 'grid' | 'list',
         detail: number | null,
