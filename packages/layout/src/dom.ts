@@ -57,6 +57,48 @@ function parseLen(token: string): Len | null {
     return null
 }
 
+function cssComponents(value: string): string[] {
+    const parts: string[] = []
+    let depth = 0
+    let current = ''
+    for (const ch of value) {
+        if (ch === '(') depth += 1
+        if (ch === ')') depth -= 1
+        if (ch === ' ' && depth === 0) {
+            if (current) parts.push(current)
+            current = ''
+        } else {
+            current += ch
+        }
+    }
+    if (current) parts.push(current)
+    return parts
+}
+
+/** A computed radius length, including linear calc(px ± %). */
+function parseRadiusLen(token: string): Len | null {
+    const direct = parseLen(token)
+    if (direct) return direct
+    if (!token.startsWith('calc(') || !token.endsWith(')')) return null
+
+    let sign = 1
+    let px = 0
+    let pct = 0
+    for (const part of token.slice(5, -1).trim().split(/\s+/)) {
+        if (part === '+' || part === '-') {
+            sign = part === '+' ? 1 : -1
+            continue
+        }
+        const value = Number.parseFloat(part)
+        if (!Number.isFinite(value)) return null
+        if (part.endsWith('%')) pct += (sign * value) / 100
+        else if (part.endsWith('px') || value === 0) px += sign * value
+        else return null
+        sign = 1
+    }
+    return { px, pct }
+}
+
 function parseTranslate(value: string): readonly [Len, Len] | null {
     if (value === 'none') return [ZERO, ZERO]
     const parts = value.split(' ')
@@ -310,9 +352,10 @@ export function measure(
     if (radius && !unsupported) {
         radii = []
         for (const property of RADIUS_PROPERTIES) {
-            const parts = style.getPropertyValue(property).split(' ')
-            const x = parseLen(parts[0]!) ?? ZERO
-            const y = parts[1] === undefined ? x : (parseLen(parts[1]) ?? ZERO)
+            const parts = cssComponents(style.getPropertyValue(property))
+            const x = parseRadiusLen(parts[0]!) ?? ZERO
+            const y =
+                parts[1] === undefined ? x : (parseRadiusLen(parts[1]) ?? ZERO)
             radii.push(x, y)
         }
     }
