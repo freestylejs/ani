@@ -50,6 +50,11 @@ export interface Track {
     readonly duration: number
     readonly curve: Curve
     readonly anchor: AnchorRule | null
+    /**
+     * Planned for a node moving at the flush (with its velocity): its time
+     * continues from the last painted frame (§4.3).
+     */
+    readonly moving: boolean
 }
 
 /** A crossfade timeline, started with the lead's motion at the handoff. */
@@ -162,6 +167,7 @@ export function createTrack(
         duration: motion.duration,
         curve: motion.curve,
         anchor,
+        moving: velocity !== null,
     }
 }
 

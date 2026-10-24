@@ -205,8 +205,16 @@ stale; it snaps with `'stale'` and never guesses.
 
 ### 4.3 Frames
 
-- A track's time starts at its first clock update, whose `dt` is forced to 0. A 120 ms block
-  after the commit therefore costs one late frame, not 120 ms of progress.
+- A track **from rest** starts its time at its first clock update, whose `dt` is forced to 0:
+  its first painted frame is B, and a 120 ms block after the commit costs one late frame, not
+  120 ms of progress.
+- A track planned for a node **moving** at the flush (a retarget, a reduced-motion re-plan, or
+  a handoff from a moving node, all carrying a velocity) continues the time of the last
+  painted frame: its B and velocity are the drawn box and velocity of that frame, so its first
+  update advances by the frame's `dt` like every running track. Holding that frame would stall
+  the motion for one frame at every retarget (amended 2026-10-24 after the comparison with
+  Motion, approved by the user). A drive that no frame has drawn yet (two flushes in one frame)
+  is still at rest. A crossfade's timeline starts with its lead's.
 - After that, tracks advance by the clock's `dt` (lag-smoothed, time-scaled), exactly like
   every other Ani animation.
 - The read phase is unused; `update` solves; `commit` writes only declarations whose value
