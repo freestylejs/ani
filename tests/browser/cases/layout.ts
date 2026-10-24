@@ -4238,6 +4238,146 @@ export async function P2RadiusCrossfade(): Promise<string> {
     }
 }
 
+/** P2-C read discipline: shared radius is read once at first sight, never forced per flush. */
+export async function P2RadiusReadDiscipline(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.2, timing: linear } })
+    const probe = probeDom()
+    try {
+        const lead = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        const sibling = node(
+            h.root,
+            'left: 20px; top: 120px; width: 80px; height: 40px;'
+        )
+        h.add(lead, { layoutId: 'radius-read-discipline', radius: true })
+        h.add(sibling)
+
+        // A never-moved shared-radius participant gets one ordinary geometry
+        // measurement the first time a flush sees it.
+        probe.log.length = 0
+        probe.on = true
+        await h.group.flush()
+        probe.on = false
+        const firstRects = probe.log.filter((entry) => entry === 'rect').length
+        const firstStyles = probe.log.filter(
+            (entry) => entry === 'style'
+        ).length
+        expectEqual(firstRects, 2, 'first flush rect reads')
+        expectEqual(firstStyles, 1, 'first flush shared-radius style read')
+
+        // The one-time bootstrap must not become a per-flush read.
+        probe.log.length = 0
+        probe.on = true
+        await h.group.flush()
+        probe.on = false
+        const nextRects = probe.log.filter((entry) => entry === 'rect').length
+        const nextStyles = probe.log.filter((entry) => entry === 'style').length
+        expectEqual(nextRects, 2, 'next flush rect reads')
+        expectEqual(nextStyles, 0, 'next flush shared-radius style reads')
+
+        // The judged scenario: only the unrelated sibling changes.
+        h.group.capture()
+        sibling.style.left = '160px'
+        probe.log.length = 0
+        probe.on = true
+        const second = report(h.group.flush())
+        probe.on = false
+        const rects = probe.log.filter((entry) => entry === 'rect').length
+        const styles = probe.log.filter((entry) => entry === 'style').length
+        expectEqual(rects, 2, 'flush rect reads match base')
+        expectEqual(styles, 1, 'flush computed-style reads match base')
+        h.group.finish()
+        await settleMicrotasks()
+        expectEqual(second.value?.status, 'ended', 'sibling run')
+        return `first flush ${firstRects} rects, ${firstStyles} computed style; next flush ${nextRects} rects, ${nextStyles} computed style; unrelated flush matches base: ${rects} rects, ${styles} computed style`
+    } finally {
+        probe.restore()
+        h.dispose()
+    }
+}
+
+/** P2-B: reduced-motion jump mid-crossfade finishes the fade endpoint before presence unmount. */
+export async function P2ReducedMidCrossfade(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.4, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 80px; opacity: 1;'
+        )
+        const oldStyle = old.style.cssText
+        const removeOld = h.group.add(old, { layoutId: 'reduced-crossfade' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        let exited: string | null = null
+        void presence.exit().then((value) => {
+            exited = value
+        })
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 240px; height: 180px; opacity: 1;'
+        )
+        const leadStyle = lead.style.cssText
+        h.add(lead, { layoutId: 'reduced-crossfade' })
+        const running = report(h.group.flush())
+        // Let presence's own 0.1 s exit finish while layout still holds it
+        // for the longer 0.4 s crossfade.
+        await frames(h.mc, 10, noCheck)
+
+        h.mc.setReducedMotion(true)
+        h.group.capture()
+        const reduced = await h.group.flush()
+        await settleMicrotasks()
+
+        expectEqual(reduced.status, 'reduced', 'reduced flush status')
+        expectEqual(running.value?.status, 'ended', 'active crossfade finished')
+        expectEqual(old.isConnected, true, 'follower still connected')
+        expectEqual(old.style.opacity, '0', 'follower held at opacity 0')
+        expectEqual(
+            getComputedStyle(old).opacity,
+            '0',
+            'follower computed opacity 0'
+        )
+        expectEqual(lead.style.cssText, leadStyle, 'lead restored')
+        expectEqual(exited, 'exited', 'presence released')
+        expectEqual(h.mc.clock.size, 0, 'no clock subscription')
+
+        const expectedUnmountStyle = document.createElement('div')
+        expectedUnmountStyle.style.cssText = oldStyle
+        expectedUnmountStyle.style.transform = old.style.transform
+        removeOld()
+        old.remove()
+        await settleMicrotasks()
+        expectEqual(
+            old.style.cssText,
+            expectedUnmountStyle.style.cssText,
+            'follower unmount restores byte-identically'
+        )
+        expectEqual(h.mc.clock.size, 0, 'unmount leaves no clock subscription')
+        presence.dispose()
+        return 'reduced mid-crossfade holds follower at 0, releases presence, restores byte-identically on unmount'
+    } finally {
+        h.dispose()
+    }
+}
+
 /** P2-C: a removed lead carries its resolved percentage/elliptical radius through retain. */
 export async function P2RadiusRetained(): Promise<string> {
     const linear = timing.linear()

@@ -1428,29 +1428,13 @@ export function createLayoutGroup(
             stale,
         })
         for (;;) {
-            // A current shared lead with radius ownership is affected state for
-            // retention: refresh it in the ordinary read phase so a later
-            // removal can carry ρ_B without a removal-time or frame read.
-            const sharedRadiusLeads = new Set(
-                [...result.leads.values()].filter(
-                    (i) => list[i]!.options.radius === true
-                )
-            )
             const wanted = result.actions.map(
                 (action, i) =>
-                    action.kind !== 'none' || sharedRadiusLeads.has(i)
+                    action.kind !== 'none' ||
+                    (list[i]!.options.layoutId !== undefined &&
+                        list[i]!.options.radius === true &&
+                        list[i]!.geometry === null)
             )
-            result.actions.forEach((action, i) => {
-                if (
-                    action.kind === 'track' &&
-                    action.handoffFrom !== undefined &&
-                    action.handoffFrom >= 0 &&
-                    list[i]!.options.radius === true &&
-                    list[action.handoffFrom]!.options.radius === true
-                ) {
-                    wanted[action.handoffFrom] = true
-                }
-            })
             const added = measureNodes(wanted)
             // the plan assumed a centred origin and support for every node it
             // had not measured; it is redone only when that assumption failed
@@ -1633,7 +1617,7 @@ export function createLayoutGroup(
                     if (previous.options.radius !== true) return
                     source =
                         drawnRadius.get(previous) ??
-                        geometry[action.handoffFrom]?.radius ??
+                        previous.geometry?.radius ??
                         null
                 } else {
                     const id = list[i]!.options.layoutId
@@ -1683,6 +1667,7 @@ export function createLayoutGroup(
             const d = p.drive
             switch (action.kind) {
                 case 'none':
+                    if (reduced === 'jump' && d?.fade) endFade(p)
                     // a crossfade follower stays invisible until presence removes it
                     if (d && (d.kind !== 'held' || !nodes[i]!.exiting))
                         settle(p)

@@ -402,9 +402,9 @@ any total scale. The declaration is restored on settle.
 A shared `layoutId` handoff blends the on-screen corner shape when both the departing node and
 new lead have `radius: true`. Per corner and axis, let `ρ_A` be the new lead's authored radius
 resolved at A, and let `ρ_B` be the departing node's on-screen radius at the flush. A resting
-departing node supplies its freshly resolved authored radius; a driven node supplies the `ρ`
-it is currently drawing. A removed lead may supply that `ρ_B` from the value retained with its
-box and velocity for `retain` seconds. On the new lead's track timeline,
+departing node supplies the authored radius from its last ordinary measurement; a driven node
+supplies the `ρ` it is currently drawing. A removed lead may supply that `ρ_B` from the value
+retained with its box and velocity for `retain` seconds. On the new lead's track timeline,
 `p = clamp(e(τ), 0, 1)` and `ρ(p) = ρ_B + (ρ_A − ρ_B)·p`. During a live crossfade both layers
 draw the same `ρ(p)` and each converts it to its own declaration with its own `A_w/V_w` or
 `A_h/V_h`, so their silhouettes are identical.
@@ -413,8 +413,11 @@ A retarget or reversal during a radius blend starts the new blend from the `ρ` 
 at `p = 1` the lead draws exactly `ρ_A`, so ending the blend, settling the track and restoring
 the authored declaration introduce no radius jump. There is no radius blend when either side
 lacks `radius: true`, nor for a resting node whose authored radius alone changed across a commit.
-The handoff source is derived only from values already measured or retained; radius blending
-adds no DOM read.
+A `layoutId` participant with `radius: true` and no stored geometry is measured once in the
+ordinary read phase of the first flush that sees it, so a never-moved resting source has a
+radius available for its first handoff. After that bootstrap, the handoff source is derived
+only from values already measured or retained: no later flush is forced to read the participant,
+and frames add no DOM read.
 
 ## 6. Property ownership on one element
 
