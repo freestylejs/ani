@@ -50,7 +50,8 @@ light and dark (filmstrips below).
 
 ### Browser module `showcase`
 
-`tests/browser/cases/showcase.ts`, 9 cases, Chromium, Firefox and WebKit. For every element marked
+`tests/browser/cases/showcase.ts`, 11 cases (Folder and Gallery joined in the follow-up of §7),
+Chromium, Firefox and WebKit. For every element marked
 `data-lk` it checks:
 
 - **Change from rest.** Every frame is on the independent oracle (`__tests__/oracle.ts`, which
@@ -61,7 +62,7 @@ light and dark (filmstrips below).
   Every frame is checked until rest. A moving key whose target did not move keeps its track.
 - **Always:**
   - nothing jumps at a commit (for `'position'` nodes, the origin point);
-  - crossfade pairs sum to opacity 1;
+  - crossfade pairs cover the box: source-over coverage `1 − (1 − a)(1 − b)` is 1 (§7);
   - no snap (`onSnap`);
   - at rest, inline styles are byte-identical to a fresh render (presence's resting declarations
     excepted).
@@ -181,7 +182,7 @@ starts fresh. Ani hands the velocity over (§5.6).
 | `layout="preserve-aspect"` | none | — |
 | Per-element `onLayoutAnimationStart/Complete` | per-run reports (`flush()` / `update()` promises) | no per-element hooks |
 | Rotate, skew, SVG, inline elements | snap with a typed reason (§9) | no layout animation for them |
-| Border-radius correction | `radius: true`, opt-in | one option to set |
+| Border-radius correction | `radius: true`, opt-in; blends across a shared handoff (§7) | one option to set |
 | Spring physics | stateless timing + a momentum term (§5.1) | a continuity device, not physics |
 
 ## 6. Residual risks
@@ -193,3 +194,65 @@ starts fresh. Ani hands the velocity over (§5.6).
   benchmark; the ratios are the claim.
 - The filmstrips use the real clock and screenshot latency, so their timestamps are approximate.
   Frame exactness is the tests' job.
+- A capture pays one computed-style read for each resting element that has both a `layoutId` and
+  `radius: true`. This is the price of an exact starting radius (§7); flushes and frames read
+  nothing more than before.
+- A direct `flush()` with no capture cannot see a radius changed by style alone while the element
+  rested. The blend then starts from the last measured radius (ARCHITECTURE §12).
+
+## 7. Follow-up: the user's review, 2026-10-24/25
+
+The user reviewed the running showcase and reported two things:
+- the radius animation looked awkward in Create button, Family-style dialog, Card to detail and
+  Gallery;
+- the Folder had a timing problem: frames where nothing showed.
+
+Frame-exact traces (Playwright's paused clock, one 16.67 ms step per frame) separated engine
+defects from example defects.
+
+| Finding | Kind | Measured on `5632f65` | Fix |
+|---|---|---|---|
+| A. Radius re-read during a run | engine bug | layout read back its own `!important` corner write at the next flush, so the correction compounded. E2 open drew 42.6/71.1 px for an 18 px corner; the Dialog sheet drew 24.6 px for 28 | A corner layout owns keeps its authored length across flushes. A plain author replacement becomes the source (ARCHITECTURE §5.7, §6) |
+| B. Crossfade coverage | engine design | complementary opacities `w`, `1 − w` cover only 0.75 of a pair at mid-fade, and 0.44 for E4's nested image and title | Motion's curves: the lead fades in over the first half (`circOut`), the follower fades out after it, so coverage is exactly 1. A reversal starts both layers from their current opacities (§5.6) |
+| C. No radius blend across a shared handoff | engine gap | the new element showed its own radius from the first frame | When both elements set `radius: true`, the on-screen corner goes from the departing radius to the new one on the lead's curve. The resting departing radius is read at capture (user-approved: accuracy over a cached value, so a `:hover` radius change is included) (§4.1, §5.7) |
+| D. Gallery without `radius: true` | example bug | tile corners reached 52 px on close | `radius: true` on tile and detail |
+| E. Folder backgrounds | example bug | the panel's opaque, non-participating background covered the moving tiles; two empty frames on open; the panel popped at f0, and the icon vanished at once on close | The icon and panel are one shared `'folder'` surface with `radius: true`, and the staggered items are `layout: 'position'` |
+
+Found on the way and fixed:
+- reduced motion switched on during a crossfade gave the exiting element its opacity back (it was
+  there on `5632f65`; §9);
+- an over-strict Folder test counted two shared tiles crossing each other as an occluder, and an
+  early fix had tuned one tile's spring to dodge it. The test was corrected, and every tile uses
+  the group spring.
+
+**Process.** There were three fix packets with independent judges, each run until it passed:
+- P1 `6da0b66`, radius read-back: PASS in round 1;
+- P2 `403fcd3`, crossfade and radius blend: PASS in round 3, after an extra flush read and the
+  reduced-motion fade were sent back;
+- P3 `331c131`, examples: PASS in round 2, after the spring fitting was sent back.
+
+The reports are kept outside the repository, in `ani-fx-brief/reports`.
+
+**Evidence on the integrated build.** Traces of 41 frames per demo, 10 demos, in Chromium, Firefox
+and WebKit:
+- source-over coverage is 1.000 at every frame of E2, E3, E4 and Gallery, opening and closing;
+- the two layers' on-screen radii agree within 0.10 px;
+- no radius moves at settle;
+- the E4 card goes 18.00 → 18.24 → 18.82 → … → 26 px, with the same series in every browser;
+- the Dialog sheet holds 28.00 px;
+- the Folder surface stays ≥ 0.99 covered and morphs 80×80 ↔ 340×260;
+- no shared tile is missing in any frame.
+
+**Final gate (merge `2142a9c` plus the docs):**
+
+| Gate | Result |
+|---|---|
+| vitest | 137 files, 1,617 tests |
+| browser, Chromium | 162 passed |
+| browser, Firefox | 160 passed, 2 Chromium-only skipped |
+| browser, WebKit | 160 passed, 2 Chromium-only skipped |
+| engine coverage (statements/branches/functions/lines) | 95.04 / 85.62 / 98.19 / 97.83 |
+| commit reads at 1,000 participants | 2–3 ms (gate 4 ms); steady frame p95 0.75–0.85 ms (gate 2 ms) |
+| WAAPI trace gate, size gate | pass; 8/8, unchanged bytes |
+| `ts:typecheck`, biome | clean (10 warnings, the existing baseline) |
+| docs smoke | 3 browsers, no errors |
