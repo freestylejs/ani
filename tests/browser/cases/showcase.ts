@@ -6,7 +6,7 @@
 //   drawn at to the box it lands in, with the example's own motion;
 // - a change made mid-flight: nothing moves at the commit, and the frame step
 //   right after it continues the step right before it;
-// - always: no snap, crossfading pairs sum to opacity 1, and at rest every
+// - always: no snap, crossfading pairs preserve source-over coverage, and at rest every
 //   marked element's inline style is byte-identical to a fresh render.
 import type { ManualClock } from '@freestylejs/ani-core/testing'
 import { createManualClock } from '@freestylejs/ani-core/testing'
@@ -204,10 +204,12 @@ function expectOpacities(shot: Snapshot, label: string): number {
     let worst = 0
     for (const [key, list] of shot) {
         if (list.length !== 2) continue
-        const sum = list[0]!.opacity + list[1]!.opacity
-        worst = Math.max(worst, Math.abs(sum - 1))
-        if (worst > 0.05) {
-            throw new Error(`${label}: ${key} opacities sum to ${sum}`)
+        const a = list[0]!.opacity
+        const b = list[1]!.opacity
+        const coverage = 1 - (1 - a) * (1 - b)
+        worst = Math.max(worst, Math.abs(coverage - 1))
+        if (worst > 1e-5) {
+            throw new Error(`${label}: ${key} coverage is ${coverage}`)
         }
     }
     return worst
