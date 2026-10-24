@@ -15,7 +15,6 @@ import {
     E1,
     E2,
     E3,
-    E3_SHARED_SPRING,
     E4,
     E5,
     FolderFixture,
@@ -334,6 +333,9 @@ export async function E3Folder(): Promise<string> {
         let surfaceWorst = 0
         let radiusWorst = 0
         let aspectWorst = 0
+        const sharedLayoutIds = new Set(
+            Array.from({ length: E3.shared }, (_, i) => `folder-tile-${i}`)
+        )
         const checkOcclusion = (label: string) => {
             for (let i = 0; i < E3.shared; i++) {
                 const pair = [
@@ -362,11 +364,15 @@ export async function E3Folder(): Promise<string> {
                 const below = Math.max(...indexes)
                 for (const element of stack.slice(0, below)) {
                     if (pair.includes(element as HTMLElement)) continue
-                    if (
-                        element instanceof HTMLElement &&
-                        element.dataset.layoutId === 'folder'
-                    )
-                        continue
+                    if (element instanceof HTMLElement) {
+                        const layoutId = element.dataset.layoutId
+                        if (
+                            layoutId === 'folder' ||
+                            (layoutId !== undefined &&
+                                sharedLayoutIds.has(layoutId))
+                        )
+                            continue
+                    }
                     const identity =
                         element instanceof HTMLElement
                             ? [
@@ -662,10 +668,7 @@ export async function E3Folder(): Promise<string> {
         })
         // then on their tracks from the folder to the panel every frame
         const tracks = shared.map((_, i) =>
-            spec(at(i, false), at(i, true), {
-                ...motion,
-                timing: i === 2 ? E3_SHARED_SPRING : SPRING,
-            })
+            spec(at(i, false), at(i, true), motion)
         )
         let worst = 0
         await enter('open', (t) => {
