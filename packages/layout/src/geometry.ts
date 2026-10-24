@@ -102,6 +102,27 @@ export function ownMap(box: Box, own: OwnTransform): Map2 {
     )
 }
 
+/**
+ * The transform origin the browser applies, px from the CSS box's top-left
+ * (§5.3): the computed `origin`, or, where the browser applies an origin's
+ * percentage `pct` to the box snapped to device pixels (WebKit), that
+ * percentage of the snapped box `round(w · dpr) / dpr`.
+ */
+export function usedOrigin(
+    origin: readonly [number, number],
+    pct: readonly [number, number] | null,
+    w: number,
+    h: number,
+    dpr: number
+): readonly [number, number] {
+    if (!pct) return origin
+    const snap = (v: number) => Math.round(v * dpr) / dpr
+    return [
+        origin[0] + pct[0] * (snap(w) - w),
+        origin[1] + pct[1] * (snap(h) - h),
+    ]
+}
+
 /** The box `L` such that `ownMap(L, own)` draws it at `rect`. */
 export function unmapOwn(rect: Box, own: OwnTransform): Box {
     return {

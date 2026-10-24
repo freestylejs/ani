@@ -28,6 +28,7 @@ import {
     type OBox,
     type OTrackSpec,
 } from '../../../packages/layout/src/__tests__/oracle'
+import { measure } from '../../../packages/layout/src/dom'
 import { expectClose, expectEqual } from './assert'
 
 export const pageOptions = {}
@@ -216,6 +217,126 @@ export async function T1(): Promise<string> {
         return `${count} frames, max error ${worst.toFixed(4)} px`
     } finally {
         h.dispose()
+    }
+}
+
+/**
+ * Fractional boxes that scale, with percentage, mixed and px origins and an
+ * inline scale: every frame within 0.05 px of the oracle. WebKit applies an
+ * origin's percentage to the box snapped to device pixels (§3.1); projecting
+ * about the computed origin there was off by |s − 1|·δ (0.28 px in the
+ * showcase's dialog).
+ */
+export async function REFBOX(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.2, timing: linear } })
+    try {
+        const cases = [
+            ['50% 50%', ''],
+            ['100% 0', ''],
+            ['calc(20% + 3px) 100%', ''],
+            ['7px 3px', ''],
+            ['50% 50%', 'transform: scale(1.5);'],
+        ] as const
+        const elements = cases.map(([origin, extra], i) => {
+            const element = node(
+                h.root,
+                `left: ${10.3 + i * 0.37}px; top: ${20 + i * 130}px; width: ${70.1875 + i * 0.29}px; height: ${20.3 + i * 0.17}px; transform-origin: ${origin}; ${extra} background: #345;`
+            )
+            h.add(element)
+            return element
+        })
+        const before = elements.map(pageBox)
+        h.group.capture()
+        elements.forEach((element, i) => {
+            element.style.width = `${290.3 + i * 0.41}px`
+            element.style.height = `${90.7 + i * 0.23}px`
+            element.style.left = `${300.6 - i * 0.13}px`
+        })
+        const after = elements.map(pageBox)
+        const tracks = elements.map((element, i) => {
+            const style = getComputedStyle(element)
+            const [ox, oy] = style.transformOrigin
+                .split(' ')
+                .map(Number.parseFloat)
+            return spec(before[i]!, after[i]!, {
+                duration: 0.2,
+                timing: linear,
+                fx: ox! / Number.parseFloat(style.width),
+                fy: oy! / Number.parseFloat(style.height),
+            })
+        })
+        const done = report(h.group.flush())
+        let worst = 0
+        const count = await frames(
+            h.mc,
+            40,
+            (elapsed) => {
+                elements.forEach((element, i) => {
+                    worst = Math.max(
+                        worst,
+                        expectAt(
+                            element,
+                            expectedBox(tracks[i]!, elapsed),
+                            `${cases[i]![0]}${cases[i]![1] ? ' scaled' : ''} t=${elapsed}`,
+                            0.05
+                        )
+                    )
+                })
+            },
+            () => done.value !== null
+        )
+        expectEqual(done.value, { status: 'ended', snapped: [] }, 'report')
+        return `${count} frames × ${elements.length} fractional boxes, max error ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/**
+ * The percentage part of a computed transform-origin from the Typed OM (§5.3),
+ * which keeps `%` and `calc()` where the resolved value is px only: read only
+ * where the browser snaps the reference box; `null` without a Typed OM.
+ */
+export async function ORIGINPCT(): Promise<string> {
+    const root = document.createElement('div')
+    root.style.cssText = 'position: relative; width: 300px; height: 100px;'
+    document.body.append(root)
+    try {
+        const cases: readonly [string, readonly [number, number]][] = [
+            ['50% 50%', [0.5, 0.5]],
+            ['100% 0', [1, 0]],
+            ['10px 3px', [0, 0]],
+            ['calc(20% + 3px) 100%', [0.2, 1]],
+            ['calc(30% - 2px) 0', [0.3, 0]],
+            ['left bottom', [0, 1]],
+            ['right 25%', [1, 0.25]],
+        ]
+        const typed = typeof root.computedStyleMap === 'function'
+        const none = () => new Set<Element>()
+        for (const [origin, want] of cases) {
+            const e = node(
+                root,
+                `left: 0; top: 0; width: 50.3px; height: 20px; transform-origin: ${origin};`
+            )
+            const pct = measure(e, false, none, true).originPct
+            if (typed) {
+                expectClose(pct![0], want[0], 1e-9, `${origin}: x`)
+                expectClose(pct![1], want[1], 1e-9, `${origin}: y`)
+            } else {
+                expectEqual(pct, null, `${origin}: no Typed OM`)
+            }
+            expectEqual(
+                measure(e, false, none, false).originPct,
+                null,
+                `${origin}: not read where the box is exact`
+            )
+        }
+        return typed
+            ? `${cases.length} origins: percentages read from the Typed OM`
+            : `no Typed OM: no percentages read (${cases.length} origins)`
+    } finally {
+        root.remove()
     }
 }
 

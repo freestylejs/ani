@@ -135,6 +135,11 @@ Each commit costs one batched read before the mutation and one after. Every anim
 frame after that is arithmetic plus writes, inside the clock's `update` and `commit`
 phases.
 
+The one write-then-read of the engine is a capability probe, once per document when a scope
+is created (outside every flush and frame): whether the browser applies a percentage
+`transform-origin` to the border box snapped to device pixels (§5.3). A participant from a
+document no scope was created for is probed at its first flush.
+
 ### 4.1 Capture (B)
 
 `capture()` reads every registered participant of the scope that the engine does not
@@ -179,7 +184,8 @@ is the true before-box, not a remembered one.
 
 1. Read A for every participant (one layout): the rect, and for active nodes the inline
    `transform` and the computed `translate`/`scale`/`rotate`/`transform-origin`/corner
-   radii, which give `Lₙ`, `Oₙ` and `Qₙ` (frozen for the run). Only the poses the engine
+   radii, which give `Lₙ`, `Oₙ` and `Qₙ` (frozen for the run); where the browser snaps the
+   reference box, also the Typed OM value of `transform-origin` (§5.3). Only the poses the engine
    last wrote are divided out (§3.1); nothing is restored or stripped first.
 2. Plan (§5) — pure.
 3. Write the pose of every engine node at its current time (the t = 0 pose of a new track
@@ -266,6 +272,15 @@ V′ = Mπ⁻¹(V),   s = V′_w / X_w,   t = V′_x − O_x − s·(X_x − O_x
 
 The track's origin fraction is `(O_x − L_x) / L_w`, the transform origin's place in the box
 (an affine `Qₙ` keeps it). Depth is unlimited.
+
+`O` in the projection (and in `Qₙ`, and wherever a drawn rect is divided back to `Lₙ`) is the
+origin the browser *applies*. Chromium and Gecko apply the computed origin. WebKit applies an
+origin's percentage to the border box snapped to device pixels, `round(L_w·dpr)/dpr`, so a
+fractional box drawn at scale `s` lands `|s − 1|·δ` off (δ < 0.5/dpr px) if the computed
+origin is used. Where the probe of §4 finds snapping, the percentage part of each origin axis
+is read from the Typed OM computed value (`computedStyleMap()`, which keeps `%` and `calc()`;
+the resolved value is px only) and applied to the snapped box. The track's origin fraction
+stays the computed one: only the projection follows the browser.
 
 `Mπ` is the parent's map in the node's own flush space (§3.1). Every full map is the map that
 carries `Lₐ` onto the drawn box, so it needs no chain. Let `Ωₐ` be `a`'s full map with every
@@ -370,7 +385,7 @@ any total scale. The declaration is restored on settle.
 |---|---|---|
 | `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.1), frozen for the run and restored byte for byte. Layout writes them `!important`; an author's inline write during the run (React re-rendering a `style` prop) replaces that declaration, so it is recognised by its priority and taken in at the next flush or settle: the run keeps its frozen composition and the author's value is what the settle restores. A CSS transition configured on them (`translate`, `scale` or `all`, which would animate layout's own writes) or a running CSS animation of them snaps the node with a development warning naming the fix (e.g. Tailwind `transition-colors` instead of `transition`). |
 | `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
-| `transform-origin` | Author | Read once per flush for active nodes. |
+| `transform-origin` | Author | Read once per flush for active nodes (with its Typed OM value where the browser snaps the reference box, §5.3). |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
 | `border-radius` | Layout when `radius: true` | Saved when layout first owns it (also when `radius` turns on mid-run), restored on settle; turning `radius` off gives the corners back at once. |
 | `rotate`, skew, non-translation ancestor transforms | Author | The subtree snaps with `'unsupported'`. |
@@ -609,7 +624,8 @@ nothing.
 Regression tests: late start after a 120 ms block (≤ 6 %), unrelated re-render (identical
 trajectory), crossfade only on a real handoff with no pop to 1, velocity ≤ 5 % across a
 retarget under jank, reduced motion (zero writes, zero subscribers, mid-run toggle), showcase
-honesty. Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
+honesty, fractional boxes under scale within 0.05 px in every engine (`layout:REFBOX`, the
+WebKit reference box). Seeded fuzz invariants: no NaN, no read after the first write in a tick, one writer
 per property, byte-identical final inline style, no subscription left.
 
 Cost gates: reads per commit = 2N rects plus one computed-style read per active node; zero
