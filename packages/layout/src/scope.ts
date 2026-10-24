@@ -17,6 +17,7 @@ import {
     pageScroll,
     put,
     RADIUS_PROPERTIES,
+    readRadius,
     resolveLen,
     type Saved,
     save,
@@ -227,6 +228,8 @@ interface Run {
 interface Capture {
     live: boolean
     readonly rects: Map<Participant, Box>
+    /** Resting shared radius:true participants' resolved radii at B. */
+    readonly radius: Map<Participant, readonly number[]>
     /** Participants driven at capture time (not read: B is their drawn box). */
     readonly driven: Set<Participant>
     readonly scroll: ReadonlyMap<Element, readonly [number, number]>
@@ -816,8 +819,10 @@ export function createLayoutGroup(
         if (disposed || !hasDOM()) return
         if (capture?.live) return
         const rects = new Map<Participant, Box>()
+        const radius = new Map<Participant, readonly number[]>()
         const driven = new Set<Participant>()
         const elements: HTMLElement[] = []
+        const radiusParticipants: Participant[] = []
         let scroll: readonly [number, number] | null = null
         for (const p of registry.values()) {
             if (!p.element.isConnected) continue
@@ -829,10 +834,19 @@ export function createLayoutGroup(
             scroll ??= pageScroll(p.element.ownerDocument)
             rects.set(p, pageRect(p.element, scroll))
             stats.reads += 1
+            if (p.options.layoutId !== undefined && p.options.radius === true) {
+                radiusParticipants.push(p)
+            }
+        }
+        for (const p of radiusParticipants) {
+            const value = readRadius(p.element)
+            stats.reads += 1
+            if (value) radius.set(p, value)
         }
         const current: Capture = {
             live: true,
             rects,
+            radius,
             driven,
             scroll: scrollOffsets(elements),
         }
@@ -1429,11 +1443,7 @@ export function createLayoutGroup(
         })
         for (;;) {
             const wanted = result.actions.map(
-                (action, i) =>
-                    action.kind !== 'none' ||
-                    (list[i]!.options.layoutId !== undefined &&
-                        list[i]!.options.radius === true &&
-                        list[i]!.geometry === null)
+                (action) => action.kind !== 'none'
             )
             const added = measureNodes(wanted)
             // the plan assumed a centred origin and support for every node it
@@ -1617,6 +1627,7 @@ export function createLayoutGroup(
                     if (previous.options.radius !== true) return
                     source =
                         drawnRadius.get(previous) ??
+                        cap?.radius.get(previous) ??
                         previous.geometry?.radius ??
                         null
                 } else {
@@ -2035,6 +2046,7 @@ export function createLayoutGroup(
                             radius:
                                 self.options.radius === true
                                     ? (motion?.radius ??
+                                      capture?.radius.get(self) ??
                                       self.geometry?.radius ??
                                       null)
                                     : null,

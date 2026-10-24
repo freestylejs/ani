@@ -149,7 +149,12 @@ function px(value: string): number {
 export function borderSize(
     element: HTMLElement
 ): readonly [number, number] | null {
-    const style = getComputedStyle(element)
+    return borderSizeFromStyle(getComputedStyle(element))
+}
+
+function borderSizeFromStyle(
+    style: CSSStyleDeclaration
+): readonly [number, number] | null {
     const w = px(style.width)
     const h = px(style.height)
     if (!Number.isFinite(w) || !Number.isFinite(h)) return null
@@ -166,6 +171,28 @@ export function borderSize(
             px(style.borderTopWidth) +
             px(style.borderBottomWidth),
     ]
+}
+
+function radiiFromStyle(style: CSSStyleDeclaration): Len[] {
+    const radii: Len[] = []
+    for (const property of RADIUS_PROPERTIES) {
+        const parts = cssComponents(style.getPropertyValue(property))
+        const x = parseRadiusLen(parts[0]!) ?? ZERO
+        const y =
+            parts[1] === undefined ? x : (parseRadiusLen(parts[1]) ?? ZERO)
+        radii.push(x, y)
+    }
+    return radii
+}
+
+/** Resolved authored corner radii from one computed-style read. */
+export function readRadius(element: HTMLElement): readonly number[] | null {
+    const style = getComputedStyle(element)
+    const size = borderSizeFromStyle(style)
+    if (!size) return null
+    return radiiFromStyle(style).map((len, i) =>
+        resolveLen(len, i % 2 === 0 ? size[0] : size[1])
+    )
 }
 
 /** Whether a transition (configured or running) or a CSS animation drives `translate` or `scale`. */
@@ -350,14 +377,7 @@ export function measure(
     }
     let radii: Len[] | null = null
     if (radius && !unsupported) {
-        radii = []
-        for (const property of RADIUS_PROPERTIES) {
-            const parts = cssComponents(style.getPropertyValue(property))
-            const x = parseRadiusLen(parts[0]!) ?? ZERO
-            const y =
-                parts[1] === undefined ? x : (parseRadiusLen(parts[1]) ?? ZERO)
-            radii.push(x, y)
-        }
+        radii = radiiFromStyle(style)
     }
     return {
         unsupported,
