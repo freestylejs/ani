@@ -1,9 +1,10 @@
 // The Motion-parity examples (`layout_examples.tsx`) on a manual clock, in
 // Chromium, Firefox and WebKit. One harness checks every example the same way:
 //
-// - a change made at rest: every marked element (`data-lk`) present before and
-//   after is on the independent oracle at every frame, from the box it was
-//   drawn at to the box it lands in, with the example's own motion;
+// - a change made at rest: every marked element (`data-lk`, or a fixture's
+//   `data-layout-id`) present before and after is on the independent oracle at
+//   every frame, from the box it was drawn at to the box it lands in, with the
+//   example's own motion;
 // - a change made mid-flight: nothing moves at the commit, and the frame step
 //   right after it continues the step right before it;
 // - always: no snap, crossfading pairs sum to opacity 1, and at rest every
@@ -40,6 +41,10 @@ import {
     type Todo,
     TodoFixture,
 } from '../../../packages/web/src/components/layout_examples'
+import {
+    FolderFixture,
+    GalleryFixture,
+} from '../../../packages/web/src/components/layout_fixtures'
 import { expectClose, expectEqual } from './assert'
 import {
     DT,
@@ -72,6 +77,12 @@ interface Entry {
 
 type Snapshot = Map<string, Entry[]>
 
+const MARKED = '[data-lk], [data-layout-id]'
+
+function markedKey(element: HTMLElement): string {
+    return element.dataset.lk ?? element.dataset.layoutId!
+}
+
 function identity(transform: string): boolean {
     if (transform === 'none') return true
     const m = /matrix\(([^)]*)\)/.exec(transform)
@@ -97,8 +108,8 @@ function transformed(element: HTMLElement, host: HTMLElement): boolean {
 
 function snapshot(host: HTMLElement): Snapshot {
     const out: Snapshot = new Map()
-    for (const element of host.querySelectorAll<HTMLElement>('[data-lk]')) {
-        const key = element.dataset.lk!
+    for (const element of host.querySelectorAll<HTMLElement>(MARKED)) {
+        const key = markedKey(element)
         const list = out.get(key) ?? []
         list.push({
             element,
@@ -140,7 +151,7 @@ function context(): Context {
             clock: mc.clock,
             onSnap: (element, reason) =>
                 snaps.push(
-                    `${element.dataset.lk ?? element.tagName}: ${reason}`
+                    `${element.dataset.lk ?? element.dataset.layoutId ?? element.tagName}: ${reason}`
                 ),
         },
     }
@@ -182,15 +193,31 @@ function expectNoJump(
     let worst = 0
     const now = snapshot(host)
     for (const [key, list] of before) {
-        if (list.length !== 1 || moving.includes(key)) continue
+        if (moving.includes(key) || list.length === 0) continue
         const was = list[0]!.box
+        if (list.length > 1) {
+            for (const entry of list.slice(1)) {
+                const error = maxDiff(entry.box, was)
+                if (!(error <= TOL)) {
+                    throw new Error(
+                        `${label}: ${key} crossfade layers differ before the commit by ${error.toFixed(3)} px`
+                    )
+                }
+            }
+        }
         for (const entry of now.get(key) ?? []) {
+            // A shared-id handoff can have two layers for one key. They share
+            // one drawn box, so both must stay on the pre-commit box.
+            const sameElement = list.find(
+                (candidate) => candidate.element === entry.element
+            )
+            const beforeBox = sameElement?.box ?? was
             // a 'position' node's size is pinned to its new box (§5.2):
             // only its origin point must not move
             const want =
                 entry.element.dataset.lkMode === 'position'
-                    ? pinned(was, entry.box, origin(entry.element))
-                    : was
+                    ? pinned(beforeBox, entry.box, origin(entry.element))
+                    : beforeBox
             worst = Math.max(
                 worst,
                 expectAt(entry.element, want, `${label}: ${key}`)
@@ -403,15 +430,23 @@ async function chainRun(
         const now = snapshot(host)
         for (const [key, to] of target) {
             const list = now.get(key)
-            if (list?.length !== 1 || list[0]!.transformed) {
+            const current = live.get(key)
+            if (
+                !list ||
+                list.length === 0 ||
+                list.some((entry) => entry.transformed) ||
+                (list.length !== 1 && current === undefined)
+            ) {
                 live.delete(key)
                 continue
             }
-            const current = live.get(key)
             const t = current ? elapsed(current.start) : 0
             const moving =
                 current !== undefined &&
                 t < current.track.delay + current.track.duration
+            // During a shared-id crossfade there are two live elements for
+            // one key. A running oracle track already defines their common
+            // drawn box, so keep/retarget that track instead of dropping it.
             const drawn = current ? expectedBox(current.track, t) : list[0]!.box
             if (moving && maxDiff(to.box, current.track.after) < 1) {
                 kept += 1
@@ -490,17 +525,16 @@ async function expectFresh(ctx: Context, node: ReactNode, label: string) {
     try {
         await fresh.render(node)
         const want = new Map<string, string>()
-        for (const e of fresh.host.querySelectorAll<HTMLElement>('[data-lk]')) {
-            want.set(e.dataset.lk!, layoutStyle(e))
+        for (const e of fresh.host.querySelectorAll<HTMLElement>(MARKED)) {
+            want.set(markedKey(e), layoutStyle(e))
         }
         let count = 0
-        for (const e of ctx.view.host.querySelectorAll<HTMLElement>(
-            '[data-lk]'
-        )) {
+        for (const e of ctx.view.host.querySelectorAll<HTMLElement>(MARKED)) {
+            const key = markedKey(e)
             expectEqual(
                 layoutStyle(e),
-                want.get(e.dataset.lk!),
-                `${label}: ${e.dataset.lk} inline style at rest`
+                want.get(key),
+                `${label}: ${key} inline style at rest`
             )
             count += 1
         }
@@ -524,6 +558,80 @@ function summary(name: string, runs: RunStats[], extra = ''): string {
 
 function chainText(c: RunStats & { changes: number; kept: number }): string {
     return `; ${c.changes} mid-flight changes: ${c.keys} element chains over ${c.frames} frames on the oracle, velocity carried (worst ${c.worst.toFixed(4)} px at ${c.at || '-'}, ${c.kept} tracks kept)`
+}
+
+/* ───────────────────────── iOS Folder fixture ───────────────────────── */
+
+export async function Folder(): Promise<string> {
+    const ctx = context()
+    const app = (open: boolean) => h(FolderFixture, { open, ...ctx.props })
+    const render = (open: boolean) => () => ctx.view.render(app(open))
+    const to = (open: boolean, frames: number): Step => ({
+        frames,
+        act: render(open),
+        state: () => app(open),
+    })
+    try {
+        await ctx.view.render(app(false))
+        const runs = [
+            await oracleRun(ctx, render(true), 'folder open'),
+            await oracleRun(ctx, render(false), 'folder close'),
+        ]
+        const c = await chainRun(
+            ctx,
+            [to(true, 6), to(false, 5), to(true, 4)],
+            'folder reopen'
+        )
+        runs.push(await oracleRun(ctx, render(false), 'folder final close'))
+        await expectFresh(ctx, app(false), 'folder')
+        expectNoSnap(ctx)
+        return summary('iOS folder', runs, chainText(c))
+    } finally {
+        ctx.view.dispose()
+    }
+}
+
+/* ───────────────────────── Gallery fixture ───────────────────────── */
+
+export async function Gallery(): Promise<string> {
+    const ctx = context()
+    const app = (view: 'grid' | 'list', detail: number | null = null) =>
+        h(GalleryFixture, { view, detail, ...ctx.props })
+    const render = (view: 'grid' | 'list', detail: number | null = null) => () =>
+        ctx.view.render(app(view, detail))
+    const to = (
+        view: 'grid' | 'list',
+        detail: number | null,
+        frames: number
+    ): Step => ({
+        frames,
+        act: render(view, detail),
+        state: () => app(view, detail),
+    })
+    try {
+        await ctx.view.render(app('grid'))
+        const runs = [
+            await oracleRun(ctx, render('list'), 'gallery grid→list'),
+            await oracleRun(ctx, render('grid'), 'gallery list→grid'),
+            await oracleRun(ctx, render('grid', 5), 'gallery detail open'),
+            await oracleRun(ctx, render('grid'), 'gallery detail close'),
+        ]
+        const c = await chainRun(
+            ctx,
+            [
+                to('list', null, 5),
+                to('grid', null, 4),
+                to('grid', 5, 5),
+                to('grid', null, 4),
+            ],
+            'gallery chain'
+        )
+        await expectFresh(ctx, app('grid'), 'gallery')
+        expectNoSnap(ctx)
+        return summary('gallery', runs, chainText(c))
+    } finally {
+        ctx.view.dispose()
+    }
 }
 
 /* ───────────────────────── Switch ───────────────────────── */
