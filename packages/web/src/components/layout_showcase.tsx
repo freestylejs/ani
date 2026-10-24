@@ -177,7 +177,7 @@ function FolderDemo() {
         <ShowcaseCard
             id="E3"
             title="Folder"
-            description="The closed folder and open panel share one radius-aware surface; four nested shared tiles morph inside it, while the five staggered apps are position-only layout participants so the surface never stretches them."
+            description="The closed folder and open panel share one radius-aware surface; four nested shared tiles inherit the group's single spring, while the five staggered apps are position-only layout participants so the surface never stretches them."
             tag="nested ids + radius"
             controls={
                 <Control onClick={() => setOpen((v) => !v)}>
@@ -192,13 +192,14 @@ function FolderDemo() {
 const tile = useLayout({
     layoutId: 'folder-tile-' + i,
     radius: true,
-    motion: { timing: crossingTile ? folderSpring : spring },
 })
 const item = useLayout({ layout: 'position', ref: itemPresence.ref })
 
-<AnimatePresence mode="popLayout">
-    {open ? <Panel ref={surface} /> : <Folder ref={surface} />}
-</AnimatePresence>`}
+<LayoutGroup motion={{ duration: DURATION, timing: SPRING }}>
+    <AnimatePresence mode="popLayout">
+        {open ? <Panel ref={surface} /> : <Folder ref={surface} />}
+    </AnimatePresence>
+</LayoutGroup>`}
         >
             <FolderFixture open={open} />
         </ShowcaseCard>
