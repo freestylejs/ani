@@ -4238,47 +4238,211 @@ export async function P2RadiusCrossfade(): Promise<string> {
     }
 }
 
-/** P2-C read discipline: shared radius is read once at first sight, never forced per flush. */
+/** P2-C amendment 3: a style-only resting radius change is captured at B for retained and live handoffs. */
+export async function P2RadiusCaptureAccuracy(): Promise<string> {
+    const linear = timing.linear()
+    const duration = 0.4
+    let worst = 0
+
+    {
+        const h = harness({ motion: { duration, timing: linear }, retain: 1 })
+        try {
+            const old = node(
+                h.root,
+                'left: 20px; top: 20px; width: 100px; height: 60px; border-radius: 14px / 10px;'
+            )
+            const removeOld = h.group.add(old, {
+                layoutId: 'radius-capture-retained',
+                radius: true,
+            })
+            await h.group.flush()
+            old.style.borderRadius = '30px / 18px'
+            h.group.capture()
+            removeOld()
+            old.remove()
+            const lead = node(
+                h.root,
+                'left: 300px; top: 100px; width: 220px; height: 120px; border-radius: 8px / 24px;'
+            )
+            h.add(lead, {
+                layoutId: 'radius-capture-retained',
+                radius: true,
+            })
+            const run = report(h.group.flush())
+            const from = [30, 18, 30, 18, 30, 18, 30, 18]
+            const to = [8, 24, 8, 24, 8, 24, 8, 24]
+            worst = Math.max(
+                worst,
+                expectRadii(lead, from, 'retained style-only handoff t=0')
+            )
+            await frames(
+                h.mc,
+                40,
+                (elapsed) => {
+                    worst = Math.max(
+                        worst,
+                        expectRadii(
+                            lead,
+                            expectedRadiusBlend(
+                                from,
+                                to,
+                                linear,
+                                elapsed / duration
+                            ),
+                            `retained style-only handoff t=${elapsed.toFixed(3)}`
+                        )
+                    )
+                },
+                () => run.value !== null
+            )
+            expectEqual(run.value?.status, 'ended', 'retained capture run')
+        } finally {
+            h.dispose()
+        }
+    }
+
+    {
+        const h = harness({ motion: { duration, timing: linear } })
+        try {
+            const old = node(
+                h.root,
+                'left: 20px; top: 20px; width: 100px; height: 60px; border-radius: 12px / 9px;'
+            )
+            h.add(old, {
+                layoutId: 'radius-capture-live',
+                radius: true,
+            })
+            const presence = createPresence(
+                old,
+                {
+                    present: { translateY: 0 },
+                    exit: ani({
+                        to: { translateY: 0 },
+                        duration: 0.1,
+                        timing: linear,
+                    }),
+                },
+                { clock: h.mc.clock }
+            )
+            await h.group.flush()
+            old.style.borderRadius = '28px / 16px'
+            h.group.capture()
+            void presence.exit()
+            const lead = node(
+                h.root,
+                'left: 320px; top: 120px; width: 240px; height: 140px; border-radius: 6px / 22px;'
+            )
+            h.add(lead, { layoutId: 'radius-capture-live', radius: true })
+            const run = report(h.group.flush())
+            const from = [28, 16, 28, 16, 28, 16, 28, 16]
+            const to = [6, 22, 6, 22, 6, 22, 6, 22]
+            worst = Math.max(
+                worst,
+                expectRadii(lead, from, 'live lead style-only handoff t=0'),
+                expectRadii(old, from, 'live follower style-only handoff t=0')
+            )
+            await frames(
+                h.mc,
+                40,
+                (elapsed) => {
+                    const want = expectedRadiusBlend(
+                        from,
+                        to,
+                        linear,
+                        elapsed / duration
+                    )
+                    worst = Math.max(
+                        worst,
+                        expectRadii(
+                            lead,
+                            want,
+                            `live lead style-only handoff t=${elapsed.toFixed(3)}`
+                        ),
+                        expectRadii(
+                            old,
+                            want,
+                            `live follower style-only handoff t=${elapsed.toFixed(3)}`
+                        )
+                    )
+                },
+                () => run.value !== null
+            )
+            expectEqual(run.value?.status, 'ended', 'live capture run')
+            presence.dispose()
+        } finally {
+            h.dispose()
+        }
+    }
+
+    return `style-only resting radius captured for retained and live handoffs within ${worst.toFixed(4)} px`
+}
+
+/** P2-C read discipline: capture snapshots shared radii; flush and frame reads stay base. */
 export async function P2RadiusReadDiscipline(): Promise<string> {
     const linear = timing.linear()
     const h = harness({ motion: { duration: 0.2, timing: linear } })
     const probe = probeDom()
     try {
-        const lead = node(
-            h.root,
-            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
-        )
+        const shared = [
+            node(
+                h.root,
+                'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+            ),
+            node(
+                h.root,
+                'left: 120px; top: 20px; width: 80px; height: 40px; border-radius: 14px;'
+            ),
+            node(
+                h.root,
+                'left: 220px; top: 20px; width: 80px; height: 40px; border-radius: 25%;'
+            ),
+        ]
         const sibling = node(
             h.root,
             'left: 20px; top: 120px; width: 80px; height: 40px;'
         )
-        h.add(lead, { layoutId: 'radius-read-discipline', radius: true })
+        const plain = node(
+            h.root,
+            'left: 120px; top: 120px; width: 80px; height: 40px; border-radius: 9px;'
+        )
+        shared.forEach((element, i) =>
+            h.add(element, {
+                layoutId: `radius-read-discipline-${i}`,
+                radius: true,
+            })
+        )
         h.add(sibling)
+        h.add(plain, { radius: true })
 
-        // A never-moved shared-radius participant gets one ordinary geometry
-        // measurement the first time a flush sees it.
         probe.log.length = 0
         probe.on = true
-        await h.group.flush()
+        h.group.capture()
         probe.on = false
-        const firstRects = probe.log.filter((entry) => entry === 'rect').length
-        const firstStyles = probe.log.filter(
+        const captureLog = [...probe.log]
+        const captureRects = captureLog.filter(
+            (entry) => entry === 'rect'
+        ).length
+        const captureStyles = captureLog.filter(
             (entry) => entry === 'style'
         ).length
-        expectEqual(firstRects, 2, 'first flush rect reads')
-        expectEqual(firstStyles, 1, 'first flush shared-radius style read')
+        expectEqual(captureRects, 5, 'capture rect reads')
+        expectEqual(captureStyles, 3, 'capture shared-radius style reads')
+        expectEqual(
+            captureLog.slice(0, 5).every((entry) => entry === 'rect') &&
+                captureLog.slice(5).every((entry) => entry === 'style'),
+            true,
+            `capture rects before styles (${captureLog.join(',')})`
+        )
 
-        // The one-time bootstrap must not become a per-flush read.
         probe.log.length = 0
         probe.on = true
         await h.group.flush()
         probe.on = false
-        const nextRects = probe.log.filter((entry) => entry === 'rect').length
-        const nextStyles = probe.log.filter((entry) => entry === 'style').length
-        expectEqual(nextRects, 2, 'next flush rect reads')
-        expectEqual(nextStyles, 0, 'next flush shared-radius style reads')
+        const noopRects = probe.log.filter((entry) => entry === 'rect').length
+        const noopStyles = probe.log.filter((entry) => entry === 'style').length
+        expectEqual(noopRects, 5, 'no-op flush rect reads match base')
+        expectEqual(noopStyles, 0, 'no-op flush style reads match base')
 
-        // The judged scenario: only the unrelated sibling changes.
         h.group.capture()
         sibling.style.left = '160px'
         probe.log.length = 0
@@ -4287,12 +4451,20 @@ export async function P2RadiusReadDiscipline(): Promise<string> {
         probe.on = false
         const rects = probe.log.filter((entry) => entry === 'rect').length
         const styles = probe.log.filter((entry) => entry === 'style').length
-        expectEqual(rects, 2, 'flush rect reads match base')
+        expectEqual(rects, 5, 'flush rect reads match base')
         expectEqual(styles, 1, 'flush computed-style reads match base')
+
+        probe.log.length = 0
+        probe.on = true
+        for (let i = 0; i < 5; i++) h.mc.frame(FRAME_MS)
+        probe.on = false
+        const frameReads = probe.log.filter((entry) => entry !== 'write').length
+        expectEqual(frameReads, 0, 'steady frame reads')
+
         h.group.finish()
         await settleMicrotasks()
         expectEqual(second.value?.status, 'ended', 'sibling run')
-        return `first flush ${firstRects} rects, ${firstStyles} computed style; next flush ${nextRects} rects, ${nextStyles} computed style; unrelated flush matches base: ${rects} rects, ${styles} computed style`
+        return `capture ${captureRects} rects then ${captureStyles} styles; no-op flush ${noopRects} rects/${noopStyles} styles; unrelated flush ${rects} rects/${styles} style; frames ${frameReads} reads`
     } finally {
         probe.restore()
         h.dispose()
