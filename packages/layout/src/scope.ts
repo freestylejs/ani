@@ -151,6 +151,8 @@ interface Geometry {
     readonly authored: Authored
     /** Corner radii at A in px (x/y per corner), when `radius: true`. */
     readonly radius: readonly number[] | null
+    /** Authored radius lengths whose percentages resolve against this flush's CSS box. */
+    readonly radiusSource: readonly Len[] | null
     /** The presence part of the computed `transform` at this flush. */
     readonly matrix: Measured['matrix']
     readonly unsupported: string | null
@@ -182,6 +184,8 @@ interface Drive {
     lead: Participant | null
     readonly saved: Saved
     readonly authored: Authored
+    /** Authored corner-radius lengths frozen while layout owns their declarations. */
+    radius: readonly Len[] | null
     /** The reduced-motion mode its track was planned under. */
     mode: string
     run: Run | null
@@ -916,6 +920,7 @@ export function createLayoutGroup(
                 fy: css.h > 0 ? m.origin[1] / css.h : 0.5,
                 authored,
                 radius,
+                radiusSource: m.radius,
                 matrix: m.matrix,
                 unsupported,
             },
@@ -1145,13 +1150,24 @@ export function createLayoutGroup(
             for (let i = 0; i < list.length; i++) {
                 if (!wanted[i] || geometry[i]) continue
                 const p = list[i]!
-                const m = measure(
+                let m = measure(
                     p.element,
                     p.options.radius === true,
                     animatedNow,
                     snapsReference
                 )
                 stats.reads += 1
+                if (m.radius && p.drive?.radius) {
+                    const radius = [...m.radius]
+                    RADIUS_PROPERTIES.forEach((property, corner) => {
+                        if (!p.drive!.written.has(property)) return
+                        radius[corner * 2] = p.drive!.radius![corner * 2]!
+                        radius[corner * 2 + 1] =
+                            p.drive!.radius![corner * 2 + 1]!
+                    })
+                    m = { ...m, radius }
+                }
+                if (p.drive && p.options.radius) p.drive.radius = m.radius
                 const parent = parents[i]!
                 const { geometry: g, full } = resolveGeometry(
                     p,
@@ -1509,6 +1525,9 @@ export function createLayoutGroup(
                         existing.saved.delete(prop)
                         existing.written.delete(prop)
                     }
+                    existing.radius = null
+                } else if (p.options.radius) {
+                    existing.radius = g.radiusSource
                 }
                 existing.kind = kind
                 return existing
@@ -1527,6 +1546,7 @@ export function createLayoutGroup(
                 lead: null,
                 saved: save(p.element, all),
                 authored: g.authored,
+                radius: g.radiusSource,
                 mode: reduced,
                 run: null,
                 release: null,
