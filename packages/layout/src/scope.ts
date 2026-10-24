@@ -24,7 +24,7 @@ import {
     scrollOffsets,
     viewportBox,
 } from './dom'
-import { hasDOM, supportsLinearEasing } from './feature'
+import { hasDOM, snapsReferenceBox, supportsLinearEasing } from './feature'
 import {
     aboutOrigin,
     type Box,
@@ -42,6 +42,7 @@ import {
     STILL_IDENTITY,
     still,
     unmapOwn,
+    usedOrigin,
 } from './geometry'
 import {
     assertKeys,
@@ -438,6 +439,8 @@ export function createLayoutGroup(
     options: LayoutGroupOptions = {}
 ): LayoutGroup {
     validateGroupOptions(options)
+    // the one write-then-read of the engine, outside every flush and frame
+    if (hasDOM()) snapsReferenceBox(document)
     const clock: Clock = options.clock ?? defaultClock
     const policy = validateReducedMotion(options.reducedMotion)
     const threshold = options.threshold ?? DEFAULT_THRESHOLD
@@ -845,7 +848,8 @@ export function createLayoutGroup(
         rect: Box,
         m: Measured,
         parentFull: Map2,
-        parentRest: Map2
+        parentRest: Map2,
+        dpr: number
     ): { geometry: Geometry; full: Map2 } {
         const local = mapBox(invert(parentFull), rect)
         let unsupported = m.unsupported
@@ -856,13 +860,14 @@ export function createLayoutGroup(
         const sy = ky > 0 ? ky : 1
         const w = local.w / sx
         const h = local.h / sy
+        const [originX, originY] = usedOrigin(m.origin, m.originPct, w, h, dpr)
         const own = {
             kx: sx,
             ky: sy,
             tx: resolveLen(m.translate[0], w) + m.scale[0] * m.matrix.e,
             ty: resolveLen(m.translate[1], h) + m.scale[1] * m.matrix.f,
-            ox: m.origin[0],
-            oy: m.origin[1],
+            ox: originX,
+            oy: originY,
         }
         const css = unmapOwn(local, own)
         const full = compose(parentFull, ownMap(css, own))
@@ -872,8 +877,8 @@ export function createLayoutGroup(
             sx: m.scale[0],
             sy: m.scale[1],
         }
-        const ox = css.x + m.origin[0]
-        const oy = css.y + m.origin[1]
+        const ox = css.x + originX
+        const oy = css.y + originY
         const inner = aboutOrigin(
             {
                 tx: authored.tx + authored.sx * m.matrix.e,
@@ -1111,6 +1116,9 @@ export function createLayoutGroup(
 
         // 1. reads: every rect, then computed styles of what the plan needs
         const doc = list[0]!.element.ownerDocument
+        // probed when the scope was created; another document is probed here
+        const snapsReference = snapsReferenceBox(doc)
+        const dpr = doc.defaultView?.devicePixelRatio ?? 1
         const scroll = pageScroll(doc)
         const rects = list.map((p) => pageRect(p.element, scroll))
         stats.reads += list.length
@@ -1137,7 +1145,8 @@ export function createLayoutGroup(
                 const m = measure(
                     p.element,
                     p.options.radius === true,
-                    animatedNow
+                    animatedNow,
+                    snapsReference
                 )
                 stats.reads += 1
                 const parent = parents[i]!
@@ -1146,7 +1155,8 @@ export function createLayoutGroup(
                     rects[i]!,
                     m,
                     parent >= 0 ? fulls[parent]! : IDENTITY_MAP,
-                    parent >= 0 ? geometry[parent]!.rest : IDENTITY_MAP
+                    parent >= 0 ? geometry[parent]!.rest : IDENTITY_MAP,
+                    dpr
                 )
                 geometry[i] = g
                 fulls[i] = full

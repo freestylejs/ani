@@ -14,6 +14,7 @@ import {
     ownMap,
     poseFor,
     unmapOwn,
+    usedOrigin,
 } from '../geometry'
 import { applyPose, maxDiff, rng } from './oracle'
 
@@ -151,5 +152,68 @@ describe('geometry: moving maps', () => {
             )
         }
         expect(movingOnto({ ...css, w: 0 }, drawn, velocity)).toBeNull()
+    })
+})
+
+describe('geometry: the origin the browser applies (§5.3)', () => {
+    it('is the computed origin where the browser uses the exact box', () => {
+        expect(
+            usedOrigin([35.09375, 10.1484375], null, 70.1875, 20.296875, 1)
+        ).toEqual([35.09375, 10.1484375])
+    })
+
+    // the origins WebKit applied in a probe (left 20, scale 5): a percentage
+    // of round(w · dpr) / dpr, a length as it is
+    it.each([
+        [
+            '50% 50%, dpr 1',
+            [35.09375, 10.1484375],
+            [0.5, 0.5],
+            70.1875,
+            20.296875,
+            1,
+            [35, 10],
+        ],
+        [
+            '50% 50%, dpr 2',
+            [5.1484375, 10.1484375],
+            [0.5, 0.5],
+            10.296875,
+            20.296875,
+            2,
+            [5.25, 10.25],
+        ],
+        [
+            '50% 50%, dpr 3',
+            [35.09375, 10.1484375],
+            [0.5, 0.5],
+            70.1875,
+            20.296875,
+            3,
+            [35.1666667, 10.1666667],
+        ],
+        [
+            '100% 0, dpr 2',
+            [50.296875, 0],
+            [1, 0],
+            50.296875,
+            20.296875,
+            2,
+            [50.5, 0],
+        ],
+        ['10px 0, dpr 2', [10, 0], [0, 0], 50.296875, 20.296875, 2, [10, 0]],
+        [
+            'calc(20% + 3px) 0, dpr 2',
+            [13.059375, 0],
+            [0.2, 0],
+            50.296875,
+            20.296875,
+            2,
+            [13.1, 0],
+        ],
+    ] as const)('%s', (_, origin, pct, w, h, dpr, want) => {
+        const [x, y] = usedOrigin(origin, pct, w, h, dpr)
+        expect(x).toBeCloseTo(want[0], 6)
+        expect(y).toBeCloseTo(want[1], 6)
     })
 })

@@ -29,6 +29,11 @@ export interface Measured {
     }
     /** `transform-origin`, px from the border box's top-left. */
     readonly origin: readonly [number, number]
+    /**
+     * The percentage part of each origin axis, read only where the browser
+     * snaps the reference box (`snapsReferenceBox`); `null` elsewhere.
+     */
+    readonly originPct: readonly [number, number] | null
     /** Border-box size in CSS px before any transform, rounded (`offsetWidth`/`offsetHeight`). */
     readonly size: readonly [number, number]
     /** Corner radii (tl, tr, br, bl as x/y pairs), when asked for. */
@@ -218,10 +223,64 @@ export function viewportBox(doc: Document): Box {
     }
 }
 
+/** A computed `transform-origin` component's percentage (`calc()` included). */
+function percentOf(token: string): number | null {
+    if (!token.startsWith('calc(')) {
+        const value = Number.parseFloat(token)
+        if (!Number.isFinite(value)) return null
+        return token.endsWith('%') ? value / 100 : 0
+    }
+    let sign = 1
+    let pct = 0
+    for (const part of token.slice(5, -1).trim().split(/\s+/)) {
+        if (part === '+' || part === '-') {
+            sign = part === '+' ? 1 : -1
+            continue
+        }
+        const value = Number.parseFloat(part)
+        if (!Number.isFinite(value)) return null
+        if (part.endsWith('%')) pct += (sign * value) / 100
+        sign = 1
+    }
+    return pct
+}
+
+/**
+ * The percentage part of each origin axis from the computed value: the
+ * resolved `transformOrigin` is px only, the Typed OM keeps percentages.
+ */
+function originPercents(
+    element: HTMLElement
+): readonly [number, number] | null {
+    if (typeof element.computedStyleMap !== 'function') return null
+    const value = String(
+        element.computedStyleMap().get('transform-origin') ?? ''
+    )
+    // components split on spaces outside parentheses
+    const tokens: string[] = []
+    let depth = 0
+    let current = ''
+    for (const ch of value) {
+        if (ch === '(') depth += 1
+        if (ch === ')') depth -= 1
+        if (ch === ' ' && depth === 0) {
+            if (current) tokens.push(current)
+            current = ''
+        } else {
+            current += ch
+        }
+    }
+    if (current) tokens.push(current)
+    const x = tokens[0] === undefined ? null : percentOf(tokens[0])
+    const y = tokens[1] === undefined ? null : percentOf(tokens[1])
+    return x === null || y === null ? null : [x, y]
+}
+
 export function measure(
     element: HTMLElement,
     radius: boolean,
-    animated: () => ReadonlySet<Element>
+    animated: () => ReadonlySet<Element>,
+    snapsReference: boolean
 ): Measured {
     const style = getComputedStyle(element)
     const translate = parseTranslate(style.translate)
@@ -263,6 +322,7 @@ export function measure(
         scale: scale ?? [1, 1],
         matrix: matrix ?? IDENTITY_MATRIX,
         origin: [origin[0] ?? 0, origin[1] ?? 0],
+        originPct: snapsReference ? originPercents(element) : null,
         size: [element.offsetWidth, element.offsetHeight],
         radius: radii,
     }
