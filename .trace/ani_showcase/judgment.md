@@ -29,7 +29,7 @@ six are the existing acceptance rows. The new ones are in
 |---|---|---|
 | Layout animation (switch) | Switch | `useLayout()` on the knob |
 | Tab select | Tabs | shared `layoutId` underline, panel under `AnimatePresence mode="wait"` |
-| Smooth tabs | Smooth tabs | `layoutId` + `radius` pill following the pointer |
+| Smooth tabs | Smooth tabs | `layoutId` pill following the pointer; radius correction is the shared-element default |
 | Accordion | Accordion | card resizes by layout; header/body `layout: 'position'` |
 | Reorder animation | Shuffle | reorder the array |
 | Reorder (drag) | Drag to reorder | user land: own `transform` while dragging, `useLayoutGroup().update()` on release |
@@ -182,7 +182,7 @@ starts fresh. Ani hands the velocity over (§5.6).
 | `layout="preserve-aspect"` | none | — |
 | Per-element `onLayoutAnimationStart/Complete` | per-run reports (`flush()` / `update()` promises) | no per-element hooks |
 | Rotate, skew, SVG, inline elements | snap with a typed reason (§9) | no layout animation for them |
-| Border-radius correction | `radius: true`, opt-in; blends across a shared handoff (§7) | one option to set |
+| Border-radius correction | on by default with a `layoutId`; `radius: false` opts out; otherwise opt-in with `radius: true`; blends across a shared handoff (§7) | no option for shared elements; one option for non-shared elements |
 | Spring physics | stateless timing + a momentum term (§5.1) | a continuity device, not physics |
 
 ## 6. Residual risks
@@ -194,9 +194,9 @@ starts fresh. Ani hands the velocity over (§5.6).
   benchmark; the ratios are the claim.
 - The filmstrips use the real clock and screenshot latency, so their timestamps are approximate.
   Frame exactness is the tests' job.
-- A capture pays one computed-style read for each resting element that has both a `layoutId` and
-  `radius: true`. This is the price of an exact starting radius (§7); flushes and frames read
-  nothing more than before.
+- A capture pays one computed-style read for each resting element with a `layoutId` whose radius
+  correction is on (the default for `layoutId`; `radius: false` opts out). This is the price of an
+  exact starting radius (§7); flushes and frames read nothing more than before.
 - A direct `flush()` with no capture cannot see a radius changed by style alone while the element
   rested. The blend then starts from the last measured radius (ARCHITECTURE §12).
 
@@ -256,3 +256,45 @@ and WebKit:
 | WAAPI trace gate, size gate | pass; 8/8, unchanged bytes |
 | `ts:typecheck`, biome | clean (10 warnings, the existing baseline) |
 | docs smoke | 3 browsers, no errors |
+
+## 8. Follow-up: radius default and WAAPI requirements, 2026-10-25
+
+The user approved two follow-ups: a participant with a `layoutId` corrects radius by default
+(`radius: false` opts out; a participant without a `layoutId` remains opt-in), and the WAAPI
+engine's limits must be stated exactly in the architecture, public docs and JSDoc. The behavior
+landed in `4b3d4c8`; the first documentation pass was `a4191c6`. This cleanup adds `f51aafc`
+(WAAPI nesting validation and browser coverage), `52d6d89` (layout/React JSDoc and package docs),
+`7acf251` (web guide/showcase copy and Code disclosures), and `f96d352` (the expected-warning test
+annotation needed to preserve the 10-warning Biome baseline).
+
+The drift sweep found one behavior defect behind otherwise-correct prose: the WAAPI engine rejected
+a nested participant from `add()` but not from `set()`. A browser regression failed on `a4191c6`
+with `nested set: expected "ANI_INVALID_OPTIONS", received "no error"`; `set()` now runs the same
+nesting validator as `add()`. The same case covers a nesting introduced later in the DOM snapping
+`'unsupported'` and missing CSS `linear()` support snapping `'unsupported'`. A separate case proves
+that an Ani clock with `timeScale = 0` does not stop the document-timeline animation. Existing
+cases cover position-only/options rejection, no-velocity retargeting, reduced motion and no inline
+style. The jank step-back is a stated consequence of sampling `Animation.currentTime` on the main
+thread while the compositor keeps advancing; it has mechanism coverage plus the compositor trace,
+but no direct frame oracle because JavaScript cannot sample compositor-only frames while the main
+thread is blocked.
+
+User-facing shared-element examples no longer teach redundant `radius: true`; runtime fixtures were
+left explicit where they already were. The package README, guide, changesets and React `engine` prop
+now distinguish the default clock-driven RAF engine from WAAPI's document timeline and state the
+same WAAPI requirements and differences as the implementation. Historical decision/source traces
+were not rewritten.
+
+**Final gate (`f96d352`, before this trace-only update):**
+
+| Gate | Result |
+|---|---|
+| vitest | 137 files, 1,618 tests |
+| browser, Chromium | 164 passed |
+| browser, Firefox | 162 passed, 2 Chromium-only skipped |
+| browser, WebKit | 162 passed, 2 Chromium-only skipped |
+| engine coverage (statements/branches/functions/lines) | 95.20 / 85.52 / 98.20 / 98.01 (floors 90/80/95/92) |
+| commit reads at 1,000 participants | 2.30 ms (gate 4 ms); steady frame p95 at 300 nested movers 0.725 ms (gate 2 ms) |
+| WAAPI trace gate, size gate | pass; 8/8 |
+| `ts:typecheck`, biome | clean; 11/11 typecheck tasks, 10 warnings (existing baseline) |
+| docs smoke | Chromium, Firefox and WebKit pass against the built site on port 3114; no errors |
