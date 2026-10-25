@@ -5,7 +5,7 @@ Layout animation, presence and View Transition helpers for ANI 2.
 Mark elements, change the DOM, and every marked element whose box changed animates from where
 it was drawn to where layout put it. The default `'raf'` engine runs on Ani's clock and writes
 only `translate` and `scale` (plus `opacity` for a shared-element crossfade and
-`border-radius` for shared elements and when asked). It reads the DOM once before a change and
+`border-radius` when radius correction is on). It reads the DOM once before a change and
 once after it; animation frames do no reads.
 Anything it cannot animate exactly jumps to its final layout and is reported with a reason.
 
