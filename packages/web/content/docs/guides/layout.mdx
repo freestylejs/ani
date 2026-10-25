@@ -107,7 +107,7 @@ export function Panel({ open, children }: { open: boolean; children: ReactNode }
 | `delay` | `0` | Seconds. Applies to an element at rest when the change happens; an element that is already moving starts at once and keeps its speed. |
 | `timing` | `timing.easeOut()` | A core timing function. |
 
-The timing must be stateless and must start with a finite slope, because a moving element carries its velocity into the curve. `timing.linear()`, `timing.bezier(...)`, the CSS presets and `timing.spring(...)` work. `timing.dynamicSpring(...)` and a bezier with `x1 = 0` and `y1 ≠ 0` throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` as soon as you pass them. Like everywhere in Ani, `timing.spring` is fitted to `duration` (see [timing](/en/docs/core-api/timing)).
+The timing must be stateless and must start with a finite slope. The default `'raf'` engine needs that slope to carry a moving element's velocity into the curve; WAAPI uses the same validated timing but retargets at rest. `timing.linear()`, `timing.bezier(...)`, the CSS presets and `timing.spring(...)` work. `timing.dynamicSpring(...)` and a bezier with `x1 = 0` and `y1 ≠ 0` throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` as soon as you pass them. Like everywhere in Ani, `timing.spring` is fitted to `duration` (see [timing](/en/docs/core-api/timing)).
 
 A participant's `motion` is merged field by field over the `motion` of its groups, outermost first:
 
@@ -278,7 +278,7 @@ A participant with no `LayoutGroup` above it joins an implicit root group, one p
 
 | Group option | Default | Meaning |
 | :--- | :--- | :--- |
-| `clock` | `defaultClock` | The Ani clock that drives the group. |
+| `clock` | `defaultClock` | Drives the default `'raf'` engine and supplies reduced motion to both engines. |
 | `reducedMotion` | `'jump'` | See [Reduced motion](#reduced-motion). |
 | `threshold` | `1` | Pixels a box must move to animate. |
 | `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
@@ -458,9 +458,9 @@ Layout and the other style writers own separate CSS properties:
 
 ### Interruption
 
-A change while elements are moving does not wait for them and does not restart them from scratch. Each element whose target moved starts its new animation from where it is drawn, with its current velocity, and skips its `delay`. Elements whose target did not move keep their running animation untouched, so an unrelated re-render cannot restart anything. A change of `layoutId`, `layoutCrossfade` or `layoutDependency` alone never restarts a running animation.
+With the default `'raf'` engine, a change while elements are moving does not wait for them and does not restart them from scratch. Each element whose target moved starts its new animation from where it is drawn, with its current velocity, and skips its `delay`. Elements whose target did not move keep their running animation untouched, so an unrelated re-render cannot restart anything. A change of `layoutId`, `layoutCrossfade` or `layoutDependency` alone never restarts a running animation. With `'waapi'`, the compositor-engine rule above applies instead: a retarget starts from where it is drawn, at rest.
 
-The carried velocity bends the start of the new curve and fades out by its end. It keeps the motion continuous; it is not spring physics.
+For `'raf'`, the carried velocity bends the start of the new curve and fades out by its end. It keeps the motion continuous; it is not spring physics.
 
 ### Reduced motion
 
@@ -468,7 +468,7 @@ The preference comes from the group's clock (by default `matchMedia('(prefers-re
 
 | `reducedMotion` | Behavior |
 | :--- | :--- |
-| `'jump'` (default) | Nothing animates. Running animations finish at once, and the clock is not subscribed. The report's status is `'reduced'`. |
+| `'jump'` (default) | Nothing animates. Running animations finish at once; RAF leaves no clock subscription and WAAPI leaves no browser animation. The report's status is `'reduced'`. |
 | `{ maxDuration }` | Delay and duration are scaled down so that each animation fits in `maxDuration` seconds. Shorter ones are untouched. |
 | `'ignore'` | Animations play in full. |
 
@@ -512,7 +512,7 @@ Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a
 
 ### Limits
 
--   Layout motion runs on the main thread, on Ani's clock. While the main thread is blocked, the animation does not advance on screen.
+-   The default `'raf'` layout engine runs on the main thread, on Ani's clock, so it does not advance on screen while the main thread is blocked. The optional [WAAPI engine](#compositor-engine) is the gated compositor-smooth exception.
 -   Capture reads the DOM during render. These are reads only, but when styles changed since the last layout they force one.
 -   A change that renders no participant, `LayoutGroup` or `AnimatePresence` does not animate (see [When a change animates](#when-a-change-animates)).
 -   Text inside an element that scales is re-rasterized and can look soft until the animation ends. Use `layout: 'position'` on text.
