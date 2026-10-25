@@ -273,14 +273,98 @@ export async function W4(): Promise<string> {
         expectEqual(
             code(() => group.add(child, { layout: 'position' })),
             'ANI_INVALID_OPTIONS',
-            'nested'
+            'nested add'
         )
         expectEqual(
             code(() => group.set(parent, {})),
             'ANI_INVALID_OPTIONS',
-            'set'
+            'set options'
         )
-        return `${cases.length + 2} unsupported shapes throw ANI_INVALID_OPTIONS`
+
+        const late = box(root, 'left: 60px; top: 0;')
+        group.add(late, { layout: 'position' })
+        group.capture()
+        parent.append(late)
+        expectEqual(
+            code(() => group.set(late, { layout: 'position' })),
+            'ANI_INVALID_OPTIONS',
+            'nested set'
+        )
+        late.style.left = '20px'
+        const originalWarn = console.warn
+        const warnings: string[] = []
+        console.warn = (...args: unknown[]) => {
+            warnings.push(args.map(String).join(' '))
+        }
+        let nested: LayoutReport
+        try {
+            nested = await group.flush()
+        } finally {
+            console.warn = originalWarn
+        }
+        expectEqual(
+            nested.snapped.some(
+                ({ element, reason }) =>
+                    element === late && reason === 'unsupported'
+            ),
+            true,
+            'later nesting snaps unsupported'
+        )
+        expectEqual(warnings.length, 1, 'later nesting warns once')
+
+        root.append(late)
+        group.capture()
+        parent.style.left = '20px'
+        const supports = CSS.supports
+        let noLinear: LayoutReport
+        try {
+            CSS.supports = () => false
+            noLinear = await group.flush()
+        } finally {
+            CSS.supports = supports
+        }
+        expectEqual(
+            noLinear.snapped.some(
+                ({ element, reason }) =>
+                    element === parent && reason === 'unsupported'
+            ),
+            true,
+            'missing CSS linear() snaps unsupported'
+        )
+        return `${cases.length + 3} invalid shapes throw ANI_INVALID_OPTIONS; later nesting and missing CSS linear() snap unsupported`
+    } finally {
+        group.dispose()
+        root.remove()
+    }
+}
+
+/** The document timeline advances even when the Ani clock's time scale is zero. */
+export async function W6(): Promise<string> {
+    const mc = createManualClock({ timeScale: 0 })
+    const root = stage()
+    const group = createLayoutGroup({
+        clock: mc.clock,
+        engine: 'waapi',
+        motion: { duration: 0.4, timing: timing.linear() },
+    })
+    const element = box(root, 'left: 0; top: 20px;')
+    group.add(element, { layout: 'position' })
+    try {
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        group.capture()
+        element.style.left = '300px'
+        void group.flush()
+        await new Promise((resolve) => requestAnimationFrame(resolve))
+        await sleep(120)
+        const x = within(root, element).x
+        if (!(x > 20 && x < 300)) {
+            throw new Error(
+                `document timeline did not advance with clock timeScale 0: x=${x}`
+            )
+        }
+        group.finish()
+        await sleep(0)
+        return `clock timeScale 0; document timeline advanced to x = ${x.toFixed(2)} px; reduced motion is covered by W5`
     } finally {
         group.dispose()
         root.remove()
