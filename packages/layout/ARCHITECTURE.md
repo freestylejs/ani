@@ -19,7 +19,7 @@ flat position tracks on the document timeline.
 At each commit it learns where every marked box *was drawn* (B) and where layout
 *put it* (A). With `'raf'`, every frame re-solves every animating box top-down, parent before
 child, and writes only `translate` and `scale` (plus `opacity` for a crossfade pair and
-`border-radius` when asked). WAAPI uses the same plan but realizes only the §10 shape with
+`border-radius` when radius correction is on). WAAPI uses the same plan but realizes only the §10 shape with
 `Element.animate()`.
 
 - **Exact by construction.** The default `'raf'` realization supports nesting at any depth,
@@ -359,8 +359,8 @@ are compared by their *effective* value under the group's motion: `layout`, `lay
 `{ motion: { delay: 0 } }`), a timing by its class and parameters in any key order, so an
 inline `timing.spring({…})` equals the previous render's. `layoutId`, `layoutCrossfade` and
 `layoutDependency` act at the flush and never restart a track. A reduced-motion mode that
-changed since a track was planned (§9) re-plans it at the next flush, from its drawn box with
-its velocity.
+changed since a track was planned (§9) re-plans it at the next flush from its drawn box: RAF
+carries its velocity; WAAPI starts at rest (§10).
 
 ### 5.6 Shared `layoutId` and crossfade
 
@@ -691,7 +691,7 @@ trajectory), crossfade only on a real handoff with no opacity pop and coverage p
 §5.6 asymmetric curves (including reversal and nested shared ids), shared-handoff radius blending
 with identical silhouettes (live and retained, including `%`/elliptical corners, no blend when
 one side opts out, continuous retarget/reversal, and a resting style-only radius change captured
-before both retained and live handoffs), velocity ≤ 5 % across a retarget under jank, reduced
+before both retained and live handoffs), RAF velocity ≤ 5 % across a retarget under jank, reduced
 motion (zero writes, zero subscribers, mid-run toggle), showcase honesty, fractional boxes under
 scale within 0.05 px in every engine (`layout:REFBOX`, the WebKit reference box). The
 Motion-parity examples (`showcase` module) are checked the same way: every frame on the oracle
