@@ -178,7 +178,7 @@ function FolderDemo() {
             id="E3"
             title="Folder"
             description="The closed folder and open panel share one radius-aware surface; four nested shared tiles inherit the group's single spring, while the five staggered apps are position-only layout participants so the surface never stretches them."
-            tag="nested ids + radius"
+            tag="nested ids + default radius"
             controls={
                 <Control onClick={() => setOpen((v) => !v)}>
                     {open ? 'Close folder' : 'Open folder'}
@@ -186,12 +186,10 @@ function FolderDemo() {
             }
             code={`const surface = useLayout({
     layoutId: 'folder',
-    radius: true,
     ref: presence.ref,
 })
 const tile = useLayout({
     layoutId: 'folder-tile-' + i,
-    radius: true,
 })
 const item = useLayout({ layout: 'position', ref: itemPresence.ref })
 
@@ -292,7 +290,7 @@ function GalleryDemo() {
             id="Gallery"
             title="Gallery"
             description={`${GALLERY.count} radius-aware tiles move between a grid and a list; a tile and its detail view share the same id so the handoff keeps its corners stable.`}
-            tag="grid / list + radius"
+            tag="grid / list + default radius"
             wide={true}
             controls={
                 <>
@@ -317,11 +315,9 @@ function GalleryDemo() {
             }
             code={`const tile = useLayout({
     layoutId: 'gallery-' + i,
-    radius: true,
 })
 const detail = useLayout({
     layoutId: 'gallery-' + i,
-    radius: true,
     ref: presence.ref,
 })`}
         >
@@ -404,7 +400,7 @@ function NavDemo() {
             id="Smooth tabs"
             title="Smooth tabs"
             description="A pill follows the pointer across items of different widths. Sweep across quickly: every retarget keeps its velocity, and radius keeps the corners round."
-            tag="layoutId + radius"
+            tag="layoutId + default radius"
             controls={
                 <span className={styles.state}>
                     Hover the bar, click to select.
@@ -419,7 +415,7 @@ function NavDemo() {
     ))}
 </nav>
 
-const ref = useLayout({ layoutId: 'nav-highlight', radius: true })`}
+const ref = useLayout({ layoutId: 'nav-highlight' })`}
         >
             <NavFixture
                 highlight={hovered ?? selected}

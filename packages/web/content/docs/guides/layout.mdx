@@ -15,7 +15,7 @@ pnpm add @freestylejs/ani-core @freestylejs/ani-layout @freestylejs/ani-react
 
 -   **Before the change, capture.** Every render of a participant, a `LayoutGroup` or an `AnimatePresence` reads where the participants of its group are drawn now. React has not changed the DOM yet, so this is what the user sees.
 -   **After the commit, flush.** One microtask per group, after every layout effect and before paint, reads where layout put each participant and starts an animation for every box that moved by at least `threshold` pixels (default 1).
--   **Frames do no reads.** Each frame computes every moving box from its two ends, parent before child, and writes only `translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` when `radius` is on). The animation runs on Ani's clock, together with every other Ani animation.
+-   **Frames do no reads.** Each frame computes every moving box from its two ends, parent before child, and writes only `translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` when `radius` is on). With the default `'raf'` engine, the animation runs on Ani's clock together with every other Ani animation; the optional [`'waapi'` engine](#compositor-engine) uses the document timeline.
 -   **Both ends are what the user sees.** The start is the box as it was drawn, including any transform on screen (an animation in progress, a presence enter, a hover scale). The end is where the element will rest. An interrupted element therefore continues from where it is drawn, and nested elements stay exact at any depth.
 -   **Jump, never move wrongly.** An element the engine cannot animate exactly jumps to its final layout and is reported with a [reason](#when-an-element-jumps).
 
