@@ -291,6 +291,7 @@ export async function W4(): Promise<string> {
             'nested set'
         )
         late.style.left = '20px'
+        // biome-ignore lint/suspicious/noConsole: capture the expected development warning
         const originalWarn = console.warn
         const warnings: string[] = []
         console.warn = (...args: unknown[]) => {
