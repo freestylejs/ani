@@ -275,10 +275,47 @@ export async function W4(): Promise<string> {
             'ANI_INVALID_OPTIONS',
             'nested add'
         )
+        const setCases: [string, () => void][] = [
+            ['set default layout', () => group.set(parent, {})],
+            ['set layout true', () => group.set(parent, { layout: true })],
+            ['set size', () => group.set(parent, { layout: 'size' })],
+            [
+                'set layoutId',
+                () =>
+                    group.set(parent, {
+                        layout: 'position',
+                        layoutId: 'x',
+                    }),
+            ],
+            [
+                'set layoutAnchor',
+                () =>
+                    group.set(parent, {
+                        layout: 'position',
+                        layoutAnchor: { x: 0.5, y: 0.5 },
+                    }),
+            ],
+            [
+                'set radius',
+                () =>
+                    group.set(parent, {
+                        layout: 'position',
+                        radius: true,
+                    }),
+            ],
+        ]
+        for (const [name, fn] of setCases) {
+            expectEqual(code(fn), 'ANI_INVALID_OPTIONS', name)
+        }
         expectEqual(
-            code(() => group.set(parent, {})),
-            'ANI_INVALID_OPTIONS',
-            'set options'
+            code(() =>
+                group.set(parent, {
+                    layout: 'position',
+                    radius: false,
+                })
+            ),
+            'no error',
+            'radius false is allowed'
         )
 
         const late = box(root, 'left: 60px; top: 0;')
@@ -332,7 +369,7 @@ export async function W4(): Promise<string> {
             true,
             'missing CSS linear() snaps unsupported'
         )
-        return `${cases.length + 3} invalid shapes throw ANI_INVALID_OPTIONS; later nesting and missing CSS linear() snap unsupported`
+        return `${cases.length} add and ${setCases.length} set invalid shapes throw ANI_INVALID_OPTIONS; radius false is allowed; later nesting and missing CSS linear() snap unsupported`
     } finally {
         group.dispose()
         root.remove()
