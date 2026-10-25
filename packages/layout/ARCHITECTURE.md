@@ -19,8 +19,8 @@ flat position tracks on the document timeline.
 At each commit it learns where every marked box *was drawn* (B) and where layout
 *put it* (A). With `'raf'`, every frame re-solves every animating box top-down, parent before
 child, and writes only `translate` and `scale` (plus `opacity` for a crossfade pair and
-`border-radius` when radius correction is on). WAAPI uses the same plan but realizes only the §10 shape with
-`Element.animate()`.
+`border-radius` when radius correction is on). WAAPI uses the same plan but realizes only
+the §10 shape with `Element.animate()`.
 
 - **Exact by construction.** The default `'raf'` realization supports nesting at any depth,
   `layoutAnchor`, shared `layoutId` and crossfade as one equation per node. No keyframe
