@@ -15,7 +15,7 @@ pnpm add @freestylejs/ani-core @freestylejs/ani-layout @freestylejs/ani-react
 
 -   **Before the change, capture.** Every render of a participant, a `LayoutGroup` or an `AnimatePresence` reads where the participants of its group are drawn now. React has not changed the DOM yet, so this is what the user sees.
 -   **After the commit, flush.** One microtask per group, after every layout effect and before paint, reads where layout put each participant and starts an animation for every box that moved by at least `threshold` pixels (default 1).
--   **Frames do no reads.** Each frame computes every moving box from its two ends, parent before child, and writes only `translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` with `radius: true`). The animation runs on Ani's clock, together with every other Ani animation.
+-   **Frames do no reads.** Each frame computes every moving box from its two ends, parent before child, and writes only `translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` when `radius` is on). The animation runs on Ani's clock, together with every other Ani animation.
 -   **Both ends are what the user sees.** The start is the box as it was drawn, including any transform on screen (an animation in progress, a presence enter, a hover scale). The end is where the element will rest. An interrupted element therefore continues from where it is drawn, and nested elements stay exact at any depth.
 -   **Jump, never move wrongly.** An element the engine cannot animate exactly jumps to its final layout and is reported with a [reason](#when-an-element-jumps).
 
@@ -67,7 +67,7 @@ export function TodoList({ initial }: { initial: Todo[] }) {
 | `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant; see [Anchored children](#anchored-children). |
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
 | `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps to its new box instead of animating (not reported). Use it to animate only for the changes you name. |
-| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId` that both set it, the corners blend from one radius to the other. |
+| `radius` | `true` with a `layoutId`, else `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId`, the corners blend from one radius to the other unless either sets `radius: false`. |
 | `motion` | — | `{ duration, delay, timing }` in seconds; see [Motion](#motion). |
 | `ref` | — | Another ref that receives the element. |
 
@@ -140,7 +140,7 @@ Elements with the same `layoutId` are one element to the user. When the element 
 -   **Lead.** Per id, the newest mounted element that is not exiting leads. Two mounted, non-exiting elements with one id print a development warning; the newest leads and the other animates on its own.
 -   **Handoff.** The new lead starts from the drawn box of the element it replaces: the live box of an element exiting under presence, or the box of a removed element, kept for `retain` seconds (default 1).
 -   **Crossfade.** When the previous element is exiting under [presence](#presence) and the box moved, both draw at the lead's box while the lead fades in and the exiting element fades out, on the lead's curve. The lead fades in over the first half and the exiting element fades out only after it, so the pair never shows what is behind it. The exiting element stays invisible until presence removes it, and presence waits for the crossfade to end. `layoutCrossfade: false` on either element turns it off.
--   **Corners.** When both elements set `radius: true`, the corners blend from the radius the old element showed to the new element's own, on the same curve, so the shape changes with the box.
+-   **Corners.** Unless either element sets `radius: false`, the corners blend from the radius the old element showed to the new element's own, on the same curve, so the shape changes with the box.
 -   **Opacity.** If the exiting element's presence animates `opacity` itself, there is no crossfade and a development warning is printed. Animate opacity on a child instead.
 
 A card that opens into a detail view, with the surface, the image and the title as three nested ids:
@@ -172,7 +172,6 @@ const handoff = {
 function Card({ card, onOpen }: { card: CardData; onOpen: () => void }) {
     const surface = useLayout<HTMLButtonElement>({
         layoutId: `card-${card.id}`,
-        radius: true,
     })
     const image = useLayout<HTMLImageElement>({ layoutId: `image-${card.id}` })
     const title = useLayout<HTMLSpanElement>({
@@ -191,7 +190,6 @@ function Detail({ card, onClose }: { card: CardData; onClose: () => void }) {
     const presence = usePresence(handoff)
     const surface = useLayout<HTMLElement>({
         layoutId: `card-${card.id}`,
-        radius: true,
     })
     const image = useLayout<HTMLImageElement>({ layoutId: `image-${card.id}` })
     const title = useLayout<HTMLHeadingElement>({
@@ -286,9 +284,27 @@ A participant with no `LayoutGroup` above it joins an implicit root group, one p
 | `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
 | `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
 | `onSnap` | — | `(element, reason) => void` for every element that jumped. The latest prop is always called. |
-| `engine` | `'raf'` | `'waapi'` runs each move as a compositor animation that stays smooth while the main thread is blocked. Every participant must then be a top-level `layout: 'position'` element without `layoutAnchor`, `layoutId` or `radius` (anything else throws); a retarget carries no velocity, and the animations run on the document timeline rather than the Ani clock. |
+| `engine` | `'raf'` | `'waapi'` runs flat position moves as compositor animations, smooth while the main thread is blocked. See [Compositor engine](#compositor-engine) for what it requires. |
 
 A change of `clock`, `reducedMotion`, `threshold`, `maxNodes`, `retain` or `engine` creates a new group, and running animations jump to their end. Define these values once, outside the component, and pass the same objects on every render.
+
+### Compositor engine
+
+`engine: 'waapi'` runs each move as a browser compositor animation (`Element.animate()`), so it stays smooth while the main thread is blocked. It is for flat lists and grids whose items only change position. Every requirement below is checked; the engine never falls back silently.
+
+| Requirement | If it is not met |
+| :--- | :--- |
+| Every participant sets `layout: 'position'` | `add` / `set` throws `ANI_INVALID_OPTIONS` |
+| No participant sets `layoutAnchor`, `layoutId` or `radius: true` | `add` / `set` throws `ANI_INVALID_OPTIONS` |
+| No participant is inside another participant | `add` / `set` throws `ANI_INVALID_OPTIONS`; a nesting that appears later in the DOM makes that element jump (`'unsupported'`) |
+| The browser supports the CSS `linear()` easing | The element jumps (`'unsupported'`) |
+
+It also behaves differently from the default `'raf'` engine:
+
+-   A move interrupted by a new change starts again from where it is drawn, at rest: it does not keep its speed.
+-   The animations run on the document timeline, not on the Ani clock, so they ignore the clock's time scale. Reduced motion is still read from the clock at each change.
+-   A change made while the main thread is blocked reads the drawn position on the main thread. The compositor may have drawn further, so the element can step back by the frames the main thread missed.
+-   It writes no inline style. `finish()`, `dispose()`, removing an element and reduced motion cancel its animation.
 
 ### When a change animates
 
@@ -435,7 +451,7 @@ Layout and the other style writers own separate CSS properties:
 | `transform` | Presence and Ani timelines | Never written by layout. Presence enters and exits, `useAniRef` and other Ani animations write here. |
 | `transform-origin` | You | Read once per change. A size animation scales around it. |
 | `opacity` | Presence and you | Layout writes it only for a `layoutId` crossfade pair. |
-| `border-radius` | Layout with `radius: true` | Restored at the end of the run. |
+| `border-radius` | Layout when `radius` is on | Restored at the end of the run. |
 | `rotate`, skew | You | An element with them, or under a non-participant ancestor that rotates, skews or scales, jumps with `'unsupported'`. |
 
 **CSS transitions.** A CSS transition on `translate`, `scale` or `all` would animate layout's own writes, so the element jumps with `'unsupported'` and a development warning. Tailwind's `transition` and `transition-all` include them; use `transition-colors`, `transition-opacity` or a `transition-property` list without them. A running CSS animation of `translate` or `scale` jumps the same way.

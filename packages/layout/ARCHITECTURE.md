@@ -133,7 +133,7 @@ in the track's space leaves the track exactly where it was.
 
 Each commit costs one batched read before the mutation and one after. The capture batch
 reads every undriven participant's rect and, after all rects, one computed style for each
-undriven participant with both `layoutId` and `radius: true`; the flush batch is unchanged.
+undriven participant with a `layoutId` and radius on (§5.7); the flush batch is unchanged.
 Every animation frame after that is arithmetic plus writes, inside the clock's `update` and
 `commit` phases.
 
@@ -147,9 +147,9 @@ document no scope was created for is probed at its first flush.
 `capture()` reads every registered participant of the scope that the engine does not
 drive: `getBoundingClientRect`, page scroll, and the scroll position of each participant's
 scroll container. The rect is B as it is (§3.1). After every rect is read, each such
-participant with both `layoutId` and `radius: true` gets one computed-style read; its four
+participant with a `layoutId` and radius on gets one computed-style read; its four
 corner radii are resolved against its CSS border box at B and stored as B's radius. A participant
-without a `layoutId` or without `radius: true` adds no capture style read. Driven nodes are
+without a `layoutId`, or with `radius: false`, adds no capture style read. Driven nodes are
 not read: their drawn box and drawn radius are known exactly.
 
 **Lifetime.** A scope has at most one capture. It belongs to the open epoch, which `flush()`
@@ -395,7 +395,9 @@ its velocity.
 
 ### 5.7 Radius
 
-`radius: true` uses the author's four corner radii of A at every flush. When layout does not
+Radius is on for a participant with `radius: true`, and for one with a `layoutId` that
+omits `radius` (shared elements correct their corners by default); `radius: false` turns it
+off. A participant with radius on uses the author's four corner radii of A at every flush. When layout does not
 own a corner, its computed value is read with the node's other computed values. While layout
 owns it and its inline declaration still holds layout's own `!important` write, the authored
 length captured when ownership began is reused instead; percentages and `calc()` keep their
@@ -405,7 +407,7 @@ recognised by §6 becomes the source from that flush onward. Each corner is writ
 any total scale. The declaration is restored on settle.
 
 A shared `layoutId` handoff blends the on-screen corner shape when both the departing node and
-new lead have `radius: true`. Per corner and axis, let `ρ_A` be the new lead's authored radius
+new lead have radius on. Per corner and axis, let `ρ_A` be the new lead's authored radius
 resolved at A, and let `ρ_B` be the departing node's on-screen radius at the flush. Its source
 order is exact: (1) a driven departing node's currently drawn `ρ`; (2) the departing node's
 radius from the consumed capture, for a resting node; (3) its stored geometry from the last
@@ -420,7 +422,7 @@ draw the same `ρ(p)` and each converts it to its own declaration with its own `
 A retarget or reversal during a radius blend starts the new blend from the `ρ` currently drawn;
 at `p = 1` the lead draws exactly `ρ_A`, so ending the blend, settling the track and restoring
 the authored declaration introduce no radius jump. There is no radius blend when either side
-lacks `radius: true`. A style-only radius change made while a shared participant rests is
+has `radius: false`. A style-only radius change made while a shared participant rests is
 therefore included by the next capture instead of using a lifetime bootstrap. Flushes add no
 radius-only measurement, and frames add no DOM read.
 
@@ -432,7 +434,7 @@ radius-only measurement, and frames add no DOM read.
 | `transform` | Presence and Core | Part of the inner map (§3.1); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes (with its Typed OM value where the browser snaps the reference box, §5.3). |
 | `opacity` | Presence; layout only for a crossfade pair | §5.6. |
-| `border-radius` | Layout when `radius: true` | A resting shared participant is read-only snapshotted at capture (§4.1); capture does not take ownership. Saved when layout first owns it (also when `radius` turns on mid-run), then frozen as the authored radius while the inline declaration still holds layout's own `!important` write (§5.7). An author's plain inline replacement is recognised by priority like `translate`/`scale`, used from the next flush and restored on settle. Turning `radius` off gives the corners back at once. |
+| `border-radius` | Layout when radius is on (§5.7) | A resting shared participant is read-only snapshotted at capture (§4.1); capture does not take ownership. Saved when layout first owns it (also when `radius` turns on mid-run), then frozen as the authored radius while the inline declaration still holds layout's own `!important` write (§5.7). An author's plain inline replacement is recognised by priority like `translate`/`scale`, used from the next flush and restored on settle. Turning `radius` off gives the corners back at once. |
 | `rotate`, skew, non-translation ancestor transforms | Author | The subtree snaps with `'unsupported'`. |
 
 Presence and layout meet only inside the package: `createPresence` registers its element,
@@ -465,7 +467,7 @@ interface LayoutOptions {
   readonly layoutAnchor?: { readonly x: number; readonly y: number }  // 0..1
   readonly layoutCrossfade?: boolean             // default true
   readonly layoutDependency?: unknown            // optional narrowing
-  readonly radius?: boolean                      // default false
+  readonly radius?: boolean                      // default: true with a layoutId, else false
   readonly motion?: LayoutMotion
 }
 
@@ -680,8 +682,8 @@ velocity. Seeded fuzz invariants: no NaN, no read after the first write in a tic
 per property, byte-identical final inline style, no subscription left.
 
 Cost gates: the flush read set stays base-exact: 2N rects plus one computed-style read per active
-node. Capture adds exactly one computed-style read for each undriven shared `radius: true`
-participant, after all capture rects; unrelated-sibling and no-op flush counts therefore stay
+node. Capture adds exactly one computed-style read for each undriven shared participant with
+radius on, after all capture rects; unrelated-sibling and no-op flush counts therefore stay
 unchanged, and steady frames read zero. Commit reads at 1,000 participants ≤ 4 ms; steady frame
 at 300 nested movers ≤ 2 ms p95. The whole commit and the steady frame with every participant
 moving are recorded at 50, 300 and 1,000 participants.
@@ -694,7 +696,7 @@ moving are recorded at 50, 300 and 1,000 participants.
   frames the main thread missed. It does not follow the Ani clock's time scale.
 - Render-phase reads bend React's purity norm (reads only) and can force a layout during render
   when the DOM is dirty. A capture also pays one computed-style read per undriven shared
-  `radius: true` participant so its B radius is current; this deliberate accuracy cost does not
+  participant with radius on so its B radius is current; this deliberate accuracy cost does not
   recur in flush or frames.
 - A direct `flush()` with no capture cannot observe a resting style-only radius change; §5.7
   falls back to the participant's last ordinary geometry in that case.
