@@ -190,7 +190,8 @@ export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
         (a.layoutCrossfade ?? true) === (b.layoutCrossfade ?? true) &&
         'layoutDependency' in a === 'layoutDependency' in b &&
         Object.is(a.layoutDependency, b.layoutDependency) &&
-        (a.radius ?? false) === (b.radius ?? false) &&
+        (a.radius ?? a.layoutId !== undefined) ===
+            (b.radius ?? b.layoutId !== undefined) &&
         sameMotion(a.motion, b.motion)
     )
 }

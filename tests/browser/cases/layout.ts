@@ -4604,7 +4604,7 @@ export async function P2RadiusRetained(): Promise<string> {
     }
 }
 
-/** P2-C: radius blending is opt-in on both sides of a shared handoff. */
+/** P2-C: `radius: false` on either side of a shared handoff turns the blend off. */
 export async function P2RadiusOptOut(): Promise<string> {
     const linear = timing.linear()
     const h = harness({ motion: { duration: 0.4, timing: linear } })
@@ -4613,7 +4613,7 @@ export async function P2RadiusOptOut(): Promise<string> {
             h.root,
             'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
         )
-        h.add(old, { layoutId: 'radius-optout' })
+        h.add(old, { layoutId: 'radius-optout', radius: false })
         const presence = createPresence(
             old,
             {
@@ -4656,7 +4656,71 @@ export async function P2RadiusOptOut(): Promise<string> {
         )
         expectEqual(run.value?.status, 'ended', 'opt-out radius run')
         presence.dispose()
-        return `one-sided radius:true does not blend; lead stays 8×24 within ${worst.toFixed(4)} px`
+        return `radius: false on one side does not blend; lead stays 8×24 within ${worst.toFixed(4)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/** A shared `layoutId` owns its corners by default: both sides omit `radius` and still blend. */
+export async function RadiusSharedDefault(): Promise<string> {
+    const linear = timing.linear()
+    const h = harness({ motion: { duration: 0.4, timing: linear } })
+    try {
+        const old = node(
+            h.root,
+            'left: 20px; top: 20px; width: 80px; height: 40px; border-radius: 20px / 12px;'
+        )
+        h.add(old, { layoutId: 'radius-default' })
+        const presence = createPresence(
+            old,
+            {
+                present: { translateY: 0 },
+                exit: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: linear,
+                }),
+            },
+            { clock: h.mc.clock }
+        )
+        h.group.capture()
+        await h.group.flush()
+
+        h.group.capture()
+        void presence.exit()
+        const lead = node(
+            h.root,
+            'left: 300px; top: 100px; width: 200px; height: 100px; border-radius: 8px / 24px;'
+        )
+        h.add(lead, { layoutId: 'radius-default' })
+        const run = report(h.group.flush())
+        const from = [20, 12, 20, 12, 20, 12, 20, 12]
+        const own = [8, 24, 8, 24, 8, 24, 8, 24]
+        let worst = expectRadii(lead, from, 'default radius t=0')
+        await frames(
+            h.mc,
+            40,
+            (elapsed) => {
+                if (elapsed >= 0.4) return
+                worst = Math.max(
+                    worst,
+                    expectRadii(
+                        lead,
+                        expectedRadiusBlend(from, own, linear, elapsed / 0.4),
+                        `default radius t=${elapsed.toFixed(3)}`
+                    )
+                )
+            },
+            () => run.value !== null
+        )
+        expectEqual(run.value?.status, 'ended', 'default radius run')
+        presence.dispose()
+        worst = Math.max(
+            worst,
+            expectRadii(lead, own, 'default radius settled')
+        )
+        return `omitted radius on both sides blends 20×12 → 8×24 within ${worst.toFixed(4)} px`
     } finally {
         h.dispose()
     }

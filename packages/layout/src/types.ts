@@ -35,10 +35,21 @@ export interface LayoutGroupOptions {
     readonly retain?: number
     readonly onSnap?: (element: HTMLElement, reason: SnapReason) => void
     /**
-     * Default: `'raf'`, every track on the clock. `'waapi'` runs each track as
-     * a compositor animation (smooth while the main thread is blocked): only
-     * top-level `layout: 'position'` participants without `layoutAnchor`,
-     * `layoutId` or `radius`, no velocity term, on the document timeline.
+     * Default: `'raf'`, every track on the clock.
+     *
+     * `'waapi'` runs each track as one compositor `translate` animation, smooth
+     * while the main thread is blocked. It never falls back silently:
+     * - every participant must set `layout: 'position'` and must not set
+     *   `layoutAnchor`, `layoutId` or `radius: true`, or `add`/`set` throws
+     *   `ANI_INVALID_OPTIONS`;
+     * - a participant inside another throws at `add`/`set`; a nesting that
+     *   appears later in the DOM snaps as `'unsupported'`;
+     * - without CSS `linear()` easing every element snaps as `'unsupported'`.
+     *
+     * Unlike `'raf'`: a retarget starts from the drawn box at rest (no
+     * velocity); tracks run on the document timeline, so the clock's time
+     * scale does not apply (its reduced motion still does); a retarget during
+     * main-thread jank can step back by the frames the main thread missed.
      */
     readonly engine?: 'raf' | 'waapi'
 }
