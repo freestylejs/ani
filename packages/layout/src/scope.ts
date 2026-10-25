@@ -1980,22 +1980,26 @@ export function createLayoutGroup(
         stats.tracks = 0
     }
 
+    function validateWaapiNesting(element: HTMLElement): void {
+        for (const other of registry.keys()) {
+            if (
+                other !== element &&
+                (other.contains(element) || element.contains(other))
+            ) {
+                throw invalidOptions(
+                    'type',
+                    "the 'waapi' engine animates top-level participants only; a nested participant needs the 'raf' engine."
+                )
+            }
+        }
+    }
+
     const group: LayoutGroup = {
         add(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
             if (waapi) {
                 validateWaapiOptions(layoutOptions)
-                for (const other of registry.keys()) {
-                    if (
-                        other !== element &&
-                        (other.contains(element) || element.contains(other))
-                    ) {
-                        throw invalidOptions(
-                            'type',
-                            "the 'waapi' engine animates top-level participants only; a nested participant needs the 'raf' engine."
-                        )
-                    }
-                }
+                validateWaapiNesting(element)
             }
             if (disposed) return noop
             let p = registry.get(element)
@@ -2088,7 +2092,10 @@ export function createLayoutGroup(
 
         set(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
-            if (waapi) validateWaapiOptions(layoutOptions)
+            if (waapi) {
+                validateWaapiOptions(layoutOptions)
+                validateWaapiNesting(element)
+            }
             const p = registry.get(element)
             if (!p) return
             if (!sameTrackOptions(p.options, layoutOptions, groupMotion))
