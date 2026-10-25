@@ -75,7 +75,7 @@ with `x1 = 0` and `y1 ≠ 0` throw.
 
 | Option | Default | Meaning |
 | :--- | :--- | :--- |
-| `clock` | `defaultClock` | The Ani clock that drives the group. Its reduced-motion preference is read at every flush. |
+| `clock` | `defaultClock` | Drives the default `'raf'` engine and supplies the reduced-motion preference read by both engines at every flush. |
 | `motion` | — | Defaults for every participant's `motion`. |
 | `reducedMotion` | `'jump'` | `'jump'`, `'ignore'` or `{ maxDuration }` in seconds. |
 | `threshold` | `1` | Pixels a box must move to animate. |

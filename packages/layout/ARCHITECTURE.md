@@ -12,20 +12,24 @@ Execution plan and evidence: `.trace/ani_layout_final/`.
 
 ## 1. Decision
 
-ani-layout is **one pure layout solver on Ani's own clock**.
+ani-layout is **one pure layout solver**. The default `'raf'` realization runs it on
+Ani's own clock; the optional gated `'waapi'` realization is the §10 exception and runs
+flat position tracks on the document timeline.
 
 At each commit it learns where every marked box *was drawn* (B) and where layout
-*put it* (A). On every frame it re-solves every animating box top-down, parent before
+*put it* (A). With `'raf'`, every frame re-solves every animating box top-down, parent before
 child, and writes only `translate` and `scale` (plus `opacity` for a crossfade pair and
-`border-radius` when asked).
+`border-radius` when asked). WAAPI uses the same plan but realizes only the §10 shape with
+`Element.animate()`.
 
-- **Exact by construction.** Nesting at any depth, `layoutAnchor`, shared `layoutId` and
-  crossfade are one equation per node. No keyframe sampling, no error budget, no depth
-  limit.
+- **Exact by construction.** The default `'raf'` realization supports nesting at any depth,
+  `layoutAnchor`, shared `layoutId` and crossfade as one equation per node. No keyframe
+  sampling, no error budget, no depth limit. WAAPI accepts only the smaller exact shape of §10.
 - **Ani's moat.** Reads happen once per commit and never interleave with writes. Steady
-  frames do zero DOM reads. The scope is one `Animatable` on the core clock, so it
-  shares frame time, time scale, reduced motion and ownership with every other Ani
-  animation.
+  frames do zero DOM reads. The default `'raf'` scope is one `Animatable` on the core clock,
+  so it shares frame time, time scale, reduced motion and ownership with every other Ani
+  animation. WAAPI keeps the read discipline and reduced-motion policy, but its tracks use
+  the document timeline and do not follow the clock's time scale (§10).
 - **Declarative.** In React you mark an element with `useLayout()`. It animates whenever
   its box changes across a commit. No `deps`, no capture or play calls.
 - **Snap, never wrong motion.** Anything the solver cannot do exactly jumps to the real
@@ -123,8 +127,9 @@ in the track's space leaves the track exactly where it was.
 2. The final frame is the real layout: identity pose, inline styles byte-identical to before
    the run, no clock subscription left.
 3. One owner per CSS property on a participant (§6).
-4. Interruption is continuous in position and velocity (§5.1 states the single physical
-   limit: a size channel never drops below one pixel).
+4. With `'raf'`, interruption is continuous in position and velocity (§5.1 states the single
+   physical limit: a size channel never drops below one pixel). WAAPI deliberately drops
+   retarget velocity and has the jank caveat of §10.
 5. A node whose target did not move is never retargeted: an unrelated re-render cannot
    restart anything.
 6. Anything the solver cannot do exactly snaps, with a typed reason.
@@ -134,8 +139,8 @@ in the track's space leaves the track exactly where it was.
 Each commit costs one batched read before the mutation and one after. The capture batch
 reads every undriven participant's rect and, after all rects, one computed style for each
 undriven participant with a `layoutId` and radius on (§5.7); the flush batch is unchanged.
-Every animation frame after that is arithmetic plus writes, inside the clock's `update` and
-`commit` phases.
+With the default `'raf'` engine, every animation frame after that is arithmetic plus writes,
+inside the clock's `update` and `commit` phases. WAAPI realization follows §10 instead.
 
 The one write-then-read of the engine is a capability probe, once per document when a scope
 is created (outside every flush and frame): whether the browser applies a percentage
@@ -193,8 +198,9 @@ is the true before-box, not a remembered one.
    reference box, also the Typed OM value of `transform-origin` (§5.3). Only the poses the engine
    last wrote are divided out (§3.1); nothing is restored or stripped first.
 2. Plan (§5) — pure.
-3. Write the pose of every engine node at its current time (the t = 0 pose of a new track
-   reproduces B), then subscribe the scope's `Animatable` if any track exists.
+3. With `'raf'`, write the pose of every engine node at its current time (the t = 0 pose of a
+   new track reproduces B), then subscribe the scope's `Animatable` if any track exists. With
+   `'waapi'`, commit the flush writes and install the held track animations per §10.
 
 In React, a layout effect of every participant, group and `AnimatePresence` queues **one**
 microtask per scope and commit that calls `flush()`. It runs after every layout effect
@@ -209,6 +215,8 @@ flush is therefore compensated exactly instead of invalidating the epoch.
 stale; it snaps with `'stale'` and never guesses.
 
 ### 4.3 Frames
+
+This subsection is the default `'raf'` frame contract; WAAPI timing is §10.
 
 - A track **from rest** starts its time at its first clock update, whose `dt` is forced to 0:
   its first painted frame is B, and a 120 ms block after the commit costs one late frame, not
@@ -232,6 +240,9 @@ stale; it snaps with `'stale'` and never guesses.
 ## 5. Solver
 
 ### 5.1 Track
+
+The velocity-carry rules in this subsection are the default `'raf'` contract. WAAPI uses the
+same endpoint/timing track with no incoming velocity, so every retarget starts at rest (§10).
 
 Each node animates four channels: the **origin point** (the box point under its
 `transform-origin`, kept as a fraction of the box) and the size. Interpolating the origin
@@ -327,9 +338,9 @@ not move keeps `V = A` and is counter-projected), so nesting never distorts it.
 
 ### 5.5 Interruption
 
-A new flush while tracks run never reads animated state. B for a driven node is its current
-drawn box and `v` its current velocity, both seen through the presence layers as they are at
-this flush: a presence `transform` that changed since the last flush changed what the user
+A new flush while tracks run never reads animated state. With `'raf'`, B for a driven node is
+its current drawn box and `v` its current velocity, both seen through the presence layers as
+of this flush: a presence `transform` that changed since the last flush changed what the user
 sees, so the drawn box is mapped through the current presence matrices (the poses are the
 engine's own; the presence matrix is read with the other computed values of active nodes).
 Each pose is recovered *with its rate* from the drawn box and velocity, and recomposed through
@@ -340,7 +351,9 @@ options changed, gets a new track; every other node keeps its track untouched. T
 judged under the presence matrices its track was planned with: a presence `transform` that
 changed since is a visual layer (§3.1), not a move, so a re-render during a presence
 animation keeps the track, and a kept track keeps the geometry and the ancestor matrices it
-was planned with (§3.1), while a node planned now starts in this flush's space. Track options
+was planned with (§3.1), while a node planned now starts in this flush's space. WAAPI samples
+B from `Animation.currentTime` and supplies no `v`; within its flat position-only shape, the
+same target/option keep test applies (§10). Track options
 are compared by their *effective* value under the group's motion: `layout`, `layoutAnchor`,
 `radius` and `motion` with the defaults and the group's fields merged in (`{}` equals
 `{ motion: { delay: 0 } }`), a timing by its class and parameters in any key order, so an
@@ -427,6 +440,9 @@ therefore included by the next capture instead of using a lifetime bootstrap. Fl
 radius-only measurement, and frames add no DOM read.
 
 ## 6. Property ownership on one element
+
+This table is the default `'raf'` ownership contract. WAAPI writes no inline style: its flat
+position-only track is an `Element.animate()` effect on `translate` (§10).
 
 | Property | Owner | Rule |
 |---|---|---|
@@ -605,8 +621,8 @@ group API.
 | Reduced motion `{ maxDuration }` | Delay + duration scaled down to fit, in `motion.ts` only | — |
 | Reduced motion `'ignore'` | Plays in full | — |
 | `dispose()` or unmount | Tracks cancelled, inline styles restored, presence holds released | status `'disposed'` |
-| A moving participant unregistered, or gone from the document at a flush | Its track is cancelled and its styles restored at once (pending writes for it dropped); the rest of its run goes on; a run left with no node resolves `'disposed'`; the scope unsubscribes when nothing else moves, once the task's microtasks have run (before any frame), so a handoff flushed in the same task keeps a continuous subscription (§4.3) | status `'disposed'` (a run of only such nodes) |
-| Reduced motion toggled during a run | The next flush applies the current mode to running tracks: `'jump'` finishes them, `maxDuration` re-plans them clamped from their drawn box and velocity. A crossfade finished by `'jump'` ends as a completed fade: the lead gets its opacity back, and the exiting follower is held at opacity 0 until presence unmounts it (§5.6) | — |
+| A moving participant unregistered, or gone from the document at a flush | Its track is cancelled and its styles restored at once (pending RAF writes for it dropped; WAAPI cancels its browser animation); the rest of its run goes on; a run left with no node resolves `'disposed'`. Under `'raf'`, the scope unsubscribes when nothing else moves, once the task's microtasks have run (before any frame), so a handoff flushed in the same task keeps a continuous subscription (§4.3) | status `'disposed'` (a run of only such nodes) |
+| Reduced motion toggled during a run | The next flush applies the current mode to running tracks: `'jump'` finishes them; `maxDuration` re-plans them clamped from their drawn box, carrying velocity under `'raf'` and starting at rest under WAAPI (§10). A crossfade finished by `'jump'` ends as a completed fade: the lead gets its opacity back, and the exiting follower is held at opacity 0 until presence unmounts it (§5.6) | — |
 | `finish()` | Every track jumps to A and settles | status `'ended'` |
 | No DOM (SSR), first client commit | No-op; hydration never animates | — |
 
@@ -621,12 +637,13 @@ An explicit group option, for flat moves that must stay smooth while the main th
 blocked. Same plan, realized with `Element.animate()` (`realize/waapi.ts`):
 
 - **Shape.** Top-level `layout: 'position'` participants only, without `layoutAnchor`,
-  `layoutId` or `radius`; anything else throws `ANI_INVALID_OPTIONS` at `add`/`set` (a nested
+  `layoutId` or `radius: true`; anything else throws `ANI_INVALID_OPTIONS` at `add`/`set` (a nested
   participant included), never degrades. A nesting that appears later in the DOM snaps as
   `'unsupported'`. There is no velocity term: a retarget starts from the drawn box at rest.
 - **Realization.** Each track is one `translate` animation from its start pose to the authored
   translate, with the track's curve sampled into a CSS `linear()` easing (stops chosen so a
-  move is drawn within 0.05 px), its delay and `fill: 'backwards'`. It is created in the flush
+  move is drawn within 0.05 px), its delay and `fill: 'backwards'`. Without CSS `linear()`
+  support the element snaps as `'unsupported'`. The animation is created in the flush
   and held at τ = 0, then played from the next animation frame without a `startTime`: the
   first painted frame is τ = 0 in every browser (Gecko and WebKit would otherwise count a
   block right after the flush as elapsed time). It writes no inline style; settle, `finish`,
@@ -634,7 +651,8 @@ blocked. Same plan, realized with `Element.animate()` (`realize/waapi.ts`):
 - **Time.** A track's elapsed time is its animation's `currentTime`, read wherever the scope
   needs a drawn box (the next flush's B, a removal). The animations run on the document
   timeline, not on the Ani clock: they do not follow its time scale; reduced motion is still
-  read from the clock at each flush.
+  read from the clock at each flush. Under main-thread jank the compositor may have drawn ahead
+  of the sampled `currentTime`, so a retarget can step back by the frames the main thread missed.
 - **Gates (all met).** (1) RAF-vs-WAAPI differential ≤ 0.5 px per frame (`waapi:W1`, seeking
   the paused animation to each frame's time); (2) the first painted frame after a 120 ms
   block ≤ 6 % (`waapi:W3`); (3) a Chromium trace shows compositor frames drawing during a
