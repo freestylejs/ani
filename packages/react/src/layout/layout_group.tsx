@@ -20,9 +20,29 @@ import {
 } from './context'
 
 /** Every option may also be passed as `undefined` (the default), as React props are. */
-export type LayoutGroupProps = {
-    readonly [K in keyof LayoutGroupOptions]?: LayoutGroupOptions[K] | undefined
-} & {
+type LayoutGroupOptionProps = {
+    readonly [K in Exclude<keyof LayoutGroupOptions, 'engine'>]?:
+        | LayoutGroupOptions[K]
+        | undefined
+}
+
+export type LayoutGroupProps = LayoutGroupOptionProps & {
+    /**
+     * Default: `'raf'`.
+     *
+     * `'waapi'` runs flat compositor `translate` animations. Every
+     * participant must set `layout: 'position'` and must not set
+     * `layoutAnchor`, `layoutId` or `radius: true`; nesting throws from
+     * `add` / `set`, while nesting introduced later snaps as
+     * `'unsupported'`; without CSS `linear()` easing, moves snap as
+     * `'unsupported'`.
+     *
+     * Unlike `'raf'`, a retarget carries no velocity; tracks use the document
+     * timeline, so the Ani clock's time scale does not apply (reduced motion
+     * still does); a jank retarget can step back by missed compositor frames;
+     * no inline style is written.
+     */
+    readonly engine?: LayoutGroupOptions['engine'] | undefined
     /** Namespaces the `layoutId`s of this group's participants. */
     readonly id?: string | undefined
     readonly children?: ReactNode

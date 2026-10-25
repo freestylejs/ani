@@ -49,7 +49,8 @@ export interface LayoutGroupOptions {
      * Unlike `'raf'`: a retarget starts from the drawn box at rest (no
      * velocity); tracks run on the document timeline, so the clock's time
      * scale does not apply (its reduced motion still does); a retarget during
-     * main-thread jank can step back by the frames the main thread missed.
+     * main-thread jank can step back by the frames the main thread missed; no
+     * inline style is written.
      */
     readonly engine?: 'raf' | 'waapi'
 }
