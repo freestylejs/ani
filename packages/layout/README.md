@@ -4,8 +4,8 @@ Layout animation, presence and View Transition helpers for ANI 2.
 
 Mark elements, change the DOM, and every marked element whose box changed animates from where
 it was drawn to where layout put it. The engine runs on Ani's clock and writes only
-`translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` when
-asked). It reads the DOM once before a change and once after it; animation frames do no reads.
+`translate` and `scale` (plus `opacity` for a shared-element crossfade and `border-radius` for
+shared elements and when asked). It reads the DOM once before a change and once after it; animation frames do no reads.
 Anything it cannot animate exactly jumps to its final layout and is reported with a reason.
 
 ```sh
@@ -62,7 +62,7 @@ const run = await group.flush() // read the boxes after it and start the run
 | `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant. |
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
 | `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps instead of animating. |
-| `radius` | `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId` that both set it, the corners blend from one radius to the other. |
+| `radius` | `true` with a `layoutId`, else `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId`, the corners blend from one radius to the other unless either sets `radius: false`. |
 | `motion` | — | `{ duration, delay, timing }`, merged field by field over the group's `motion`. |
 
 `LayoutMotion`: `duration` in seconds (default `0.35`); `delay` in seconds (default `0`, applies
@@ -81,10 +81,27 @@ with `x1 = 0` and `y1 ≠ 0` throw.
 | `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
 | `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
 | `onSnap` | — | `(element, reason) => void`, called for every element that jumped. |
-| `engine` | `'raf'` | `'waapi'` runs each move as a compositor animation, smooth while the main thread is blocked: top-level `layout: 'position'` participants only (no `layoutAnchor`, `layoutId` or `radius`; anything else throws), no velocity across a retarget, on the document timeline rather than the Ani clock. |
+| `engine` | `'raf'` | `'waapi'` runs flat position moves as compositor animations, smooth while the main thread is blocked. Requirements below. |
 
 Invalid options throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS`, from
 `createLayoutGroup`, `add` or `set`, never inside a frame.
+
+### `engine: 'waapi'`
+
+Each move becomes one `Element.animate()` on `translate`. It never falls back silently:
+
+| Requirement | If it is not met |
+| :--- | :--- |
+| Every participant sets `layout: 'position'` | `add` / `set` throws `ANI_INVALID_OPTIONS` |
+| No `layoutAnchor`, `layoutId` or `radius: true` | `add` / `set` throws `ANI_INVALID_OPTIONS` |
+| No participant inside another | `add` / `set` throws; a nesting that appears later in the DOM snaps as `'unsupported'` |
+| CSS `linear()` easing is supported | The element snaps as `'unsupported'` |
+
+Differences from `'raf'`: a retarget starts from the drawn box at rest (no velocity); the
+animations run on the document timeline, so the Ani clock's time scale does not apply (reduced
+motion is still read from it at each flush); a retarget during main-thread jank reads the drawn
+box from `currentTime` and can step back by the frames the main thread missed; no inline style
+is written.
 
 ## Report
 
