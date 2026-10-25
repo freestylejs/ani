@@ -182,7 +182,7 @@ starts fresh. Ani hands the velocity over (§5.6).
 | `layout="preserve-aspect"` | none | — |
 | Per-element `onLayoutAnimationStart/Complete` | per-run reports (`flush()` / `update()` promises) | no per-element hooks |
 | Rotate, skew, SVG, inline elements | snap with a typed reason (§9) | no layout animation for them |
-| Border-radius correction | on by default with a `layoutId`; `radius: false` opts out; otherwise opt-in with `radius: true`; blends across a shared handoff (§7) | no option for shared elements; one option for non-shared elements |
+| Border-radius correction | on by default with a `layoutId`; `radius: false` opts out; otherwise opt-in with `radius: true`; blends across a shared handoff (§7) | none for shared elements; non-shared correction still requires `radius: true` |
 | Spring physics | stateless timing + a momentum term (§5.1) | a continuity device, not physics |
 
 ## 6. Residual risks
@@ -262,30 +262,37 @@ and WebKit:
 The user approved two follow-ups: a participant with a `layoutId` corrects radius by default
 (`radius: false` opts out; a participant without a `layoutId` remains opt-in), and the WAAPI
 engine's limits must be stated exactly in the architecture, public docs and JSDoc. The behavior
-landed in `4b3d4c8`; the first documentation pass was `a4191c6`. This cleanup adds `f51aafc`
-(WAAPI nesting validation and browser coverage), `52d6d89` (layout/React JSDoc and package docs),
-`7acf251` (web guide/showcase copy and Code disclosures), and `f96d352` (the expected-warning test
-annotation needed to preserve the 10-warning Biome baseline).
+landed in `4b3d4c8`; the first documentation pass was `a4191c6`. The interrupted cleanup recovered
+`f51aafc` (WAAPI nesting validation), `52d6d89` (layout/React contract docs), `7acf251` (web
+showcase copy), `f96d352` (the expected-warning Biome annotation) and `ec54536` (the first trace
+record). This continuation reviewed that state as unverified and added `476fe2a` (architecture and
+README engine scoping), `a3e14f5` (complete WAAPI `set()` validation coverage), `254c588` and
+`193d9dd` (web interruption/default drift), `a91a4b4` (React changeset contract), `628e979`
+(layout summary drift) and `4e312d3` (RAF-only web guarantees).
 
-The drift sweep found one behavior defect behind otherwise-correct prose: the WAAPI engine rejected
-a nested participant from `add()` but not from `set()`. A browser regression failed on `a4191c6`
-with `nested set: expected "ANI_INVALID_OPTIONS", received "no error"`; `set()` now runs the same
-nesting validator as `add()`. The same case covers a nesting introduced later in the DOM snapping
-`'unsupported'` and missing CSS `linear()` support snapping `'unsupported'`. A separate case proves
-that an Ani clock with `timeScale = 0` does not stop the document-timeline animation. Existing
-cases cover position-only/options rejection, no-velocity retargeting, reduced motion and no inline
-style. The jank step-back is a stated consequence of sampling `Animation.currentTime` on the main
-thread while the compositor keeps advancing; it has mechanism coverage plus the compositor trace,
-but no direct frame oracle because JavaScript cannot sample compositor-only frames while the main
-thread is blocked.
+The drift sweep found one behavior defect: the WAAPI engine rejected a nested participant from
+`add()` but not from `set()`. The W4 regression fails on `a4191c6` with
+`nested set: expected "ANI_INVALID_OPTIONS", received "no error"`; `set()` now runs the same
+nesting validator as `add()`. W4 also checks all seven invalid `add()` shapes, six invalid
+`set()` shapes, that `radius: false` is legal, later DOM nesting snapping `'unsupported'`, and
+missing CSS `linear()` support snapping `'unsupported'`. W1 checks the position-only realization
+and byte-identical inline style, W2 checks a retarget against a no-velocity oracle, W3 checks
+the held first-frame contract after a 120 ms main-thread block, W5 checks reduced motion and lifecycle
+cancellation, and W6 proves that `timeScale = 0` does not stop the document-timeline animation.
+The jank step-back is the documented consequence of sampling `Animation.currentTime` on the main
+thread while the compositor can advance; it has mechanism coverage plus W2/W3 and the compositor
+trace, but no direct frame oracle because JavaScript cannot sample compositor-only frames while the
+main thread is blocked.
 
-User-facing shared-element examples no longer teach redundant `radius: true`; runtime fixtures were
-left explicit where they already were. The package README, guide, changesets and React `engine` prop
-now distinguish the default clock-driven RAF engine from WAAPI's document timeline and state the
-same WAAPI requirements and differences as the implementation. Historical decision/source traces
-were not rewritten.
+Two read-only drift audits also found stale generic prose outside the dedicated WAAPI section:
+unqualified RAF clock/velocity/property-ownership statements, radius summaries that did not mention
+the effective default/opt-out, the guide's generic interruption/delay/nesting language, and the React
+changeset's missing exact contract. Those were corrected and the follow-up audit returned PASS.
+User-facing Code disclosures for shared elements now rely on the `layoutId` radius default; runtime
+fixtures/examples may remain explicit. Historical `.trace/ani_layout_final/source_decision.md` and
+the `cp*` records were not rewritten.
 
-**Final gate (`f96d352`, before this trace-only update):**
+**Final code gate (`4e312d3`):**
 
 | Gate | Result |
 |---|---|
@@ -294,7 +301,8 @@ were not rewritten.
 | browser, Firefox | 162 passed, 2 Chromium-only skipped |
 | browser, WebKit | 162 passed, 2 Chromium-only skipped |
 | engine coverage (statements/branches/functions/lines) | 95.20 / 85.52 / 98.20 / 98.01 (floors 90/80/95/92) |
-| commit reads at 1,000 participants | 2.30 ms (gate 4 ms); steady frame p95 at 300 nested movers 0.725 ms (gate 2 ms) |
-| WAAPI trace gate, size gate | pass; 8/8 |
-| `ts:typecheck`, biome | clean; 11/11 typecheck tasks, 10 warnings (existing baseline) |
-| docs smoke | Chromium, Firefox and WebKit pass against the built site on port 3114; no errors |
+| commit reads at 1,000 participants | 2.50 ms (gate 4 ms); steady frame p95 at 300 nested movers 0.510 ms (gate 2 ms) |
+| WAAPI trace gate, size gate | pass; WAAPI 120.307 ms block with 5 compositor draws / 5 swaps and no composite failures; 8/8 size scenarios |
+| `ts:typecheck`, browser tsc, biome | clean; 11/11 typecheck tasks, browser tsc exit 0, 10 warnings (existing baseline) |
+| build, docs build | pass; 8/8 package builds; docs 166/166 static pages |
+| docs smoke | Chromium, Firefox and WebKit pass against the built site on port 3114 with `errors: []`; the recorded server PID was stopped and the port was clear |
