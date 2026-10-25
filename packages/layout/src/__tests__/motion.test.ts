@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
     clampMotion,
     curveOf,
+    ownsRadius,
     resolveMotion,
     sameTrackOptions,
     validateLayoutOptions,
@@ -163,6 +164,22 @@ describe('motion: track option equality (J-016)', () => {
         expect(sameTrackOptions({}, { motion: { duration: 0.35 } })).toBe(true)
         expect(
             sameTrackOptions({}, { motion: { duration: 0.35 } }, group)
+        ).toBe(false)
+    })
+
+    it('radius defaults on for a shared layoutId only', () => {
+        expect(ownsRadius({})).toBe(false)
+        expect(ownsRadius({ radius: true })).toBe(true)
+        expect(ownsRadius({ layoutId: 'a' })).toBe(true)
+        expect(ownsRadius({ layoutId: 'a', radius: false })).toBe(false)
+        expect(
+            sameTrackOptions({ layoutId: 'a' }, { layoutId: 'a', radius: true })
+        ).toBe(true)
+        expect(
+            sameTrackOptions(
+                { layoutId: 'a' },
+                { layoutId: 'a', radius: false }
+            )
         ).toBe(false)
     })
 

@@ -53,6 +53,7 @@ import {
     type LayoutMotion,
     type LayoutOptions,
     type Motion,
+    ownsRadius,
     resolveMotion,
     sameTrackOptions,
     validateLayoutOptions,
@@ -539,9 +540,9 @@ export function createLayoutGroup(
                         ? (index.get(d.lead) ?? -1)
                         : -1,
                 fade,
-                radius: live && node.p.options.radius ? g.radius : null,
+                radius: live && ownsRadius(node.p.options) ? g.radius : null,
                 radiusBlend: (() => {
-                    if (!live || !node.p.options.radius || !d.radiusBlend)
+                    if (!live || !ownsRadius(node.p.options) || !d.radiusBlend)
                         return null
                     const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
                     const track = leadDrive?.track
@@ -834,7 +835,7 @@ export function createLayoutGroup(
             scroll ??= pageScroll(p.element.ownerDocument)
             rects.set(p, pageRect(p.element, scroll))
             stats.reads += 1
-            if (p.options.layoutId !== undefined && p.options.radius === true) {
+            if (p.options.layoutId !== undefined && ownsRadius(p.options)) {
                 radiusParticipants.push(p)
             }
         }
@@ -1204,7 +1205,7 @@ export function createLayoutGroup(
                 const p = list[i]!
                 let m = measure(
                     p.element,
-                    p.options.radius === true,
+                    ownsRadius(p.options),
                     animatedNow,
                     snapsReference
                 )
@@ -1219,7 +1220,7 @@ export function createLayoutGroup(
                     })
                     m = { ...m, radius }
                 }
-                if (p.drive && p.options.radius) p.drive.radius = m.radius
+                if (p.drive && ownsRadius(p.options)) p.drive.radius = m.radius
                 const parent = parents[i]!
                 const { geometry: g, full } = resolveGeometry(
                     p,
@@ -1560,7 +1561,7 @@ export function createLayoutGroup(
                 // an owned property it did not save yet (opacity for a new
                 // crossfade, corners when `radius` was turned on mid-run)
                 const wanted = [...properties]
-                if (p.options.radius && g.radius)
+                if (ownsRadius(p.options) && g.radius)
                     wanted.push(...RADIUS_PROPERTIES)
                 const missing = wanted.filter(
                     (prop) => !existing.saved.has(prop)
@@ -1569,7 +1570,7 @@ export function createLayoutGroup(
                     existing.saved.set(k, v)
                 // corners it no longer owns go back now
                 if (
-                    !p.options.radius &&
+                    !ownsRadius(p.options) &&
                     existing.saved.has(RADIUS_PROPERTIES[0])
                 ) {
                     queueRestore(p.element, existing, RADIUS_PROPERTIES)
@@ -1578,7 +1579,7 @@ export function createLayoutGroup(
                         existing.written.delete(prop)
                     }
                     existing.radius = null
-                } else if (p.options.radius) {
+                } else if (ownsRadius(p.options)) {
                     existing.radius = g.radiusSource
                 }
                 existing.kind = kind
@@ -1586,7 +1587,7 @@ export function createLayoutGroup(
             }
             // the WAAPI engine writes no inline style
             const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
-            if (!waapi && p.options.radius && g.radius)
+            if (!waapi && ownsRadius(p.options) && g.radius)
                 all.push(...RADIUS_PROPERTIES)
             const d: Drive = {
                 kind,
@@ -1616,15 +1617,14 @@ export function createLayoutGroup(
             Pick<RadiusBlend, 'from' | 'to'>
         >()
         actions.forEach((action, i) => {
-            if (action.kind !== 'track' || list[i]!.options.radius !== true)
-                return
+            if (action.kind !== 'track' || !ownsRadius(list[i]!.options)) return
             const target = geometry[i]?.radius
             if (!target) return
             let source: readonly number[] | null = null
             if (action.handoffFrom !== undefined) {
                 if (action.handoffFrom >= 0) {
                     const previous = list[action.handoffFrom]!
-                    if (previous.options.radius !== true) return
+                    if (!ownsRadius(previous.options)) return
                     source =
                         drawnRadius.get(previous) ??
                         cap?.radius.get(previous) ??
@@ -2043,13 +2043,12 @@ export function createLayoutGroup(
                         retained.set(id, {
                             box,
                             velocity: motion?.velocity ?? null,
-                            radius:
-                                self.options.radius === true
-                                    ? (motion?.radius ??
-                                      capture?.radius.get(self) ??
-                                      self.geometry?.radius ??
-                                      null)
-                                    : null,
+                            radius: ownsRadius(self.options)
+                                ? (motion?.radius ??
+                                  capture?.radius.get(self) ??
+                                  self.geometry?.radius ??
+                                  null)
+                                : null,
                             until: now() + retain * 1000,
                             parent: motion ? self.parent : null,
                         })

@@ -42,7 +42,10 @@ export interface LayoutOptions {
     readonly layoutCrossfade?: boolean
     /** When given and unchanged since the previous flush, the node is not animated. */
     readonly layoutDependency?: unknown
-    /** Keep the corners' on-screen radius under scale. Default: `false`. */
+    /**
+     * Keep the corners' on-screen radius under scale, and blend it across a
+     * `layoutId` handoff. Default: `true` with a `layoutId`, else `false`.
+     */
     readonly radius?: boolean
     readonly motion?: LayoutMotion
 }
@@ -345,13 +348,19 @@ function mergeMotion(
     return { duration, delay, timing: fn ?? defaultTiming }
 }
 
+/** Whether layout owns the corners: `radius`, defaulting on for a shared `layoutId`. */
+export function ownsRadius(options: LayoutOptions): boolean {
+    return options.radius ?? options.layoutId !== undefined
+}
+
 /**
  * Whether two option sets draw the same track under the group's motion:
  * mode, anchor, effective motion and radius. A change of any of them
  * retargets a running track (§5.5); equal effective options keep it (§3.3
  * invariant 5), so `{}` and `{ motion: { delay: 0 } }` are the same track.
  * `layoutId`, `layoutCrossfade` and `layoutDependency` act at the flush and
- * never restart a track.
+ * never restart a track, except where a `layoutId` turns the radius default
+ * on or off.
  */
 export function sameTrackOptions(
     a: LayoutOptions,
@@ -364,7 +373,7 @@ export function sameTrackOptions(
         (a.layout ?? true) === (b.layout ?? true) &&
         a.layoutAnchor?.x === b.layoutAnchor?.x &&
         a.layoutAnchor?.y === b.layoutAnchor?.y &&
-        (a.radius ?? false) === (b.radius ?? false) &&
+        ownsRadius(a) === ownsRadius(b) &&
         am.duration === bm.duration &&
         am.delay === bm.delay &&
         sameTiming(am.timing, bm.timing)
