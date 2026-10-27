@@ -350,6 +350,47 @@ describe('the capture-less flush report (§4.4)', () => {
         group.dispose()
     })
 
+    it("β includes the parent's frame: a driven child that moves 30 px with its undriven parent is reported, and so is the parent; a child whose parent did not move is not", async () => {
+        for (const parentMoves of [true, false]) {
+            const mc = createManualClock()
+            const group = createLayoutGroup({ clock: mc.clock, motion })
+            const parent = element(box(0, 0, 200, 200))
+            const child = element(box(10, 10), parent)
+            group.add(parent)
+            group.add(child)
+            group.capture()
+            await group.flush()
+            group.capture()
+            model.place(child, box(60, 10))
+            void group.flush()
+            mc.frames(2)
+            await nextTask()
+            expect(group.stats.tracks).toBe(1)
+            const drawn = model.rect(child)
+            // no capture: the commit moves the parent, the child with it
+            if (parentMoves) {
+                model.place(parent, box(30, 0, 200, 200))
+                model.place(child, box(90, 10))
+            }
+            const report = await group.flush()
+            if (parentMoves) {
+                // it jumped with its layout by 30 px
+                expect(model.rect(child).x - drawn.x).toBeCloseTo(30, 9)
+                expect(report).toEqual({
+                    status: 'stale',
+                    snapped: [
+                        { element: parent, reason: 'stale' },
+                        { element: child, reason: 'stale' },
+                    ],
+                })
+            } else {
+                expect(report).toEqual({ status: 'no-change', snapped: [] })
+            }
+            group.dispose()
+            document.body.innerHTML = ''
+        }
+    })
+
     it("an undriven node is judged against the aged capture's box when there is one; nothing reported is 'no-change'", async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({ clock: mc.clock, motion })

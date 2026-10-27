@@ -2011,14 +2011,46 @@ export function createLayoutGroup(
             return { dx, dy, exact, path }
         })
 
+        /** The last known box of an undriven node (§4.4). */
+        const lastKnownOf = (i: number): Box | null =>
+            (fresh ? null : cap?.rects.get(list[i]!)) ?? lastBoxes[i] ?? null
         /**
-         * `β` of a driven node (§4.4): from the change of its layout box in
-         * its parent participant's local frame since the previous flush, its
-         * own pose scale and origin, and the parent's raw rect and layout
-         * sizes at this flush. Infinity when an input is unknown (a new or
-         * reparented node, an unmeasured parent).
+         * `β_π` (§4.4): how far the parent participant's local frame moved
+         * on screen. A driven parent's own `β`; an undriven parent's box
+         * displacement on any edge between its last known box and its A
+         * (Infinity with none); 0 at the top level.
+         */
+        const frameOf = (i: number): number => {
+            const k = parents[i]!
+            if (k < 0) return 0
+            if (runs(list[k]!.drive)) return boundOf(k)
+            const from = lastKnownOf(k)
+            if (!from) return Number.POSITIVE_INFINITY
+            const to = geometry[k]?.a ?? rects[k]!
+            return Math.max(
+                Math.abs(to.x - from.x),
+                Math.abs(to.y - from.y),
+                Math.abs(to.x + to.w - from.x - from.w),
+                Math.abs(to.y + to.h - from.y - from.h)
+            )
+        }
+        const bounds: (number | undefined)[] = list.map(() => undefined)
+        /**
+         * `β` of a driven node (§4.4), top-down: `β_π` plus the bound from
+         * the change of its layout box in its parent participant's local
+         * frame since the previous flush, its own pose scale and origin, and
+         * the parent's raw rect and layout sizes at this flush. Infinity when
+         * an input is unknown (a new or reparented node, an unmeasured
+         * parent).
          */
         const boundOf = (i: number): number => {
+            const known = bounds[i]
+            if (known !== undefined) return known
+            const value = ownBound(i)
+            bounds[i] = value
+            return value
+        }
+        const ownBound = (i: number): number => {
             const p = list[i]!
             const parent = parents[i]!
             const was = lastGeometry[i]
@@ -2070,6 +2102,7 @@ export function createLayoutGroup(
                 pose: { sx: pose.sx, sy: pose.sy },
                 origin: { fx: g.fx, fy: g.fy },
                 parent: parentInput,
+                frame: frameOf(i),
             })
         }
 
@@ -2305,10 +2338,7 @@ export function createLayoutGroup(
                             a: node.a,
                             // the aged capture's box; with a fresh capture
                             // this node is judged as if it had none
-                            lastKnown:
-                                (fresh ? null : cap?.rects.get(p)) ??
-                                lastBoxes[i] ??
-                                null,
+                            lastKnown: lastKnownOf(i),
                             bound: 0,
                             translationExact: true,
                         },

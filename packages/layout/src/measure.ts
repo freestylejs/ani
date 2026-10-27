@@ -345,17 +345,27 @@ export interface ScreenBoundInput {
         readonly rect: { readonly w: number; readonly h: number }
         readonly size: { readonly w: number; readonly h: number }
     } | null
+    /**
+     * `β_π`: how far the parent's local frame moved on screen, one vector for
+     * every point of it (its layout moved and its pose stays relative to its
+     * layout box). A driven parent's own `β`; an undriven parent's box
+     * displacement between its last known box and its A (Infinity with no
+     * last known box); 0 at the top level.
+     */
+    readonly frame: number
 }
 
 /**
- * §4.4: `β`, a bound on the screen displacement of every edge of a driven
- * node's drawn box that holds for any affine map above it, supported or not.
- * An edge moves in the parent's frame by at most
- * `e = |Δx| + (1 + 2·s)·max(1, |f|)·|Δw|` per axis; a linear map taking a
+ * §4.4: `β`, a bound on the screen displacement of every corner (so every
+ * edge) of a driven node's drawn box that holds for any affine map above it,
+ * supported or not: `β = β_π + (R_axis / min(w, h))·max(e_x, e_y)`. A corner
+ * moves in the parent's frame by at most `e = |Δx| + (1 + 2·s)·max(1, |f|)·|Δw|`
+ * per axis, and that frame itself by at most `β_π`; a linear map taking a
  * `w × h` box to a bounding box `R` has row sums at most `R_axis / min(w, h)`.
  */
 export function screenBound(input: ScreenBoundInput): number {
-    const { change, pose, origin, parent } = input
+    const { change, pose, origin, parent, frame } = input
+    if (!(frame >= 0)) return Number.POSITIVE_INFINITY
     const ex =
         Math.abs(change.x) +
         (1 + 2 * Math.abs(pose.sx)) *
@@ -367,11 +377,11 @@ export function screenBound(input: ScreenBoundInput): number {
             Math.max(1, Math.abs(origin.fy)) *
             Math.abs(change.h)
     const e = Math.max(ex, ey)
-    if (!parent) return e
+    if (!parent) return frame + e
     const side = Math.min(parent.size.w, parent.size.h)
     if (!validPositive(side)) return Number.POSITIVE_INFINITY
     const row = Math.max(parent.rect.w, parent.rect.h) / side
-    return row * e
+    return frame + row * e
 }
 
 export interface StaleNode {
