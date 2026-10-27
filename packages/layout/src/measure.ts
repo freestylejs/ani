@@ -6,14 +6,18 @@
 import {
     aboutOrigin,
     type Box,
+    carry,
     compose,
+    composeMoving,
     IDENTITY_MAP,
     invert,
     type Map2,
+    type MovingMap,
     mapBox,
     type OwnTransform,
     ownMap,
     type Pose,
+    STILL_IDENTITY,
     unmapOwn,
 } from './geometry'
 
@@ -346,6 +350,61 @@ export function presentedLayoutBoxes(nodes: readonly PresentedNode[]): Box[] {
     }
 
     return boxes
+}
+
+const ZERO_BOX: Box = { x: 0, y: 0, w: 0, h: 0 }
+
+/**
+ * §4.2 Velocity, §5.7: the true velocity of each presented box B at `t_k`,
+ * top-down. B is the node's CSS box drawn through its own pose and inner map
+ * about its own origin, then through its parent's presented map; the layout
+ * box and the inner maps are static between frames, so the velocity is the
+ * product-rule derivative of that composed map applied to the CSS box: the
+ * parents' scale rates times the node's offset in their frames, their
+ * translation rates, and its own pose rate. `rates[k]` is the time
+ * derivative of node k's pose (`tx`, `ty`, `sx`, `sy`); null: at rest.
+ */
+export function presentedVelocities(
+    nodes: readonly PresentedNode[],
+    rates: readonly (Pose | null)[]
+): Box[] {
+    const fulls: MovingMap[] = []
+    const velocities: Box[] = []
+    nodes.forEach((node, k) => {
+        const parent = node.parent >= 0 ? fulls[node.parent]! : STILL_IDENTITY
+        const local = mapBox(invert(parent.map), node.rect)
+        const [ox, oy] = node.origin
+        const p = node.pose
+        const q = node.inner
+        const own: OwnTransform = {
+            kx: p.sx * q.sx,
+            ky: p.sy * q.sy,
+            tx: p.tx + p.sx * q.tx,
+            ty: p.ty + p.sy * q.ty,
+            ox,
+            oy,
+        }
+        const css = unmapOwn(local, own)
+        const r = rates[k] ?? null
+        // x ↦ k·(x − O) + O + t about the origin O, and its derivative
+        const kx = r ? r.sx * q.sx : 0
+        const ky = r ? r.sy * q.sy : 0
+        const tx = r ? r.tx + r.sx * q.tx : 0
+        const ty = r ? r.ty + r.sy * q.ty : 0
+        const Ox = css.x + ox
+        const Oy = css.y + oy
+        const moving: MovingMap = {
+            map: ownMap(css, own),
+            rate: {
+                x: { k: kx, b: tx - kx * Ox },
+                y: { k: ky, b: ty - ky * Oy },
+            },
+        }
+        const full = composeMoving(parent, moving)
+        fulls.push(full)
+        velocities.push(carry(full, css, ZERO_BOX).velocity)
+    })
+    return velocities
 }
 
 export type KeepPath = 'unchanged' | 'translate' | 'retarget'

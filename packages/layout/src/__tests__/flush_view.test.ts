@@ -541,3 +541,83 @@ describe('the support check at flush (§4.2)', () => {
         group.dispose()
     })
 })
+
+describe('the presented velocity v at t_k (§4.2 Velocity, §5.7)', () => {
+    /**
+     * A parent participant at a live scale (200 × 100 → 400 × 200 px, linear,
+     * 1 s) with a child that has its own track (60 px right); five frames in,
+     * the child's layout shifts 24 px up inside the parent (an inner scroll
+     * offset σ, presented). Everything the analytic chain draws is linear in
+     * t here, so a one-sided difference of the presented box is its exact
+     * derivative; the retarget is a cubic in t, so four frames give its
+     * exact start velocity. The engine writes poses to 1e-6, which bounds
+     * what rects can show (a few 1e-3 px/s at 50 ms steps); the chain itself
+     * is checked at 1e-9 in measure.test.ts (PV-1).
+     */
+    async function scene(commit: boolean) {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion: { duration: 1, timing: timing.linear() },
+            threshold: 8,
+        })
+        const parent = element(box(0, 200, 200, 100))
+        const child = element(box(20, 220, 40, 40), parent)
+        group.add(parent)
+        group.add(child)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(parent, box(0, 200, 400, 200))
+        model.place(child, box(80, 220, 40, 40))
+        void group.flush()
+        mc.frames(5)
+        await nextTask()
+        // σ = 24 px, presented: the child's in-parent offset changes
+        model.place(child, box(80, 196, 40, 40))
+        const h = 0.05
+        const b0 = model.rect(child)
+        let v: Box
+        if (commit) {
+            group.capture()
+            // the commit moves the child 5 px (J = 5 < threshold): path 3
+            // under the live scale, a retarget from (B, v)
+            model.place(child, box(85, 196, 40, 40))
+            void group.flush()
+            const c0 = model.rect(child)
+            expectBox(c0, b0, 1e-9)
+            const c: Box[] = [c0]
+            for (let k = 0; k < 3; k++) {
+                mc.frame(h * 1000)
+                c.push(model.rect(child))
+            }
+            const d = (key: keyof Box) =>
+                (-11 * c[0]![key] +
+                    18 * c[1]![key] -
+                    9 * c[2]![key] +
+                    2 * c[3]![key]) /
+                (6 * h)
+            v = { x: d('x'), y: d('y'), w: d('w'), h: d('h') }
+        } else {
+            mc.frame(h * 1000)
+            const b1 = model.rect(child)
+            v = {
+                x: (b1.x - b0.x) / h,
+                y: (b1.y - b0.y) / h,
+                w: (b1.w - b0.w) / h,
+                h: (b1.h - b0.h) / h,
+            }
+        }
+        group.dispose()
+        document.body.innerHTML = ''
+        return v
+    }
+
+    it('under a live parent scale with a 24 px inner offset presented, the retarget starts at the presented box’s true velocity: the product-rule derivative (parent scale rate × in-parent offset, parent translation rate, own rate), to a finite difference of the presented box (within the 1e-6 write precision)', async () => {
+        const expected = await scene(false)
+        const actual = await scene(true)
+        // the inner offset's own term is visible: −k′·σ = −12 px/s on y
+        expect(Math.abs(expected.y + 12)).toBeLessThan(0.01)
+        expectBox(actual, expected, 0.02)
+    })
+})

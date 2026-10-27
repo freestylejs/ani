@@ -810,6 +810,28 @@ export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
     return drawnMotion(nodes, true).velocities
 }
 
+/**
+ * The analytic velocity of every drawn box, and the time derivative of every
+ * node's own pose as written (`tx`, `ty` about its origin, `sx`, `sy`).
+ */
+export function drawnRates(nodes: readonly SolveNode[]): {
+    velocities: BoxVelocity[]
+    poses: Pose[]
+} {
+    const motion = drawnMotion(nodes, true)
+    const poses = nodes.map((node, i) => {
+        // x ↦ s·(x − o) + o + t: b = o − s·o + t, so t′ = b′ + s′·o
+        const { rate } = motion.pose(i)
+        return {
+            tx: rate.x.b + rate.x.k * node.ox,
+            ty: rate.y.b + rate.y.k * node.oy,
+            sx: rate.x.k,
+            sy: rate.y.k,
+        }
+    })
+    return { velocities: motion.velocities, poses }
+}
+
 /** Whether a crossfade's timeline has ended (the lead's perceptual end for a spring). */
 export function fadeEnded(fade: Fade): boolean {
     return fade.elapsed >= fade.law.duration
