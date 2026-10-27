@@ -300,35 +300,46 @@ not a remembered one.
 ### 4.2 Measured state, the support check, and the presented layout box
 
 **Support check** (production, every participant, at capture and at flush). It never treats a
-scale derived from a rounded layout size as exact; it propagates a **scale interval** that provably
-contains the true total scale. Top-down, parent before child, per axis, with `R` the rect size and
-`O` the integer layout size (`offsetWidth`, `offsetHeight`):
+scale derived from a rounded layout size as exact, and it never derives an expected scale from a
+measurement. Each node's measurement is compared with the exact model of its total scale.
+Top-down, parent before child, per axis, with `R` the rect size and `O` the integer layout size
+(`offsetWidth`, `offsetHeight`):
 
 - **Measured interval.** The true layout size `W` satisfies `|W − O| < 1 px` (`offsetWidth` rounds
   or pixel-snaps a LayoutUnit size). So the true total scale `S = R / W` lies in
   `M = [R / (O + 1), R / (O − 1)]` for `O > 1`. A **degenerate axis** (`O ≤ 1`) is not left
   unproven: the check reads that participant's exact computed border-box size `W` on the axis
   (counted in `stats.styles`) and uses `M = [R / W, R / W]`. A zero `W` is a zero-size box, which
-  snaps `'unsupported'` (`zero size`) like today. Both ends are widened by a relative `1e-9` for
-  floating-point rounding.
-- **Expected interval.** `E = I_π · p · q`, with `I_π` the parent participant's propagated interval
-  (`[1, 1]` at the top level, since non-participant ancestors only translate, §6), `p` the node's
-  own pose scale as last written (known exactly) and `q` its inner-map scale. The check first
-  assumes `q = 1`; on a mismatch it reads the computed values of item 2 of §4.1 (at flush, the
-  active node's values are read anyway) and uses their scale.
-- **Pass** when `M ∩ E ≠ ∅` on both axes.
-- **Propagated interval.** `I = M ∩ E` when `q` was read; `I = M` when `q` was assumed (an assumed
-  `q` is not knowledge). When `I` is wider than ±0.5 % relative (`O` below about 200 px, or a wide
-  parent interval) and the node has participant children, its computed values are read as on a
-  mismatch, so `I = M ∩ (I_π · p · q)` and every propagated interval stays within ±0.5 % of the
-  truth by induction from the top level.
+  snaps `'unsupported'` (`zero size`) like today. Both ends are widened by a relative `1e-6`: some
+  engines compute rects in single precision.
+- **Expected scale.** `E = E_π · p · q` is a number per axis, not an interval:
+  - `E_π` is the parent participant's expected scale (1 at the top level, since non-participant
+    ancestors only translate, §6);
+  - `p` is the node's own pose scale as last written (known exactly);
+  - `q` is its inner-map scale, assumed 1 until read. At flush, the active node's computed values
+    are read anyway (§9.1), and their scale is used.
+- **Pass** when `E ∈ M` on both axes.
+- **Verification before a snap.** A node fails only after verification.
+  - When `E ∉ M`, the check reads the computed values (item 2 of §4.1) of the node and of every
+    participant ancestor whose `q` is still assumed, top-down. It then recomputes `E` along the
+    chain with the scales read.
+  - The classifier below runs on every node read. A rotation, skew or 3D component in an ancestor
+    makes that ancestor unsupported, with its subtree.
+  - The node snaps only when `E ∉ M` still.
+  - Reads happen only on a failing chain. Each is counted in `stats.styles` and reused for the rest
+    of the check and for the flush.
 
-On a supported tree the true `S` lies in `M` and in `E` at every node, so the check has **no false
-positive** at any scale, size or nesting depth: rounding can widen an interval but never exclude
-the truth. It detects an unsupported map whose effect on the box exceeds the measurement interval
-(about 1 px of the node's own size plus 0.5 % from its parent); smaller effects are drawn as their
-box, like the small rotations below. The same intervals serve both reads of a flush; the computed
-reads they add are counted in `stats.styles`.
+On a supported tree with every `q` read, `E` is the true total scale, which lies in `M`.
+- **No false positive.** An assumed `q` that hides inside its own node's `M` can make a
+  descendant's first comparison fail; verification reads it, and the descendant passes. So the
+  check has **no false positive** at any scale, size or nesting depth.
+- **No accumulation.** `E` is never derived from a measurement, so an unsupported map that escapes
+  one node's interval is not inherited: every participant is compared with the exact model. An
+  unsupported map (a skew, a rotation, `zoom`, a non-translating non-participant ancestor) is
+  detected as soon as its composed effect on any participant's box exceeds that node's own
+  measurement interval (under 1 px of its own size). It cannot accumulate across a chain, at any
+  depth. Smaller effects are drawn as their box, like the small rotations below.
+- **Shared reads.** Both reads of a flush use the same verified scales.
 
 - A mismatch, or computed values with a rotation, skew or 3D component, means a map the engine
   does not own (a box-changing rotation or skew, 3D, CSS `zoom`). The node and its participant
@@ -386,7 +397,21 @@ A flush with no capture, or with an aged capture, has no valid measurement of wh
 | Node | Outcome | Report |
 |---|---|---|
 | Undriven | Appears at A (no track). | Reported `'stale'` when its A differs by at least `threshold` from its **last known box**: the aged capture's box when there is one, else its A at its previous flush (that flush's view space). A node with no last known box (registered since its last flush) is reported. |
-| Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is translated by `δ = A_new − A_old`, §5.7; with no valid B there is nothing to retarget from). | Reported `'stale'` when its screen displacement bound `|δ|·max(1, ρ)` (§5.7) reaches `threshold`, or reaches 0.01 px while the translation is not exact (path 2's condition fails). |
+| Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is translated by `δ = A_new − A_old`, §5.7; with no valid B there is nothing to retarget from). | Reported `'stale'` when its screen displacement bound `β` (below) reaches `threshold`, or reaches 0.01 px while the translation is not exact (path 2's condition fails). |
+
+**The screen displacement bound `β`.** It holds for any affine map above the node, supported or
+not, so no undetected skew or rotation can make it too small.
+- **Layout change.** `d` is the change of the node's layout box in its parent participant's local
+  frame, in CSS px, between the previous flush and this one: `Δx`, `Δw` per axis (`Δy`, `Δh`).
+- **Own pose.** With its own pose scale `s` and transform-origin fraction `f` per axis held, an edge
+  of its drawn box moves in that frame by at most `e = |Δx| + (1 + 2·s)·max(1, |f|)·|Δw|` per axis.
+- **Map above.** The parent's presented linear map at this flush is bounded by its own raw rect,
+  read at this flush under its unchanged pose. Any linear map that takes a `w × h` box to a
+  bounding box of size `(R_x, R_y)` has row sums `|a| + |c| ≤ R_x / min(w, h)` (and likewise for
+  `y`). The bound uses the parent's rounded sizes less one (`W > O − 1`), or its exact sizes on a
+  degenerate axis.
+- **The bound.** `β = max over axes of (R_axis / min(w, h))·max(e_x, e_y)`. At the top level the
+  factor is 1 (non-participant ancestors only translate, §6).
 
 The rule is **exhaustive and conservative**: every node that may have jumped by `threshold` or more
 is reported, and a node that only moved with a scroll since its last known box may be reported too
@@ -643,13 +668,16 @@ commit's own task (the mutation, an unpresented scroll) moved A only, so the nod
 **Re-expression of a kept track.** With `δ = A_new − A_old` per axis (both rest boxes, each in its
 own flush's view space), a kept track takes exactly one of three paths:
 
-Every path is judged in **screen space**. With `ρ` per axis the product, over the node's
-participant ancestors, of each one's pose scale at `t_k` and its inner-map scale now divided by the
-one the track was planned with (1 with no ancestors), the presented displacement a kept track
-leaves uncorrected is at most `|δ|·max(1, ρ)` per axis. No rest-space epsilon is ever used alone.
+Every path is judged by **what the user sees**. No rest-space epsilon and no model of the
+ancestor maps decides that a track may be left alone.
+- The flush reads each running node's raw rect `D` before any write, under its pose as last
+  written. With the commit applied, `D` is where the next frame would draw the node if its track
+  were left untouched.
+- `J = D − B` is therefore the **measured jump** on every edge, through whatever maps are above
+  the node, supported or not.
 
-1. **Unchanged** when `|δ|·max(1, ρ) < 0.01 px` on both axes: the screen displacement is below
-   drawing precision whatever the ancestors do.
+1. **Unchanged** when `|J| < 0.01 px` on every edge (both origins and both sizes). Leaving the
+   track alone draws the next frame where the user saw the node.
 2. **Translated** by `δ` when the translation is provably exact: at `t_k` every participant
    ancestor's pose has scale 1 on both axes (no ancestor track or hold is changing a scale), and
    every participant ancestor's inner-map scale is the one the track was planned with. Then the
@@ -663,6 +691,8 @@ leaves uncorrected is at most `|δ|·max(1, ρ)` per axis. No rest-space epsilon
    the child's B by 10 px while `A_new − A_old` is 20 px), so no translation of the old track is
    exact. The node is planned now from its measured presented box and analytic velocity toward
    `A_new`, in this flush's space: the first frame is B and velocity is continuous (invariant 4).
+
+With an aged capture or no capture there is no B and no `J`. §4.4 decides those flushes.
 
 A node planned now starts in this flush's space.
 
@@ -1244,7 +1274,7 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture | (a) no shear, exact `(B, v)`; (b) aged, §4.4 outcome, no rewind |
 | L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller, each with a slotted light-DOM participant under a participant inside the root | As L-MEAS-4; the slotted participant is planned under its flat-tree parent (§4.6) |
-| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold`; a driven node with a sub-0.01 px δ under a live ancestor scale of 300 | §4.4 outcomes; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule (the amplified case is reported) |
+| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold`; a driven node with a sub-0.01 px δ under a live ancestor scale of 300 | §4.4 outcomes, with `β` as defined there; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule (the amplified case is reported) |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly |
 | L-MEAS-13 an earlier rAF callback moves an ancestor; a later callback calls `update()` (via Ani's clock) | Aged at once, §4.4, never the intermediate box as B |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
@@ -1294,7 +1324,7 @@ marker; use the predicted box instead of the measured one; drop the layout-size 
 
 | Spike | Must show (three engines) | Fallback that ships if it fails |
 |---|---|---|
-| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The interval support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom; a degenerate-axis leaf (a 1 px rule, a 0.5 px hairline) under an unowned `zoom: 2` wrapper is detected through its exact computed size. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
+| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom; a degenerate-axis leaf (a 1 px rule, a 0.5 px hairline) under an unowned `zoom: 2` wrapper is detected through its exact computed size; a chain of participants each with a sub-resolution skew (201 px squares, `skewX` of 0.0048 per level, 3 and 1,999 levels) is detected at the first participant whose box the composed skew changes by its measurement interval, never inherited. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
 | S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect; if still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree |
 | S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one | None needed: aging is the conservative path |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.10 |
