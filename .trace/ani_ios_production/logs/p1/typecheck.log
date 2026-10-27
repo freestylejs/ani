@@ -1,5 +1,5 @@
 $ pnpm ts:typecheck
-# commit 81893f3ebb4995d41947eef35baee433b6a697a3
+# commit f94848de6d8d9edc04a54f614498b61799bc129d
 
 > @freestylejs/ani-monorepo@1.0.0 ts:typecheck /home/user/ani
 > turbo run ts:typecheck
@@ -10,12 +10,12 @@ $ pnpm ts:typecheck
    • Running ts:typecheck in 8 packages
    • Remote caching disabled
 
-@freestylejs/ani-core:build: cache bypass, force executing e548e81bf2f2dc15
+@freestylejs/ani-core:build: cache bypass, force executing 8f52f9651e98868d
+@freestylejs/ani-core:ts:typecheck: cache miss, executing d374eb1d23c7e4c3
 @freestylejs/ani-codemod:ts:typecheck: cache hit, replaying logs 4ea0e64a2d22461c
 @freestylejs/ani-codemod:ts:typecheck: 
 @freestylejs/ani-codemod:ts:typecheck: > @freestylejs/ani-codemod@0.0.0 ts:typecheck /home/user/ani/packages/codemod
 @freestylejs/ani-codemod:ts:typecheck: > tsc --noEmit --skipLibCheck
-@freestylejs/ani-core:ts:typecheck: cache hit, replaying logs 21d724f4e7011a92
 @freestylejs/ani-codemod:ts:typecheck: 
 @freestylejs/ani-core:ts:typecheck: 
 @freestylejs/ani-core:ts:typecheck: > @freestylejs/ani-core@1.3.0 ts:typecheck /home/user/ani/packages/core
@@ -41,31 +41,31 @@ $ pnpm ts:typecheck
 @freestylejs/ani-core:build: CJS Build start
 @freestylejs/ani-core:build: ESM Build start
 @freestylejs/ani-core:build: DTS Build start
+@freestylejs/ani-core:build: ESM dist/index.js          177.30 KB
+@freestylejs/ani-core:build: ESM dist/values.js         19.32 KB
+@freestylejs/ani-core:build: ESM dist/testing.js        2.06 KB
 @freestylejs/ani-core:build: ESM dist/chunk-G6J5T7CS.js 18.84 KB
 @freestylejs/ani-core:build: ESM dist/chunk-I3YVW656.js 1.32 KB
-@freestylejs/ani-core:build: ESM dist/testing.js        2.06 KB
-@freestylejs/ani-core:build: ESM dist/values.js         19.32 KB
-@freestylejs/ani-core:build: ESM dist/index.js          175.52 KB
-@freestylejs/ani-core:build: ESM ⚡️ Build success in 440ms
-@freestylejs/ani-core:build: ESM dist/dev/values.js         19.31 KB
-@freestylejs/ani-core:build: ESM dist/dev/testing.js        2.06 KB
-@freestylejs/ani-core:build: ESM dist/dev/index.js          176.90 KB
-@freestylejs/ani-core:build: ESM dist/dev/chunk-RPMG77FT.js 18.83 KB
-@freestylejs/ani-core:build: ESM dist/dev/chunk-P2FU4QNN.js 1.32 KB
-@freestylejs/ani-core:build: ESM ⚡️ Build success in 453ms
-@freestylejs/ani-core:build: CJS dist/index.cjs          183.13 KB
-@freestylejs/ani-core:build: CJS dist/values.cjs         20.00 KB
-@freestylejs/ani-core:build: CJS dist/testing.cjs        2.39 KB
-@freestylejs/ani-core:build: CJS dist/chunk-YWMYNRHK.cjs 20.10 KB
-@freestylejs/ani-core:build: CJS dist/chunk-KXIU4G4K.cjs 1.45 KB
-@freestylejs/ani-core:build: CJS ⚡️ Build success in 442ms
-@freestylejs/ani-core:build: CJS dist/dev/index.cjs          184.64 KB
+@freestylejs/ani-core:build: ESM ⚡️ Build success in 736ms
+@freestylejs/ani-core:build: CJS dist/dev/index.cjs          186.42 KB
 @freestylejs/ani-core:build: CJS dist/dev/values.cjs         19.99 KB
 @freestylejs/ani-core:build: CJS dist/dev/testing.cjs        2.39 KB
 @freestylejs/ani-core:build: CJS dist/dev/chunk-ADDKDHY4.cjs 20.09 KB
 @freestylejs/ani-core:build: CJS dist/dev/chunk-JVQO6ZSU.cjs 1.48 KB
-@freestylejs/ani-core:build: CJS ⚡️ Build success in 455ms
-@freestylejs/ani-core:build: DTS ⚡️ Build success in 4924ms
+@freestylejs/ani-core:build: CJS ⚡️ Build success in 858ms
+@freestylejs/ani-core:build: CJS dist/index.cjs          184.91 KB
+@freestylejs/ani-core:build: CJS dist/values.cjs         20.00 KB
+@freestylejs/ani-core:build: CJS dist/testing.cjs        2.39 KB
+@freestylejs/ani-core:build: CJS dist/chunk-YWMYNRHK.cjs 20.10 KB
+@freestylejs/ani-core:build: CJS dist/chunk-KXIU4G4K.cjs 1.45 KB
+@freestylejs/ani-core:build: CJS ⚡️ Build success in 737ms
+@freestylejs/ani-core:build: ESM dist/dev/index.js          178.68 KB
+@freestylejs/ani-core:build: ESM dist/dev/values.js         19.31 KB
+@freestylejs/ani-core:build: ESM dist/dev/testing.js        2.06 KB
+@freestylejs/ani-core:build: ESM dist/dev/chunk-RPMG77FT.js 18.83 KB
+@freestylejs/ani-core:build: ESM dist/dev/chunk-P2FU4QNN.js 1.32 KB
+@freestylejs/ani-core:build: ESM ⚡️ Build success in 858ms
+@freestylejs/ani-core:build: DTS ⚡️ Build success in 8224ms
 @freestylejs/ani-core:build: DTS dist/index.d.cts          49.11 KB
 @freestylejs/ani-core:build: DTS dist/values.d.cts         3.22 KB
 @freestylejs/ani-core:build: DTS dist/testing.d.cts        1.91 KB
@@ -74,27 +74,27 @@ $ pnpm ts:typecheck
 @freestylejs/ani-core:build: DTS dist/values.d.ts          3.22 KB
 @freestylejs/ani-core:build: DTS dist/testing.d.ts         1.91 KB
 @freestylejs/ani-core:build: DTS dist/clock-DmeSP_I9.d.ts  6.63 KB
-@freestylejs/ani-layout:ts:typecheck: cache miss, executing f02a2c5d863880b7
-@freestylejs/ani-svelte:ts:typecheck: cache hit, replaying logs 19e20ffab5bfa914
-@freestylejs/ani-svelte:ts:typecheck: 
-@freestylejs/ani-svelte:ts:typecheck: > @freestylejs/ani-svelte@1.1.0 ts:typecheck /home/user/ani/packages/svelte
-@freestylejs/ani-svelte:ts:typecheck: > tsc --noEmit --skipLibCheck
-@freestylejs/ani-svelte:ts:typecheck: 
-@freestylejs/ani-layout:build: cache bypass, force executing 6a7845a282212cd8
-@freestylejs/ani-vue:ts:typecheck: cache hit, replaying logs 14a8e0aac405696a
-@freestylejs/ani-solid:ts:typecheck: cache hit, replaying logs f94ee4127a18fd59
-@freestylejs/ani-solid:ts:typecheck: 
-@freestylejs/ani-solid:ts:typecheck: > @freestylejs/ani-solid@1.1.0 ts:typecheck /home/user/ani/packages/solid
-@freestylejs/ani-solid:ts:typecheck: > tsc --noEmit --skipLibCheck
-@freestylejs/ani-solid:ts:typecheck: 
-@freestylejs/ani-vue:ts:typecheck: 
-@freestylejs/ani-vue:ts:typecheck: > @freestylejs/ani-vue@1.1.0 ts:typecheck /home/user/ani/packages/vue
-@freestylejs/ani-vue:ts:typecheck: > tsc --noEmit --skipLibCheck
-@freestylejs/ani-vue:ts:typecheck: 
+@freestylejs/ani-svelte:ts:typecheck: cache miss, executing d725ee3fc04e47ab
+@freestylejs/ani-layout:ts:typecheck: cache miss, executing 3cd53699329b6be4
+@freestylejs/ani-vue:ts:typecheck: cache miss, executing f61ea4d2530cf311
+@freestylejs/ani-layout:build: cache bypass, force executing dfb7629ce665469d
+@freestylejs/ani-solid:ts:typecheck: cache miss, executing fb5617b9a945551b
 @freestylejs/ani-layout:ts:typecheck: 
 @freestylejs/ani-layout:ts:typecheck: > @freestylejs/ani-layout@0.1.0 ts:typecheck /home/user/ani/packages/layout
 @freestylejs/ani-layout:ts:typecheck: > tsc --noEmit --skipLibCheck
 @freestylejs/ani-layout:ts:typecheck: 
+@freestylejs/ani-vue:ts:typecheck: 
+@freestylejs/ani-vue:ts:typecheck: > @freestylejs/ani-vue@1.1.0 ts:typecheck /home/user/ani/packages/vue
+@freestylejs/ani-vue:ts:typecheck: > tsc --noEmit --skipLibCheck
+@freestylejs/ani-vue:ts:typecheck: 
+@freestylejs/ani-solid:ts:typecheck: 
+@freestylejs/ani-solid:ts:typecheck: > @freestylejs/ani-solid@1.1.0 ts:typecheck /home/user/ani/packages/solid
+@freestylejs/ani-solid:ts:typecheck: > tsc --noEmit --skipLibCheck
+@freestylejs/ani-solid:ts:typecheck: 
+@freestylejs/ani-svelte:ts:typecheck: 
+@freestylejs/ani-svelte:ts:typecheck: > @freestylejs/ani-svelte@1.1.0 ts:typecheck /home/user/ani/packages/svelte
+@freestylejs/ani-svelte:ts:typecheck: > tsc --noEmit --skipLibCheck
+@freestylejs/ani-svelte:ts:typecheck: 
 @freestylejs/ani-layout:build: 
 @freestylejs/ani-layout:build: > @freestylejs/ani-layout@0.1.0 build /home/user/ani/packages/layout
 @freestylejs/ani-layout:build: > tsup
@@ -107,16 +107,16 @@ $ pnpm ts:typecheck
 @freestylejs/ani-layout:build: CLI Cleaning output folder
 @freestylejs/ani-layout:build: CJS Build start
 @freestylejs/ani-layout:build: ESM Build start
-@freestylejs/ani-layout:build: ESM dist/index.js 113.89 KB
-@freestylejs/ani-layout:build: ESM ⚡️ Build success in 124ms
-@freestylejs/ani-layout:build: CJS dist/index.cjs 115.61 KB
-@freestylejs/ani-layout:build: CJS ⚡️ Build success in 125ms
+@freestylejs/ani-layout:build: CJS dist/index.cjs 119.45 KB
+@freestylejs/ani-layout:build: CJS ⚡️ Build success in 227ms
+@freestylejs/ani-layout:build: ESM dist/index.js 117.64 KB
+@freestylejs/ani-layout:build: ESM ⚡️ Build success in 235ms
 @freestylejs/ani-layout:build: DTS Build start
-@freestylejs/ani-layout:build: DTS ⚡️ Build success in 2949ms
-@freestylejs/ani-layout:build: DTS dist/index.d.cts 11.24 KB
-@freestylejs/ani-layout:build: DTS dist/index.d.ts  11.24 KB
-@freestylejs/ani-react:ts:typecheck: cache miss, executing 314d409c8ab4af6d
-@freestylejs/ani-react:build: cache bypass, force executing a1d2687de5a5afab
+@freestylejs/ani-layout:build: DTS ⚡️ Build success in 5928ms
+@freestylejs/ani-layout:build: DTS dist/index.d.cts 11.85 KB
+@freestylejs/ani-layout:build: DTS dist/index.d.ts  11.85 KB
+@freestylejs/ani-react:ts:typecheck: cache miss, executing 36b4a5263d9e6c9b
+@freestylejs/ani-react:build: cache bypass, force executing bc19207c0def5efb
 @freestylejs/ani-react:build: 
 @freestylejs/ani-react:build: > @freestylejs/ani-react@1.1.0 build /home/user/ani/packages/react
 @freestylejs/ani-react:build: > tsup
@@ -139,34 +139,33 @@ $ pnpm ts:typecheck
 @freestylejs/ani-react:build: CLI Target: esnext
 @freestylejs/ani-react:build: CJS Build start
 @freestylejs/ani-react:build: ESM Build start
-@freestylejs/ani-react:build: CJS dist/layout.cjs 33.20 KB
-@freestylejs/ani-react:build: CJS ⚡️ Build success in 82ms
-@freestylejs/ani-react:build: CJS dist/index.cjs 6.87 KB
-@freestylejs/ani-react:build: CJS ⚡️ Build success in 88ms
 @freestylejs/ani-react:build: ESM dist/index.js 5.53 KB
-@freestylejs/ani-react:build: ESM ⚡️ Build success in 89ms
-@freestylejs/ani-react:build: ESM dist/layout.js 30.95 KB
-@freestylejs/ani-react:build: ESM ⚡️ Build success in 88ms
+@freestylejs/ani-react:build: ESM ⚡️ Build success in 106ms
+@freestylejs/ani-react:build: CJS dist/index.cjs 6.87 KB
+@freestylejs/ani-react:build: CJS ⚡️ Build success in 106ms
+@freestylejs/ani-react:build: CJS dist/layout.cjs 34.35 KB
+@freestylejs/ani-react:build: CJS ⚡️ Build success in 108ms
+@freestylejs/ani-react:build: ESM dist/layout.js 32.04 KB
+@freestylejs/ani-react:build: ESM ⚡️ Build success in 108ms
 @freestylejs/ani-react:build: DTS Build start
 @freestylejs/ani-react:build: DTS Build start
-@freestylejs/ani-react:build: DTS ⚡️ Build success in 2741ms
+@freestylejs/ani-react:build: DTS ⚡️ Build success in 2830ms
 @freestylejs/ani-react:build: DTS dist/index.d.cts 4.69 KB
 @freestylejs/ani-react:build: DTS dist/index.d.ts  4.69 KB
-@freestylejs/ani-react:build: DTS ⚡️ Build success in 3486ms
+@freestylejs/ani-react:build: DTS ⚡️ Build success in 3371ms
 @freestylejs/ani-react:build: DTS dist/layout.d.cts 4.08 KB
 @freestylejs/ani-react:build: DTS dist/layout.d.ts  4.08 KB
-@freestylejs/ani-web:ts:typecheck: cache miss, executing 5a8e7566ded10f21
+@freestylejs/ani-web:ts:typecheck: cache miss, executing 4d78dc5883db1152
 @freestylejs/ani-web:ts:typecheck: 
 @freestylejs/ani-web:ts:typecheck: > @freestylejs/ani-web@0.3.0 ts:typecheck /home/user/ani/packages/web
 @freestylejs/ani-web:ts:typecheck: > next typegen && tsc --noEmit --skipLibCheck
 @freestylejs/ani-web:ts:typecheck: 
 @freestylejs/ani-web:ts:typecheck: [baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
 @freestylejs/ani-web:ts:typecheck: Generating route types...
-@freestylejs/ani-web:ts:typecheck: [MDX] generated files in 30.39861300000007ms
 @freestylejs/ani-web:ts:typecheck: ✓ Types generated successfully
 
  Tasks:    11 successful, 11 total
-Cached:    5 cached, 11 total
-  Time:    22.976s 
+Cached:    1 cached, 11 total
+  Time:    43.128s 
 
 # exit 0

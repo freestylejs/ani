@@ -1,7 +1,7 @@
 $ node tests/browser/run.ts --browser webkit --case core:*
-# commit 81893f3ebb4995d41947eef35baee433b6a697a3
+# commit 9d79886467ab0bd9da858830f92c1ad3dc0d6aff
 SKIP core:C1 (CDP: Chromium only)
 SKIP core:C2 (CDP: Chromium only)
 
-0 passed, 0 failed, 0 known failures, 2 skipped (0.4 s)
+0 passed, 0 failed, 0 known failures, 2 skipped (0.5 s)
 # exit 0

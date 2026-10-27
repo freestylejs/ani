@@ -146,4 +146,49 @@ Environment: the pinned §11.5 container (Ubuntu 24.04.5, kernel 6.18.44, 4 × X
 - The J-002 and J-003 rules are authority text plus pure proofs here. Their implementation and
   rows are P4 (L-DRIVE-6) and P2 (§4.2 intervals, L-MEAS-4/7/11, spike S1 (b)).
 
-**Self verdict: PASS** for P1 and for the P0 remediation, pending the tribunal.
+**First self verdict: PASS** for P1 and for the P0 remediation. The tribunal ruled **FAIL** on both
+(`p1_spring_trial_result.md`: 1 S0, 7 S1).
+
+## Second remediation (re-judged now)
+
+My first verdict missed J-001/J-004 for the same reason the P0 self-check missed J-001: I proved
+each path exact in its own frame instead of judging the drawn error on screen. The fix judges every
+cut-off in screen space.
+
+| ID | Correction | Where | Proof |
+|---|---|---|---|
+| J-001 S0 | §5.7: every path is judged in screen space. `ρ` per axis is the product over participant ancestors of pose scale × innerNow / innerPlanned. Unchanged only when `|δ|·max(1, ρ) < 0.01 px` | Authority 81893f3; code f94848d (`keepPath`) | `measure.test.ts` KP-1: 0.009 px under ancestor scale 323 → `'retarget'`; ρ = 1 at 0.0099 px → `'unchanged'`. KP-2/KP-3 cover the other two paths |
+| J-004 S1 | §4.4 driven row: reported when `|δ|·max(1, ρ) ≥ threshold`, or `≥ 0.01` when the translation is not exact | Authority 81893f3; code f94848d (`staleReported`) | `measure.test.ts` ST-2 |
+| P0-N001 S1 | §4.2: a degenerate axis (`O ≤ 1`) reads the exact computed size `W`, so `M = R/W`; `W ≤ 0` is a zero size, which snaps. S1(b) gains the degenerate leaf under `zoom: 2` | Authority 81893f3; code f94848d (`supportCheck(…, readExactSize)`) | `measure.test.ts` SC-5 (degenerate axes alone never fail a supported tree), SC-6 (degenerate leaf under unowned `zoom: 2` or an ancestor transform is detected) |
+| P1-001 S1 | `LayoutGroup` validates its own layer, then the merged layers with the outermost engine, before merging or touching state (`validateMotionLayers(layers, engine?)`) | a4689eb | `layout.test.tsx` P1-001 |
+| P1-002 S1 | The chosen reduced-motion candidate is subject to the §5.3 cap: a settle beyond 10 s refuses the track (`'unsupported'`, `spring-timeout`). §9.4 now says so | d8e793d; authority 9d79886 | `solve.test.ts` P1-002 |
+| P1-003 S1 | `physics.perceptual` asserts a finite `t` and a finite duration > 0; `spring` asserts its whole domain | 04d1d12 (core `physics/spring.ts`) | `physics.test.ts` S5, P2 (P1-003) |
+| P1-004 S1 | L-SPRING-4's expectation comes from `reducedSpringOracle` in `oracle.ts`, built on `settleOracle` (closed form plus bisection, independent of production `settleTime`/`planTrack`) | d8e793d | `solve.test.ts` L-SPRING-4 oracle property; browser row L-SPRING-4 |
+| P1-005 S1 | Raw logs, one executable command per engine: `bash .trace/ani_ios_production/logs/p1/run.sh` | `logs/p1/*.log` at f94848d | The logs themselves (each records its command, commit and exit code) |
+
+### Gate at f94848d (raw logs in `logs/p1/`)
+
+| Check | Log | Result |
+|---|---|---|
+| Environment fingerprint | `env.log` | Matches §11.5 (Ubuntu 24.04.5, 6.18.44, 4 × Xeon @ 2.80GHz, 16 GB, Node 22.22.0, Playwright 1.55.0, chromium_headless_shell-1187, firefox-1490, webkit-2203) |
+| Unit, property, integration | `vitest.log` | 140 files, **1,681 passed** |
+| Types | `typecheck.log` | 11/11 |
+| Lint/format | `biome.log` | exit 0 (10 warnings, all predating P1) |
+| Full Chromium suite | `chromium-all.log` | 167/168; the failure is `layout:COST` (see below) |
+| Firefox `layout`, `layout_spring`, `waapi` | `firefox-*.log` | 55/56 (`layout:COST`), 4/4, 6/6 |
+| WebKit `layout`, `layout_spring`, `waapi` | `webkit-*.log` | 56/56, 4/4, 6/6 |
+| `core` module, both engines | `*-core.log` | 2 skipped, as at P1 (Chromium-only cases) |
+| Remediation proofs | `node p1_proofs.mjs` | 12/12 PASS |
+
+**`layout:COST` is not a P1 regression**, as shown by `logs/p1/cost-ab.log`.
+- **Method.** Interleaved Chromium runs of the P1 base (bb28e72) and HEAD, with nothing else
+  running.
+- **Result.** Both fail the 4 ms read budget about half the time. With one warm-up and the median
+  of five, the base reads 5.0 ms and HEAD 4.9 ms.
+- **Interference.** The Firefox run in the gate overlapped those re-runs, so its COST number is
+  not clean.
+- **Owner.** The row sits at its budget on this host. It is the P5 pinned-bench gate (§11.5), and
+  H5's removal of the scroll-offset reads lowers its read count.
+
+**Self verdict: PASS** for the second remediation of P0 and P1, with `layout:COST` handed to P5 as
+recorded. Pending the tribunal.

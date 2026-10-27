@@ -1,5 +1,5 @@
 $ npx biome check .
-# commit 81893f3ebb4995d41947eef35baee433b6a697a3
+# commit f94848de6d8d9edc04a54f614498b61799bc129d
 bench/browser/budget.test.ts:56:34 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   i Magic number detected. Extract it to a constant with a meaningful name.
@@ -224,30 +224,30 @@ bench/browser/budget.test.ts:101:46 lint/style/noMagicNumbers ━━━━━━
   i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
   
 
-bench/browser/budget.ts:92:50 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bench/browser/budget.test.ts:102:49 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   i Magic number detected. Extract it to a constant with a meaningful name.
   
-    90 │ /** Rounds up to 0.1, ignoring floating point noise below 1e-6. */
-    91 │ function ceilTenth(value: number): number {
-  > 92 │     return Math.ceil(Number((value * 10).toFixed(6))) / 10
-       │                                                  ^
-    93 │ }
-    94 │ 
+    100 │     const budget = createBudget(rows, 5000)
+    101 │     assert.strictEqual(budget.rafGroupP95Ms, 4.5)
+  > 102 │     assert.notStrictEqual(budget.rafGroupP95Ms, 5.0)
+        │                                                 ^^^
+    103 │ })
+    104 │ 
   
   i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
   
 
-bench/browser/budget.ts:155:36 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+bench/browser/budget.test.ts:107:34 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   i Magic number detected. Extract it to a constant with a meaningful name.
   
-    153 │ ): BudgetCheck {
-    154 │     const ok = kind === 'max' ? value <= bound : value >= bound
-  > 155 │     const shown = `${value.toFixed(3)}${unit}`
-        │                                    ^
-    156 │     const relation = kind === 'max' ? '<=' : '>='
-    157 │     return {
+    105 │ test('createBudget keeps measured headroom when it is below the group hard budget', () => {
+    106 │     const rows: ResultRow[] = [
+  > 107 │         mockRow('raf-timelines', 5000, { tickP95: 16 }),
+        │                                  ^^^^
+    108 │         mockRow('raf-group', 5000, { tickP95: 3.0 }),
+    109 │         mockRow('raf-read', 5000, { styleRecalcsPerFrame: 1.0 }),
   
   i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
   
@@ -281,8 +281,8 @@ tests/browser/waapi_trace_page.ts:38:40 lint/style/noMagicNumbers ━━━━�
   
 
 The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
-Diagnostics not shown: 5700.
-Checked 429 files in 790ms. No fixes applied.
+Diagnostics not shown: 5764.
+Checked 430 files in 1255ms. No fixes applied.
 Found 10 warnings.
-Found 5710 infos.
+Found 5774 infos.
 # exit 0
