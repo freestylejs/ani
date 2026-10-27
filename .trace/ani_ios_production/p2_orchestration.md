@@ -48,6 +48,7 @@ container, each in its own git worktree.
 | H4 rows | `layout_meas` browser rows L-MEAS-1..13 (without 5), L-HAND-1..2, L-KEY-1, L-DOC-1, tests first, with a `knownFailures` worklist that must be empty at the gate | Argon4 (draft), then native helper | Accepted (e682706 draft as received, a3a657e reviewed): 16 rows; 2 pass and 14 are known failures, each failing at the same frame for its named P2 reason in Chromium, Firefox and WebKit; re-run here |
 | H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 (partial), then native helper | Accepted after a review round: 25 commits linearized onto the dev branch (e5d4b80..6544e62); every finding of the independent review fixed, each with a test that failed before its fix; gate logs `logs/p2-integ/` |
 | R1 remediation | P1 tribunal P1-001..P1-004; the code side of P0 J-001, J-004 and P0-N001 in `measure.ts` | DeepSeek | Accepted (04d1d12..f94848d) |
+| H7 performance | §11.5 commit cost, behaviour-preserving only (`briefs/h7.md`) | Native helper | Accepted on review: 8 commits, no change to frames, reports or read counts; gates identical to `logs/p2-integ` (`logs/p2-h7/`) |
 | H6 | Closed-root flat ancestry (§4.6, amended), active-scroll handoff rule (§5.8), L-MEAS-5 React rows; L_MEAS_10 and L_HAND_2 out of `knownFailures` | Native helper | After H5 (`briefs/h6.md`) |
 
 ## Tribunal carry-over into P2 (from `p1_spring_trial_result.md`)
@@ -101,3 +102,35 @@ container, each in its own git worktree.
   (S2 fallback). L_MEAS_4 now passes in all three engines, after H5's velocity fix.
 - **COST.** H5's profile shows the whole commit at about 25–45 ms against the 4 ms gate. That is
   the H7 slice.
+
+## H7 performance (review and the cost decision)
+
+- **Review.** Every change is a pure restatement:
+  - transforms classified once per check (reads precede writes within a check, nothing kept
+    across a capture and its flush);
+  - `display` read once;
+  - an owned declaration's inline value skipped (same branch result);
+  - a per-build ancestor memo with at-or-above semantics;
+  - `writtenPose` parsed without arrays (identical NaN and missing-component behaviour);
+  - lazy child lists;
+  - the engine's own pose passed (only its scales are read);
+  - the unread `Capture.offsets` dropped.
+- **Effect.** 10–25% faster in Chromium and 0–14% in WebKit. Medians of 5 fresh-process runs at
+  1,000 participants, after: Chromium 11.85 ms (300 moving, at rest) to 28.78 ms (1,000, tracks
+  running); WebKit 14 to 37 ms. Steady frame p95 ≤ 1.9 ms in all engines.
+- **The floor.** A hand loop doing only the reads and writes the authority requires, on the same
+  DOM:
+  - Chromium: 4.8–5.2 ms (300 moving), 8.0–8.8 ms (1,000);
+  - WebKit: 4 ms (300 moving), 6–10 ms (1,000).
+
+  Under §4.1 item 1, §4.3 steps 2 and 4, §4.2 and §9.1, the 4 ms commit budget of §11.5 and the
+  legacy `layout:COST` row cannot pass on this host. The row's read figure alone (2,000 rects,
+  4,000 size getters) is 5.2–6.5 ms, and every one of those reads is required by §11.5.
+- **Decision.** P1-N001 needs an owner-approved amendment (the tribunal's words). The orchestrator
+  put the options to the owner and recommends this one:
+  - retire the legacy row;
+  - gate the commit in the P5 pinned harness at ≤ 2× the required-work floor on the same host;
+  - keep the absolute steady p95 ≤ 2 ms and the exact read counts.
+
+  Until the owner decides, the item stays open. A `flush()` restructuring slice follows H6 under
+  any option.

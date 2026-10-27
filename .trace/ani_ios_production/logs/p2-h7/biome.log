@@ -1,0 +1,282 @@
+packages/layout/src/__tests__/geometry.test.ts:22:24 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    21 │ describe('geometry', () => {
+  > 22 │     const random = rng(7)
+       │                        ^
+    23 │     const box = () => ({
+    24 │         x: random() * 500,
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:24:23 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    22 │     const random = rng(7)
+    23 │     const box = () => ({
+  > 24 │         x: random() * 500,
+       │                       ^^^
+    25 │         y: random() * 500,
+    26 │         w: 1 + random() * 300,
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:25:23 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    23 │     const box = () => ({
+    24 │         x: random() * 500,
+  > 25 │         y: random() * 500,
+       │                       ^^^
+    26 │         w: 1 + random() * 300,
+    27 │         h: 1 + random() * 300,
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:26:27 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    24 │         x: random() * 500,
+    25 │         y: random() * 500,
+  > 26 │         w: 1 + random() * 300,
+       │                           ^^^
+    27 │         h: 1 + random() * 300,
+    28 │     })
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:27:27 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    25 │         y: random() * 500,
+    26 │         w: 1 + random() * 300,
+  > 27 │         h: 1 + random() * 300,
+       │                           ^^^
+    28 │     })
+    29 │     const map = () => ({
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:30:17 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    28 │     })
+    29 │     const map = () => ({
+  > 30 │         x: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+       │                 ^^^
+    31 │         y: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+    32 │     })
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:30:34 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    28 │     })
+    29 │     const map = () => ({
+  > 30 │         x: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+       │                                  ^
+    31 │         y: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+    32 │     })
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:30:51 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    28 │     })
+    29 │     const map = () => ({
+  > 30 │         x: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+       │                                                   ^^^
+    31 │         y: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+    32 │     })
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:30:57 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    28 │     })
+    29 │     const map = () => ({
+  > 30 │         x: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+       │                                                         ^^^
+    31 │         y: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+    32 │     })
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/__tests__/geometry.test.ts:31:17 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    29 │     const map = () => ({
+    30 │         x: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+  > 31 │         y: { k: 0.1 + random() * 3, b: random() * 200 - 100 },
+       │                 ^^^
+    32 │     })
+    33 │ 
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:41:26 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    39 │         hash = ((hash << 5) + hash + value.charCodeAt(i)) >>> 0
+    40 │     }
+  > 41 │     return hash.toString(36)
+       │                          ^^
+    42 │ }
+    43 │ 
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:45:62 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    44 │ function nameFor(id: string): string {
+  > 45 │     const safe = id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40)
+       │                                                              ^^
+    46 │     return `ani-${safe}-${hash(id)}`.slice(0, 64)
+    47 │ }
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:46:47 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    44 │ function nameFor(id: string): string {
+    45 │     const safe = id.replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 40)
+  > 46 │     return `ani-${safe}-${hash(id)}`.slice(0, 64)
+       │                                               ^^
+    47 │ }
+    48 │ 
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:55:33 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    53 │     while (used.has(name)) {
+    54 │         const suffix = `-${counter++}`
+  > 55 │         name = `${base.slice(0, 64 - suffix.length)}${suffix}`
+       │                                 ^^
+    56 │     }
+    57 │     used.add(name)
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:206:47 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    204 │                 started !== null &&
+    205 │                 typeof performance !== 'undefined' &&
+  > 206 │                 performance.now() - started > 100
+        │                                               ^^^
+    207 │             ) {
+    208 │                 warn(
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:345:9 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    343 │     if (!hasDOM() || typeof document.getAnimations !== 'function') return 0
+    344 │     const duration = Math.min(
+  > 345 │         500,
+        │         ^^^
+    346 │         Math.max(100, (motion.duration ?? 0.35) * 1000)
+    347 │     )
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:346:18 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    344 │     const duration = Math.min(
+    345 │         500,
+  > 346 │         Math.max(100, (motion.duration ?? 0.35) * 1000)
+        │                  ^^^
+    347 │     )
+    348 │     const easing = cssEasing(motion.timing ?? defaultTiming())
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:346:43 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    344 │     const duration = Math.min(
+    345 │         500,
+  > 346 │         Math.max(100, (motion.duration ?? 0.35) * 1000)
+        │                                           ^^^^
+    347 │     )
+    348 │     const easing = cssEasing(motion.timing ?? defaultTiming())
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:346:51 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    344 │     const duration = Math.min(
+    345 │         500,
+  > 346 │         Math.max(100, (motion.duration ?? 0.35) * 1000)
+        │                                                   ^^^^
+    347 │     )
+    348 │     const easing = cssEasing(motion.timing ?? defaultTiming())
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+packages/layout/src/view_transition.ts:33:41 lint/suspicious/noConsole ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Don't use console.
+  
+    32 │ function warn(message: string): void {
+  > 33 │     if (typeof console !== 'undefined') console.warn(`[ani-layout] ${message}`)
+       │                                         ^^^^^^^^^^^^
+    34 │ }
+    35 │ 
+  
+  i The use of console is often reserved for debugging.
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 1236.
+Checked 35 files in 147ms. No fixes applied.
+Found 4 warnings.
+Found 1252 infos.
