@@ -3049,6 +3049,267 @@ export async function L_MEAS_13(): Promise<string> {
     }
 }
 
+/* ───────────────────────── L-MEAS-14 ───────────────────────── */
+
+/** Frames every L-MEAS-14 variant checks after its commit. */
+const ANCHOR_FRAMES = 24
+
+/**
+ * L-MEAS-14: scroll anchoring during a run, in a scrolled column (§11.4 S2,
+ * §12). (a) The L-MEAS-2 shape for 24 frames: no scroll offset moves by
+ * layout's writes, and every frame is on the oracle. (b) A banner above the
+ * visible cards grows mid-run, and (c) is deleted mid-run: with non-driven
+ * content visible between the cards the browser's compensation holds (the
+ * scroll offset absorbs the shift; there is none in WebKit, which has no CSS
+ * anchoring); with only driven cards visible the shift is presented
+ * uncompensated and the cards follow content. The fallback (`overflow-anchor:
+ * none` on every driven card) is written only where the probe says a
+ * transform moves the anchor: in Firefox, never in Chromium or WebKit.
+ */
+export function L_MEAS_14(): Promise<string> {
+    return variants('L_MEAS_14', [
+        ['(a) a commit that also scrolls', meas14Scroll],
+        [
+            '(b) a banner grows, non-driven content visible',
+            () => meas14Shift('grow', 'mixed'),
+        ],
+        [
+            '(b) a banner grows, only driven cards visible',
+            () => meas14Shift('grow', 'driven'),
+        ],
+        [
+            '(c) a deletion above, non-driven content visible',
+            () => meas14Shift('delete', 'mixed'),
+        ],
+        [
+            '(c) a deletion above, only driven cards visible',
+            () => meas14Shift('delete', 'driven'),
+        ],
+    ])
+}
+
+/**
+ * The S2 fallback on each driven card: `overflow-anchor: none !important`
+ * where a transform moves the scroll anchor (Firefox, §11.4 S2), nothing
+ * elsewhere.
+ */
+function expectAnchorFallback(
+    names: Names,
+    driven: readonly HTMLElement[],
+    label: string
+): void {
+    const fallback = navigator.userAgent.includes('Firefox')
+    for (const card of driven) {
+        const value = card.style.getPropertyValue('overflow-anchor')
+        const priority = card.style.getPropertyPriority('overflow-anchor')
+        const want = fallback ? 'none !important' : 'no declaration'
+        const got = value === '' ? 'no declaration' : `${value} !${priority}`
+        if (got !== want) {
+            throw new Error(
+                `${label} ${nameOf(names, card)}: overflow-anchor is ${got}, expected ${want} (${fallback ? 'Firefox counts the anchor node’s transform' : 'this engine does not re-anchor on a transform'}, §11.4 S2)`
+            )
+        }
+    }
+}
+
+async function meas14Scroll(): Promise<string> {
+    const row = 'L_MEAS_14 (a)'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const column = (left: number) =>
+            node(
+                h.root,
+                `left: ${left}px; top: 0; width: 160px; height: 220px; overflow-y: auto;`
+            )
+        const columnA = column(0)
+        const columnB = column(200)
+        const card = (col: HTMLElement, name: string) => {
+            const element = document.createElement('div')
+            element.style.cssText =
+                'position: relative; width: 140px; height: 60px; margin-bottom: 10px; transform-origin: 0 0;'
+            col.append(element)
+            names.set(element, name)
+            h.add(element)
+            return element
+        }
+        const as = [0, 1, 2].map((i) => card(columnA, `a${i}`))
+        const bs = [0, 1, 2, 3, 4].map((i) => card(columnB, `b${i}`))
+        const cards = [...as, ...bs]
+        await baseline(h, row)
+
+        const authored = cards.map((c) => c.style.cssText)
+        const b = cards.map(viewBox)
+        h.group.capture()
+        columnB.append(as[1]!)
+        columnB.scrollTop = 120
+        const scrolled = [columnA.scrollTop, columnB.scrollTop] as const
+        if (scrolled[0] !== 0 || Math.abs(scrolled[1] - 120) > 0.5) {
+            throw new Error(
+                `${row} setup: the columns scrolled to ${scrolled.join(', ')}, not 0, 120`
+            )
+        }
+        const a = cards.map(viewBox)
+        const run = report(h.group.flush())
+        const specs = cards.map((_, i) =>
+            maxDiff(b[i]!, a[i]!) >= 1
+                ? spec(b[i]!, a[i]!, { timing: ease })
+                : null
+        )
+        const driven = cards.filter((_, i) => specs[i] !== null)
+        const check = (label: string, t: number) => {
+            const offsets = [columnA.scrollTop, columnB.scrollTop]
+            if (offsets[0] !== scrolled[0] || offsets[1] !== scrolled[1]) {
+                throw new Error(
+                    `${row} ${label}: the columns' scroll offsets are ${offsets.join(', ')}, not the ${scrolled.join(', ')} they held when A was read: layout's writes moved a scroll offset (§11.4 S2)`
+                )
+            }
+            return expectAll(
+                `${row} ${label} t=${t.toFixed(3)}`,
+                cards.map(
+                    (c, i) =>
+                        [
+                            c,
+                            specs[i] ? expectedBox(specs[i]!, t) : a[i]!,
+                            nameOf(names, c),
+                        ] as const
+                )
+            )
+        }
+        let worst = check('flush write', 0)
+        expectAnchorFallback(names, driven, `${row} flush write`)
+        await expectRunning(names, run, `${row} flush`)
+        for (let f = 1; f <= ANCHOR_FRAMES; f++) {
+            await step(h.mc)
+            worst = Math.max(worst, check(`frame ${f}`, restAt(f)))
+            if (run.value === null) {
+                expectAnchorFallback(names, driven, `${row} frame ${f}`)
+            }
+        }
+        expectReport(names, run.value!, 'ended', [], `${row} run`)
+        expectSnapCalls(names, snaps, [], `${row} run`)
+        cards.forEach((c, i) =>
+            expectRestored(c, authored[i]!, `${row} ${nameOf(names, c)}`)
+        )
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `${driven.length} cards, ${ANCHOR_FRAMES} frames ≤ ${worst.toFixed(3)} px, scroll offsets held at ${scrolled.join(', ')}`
+    } finally {
+        h.dispose()
+    }
+}
+
+/**
+ * (b), (c): the cards of a scrolled column are driven by a commit that moves
+ * each 30 px to the right; at frame 5 the banner above the visible area grows
+ * by 40 px (`'grow'`) or is removed with its margin, 50 px (`'delete'`).
+ * `'mixed'` puts a non-driven note before every card and scrolls so a note is
+ * the first visible element; `'driven'` has cards only, so every visible
+ * element is driven.
+ */
+async function meas14Shift(
+    kind: 'grow' | 'delete',
+    visible: 'mixed' | 'driven'
+): Promise<string> {
+    const row = `L_MEAS_14 ${kind === 'grow' ? '(b)' : '(c)'} ${visible}`
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const column = node(
+            h.root,
+            'left: 0; top: 0; width: 220px; height: 240px; overflow-y: auto;'
+        )
+        const banner = document.createElement('div')
+        banner.style.cssText = 'height: 40px; margin-bottom: 10px;'
+        column.append(banner)
+        const cards: HTMLElement[] = []
+        const count = visible === 'mixed' ? 6 : 8
+        for (let i = 0; i < count; i++) {
+            if (visible === 'mixed') {
+                const note = document.createElement('div')
+                note.style.cssText = 'height: 30px; margin-bottom: 10px;'
+                note.textContent = `note ${i}`
+                column.append(note)
+            }
+            const card = document.createElement('div')
+            card.style.cssText =
+                'position: relative; left: 0; width: 160px; height: 50px; margin-bottom: 10px; transform-origin: 0 0;'
+            column.append(card)
+            names.set(card, `card${i}`)
+            h.add(card)
+            cards.push(card)
+        }
+        await baseline(h, row)
+        // presented: the banner is above the visible area, and the first
+        // visible element is a note (mixed) or a card (driven)
+        column.scrollTop = visible === 'mixed' ? 150 : 170
+        await nextFrame()
+        await nextFrame()
+        const s0 = column.scrollTop
+
+        const b = cards.map(viewBox)
+        h.group.capture()
+        for (const card of cards) card.style.left = '30px'
+        const authored = cards.map((c) => c.style.cssText)
+        const a = cards.map(viewBox)
+        const run = report(h.group.flush())
+        const specs = cards.map((_, i) => spec(b[i]!, a[i]!, { timing: ease }))
+        // the browser compensates only through a non-driven anchor (§12)
+        const compensates =
+            visible === 'mixed' && CSS.supports('overflow-anchor', 'auto')
+        const shift = kind === 'grow' ? 40 : -50
+        let dy = 0
+        let expectedScroll = s0
+        let worst = 0
+        const check = (label: string, f: number) => {
+            const t = restAt(f)
+            if (Math.abs(column.scrollTop - expectedScroll) > 0.5) {
+                throw new Error(
+                    `${row} ${label}: the column's scroll offset is ${column.scrollTop}, expected ${expectedScroll} (${f >= 5 ? (compensates ? `the browser compensates the ${shift} px shift through the visible non-driven note` : `the ${shift} px shift is presented uncompensated: ${visible === 'driven' ? 'only driven cards are visible' : 'this engine has no CSS anchoring'}`) : 'before the shift'}, §12)`
+                )
+            }
+            worst = Math.max(
+                worst,
+                expectAll(
+                    `${row} ${label} t=${t.toFixed(3)}`,
+                    cards.map(
+                        (c, i) =>
+                            [
+                                c,
+                                shiftBox(expectedBox(specs[i]!, t), 0, dy),
+                                nameOf(names, c),
+                            ] as const
+                    )
+                )
+            )
+        }
+        check('flush write', 0)
+        expectAnchorFallback(names, cards, `${row} flush write`)
+        await expectRunning(names, run, `${row} flush`)
+        for (let f = 1; f <= ANCHOR_FRAMES; f++) {
+            if (f === 5) {
+                if (kind === 'grow') banner.style.height = '80px'
+                else banner.remove()
+                if (compensates) expectedScroll = s0 + shift
+                else dy = shift
+            }
+            await step(h.mc)
+            check(`frame ${f}`, f)
+            if (run.value === null) {
+                expectAnchorFallback(names, cards, `${row} frame ${f}`)
+            }
+        }
+        expectReport(names, run.value!, 'ended', [], `${row} run`)
+        expectSnapCalls(names, snaps, [], `${row} run`)
+        cards.forEach((c, i) =>
+            expectRestored(c, authored[i]!, `${row} ${nameOf(names, c)}`)
+        )
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `${cards.length} cards ≤ ${worst.toFixed(3)} px; the ${shift} px shift ${compensates ? `compensated (scroll ${s0} → ${expectedScroll})` : `presented uncompensated, cards followed content (scroll held at ${s0})`}`
+    } finally {
+        h.dispose()
+    }
+}
+
 /* ───────────────────────── L-HAND-1 ───────────────────────── */
 
 const presenceMotion = () =>
