@@ -1798,20 +1798,38 @@ export function createLayoutGroup(
             const nodes: PresentedNode[] = []
             const of: number[] = []
             const slot = new Map<number, number>()
+            /** Each node's total scale at capture, top-down (origin-free). */
+            const scales: { x: number; y: number }[] = []
             list.forEach((p, i) => {
                 const g = geometry[i]
                 const rect = fresh.rects.get(p)
                 const parent = parents[i]!
                 if (!g || !rect || (parent >= 0 && !slot.has(parent))) return
                 const css = mapBox(invert(g.inner), g.box)
+                const pose = engine.poses.get(p) ?? IDENTITY_POSE
+                const inner = innerPose(g.authored, g.matrix)
+                const above = parent >= 0 ? scales[slot.get(parent)!]! : null
+                const kx = (above ? above.x : 1) * pose.sx * inner.sx
+                const ky = (above ? above.y : 1) * pose.sy * inner.sy
+                // the pose last written was applied about the origin of the
+                // box presented at capture (§4.2): its fractions (a driven
+                // node's as its pose was planned) of that box, not A's offset
+                const f = frozen.get(p)?.geometry ?? g
+                const w = rect.w / kx
+                const h = rect.h / ky
+                const origin: readonly [number, number] = [
+                    Number.isFinite(w) ? f.fx * w : g.ox - css.x,
+                    Number.isFinite(h) ? f.fy * h : g.oy - css.y,
+                ]
                 slot.set(i, nodes.length)
                 of.push(i)
+                scales.push({ x: kx, y: ky })
                 nodes.push({
                     parent: parent >= 0 ? slot.get(parent)! : -1,
                     rect,
-                    pose: engine.poses.get(p) ?? IDENTITY_POSE,
-                    inner: innerPose(g.authored, g.matrix),
-                    origin: [g.ox - css.x, g.oy - css.y],
+                    pose,
+                    inner,
+                    origin,
                 })
             })
             // L_k = R_parent ∘ Q about L_k's origin: divide the inner maps
@@ -1838,17 +1856,11 @@ export function createLayoutGroup(
             })
             // v is the presented box's true velocity: the product rule
             // through every presented parent map, applied to the presented
-            // CSS box (§4.2 Velocity), not the track's own box alone. Each
-            // map is about the origin the browser applied at capture: its
-            // fractions (a driven node's as its pose was planned) of the
-            // presented box, not A's offset
+            // CSS box (§4.2 Velocity), not the track's own box alone; each
+            // map about the origin applied at capture, as for L_k
             presentedVelocities(
                 nodes,
-                of.map((i) => engine.poseRates.get(list[i]!) ?? null),
-                of.map((i) => {
-                    const g = frozen.get(list[i]!)?.geometry ?? geometry[i]!
-                    return [g.fx, g.fy] as const
-                })
+                of.map((i) => engine.poseRates.get(list[i]!) ?? null)
             ).forEach((v, k) => {
                 velocity.set(list[of[k]!]!, v)
             })

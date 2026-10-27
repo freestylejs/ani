@@ -856,6 +856,39 @@ describe('measure: presentedLayoutBoxes (§4.2)', () => {
     })
 })
 
+describe('measure: presentedLayoutBoxes origin (§4.2)', () => {
+    it('PL-2: L_k is exact (1e-6) with the origin applied at capture, and off by Δo·(1 − k) with a resized A’s origin', () => {
+        const k = 18.48
+        const css: Box = { x: 0, y: 0, w: 20, h: 20 }
+        // drawn about the presented box's 50 % origin (10, 10)
+        const rect = rendered(
+            0,
+            [{ parent: -1, css, ox: 10, oy: 10, inner: NO_POSE }],
+            [{ tx: 3, ty: -2, sx: k, sy: k }]
+        )
+        const at = (origin: readonly [number, number]) =>
+            presentedLayoutBoxes([
+                {
+                    parent: -1,
+                    rect,
+                    pose: { tx: 3, ty: -2, sx: k, sy: k },
+                    inner: NO_POSE,
+                    origin,
+                },
+            ])[0]!
+        const right = at([10, 10])
+        for (const key of ['x', 'y', 'w', 'h'] as const) {
+            expect(Math.abs(right[key] - css[key])).toBeLessThan(1e-6)
+        }
+        // A resized to 20.5 px: its 50 % origin is 0.25 px further
+        const wrong = at([10.25, 10.25])
+        expect(Math.abs(wrong.x - css.x)).toBeCloseTo(
+            Math.abs(0.25 * (1 - k)),
+            9
+        )
+    })
+})
+
 describe('measure: presentedVelocities (§4.2 Velocity)', () => {
     it('PV-1: property — 5,000 random nested trees (depth <= 4) with poses moving at random rates (translate and scale) and static inner maps: v is the derivative of the drawn box, to 1e-9 relative of a 5-point difference (exact for these polynomials)', () => {
         const random = rng(0x7e10_c17e)
