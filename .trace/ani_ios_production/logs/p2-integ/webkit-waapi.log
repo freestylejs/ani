@@ -1,0 +1,14 @@
+PASS waapi:W1 (568 ms)
+    RAF vs WAAPI every frame: max 0.0322 px (linear 0.0000, linear +delay 0.0000, ease-out 0.0193, ease-out +delay 0.0170, spring 0.0143, spring +delay 0.0322); no inline style written
+PASS waapi:W2 (458 ms)
+    retarget from (243.45, 20) at 0.16 s: on the oracle within 0.0076 px; ended, nothing left
+PASS waapi:W3 (1157 ms)
+    first painted frame after a 120 ms block at 0.00 %
+PASS waapi:W4 (474 ms)
+    7 add and 6 set invalid shapes throw ANI_INVALID_OPTIONS; radius false is allowed; later nesting and missing CSS linear() snap unsupported
+PASS waapi:W5 (469 ms)
+    finish, removal, reduced motion and dispose cancel their animations with exact reports; no inline style written
+PASS waapi:W6 (598 ms)
+    clock timeScale 0; document timeline advanced to x = 84.75 px; reduced motion is covered by W5
+
+6 passed, 0 failed, 0 known failures, 0 skipped (4.3 s)

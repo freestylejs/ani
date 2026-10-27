@@ -1,0 +1,32 @@
+PASS react_layout:E5 (1621 ms)
+    5 adds 80 ms apart: every enter (spring, 0.4 s, centre-bottom) and every layout track (6 interrupted with their velocity) on the expectation every frame, max error 0.0083 px; exit (y 10, scaleX 0.9, 0.2 s spring) on the expectation every frame, bottom edge within 0.0078 px, released at 0.208 s; siblings final at t = 0 and on their tracks, max error 0.0079 px
+PASS react_layout:J16 (598 ms)
+    {} → {"duration":1}: x 40.000/44.000/48.000 (error 0.0000 px); {} → {"delay":0}: x 40.000/44.000/48.000 (error 0.0000 px); spring {m,k,c} → {c,k,m}: x 141.267/154.133/165.417 (error 0.0081 px); every frame on the first track; {} → {"duration":0.5} retargets
+PASS react_layout:J26 (552 ms)
+    equal { maxDuration: 0.1 }: x 40.000/44.000/48.000 at 0.2/0.22/0.24 s, every frame on the first track (error 0.0000 px), one subscriber; { maxDuration: 0.2 } re-creates: x 200.000, 0 subscribers
+PASS react_layout:J27 (532 ms)
+    mid-enter exit: lifted to 50px/80px 100px × 50px, drawn (50, 94, 80, 40) until the release at 0.208 s (error 0.0000 px); mid-layout exit: lifted to top 30px, on its track through 0.680 s (error 0.0067 px)
+PASS react_layout:J28 (1389 ms)
+    mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error 0.0067); mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at 1.000 s (max error 0.0000); nothing subscribed after the settle
+PASS react_layout:J29 (1218 ms)
+    main document y 50 (translate 0px 50px), iframe y 50 (translate 0px 50px) at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left
+PASS react_layout:RL1 (717 ms)
+    reorder: 4 items on the oracle every frame, max error 0.0080 px; styles restored
+PASS react_layout:RL2 (975 ms)
+    StrictMode: two reorders on the oracle, max error 0.0080 px
+PASS react_layout:RL3 (1647 ms)
+    110 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout:RL4 (1384 ms)
+    96 checks over 1 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout:RL5 (1335 ms)
+    103 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailacdebf)
+PASS react_layout:RL6 (3250 ms)
+    memoized subtree: snapped with one warning; update(fn) on the oracle, max error 0.0080 px; rendered class: animated, 0 warnings, memoized class: b (0, 50) → (40, 0) with 1 warning, rendered style: animated, 0 warnings, memoized style: b (0, 50) → (40, 0) with 1 warning
+PASS react_layout:RL7 (933 ms)
+    30 frames, a re-render every 3rd: trajectories differ by 0.0000 px
+PASS react_layout:RL8 (1234 ms)
+    implicit root: mid-run at 24.0 between 4 and 42; settled and restored
+PASS react_layout:RL9 (582 ms)
+    reorder from the old box as one WAAPI animation per item; no inline style; released at the end (4 → 38)
+
+15 passed, 0 failed, 0 known failures, 0 skipped (20.2 s)
