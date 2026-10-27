@@ -165,6 +165,27 @@ describe('react layout adapter', () => {
         }
     })
 
+    it('a registration that creates its scope captures the empty scope first, so the mount flush is measured (§4.1, §4.4)', async () => {
+        const view = await mount(
+            <ul>
+                <Item id="a" />
+                <Item id="b" />
+            </ul>
+        )
+        try {
+            await settle()
+            const [fake] = live()
+            expect(live()).toHaveLength(1)
+            expect(fake!.members.size).toBe(2)
+            // the group the first registration created: captured before any
+            // add, then flushed once for the commit
+            expect(fake!.calls.slice(0, 3)).toEqual(['capture', 'add', 'add'])
+            expect(flushes(fake!)).toBe(1)
+        } finally {
+            await view.unmount()
+        }
+    })
+
     it('keeps one scope under StrictMode and flushes once per commit', async () => {
         const view = await mount(
             <StrictMode>

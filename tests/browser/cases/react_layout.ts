@@ -425,6 +425,9 @@ function ConcurrentApp({
     return h(
         LayoutGroup,
         { clock },
+        // time-sliced: a transition's render spans many tasks; its last
+        // slice renders the participants, so the capture is fresh (§4.1)
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => h(Slow, { key: i })),
         h(
             Suspense,
             { fallback: h(Fallback) },
@@ -434,9 +437,7 @@ function ConcurrentApp({
             Column,
             null,
             order.map((id) => h(Item, { key: id, id }))
-        ),
-        // time-sliced: a transition's render spans many tasks
-        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => h(Slow, { key: i }))
+        )
     )
 }
 
@@ -1608,7 +1609,27 @@ export async function J26(): Promise<string> {
             'x at 0.2 s'
         )
         expectEqual(changed.clock.size, 1, 'running')
-        await view.render(app(changed, 200, { maxDuration: 0.2 }))
+        // the re-created scope's first flush has no capture, and the mover,
+        // registered since its last flush and drawn mid-run until now, is
+        // reported 'stale' (§4.4)
+        const warnings: string[] = []
+        const warn = console.warn
+        console.warn = (...args: unknown[]) => {
+            warnings.push(String(args[0]))
+        }
+        try {
+            await view.render(app(changed, 200, { maxDuration: 0.2 }))
+        } finally {
+            console.warn = warn
+        }
+        expectEqual(
+            warnings.length === 1 &&
+                warnings[0]!.includes(
+                    'no valid measurement of what was presented'
+                ),
+            true,
+            `re-created: one capture-less warning (${warnings.join(' | ')})`
+        )
         const x = pageBox(byId(view.host, 'mover')).x - before.x
         expectClose(x, 200, TOL, 're-created: the layout box')
         expectEqual(changed.clock.size, 0, 're-created: no subscriber')
