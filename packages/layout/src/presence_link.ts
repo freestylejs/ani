@@ -4,7 +4,7 @@
  * release holds. Adapters see none of it.
  */
 
-import { flatParent } from './dom'
+import { flatParent, type KnownRoots } from './dom'
 
 export interface PresenceLink {
     readonly exiting: boolean
@@ -23,9 +23,19 @@ export function linkPresence(element: Element, link: PresenceLink): () => void {
     }
 }
 
-/** The nearest presence link at or above `element`, if any is exiting. */
-export function exitingPresence(element: Element): PresenceLink | null {
-    for (let node: Element | null = element; node; node = flatParent(node)) {
+/**
+ * The nearest presence link at or above `element` in the flat tree, through
+ * the scope's known shadow roots (§4.6), if any is exiting.
+ */
+export function exitingPresence(
+    element: Element,
+    roots?: KnownRoots
+): PresenceLink | null {
+    for (
+        let node: Element | null = element;
+        node;
+        node = flatParent(node, roots)
+    ) {
         const link = links.get(node)
         if (link?.exiting) return link
     }

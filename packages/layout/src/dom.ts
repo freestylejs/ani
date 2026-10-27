@@ -396,21 +396,52 @@ export function measure(
 }
 
 /**
- * Flat-tree parent of `node` (§4.6): `assignedSlot`, else `parentElement`,
- * else the `host` of `node`'s `ShadowRoot` parent (open or closed).
+ * The shadow roots a scope knows hold a participant, open or closed, keyed by
+ * host (§4.6).
  */
-export function flatParent(node: Node): HTMLElement | null {
-    const slot = (node as Partial<Slottable>).assignedSlot
+export type KnownRoots = ReadonlyMap<Element, ShadowRoot>
+
+/** `node` is a `ShadowRoot` (a fragment with a host), in any realm. */
+export function isShadowRoot(node: Node): node is ShadowRoot {
+    return node.nodeType === 11 && 'host' in node
+}
+
+/**
+ * The slot that holds `node` in the known closed root of its parent element:
+ * the one whose `assignedNodes()` holds it (§4.6). `assignedSlot` is null for
+ * a node slotted into a closed root; an open root needs no search.
+ */
+function knownSlot(
+    node: Node,
+    roots: KnownRoots | undefined
+): HTMLSlotElement | null {
+    const host = node.parentElement
+    const root = host ? roots?.get(host) : undefined
+    if (!root || root.mode === 'open') return null
+    const slots = root.querySelectorAll('slot')
+    for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i]!
+        if (slot.assignedNodes().includes(node as ChildNode)) return slot
+    }
+    return null
+}
+
+/**
+ * Flat-tree parent of `node` (§4.6): its assigned slot (`assignedSlot`, or
+ * for a node whose parent element hosts a known closed root, the slot of that
+ * root that holds it), else `parentElement`, else the `host` of `node`'s
+ * `ShadowRoot` parent (open or closed). A closed root the scope does not know
+ * holds no participant, so the walk passes from a node slotted into it
+ * straight to its host.
+ */
+export function flatParent(node: Node, roots?: KnownRoots): HTMLElement | null {
+    const slot =
+        (node as Partial<Slottable>).assignedSlot ?? knownSlot(node, roots)
     if (slot) return slot
     if (node.parentElement) return node.parentElement
     const parent = node.parentNode
-    if (
-        parent &&
-        parent.nodeType === 11 &&
-        'host' in parent &&
-        (parent as ShadowRoot).host
-    ) {
-        return (parent as ShadowRoot).host as HTMLElement
+    if (parent && isShadowRoot(parent) && parent.host) {
+        return parent.host as HTMLElement
     }
     return null
 }
@@ -421,12 +452,13 @@ export function flatParent(node: Node): HTMLElement | null {
  */
 export function containsFlat(
     ancestor: Node,
-    node: Node | null | undefined
+    node: Node | null | undefined,
+    roots?: KnownRoots
 ): boolean {
     for (
         let current: Node | null = node ?? null;
         current;
-        current = flatParent(current)
+        current = flatParent(current, roots)
     ) {
         if (current === ancestor) return true
     }

@@ -9,6 +9,8 @@ import {
     borderSize,
     containsFlat,
     flatParent,
+    isShadowRoot,
+    type KnownRoots,
     type Len,
     type Measured,
     measure,
@@ -255,6 +257,11 @@ interface Participant {
     removed: boolean
     /** Resolved motion for a reduced-motion mode, until its options change. */
     motion: { readonly mode: string; readonly value: Motion } | null
+    /**
+     * The shadow root holding it, tracked for the flat-tree walks (§4.6):
+     * `null` in a document, `undefined` until it is first seen connected.
+     */
+    root: ShadowRoot | null | undefined
 }
 
 interface Run {
@@ -741,6 +748,13 @@ export function createLayoutGroup(
     >()
 
     const registry = new Map<HTMLElement, Participant>()
+    /**
+     * The shadow roots that hold a participant, open or closed, by host,
+     * with how many participants each holds: every flat-tree walk finds a
+     * slot of a closed root through them (§4.6).
+     */
+    const roots = new Map<Element, ShadowRoot>()
+    const rootUsers = new Map<ShadowRoot, number>()
     let scopeDocument: Document | null = null
     let sequence = 0
     let capture: Capture | null = null
@@ -762,6 +776,44 @@ export function createLayoutGroup(
         warned.add(kind)
         // biome-ignore lint/suspicious/noConsole: development warning
         console.warn(`[ani-layout] ${message}`)
+    }
+
+    /**
+     * Tracks the root node of a participant's element (§4.6): a shadow root
+     * is known from then on, a document holds none. An element that is not
+     * in a document or a shadow root yet is tracked when first seen connected.
+     */
+    function trackRoot(p: Participant): void {
+        if (p.root !== undefined) return
+        const node = p.element.getRootNode()
+        if (isShadowRoot(node)) {
+            p.root = node
+            rootUsers.set(node, (rootUsers.get(node) ?? 0) + 1)
+            roots.set(node.host, node)
+        } else if (node.nodeType === 9) {
+            p.root = null
+        }
+    }
+
+    /** Drops a root with the last participant inside it. */
+    function dropRoot(p: Participant): void {
+        const root = p.root
+        if (!root) return
+        p.root = undefined
+        const users = (rootUsers.get(root) ?? 1) - 1
+        if (users > 0) {
+            rootUsers.set(root, users)
+            return
+        }
+        rootUsers.delete(root)
+        if (roots.get(root.host) === root) roots.delete(root.host)
+    }
+
+    /** The known roots with `element`'s own, for a check made before it is registered. */
+    function rootsWith(element: HTMLElement): KnownRoots {
+        const node = element.getRootNode()
+        if (!isShadowRoot(node) || roots.get(node.host) === node) return roots
+        return new Map(roots).set(node.host, node)
     }
 
     function assertDocument(element: HTMLElement): void {
@@ -1119,6 +1171,7 @@ export function createLayoutGroup(
         index: Map<Participant, number>
     } {
         const list = [...registry.values()].filter((p) => p.element.isConnected)
+        for (const p of list) trackRoot(p)
         const parentOf = new Map<Participant, Participant | null>()
         const depth = new Map<Participant, number>()
         const above = new Map<Node, Participant | null>()
@@ -1445,7 +1498,11 @@ export function createLayoutGroup(
     ): Participant | null {
         let found: Participant | null = null
         const walked: Node[] = []
-        for (let node = flatParent(element); node; node = flatParent(node)) {
+        for (
+            let node = flatParent(element, roots);
+            node;
+            node = flatParent(node, roots)
+        ) {
             const known = above?.get(node)
             if (known !== undefined) {
                 found = known
@@ -2303,7 +2360,7 @@ export function createLayoutGroup(
                     motion: motionOf(p, reduced),
                     layoutId: p.keyChanged ? null : (options.layoutId ?? null),
                     crossfade: options.layoutCrossfade ?? true,
-                    exiting: exitingPresence(p.element) !== null,
+                    exiting: exitingPresence(p.element, roots) !== null,
                     presenceOpacity: presence?.opacity ?? false,
                     unsupported: unsupported !== null,
                     skip:
@@ -2385,7 +2442,7 @@ export function createLayoutGroup(
             if (
                 id === undefined ||
                 result.leads.has(id) ||
-                exitingPresence(p.element) !== null
+                exitingPresence(p.element, roots) !== null
             ) {
                 continue
             }
@@ -2892,7 +2949,7 @@ export function createLayoutGroup(
                         started: continues,
                         law: track?.law ?? INSTANT_LAW,
                     }
-                    const presence = exitingPresence(p.element)
+                    const presence = exitingPresence(p.element, roots)
                     if (presence) {
                         let release!: () => void
                         presence.hold(
@@ -3079,6 +3136,7 @@ export function createLayoutGroup(
     function documentMismatch(p: Participant): void {
         p.removed = true
         registry.delete(p.element)
+        dropRoot(p)
         invalidateHold(p)
         const id = p.options.layoutId
         if (id !== undefined && leads.get(id) === p) {
@@ -3120,10 +3178,13 @@ export function createLayoutGroup(
     }
 
     function validateWaapiNesting(element: HTMLElement): void {
+        // the new element's root counts before it is registered
+        const known = rootsWith(element)
         for (const other of registry.keys()) {
             if (
                 other !== element &&
-                (containsFlat(other, element) || containsFlat(element, other))
+                (containsFlat(other, element, known) ||
+                    containsFlat(element, other, known))
             ) {
                 throw invalidOptions(
                     'type',
@@ -3171,14 +3232,17 @@ export function createLayoutGroup(
                     parent: null,
                     removed: false,
                     motion: null,
+                    root: undefined,
                 }
                 registry.set(element, p)
+                trackRoot(p)
             }
             const self = p
             return () => {
                 if (self.removed || registry.get(element) !== self) return
                 self.removed = true
                 registry.delete(element)
+                dropRoot(self)
                 const id = self.options.layoutId
                 if (id !== undefined && leads.get(id) === self) {
                     // its last presented box, radius and velocity, in view
@@ -3282,7 +3346,10 @@ export function createLayoutGroup(
             disposed = true
             capture?.disarm()
             capture = null
-            for (const p of registry.values()) p.removed = true
+            for (const p of registry.values()) {
+                p.removed = true
+                dropRoot(p)
+            }
             registry.clear()
             frame = []
             leads.clear()
