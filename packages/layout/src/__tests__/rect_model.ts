@@ -8,8 +8,19 @@ import type { Box } from '../geometry'
  * placed ancestor, each about its `transform-origin` (px, default `0 0`).
  * `offsetWidth`/`offsetHeight` round the layout size, and computed styles
  * report the inline transform properties and the exact border-box size.
- * Every read is counted, in order.
+ * An inline `zoom` on any ancestor (placed or not) scales the rects under it
+ * about its layout box's top-left (an unplaced one: the view origin), and
+ * changes no layout size. Every read is counted, in order.
+ *
+ * Engine precision (§4.2 measurement error): `widths: 'chromium'` serializes
+ * computed widths and heights to six significant digits; `rects: 'firefox'`
+ * quantizes the edges of a transformed box's rect to 1/60 px app units.
  */
+export interface RectModelOptions {
+    readonly widths?: 'exact' | 'chromium'
+    readonly rects?: 'exact' | 'firefox'
+}
+
 export interface RectModel {
     /** Places `element` at `box`; `offset` overrides the rounded layout size. */
     place(
@@ -25,6 +36,8 @@ export interface RectModel {
     /** Every read, in order: 'rect', 'offset' (one per pair) or 'style'. */
     readonly log: string[]
     reset(): void
+    /** Sets the engine precision the model reports with from now on. */
+    precision(options: RectModelOptions): void
 }
 
 function px(value: string): number {
@@ -52,7 +65,13 @@ function originOf(element: HTMLElement): [number, number] {
     return [px(x!) || 0, px(y ?? '0') || 0]
 }
 
-export function createRectModel(): RectModel {
+function zoomOf(element: HTMLElement): number {
+    const value = Number.parseFloat(element.style.zoom)
+    return Number.isFinite(value) && value > 0 ? value : 1
+}
+
+export function createRectModel(initial: RectModelOptions = {}): RectModel {
+    let options = initial
     const boxes = new WeakMap<HTMLElement, Box>()
     const offsets = new WeakMap<HTMLElement, readonly [number, number]>()
     const reads = { rects: 0, offsets: 0, styles: 0 }
@@ -60,15 +79,29 @@ export function createRectModel(): RectModel {
 
     const rect = (element: HTMLElement): Box => {
         let box = { ...boxes.get(element)! }
+        let transformed = false
         for (
             let node: HTMLElement | null = element;
             node;
             node = node.parentElement
         ) {
             const layout = boxes.get(node)
+            const z = zoomOf(node)
+            if (z !== 1) {
+                transformed = true
+                const zx = layout?.x ?? 0
+                const zy = layout?.y ?? 0
+                box = {
+                    x: zx + z * (box.x - zx),
+                    y: zy + z * (box.y - zy),
+                    w: z * box.w,
+                    h: z * box.h,
+                }
+            }
             if (!layout) continue
             const [tx, ty] = translateOf(node)
             const [sx, sy] = scaleOf(node)
+            if (tx !== 0 || ty !== 0 || sx !== 1 || sy !== 1) transformed = true
             const [ox, oy] = originOf(node)
             const cx = layout.x + ox
             const cy = layout.y + oy
@@ -79,8 +112,20 @@ export function createRectModel(): RectModel {
                 h: sy * box.h,
             }
         }
+        if (options.rects === 'firefox' && transformed) {
+            // app units: every edge on the 1/60 px grid
+            const q = (v: number) => Math.round(v * 60) / 60
+            const x = q(box.x)
+            const y = q(box.y)
+            box = { x, y, w: q(box.x + box.w) - x, h: q(box.y + box.h) - y }
+        }
         return box
     }
+    /** A computed length as the engine serializes it. */
+    const length = (v: number): string =>
+        options.widths === 'chromium'
+            ? `${Number(v.toPrecision(6))}px`
+            : `${v}px`
 
     const realGetComputedStyle = window.getComputedStyle.bind(window)
     vi.spyOn(window, 'getComputedStyle').mockImplementation((elt: Element) => {
@@ -99,8 +144,8 @@ export function createRectModel(): RectModel {
                     const [ox, oy] = originOf(html)
                     return `${ox}px ${oy}px`
                 }
-                if (prop === 'width' && layout) return `${layout.w}px`
-                if (prop === 'height' && layout) return `${layout.h}px`
+                if (prop === 'width' && layout) return length(layout.w)
+                if (prop === 'height' && layout) return length(layout.h)
                 if (prop === 'getPropertyValue') {
                     // corner radii resolve as a browser's do: '0px' when unset
                     return (name: string) =>
@@ -173,6 +218,9 @@ export function createRectModel(): RectModel {
             reads.offsets = 0
             reads.styles = 0
             log.length = 0
+        },
+        precision(next) {
+            options = next
         },
     }
 }
