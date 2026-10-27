@@ -1,17 +1,17 @@
 $ node tests/browser/run.ts --browser firefox --case waapi:*
-# commit 81893f3ebb4995d41947eef35baee433b6a697a3
-PASS waapi:W1 (642 ms)
+# commit f94848de6d8d9edc04a54f614498b61799bc129d
+PASS waapi:W1 (631 ms)
     RAF vs WAAPI every frame: max 0.0333 px (linear 0.0000, linear +delay 0.0000, ease-out 0.0167, ease-out +delay 0.0167, spring 0.0167, spring +delay 0.0333); no inline style written
-PASS waapi:W2 (499 ms)
+PASS waapi:W2 (616 ms)
     retarget from (243.45, 20) at 0.16 s: on the oracle within 0.0163 px; ended, nothing left
-PASS waapi:W3 (1205 ms)
+PASS waapi:W3 (1364 ms)
     first painted frame after a 120 ms block at 0.00 %
-PASS waapi:W4 (505 ms)
+PASS waapi:W4 (584 ms)
     7 add and 6 set invalid shapes throw ANI_INVALID_OPTIONS; radius false is allowed; later nesting and missing CSS linear() snap unsupported
-PASS waapi:W5 (502 ms)
+PASS waapi:W5 (565 ms)
     finish, removal, reduced motion and dispose cancel their animations with exact reports; no inline style written
-PASS waapi:W6 (651 ms)
-    clock timeScale 0; document timeline advanced to x = 87.78 px; reduced motion is covered by W5
+PASS waapi:W6 (700 ms)
+    clock timeScale 0; document timeline advanced to x = 87.42 px; reduced motion is covered by W5
 
-6 passed, 0 failed, 0 known failures, 0 skipped (6.1 s)
+6 passed, 0 failed, 0 known failures, 0 skipped (6.9 s)
 # exit 0

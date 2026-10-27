@@ -603,7 +603,7 @@ describe('measure: presentedLayoutBoxes (§4.2)', () => {
 })
 
 describe('measure: keepPath (§5.7)', () => {
-    it('KP-1: delta below 0.01 on both axes returns unchanged regardless of ancestors', () => {
+    it('KP-1: |δ|·max(1, ρ) below 0.01 on both axes returns unchanged; an amplified δ does not', () => {
         expect(
             keepPath({
                 delta: { x: 0, y: 0 },

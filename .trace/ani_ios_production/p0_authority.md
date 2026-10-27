@@ -101,3 +101,10 @@ and wording, not whether each refinement keeps "snap, never wrong motion".
 References: 173 `§` references, 0 missing targets after the edits. Legacy terms ("page box",
 "inner-scroll", "analytic before-box", "field-by-field") occur only in the header's removal note.
 
+## Second remediation (re-judged with P1, after `p1_spring_trial_result.md`)
+
+The P1 tribunal reopened J-001 and J-004 and added P0-N001. All three are corrected in the
+authority (81893f3) and in `measure.ts` (f94848d). The proofs are in `p1_spring.md` § Second
+remediation.
+- **J-001 and J-004.** Every cut-off is judged in screen space (`|δ|·max(1, ρ)`).
+- **P0-N001.** A degenerate axis reads the exact computed size.
