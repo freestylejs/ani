@@ -1107,10 +1107,11 @@ export function createLayoutGroup(
         const list = [...registry.values()].filter((p) => p.element.isConnected)
         const parentOf = new Map<Participant, Participant | null>()
         const depth = new Map<Participant, number>()
+        const above = new Map<Node, Participant | null>()
         const depthOf = (p: Participant): number => {
             const known = depth.get(p)
             if (known !== undefined) return known
-            const parent = nearestParticipant(p.element)
+            const parent = nearestParticipant(p.element, above)
             parentOf.set(p, parent)
             const d = parent ? depthOf(parent) + 1 : 0
             depth.set(p, d)
@@ -1423,12 +1424,33 @@ export function createLayoutGroup(
         run.resolve({ status: 'interrupted', snapped: run.snapped })
     }
 
-    function nearestParticipant(element: HTMLElement): Participant | null {
+    /**
+     * The nearest live participant above `element` in the flat tree. With
+     * `above` (one tree build, the registry unchanged), every ancestor
+     * walked that is not one remembers the answer, so siblings share the
+     * walk of their common ancestors.
+     */
+    function nearestParticipant(
+        element: HTMLElement,
+        above?: Map<Node, Participant | null>
+    ): Participant | null {
+        let found: Participant | null = null
+        const walked: Node[] = []
         for (let node = flatParent(element); node; node = flatParent(node)) {
+            const known = above?.get(node)
+            if (known !== undefined) {
+                found = known
+                break
+            }
             const p = registry.get(node)
-            if (p && !p.removed && node.isConnected) return p
+            if (p && !p.removed && node.isConnected) {
+                found = p
+                break
+            }
+            walked.push(node)
         }
-        return null
+        if (above) for (const node of walked) above.set(node, found)
+        return found
     }
 
     function resolveGeometry(
