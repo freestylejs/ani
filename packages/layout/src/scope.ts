@@ -1838,10 +1838,17 @@ export function createLayoutGroup(
             })
             // v is the presented box's true velocity: the product rule
             // through every presented parent map, applied to the presented
-            // CSS box (§4.2 Velocity), not the track's own box alone
+            // CSS box (§4.2 Velocity), not the track's own box alone. Each
+            // map is about the origin the browser applied at capture: its
+            // fractions (a driven node's as its pose was planned) of the
+            // presented box, not A's offset
             presentedVelocities(
                 nodes,
-                of.map((i) => engine.poseRates.get(list[i]!) ?? null)
+                of.map((i) => engine.poseRates.get(list[i]!) ?? null),
+                of.map((i) => {
+                    const g = frozen.get(list[i]!)?.geometry ?? geometry[i]!
+                    return [g.fx, g.fy] as const
+                })
             ).forEach((v, k) => {
                 velocity.set(list[of[k]!]!, v)
             })

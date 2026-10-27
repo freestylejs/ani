@@ -58,11 +58,14 @@ function scaleOf(element: HTMLElement): [number, number] {
     return [x!, y ?? x!]
 }
 
-function originOf(element: HTMLElement): [number, number] {
+/** The inline `transform-origin` in px; a percentage resolves on `layout`. */
+function originOf(element: HTMLElement, layout?: Box): [number, number] {
     const value = element.style.transformOrigin
     if (!value) return [0, 0]
     const [x, y] = value.split(' ')
-    return [px(x!) || 0, px(y ?? '0') || 0]
+    const resolve = (v: string | undefined, size: number) =>
+        v?.endsWith('%') ? (px(v) / 100) * size : px(v ?? '0') || 0
+    return [resolve(x, layout?.w ?? 0), resolve(y, layout?.h ?? 0)]
 }
 
 function zoomOf(element: HTMLElement): number {
@@ -102,7 +105,7 @@ export function createRectModel(initial: RectModelOptions = {}): RectModel {
             const [tx, ty] = translateOf(node)
             const [sx, sy] = scaleOf(node)
             if (tx !== 0 || ty !== 0 || sx !== 1 || sy !== 1) transformed = true
-            const [ox, oy] = originOf(node)
+            const [ox, oy] = originOf(node, layout)
             const cx = layout.x + ox
             const cy = layout.y + oy
             box = {
@@ -141,7 +144,7 @@ export function createRectModel(initial: RectModelOptions = {}): RectModel {
                 if (prop === 'rotate') return html.style.rotate || 'none'
                 if (prop === 'transform') return html.style.transform || 'none'
                 if (prop === 'transformOrigin') {
-                    const [ox, oy] = originOf(html)
+                    const [ox, oy] = originOf(html, layout)
                     return `${ox}px ${oy}px`
                 }
                 if (prop === 'width' && layout) return length(layout.w)
