@@ -352,16 +352,18 @@ export function readTransform(style: CSSStyleDeclaration): Transform | string {
 
 /**
  * The computed values of an active node (§4.3). `style` is its computed
- * style when the caller already holds it, so an element is read once.
+ * style when the caller already holds it, so an element is read once, and
+ * `transform` its `readTransform` when the caller already classified it in
+ * the same check.
  */
 export function measure(
     element: HTMLElement,
     radius: boolean,
     animated: () => ReadonlySet<Element>,
     snapsReference: boolean,
-    style: CSSStyleDeclaration = getComputedStyle(element)
+    style: CSSStyleDeclaration = getComputedStyle(element),
+    transform: Transform | string = readTransform(style)
 ): Measured {
-    const transform = readTransform(style)
     const origin = style.transformOrigin.split(' ').map(px)
     let unsupported: string | null = null
     if (style.display === 'contents' || style.display === 'none') {
