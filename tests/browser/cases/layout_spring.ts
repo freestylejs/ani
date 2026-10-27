@@ -1,7 +1,7 @@
 // L-SPRING rows (ARCHITECTURE §5.1–§5.3, §5.8, §5.9, §9.4, §10): the physical
 // spring in real browsers on a manual clock, every frame against the
 // independent closed-form oracle.
-import { ani, isAniError, physics, timing } from '@freestylejs/ani-core'
+import { ani, isAniError, timing } from '@freestylejs/ani-core'
 import {
     createLayoutGroup,
     createPresence,
@@ -12,6 +12,7 @@ import {
     maxDiff,
     type OBox,
     perceptualOracle,
+    reducedSpringOracle,
     springOracle,
 } from '../../../packages/layout/src/__tests__/oracle'
 import { expectEqual } from './assert'
@@ -541,23 +542,51 @@ export async function L_SPRING_4(): Promise<string> {
             el.style.left = '300px'
             const a = pageBox(el)
             const style = el.style.cssText
+            const expected = reducedSpringOracle(1, bounce, 0, max, [
+                { x0: b.x - a.x, v0: 0 },
+            ])
             const done = report(h.group.flush())
             let overshoot = 0
             let lastFrame = 0
+            let worst = 0
             const count = await frames(
                 h.mc,
                 200,
                 (elapsed) => {
                     lastFrame = elapsed
                     overshoot = Math.max(overshoot, pageBox(el).x - a.x)
+                    if (typeof expected === 'object') {
+                        const want =
+                            elapsed >= expected.settle
+                                ? a
+                                : springBox(
+                                      b,
+                                      a,
+                                      null,
+                                      expected.duration,
+                                      expected.bounce,
+                                      elapsed
+                                  ).box
+                        worst = Math.max(
+                            worst,
+                            expectAt(
+                                el,
+                                want,
+                                `b=${bounce} max=${max} t=${elapsed.toFixed(4)}`
+                            )
+                        )
+                    }
                 },
                 () => done.value !== null
             )
-            if (max < 0.05) {
+            if (expected === 'reduced') {
                 // nothing fits: the node jumps
                 expectEqual(done.value!.status, 'reduced', 'status')
                 lines.push(`max ${max}: jump`)
                 continue
+            }
+            if (expected === 'spring-timeout') {
+                throw new Error('unexpected spring-timeout in L_SPRING_4')
             }
             expectEqual(done.value!.status, 'ended', 'status')
             if (overshoot > 1e-6)
@@ -569,20 +598,11 @@ export async function L_SPRING_4(): Promise<string> {
                     `run lasted ${lastFrame} s, beyond maxDuration ${max} s`
                 )
             }
-            // the chosen spring is the largest grid factor with bounce ≤ 0
-            const grid = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1]
-            const f = grid.find(
-                (g) =>
-                    physics
-                        .spring({ duration: g, bounce: Math.min(bounce, 0) })
-                        .settleTime(b.x - a.x, 0) <= max
-            )
-            if (f === undefined) throw new Error('the oracle found no factor')
             void count
             expectAt(el, a, 'final box', 0.01)
             expectEqual(el.style.cssText, style, 'restored')
             lines.push(
-                `b=${bounce} max ${max}: factor ${f}, ${lastFrame.toFixed(3)} s`
+                `b=${bounce} max ${max}: factor ${expected.factor}, ${lastFrame.toFixed(3)} s, ≤ ${worst.toFixed(3)} px`
             )
         } finally {
             h.dispose()

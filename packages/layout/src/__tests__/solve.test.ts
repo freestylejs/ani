@@ -36,10 +36,14 @@ import {
     NO_POSE,
     type OBox,
     type ONode,
+    ORACLE_REDUCED_GRID,
+    ORACLE_SETTLE_CAP,
     type OTrackSpec,
     perceptualOracle,
+    reducedSpringOracle,
     rendered,
     rng,
+    settleOracle,
     springOracle,
 } from './oracle'
 
@@ -1436,6 +1440,47 @@ describe('solve: spring tracks (§5.3)', () => {
         ).toBe('spring-timeout')
     })
 
+    it('P1-002: every reduced-motion candidate settling later than 10 s is refused (spring-timeout)', () => {
+        // Tribunal counterexample: 500 px move, duration 100, bounce 0, reducedMotion { maxDuration: 1e9 }
+        const base = resolveMotion([
+            { type: 'spring', duration: 100, bounce: 0 },
+        ])
+        const reduced = { ...base, maxDuration: 1e9 } as typeof base
+        expect(
+            planTrack(
+                { x: 500, y: 0, w: 10, h: 10 },
+                { x: 0, y: 0, w: 10, h: 10 },
+                null,
+                0,
+                0,
+                true,
+                reduced,
+                null
+            )
+        ).toBe('spring-timeout')
+
+        // Zero-velocity retry candidate exceeding 10 s cap when carried-velocity candidates exceed maxDuration
+        const retryBase = resolveMotion([
+            { type: 'spring', duration: 8, bounce: 0 },
+        ])
+        const retryReduced = {
+            ...retryBase,
+            maxDuration: 15,
+        } as typeof retryBase
+        expect(
+            planTrack(
+                { x: 500, y: 0, w: 10, h: 10 },
+                { x: 0, y: 0, w: 10, h: 10 },
+                { x: 1e9, y: 0, w: 0, h: 0 },
+                0,
+                0,
+                'position',
+                retryReduced,
+                null
+            )
+        ).toBe('spring-timeout')
+    })
+
     it('a delayed spring holds B through its delay, then starts at rest', () => {
         const b = { x: 100, y: 0, w: 50, h: 50 }
         const a = { x: 0, y: 0, w: 50, h: 50 }
@@ -1542,83 +1587,122 @@ describe('solve: the perceptual timeline of a spring lead (§5.3, §5.8, §5.9)'
 })
 
 describe('solve: reduced motion { maxDuration } on a spring (§9.4)', () => {
-    const GRID = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1]
-    it('L-SPRING-4: the largest grid factor that fits, no overshoot, never beyond maxDuration', () => {
+    it('L-SPRING-4: matches the independent reduced-grid oracle (factor, carry/retry, bounce clamp, maxDuration, 10 s cap, exact end)', () => {
         const random = rng(0x4ed0)
-        let fitted = 0
-        let jumped = 0
+        let carriedCount = 0
+        let retriedCount = 0
+        let jumpedCount = 0
+        let timeoutCount = 0
         for (let i = 0; i < 600; i++) {
-            const D = 0.1 + random() * 1.5
+            const long = i >= 540
+            const highVel = i >= 460 && i < 540
+            const D = long
+                ? 8 + random() * 20
+                : highVel
+                  ? 0.8 + random() * 1.2
+                  : 0.1 + random() * 1.5
             const bounce = BOUNCES[Math.floor(random() * BOUNCES.length)]!
             const delay = random() < 0.3 ? random() * 0.3 : 0
-            const max = 0.05 + random() * 1.5
-            const dx = (random() - 0.5) * 1200
-            const moving = random() < 0.5
+            const max = long
+                ? 15 + random() * 100
+                : highVel
+                  ? 0.18 + random() * 0.28
+                  : 0.05 + random() * 1.5
+            const dx = long
+                ? (random() < 0.5 ? -1 : 1) * (200 + random() * 400)
+                : highVel
+                  ? (random() < 0.5 ? -1 : 1) * (10 + random() * 150)
+                  : (random() - 0.5) * 1200
+            const moving = highVel || random() < 0.5
             const v = moving
-                ? { x: (random() - 0.5) * 8000, y: 0, w: 0, h: 0 }
+                ? {
+                      x: highVel
+                          ? (random() < 0.5 ? -1 : 1) * (5e4 + random() * 5e6)
+                          : (random() - 0.5) * 8000,
+                      y: 0,
+                      w: 0,
+                      h: 0,
+                  }
                 : null
             const base = resolveMotion([
                 { type: 'spring', duration: D, bounce, delay },
             ])
             const motion = { ...base, maxDuration: max } as typeof base
             const b = { x: dx, y: 0, w: 40, h: 40 }
-            const a = { x: 0, y: 0, w: 40, h: 40 }
+            const a = { x: 0, y: 0, w: 40, h: 10 }
             const track = planTrack(b, a, v, 0, 0, 'position', motion, null)
-            // the oracle's own settle: sample the response finely past the
-            // candidate's end and check the 0.1 px / 1 px/s bound holds
-            if (track === 'reduced') {
-                jumped += 1
+            const expected = reducedSpringOracle(D, bounce, delay, max, [
+                { x0: dx, v0: v?.x ?? 0 },
+                { x0: 0, v0: 0 },
+            ])
+            if (expected === 'reduced') {
+                expect(track).toBe('reduced')
+                jumpedCount += 1
                 continue
             }
-            if (typeof track === 'string' || track.law.kind !== 'spring')
-                throw new Error(String(track))
-            fitted += 1
-            const law = track.law
-            expect(track.delay + law.settle).toBeLessThanOrEqual(max + 1e-12)
-            expect(law.spring.bounce).toBeLessThanOrEqual(0)
-            const f = law.duration / D
-            expect(GRID.some((g) => Math.abs(g - f) < 1e-12)).toBe(true)
-            expect(track.delay).toBeCloseTo(delay * f, 12)
-            // a larger factor would not have fitted with the same start
-            const larger = GRID.filter((g) => g > f + 1e-12)
-            const carried = track.seed[0] !== 0
-            for (const g of larger) {
-                const s = resolveMotion([
-                    {
-                        type: 'spring',
-                        duration: D * g,
-                        bounce: Math.min(bounce, 0),
-                    },
-                ])
-                const t = planTrack(
-                    b,
-                    a,
-                    carried ? v : null,
-                    0,
-                    0,
-                    'position',
-                    s,
-                    null
-                )
-                if (typeof t === 'string' || t.law.kind !== 'spring') continue
-                expect(delay * g + t.law.settle).toBeGreaterThan(max)
+            if (expected === 'spring-timeout') {
+                expect(track).toBe('spring-timeout')
+                timeoutCount += 1
+                continue
             }
-            // after the end the oracle response stays inside the settle bound
-            const v0 = carried ? v!.x : 0
+            if (typeof track === 'string' || track.law.kind !== 'spring') {
+                throw new Error(String(track))
+            }
+            const law = track.law
+            const f = law.duration / D
+            expect(f).toBeCloseTo(expected.factor, 12)
+            expect(law.spring.bounce).toBe(expected.bounce)
+            expect(law.spring.bounce).toBeLessThanOrEqual(0)
+            expect(track.delay).toBeCloseTo(expected.delay, 12)
+            expect(law.settle).toBeCloseTo(expected.settle, 6)
+            expect(track.delay + law.settle).toBeLessThanOrEqual(max + 1e-12)
+            expect(law.settle).toBeLessThanOrEqual(ORACLE_SETTLE_CAP)
+            const expectedSeed = expected.carry ? (v?.x ?? 0) : 0
+            expect(track.seed[0]).toBe(expectedSeed)
+            if (v && v.x !== 0) {
+                if (expected.carry) carriedCount += 1
+                else retriedCount += 1
+            } else {
+                carriedCount += 1
+            }
+            // Every larger factor in the same pass must exceed maxDuration according to settleOracle
+            for (const g of ORACLE_REDUCED_GRID) {
+                if (g <= expected.factor + 1e-12) continue
+                const s = settleOracle(D * g, expected.bounce, dx, expectedSeed)
+                expect(delay * g + s).toBeGreaterThan(max - 1e-9)
+            }
+            // When the zero-velocity retry was chosen for a moving node, every factor with carried velocity must have exceeded maxDuration
+            if (!expected.carry && v && v.x !== 0) {
+                for (const g of ORACLE_REDUCED_GRID) {
+                    const s = settleOracle(D * g, expected.bounce, dx, v.x)
+                    expect(delay * g + s).toBeGreaterThan(max - 1e-9)
+                }
+            }
+            // Final exactness at settle and settle bound thereafter
+            expect(
+                drawnBoxes([
+                    rootNode(a, {
+                        track,
+                        elapsed: track.delay + law.settle + 1e-12,
+                    }),
+                ])[0]
+            ).toEqual(a)
             for (let k = 0; k <= 50; k++) {
                 const t = law.settle + (k / 50) * law.duration
                 const o = springOracle(
                     law.duration,
                     law.spring.bounce,
                     dx,
-                    v0,
+                    expectedSeed,
                     t
                 )
                 expect(Math.abs(o.d)).toBeLessThanOrEqual(0.1 + 1e-9)
                 expect(Math.abs(o.v)).toBeLessThanOrEqual(1 + 1e-9)
             }
         }
-        expect(fitted).toBeGreaterThan(100)
-        expect(jumped).toBeGreaterThan(10)
+        expect(carriedCount).toBeGreaterThan(100)
+        expect(retriedCount).toBeGreaterThan(20)
+        expect(jumpedCount).toBeGreaterThan(10)
+        expect(timeoutCount).toBeGreaterThan(10)
     })
 })

@@ -152,6 +152,206 @@ export function springOracle(
     }
 }
 
+export const ORACLE_REDUCED_GRID = [
+    1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1,
+] as const
+export const ORACLE_SETTLE_CAP = 10
+
+/**
+ * Physical settle time `inf { T >= 0 : for all t >= T, |d(t)| <= posTol and |v(t)| <= speedTol }`
+ * derived directly from the closed-form oscillator `springOracle`, without
+ * calling production `physics.spring` or `settleTime`.
+ */
+export function settleOracle(
+    D: number,
+    b: number,
+    x0: number,
+    v0: number,
+    posTol = 0.1,
+    speedTol = 1
+): number {
+    if (x0 === 0 && v0 === 0) return 0
+    const w = (2 * Math.PI) / D
+    const z = b >= 0 ? 1 - b : 1 / (1 + b)
+    const points: number[] = [0]
+    let hi = 0
+
+    if (z === 1) {
+        const c1 = x0
+        const c2 = v0 + w * x0
+        if (c2 !== 0) {
+            const td = -c1 / c2
+            const tv = (c2 - w * c1) / (w * c2)
+            const ta = (2 * w * c2 - w * w * c1) / (w * w * c2)
+            for (const t of [td, tv, ta]) {
+                if (Number.isFinite(t) && t > 0) points.push(t)
+            }
+        }
+        hi = Math.max(1 / w, ...points)
+        while (
+            (Math.abs(c1) + Math.abs(c2) * hi) * Math.exp(-w * hi) > posTol ||
+            (Math.abs(c2 - w * c1) + w * Math.abs(c2) * hi) *
+                Math.exp(-w * hi) >
+                speedTol
+        ) {
+            hi *= 2
+            if (hi > 1e6) return Number.POSITIVE_INFINITY
+        }
+    } else if (z > 1) {
+        const q = Math.sqrt(z * z - 1)
+        const r1 = -w * (z - q)
+        const r2 = -w * (z + q)
+        const c1 = (v0 - r2 * x0) / (r1 - r2)
+        const c2 = x0 - c1
+        if (c1 !== 0 && c2 !== 0) {
+            for (const ratio of [
+                -c2 / c1,
+                -(c2 * r2) / (c1 * r1),
+                -(c2 * r2 * r2) / (c1 * r1 * r1),
+            ]) {
+                if (ratio > 0) {
+                    const t = Math.log(ratio) / (r1 - r2)
+                    if (Number.isFinite(t) && t > 0) points.push(t)
+                }
+            }
+        }
+        hi = Math.max(1 / -r1, ...points)
+        while (
+            Math.abs(c1) * Math.exp(r1 * hi) +
+                Math.abs(c2) * Math.exp(r2 * hi) >
+                posTol ||
+            Math.abs(c1 * r1) * Math.exp(r1 * hi) +
+                Math.abs(c2 * r2) * Math.exp(r2 * hi) >
+                speedTol
+        ) {
+            hi *= 2
+            if (hi > 1e6) return Number.POSITIVE_INFINITY
+        }
+    } else {
+        const wd = w * Math.sqrt(1 - z * z)
+        const a = z * w
+        const A = x0
+        const B = (v0 + a * x0) / wd
+        const C = v0
+        const S = B * wd - a * A
+        const C2 = S * wd - a * C
+        const S2 = -C * wd - a * S
+        const rd = Math.hypot(A, B)
+        const rv = Math.hypot(C, S)
+        const td = rd > posTol ? Math.log(rd / posTol) / a : 0
+        const tv = rv > speedTol ? Math.log(rv / speedTol) / a : 0
+        hi = Math.max(td, tv)
+        if (hi === 0) return 0
+        const lo = Math.max(0, hi - (2 * Math.PI) / wd)
+        if (lo > 0) points.push(lo)
+        const addTrigRoots = (P: number, Q: number) => {
+            if (P === 0 && Q === 0) return
+            const base = Math.atan2(-P, Q)
+            const kMin = Math.floor((lo * wd - base) / Math.PI) - 1
+            const kMax = Math.ceil((hi * wd - base) / Math.PI) + 1
+            for (let k = kMin; k <= kMax; k++) {
+                const t = (base + k * Math.PI) / wd
+                if (t > lo && t < hi) points.push(t)
+            }
+        }
+        addTrigRoots(A, B)
+        addTrigRoots(C, S)
+        addTrigRoots(C2, S2)
+    }
+
+    points.push(hi)
+    points.sort((p, q) => p - q)
+
+    const lastCrossing = (
+        left: number,
+        right: number,
+        pick: (t: number) => number,
+        tol: number
+    ): number | null => {
+        if (Math.abs(pick(right)) > tol) return right
+        if (Math.abs(pick(left)) <= tol) return null
+        let l = left
+        let r = right
+        for (let i = 0; i < 64; i++) {
+            const m = 0.5 * (l + r)
+            if (Math.abs(pick(m)) > tol) l = m
+            else r = m
+        }
+        return r
+    }
+
+    for (let i = points.length - 2; i >= 0; i--) {
+        const left = points[i]!
+        const right = points[i + 1]!
+        if (right <= left) continue
+        const td = lastCrossing(
+            left,
+            right,
+            (t) => springOracle(D, b, x0, v0, t).d,
+            posTol
+        )
+        const tv = lastCrossing(
+            left,
+            right,
+            (t) => springOracle(D, b, x0, v0, t).v,
+            speedTol
+        )
+        if (td !== null || tv !== null) {
+            return Math.max(td ?? 0, tv ?? 0)
+        }
+    }
+    return 0
+}
+
+export interface OReducedSpring {
+    readonly factor: number
+    readonly duration: number
+    readonly delay: number
+    readonly bounce: number
+    readonly carry: boolean
+    readonly settle: number
+}
+
+/**
+ * Independent reduced-motion spring selection (§9.4, §5.3): clamps `bounce` to
+ * `<= 0`, searches `ORACLE_REDUCED_GRID` from largest to smallest first with
+ * carried velocity and then from rest (`v0 = 0`), and applies the global 10 s
+ * settle cap (`'spring-timeout'`) before accepting a candidate.
+ */
+export function reducedSpringOracle(
+    duration: number,
+    bounce: number,
+    delay: number,
+    maxDuration: number,
+    channels: readonly { readonly x0: number; readonly v0: number }[]
+): OReducedSpring | 'reduced' | 'spring-timeout' {
+    const clampedBounce = Math.min(bounce, 0)
+    for (const carry of [true, false]) {
+        for (const factor of ORACLE_REDUCED_GRID) {
+            const d = duration * factor
+            let settle = 0
+            for (const ch of channels) {
+                settle = Math.max(
+                    settle,
+                    settleOracle(d, clampedBounce, ch.x0, carry ? ch.v0 : 0)
+                )
+            }
+            if (delay * factor + settle <= maxDuration) {
+                if (!(settle <= ORACLE_SETTLE_CAP)) return 'spring-timeout'
+                return {
+                    factor,
+                    duration: d,
+                    delay: delay * factor,
+                    bounce: clampedBounce,
+                    carry,
+                    settle,
+                }
+            }
+        }
+    }
+    return 'reduced'
+}
+
 /** §5.3 perceptual progress `min(1, s(t)/s(D))`, `s(t) = 1 − (1 + ωt)e^(−ωt)`. */
 export function perceptualOracle(t: number, D: number): number {
     if (t <= 0) return 0
