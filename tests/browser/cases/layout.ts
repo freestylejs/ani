@@ -3149,11 +3149,12 @@ export async function J32(): Promise<string> {
 }
 
 /**
- * CP8 trial J-032: a kept track keeps the presence matrices it was planned
- * with, not its CSS box. The parent, retargeted after its layer changed
- * (scaleX 0.8 → 1), moves the child's CSS box while the child's A in its own
- * flush's space is unchanged: the child keeps its track from exactly what the
- * user saw, drawn through the parent's current layer.
+ * CP8 trial J-032: the parent, retargeted after its layer changed (scaleX
+ * 0.8 → 1), moves the child's CSS box while the child's A in its own flush's
+ * space is unchanged. The child's rect at the flush, under the poses last
+ * written, measures the parent's unpresented move (J = D − B is 100 px), and
+ * its parent's inner scale changed since planning, so the child retargets
+ * from exactly what the user saw, with its drawn velocity (§5.7 path 3).
  */
 export async function J32B(): Promise<string> {
     const linear = timing.linear()
@@ -3185,7 +3186,13 @@ export async function J32B(): Promise<string> {
         parent.style.left = '300px'
         child.style.left = '-25px'
         const second = report(h.group.flush())
-        expectAt(child, seen, 'the kept child stays where the user saw it')
+        expectAt(child, seen, 'the child starts where the user saw it')
+        // drawn at R + 1.25 (C − R): 200 + 1.25 · (280 − 200) px/s
+        const childTrack = spec(seen, at(o, 275, 0, 40, 40), {
+            duration: 1,
+            timing: linear,
+            velocity: { x: 300, y: 0, w: 0, h: 0 },
+        })
         const parentTrack = spec(
             at(o, 40, 0, 200, 40),
             at(o, 300, 0, 200, 40),
@@ -3206,13 +3213,11 @@ export async function J32B(): Promise<string> {
                 const R =
                     expectedBox(parentTrack, since(parentTrack, elapsed)).x -
                     o.x
-                // the kept child track, and the parent's layer (1 / 0.8 about its drawn left)
-                const C = 280 * Math.min(1, 0.2 + DT + elapsed)
                 worst = Math.max(
                     worst,
                     expectAt(
                         child,
-                        at(o, R + 1.25 * (C - R), 0, 40, 40),
+                        expectedBox(childTrack, since(childTrack, elapsed)),
                         `child t=${elapsed.toFixed(3)}`
                     )
                 )
@@ -3237,11 +3242,11 @@ export async function J32B(): Promise<string> {
             'no-change',
             'the no-op flush keeps both tracks'
         )
-        expectEqual(second.value?.status, 'ended', 'parent run')
+        expectEqual(second.value?.status, 'ended', 'parent and child run')
         expectAt(child, at(o, 275, 0, 40, 40), 'child at rest', 0.01)
         expectEqual(child.style.translate, '', 'child translate restored')
         expectEqual(child.style.scale, '', 'child scale restored')
-        return `parent retargeted after scaleX 0.8 → 1 moves the kept child's CSS box: the child stays at (${(seen.x - o.x).toFixed(1)}, w ${seen.w}) and keeps its track through the parent's layer; ${count} frames: child within ${worst.toFixed(4)} px, parent within ${parentWorst.toFixed(4)} px; no-op flush kept both; identity settle`
+        return `parent retargeted after scaleX 0.8 → 1 moves the child's CSS box: the measured jump retargets the child from (${(seen.x - o.x).toFixed(1)}, w ${seen.w}) at 300 px/s; ${count} frames: child within ${worst.toFixed(4)} px, parent within ${parentWorst.toFixed(4)} px; no-op flush kept both; identity settle`
     } finally {
         h.dispose()
     }

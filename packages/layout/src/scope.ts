@@ -48,14 +48,17 @@ import {
     usedOrigin,
 } from './geometry'
 import {
+    type KeepAncestor,
     type KeepPath,
-    type KeepPathInput,
     keepPath,
     type PresentedNode,
     presentedLayoutBoxes,
+    type ScreenBoundInput,
     type SupportNode,
+    screenBound,
     staleReported,
     supportCheck,
+    translationExact,
 } from './measure'
 import {
     assertKeys,
@@ -118,8 +121,6 @@ const MAX_SCALE = 50
 const UNOWNED_MAP =
     'a map the engine does not own (a scaled, rotated or skewed ancestor that is not a participant, 3D, or CSS zoom)'
 const IDENTITY_POSE: Pose = { tx: 0, ty: 0, sx: 1, sy: 1 }
-
-type KeepAncestor = KeepPathInput['ancestors'][number]
 
 interface Authored {
     readonly tx: number
@@ -960,9 +961,6 @@ export function createLayoutGroup(
         poses: ReadonlyMap<Participant, Pose>,
         styleOf: (i: number) => CSSStyleDeclaration
     ): readonly (string | null)[] {
-        const hasChildren = list.map(() => false)
-        for (const parent of parents)
-            if (parent >= 0) hasChildren[parent] = true
         const poseOf = (i: number) => poses.get(list[i]!) ?? IDENTITY_POSE
         const nodes: SupportNode[] = list.map((_, i) => {
             const pose = poseOf(i)
@@ -971,7 +969,6 @@ export function createLayoutGroup(
                 rect: rects[i]!,
                 offset: offsets[i]!,
                 pose: { sx: pose.sx, sy: pose.sy },
-                hasChildren: hasChildren[i]!,
             }
         })
         const causes: (string | null)[] = list.map(() => null)
@@ -1402,6 +1399,9 @@ export function createLayoutGroup(
         for (const parent of parents) if (parent >= 0) hasChild[parent] = true
         /** Each node's A at its previous flush, before this one replaces it. */
         const lastBoxes = list.map((p) => p.lastBox)
+        /** Each node's geometry and participant parent at its previous flush. */
+        const lastGeometry = list.map((p) => p.geometry)
+        const lastParent = list.map((p) => p.parent)
 
         // the engine's own state at t_k: the fresh capture's, or now when there
         // is none (its last writes describe the presented frame either way)
@@ -1731,8 +1731,12 @@ export function createLayoutGroup(
         /**
          * Per running track, its re-expression (§5.7): `δ = A_new − A_old` of
          * its origin channels (both rest boxes, each in its own flush's view
-         * space), `ρ` per axis over its participant ancestors, and the path.
-         * A track whose ancestors changed since it was planned retargets.
+         * space), whether translating by it is exact (path 2's condition),
+         * and the path, decided by the measured jump `J = D − B`: `D` this
+         * flush's rect, read before any write under the pose last written,
+         * `B` the fresh capture's. Without a B there is no J and no path
+         * (§4.4 decides). A track whose ancestors changed since it was
+         * planned retargets.
          */
         const reexpress = list.map((p, i) => {
             const d = p.drive
@@ -1752,8 +1756,6 @@ export function createLayoutGroup(
             const dy = own.y + track.fy * own.h - track.a[1]
             const before = frameChainOf(was)
             const ancestors: KeepAncestor[] = []
-            let rhoX = 1
-            let rhoY = 1
             let same = true
             let n = 0
             for (let k = parents[i]!; k >= 0; k = parents[k]!, n++) {
@@ -1770,8 +1772,6 @@ export function createLayoutGroup(
                     fa.geometry.authored,
                     was.ancestry.get(a) ?? fa.geometry.matrix
                 )
-                rhoX *= (pose.sx * innerNow.sx) / innerPlanned.sx
-                rhoY *= (pose.sy * innerNow.sy) / innerPlanned.sy
                 ancestors.push({
                     pose: { sx: pose.sx, sy: pose.sy },
                     innerNow: { sx: innerNow.sx, sy: innerNow.sy },
@@ -1779,11 +1779,86 @@ export function createLayoutGroup(
                 })
             }
             if (n !== before.length) same = false
-            const path: KeepPath = same
-                ? keepPath({ delta: { x: dx, y: dy }, ancestors })
-                : 'retarget'
-            return { dx, dy, rho: { x: rhoX, y: rhoY }, path }
+            const b = fresh?.rects.get(p)
+            const raw = rects[i]!
+            const path: KeepPath | null = b
+                ? same
+                    ? keepPath({
+                          jump: {
+                              x: raw.x - b.x,
+                              y: raw.y - b.y,
+                              w: raw.w - b.w,
+                              h: raw.h - b.h,
+                          },
+                          ancestors,
+                      })
+                    : 'retarget'
+                : null
+            const exact = same && translationExact(ancestors)
+            return { dx, dy, exact, path }
         })
+
+        /**
+         * `β` of a driven node (§4.4): from the change of its layout box in
+         * its parent participant's local frame since the previous flush, its
+         * own pose scale and origin, and the parent's raw rect and layout
+         * sizes at this flush. Infinity when an input is unknown (a new or
+         * reparented node, an unmeasured parent).
+         */
+        const boundOf = (i: number): number => {
+            const p = list[i]!
+            const parent = parents[i]!
+            const was = lastGeometry[i]
+            const g = geometry[i]
+            const parentNow = parent >= 0 ? list[parent]! : null
+            if (!g || !was || lastParent[i] !== parentNow) {
+                return Number.POSITIVE_INFINITY
+            }
+            /** The node's CSS box relative to its parent's, in its parent's local frame. */
+            const local = (own: Geometry, of: Geometry | null): Box => {
+                const css = mapBox(invert(own.inner), own.box)
+                if (!of) return css
+                const base = mapBox(invert(of.inner), of.box)
+                return {
+                    x: css.x - base.x,
+                    y: css.y - base.y,
+                    w: css.w,
+                    h: css.h,
+                }
+            }
+            const gp = parent >= 0 ? geometry[parent] : null
+            const wasParent = parent >= 0 ? lastGeometry[parent] : null
+            if (parent >= 0 && (!gp || !wasParent)) {
+                return Number.POSITIVE_INFINITY
+            }
+            const now = local(g, gp ?? null)
+            const then = local(was, wasParent ?? null)
+            const pose = engine.poses.get(p) ?? IDENTITY_POSE
+            let parentInput: ScreenBoundInput['parent'] = null
+            if (parent >= 0) {
+                const [ow, oh] = offsets[parent]!
+                const exact =
+                    ow > 1 && oh > 1 ? null : borderSize(styleOf(parent))
+                parentInput = {
+                    rect: { w: rects[parent]!.w, h: rects[parent]!.h },
+                    size: {
+                        w: ow > 1 ? ow - 1 : (exact?.[0] ?? 0),
+                        h: oh > 1 ? oh - 1 : (exact?.[1] ?? 0),
+                    },
+                }
+            }
+            return screenBound({
+                change: {
+                    x: now.x - then.x,
+                    y: now.y - then.y,
+                    w: now.w - then.w,
+                    h: now.h - then.h,
+                },
+                pose: { sx: pose.sx, sy: pose.sy },
+                origin: { fx: g.fx, fy: g.fy },
+                parent: parentInput,
+            })
+        }
 
         /** Why each node cannot be animated exactly, for its warning. */
         const why: (string | null)[] = list.map(() => null)
@@ -1997,15 +2072,14 @@ export function createLayoutGroup(
                 const node = nodes[i]!
                 if (already.has(p.element) || node.skip) return
                 const r = reexpress[i]
-                if (action.kind === 'keep' && r) {
+                if (action.kind === 'keep') {
                     reported[i] = staleReported(
                         {
                             driven: true,
                             a: node.a,
                             lastKnown: null,
-                            delta: { x: r.dx, y: r.dy },
-                            rho: r.rho,
-                            translationExact: r.path !== 'retarget',
+                            bound: r ? boundOf(i) : Number.POSITIVE_INFINITY,
+                            translationExact: r?.exact ?? false,
                         },
                         threshold,
                         () => 0
@@ -2017,8 +2091,7 @@ export function createLayoutGroup(
                             a: node.a,
                             lastKnown:
                                 cap?.rects.get(p) ?? lastBoxes[i] ?? null,
-                            delta: { x: 0, y: 0 },
-                            rho: { x: 1, y: 1 },
+                            bound: 0,
                             translationExact: true,
                         },
                         threshold,

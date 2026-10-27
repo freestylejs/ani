@@ -1,5 +1,5 @@
 /**
- * Pure measurement functions: interval support check, presented layout box
+ * Pure measurement functions: the support check, presented layout box
  * recovery, kept-track re-expression path, and stale flush reporting
  * (ARCHITECTURE §4.2, §4.4, §5.7). Pure: no DOM, no clock.
  */
@@ -18,14 +18,15 @@ import {
 } from './geometry'
 
 /** A closed interval of a total scale on one axis; `hi` may be Infinity. */
-export interface AxisInterval {
+interface AxisInterval {
     readonly lo: number
     readonly hi: number
 }
 
-export interface ScaleInterval {
-    readonly x: AxisInterval
-    readonly y: AxisInterval
+/** A scale per axis. */
+export interface AxisScale {
+    readonly sx: number
+    readonly sy: number
 }
 
 /** One participant, parents before children (§4.2). */
@@ -37,19 +38,16 @@ export interface SupportNode {
     /** offsetWidth and offsetHeight (integers). */
     readonly offset: readonly [number, number]
     /** The scale of the pose the engine last wrote (1, 1 when it wrote none). */
-    readonly pose: { readonly sx: number; readonly sy: number }
-    /** Whether any participant has this node as its parent. */
-    readonly hasChildren: boolean
+    readonly pose: AxisScale
 }
 
 /**
- * Reads node `index`'s computed inner-map scale (authored `scale` times the presence
- * matrix scale), or 'unsupported' when its computed values hold a rotation, skew or 3D
- * component. Called at most once per node.
+ * Reads node `index`'s computed values (item 2 of §4.1) and returns its
+ * inner-map scale (authored `scale` times the presence matrix scale), or
+ * 'unsupported' when the classifier finds a rotation, skew or 3D component.
+ * Called at most once per node, only on a failing chain.
  */
-export type InnerScaleReader = (
-    index: number
-) => { readonly sx: number; readonly sy: number } | 'unsupported'
+export type InnerScaleReader = (index: number) => AxisScale | 'unsupported'
 
 /**
  * Reads node `index`'s true CSS width and height (`getComputedStyle`), called
@@ -63,22 +61,22 @@ export type ExactSizeReader = (index: number) => {
 export interface SupportResult {
     /** false: the node fails, or sits under a node that failed (its subtree snaps). */
     readonly supported: readonly boolean[]
-    /** The propagated interval I per node; null where unsupported. */
-    readonly intervals: readonly (ScaleInterval | null)[]
-    /** Indices passed to the reader, in call order. */
+    /** The expected total scale `E` per node, with every scale read; null where unsupported. */
+    readonly scales: readonly (AxisScale | null)[]
+    /** Indices passed to the inner-scale reader, in call order. */
     readonly reads: readonly number[]
 }
 
-const ROUNDING_SLACK = 1e-9
-const WIDE_RELATIVE_LIMIT = 0.005
+/** Some engines compute rects in single precision (§4.2). */
+const ROUNDING_SLACK = 1e-6
 const SCALE_TOLERANCE = 1e-12
-const UNCHANGED_DELTA_PX = 0.01
+const UNCHANGED_PX = 0.01
 
-const TOP_INTERVAL: ScaleInterval = {
-    x: { lo: 1, hi: 1 },
-    y: { lo: 1, hi: 1 },
+function validPositive(n: number): boolean {
+    return Number.isFinite(n) && n > 0
 }
 
+/** The measured interval `M` of one axis (§4.2). */
 function measuredAxis(r: number, o: number, exact: number): AxisInterval {
     if (!(o > 1)) {
         if (!validPositive(exact)) {
@@ -96,143 +94,109 @@ function measuredAxis(r: number, o: number, exact: number): AxisInterval {
     }
 }
 
-function expectedAxis(
-    parent: AxisInterval,
-    p: number,
-    q: number
-): AxisInterval {
-    return { lo: parent.lo * p * q, hi: parent.hi * p * q }
-}
-
-function intersectAxis(a: AxisInterval, b: AxisInterval): AxisInterval | null {
-    const lo = Math.max(a.lo, b.lo)
-    const hi = Math.min(a.hi, b.hi)
-    return lo <= hi ? { lo, hi } : null
-}
-
-function isWideAxis(axis: AxisInterval): boolean {
-    if (!Number.isFinite(axis.lo) || !Number.isFinite(axis.hi)) return true
-    const sum = axis.hi + axis.lo
-    if (sum <= 0) return false
-    return (axis.hi - axis.lo) / sum > WIDE_RELATIVE_LIMIT
-}
-
-function validPositive(n: number): boolean {
-    return Number.isFinite(n) && n > 0
+function within(e: number, m: AxisInterval): boolean {
+    return e >= m.lo && e <= m.hi
 }
 
 /**
- * §4.2, §9.1: Top-down interval support check per participant and axis.
- * Propagates a scale interval containing the true total scale without false
- * positives from integer `offsetWidth`/`offsetHeight` rounding, reading the
- * inner scale at most once per node on mismatch or when a parent interval
- * exceeds ±0.5% relative width.
+ * §4.2, §9.1: the support check per participant and axis, top-down. Each
+ * node's measured interval `M` is compared with the exact model of its total
+ * scale, `E = E_π · p · q`, never with a scale derived from a measurement. An
+ * inner scale `q` is assumed 1 until read; when `E ∉ M`, the node and every
+ * participant ancestor whose `q` is still assumed are read top-down, the
+ * classifier runs on each read (a rotation, skew or 3D component snaps that
+ * node with its subtree), `E` is recomputed with the scales read, and the
+ * node fails only when `E ∉ M` still. A read ancestor whose own model then
+ * leaves its own `M` fails too, with its subtree.
  */
 export function supportCheck(
     nodes: readonly SupportNode[],
     readInner: InnerScaleReader,
     readExactSize: ExactSizeReader
 ): SupportResult {
-    const supported: boolean[] = []
-    const intervals: (ScaleInterval | null)[] = []
+    const n = nodes.length
+    const failed: boolean[] = new Array(n).fill(false)
+    const known: (AxisScale | null)[] = new Array(n).fill(null)
+    const expected: { x: number; y: number }[] = []
+    const measured: { x: AxisInterval; y: AxisInterval }[] = []
     const reads: number[] = []
 
-    for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i]!
-        const parentIdx = node.parent
-        if (parentIdx >= 0 && !supported[parentIdx]) {
-            supported.push(false)
-            intervals.push(null)
-            continue
+    const inherited = (i: number): boolean => {
+        for (let k = nodes[i]!.parent; k >= 0; k = nodes[k]!.parent) {
+            if (failed[k]) return true
         }
-        const parentInterval =
-            parentIdx >= 0 ? intervals[parentIdx]! : TOP_INTERVAL
-        const px = node.pose.sx
-        const py = node.pose.sy
+        return false
+    }
+    /** E of node `i` from its parent's E and its own p and q (1 when assumed). */
+    const model = (i: number): { x: number; y: number } => {
+        const node = nodes[i]!
+        const parent = node.parent >= 0 ? expected[node.parent]! : null
+        const q = known[i]
+        return {
+            x: (parent ? parent.x : 1) * node.pose.sx * (q ? q.sx : 1),
+            y: (parent ? parent.y : 1) * node.pose.sy * (q ? q.sy : 1),
+        }
+    }
+    const passes = (i: number): boolean =>
+        within(expected[i]!.x, measured[i]!.x) &&
+        within(expected[i]!.y, measured[i]!.y)
+
+    for (let i = 0; i < n; i++) {
+        const node = nodes[i]!
+        const ox = node.offset[0]
+        const oy = node.offset[1]
         if (
-            !validPositive(px) ||
-            !validPositive(py) ||
+            !validPositive(node.pose.sx) ||
+            !validPositive(node.pose.sy) ||
             !(node.rect.w >= 0) ||
             !(node.rect.h >= 0)
         ) {
-            supported.push(false)
-            intervals.push(null)
-            continue
+            failed[i] = true
         }
+        const exact =
+            !failed[i] && (!(ox > 1) || !(oy > 1))
+                ? readExactSize(i)
+                : { w: 0, h: 0 }
+        measured.push({
+            x: measuredAxis(node.rect.w, ox, exact.w),
+            y: measuredAxis(node.rect.h, oy, exact.h),
+        })
+        expected.push(model(i))
+        if (failed[i] || inherited(i) || passes(i)) continue
 
-        const ox = node.offset[0]
-        const oy = node.offset[1]
-        const exact = !(ox > 1) || !(oy > 1) ? readExactSize(i) : { w: 0, h: 0 }
-        const mx = measuredAxis(node.rect.w, ox, exact.w)
-        const my = measuredAxis(node.rect.h, oy, exact.h)
-
-        let ex = expectedAxis(parentInterval.x, px, 1)
-        let ey = expectedAxis(parentInterval.y, py, 1)
-        let ix = intersectAxis(mx, ex)
-        let iy = intersectAxis(my, ey)
-        let wasRead = false
-
-        if (ix === null || iy === null) {
-            reads.push(i)
-            wasRead = true
-            const inner = readInner(i)
+        // verification: this node and its ancestors with an assumed q
+        const chain: number[] = []
+        for (let k = i; k >= 0; k = nodes[k]!.parent) {
+            if (known[k] === null) chain.unshift(k)
+        }
+        for (const k of chain) {
+            reads.push(k)
+            const inner = readInner(k)
             if (
                 inner === 'unsupported' ||
                 !validPositive(inner.sx) ||
                 !validPositive(inner.sy)
             ) {
-                supported.push(false)
-                intervals.push(null)
-                continue
+                failed[k] = true
+                break
             }
-            ex = expectedAxis(parentInterval.x, px, inner.sx)
-            ey = expectedAxis(parentInterval.y, py, inner.sy)
-            ix = intersectAxis(mx, ex)
-            iy = intersectAxis(my, ey)
-            if (ix === null || iy === null) {
-                supported.push(false)
-                intervals.push(null)
-                continue
-            }
+            known[k] = inner
         }
-
-        let propX = wasRead ? ix : mx
-        let propY = wasRead ? iy : my
-
-        if (
-            !wasRead &&
-            node.hasChildren &&
-            (isWideAxis(propX) || isWideAxis(propY))
-        ) {
-            reads.push(i)
-            const inner = readInner(i)
-            if (
-                inner === 'unsupported' ||
-                !validPositive(inner.sx) ||
-                !validPositive(inner.sy)
-            ) {
-                supported.push(false)
-                intervals.push(null)
-                continue
-            }
-            ex = expectedAxis(parentInterval.x, px, inner.sx)
-            ey = expectedAxis(parentInterval.y, py, inner.sy)
-            ix = intersectAxis(mx, ex)
-            iy = intersectAxis(my, ey)
-            if (ix === null || iy === null) {
-                supported.push(false)
-                intervals.push(null)
-                continue
-            }
-            propX = ix
-            propY = iy
+        // every model below a read scale is recomputed, parents first
+        for (let k = 0; k <= i; k++) expected[k] = model(k)
+        for (const k of chain) {
+            if (!failed[k] && !inherited(k) && !passes(k)) failed[k] = true
         }
-
-        supported.push(true)
-        intervals.push({ x: propX, y: propY })
     }
 
-    return { supported, intervals, reads }
+    const supported: boolean[] = []
+    const scales: (AxisScale | null)[] = []
+    for (let i = 0; i < n; i++) {
+        const ok = !failed[i] && !inherited(i)
+        supported.push(ok)
+        scales.push(ok ? { sx: expected[i]!.x, sy: expected[i]!.y } : null)
+    }
+    return { supported, scales, reads }
 }
 
 /** One participant at capture, parents before children (§4.2 presented layout box). */
@@ -288,15 +252,33 @@ export function presentedLayoutBoxes(nodes: readonly PresentedNode[]): Box[] {
 
 export type KeepPath = 'unchanged' | 'translate' | 'retarget'
 
+/** The scales of one participant ancestor of a kept track (§5.7 path 2). */
+export interface KeepAncestor {
+    /** Its pose scale at `t_k`. */
+    readonly pose: AxisScale
+    /** Its inner-map scale now. */
+    readonly innerNow: AxisScale
+    /** Its inner-map scale when the track was planned. */
+    readonly innerPlanned: AxisScale
+}
+
+/** Per edge of a box: both origins and both sizes. */
+export interface Edges {
+    readonly x: number
+    readonly y: number
+    readonly w: number
+    readonly h: number
+}
+
 export interface KeepPathInput {
-    /** δ = A_new − A_old of the node's origin channels, px. */
-    readonly delta: { readonly x: number; readonly y: number }
-    /** For every participant ancestor (any order): its pose scale at t_k, its inner-map scale now, and the one the track was planned with. */
-    readonly ancestors: readonly {
-        readonly pose: { readonly sx: number; readonly sy: number }
-        readonly innerNow: { readonly sx: number; readonly sy: number }
-        readonly innerPlanned: { readonly sx: number; readonly sy: number }
-    }[]
+    /**
+     * The measured jump `J = D − B` on every edge: `D` the node's raw rect
+     * read at the flush before any write, under its pose as last written;
+     * `B` the fresh capture's rect.
+     */
+    readonly jump: Edges
+    /** Every participant ancestor, any order. */
+    readonly ancestors: readonly KeepAncestor[]
 }
 
 function unitScale(s: number): boolean {
@@ -311,33 +293,85 @@ function sameRelativeScale(a: number, b: number): boolean {
 }
 
 /**
- * §5.7: The re-expression path of a kept track ('unchanged', 'translate', or
- * 'retarget' when an ancestor has a live pose scale or changed inner scale).
+ * §5.7 path 2's condition: translating a kept track by `δ` is exact when, at
+ * `t_k`, every participant ancestor's pose has scale 1 and its inner-map
+ * scale is the one the track was planned with.
+ */
+export function translationExact(ancestors: readonly KeepAncestor[]): boolean {
+    return ancestors.every(
+        (anc) =>
+            unitScale(anc.pose.sx) &&
+            unitScale(anc.pose.sy) &&
+            sameRelativeScale(anc.innerNow.sx, anc.innerPlanned.sx) &&
+            sameRelativeScale(anc.innerNow.sy, anc.innerPlanned.sy)
+    )
+}
+
+/**
+ * §5.7: the re-expression path of a kept track, judged by what the user
+ * sees: 'unchanged' when the measured jump is below 0.01 px on every edge,
+ * 'translate' when the translation is exact, else 'retarget'.
  */
 export function keepPath(input: KeepPathInput): KeepPath {
-    let rhoX = 1
-    let rhoY = 1
-    for (const anc of input.ancestors) {
-        rhoX *= (anc.pose.sx * anc.innerNow.sx) / anc.innerPlanned.sx
-        rhoY *= (anc.pose.sy * anc.innerNow.sy) / anc.innerPlanned.sy
-    }
-    const dx = Math.abs(input.delta.x) * Math.max(1, rhoX)
-    const dy = Math.abs(input.delta.y) * Math.max(1, rhoY)
-    if (dx < UNCHANGED_DELTA_PX && dy < UNCHANGED_DELTA_PX) {
+    const { jump } = input
+    if (
+        Math.abs(jump.x) < UNCHANGED_PX &&
+        Math.abs(jump.y) < UNCHANGED_PX &&
+        Math.abs(jump.w) < UNCHANGED_PX &&
+        Math.abs(jump.h) < UNCHANGED_PX
+    ) {
         return 'unchanged'
     }
-    for (const anc of input.ancestors) {
-        if (!unitScale(anc.pose.sx) || !unitScale(anc.pose.sy)) {
-            return 'retarget'
-        }
-        if (
-            !sameRelativeScale(anc.innerNow.sx, anc.innerPlanned.sx) ||
-            !sameRelativeScale(anc.innerNow.sy, anc.innerPlanned.sy)
-        ) {
-            return 'retarget'
-        }
-    }
-    return 'translate'
+    return translationExact(input.ancestors) ? 'translate' : 'retarget'
+}
+
+/** The inputs of the screen displacement bound `β` of a driven node (§4.4). */
+export interface ScreenBoundInput {
+    /**
+     * `d`: the change of the node's layout box in its parent participant's
+     * local frame (CSS px) between the previous flush and this one.
+     */
+    readonly change: Edges
+    /** Its own pose scale `s` per axis, held. */
+    readonly pose: AxisScale
+    /** Its transform-origin fraction `f` per axis. */
+    readonly origin: { readonly fx: number; readonly fy: number }
+    /**
+     * The parent participant's raw rect size `R` at this flush, and its layout
+     * sizes `w`, `h` (the rounded sizes less one, or the exact sizes on a
+     * degenerate axis); null at the top level.
+     */
+    readonly parent: {
+        readonly rect: { readonly w: number; readonly h: number }
+        readonly size: { readonly w: number; readonly h: number }
+    } | null
+}
+
+/**
+ * §4.4: `β`, a bound on the screen displacement of every edge of a driven
+ * node's drawn box that holds for any affine map above it, supported or not.
+ * An edge moves in the parent's frame by at most
+ * `e = |Δx| + (1 + 2·s)·max(1, |f|)·|Δw|` per axis; a linear map taking a
+ * `w × h` box to a bounding box `R` has row sums at most `R_axis / min(w, h)`.
+ */
+export function screenBound(input: ScreenBoundInput): number {
+    const { change, pose, origin, parent } = input
+    const ex =
+        Math.abs(change.x) +
+        (1 + 2 * Math.abs(pose.sx)) *
+            Math.max(1, Math.abs(origin.fx)) *
+            Math.abs(change.w)
+    const ey =
+        Math.abs(change.y) +
+        (1 + 2 * Math.abs(pose.sy)) *
+            Math.max(1, Math.abs(origin.fy)) *
+            Math.abs(change.h)
+    const e = Math.max(ex, ey)
+    if (!parent) return e
+    const side = Math.min(parent.size.w, parent.size.h)
+    if (!validPositive(side)) return Number.POSITIVE_INFINITY
+    const row = Math.max(parent.rect.w, parent.rect.h) / side
+    return row * e
 }
 
 export interface StaleNode {
@@ -346,11 +380,9 @@ export interface StaleNode {
     readonly a: Box
     /** Undriven: the aged capture's box, else A at its previous flush, else null (never known). */
     readonly lastKnown: Box | null
-    /** Driven: δ = A_new − A_old of its origin channels. */
-    readonly delta: { readonly x: number; readonly y: number }
-    /** Driven: ancestor scale amplification factor on each axis (1, 1 when none). */
-    readonly rho: { readonly x: number; readonly y: number }
-    /** Driven: whether keepPath(...) would be 'unchanged' or 'translate' (translation exact). */
+    /** Driven: the screen displacement bound `β` (`screenBound`), Infinity when it has no inputs. */
+    readonly bound: number
+    /** Driven: whether path 2's condition holds (`translationExact`). */
     readonly translationExact: boolean
 }
 
@@ -368,11 +400,8 @@ export function staleReported(
             difference(node.lastKnown, node.a) >= threshold
         )
     }
-    const dx = Math.abs(node.delta.x) * Math.max(1, node.rho.x)
-    const dy = Math.abs(node.delta.y) * Math.max(1, node.rho.y)
-    const maxDelta = Math.max(dx, dy)
     return (
-        maxDelta >= threshold ||
-        (maxDelta >= UNCHANGED_DELTA_PX && !node.translationExact)
+        !(node.bound < threshold) ||
+        (node.bound >= UNCHANGED_PX && !node.translationExact)
     )
 }
