@@ -168,7 +168,7 @@ export interface Layer {
 export interface Solved {
     readonly drawn: Box
     readonly pose: Pose
-    /** Full page map of this node: parent's map ∘ pose ∘ inner map. */
+    /** Full view-space map of this node: parent's map ∘ pose ∘ inner map. */
     readonly map: Map2
     readonly opacity: number | null
     readonly radius: readonly number[] | null

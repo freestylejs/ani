@@ -72,6 +72,23 @@ export interface LayoutReport {
     }[]
 }
 
+/** Every read the engine made, by kind, and what runs now (§7.1). */
+export interface LayoutStats {
+    readonly captures: number
+    /** `rects + offsets + styles`. */
+    readonly reads: number
+    /** `getBoundingClientRect()` calls. */
+    readonly rects: number
+    /** `offsetWidth`/`offsetHeight` pairs. */
+    readonly offsets: number
+    /** Computed-style reads. */
+    readonly styles: number
+    /** Running tracks. */
+    readonly tracks: number
+    /** Live holds. */
+    readonly holds: number
+}
+
 export interface LayoutGroup {
     /** Registers a participant. Returns an idempotent remove that restores its owned styles. */
     add(element: HTMLElement, options?: LayoutOptions): () => void
@@ -87,11 +104,7 @@ export interface LayoutGroup {
     finish(): void
     /** Cancels every track, restores every owned style, releases presence holds. */
     dispose(): void
-    readonly stats: {
-        readonly captures: number
-        readonly reads: number
-        readonly tracks: number
-    }
+    readonly stats: LayoutStats
 }
 
 /* ─────────────────────── Presence state ─────────────────────── */

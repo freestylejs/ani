@@ -83,7 +83,15 @@ vi.mock('@freestylejs/ani-layout', async (original) => {
                     fake.calls.push('dispose')
                     fake.disposed = true
                 },
-                stats: { captures: 0, reads: 0, tracks: 0 },
+                stats: {
+                    captures: 0,
+                    reads: 0,
+                    rects: 0,
+                    offsets: 0,
+                    styles: 0,
+                    tracks: 0,
+                    holds: 0,
+                },
             }
             return group
         },

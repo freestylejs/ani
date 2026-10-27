@@ -3,7 +3,7 @@
 import { isAniError, timing } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../core/src/testing/index'
-import { containsFlat, flatParent, scrollOffsets } from '../dom'
+import { containsFlat, flatParent } from '../dom'
 import type { Box } from '../geometry'
 import { validateLayoutOptions } from '../motion'
 import { exitingPresence, linkPresence } from '../presence_link'
@@ -219,7 +219,7 @@ describe('I-1: flat-tree ancestry (§4.6)', () => {
         }
     })
 
-    it('scrollOffsets in dom.ts walks across open/closed ShadowRoots and slots and detects stale scroll', async () => {
+    it('a scroll inside open/closed ShadowRoots and slots between capture and flush is part of the change, never stale (§3.2, §4.4)', async () => {
         for (const mode of ['open', 'closed'] as const) {
             const scroller = document.createElement('div')
             scroller.scrollLeft = 12
@@ -245,11 +245,6 @@ describe('I-1: flat-tree ancestry (§4.6)', () => {
                 shadowScroller.append(leaf)
             }
 
-            const offsets = scrollOffsets([leaf])
-            expect(offsets.get(shadowScroller)).toEqual([5, 15])
-            expect(offsets.get(scroller)).toEqual([12, 34])
-
-            // Also verify capture -> scroll -> flush reports 'stale' across the shadow/slot boundary
             const clock = createManualClock()
             const group = createLayoutGroup({
                 clock: clock.clock,
@@ -257,14 +252,19 @@ describe('I-1: flat-tree ancestry (§4.6)', () => {
             })
             place(leaf, { x: 0, y: 0, w: 80, h: 40 })
             group.add(leaf, { layout: true })
+            group.capture()
             await group.flush()
 
+            // an unpresented scroll in the commit's own task: the leaf starts
+            // where it was seen, in view space (D3)
             group.capture()
             shadowScroller.scrollTop = 90
             place(leaf, { x: 0, y: 40, w: 80, h: 40 })
-            const report = await group.flush()
-            expect(report.status).toBe('stale')
-            expect(report.snapped).toEqual([{ element: leaf, reason: 'stale' }])
+            const run = group.flush()
+            expect(group.stats.tracks).toBe(1)
+            expect(leaf.style.translate).toBe('0px -40px')
+            group.finish()
+            expect(await run).toEqual({ status: 'ended', snapped: [] })
             group.dispose()
         }
     })
@@ -394,6 +394,9 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
 
         group.add(el1, { layout: true })
         group.add(el2, { layout: true })
+        // the baseline flush is measured: a capture-less one reports both
+        // newly registered nodes 'stale' (§4.4)
+        group.capture()
         await group.flush()
 
         // Start a track on el1
@@ -465,6 +468,8 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
 
         place(el, { x: 0, y: 0, w: 100, h: 40 })
         group.add(el, { layout: true })
+        // a measured baseline (a capture-less one reports the new node, §4.4)
+        group.capture()
         await group.flush()
 
         group.capture()
@@ -519,19 +524,23 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         document.body.append(a)
         place(a, { x: 10, y: 10, w: 100, h: 40 })
         const removeA = mainGroup.add(a, { layoutId: 'hero' })
+        mainGroup.capture()
         await mainGroup.flush()
 
-        // Cross-scope in another document with same layoutId does not hand off from `a`
+        // Cross-scope in another document with same layoutId does not hand off
+        // from `a`; every flush below is measured, so a handoff could fly
         const b = otherDoc.createElement('div')
         otherDoc.body.append(b)
         place(b, { x: 200, y: 100, w: 100, h: 40 })
         otherGroup.add(b, { layoutId: 'hero' })
+        otherGroup.capture()
         const otherReport = await otherGroup.flush()
         expect(otherReport.status).toBe('no-change')
         expect(otherGroup.stats.tracks).toBe(0)
 
         // Adopting `a` into otherDoc and removing/evicting it must not leave a retained
         // box in `mainGroup` for a subsequent `layoutId: 'hero'` participant in `document`
+        mainGroup.capture()
         otherDoc.adoptNode(a)
         removeA()
 

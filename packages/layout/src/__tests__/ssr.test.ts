@@ -17,7 +17,15 @@ describe('layout package without DOM', () => {
             status: 'no-change',
             snapped: [],
         })
-        expect(group.stats).toEqual({ captures: 0, reads: 0, tracks: 0 })
+        expect(group.stats).toEqual({
+            captures: 0,
+            reads: 0,
+            rects: 0,
+            offsets: 0,
+            styles: 0,
+            tracks: 0,
+            holds: 0,
+        })
         group.dispose()
         await expect(group.flush()).resolves.toMatchObject({
             status: 'disposed',
