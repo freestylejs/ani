@@ -2,7 +2,8 @@ import { timing } from '@freestylejs/ani-core'
 import { describe, expect, it, vi } from 'vitest'
 import * as geometry from '../geometry'
 import { resolveMotion } from '../motion'
-import { createTrack, type SolveNode, solve } from '../solve'
+import { type SolveNode, solve } from '../solve'
+import { trackOf as createTrack } from './nodes'
 
 // counts every map composition the solver makes
 const count = vi.hoisted(() => ({ compose: 0 }))

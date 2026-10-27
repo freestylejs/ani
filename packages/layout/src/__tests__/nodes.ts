@@ -1,5 +1,12 @@
 import { type Box, IDENTITY_MAP } from '../geometry'
-import type { SolveNode } from '../solve'
+import { createTrack, type SolveNode, type Track } from '../solve'
+
+/** `createTrack` for a plan that must produce a track (no refusal). */
+export function trackOf(...args: Parameters<typeof createTrack>): Track {
+    const track = createTrack(...args)
+    if (typeof track === 'string') throw new Error(`no track: ${track}`)
+    return track
+}
 
 /**
  * A top-level solver node with no inner map: its local frame is the page and

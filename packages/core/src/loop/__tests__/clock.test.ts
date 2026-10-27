@@ -691,3 +691,40 @@ describe('createClock', () => {
         )
     })
 })
+
+describe('clock.inFrame', () => {
+    it('is true in every phase of a frame and false outside, also after a throw', () => {
+        const driver = createFrameDriver()
+        const errors: unknown[] = []
+        const clock = createClock({
+            requestFrame: driver.requestFrame,
+            cancelFrame: driver.cancelFrame,
+            now: driver.now,
+            onError: (error) => errors.push(error),
+        })
+        const seen: boolean[] = []
+        expect(clock.inFrame).toBe(false)
+        clock.read(() => seen.push(clock.inFrame))
+        const animatable: Animatable = {
+            read: () => seen.push(clock.inFrame),
+            update: () => seen.push(clock.inFrame),
+            commit: () => seen.push(clock.inFrame),
+        }
+        clock.subscribe(animatable)
+        driver.frame()
+        driver.frame()
+        expect(seen.length).toBeGreaterThanOrEqual(4)
+        expect(seen.every(Boolean)).toBe(true)
+        expect(clock.inFrame).toBe(false)
+        clock.unsubscribe(animatable)
+        clock.subscribe({
+            update: () => {
+                throw new Error('boom')
+            },
+        })
+        driver.frame()
+        expect(errors).toHaveLength(1)
+        expect(clock.inFrame).toBe(false)
+        clock.dispose()
+    })
+})

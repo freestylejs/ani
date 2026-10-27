@@ -2,6 +2,8 @@
  * Per frame: tracks → drawn boxes → poses (and crossfade opacities, corner
  * radii), top-down. Pure: no DOM, no clock.
  */
+
+import { physics, type Spring } from '@freestylejs/ani-core'
 import {
     type Box,
     carry,
@@ -25,8 +27,9 @@ export type Channels = readonly [number, number, number, number]
 
 /**
  * `layoutAnchor`: an offset from the parent's anchor point, moving
- * `from → to` on the node's own timeline like a channel, with the momentum
- * term `k` carrying the incoming relative velocity of a moving node.
+ * `from → to` on the node's own timeline like a channel. `seedX`/`seedY` are
+ * the law's velocity term (§5.6): the momentum `k` of a timing track, the
+ * incoming relative velocity `v₀` of a spring track.
  */
 export interface AnchorRule {
     readonly u: number
@@ -35,36 +38,82 @@ export interface AnchorRule {
     readonly fromY: number
     readonly toX: number
     readonly toY: number
-    readonly kx: number
-    readonly ky: number
+    readonly seedX: number
+    readonly seedY: number
 }
+
+/** An anchor offset path before its law is known: the incoming relative velocity, or `null` at rest. */
+export interface AnchorPath {
+    readonly u: number
+    readonly v: number
+    readonly fromX: number
+    readonly fromY: number
+    readonly toX: number
+    readonly toY: number
+    readonly velocity: { readonly x: number; readonly y: number } | null
+}
+
+/**
+ * How a track moves from B to A: a timing curve over `duration`, or a
+ * physical spring of perceptual `duration` that ends at `settle` (§5.2,
+ * §5.3).
+ */
+export type TrackLaw =
+    | {
+          readonly kind: 'timing'
+          readonly duration: number
+          readonly curve: Curve
+      }
+    | {
+          readonly kind: 'spring'
+          /** Perceptual duration: where crossfade, radius and presence release end. */
+          readonly duration: number
+          readonly spring: Spring
+          /** Seconds after the delay at which every channel is settled. */
+          readonly settle: number
+      }
 
 export interface Track {
     readonly b: Channels
     readonly a: Channels
-    readonly k: Channels
+    /**
+     * Per channel, the law's velocity term: the momentum `k` of a timing
+     * track (`c′(0) = v` through `k = v·D + (B − A)·e′(0)`), the incoming
+     * velocity `v₀` of a spring track.
+     */
+    readonly seed: Channels
     /** Origin point as a fraction of the box. */
     readonly fx: number
     readonly fy: number
     readonly delay: number
-    readonly duration: number
-    readonly curve: Curve
+    readonly law: TrackLaw
     readonly anchor: AnchorRule | null
     /**
      * Planned for a node moving at the flush (with its velocity): its time
-     * continues from the last painted frame (§4.3).
+     * continues from the last painted frame (§4.5).
      */
     readonly moving: boolean
 }
 
-/** A crossfade timeline, started with the lead's motion at the handoff. */
+/** A law that is over at once: a fade without a lead track ends immediately. */
+export const INSTANT_LAW: TrackLaw = {
+    kind: 'timing',
+    duration: 0,
+    curve: {
+        value: (tau) => Math.min(1, Math.max(0, tau)),
+        slope: () => 1,
+        slope0: 1,
+    },
+}
+
+/** A crossfade timeline, started with the lead's law at the handoff. */
 export interface Fade {
     readonly role: 'lead' | 'follower'
     /** This layer's opacity at the start: lead 0/follower 1 for a new handoff, current opacity on reversal. */
     readonly from: number
     readonly elapsed: number
-    readonly duration: number
-    readonly curve: Curve
+    /** The lead track's law: its progress drives the opacities (§5.8). */
+    readonly law: TrackLaw
 }
 
 export interface RadiusBlend {
@@ -72,7 +121,7 @@ export interface RadiusBlend {
     readonly from: readonly number[]
     /** New lead's authored on-screen radii at A. */
     readonly to: readonly number[]
-    /** The lead track whose eased progress drives the blend. */
+    /** The lead track whose progress drives the blend. */
     readonly track: Track
     readonly elapsed: number
 }
@@ -134,12 +183,20 @@ export function channelsOf(box: Box, fx: number, fy: number): Channels {
     return [box.x + fx * box.w, box.y + fy * box.h, box.w, box.h]
 }
 
+/** A spring track longer than this snaps `'unsupported'` (§5.3). */
+export const SPRING_SETTLE_CAP = 10
+/** Reduced motion `{ maxDuration }`: the factors tried for a spring (§9.4). */
+const REDUCED_GRID = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1] as const
+
+/** Why no track could be planned: reduced motion found no fit, or a spring is too long. */
+export type TrackRefusal = 'reduced' | 'spring-timeout'
+
 /**
  * A track from visual box `b` to visual box `a`, interpolating the point at
  * fractions `(fx, fy)` of the box (its transform origin) and the size. A node
- * at rest (`velocity === null`) follows the timing curve exactly (`k = 0`); a
- * moving node carries its velocity: `k = v·D + (B − A)·e′(0)` gives
- * `c′(0) = v`.
+ * at rest (`velocity === null`) starts at rest; a moving node carries its
+ * velocity exactly (`c′(0) = v`). An anchored node moves its offset from the
+ * parent's anchor point instead of its origin point (`anchor`).
  */
 export function createTrack(
     b: Box,
@@ -149,80 +206,238 @@ export function createTrack(
     fy: number,
     mode: LayoutMode,
     motion: Motion,
-    anchor: AnchorRule | null
-): Track {
+    anchor: AnchorPath | null
+): Track | TrackRefusal {
     const from = channelsOf(b, fx, fy)
     const to = channelsOf(a, fx, fy)
     const v = velocity && channelsOf(velocity, fx, fy)
     const pinOrigin = mode === 'size' || anchor !== null
     const pinSize = mode === 'position'
-    const bc: number[] = []
-    const kc: number[] = []
+    const start: number[] = []
+    const incoming: number[] = []
+    const free: boolean[] = []
     for (let i = 0; i < 4; i++) {
         const pinned = i < 2 ? pinOrigin : pinSize
-        const start = pinned ? to[i]! : from[i]!
-        bc.push(start)
-        kc.push(
-            pinned || !v
-                ? 0
-                : v[i]! * motion.duration +
-                      (start - to[i]!) * motion.curve.slope0
-        )
+        free.push(!pinned)
+        start.push(pinned ? to[i]! : from[i]!)
+        incoming.push(pinned || !v ? 0 : v[i]!)
     }
-    return {
-        b: bc as unknown as Channels,
+    const bc = start as unknown as Channels
+    if (motion.kind === 'timing') {
+        // k = v·D + (B − A)·e′(0) for a moving node; zero for a pinned channel
+        // or a node at rest, whose path is exactly the curve
+        const k = (x: number, target: number, w: number) =>
+            w * motion.duration + (x - target) * motion.curve.slope0
+        const seed = start.map((x, i) =>
+            v && free[i] ? k(x, to[i]!, incoming[i]!) : 0
+        ) as unknown as Channels
+        return {
+            b: bc,
+            a: to,
+            seed,
+            fx,
+            fy,
+            delay: motion.delay,
+            law: {
+                kind: 'timing',
+                duration: motion.duration,
+                curve: motion.curve,
+            },
+            anchor: anchor && {
+                u: anchor.u,
+                v: anchor.v,
+                fromX: anchor.fromX,
+                fromY: anchor.fromY,
+                toX: anchor.toX,
+                toY: anchor.toY,
+                seedX: anchor.velocity
+                    ? k(anchor.fromX, anchor.toX, anchor.velocity.x)
+                    : 0,
+                seedY: anchor.velocity
+                    ? k(anchor.fromY, anchor.toY, anchor.velocity.y)
+                    : 0,
+            },
+            moving: velocity !== null,
+        }
+    }
+    // the spring: displacements and incoming velocities of every channel
+    // (the anchor offset replaces the origin channels)
+    const x0 = start.map((x, i) => x - to[i]!)
+    const ax0 = anchor
+        ? [anchor.fromX - anchor.toX, anchor.fromY - anchor.toY]
+        : []
+    const av0 = anchor?.velocity
+        ? [anchor.velocity.x, anchor.velocity.y]
+        : [0, 0]
+    const settleOf = (s: Spring, carry: boolean): number => {
+        let t = 0
+        for (let i = 0; i < 4; i++) {
+            t = Math.max(t, s.settleTime(x0[i]!, carry ? incoming[i]! : 0))
+        }
+        for (let i = 0; i < ax0.length; i++) {
+            t = Math.max(t, s.settleTime(ax0[i]!, carry ? av0[i]! : 0))
+        }
+        return t
+    }
+    const build = (
+        duration: number,
+        delay: number,
+        carry: boolean,
+        settle: number,
+        s: Spring
+    ): Track => ({
+        b: bc,
         a: to,
-        k: kc as unknown as Channels,
+        seed: (carry ? incoming : [0, 0, 0, 0]) as unknown as Channels,
         fx,
         fy,
-        delay: motion.delay,
-        duration: motion.duration,
-        curve: motion.curve,
-        anchor,
+        delay,
+        law: { kind: 'spring', duration, spring: s, settle },
+        anchor: anchor && {
+            u: anchor.u,
+            v: anchor.v,
+            fromX: anchor.fromX,
+            fromY: anchor.fromY,
+            toX: anchor.toX,
+            toY: anchor.toY,
+            seedX: carry ? av0[0]! : 0,
+            seedY: carry ? av0[1]! : 0,
+        },
+        // `moving` keeps its meaning (time continues from the last painted
+        // frame) even when reduced motion drops the carried velocity
         moving: velocity !== null,
+    })
+    const max = motion.maxDuration
+    if (max === null) {
+        const s = physics.spring({
+            duration: motion.duration,
+            bounce: motion.bounce,
+        })
+        const settle = settleOf(s, true)
+        if (!(settle <= SPRING_SETTLE_CAP)) return 'spring-timeout'
+        return build(motion.duration, motion.delay, true, settle, s)
     }
+    // reduced motion: no overshoot, then the largest grid factor that fits,
+    // first carrying the velocity, then from rest; otherwise a jump
+    const bounce = Math.min(motion.bounce, 0)
+    for (const carry of [true, false]) {
+        for (const f of REDUCED_GRID) {
+            const duration = motion.duration * f
+            const s = physics.spring({ duration, bounce })
+            const settle = settleOf(s, carry)
+            if (motion.delay * f + settle <= max) {
+                return build(duration, motion.delay * f, carry, settle, s)
+            }
+        }
+    }
+    return 'reduced'
 }
 
-function progress(track: Track, elapsed: number): number {
-    const t = elapsed - track.delay
-    if (t <= 0) return 0
-    if (track.duration <= 0) return 1
-    return Math.min(1, t / track.duration)
+/** Seconds of the track's own time (after its delay) at `elapsed`. */
+function localTime(track: Track, elapsed: number): number {
+    return elapsed - track.delay
 }
 
-/** The clamped eased progress used by shared fades and radius handoffs. */
-export function trackEasedProgress(track: Track, elapsed: number): number {
-    return Math.min(1, Math.max(0, track.curve.value(progress(track, elapsed))))
+/** Track-local seconds at which the track reaches A. */
+function lawEnd(law: TrackLaw): number {
+    return law.kind === 'timing' ? law.duration : law.settle
+}
+
+/** `elapsed` at which the track reaches A (its delay included). */
+export function trackEndTime(track: Track): number {
+    return track.delay + lawEnd(track.law)
 }
 
 /** Whether the track has reached A. */
 export function trackEnded(track: Track, elapsed: number): boolean {
-    return progress(track, elapsed) >= 1
+    const t = localTime(track, elapsed)
+    return t > 0 && t >= lawEnd(track.law)
 }
 
-function channelAt(track: Track, i: number, tau: number): number {
+/**
+ * Progress 0–1 of a law at track-local time `t`: the clamped eased progress
+ * of a timing curve, the perceptual timeline of a spring (§5.3). It drives
+ * crossfade opacities, the radius blend and presence's release.
+ */
+export function lawProgress(law: TrackLaw, t: number): number {
+    if (law.kind === 'spring') return physics.perceptual(t, law.duration)
+    if (t <= 0) return 0
+    if (law.duration <= 0) return 1
+    return Math.min(
+        1,
+        Math.max(0, law.curve.value(Math.min(1, t / law.duration)))
+    )
+}
+
+/** The progress that drives a shared fade and radius handoff from this track. */
+export function trackProgress(track: Track, elapsed: number): number {
+    return lawProgress(track.law, localTime(track, elapsed))
+}
+
+/** Timing progress τ in [0, 1]. */
+function tauOf(law: { readonly duration: number }, t: number): number {
+    if (t <= 0) return 0
+    if (law.duration <= 0) return 1
+    return Math.min(1, t / law.duration)
+}
+
+/** One scalar path `from → to` with its seed, under the track's law, at local time `t`. */
+function pathAt(
+    track: Track,
+    from: number,
+    to: number,
+    seed: number,
+    t: number
+): number {
+    if (t <= 0) return from
+    const law = track.law
+    if (law.kind === 'timing') {
+        const tau = tauOf(law, t)
+        if (tau >= 1) return to
+        const e = law.curve.value(tau)
+        return to + (from - to) * (1 - e) + seed * tau * (1 - tau) * (1 - tau)
+    }
+    if (t >= law.settle) return to
+    return to + law.spring.at(t, from - to, seed)
+}
+
+function pathVelocity(
+    track: Track,
+    from: number,
+    to: number,
+    seed: number,
+    t: number
+): number {
+    if (t < 0) return 0
+    const law = track.law
+    if (law.kind === 'timing') {
+        if (law.duration <= 0) return 0
+        const tau = tauOf(law, t)
+        if (tau >= 1) return 0
+        const d =
+            -(from - to) * law.curve.slope(tau) +
+            seed * (1 - tau) * (1 - 3 * tau)
+        return d / law.duration
+    }
+    if (t >= law.settle) return 0
+    return law.spring.velocity(t, from - to, seed)
+}
+
+function channelAt(track: Track, i: number, t: number): number {
     const b = track.b[i]!
     const a = track.a[i]!
-    if (tau <= 0) return b
-    if (tau >= 1) return a
-    const e = track.curve.value(tau)
-    const c = a + (b - a) * (1 - e) + track.k[i]! * tau * (1 - tau) * (1 - tau)
+    const c = pathAt(track, b, a, track.seed[i]!, t)
     // size floor: one pixel, or the smaller endpoint when that is below it
     return i < 2 ? c : Math.max(c, Math.min(1, a, b))
 }
 
-function channelVelocity(track: Track, i: number, tau: number): number {
-    if (track.duration <= 0) return 0
-    const t = tau
-    if (t < 0 || t >= 1) return 0
+function channelVelocity(track: Track, i: number, t: number): number {
     const b = track.b[i]!
     const a = track.a[i]!
-    if (i >= 2 && channelAt(track, i, t) <= Math.min(1, a, b) && t > 0) {
+    if (i >= 2 && t > 0 && channelAt(track, i, t) <= Math.min(1, a, b)) {
         return 0
     }
-    const d =
-        -(b - a) * track.curve.slope(t) + track.k[i]! * (1 - t) * (1 - 3 * t)
-    return d / track.duration
+    return pathVelocity(track, b, a, track.seed[i]!, t)
 }
 
 function isHolding(track: Track, elapsed: number): boolean {
@@ -230,48 +445,23 @@ function isHolding(track: Track, elapsed: number): boolean {
 }
 
 function ownBox(track: Track, elapsed: number): Box {
-    const tau = progress(track, elapsed)
-    const w = channelAt(track, 2, tau)
-    const h = channelAt(track, 3, tau)
+    const t = localTime(track, elapsed)
+    const w = channelAt(track, 2, t)
+    const h = channelAt(track, 3, t)
     return {
-        x: channelAt(track, 0, tau) - track.fx * w,
-        y: channelAt(track, 1, tau) - track.fy * h,
+        x: channelAt(track, 0, t) - track.fx * w,
+        y: channelAt(track, 1, t) - track.fy * h,
         w,
         h,
     }
 }
 
-function offsetAt(
-    from: number,
-    to: number,
-    k: number,
-    curve: Curve,
-    tau: number
-): number {
-    if (tau <= 0) return from
-    if (tau >= 1) return to
-    return to + (from - to) * (1 - curve.value(tau)) + k * tau * (1 - tau) ** 2
-}
-
 function anchorOffset(rule: AnchorRule, track: Track, elapsed: number) {
-    const tau = progress(track, elapsed)
+    const t = localTime(track, elapsed)
     return {
-        x: offsetAt(rule.fromX, rule.toX, rule.kx, track.curve, tau),
-        y: offsetAt(rule.fromY, rule.toY, rule.ky, track.curve, tau),
+        x: pathAt(track, rule.fromX, rule.toX, rule.seedX, t),
+        y: pathAt(track, rule.fromY, rule.toY, rule.seedY, t),
     }
-}
-
-function offsetVelocity(
-    from: number,
-    to: number,
-    k: number,
-    track: Track,
-    tau: number
-): number {
-    if (track.duration <= 0 || tau < 0 || tau >= 1) return 0
-    const d =
-        -(from - to) * track.curve.slope(tau) + k * (1 - tau) * (1 - 3 * tau)
-    return d / track.duration
 }
 
 /** A node of the epoch recurrence: its parent and its layers. */
@@ -524,18 +714,18 @@ function drawnMotion(
             v = seenFrom(i, node.follow).velocity
         } else if (track) {
             const holding = isHolding(track, node.elapsed)
-            const tau = progress(track, node.elapsed)
-            const w = holding ? 0 : channelVelocity(track, 2, tau)
-            const h = holding ? 0 : channelVelocity(track, 3, tau)
+            const t = localTime(track, node.elapsed)
+            const w = holding ? 0 : channelVelocity(track, 2, t)
+            const h = holding ? 0 : channelVelocity(track, 3, t)
             const rule = track.anchor
             if (rule && node.parent >= 0) {
                 const parent = seenFrom(i, node.parent).velocity
                 const ox = holding
                     ? 0
-                    : offsetVelocity(rule.fromX, rule.toX, rule.kx, track, tau)
+                    : pathVelocity(track, rule.fromX, rule.toX, rule.seedX, t)
                 const oy = holding
                     ? 0
-                    : offsetVelocity(rule.fromY, rule.toY, rule.ky, track, tau)
+                    : pathVelocity(track, rule.fromY, rule.toY, rule.seedY, t)
                 v = {
                     x: parent.x + rule.u * parent.w - rule.u * w + ox,
                     y: parent.y + rule.v * parent.h - rule.v * h + oy,
@@ -546,8 +736,8 @@ function drawnMotion(
                 v = ZERO_VELOCITY
             } else {
                 v = {
-                    x: channelVelocity(track, 0, tau) - track.fx * w,
-                    y: channelVelocity(track, 1, tau) - track.fy * h,
+                    x: channelVelocity(track, 0, t) - track.fx * w,
+                    y: channelVelocity(track, 1, t) - track.fy * h,
                     w,
                     h,
                 }
@@ -575,13 +765,14 @@ export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
     return drawnMotion(nodes, true).velocities
 }
 
-/** §5.6 coverage-preserving opacity of one crossfade layer. */
+/** Whether a crossfade's timeline has ended (the lead's perceptual end for a spring). */
+export function fadeEnded(fade: Fade): boolean {
+    return fade.elapsed >= fade.law.duration
+}
+
+/** §5.8 coverage-preserving opacity of one crossfade layer. */
 export function fadeOpacity(fade: Fade): number {
-    if (fade.duration <= 0) return fade.role === 'lead' ? 1 : 0
-    const p = Math.min(
-        1,
-        Math.max(0, fade.curve.value(fade.elapsed / fade.duration))
-    )
+    const p = fade.law.duration <= 0 ? 1 : lawProgress(fade.law, fade.elapsed)
     if (fade.role === 'lead') {
         const x = Math.min(1, p / 0.5)
         const incoming = Math.sqrt(1 - (1 - x) ** 2)
@@ -604,7 +795,7 @@ export function solve(nodes: readonly SolveNode[]): Solved[] {
         let radius: readonly number[] | null = null
         const onScreenRadius = node.radiusBlend
             ? (() => {
-                  const p = trackEasedProgress(
+                  const p = trackProgress(
                       node.radiusBlend.track,
                       node.radiusBlend.elapsed
                   )

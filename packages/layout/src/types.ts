@@ -23,7 +23,7 @@ export type { SnapReason } from './plan'
 export interface LayoutGroupOptions {
     /** Default: `defaultClock`. Its `reducedMotion` is read at every flush. */
     readonly clock?: Clock
-    /** Defaults for every participant's `motion`, merged field by field. */
+    /** Defaults for every participant's `motion`, merged by kind (§5.1). */
     readonly motion?: LayoutMotion
     /** Default: `'jump'`. */
     readonly reducedMotion?: ReducedMotionPolicy

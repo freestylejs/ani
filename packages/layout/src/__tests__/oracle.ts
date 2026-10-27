@@ -105,6 +105,73 @@ export interface OTrackSpec {
     duration: number
     delay: number
     timing: TimingFunction
+    /**
+     * A physical spring instead of the curve (§5.3): its perceptual duration,
+     * bounce, and the local time at which the track ends (its settle).
+     */
+    spring?: { duration: number; bounce: number; end: number } | undefined
+}
+
+/**
+ * Displacement and velocity of the damped oscillator `d″ + 2ζω d′ + ω² d = 0`
+ * with `ω = 2π/D`, `ζ = 1 − b` (b ≥ 0) or `1/(1 + b)` (b < 0), in the textbook
+ * exponential forms (ARCHITECTURE §5.3).
+ */
+export function springOracle(
+    D: number,
+    b: number,
+    x0: number,
+    v0: number,
+    t: number
+): { d: number; v: number } {
+    const w = (2 * Math.PI) / D
+    const z = b >= 0 ? 1 - b : 1 / (1 + b)
+    if (z === 1) {
+        const e = Math.exp(-w * t)
+        const c = v0 + w * x0
+        return { d: (x0 + c * t) * e, v: (c - w * (x0 + c * t)) * e }
+    }
+    if (z < 1) {
+        const wd = w * Math.sqrt(1 - z * z)
+        const e = Math.exp(-z * w * t)
+        const B = (v0 + z * w * x0) / wd
+        const d = e * (x0 * Math.cos(wd * t) + B * Math.sin(wd * t))
+        const v =
+            -z * w * d +
+            e * (-x0 * wd * Math.sin(wd * t) + B * wd * Math.cos(wd * t))
+        return { d, v }
+    }
+    const q = Math.sqrt(z * z - 1)
+    const r1 = -w * (z - q)
+    const r2 = -w * (z + q)
+    const c1 = (v0 - r2 * x0) / (r1 - r2)
+    const c2 = x0 - c1
+    return {
+        d: c1 * Math.exp(r1 * t) + c2 * Math.exp(r2 * t),
+        v: c1 * r1 * Math.exp(r1 * t) + c2 * r2 * Math.exp(r2 * t),
+    }
+}
+
+/** §5.3 perceptual progress `min(1, s(t)/s(D))`, `s(t) = 1 − (1 + ωt)e^(−ωt)`. */
+export function perceptualOracle(t: number, D: number): number {
+    if (t <= 0) return 0
+    const s = (x: number) => 1 - (1 + x) * Math.exp(-x)
+    return Math.min(1, s((2 * Math.PI * t) / D) / s(2 * Math.PI))
+}
+
+/** §5.8 crossfade opacities from a progress `p`. */
+export function crossfadeAt(
+    p: number,
+    fromLead = 0,
+    fromFollower = 1
+): { lead: number; follower: number } {
+    const x = Math.min(1, p / 0.5)
+    const incoming = Math.sqrt(1 - (1 - x) ** 2)
+    const outgoing = Math.min(1, Math.max(0, (p - 0.5) / 0.45))
+    return {
+        lead: fromLead + (1 - fromLead) * incoming,
+        follower: fromFollower * (1 - outgoing),
+    }
 }
 
 /**
@@ -120,11 +187,36 @@ export function expectedBox(spec: OTrackSpec, elapsed: number): OBox {
     const A = ch(spec.after)
     const V = spec.velocity && ch(spec.velocity)
     const t = elapsed - spec.delay
+    const c: number[] = []
+    if (spec.spring) {
+        // c(t) = A + d(t), d(0) = B − A, d′(0) = v (0 at rest); A after the settle
+        const { duration: D, bounce, end } = spec.spring
+        for (let i = 0; i < 4; i++) {
+            const pinned =
+                i < 2 ? spec.mode === 'size' : spec.mode === 'position'
+            const b = pinned ? A[i]! : B[i]!
+            const a = A[i]!
+            const v0 = pinned || !V ? 0 : V[i]!
+            let v =
+                t <= 0
+                    ? b
+                    : t >= end
+                      ? a
+                      : a + springOracle(D, bounce, b - a, v0, t).d
+            if (i >= 2 && t > 0 && t < end) v = Math.max(v, Math.min(1, a, b))
+            c.push(v)
+        }
+        return {
+            x: c[0]! - fx * c[2]!,
+            y: c[1]! - fy * c[3]!,
+            w: c[2]!,
+            h: c[3]!,
+        }
+    }
     const tau =
         t <= 0 ? 0 : spec.duration <= 0 ? 1 : Math.min(1, t / spec.duration)
     const e = easing(spec.timing, tau)
     const s0 = easingSlope0(spec.timing)
-    const c: number[] = []
     for (let i = 0; i < 4; i++) {
         const pinned = i < 2 ? spec.mode === 'size' : spec.mode === 'position'
         const b = pinned ? A[i]! : B[i]!

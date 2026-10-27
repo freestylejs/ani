@@ -31,6 +31,7 @@ const MODULES = [
     'solid',
     'svelte',
     'layout',
+    'layout_spring',
     'react_layout',
     'acceptance',
     'showcase',

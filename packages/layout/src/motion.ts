@@ -13,13 +13,34 @@ import {
     timing,
 } from '@freestylejs/ani-core'
 
-export interface LayoutMotion {
-    /** Seconds. Default: 0.35. */
-    readonly duration?: number
+/**
+ * A layout motion layer: a timing curve or a physical spring (§5.1). A layer
+ * without `type` (and without `timing`) inherits the kind of the layers
+ * around it; `timing` or `type: 'timing'` selects the curve, `type: 'spring'`
+ * the spring. `duration` never switches the kind.
+ */
+export type LayoutMotion = LayoutTimingMotion | LayoutSpringMotion
+
+export interface LayoutTimingMotion {
+    readonly type?: 'timing' | undefined
+    /** Seconds, >= 0 (0 jumps). Default: 0.35. */
+    readonly duration?: number | undefined
     /** Seconds, for a node at rest when the change happens. Default: 0. */
-    readonly delay?: number
+    readonly delay?: number | undefined
     /** A stateless core timing function. Default: `timing.easeOut()`. */
-    readonly timing?: TimingFunction
+    readonly timing?: TimingFunction | undefined
+    readonly bounce?: never
+}
+
+export interface LayoutSpringMotion {
+    readonly type: 'spring'
+    /** Perceptual duration in seconds, > 0. Default: 0.55. */
+    readonly duration?: number | undefined
+    /** Seconds, for a node at rest when the change happens. Default: 0. */
+    readonly delay?: number | undefined
+    /** Strictly inside (-1, 1); 0 is critically damped. Default: 0. */
+    readonly bounce?: number | undefined
+    readonly timing?: never
 }
 
 /** `true` animates position and size; `'position'` pins the size; `'size'` pins the position. */
@@ -57,13 +78,34 @@ export interface Curve {
     readonly slope0: number
 }
 
-export interface Motion {
+/** A resolved timing motion: defaults applied, the curve normalized. */
+export interface TimingMotion {
+    readonly kind: 'timing'
     readonly duration: number
     readonly delay: number
+    /** The timing function, compared by value (§5.7). */
+    readonly timing: TimingFunction
     readonly curve: Curve
 }
 
+/** A resolved spring motion: defaults applied. */
+export interface SpringMotion {
+    readonly kind: 'spring'
+    /** Perceptual duration, seconds. */
+    readonly duration: number
+    readonly delay: number
+    readonly bounce: number
+    /**
+     * Reduced motion `{ maxDuration }` in force: the track's delay plus
+     * settle time must fit (§9.4), searched at plan time.
+     */
+    readonly maxDuration: number | null
+}
+
+export type Motion = TimingMotion | SpringMotion
+
 const DEFAULT_DURATION = 0.35
+const DEFAULT_SPRING_DURATION = 0.55
 const SLOPE_STEP = 1e-6
 
 export function invalidOptions(kind: 'type' | 'range', message: string): Error {
@@ -109,8 +151,9 @@ function assertSeconds(value: unknown, name: string): void {
     }
 }
 
-const MOTION_KEYS = ['duration', 'delay', 'timing'] as const
+const MOTION_KEYS = ['type', 'duration', 'delay', 'timing', 'bounce'] as const
 
+/** One motion layer, on its own (§5.1); the merged result is checked by `validateMotionLayers`. */
 export function validateMotion(value: unknown, label = 'motion'): void {
     if (value === undefined) return
     if (!isPlainObject(value)) {
@@ -120,10 +163,38 @@ export function validateMotion(value: unknown, label = 'motion'): void {
         )
     }
     assertKeys(value, MOTION_KEYS, label)
+    const type = value.type
+    if (type !== undefined && type !== 'timing' && type !== 'spring') {
+        throw invalidOptions(
+            'type',
+            `${label}.type must be 'timing' or 'spring', received ${String(type)}.`
+        )
+    }
     assertSeconds(value.duration, 'duration')
     assertSeconds(value.delay, 'delay')
+    if (value.bounce !== undefined) {
+        if (type !== 'spring') {
+            throw invalidOptions(
+                'type',
+                `${label}.bounce needs type: 'spring'; a timing motion has no bounce.`
+            )
+        }
+        const b = value.bounce
+        if (typeof b !== 'number' || !Number.isFinite(b) || b <= -1 || b >= 1) {
+            throw invalidOptions(
+                'range',
+                `${label}.bounce must be a finite number strictly inside (-1, 1), received ${String(b)}.`
+            )
+        }
+    }
     const fn = value.timing
     if (fn === undefined) return
+    if (type === 'spring') {
+        throw invalidOptions(
+            'type',
+            `${label}.timing cannot be combined with type: 'spring'; a spring is set by duration and bounce.`
+        )
+    }
     if (
         typeof fn !== 'object' ||
         fn === null ||
@@ -137,13 +208,29 @@ export function validateMotion(value: unknown, label = 'motion'): void {
     if ((fn as TimingFunction).stateful === true) {
         throw invalidOptions(
             'type',
-            `${label}.timing must be stateless; a stateful timing such as timing.dynamicSpring cannot be evaluated at an arbitrary time. Use timing.spring.`
+            `${label}.timing must be stateless; a stateful timing such as timing.dynamicSpring cannot be evaluated at an arbitrary time. Use type: 'spring'.`
         )
     }
     if (!Number.isFinite(curveOf(fn as TimingFunction).slope0)) {
         throw invalidOptions(
             'range',
             `${label}.timing must start with a finite slope so a moving node keeps its velocity; a bezier with x1 = 0 and y1 ≠ 0 starts vertically.`
+        )
+    }
+}
+
+/**
+ * The merged motion of validated layers (§5.1): a spring needs a duration
+ * > 0 once every layer is applied.
+ */
+export function validateMotionLayers(
+    layers: readonly (LayoutMotion | undefined)[]
+): void {
+    const merged = mergeMotion(layers)
+    if (merged.type === 'spring' && merged.duration === 0) {
+        throw invalidOptions(
+            'range',
+            'a spring motion needs a duration > 0 seconds; a timing motion jumps with duration 0.'
         )
     }
 }
@@ -320,32 +407,53 @@ function sameTiming(a: unknown, b: unknown): boolean {
         : sameData(a, b)
 }
 
-interface MergedMotion {
-    readonly duration: number
-    readonly delay: number
-    readonly timing: TimingFunction
-}
-
 let defaultTiming: TimingFunction | null = null
 
 /**
- * Field-wise merge, later layers win, defaults filled in (the default timing
- * too: an omitted timing and an explicit `timing.easeOut()` draw one track).
+ * The kind-level merge of motion layers, outermost first (§5.1), as one
+ * layer with its kind explicit: a layer naming a kind (`type`, or `timing`
+ * for the curve) switches to it, dropping the previous kind's `duration`,
+ * `timing` and `bounce`; a layer without one inherits the kind; `delay`
+ * merges on its own. The root kind is the timing curve. Fields stay absent
+ * where no layer gave them (defaults are applied by `resolveMotion`).
  */
-function mergeMotion(
+export function mergeMotion(
     layers: readonly (LayoutMotion | undefined)[]
-): MergedMotion {
-    let duration = DEFAULT_DURATION
-    let delay = 0
+): LayoutMotion {
+    let kind: 'timing' | 'spring' = 'timing'
+    let duration: number | undefined
+    let delay: number | undefined
     let fn: TimingFunction | undefined
+    let bounce: number | undefined
     for (const layer of layers) {
         if (!layer) continue
+        const named =
+            layer.type ?? (layer.timing === undefined ? undefined : 'timing')
+        if (named !== undefined && named !== kind) {
+            kind = named
+            duration = undefined
+            fn = undefined
+            bounce = undefined
+        }
         if (layer.duration !== undefined) duration = layer.duration
         if (layer.delay !== undefined) delay = layer.delay
         if (layer.timing !== undefined) fn = layer.timing
+        if (layer.bounce !== undefined) bounce = layer.bounce
     }
-    defaultTiming ??= timing.easeOut()
-    return { duration, delay, timing: fn ?? defaultTiming }
+    if (kind === 'spring') {
+        return {
+            type: 'spring',
+            ...(duration !== undefined && { duration }),
+            ...(delay !== undefined && { delay }),
+            ...(bounce !== undefined && { bounce }),
+        }
+    }
+    return {
+        type: 'timing',
+        ...(duration !== undefined && { duration }),
+        ...(delay !== undefined && { delay }),
+        ...(fn !== undefined && { timing: fn }),
+    }
 }
 
 /** Whether layout owns the corners: `radius`, defaulting on for a shared `layoutId`. */
@@ -367,17 +475,36 @@ export function sameTrackOptions(
     b: LayoutOptions,
     group?: LayoutMotion
 ): boolean {
-    const am = mergeMotion([group, a.motion])
-    const bm = mergeMotion([group, b.motion])
     return (
         (a.layout ?? true) === (b.layout ?? true) &&
         a.layoutAnchor?.x === b.layoutAnchor?.x &&
         a.layoutAnchor?.y === b.layoutAnchor?.y &&
         ownsRadius(a) === ownsRadius(b) &&
-        am.duration === bm.duration &&
-        am.delay === bm.delay &&
-        sameTiming(am.timing, bm.timing)
+        sameMotion(
+            resolveMotion([group, a.motion]),
+            resolveMotion([group, b.motion])
+        )
     )
+}
+
+/**
+ * Whether two motion layers draw the same track (§5.7): compared by their
+ * effective value under the default root, a timing by its class and
+ * parameters in any key order.
+ */
+export function sameLayoutMotion(
+    a: LayoutMotion | undefined,
+    b: LayoutMotion | undefined
+): boolean {
+    return a === b || sameMotion(resolveMotion([a]), resolveMotion([b]))
+}
+
+/** Effective motions compared by value (a timing by its class and parameters). */
+export function sameMotion(a: Motion, b: Motion): boolean {
+    if (a.kind !== b.kind || a.duration !== b.duration || a.delay !== b.delay)
+        return false
+    if (a.kind === 'spring') return a.bounce === (b as SpringMotion).bounce
+    return sameTiming(a.timing, (b as TimingMotion).timing)
 }
 
 /** The normalized curve of a stateless timing (cached per instance). */
@@ -410,22 +537,50 @@ export function curveOf(fn: TimingFunction): Curve {
     return curve
 }
 
-/** The merged motion of validated layers, later layers win. */
+/**
+ * The effective motion of validated layers (§5.1): the kind-level merge with
+ * defaults (timing: ease-out, 0.35 s; spring: 0.55 s, bounce 0; delay 0).
+ */
 export function resolveMotion(
     layers: readonly (LayoutMotion | undefined)[]
 ): Motion {
-    const { duration, delay, timing: fn } = mergeMotion(layers)
-    return { duration, delay, curve: curveOf(fn) }
+    const merged = mergeMotion(layers)
+    const delay = merged.delay ?? 0
+    if (merged.type === 'spring') {
+        return {
+            kind: 'spring',
+            duration: merged.duration ?? DEFAULT_SPRING_DURATION,
+            delay,
+            bounce: merged.bounce ?? 0,
+            maxDuration: null,
+        }
+    }
+    defaultTiming ??= timing.easeOut()
+    const fn = merged.timing ?? defaultTiming
+    return {
+        kind: 'timing',
+        duration: merged.duration ?? DEFAULT_DURATION,
+        delay,
+        timing: fn,
+        curve: curveOf(fn),
+    }
 }
 
-/** `{ maxDuration }`: delay + duration scaled down to fit; shorter runs untouched. */
+/**
+ * Reduced motion `{ maxDuration }` (§9.4). Timing: delay and duration scaled
+ * down to fit; shorter runs untouched. Spring: the bound is applied per track
+ * at plan time, where the displacement and velocity are known.
+ */
 export function clampMotion(motion: Motion, maxDuration: number): Motion {
+    if (motion.kind === 'spring') return { ...motion, maxDuration }
     const total = motion.delay + motion.duration
     if (total <= maxDuration) return motion
     const factor = maxDuration / total
     return {
+        kind: 'timing',
         duration: motion.duration * factor,
         delay: motion.delay * factor,
+        timing: motion.timing,
         curve: motion.curve,
     }
 }

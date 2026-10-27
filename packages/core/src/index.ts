@@ -89,6 +89,8 @@ export type {
     SequenceNode,
     StaggerNode,
 } from './nodes/node_types'
+export type { SettleTolerance, Spring, SpringOptions } from './physics'
+export { physics } from './physics'
 export type { Resolver, StylesheetSupportedLiteral } from './style'
 export { createStyleSheet } from './style'
 export type {

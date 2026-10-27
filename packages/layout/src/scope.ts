@@ -47,7 +47,6 @@ import {
 } from './geometry'
 import {
     assertKeys,
-    type Curve,
     clampMotion,
     invalidOptions,
     type LayoutMotion,
@@ -58,6 +57,7 @@ import {
     sameTrackOptions,
     validateLayoutOptions,
     validateMotion,
+    validateMotionLayers,
     validateReducedMotion,
 } from './motion'
 import {
@@ -76,6 +76,7 @@ import {
     drawnVelocities,
     type Fade,
     fadeOpacity,
+    INSTANT_LAW,
     type Layer,
     movingParents,
     type RadiusBlend,
@@ -83,7 +84,9 @@ import {
     type SolveNode,
     solve,
     type Track,
+    type TrackLaw,
     trackEnded,
+    trackEndTime,
     ZERO_VELOCITY,
 } from './solve'
 import type {
@@ -169,8 +172,8 @@ interface DriveFade {
     elapsed: number
     /** Its first clock update has happened (independent of the track's). */
     started: boolean
-    readonly duration: number
-    readonly curve: Curve
+    /** The lead track's law (§5.8). */
+    readonly law: TrackLaw
 }
 
 interface Drive {
@@ -359,6 +362,17 @@ function validateGroupOptions(options: unknown): void {
         throw invalidOptions('type', 'clock must be an Ani clock.')
     }
     validateMotion(value.motion)
+    validateMotionLayers([value.motion as LayoutMotion | undefined])
+    if (
+        value.engine === 'waapi' &&
+        resolveMotion([value.motion as LayoutMotion | undefined]).kind ===
+            'spring'
+    ) {
+        throw invalidOptions(
+            'type',
+            "the 'waapi' engine realizes timing curves only; a spring motion needs the 'raf' engine."
+        )
+    }
     validateReducedMotion(value.reducedMotion)
     const threshold = value.threshold
     if (
@@ -410,7 +424,10 @@ function validateGroupOptions(options: unknown): void {
  * The WAAPI engine animates top-level `'position'` participants only (§10);
  * anything else throws when it is registered, never degrades.
  */
-function validateWaapiOptions(options: LayoutOptions | undefined): void {
+function validateWaapiOptions(
+    options: LayoutOptions | undefined,
+    group: LayoutMotion | undefined
+): void {
     const reject = (what: string) =>
         invalidOptions(
             'type',
@@ -421,6 +438,8 @@ function validateWaapiOptions(options: LayoutOptions | undefined): void {
     if (options.layoutAnchor !== undefined) throw reject('layoutAnchor')
     if (options.layoutId !== undefined) throw reject('layoutId')
     if (options.radius) throw reject('radius')
+    if (resolveMotion([group, options.motion]).kind === 'spring')
+        throw reject('a spring motion')
 }
 
 function format(n: number): string {
@@ -429,7 +448,7 @@ function format(n: number): string {
 }
 
 function fadeEnded(fade: DriveFade): boolean {
-    return fade.elapsed >= fade.duration
+    return fade.elapsed >= fade.law.duration
 }
 
 /** Current opacity of a running fade layer, sampled for reversal continuity. */
@@ -438,8 +457,7 @@ function currentFadeOpacity(fade: DriveFade): number {
         role: fade.role,
         from: fade.from,
         elapsed: Math.max(0, fade.elapsed),
-        duration: fade.duration,
-        curve: fade.curve,
+        law: fade.law,
     })
 }
 
@@ -522,8 +540,7 @@ export function createLayoutGroup(
                           role: d.fade.role,
                           from: d.fade.from,
                           elapsed: Math.max(0, d.fade.elapsed),
-                          duration: d.fade.duration,
-                          curve: d.fade.curve,
+                          law: d.fade.law,
                       }
                     : null
             return {
@@ -681,6 +698,8 @@ export function createLayoutGroup(
             if (animations.get(p)?.track === d.track) continue
             stopAnimation(p)
             const track = d.track
+            // the WAAPI engine rejects springs at validation (§10)
+            const law = track.law as Extract<TrackLaw, { kind: 'timing' }>
             const start = drawnBoxes(solveNodes([{ ...node, parent: -1 }]))[0]!
             const a = node.geometry.a
             const au = d.authored
@@ -689,13 +708,13 @@ export function createLayoutGroup(
                 {
                     from: [start.x - a.x + au.tx, start.y - a.y + au.ty],
                     to: [au.tx, au.ty],
-                    duration: track.duration,
+                    duration: law.duration,
                     delay: track.delay,
-                    curve: track.curve,
+                    curve: law.curve,
                 },
                 () => {
                     if (animations.get(p)?.animation !== animation) return
-                    d.elapsed = track.delay + track.duration
+                    d.elapsed = trackEndTime(track)
                     settle(p)
                     commitWrites()
                     frame = frame.filter((n) => n.p.drive !== null)
@@ -1484,6 +1503,12 @@ export function createLayoutGroup(
                     `duplicate:${warning.id}`,
                     `two live participants share layoutId "${warning.id}"; the newest leads and the other animates on its own.`
                 )
+            } else if (warning.kind === 'spring-timeout') {
+                const m = list[warning.index]!.motion?.value
+                warn(
+                    'spring-timeout',
+                    `a spring would take longer than 10 s to settle${m?.kind === 'spring' ? ` (duration ${m.duration} s, bounce ${m.bounce})` : ''}, so the node snaps 'unsupported'. Lower the bounce or the duration.`
+                )
             } else {
                 warn(
                     'presence-opacity',
@@ -1743,8 +1768,7 @@ export function createLayoutGroup(
                               from: fadeFrom.get(i)?.lead ?? 0,
                               elapsed: -action.track.delay,
                               started: continues,
-                              duration: action.track.duration,
-                              curve: action.track.curve,
+                              law: action.track.law,
                           }
                         : keptFade
                     drive.run = run
@@ -1792,8 +1816,7 @@ export function createLayoutGroup(
                         from: fadeFrom.get(action.lead)?.follower ?? 1,
                         elapsed: -(track?.delay ?? 0),
                         started: continues,
-                        duration: track?.duration ?? 0,
-                        curve: track?.curve ?? nodes[i]!.motion.curve,
+                        law: track?.law ?? INSTANT_LAW,
                     }
                     const presence = exitingPresence(p.element)
                     if (presence) {
@@ -1876,7 +1899,14 @@ export function createLayoutGroup(
             }
             return promise
         }
-        return resolved(status ?? 'no-change', snapped)
+        // no track ran: a node refused by reduced motion makes it 'reduced' (§9.3)
+        return resolved(
+            status ??
+                (snapped.some((s) => s.reason === 'reduced')
+                    ? 'reduced'
+                    : 'no-change'),
+            snapped
+        )
     }
 
     /* ───────────────────────── lifecycle ───────────────────────── */
@@ -1962,8 +1992,8 @@ export function createLayoutGroup(
         for (const node of frame) {
             const d = node.p.drive
             if (!d || d.kind === 'held') continue
-            if (d.track) d.elapsed = d.track.delay + d.track.duration
-            if (d.fade) d.fade.elapsed = d.fade.duration
+            if (d.track) d.elapsed = trackEndTime(d.track)
+            if (d.fade) d.fade.elapsed = d.fade.law.duration
         }
         if (status === 'ended' && !waapi) {
             step(null)
@@ -1997,8 +2027,9 @@ export function createLayoutGroup(
     const group: LayoutGroup = {
         add(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
+            validateMotionLayers([groupMotion, layoutOptions?.motion])
             if (waapi) {
-                validateWaapiOptions(layoutOptions)
+                validateWaapiOptions(layoutOptions, groupMotion)
                 validateWaapiNesting(element)
             }
             if (disposed) return noop
@@ -2092,8 +2123,9 @@ export function createLayoutGroup(
 
         set(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
+            validateMotionLayers([groupMotion, layoutOptions?.motion])
             if (waapi) {
-                validateWaapiOptions(layoutOptions)
+                validateWaapiOptions(layoutOptions, groupMotion)
                 validateWaapiNesting(element)
             }
             const p = registry.get(element)

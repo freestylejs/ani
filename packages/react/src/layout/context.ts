@@ -1,9 +1,4 @@
-import {
-    type Clock,
-    DEV,
-    type TimingFunction,
-    timing,
-} from '@freestylejs/ani-core'
+import { type Clock, DEV } from '@freestylejs/ani-core'
 import {
     createLayoutGroup,
     type LayoutGroup,
@@ -11,6 +6,8 @@ import {
     type LayoutMotion,
     type LayoutOptions,
     type LayoutReport,
+    mergeLayoutMotion,
+    sameLayoutMotion,
 } from '@freestylejs/ani-layout'
 import { createContext, type Ref, type RefCallback } from 'react'
 import { flushSync } from 'react-dom'
@@ -142,42 +139,6 @@ function movesLayout(records: readonly MutationRecord[]): boolean {
 }
 
 /**
- * Timings are compared by value: the same class with equal parameters, in any
- * key order (a timing written inline is a new object every render). Core
- * timings keep their parameters in `opt` and derive the rest of their fields
- * from it; a timing without `opt` is compared field by field.
- */
-function sameTiming(a: unknown, b: unknown): boolean {
-    if (a === b) return true
-    if (!isObject(a) || !isObject(b) || a.constructor !== b.constructor) {
-        return false
-    }
-    return 'opt' in a || 'opt' in b ? sameValue(a.opt, b.opt) : sameFields(a, b)
-}
-
-/** The layout defaults (§7.1): an omitted field equals its default. */
-const DEFAULT_DURATION = 0.35
-let defaultTiming: TimingFunction | null = null
-
-/** Equal when they draw the same track: omitted fields are their defaults. */
-function sameMotion(
-    a: LayoutMotion | undefined,
-    b: LayoutMotion | undefined
-): boolean {
-    if (a === b) return true
-    if (
-        (a?.duration ?? DEFAULT_DURATION) !==
-            (b?.duration ?? DEFAULT_DURATION) ||
-        (a?.delay ?? 0) !== (b?.delay ?? 0)
-    ) {
-        return false
-    }
-    if (a?.timing === b?.timing) return true
-    defaultTiming ??= timing.easeOut()
-    return sameTiming(a?.timing ?? defaultTiming, b?.timing ?? defaultTiming)
-}
-
-/**
  * Equal options keep a running track; a change retargets it (§5.5). Compared
  * by effect: an omitted option equals its default, a timing its parameters.
  */
@@ -192,7 +153,7 @@ export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
         Object.is(a.layoutDependency, b.layoutDependency) &&
         (a.radius ?? a.layoutId !== undefined) ===
             (b.radius ?? b.layoutId !== undefined) &&
-        sameMotion(a.motion, b.motion)
+        sameLayoutMotion(a.motion, b.motion)
     )
 }
 
@@ -485,19 +446,14 @@ export function existingScopes(
     return known ? found : [...(roots.get(undefined)?.live ?? [])]
 }
 
-/** `motion` fields of `over` replace those of `base`, field by field. */
+/** `over` merged onto `base` by the kind-level rule of the layout engine (§5.1). */
 export function mergeMotion(
     base: LayoutMotion | undefined,
     over: LayoutMotion | undefined
 ): LayoutMotion | undefined {
     if (!base) return over
     if (!over) return base
-    return {
-        ...base,
-        ...(over.duration !== undefined && { duration: over.duration }),
-        ...(over.delay !== undefined && { delay: over.delay }),
-        ...(over.timing !== undefined && { timing: over.timing }),
-    }
+    return mergeLayoutMotion([base, over])
 }
 
 export interface PresenceContextValue {

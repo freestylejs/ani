@@ -12,7 +12,7 @@ the core API note for `physics` and `Clock.inFrame`.
 | Phase plan with the final goal | `.trace/ani_ios_production/00_plan.md` | Written |
 | Drift analysis (DR-01..DR-20) | `.trace/ani_ios_production/p0_drift.md` | Written |
 | Layout authority v3 | `packages/layout/ARCHITECTURE.md` | Rewritten in full (no 0.2.0 text that contradicts v3 survives) |
-| Core API note | `packages/core/src/API.md` | Deferred to P1 by the plan (the surface does not exist before P1); the authority states it (§2.1) |
+| Core API note | `packages/core/src/API.md` | Written in the P1 checkpoint (`## physics`, `clock.inFrame` row). The first submission wrongly deferred it: the plan assigns it to P0 (tribunal J-005) |
 
 ## Drift closure matrix
 
@@ -80,6 +80,24 @@ consistent with v3's text and its intent ("snap, never wrong motion"):
 | No surviving contradiction with v3 | Searched for "page box", "page scroll", "not read", "inner scroll", "field by field", "does not change": only the header's removal note, a row title (L-MEAS-8) and a mutation test name | PASS |
 | Hard migration (no bridge text) | No "legacy", "compat", "deprecated" path in the authority | PASS |
 | Drift matrix closed at doc level | Table above: every DR has a section or a phase | PASS |
-| Core API note | Deferred to P1 (explicit in the plan) | PASS (scheduled) |
+| Core API note | First submission: deferred, which the plan does not allow (J-005, FAIL). Remediated: `packages/core/src/API.md` documents `physics` and `clock.inFrame`, both now exported | PASS after remediation |
 
-**Self verdict: PASS** for P0. Open items belong to later phases by the plan.
+**First self verdict: PASS** for P0. The tribunal ruled **FAIL** (2 S0, 4 S1, 1 S3;
+`p0_authority_trial_result.md`). My verdict missed J-001 and J-002 because I checked coverage
+and wording, not whether each refinement keeps "snap, never wrong motion".
+
+## Remediation (re-judged with P1)
+
+| ID | Defect | Correction (authority section) | Proof |
+|---|---|---|---|
+| J-001 S0 | Raw-δ keep is wrong under a live ancestor scale | §5.7: three exclusive paths. Unchanged when `|δ| < 0.01 px`. Translated by δ only when every participant ancestor's pose scale is 1 at `t_k` and its inner-map scale is unchanged since planning. Otherwise retarget from measured `(B, v)`. Invariant 5 states the exception. L-MEAS-4/7 rows name both paths and a nested case | `p1_proofs.mjs`: 10 px raw-δ error at scale 0.5 reproduced; path 3 first frame = B; path 2 exact at scale 1 |
+| J-002 S0 | Descendants animate the hold displacement under their own motions | §5.10: one inherited displacement `h(t)` owned by the held node through hold and landing. Descendants are drawn at residual + `h`. They are re-planned as residuals at take (`B − h`, `v − ḣ`). Release velocity enters once, through `h`. New row L-DRIVE-6; plan P4 gate is L-DRIVE-1..6 | `p1_proofs.mjs`: relative-geometry error 2.8e-14 under parent spring 0.5 s and child timing 0.1 s; the old rule detaches the child by 68.5 px; `h′(0) = v` |
+| J-003 S1 | `rect / offsetWidth` propagated as exact | §4.2: interval propagation. Measured `M = [R/(O+1), R/(O−1)]`, expected `E = I_π·p·q`; pass iff `M ∩ E ≠ ∅`. An assumed `q` is not propagated; a wide interval with participant children forces a computed read. S1 spike (b) names the counterexample | `p1_proofs.mjs`: the 50.49 / 1000 px case passes at 0.1, 1 and 10 (the old rule's 9.705 px error reproduced); 0 false positives over 20,000 random supported chains; a 3 % unowned zoom under the small parent is detected |
+| J-004 S1 | Capture-less undriven nodes not reported | §4.4: exhaustive, conservative rule against each node's last known box (the aged capture's box, else its A at its previous flush; a node with no known box is reported). Driven nodes are reported when `|δ| ≥ threshold`, or when δ is non-zero and the translation is not exact. `report.snapped`, `onSnap` and the diagnostic count use one rule; §9.1 points to §4.4. L-MEAS-11 enumerates the cases | Textual: §4.4 now matches signed v3 §3.5 ("each node that would have moved is reported") |
+| J-005 S1 | Core API note missing | `packages/core/src/API.md` `## physics` and the `clock.inFrame` row (P1 implements and exports both) | `grep -n 'physics\|inFrame' packages/core/src/API.md` |
+| J-006 S1 | Reference machine not reproducible; aggregation unspecified | §11.5: pinned environment table and fingerprint (any mismatch makes the report advisory). Measurement: cross-origin isolated `performance.now()`, a timer-granularity rule, nearest-rank percentiles. Per-gate per-run statistics; 1 warm-up run, then the median of 5 fresh-process runs, per engine | Fingerprint collected on the pinned container (Ubuntu 24.04.5, 6.18.44, 4 × Xeon @ 2.80GHz, 16 GB, Node 22.22.0, Playwright 1.55.0, chromium_headless_shell-1187, webkit-2203) |
+| J-007 S3 | "`onSnap` stays as it is, isolated" | §7.2: the API surface stays; isolation is the P3 behaviour change (§9.2) | Text |
+
+References: 173 `§` references, 0 missing targets after the edits. Legacy terms ("page box",
+"inner-scroll", "analytic before-box", "field-by-field") occur only in the header's removal note.
+
