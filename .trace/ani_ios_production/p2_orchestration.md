@@ -48,7 +48,7 @@ container, each in its own git worktree.
 | H4 rows | `layout_meas` browser rows L-MEAS-1..13 (without 5), L-HAND-1..2, L-KEY-1, L-DOC-1, tests first, with a `knownFailures` worklist that must be empty at the gate | Argon4 (draft), then native helper | Accepted (e682706 draft as received, a3a657e reviewed): 16 rows; 2 pass and 14 are known failures, each failing at the same frame for its named P2 reason in Chromium, Firefox and WebKit; re-run here |
 | H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 (partial), then native helper | Running (`briefs/h5.md`) |
 | R1 remediation | P1 tribunal P1-001..P1-004; the code side of P0 J-001, J-004 and P0-N001 in `measure.ts` | DeepSeek | Accepted (04d1d12..f94848d) |
-| H6 | Active-scroll handoff rule (§5.8), L-MEAS-5 React rows | TBD | After H5 |
+| H6 | Closed-root flat ancestry (§4.6, amended), active-scroll handoff rule (§5.8), L-MEAS-5 React rows; L_MEAS_10 and L_HAND_2 out of `knownFailures` | Native helper | After H5 (`briefs/h6.md`) |
 
 ## Tribunal carry-over into P2 (from `p1_spring_trial_result.md`)
 
@@ -64,6 +64,6 @@ container, each in its own git worktree.
 | Source | Finding | Owner |
 |---|---|---|
 | H4 L-KEY-1 | A `layoutKey` change mid-run resolves the run `'ended'`; §9.1 says `'disposed'` (`resetLayoutKey` → `stopParticipantDrive(p, false)`) | H5 (addendum) |
-| H4 L-MEAS-10 | `flatParent` uses `assignedSlot`, which is null for a node slotted into a closed shadow root, so a slotted participant is planned without its flat-tree parent | H6 |
+| H4 L-MEAS-10 | `flatParent` uses `assignedSlot`, which is null for a node slotted into a closed shadow root, so a slotted participant is planned without its flat-tree parent. The defect was in the authority too: §4.6 named `assignedSlot` as the primitive while claiming closed roots. §4.6 now finds the slot through the shadow roots the scope knows | Authority (orchestrator); code H6 |
 | H4 L-HAND-2 | The §5.8 active-scroller rule is not implemented | H6 |
 | H4 build | The root `pnpm build:fast` fails because turbo.json has no `build:fast` task (predates this work); helpers use `pnpm -r --filter './packages/*' run build:fast` | Noted |

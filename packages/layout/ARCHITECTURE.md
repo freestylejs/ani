@@ -422,9 +422,25 @@ This subsection is the default `'raf'` frame contract; WAAPI timing is §10.
 
 ### 4.6 Ancestry, documents, and fixed descendants
 
-- **Flat-tree ancestry.** One primitive (`assignedSlot`, then `parentElement`, then
-  `ShadowRoot.host`) is used for every ancestor walk: the nearest participant, the containment
-  tests of §5.8 and §8, and the dev warnings. Open and closed shadow roots are supported.
+- **Flat-tree ancestry.** One primitive is used for every ancestor walk: the nearest participant,
+  the containment tests of §5.8 and §8, and the dev warnings. The flat parent of a node is:
+  1. its assigned slot;
+  2. else its `parentElement`;
+  3. else the `host` of its `ShadowRoot`.
+
+  `assignedSlot` finds the slot only in an open root (it is null for a node slotted into a
+  closed one). So the scope keeps the shadow roots that hold a participant: the root node of each
+  registered element, open or closed, keyed by host. For a node whose parent element hosts a
+  known root, the slot is the one in that root whose `assignedNodes()` holds the node.
+
+  A closed root the scope does not know holds no participant, so the walk may pass from a slotted
+  node straight to the host:
+  - the nearest participant is the same;
+  - the containment tests treat the host as the container, which is conservative (a scroll
+    container inside that root reaches the document's listeners retargeted to the host, §5.8).
+
+  Open and closed shadow roots are supported. The roots are tracked at `add` and dropped with the
+  last participant inside them, with no reads.
 - **Document-affine scopes.** A scope binds to the `ownerDocument` of its first participant. `add`,
   `set` or `take` with an element of another document throws `ANI_INVALID_OPTIONS`. An element whose
   `ownerDocument` changes (adoption) has its track ended, styles restored and hold invalidated, is
@@ -1227,7 +1243,7 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-MEAS-7 browser layout change mid-run (an image above loads), then a commit; flat and nested (a child under a scaling parent) | Continuity ≤ 0.5 px every frame; the §5.7 path taken is the one its ancestor condition selects |
 | L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture | (a) no shear, exact `(B, v)`; (b) aged, §4.4 outcome, no rewind |
-| L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
+| L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller, each with a slotted light-DOM participant under a participant inside the root | As L-MEAS-4; the slotted participant is planned under its flat-tree parent (§4.6) |
 | L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold`; a driven node with a sub-0.01 px δ under a live ancestor scale of 300 | §4.4 outcomes; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule (the amplified case is reported) |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly |
 | L-MEAS-13 an earlier rAF callback moves an ancestor; a later callback calls `update()` (via Ani's clock) | Aged at once, §4.4, never the intermediate box as B |
