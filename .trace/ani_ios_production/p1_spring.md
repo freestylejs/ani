@@ -192,3 +192,18 @@ cut-off in screen space.
 
 **Self verdict: PASS** for the second remediation of P0 and P1, with `layout:COST` handed to P5 as
 recorded. Pending the tribunal.
+
+## Third remediation (after `p1_spring_rejudgment_result.md`)
+
+The tribunal closed P0-N001 and P1-001..P1-005. It kept J-001 and J-004 open, added P0-N002 (S0)
+and P1-N001 (S1).
+
+| ID | Analysis | Correction |
+|---|---|---|
+| J-001 S0 | **The ρ = 1 instance does not reproduce.** `δ = A_new − A_old` is measured in view space, so it already contains every static map above the node, skewed or not. When no ancestor scale is live, `K(t_k) = K_rest` and the drawn displacement is `δ` exactly. **The general case is unproven:** under a live ancestor scale with an undetected off-diagonal component, `K(t_k)·K_rest⁻¹` is not bounded by the scalar `ρ`. The bound could be widened, but a sound bound is cheaper to measure than to derive | §5.7 (dd85f28): path 1 is decided by the measured jump `J = D − B`. `D` is the flush's raw rect under the last written pose, which the flush reads anyway. No model decides that a track may be left alone |
+| J-004 S1 | A capture-less or aged flush has no B, so it needs a bound valid for any map | §4.4 (dd85f28): `β = max over axes (R_axis / min(w, h))·max(e_x, e_y)`. Every linear map taking a `w × h` box to a `R_x × R_y` bounding box has row sums at most `R_x / min(w, h)`. The node's own pose scale and origin bound its edges by `e` |
+| P0-N002 S0 | Correct: §4.2 propagated `M` when `q` was assumed, so a measurement became the next node's expectation, and drift accumulated | §4.2 (dd85f28): the expected scale `E = E_π·p·q` is exact and never measured. A failing node verifies its chain (reads the assumed `q`s top-down) before it snaps. No false positive, no accumulation, no forced reads |
+| P1-N001 S1 | The gate says "existing suites green", and a non-regression A/B is not green | Make `layout:COST` green by the §11.5 protocol on the pinned container. H5 removes the per-ancestor scroll-offset reads from the read phase, which is exactly what the row times. Waiving or moving the row is the owner's decision alone and is not requested |
+
+The code and tests for the three geometry items land with H5 (`measure.ts` and its wiring, addendum
+2 of `briefs/h5.md`). They include the tribunal's 3-level and 1,999-level skew chains as unit tests.
