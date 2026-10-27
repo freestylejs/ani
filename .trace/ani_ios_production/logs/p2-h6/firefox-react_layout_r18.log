@@ -1,0 +1,42 @@
+PASS react_layout_r18:E5 (1719 ms)
+    5 adds 80 ms apart: every enter (spring, 0.4 s, centre-bottom) and every layout track (6 interrupted with their velocity) on the expectation every frame, max error 0.0083 px; exit (y 10, scaleX 0.9, 0.2 s spring) on the expectation every frame, bottom edge within 0.0078 px, released at 0.208 s; siblings final at t = 0 and on their tracks, max error 0.0079 px
+PASS react_layout_r18:J16 (551 ms)
+    {} → {"duration":1}: x 40.000/44.000/48.000 (error 0.0000 px); {} → {"delay":0}: x 40.000/44.000/48.000 (error 0.0000 px); spring {m,k,c} → {c,k,m}: x 141.267/154.133/165.417 (error 0.0081 px); every frame on the first track; {} → {"duration":0.5} retargets
+PASS react_layout_r18:J26 (604 ms)
+    equal { maxDuration: 0.1 }: x 40.000/44.000/48.000 at 0.2/0.22/0.24 s, every frame on the first track (error 0.0000 px), one subscriber; { maxDuration: 0.2 } re-creates: x 200.000, 0 subscribers
+PASS react_layout_r18:J27 (599 ms)
+    mid-enter exit: lifted to 50px/80px 100px × 50px, drawn (50, 94, 80, 40) until the release at 0.208 s (error 0.0000 px); mid-layout exit: lifted to top 30px, on its track through 0.680 s (error 0.0067 px)
+PASS react_layout_r18:J28 (1431 ms)
+    mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error 0.0067); mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at 1.000 s (max error 0.0000); nothing subscribed after the settle
+PASS react_layout_r18:J29 (1201 ms)
+    main document y 50 (translate 0px 50px), iframe y 50 (translate 0px 50px) at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left
+PASS react_layout_r18:L_MEAS_5_COALESCE (1133 ms)
+    two commits and a scroll in one task, one flush: first frame = last presented, then on the oracle to the last commit's layout (max error 0.0083 px)
+PASS react_layout_r18:L_MEAS_5_SUSPENSE (3066 ms)
+    late fallback committed 6 frames after its render: aged, 'stale' exactly abcdef; late reveal measured: first frame = last presented, then on the oracle (max error 0.0083 px); quick fallback committed 8 frames after its render: aged, 'stale' exactly abcdef; quick reveal measured: first frame = last presented, then on the oracle (max error 0.0083 px)
+PASS react_layout_r18:L_MEAS_5_URGENT (1403 ms)
+    the urgent update committed inside the transition: first frame = last presented, then on the oracle (max error 0.0071 px); the transition measured: first frame = last presented, then on the oracle (max error 0.0077 px)
+PASS react_layout_r18:L_MEAS_5a (1336 ms)
+    slices over 8 frames, scrolled 30 px between chunks: first frame = last presented, then on the oracle (max error 0.0077 px); restored
+PASS react_layout_r18:L_MEAS_5b (1040 ms)
+    aged after 2 frames: every participant at its layout box; 'stale' exactly zyacdebf (the moved ones and the scrolled list)
+PASS react_layout_r18:RL1 (668 ms)
+    reorder: 4 items on the oracle every frame, max error 0.0080 px; styles restored
+PASS react_layout_r18:RL2 (882 ms)
+    StrictMode: two reorders on the oracle, max error 0.0080 px
+PASS react_layout_r18:RL3 (1251 ms)
+    106 checks over 4 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL4 (1332 ms)
+    98 checks over 1 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL5 (1297 ms)
+    104 checks over 1 DOM mutations, picture unmoved; 4 nodes animated and settled (detailacdebf)
+PASS react_layout_r18:RL6 (3086 ms)
+    memoized subtree: snapped with one warning; update(fn) on the oracle, max error 0.0080 px; rendered class: animated, 0 warnings, memoized class: b (0, 50) → (40, 0) with 1 warning, rendered style: animated, 0 warnings, memoized style: b (0, 50) → (40, 0) with 1 warning
+PASS react_layout_r18:RL7 (866 ms)
+    30 frames, a re-render every 3rd: trajectories differ by 0.0000 px
+PASS react_layout_r18:RL8 (1133 ms)
+    implicit root: mid-run at 22.8 between 4 and 42; settled and restored
+PASS react_layout_r18:RL9 (681 ms)
+    reorder from the old box as one WAAPI animation per item; no inline style; released at the end (4 → 38)
+
+20 passed, 0 failed, 0 known failures, 0 skipped (27.3 s)
