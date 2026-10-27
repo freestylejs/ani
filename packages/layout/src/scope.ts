@@ -54,6 +54,7 @@ import {
     keepPath,
     type PresentedNode,
     presentedLayoutBoxes,
+    presentedVelocities,
     type ScreenBoundInput,
     type SupportNode,
     screenBound,
@@ -90,7 +91,7 @@ import { elapsedOf, play } from './realize/waapi'
 import {
     type BoxVelocity,
     drawnBoxes,
-    drawnVelocities,
+    drawnRates,
     type Fade,
     fadeOpacity,
     INSTANT_LAW,
@@ -269,6 +270,8 @@ interface EngineState {
     readonly poses: Map<Participant, Pose>
     /** Per frame node, its analytic drawn-box velocity. */
     readonly rates: Map<Participant, BoxVelocity>
+    /** Per frame node, the time derivative of the pose it last wrote. */
+    readonly poseRates: Map<Participant, Pose>
     /** Nodes whose own track is moving (running, past its delay). */
     readonly moving: Set<Participant>
 }
@@ -1115,17 +1118,19 @@ export function createLayoutGroup(
     function engineState(): EngineState {
         const poses = new Map<Participant, Pose>()
         const rates = new Map<Participant, BoxVelocity>()
+        const poseRates = new Map<Participant, Pose>()
         const moving = new Set<Participant>()
-        if (frame.length === 0) return { poses, rates, moving }
+        if (frame.length === 0) return { poses, rates, poseRates, moving }
         if (waapi) syncAnimations()
         const nodes = solveNodes(frame)
-        const velocities = drawnVelocities(nodes)
+        const { velocities, poses: poseRate } = drawnRates(nodes)
         // a WAAPI track writes no declaration: its pose is its animation's value
         const solved = waapi ? solve(nodes) : null
         frame.forEach((node, i) => {
             const d = node.p.drive
             poses.set(node.p, solved ? solved[i]!.pose : writtenPose(d))
             rates.set(node.p, velocities[i]!)
+            poseRates.set(node.p, poseRate[i]!)
             if (
                 runs(d) &&
                 (d!.timeline !== null || d!.elapsed >= d!.track!.delay)
@@ -1133,7 +1138,7 @@ export function createLayoutGroup(
                 moving.add(node.p)
             }
         })
-        return { poses, rates, moving }
+        return { poses, rates, poseRates, moving }
     }
 
     /**
@@ -1803,6 +1808,15 @@ export function createLayoutGroup(
                     compose(parentRest, aboutOrigin(q, css.x + ox, css.y + oy))
                 )
                 presented[of[k]!] = { css, origin: node.origin }
+            })
+            // v is the presented box's true velocity: the product rule
+            // through every presented parent map, applied to the presented
+            // CSS box (§4.2 Velocity), not the track's own box alone
+            presentedVelocities(
+                nodes,
+                of.map((i) => engine.poseRates.get(list[i]!) ?? null)
+            ).forEach((v, k) => {
+                velocity.set(list[of[k]!]!, v)
             })
         }
 

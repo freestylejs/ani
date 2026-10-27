@@ -4,6 +4,7 @@ import {
     keepPath,
     type PresentedNode,
     presentedLayoutBoxes,
+    presentedVelocities,
     type StaleNode,
     type SupportNode,
     screenBound,
@@ -851,6 +852,113 @@ describe('measure: presentedLayoutBoxes (§4.2)', () => {
             }
         }
 
+        expect(maxRelErr).toBeLessThan(1e-9)
+    })
+})
+
+describe('measure: presentedVelocities (§4.2 Velocity)', () => {
+    it('PV-1: property — 5,000 random nested trees (depth <= 4) with poses moving at random rates (translate and scale) and static inner maps: v is the derivative of the drawn box, to 1e-9 relative of a 5-point difference (exact for these polynomials)', () => {
+        const random = rng(0x7e10_c17e)
+        let maxRelErr = 0
+        let offsetTerm = 0
+        for (let trial = 0; trial < 5000; trial++) {
+            const maxDepth = 1 + Math.floor(random() * 4)
+            const domNodes: ONode[] = []
+            const poses: Pose[] = []
+            const rates: (Pose | null)[] = []
+            const origins: [number, number][] = []
+            const build = (parent: number, depth: number) => {
+                const idx = domNodes.length
+                const css: Box = {
+                    x: (random() - 0.3) * 800,
+                    y: (random() - 0.3) * 800,
+                    w: 2 + random() * 500,
+                    h: 2 + random() * 500,
+                }
+                const origin: [number, number] = [
+                    random() * css.w,
+                    random() * css.h,
+                ]
+                domNodes.push({
+                    parent,
+                    css,
+                    ox: css.x + origin[0],
+                    oy: css.y + origin[1],
+                    inner: randomPose(random, 0.4),
+                })
+                poses.push(randomPose(random, 0.3))
+                rates.push(
+                    random() < 0.3
+                        ? null
+                        : {
+                              tx: (random() - 0.5) * 1000,
+                              ty: (random() - 0.5) * 1000,
+                              sx: (random() - 0.5) * 6,
+                              sy: (random() - 0.5) * 6,
+                          }
+                )
+                origins.push(origin)
+                if (depth < maxDepth) {
+                    const children = 1 + Math.floor(random() * 2)
+                    for (let c = 0; c < children; c++) {
+                        if (domNodes.length < 12) build(idx, depth + 1)
+                    }
+                }
+            }
+            build(-1, 1)
+            const posesAt = (t: number): Pose[] =>
+                poses.map((p, i) => {
+                    const r = rates[i]
+                    if (!r) return p
+                    return {
+                        tx: p.tx + r.tx * t,
+                        ty: p.ty + r.ty * t,
+                        sx: p.sx + r.sx * t,
+                        sy: p.sy + r.sy * t,
+                    }
+                })
+            const nodes: PresentedNode[] = domNodes.map((n, i) => ({
+                parent: n.parent,
+                rect: rendered(i, domNodes, poses),
+                pose: poses[i]!,
+                inner: n.inner,
+                origin: origins[i]!,
+            }))
+            const got = presentedVelocities(nodes, rates)
+            // each drawn coordinate is a polynomial of degree <= 4 in t
+            const h = 0.01
+            const at = [-2, -1, 1, 2].map((m) => posesAt(m * h))
+            for (let i = 0; i < domNodes.length; i++) {
+                const [a, b, c, d] = at.map((p) => rendered(i, domNodes, p))
+                const fd = (k: keyof Box) =>
+                    (a![k] - 8 * b![k] + 8 * c![k] - d![k]) / (12 * h)
+                const expected = {
+                    x: fd('x'),
+                    y: fd('y'),
+                    w: fd('w'),
+                    h: fd('h'),
+                }
+                // the screen motion of the node's offset in a scaling parent
+                // frame, which the node's own pose rate alone does not carry
+                if (domNodes[i]!.parent >= 0 && rates[domNodes[i]!.parent]) {
+                    offsetTerm += 1
+                }
+                const scale = Math.max(
+                    1,
+                    ...(['x', 'y', 'w', 'h'] as const).map((k) =>
+                        Math.abs(expected[k])
+                    )
+                )
+                const err =
+                    Math.max(
+                        ...(['x', 'y', 'w', 'h'] as const).map((k) =>
+                            Math.abs(got[i]![k] - expected[k])
+                        )
+                    ) / scale
+                if (err > maxRelErr) maxRelErr = err
+            }
+        }
+        expect(offsetTerm).toBeGreaterThan(1000)
         expect(maxRelErr).toBeLessThan(1e-9)
     })
 })
