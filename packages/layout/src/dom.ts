@@ -14,7 +14,7 @@ export function resolveLen(len: Len, basis: number): number {
     return len.px + len.pct * basis
 }
 
-/** A participant's computed transform inputs, read once per flush when active. */
+/** A participant's computed transform inputs, read once per flush when active (§4.3). */
 export interface Measured {
     /** Why layout cannot drive this element, or `null`. */
     readonly unsupported: string | null
@@ -34,8 +34,6 @@ export interface Measured {
      * snaps the reference box (`snapsReferenceBox`); `null` elsewhere.
      */
     readonly originPct: readonly [number, number] | null
-    /** Border-box size in CSS px before any transform, rounded (`offsetWidth`/`offsetHeight`). */
-    readonly size: readonly [number, number]
     /** Corner radii (tl, tr, br, bl as x/y pairs), when asked for. */
     readonly radius: readonly Len[] | null
 }
@@ -147,12 +145,6 @@ function px(value: string): number {
 
 /** The exact border-box size from computed values; `null` when not computable. */
 export function borderSize(
-    element: HTMLElement
-): readonly [number, number] | null {
-    return borderSizeFromStyle(getComputedStyle(element))
-}
-
-function borderSizeFromStyle(
     style: CSSStyleDeclaration
 ): readonly [number, number] | null {
     const w = px(style.width)
@@ -185,10 +177,11 @@ function radiiFromStyle(style: CSSStyleDeclaration): Len[] {
     return radii
 }
 
-/** Resolved authored corner radii from one computed-style read. */
-export function readRadius(element: HTMLElement): readonly number[] | null {
-    const style = getComputedStyle(element)
-    const size = borderSizeFromStyle(style)
+/** Corner radii from an element's computed style, resolved against its CSS border box. */
+export function readRadius(
+    style: CSSStyleDeclaration
+): readonly number[] | null {
+    const size = borderSize(style)
     if (!size) return null
     return radiiFromStyle(style).map((len, i) =>
         resolveLen(len, i % 2 === 0 ? size[0] : size[1])
@@ -261,32 +254,18 @@ export function animatedOwned(doc: Document): Set<Element> {
     return animated
 }
 
-/** Page scroll of a document, read once per batch of rects. */
-export function pageScroll(doc: Document): readonly [number, number] {
-    const view = doc.defaultView
-    return [view?.scrollX ?? 0, view?.scrollY ?? 0]
-}
-
-/** Page box: viewport rect plus page scroll. */
-export function pageRect(
-    element: Element,
-    scroll: readonly [number, number]
-): Box {
+/** The raw rect: a box in the view space of the read, nothing added (§3.2). */
+export function viewRect(element: Element): Box {
     const r = element.getBoundingClientRect()
-    return {
-        x: r.left + scroll[0],
-        y: r.top + scroll[1],
-        w: r.width,
-        h: r.height,
-    }
+    return { x: r.left, y: r.top, w: r.width, h: r.height }
 }
 
-/** The viewport as a page box. */
+/** The layout viewport in view space (§3.2), the reference of culling (§9.1). */
 export function viewportBox(doc: Document): Box {
     const view = doc.defaultView
     return {
-        x: view?.scrollX ?? 0,
-        y: view?.scrollY ?? 0,
+        x: 0,
+        y: 0,
         w: view?.innerWidth ?? doc.documentElement.clientWidth,
         h: view?.innerHeight ?? doc.documentElement.clientHeight,
     }
@@ -345,30 +324,52 @@ function originPercents(
     return x === null || y === null ? null : [x, y]
 }
 
+/** An element's own computed 2D translate and scale, and the scale/translate part of its `transform`. */
+export interface Transform {
+    readonly translate: readonly [Len, Len]
+    readonly scale: readonly [number, number]
+    readonly matrix: Measured['matrix']
+}
+
+/**
+ * The classifier of an element's own computed transforms: its translate,
+ * scale and presence matrix, or why they are not a 2D translate and scale (a
+ * rotation, skew or 3D component, or an unparseable value). `measure()` and
+ * the support check's inner-scale read (§4.2) share it.
+ */
+export function readTransform(style: CSSStyleDeclaration): Transform | string {
+    const translate = parseTranslate(style.translate)
+    if (!translate) return `unparseable translate "${style.translate}"`
+    const scale = parseScale(style.scale)
+    if (!scale) return `unparseable scale "${style.scale}"`
+    const matrix = parseMatrix(style.transform)
+    if (!matrix) {
+        return `rotation, skew or unparseable transform "${style.transform}"`
+    }
+    if (!isZeroAngle(style.rotate)) return `rotate "${style.rotate}"`
+    return { translate, scale, matrix }
+}
+
+/**
+ * The computed values of an active node (§4.3). `style` is its computed
+ * style when the caller already holds it, so an element is read once.
+ */
 export function measure(
     element: HTMLElement,
     radius: boolean,
     animated: () => ReadonlySet<Element>,
-    snapsReference: boolean
+    snapsReference: boolean,
+    style: CSSStyleDeclaration = getComputedStyle(element)
 ): Measured {
-    const style = getComputedStyle(element)
-    const translate = parseTranslate(style.translate)
-    const scale = parseScale(style.scale)
-    const matrix = parseMatrix(style.transform)
+    const transform = readTransform(style)
     const origin = style.transformOrigin.split(' ').map(px)
     let unsupported: string | null = null
     if (style.display === 'contents' || style.display === 'none') {
         unsupported = `display: ${style.display}`
     } else if (style.display === 'inline') {
         unsupported = 'display: inline (transforms do not apply)'
-    } else if (!translate) {
-        unsupported = `unparseable translate "${style.translate}"`
-    } else if (!scale) {
-        unsupported = `unparseable scale "${style.scale}"`
-    } else if (!matrix) {
-        unsupported = `rotation, skew or unparseable transform "${style.transform}"`
-    } else if (!isZeroAngle(style.rotate)) {
-        unsupported = `rotate "${style.rotate}"`
+    } else if (typeof transform === 'string') {
+        unsupported = transform
     } else if (!Number.isFinite(origin[0]) || !Number.isFinite(origin[1])) {
         unsupported = `unparseable transform-origin "${style.transformOrigin}"`
     } else if (transitionsConfigured(style) || animated().has(element)) {
@@ -379,14 +380,14 @@ export function measure(
     if (radius && !unsupported) {
         radii = radiiFromStyle(style)
     }
+    const parsed = typeof transform === 'string' ? null : transform
     return {
         unsupported,
-        translate: translate ?? [ZERO, ZERO],
-        scale: scale ?? [1, 1],
-        matrix: matrix ?? IDENTITY_MATRIX,
+        translate: parsed?.translate ?? [ZERO, ZERO],
+        scale: parsed?.scale ?? [1, 1],
+        matrix: parsed?.matrix ?? IDENTITY_MATRIX,
         origin: [origin[0] ?? 0, origin[1] ?? 0],
         originPct: snapsReference ? originPercents(element) : null,
-        size: [element.offsetWidth, element.offsetHeight],
         radius: radii,
     }
 }
@@ -425,39 +426,6 @@ export function containsFlat(
         current = flatParent(current)
     ) {
         if (current === ancestor) return true
-    }
-    return false
-}
-
-/**
- * Scroll offsets of every ancestor of `elements` (each ancestor read once),
- * except the document scroller: page boxes already include page scroll.
- */
-export function scrollOffsets(
-    elements: Iterable<Element>
-): Map<Element, readonly [number, number]> {
-    const offsets = new Map<Element, readonly [number, number]>()
-    for (const element of elements) {
-        const scroller = element.ownerDocument.scrollingElement
-        for (
-            let node = flatParent(element);
-            node && !offsets.has(node);
-            node = flatParent(node)
-        ) {
-            if (node === scroller) break
-            offsets.set(node, [node.scrollLeft, node.scrollTop])
-        }
-    }
-    return offsets
-}
-
-/** Whether any recorded ancestor that is still connected scrolled since. */
-export function scrolledSince(
-    offsets: ReadonlyMap<Element, readonly [number, number]>
-): boolean {
-    for (const [node, [left, top]] of offsets) {
-        if (!node.isConnected) continue
-        if (node.scrollLeft !== left || node.scrollTop !== top) return true
     }
     return false
 }
@@ -508,6 +476,22 @@ export function put(
 
 /** Owned declarations are important, so stylesheet rules cannot override them mid-run. */
 export const OWNED_PRIORITY = 'important'
+
+/**
+ * Whether the author replaced an owned declaration inline since layout last
+ * wrote it, read without taking it in: such an element is not drawn as
+ * layout last wrote it.
+ */
+export function replacedOwned(
+    element: HTMLElement,
+    written: ReadonlyMap<string, string>
+): boolean {
+    for (const property of written.keys()) {
+        if (element.style.getPropertyPriority(property) !== OWNED_PRIORITY)
+            return true
+    }
+    return false
+}
 
 /**
  * Takes in what the author set inline on an owned property since layout

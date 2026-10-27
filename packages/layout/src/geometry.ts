@@ -1,9 +1,11 @@
 /**
  * Boxes and per-axis affine maps. Pure: no DOM, no clock.
  *
- * Every box is a page box (CSS px, viewport rect plus page scroll). Layout
- * never projects rotation or skew, so each axis is independent and every map
- * is `x ↦ k·x + b` per axis with `k > 0`.
+ * Every box is a view box (§3.2): CSS px in the view space of the flush that
+ * measured it, layout-viewport coordinates with no scroll offset added (the
+ * raw `getBoundingClientRect()`). Layout never projects rotation or skew, so
+ * each axis is independent and every map is `x ↦ k·x + b` per axis with
+ * `k > 0`.
  */
 
 export interface Box {
@@ -57,7 +59,7 @@ export function mapBox(map: Map2, box: Box): Box {
     }
 }
 
-/** The page-space map of `pose` about the origin point `(ox, oy)`. */
+/** The map of `pose` about the origin point `(ox, oy)`, in that point's frame. */
 export function aboutOrigin(pose: Pose, ox: number, oy: number): Map2 {
     return {
         x: { k: pose.sx, b: ox + pose.tx - pose.sx * ox },
@@ -93,7 +95,7 @@ export interface OwnTransform {
     readonly oy: number
 }
 
-/** The page-space map of an own transform applied to `box`. */
+/** The map of an own transform applied to `box`, in the box's frame. */
 export function ownMap(box: Box, own: OwnTransform): Map2 {
     return aboutOrigin(
         { tx: own.tx, ty: own.ty, sx: own.kx, sy: own.ky },

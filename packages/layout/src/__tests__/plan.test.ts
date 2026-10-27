@@ -25,6 +25,9 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         trackTarget: null,
         planned: null,
         parentPlanned: null,
+        presented: null,
+        parentPresented: null,
+        path: null,
         mode: true,
         anchor: null,
         motion,
@@ -47,7 +50,7 @@ function input(nodes: PlanNode[], extra: Partial<PlanInput> = {}): PlanInput {
         viewport: VIEWPORT,
         threshold: 1,
         maxNodes: 300,
-        stale: false,
+        measured: true,
         ...extra,
     }
 }
@@ -135,11 +138,72 @@ describe('plan: interruption', () => {
             trackTarget: a,
             before: drawn,
             velocity,
+            presented: a,
+            path: 'unchanged',
             ...overrides,
         })
 
     it('keeps a running track whose target did not move (an unrelated re-render restarts nothing)', () => {
-        const result = plan(input([moving({ a: { ...a, x: 100.5 } })]))
+        const shifted = { ...a, x: 100.5 }
+        const result = plan(
+            input([
+                moving({ a: shifted, presented: shifted, path: 'translate' }),
+            ])
+        )
+        expect(result.actions[0]!.kind).toBe('keep')
+    })
+
+    it('keeps a track whose A moved with its presented layout box, however far (a presented scroll, §5.7)', () => {
+        const scrolled = { ...a, y: a.y - 240 }
+        const result = plan(
+            input([
+                moving({ a: scrolled, presented: scrolled, path: 'translate' }),
+            ])
+        )
+        expect(result.actions[0]!.kind).toBe('keep')
+    })
+
+    it('retargets from B when the commit moved A away from its presented layout box (D3)', () => {
+        const result = plan(
+            input([
+                moving({ presented: { ...a, x: a.x - 5 }, path: 'unchanged' }),
+            ])
+        )
+        expect(result.actions[0]!.kind).toBe('track')
+    })
+
+    it('retargets when its size target changed, even with A on its presented layout box', () => {
+        const resized = { ...a, w: 120 }
+        const result = plan(input([moving({ a: resized, presented: resized })]))
+        expect(result.actions[0]!.kind).toBe('track')
+    })
+
+    it('retargets when its translation cannot be proven exact (§5.7 path 3)', () => {
+        const scrolled = { ...a, y: a.y - 20 }
+        const result = plan(
+            input([
+                moving({ a: scrolled, presented: scrolled, path: 'retarget' }),
+            ])
+        )
+        expect(result.actions[0]!.kind).toBe('track')
+    })
+
+    it('retargets when the capture gives no presented layout box', () => {
+        const result = plan(input([moving({ presented: null })]))
+        expect(result.actions[0]!.kind).toBe('track')
+    })
+
+    it('keeps a running track with no measured B: there is nothing to retarget from', () => {
+        const result = plan(
+            input([
+                moving({
+                    a: { ...a, x: 400 },
+                    before: null,
+                    presented: null,
+                    path: 'retarget',
+                }),
+            ])
+        )
         expect(result.actions[0]!.kind).toBe('keep')
     })
 
@@ -492,14 +556,66 @@ describe('plan: snaps', () => {
         expect(plan(input(nodes, { maxNodes: 4 })).status).toBe('run')
     })
 
-    it('a stale epoch snaps every node that would have moved', () => {
-        const result = plan(
-            input([node(), node({ before: { x: 0, y: 0, w: 100, h: 50 } })], {
-                stale: true,
-            })
+    it('without a valid measurement nothing starts and every running track is kept (§4.4)', () => {
+        const target = { x: 100, y: 100, w: 100, h: 50 }
+        const track = createTrack(
+            { x: 0, y: 0, w: 100, h: 50 },
+            target,
+            null,
+            0.5,
+            0.5,
+            true,
+            motion,
+            null
         )
-        expect(result.status).toBe('stale')
-        expect(result.snapped).toEqual([{ index: 1, reason: 'stale' }])
+        const ids = new Map<string, IdHistory>([
+            [
+                'x',
+                {
+                    lead: null,
+                    retained: { x: 600, y: 0, w: 40, h: 40 },
+                    retainedVelocity: null,
+                },
+            ],
+        ])
+        const result = plan(
+            input(
+                [
+                    // undriven, moved: no B, so it appears at A
+                    node({ before: null, a: { x: 300, y: 0, w: 100, h: 50 } }),
+                    // a running track whose A moved: kept whatever moved
+                    node({
+                        before: null,
+                        a: { x: 500, y: 500, w: 140, h: 50 },
+                        moving: true,
+                        track,
+                        trackTarget: target,
+                        path: 'retarget',
+                        optionsChanged: true,
+                    }),
+                    // a new lead does not take over the retained box
+                    node({ before: null, layoutId: 'x' }),
+                    // an unsupported running track still snaps
+                    node({
+                        before: null,
+                        moving: true,
+                        track,
+                        trackTarget: target,
+                        unsupported: true,
+                    }),
+                ],
+                { ids, measured: false }
+            )
+        )
+        expect(result.status).toBe('run')
+        expect(result.actions.map((a) => a.kind)).toEqual([
+            'none',
+            'keep',
+            'none',
+            'none',
+        ])
+        expect(result.leads.get('x')).toBe(2)
+        expect(result.snapped).toEqual([{ index: 3, reason: 'unsupported' }])
     })
 })
 
@@ -570,6 +686,9 @@ describe('plan: CP3 trial regressions', () => {
                 track: first.track,
                 trackTarget: box(100),
                 velocity: { x: 100, y: 0, w: 0, h: 0 },
+                presented: box(100),
+                parentPresented: parent,
+                path: 'unchanged',
             })
         const parentNode = node({ a: parent, before: parent })
         expect(

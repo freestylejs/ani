@@ -3,6 +3,7 @@
  * pairs and every snap reason. Pure: no DOM, no clock.
  */
 import type { Box } from './geometry'
+import type { KeepPath } from './measure'
 import type { LayoutAnchor, LayoutMode, Motion } from './motion'
 import {
     type AnchorPath,
@@ -29,23 +30,35 @@ export interface PlanNode {
     /** Transform origin as fractions of the box. */
     readonly fx: number
     readonly fy: number
-    /** Visual box before the change; `null` for a node new to the scope. */
+    /**
+     * B: the presented box measured by a fresh capture (§4.1); `null` when
+     * the capture holds none (a node new to the scope, or no valid capture).
+     */
     readonly before: Box | null
     /** Drawn-box velocity now; `null` at rest (including a track's delay hold). */
     readonly velocity: BoxVelocity | null
     /** Has a running own track (it may still hold its delay). */
     readonly moving: boolean
-    /** The running own track and its target, kept when A did not move. */
+    /** The running own track and its target (A at the flush that planned it). */
     readonly track: Track | null
     readonly trackTarget: Box | null
     /**
-     * A under the presence layers the running track was planned with (§3.1):
-     * a presence transform that changed since is a visual layer, not a move,
-     * so keep or retarget is judged on this box. `null`: judged on `a`.
+     * A under the presence matrices the running track was planned with
+     * (§3.2): a presence transform that changed since is a visual layer, not
+     * a move, so the keep test (§5.7) is judged on this box. `null`: on `a`.
      */
     readonly planned: Box | null
     /** The parent's A in the same space as `planned` (an anchored track's offset target). */
     readonly parentPlanned: Box | null
+    /**
+     * The presented layout box `L_k` of a running track (§4.2), in the same
+     * space as `planned`; `null` when the capture gives none.
+     */
+    readonly presented: Box | null
+    /** The parent's `L_k` in the same space (an anchored track's offset). */
+    readonly parentPresented: Box | null
+    /** The re-expression path of a running track (§5.7); `null` at rest. */
+    readonly path: KeepPath | null
     readonly mode: LayoutMode
     readonly anchor: LayoutAnchor | null
     readonly motion: Motion
@@ -78,8 +91,12 @@ export interface PlanInput {
     readonly viewport: Box
     readonly threshold: number
     readonly maxNodes: number
-    /** An inner scroll container moved between capture and flush. */
-    readonly stale: boolean
+    /**
+     * The flush consumed a fresh capture, a valid measurement of what was
+     * presented. Without one (§4.4) nothing starts: every running track is
+     * kept whatever moved, and every other node appears at A.
+     */
+    readonly measured: boolean
 }
 
 export type Action =
@@ -106,7 +123,7 @@ export type PlanWarning =
     | { readonly kind: 'spring-timeout'; readonly index: number }
 
 export interface Plan {
-    readonly status: 'run' | 'capped' | 'stale'
+    readonly status: 'run' | 'capped'
     readonly actions: readonly Action[]
     readonly snapped: readonly {
         readonly index: number
@@ -262,18 +279,16 @@ function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
 }
 
 /**
- * How far a running track's target is from the new A: its box target, and for
- * an anchored track its offset target from the parent's new anchor point.
+ * How far a running track's targets are from the new A (§5.7 keep test,
+ * condition 2): its size target, and for an anchored track its offset target
+ * from the parent's new anchor point (§5.6).
  */
 function targetMoved(node: PlanNode, parentAfter: Box | undefined): number {
     const target = node.trackTarget!
     const rule = node.track!.anchor
     const a = node.planned ?? node.a
+    const size = Math.max(Math.abs(target.w - a.w), Math.abs(target.h - a.h))
     if (rule && node.anchor && parentAfter) {
-        const size = Math.max(
-            Math.abs(target.w - a.w),
-            Math.abs(target.h - a.h)
-        )
         const to = anchorOffsetOf(node.anchor, a, parentAfter)
         return Math.max(
             size,
@@ -281,7 +296,42 @@ function targetMoved(node: PlanNode, parentAfter: Box | undefined): number {
             Math.abs(to.y - rule.toY)
         )
     }
-    return moved(target, a, node)
+    return size
+}
+
+/**
+ * The keep test of a running track (§5.7), judged under the presence
+ * matrices it was planned with: its new A equals its presented layout box
+ * `L_k` (1), its size and offset targets are unchanged (2), and its options
+ * are unchanged (3), each within `threshold`; and its re-expression is not a
+ * retarget. Without a measurement of what was presented there is nothing to
+ * retarget from, so the track is kept whatever moved (§4.4).
+ */
+function keeps(
+    node: PlanNode,
+    parentAfter: Box | undefined,
+    measured: boolean,
+    threshold: number
+): boolean {
+    if (!measured || node.before === null) return true
+    if (node.optionsChanged || node.path === 'retarget' || !node.presented) {
+        return false
+    }
+    if (targetMoved(node, node.parentPlanned ?? parentAfter) >= threshold) {
+        return false
+    }
+    const a = node.planned ?? node.a
+    return (
+        moved(
+            node.presented,
+            a,
+            node,
+            node.parentPresented ?? undefined,
+            node.parentPresented
+                ? (node.parentPlanned ?? parentAfter)
+                : undefined
+        ) < threshold
+    )
 }
 
 export function plan(input: PlanInput): Plan {
@@ -291,27 +341,9 @@ export function plan(input: PlanInput): Plan {
     const leadList = resolveLeads(input, warnings)
     const leads = new Map(leadList.map((lead) => [lead.id, lead.index]))
 
-    if (input.stale) {
-        nodes.forEach((node, index) => {
-            const before = node.before
-            if (
-                node.moving ||
-                (before && moved(before, node.a, node) >= threshold)
-            ) {
-                snapped.push({ index, reason: 'stale' })
-            }
-        })
-        return {
-            status: 'stale',
-            actions: nodes.map(() => NONE),
-            snapped,
-            leads,
-            warnings,
-        }
-    }
-
     // effective before-box and carried velocity: a new lead starts from the
-    // box it takes over, moving if that node was moving
+    // box it takes over, moving if that node was moving. Without a valid
+    // measurement nothing is taken over (§4.4)
     const before = nodes.map((node) => node.before)
     const carried: (BoxVelocity | null)[] = nodes.map((node) => node.velocity)
     const fadeLead = new Set<number>()
@@ -319,7 +351,7 @@ export function plan(input: PlanInput): Plan {
     const newFollower = new Map<number, number>()
     for (const lead of leadList) {
         const node = nodes[lead.index]!
-        if (lead.handoff === null) continue
+        if (lead.handoff === null || !input.measured) continue
         before[lead.index] = lead.handoff
         carried[lead.index] = lead.handoffVelocity
         handoffFrom.set(lead.index, lead.follower)
@@ -400,15 +432,19 @@ export function plan(input: PlanInput): Plan {
             node.moving &&
             node.track &&
             node.trackTarget &&
-            !node.optionsChanged &&
-            targetMoved(node, node.parentPlanned ?? parentAfter) < threshold
+            keeps(node, parentAfter, input.measured, threshold)
         ) {
             own = KEEP
+            // a kept track with no measured B cannot be shown to be outside
+            // the viewport: it keeps running (culling would make it jump)
+            if (b === null) return own
         } else if (
-            node.moving ||
-            (b !== null && movedFrom(b) >= threshold) ||
-            parentMoves ||
-            fadeLead.has(i)
+            // without a valid measurement nothing starts: the node appears at A
+            input.measured &&
+            (node.moving ||
+                (b !== null && movedFrom(b) >= threshold) ||
+                parentMoves ||
+                fadeLead.has(i))
         ) {
             const from = b ?? node.a
             const velocity = carried[i]!

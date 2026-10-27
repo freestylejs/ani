@@ -15,17 +15,16 @@ import {
     OPACITY_PROPERTIES,
     OWNED_PRIORITY,
     POSE_PROPERTIES,
-    pageRect,
-    pageScroll,
     put,
     RADIUS_PROPERTIES,
     readRadius,
+    readTransform,
+    replacedOwned,
     resolveLen,
     type Saved,
     save,
-    scrolledSince,
-    scrollOffsets,
     viewportBox,
+    viewRect,
 } from './dom'
 import { hasDOM, snapsReferenceBox, supportsLinearEasing } from './feature'
 import {
@@ -42,11 +41,22 @@ import {
     mapBox,
     movingOnto,
     ownMap,
+    type Pose,
     STILL_IDENTITY,
     still,
     unmapOwn,
     usedOrigin,
 } from './geometry'
+import {
+    type KeepPath,
+    type KeepPathInput,
+    keepPath,
+    type PresentedNode,
+    presentedLayoutBoxes,
+    type SupportNode,
+    staleReported,
+    supportCheck,
+} from './measure'
 import {
     assertKeys,
     clampMotion,
@@ -65,6 +75,7 @@ import {
 import {
     type Action,
     type IdHistory,
+    moved,
     type PlanNode,
     plan,
     type SnapReason,
@@ -103,36 +114,12 @@ const DEFAULT_MAX_NODES = 300
 const DEFAULT_RETAIN = 1
 const MIN_SCALE = 1 / 50
 const MAX_SCALE = 50
-/** Border-box size check for a non-participant ancestor's scale (px, relative). */
-const SIZE_TOLERANCE_PX = 0.1
-const SIZE_TOLERANCE_REL = 1e-3
+/** Why a node fails the support check (§4.2). */
+const UNOWNED_MAP =
+    'a map the engine does not own (a scaled, rotated or skewed ancestor that is not a participant, 3D, or CSS zoom)'
+const IDENTITY_POSE: Pose = { tx: 0, ty: 0, sx: 1, sy: 1 }
 
-function within(measured: number, exact: number, slack: number): boolean {
-    return (
-        Math.abs(measured - exact) <=
-        slack + SIZE_TOLERANCE_PX + SIZE_TOLERANCE_REL * exact
-    )
-}
-
-/**
- * Whether the CSS box recovered from the rect has the element's real size:
- * otherwise an ancestor that is not a participant scales, rotates or skews.
- * The rounded offset size decides when it can; the exact computed size only
- * when it cannot.
- */
-function sizeMatches(
-    element: HTMLElement,
-    css: Box,
-    rounded: readonly [number, number]
-): boolean {
-    if (within(css.w, rounded[0], 0.5) && within(css.h, rounded[1], 0.5)) {
-        // rounding hides at most half a pixel: only a near-1 scale on a tiny box escapes
-        return true
-    }
-    const exact = borderSize(element)
-    if (!exact) return true
-    return within(css.w, exact[0], 0) && within(css.h, exact[1], 0)
-}
+type KeepAncestor = KeepPathInput['ancestors'][number]
 
 interface Authored {
     readonly tx: number
@@ -152,7 +139,7 @@ interface Geometry {
     readonly oy: number
     /** Inner map `Q`, local frame. */
     readonly inner: Map2
-    /** Page map at rest: the parent's rest map ∘ `Q`. */
+    /** View-space map at rest: the parent's rest map ∘ `Q` (`a = rest(L)`). */
     readonly rest: Map2
     /** Origin as fractions of the CSS box. */
     readonly fx: number
@@ -233,14 +220,34 @@ interface Run {
     done: boolean
 }
 
+/** The engine's own state at an instant: what its last writes describe (§4.1). */
+interface EngineState {
+    /** Per frame node, the pose the engine last wrote (identity where it wrote none). */
+    readonly poses: Map<Participant, Pose>
+    /** Per frame node, its analytic drawn-box velocity. */
+    readonly rates: Map<Participant, BoxVelocity>
+    /** Nodes whose own track is moving (running, past its delay). */
+    readonly moving: Set<Participant>
+}
+
+/** One capture (§4.1): what was presented at `t_k`, read in one batch. */
 interface Capture {
+    /** The task stamp: reused while true, re-read in a later task. */
     live: boolean
+    /** A rendering opportunity passed (or it began in a frame): it supplies no B. */
+    aged: boolean
+    /** Releases the frame marker, if it has not fired. */
+    disarm: () => void
+    /** B per connected participant: the raw rect, nothing divided out. */
     readonly rects: Map<Participant, Box>
-    /** Resting shared radius:true participants' resolved radii at B. */
+    /** Per participant, `offsetWidth`/`offsetHeight`. */
+    readonly offsets: Map<Participant, readonly [number, number]>
+    /** Participants that failed the support check, with their subtrees. */
+    readonly unsupported: Map<Participant, string>
+    /** Shared `radius` participants' on-screen corner radii at B. */
     readonly radius: Map<Participant, readonly number[]>
-    /** Participants driven at capture time (not read: B is their drawn box). */
-    readonly driven: Set<Participant>
-    readonly scroll: ReadonlyMap<Element, readonly [number, number]>
+    /** The engine's state at `t_k`. */
+    readonly engine: EngineState
 }
 
 type Matrix = Geometry['matrix']
@@ -263,18 +270,47 @@ function sameMatrix(a: Matrix, b: Matrix): boolean {
     return a.a === b.a && a.d === b.d && a.e === b.e && a.f === b.f
 }
 
-/** The inner map `Q` (§3.1): authored translate/scale with a presence matrix, about the origin. */
+/** The inner map `Q` (§3.2) as a pose: authored translate/scale with a presence matrix. */
+function innerPose(au: Authored, m: Matrix): Pose {
+    return {
+        tx: au.tx + au.sx * m.e,
+        ty: au.ty + au.sy * m.f,
+        sx: au.sx * m.a,
+        sy: au.sy * m.d,
+    }
+}
+
+/** The inner map `Q` (§3.2) about the origin. */
 function innerOf(au: Authored, m: Matrix, ox: number, oy: number): Map2 {
-    return aboutOrigin(
-        {
-            tx: au.tx + au.sx * m.e,
-            ty: au.ty + au.sy * m.f,
-            sx: au.sx * m.a,
-            sy: au.sy * m.d,
-        },
-        ox,
-        oy
-    )
+    return aboutOrigin(innerPose(au, m), ox, oy)
+}
+
+/**
+ * A kept track re-expressed by `δ` (§5.7 path 2): its B and A origin
+ * channels move, its shape, timing, seeds, size channels and anchor offset
+ * (relative to the parent's anchor point) stay.
+ */
+function translated(track: Track, dx: number, dy: number): Track {
+    const [bx, by, bw, bh] = track.b
+    const [ax, ay, aw, ah] = track.a
+    return {
+        ...track,
+        b: [bx + dx, by + dy, bw, bh],
+        a: [ax + dx, ay + dy, aw, ah],
+    }
+}
+
+/** The pose last written to a node: its own declarations, read back exactly. */
+function writtenPose(d: Drive | null): Pose {
+    const translate = d?.written.get('translate')
+    const scale = d?.written.get('scale')
+    if (translate === undefined || scale === undefined) return IDENTITY_POSE
+    const [tx, ty] = translate.split(' ').map((v) => Number.parseFloat(v))
+    const [sx, sy] = scale.split(' ').map((v) => Number.parseFloat(v))
+    const au = d!.authored
+    const px = sx! / au.sx
+    const py = sy! / au.sy
+    return { tx: tx! - px * au.tx, ty: ty! - py * au.ty, sx: px, sy: py }
 }
 
 /**
@@ -313,17 +349,13 @@ function keptGeometry(was: Geometry, now: Geometry, a: Box): Geometry {
     return { ...now, a, box: mapBox(inner, css), inner, matrix: was.matrix }
 }
 
+/** A removed lead's last presented state, in view space as measured (§5.8). */
 interface Retained {
     readonly box: Box
     readonly velocity: BoxVelocity | null
     /** The removed lead's on-screen radii, when it owned radius. */
     readonly radius: readonly number[] | null
     readonly until: number
-    /**
-     * The participant the lead was drawn under, until the next flush carries
-     * the box through its current presence layers (§5.6).
-     */
-    readonly parent: Participant | null
 }
 
 interface Write {
@@ -509,7 +541,8 @@ export function createLayoutGroup(
     /** Drawn boxes and velocities of leads removed within `retain` seconds. */
     const retained = new Map<string, Retained>()
     const warned = new Set<string>()
-    const stats = { captures: 0, reads: 0, tracks: 0 }
+    /** Every read the engine makes, counted where it is made (§7.1). */
+    const stats = { captures: 0, rects: 0, offsets: 0, styles: 0, tracks: 0 }
 
     function warn(kind: string, message: string): void {
         if (!DEV || warned.has(kind)) return
@@ -851,41 +884,276 @@ export function createLayoutGroup(
 
     /* ───────────────────────── capture ───────────────────────── */
 
+    /** Connected participants, parents first, with their nearest participant ancestors. */
+    function participantTree(): {
+        list: Participant[]
+        parents: number[]
+        index: Map<Participant, number>
+    } {
+        const list = [...registry.values()].filter((p) => p.element.isConnected)
+        const parentOf = new Map<Participant, Participant | null>()
+        const depth = new Map<Participant, number>()
+        const depthOf = (p: Participant): number => {
+            const known = depth.get(p)
+            if (known !== undefined) return known
+            const parent = nearestParticipant(p.element)
+            parentOf.set(p, parent)
+            const d = parent ? depthOf(parent) + 1 : 0
+            depth.set(p, d)
+            return d
+        }
+        for (const p of list) depthOf(p)
+        list.sort((a, b) => depth.get(a)! - depth.get(b)! || a.order - b.order)
+        const index = new Map<Participant, number>()
+        list.forEach((p, i) => index.set(p, i))
+        const parents = list.map((p) => {
+            const parent = parentOf.get(p)
+            return parent ? index.get(parent)! : -1
+        })
+        return { list, parents, index }
+    }
+
+    /**
+     * The engine's own state now: the pose it last wrote to each frame node
+     * and the analytic velocity of each drawn box, both at the instant its
+     * last writes describe (§4.1). No DOM read.
+     */
+    function engineState(): EngineState {
+        const poses = new Map<Participant, Pose>()
+        const rates = new Map<Participant, BoxVelocity>()
+        const moving = new Set<Participant>()
+        if (frame.length === 0) return { poses, rates, moving }
+        if (waapi) syncAnimations()
+        const nodes = solveNodes(frame)
+        const velocities = drawnVelocities(nodes)
+        // a WAAPI track writes no declaration: its pose is its animation's value
+        const solved = waapi ? solve(nodes) : null
+        frame.forEach((node, i) => {
+            const d = node.p.drive
+            poses.set(node.p, solved ? solved[i]!.pose : writtenPose(d))
+            rates.set(node.p, velocities[i]!)
+            if (
+                d?.kind === 'track' &&
+                d.track !== null &&
+                !trackEnded(d.track, d.elapsed) &&
+                d.elapsed >= d.track.delay
+            ) {
+                moving.add(node.p)
+            }
+        })
+        return { poses, rates, moving }
+    }
+
+    /**
+     * The support check (§4.2) over one batch of rects and layout sizes,
+     * parents first: per node, why its box shows a map the engine does not
+     * own (its own computed transform's cause when that is what failed, its
+     * parent's for a subtree), or `null` when it passes. A node's computed
+     * values are read at most once per batch (`styleOf`), and only when the
+     * check needs them.
+     */
+    function supportOf(
+        list: readonly Participant[],
+        parents: readonly number[],
+        rects: readonly Box[],
+        offsets: readonly (readonly [number, number])[],
+        poses: ReadonlyMap<Participant, Pose>,
+        styleOf: (i: number) => CSSStyleDeclaration
+    ): readonly (string | null)[] {
+        const hasChildren = list.map(() => false)
+        for (const parent of parents)
+            if (parent >= 0) hasChildren[parent] = true
+        const poseOf = (i: number) => poses.get(list[i]!) ?? IDENTITY_POSE
+        const nodes: SupportNode[] = list.map((_, i) => {
+            const pose = poseOf(i)
+            return {
+                parent: parents[i]!,
+                rect: rects[i]!,
+                offset: offsets[i]!,
+                pose: { sx: pose.sx, sy: pose.sy },
+                hasChildren: hasChildren[i]!,
+            }
+        })
+        const causes: (string | null)[] = list.map(() => null)
+        const { supported } = supportCheck(
+            nodes,
+            (i) => {
+                const transform = readTransform(styleOf(i))
+                if (typeof transform === 'string') {
+                    causes[i] = transform
+                    return 'unsupported'
+                }
+                // the computed scale holds the pose the engine wrote
+                const pose = poseOf(i)
+                return {
+                    sx: (transform.scale[0] * transform.matrix.a) / pose.sx,
+                    sy: (transform.scale[1] * transform.matrix.d) / pose.sy,
+                }
+            },
+            (i) => {
+                const size = borderSize(styleOf(i))
+                return size
+                    ? { w: size[0], h: size[1] }
+                    : { w: Number.NaN, h: Number.NaN }
+            }
+        )
+        const reasons: (string | null)[] = []
+        list.forEach((_, i) => {
+            const parent = parents[i]!
+            reasons.push(
+                supported[i]
+                    ? null
+                    : parent >= 0 && !supported[parent]
+                      ? reasons[parent]!
+                      : (causes[i] ?? UNOWNED_MAP)
+            )
+        })
+        return reasons
+    }
+
+    /** Computed styles of one batch, each element read at most once and counted. */
+    function styleReader(
+        list: readonly Participant[]
+    ): (i: number) => CSSStyleDeclaration {
+        const styles: (CSSStyleDeclaration | undefined)[] = new Array(
+            list.length
+        )
+        return (i) => {
+            let style = styles[i]
+            if (!style) {
+                style = getComputedStyle(list[i]!.element)
+                styles[i] = style
+                stats.styles += 1
+            }
+            return style
+        }
+    }
+
+    /**
+     * Arms the capture's frame marker (§4.1): the clock's read callback and
+     * the owner window's animation frame, whichever runs first, ages it. The
+     * marker reads and writes nothing; the other half is cancelled (the
+     * clock's cannot be, so the token makes it a no-op).
+     */
+    function armMarker(current: Capture, view: Window | null): void {
+        const token = { armed: true }
+        let request: number | null = null
+        const cancelFrame = () => {
+            if (request !== null) view?.cancelAnimationFrame(request)
+            request = null
+        }
+        current.disarm = () => {
+            if (!token.armed) return
+            token.armed = false
+            cancelFrame()
+        }
+        clock.read(() => {
+            if (!token.armed) return
+            token.armed = false
+            current.aged = true
+            cancelFrame()
+        })
+        if (typeof view?.requestAnimationFrame === 'function') {
+            request = view.requestAnimationFrame(() => {
+                request = null
+                if (!token.armed) return
+                token.armed = false
+                current.aged = true
+            })
+        }
+    }
+
     function takeCapture(): void {
         if (disposed || !hasDOM()) return
         evictAdopted()
         if (capture?.live) return
-        const rects = new Map<Participant, Box>()
+        capture?.disarm()
+        // a capture that begins inside a rendering-update callback may follow
+        // an unpresented change of the same frame: it is aged at once (§4.1)
+        const inFrame = clock.inFrame
+        const { list, parents } = participantTree()
+        const engine = engineState()
+        // 1. one rect and one layout size per connected participant
+        const rects: Box[] = []
+        const offsets: (readonly [number, number])[] = []
+        for (const p of list) {
+            rects.push(viewRect(p.element))
+            offsets.push([p.element.offsetWidth, p.element.offsetHeight])
+        }
+        stats.rects += list.length
+        stats.offsets += list.length
+        // 2. the support check on what was presented
+        const styleOf = styleReader(list)
+        const unsupported = supportOf(
+            list,
+            parents,
+            rects,
+            offsets,
+            engine.poses,
+            styleOf
+        )
+        // 3. after every rect: shared corner radii at B, on screen (a driven
+        // node's own declarations are drawn at its poses' scale)
         const radius = new Map<Participant, readonly number[]>()
-        const driven = new Set<Participant>()
-        const elements: HTMLElement[] = []
-        const radiusParticipants: Participant[] = []
-        let scroll: readonly [number, number] | null = null
-        for (const p of registry.values()) {
-            if (!p.element.isConnected) continue
-            elements.push(p.element)
-            if (p.drive) {
-                driven.add(p)
-                continue
-            }
-            scroll ??= pageScroll(p.element.ownerDocument)
-            rects.set(p, pageRect(p.element, scroll))
-            stats.reads += 1
-            if (p.options.layoutId !== undefined && ownsRadius(p.options)) {
-                radiusParticipants.push(p)
-            }
-        }
-        for (const p of radiusParticipants) {
-            const value = readRadius(p.element)
-            stats.reads += 1
-            if (value) radius.set(p, value)
-        }
+        const kx: number[] = []
+        const ky: number[] = []
+        list.forEach((p, i) => {
+            const pose = engine.poses.get(p) ?? IDENTITY_POSE
+            const parent = parents[i]!
+            kx.push((parent >= 0 ? kx[parent]! : 1) * pose.sx)
+            ky.push((parent >= 0 ? ky[parent]! : 1) * pose.sy)
+            if (p.options.layoutId === undefined || !ownsRadius(p.options))
+                return
+            const value = readRadius(styleOf(i))
+            if (!value) return
+            radius.set(
+                p,
+                value.map((r, j) => r * (j % 2 === 0 ? kx[i]! : ky[i]!))
+            )
+        })
+        // an owned declaration the author replaced inline since layout wrote
+        // it is unpresented (the same task): that node and its subtree are
+        // not drawn as presented, so they supply no B (§4.1, §6)
+        const unpresented: boolean[] = []
+        list.forEach((p, i) => {
+            const parent = parents[i]!
+            unpresented.push(
+                (parent >= 0 && unpresented[parent]!) ||
+                    (p.drive !== null &&
+                        replacedOwned(p.element, p.drive.written))
+            )
+        })
+        const presentedRects = new Map<Participant, Box>()
+        list.forEach((p, i) => {
+            if (unpresented[i]) radius.delete(p)
+            else presentedRects.set(p, rects[i]!)
+        })
         const current: Capture = {
             live: true,
-            rects,
+            aged: inFrame,
+            disarm: noop,
+            rects: presentedRects,
+            offsets: new Map(list.map((p, i) => [p, offsets[i]!])),
+            unsupported: new Map(
+                list.flatMap((p, i) => {
+                    const reason = unsupported[i]
+                    return reason ? [[p, reason] as const] : []
+                })
+            ),
             radius,
-            driven,
-            scroll: scrollOffsets(elements),
+            engine,
+        }
+        if (inFrame) {
+            warn(
+                'in-frame',
+                'capture() or update() ran while the clock runs a frame (a requestAnimationFrame callback), so its capture is aged and the change does not animate. Call it from an ordinary task: an event handler, a timer or a promise callback.'
+            )
+        } else {
+            armMarker(
+                current,
+                (scopeDocument ?? list[0]?.element.ownerDocument ?? document)
+                    .defaultView
+            )
         }
         capture = current
         stats.captures += 1
@@ -967,10 +1235,6 @@ export function createLayoutGroup(
         )
         const box = mapBox(inner, css)
         const rest = compose(parentRest, inner)
-        if (!unsupported && !sizeMatches(p.element, css, m.size)) {
-            unsupported =
-                'a scaled, rotated or skewed ancestor that is not a participant'
-        }
         let radius: number[] | null = null
         if (m.radius) {
             radius = m.radius.map((len: Len, i) =>
@@ -1017,26 +1281,20 @@ export function createLayoutGroup(
     }
 
     /**
-     * B of a driven node is its drawn box as the user sees it now: through the
-     * presence layers as they are at this flush, not as they were frozen at the
-     * last one (§3.1). Only the presence matrices can differ (they are not
-     * React's, so the commit did not change them); the poses are the engine's
-     * own. Each pose is recovered with its rate from the drawn box and its
-     * velocity, then composed through the current layers, so a velocity is
-     * carried exactly (§5.5): a parent's motion stays a translation whatever
-     * the child's own scale. A lead removed since the last flush is carried
-     * through its parent's current layers the same way (§5.6).
+     * `v` of a driven node is its analytic velocity at `t_k` as the user sees
+     * it: through the presence layers as they are at this flush, not as they
+     * were frozen with its track (§5.7). B is measured through those layers;
+     * the rate is carried to them here. Each pose is recovered with its rate
+     * from the analytic drawn box and its velocity, then composed through the
+     * current layers (maps with time derivatives compose exactly by the
+     * product rule), so a parent's motion stays a translation of the child
+     * whatever the child's own scale became.
      */
-    function reconcileLayers(
+    function carryRates(
         index: ReadonlyMap<Participant, number>,
         geometry: readonly (Geometry | null)[],
-        drawn: Map<Participant, Box>,
         velocity: Map<Participant, BoxVelocity>
     ): void {
-        const pending = [...retained].filter(([, entry]) => entry.parent)
-        for (const [id, entry] of pending) {
-            retained.set(id, { ...entry, parent: null })
-        }
         if (frame.length === 0) return
         const current = new Map<Participant, Matrix>()
         for (const node of frame) {
@@ -1055,12 +1313,13 @@ export function createLayoutGroup(
             return false
         })
         if (!changed) return
-        // each node's full map as solved, with its rate (read before any is carried)
-        const ontos = frame.map((node) => {
+        // each node's full map as solved, with its rate (taken before any is carried)
+        const drawn = drawnBoxes(solveNodes(frame))
+        const ontos = frame.map((node, k) => {
             const g = node.geometry
             return movingOnto(
                 mapBox(invert(g.inner), g.box),
-                drawn.get(node.p) ?? g.a,
+                drawn[k]!,
                 velocity.get(node.p) ?? ZERO_VELOCITY
             )
         })
@@ -1074,7 +1333,6 @@ export function createLayoutGroup(
                 ontos[k] ??
                 composeMoving(parentWas(k), still(frame[k]!.geometry.inner))
         )
-        const before: MovingMap[] = []
         const after: MovingMap[] = []
         frame.forEach((node, k) => {
             const g = node.geometry
@@ -1085,7 +1343,6 @@ export function createLayoutGroup(
                 node.parent >= 0 ? after[node.parent]! : STILL_IDENTITY
             const onto = ontos[k]
             if (!onto) {
-                before.push(composeMoving(parentWas(k), still(g.inner)))
                 after.push(composeMoving(parentNow, still(inner)))
                 return
             }
@@ -1098,7 +1355,6 @@ export function createLayoutGroup(
                 composeMoving(parentNow, pose),
                 still(inner)
             )
-            before.push(onto)
             after.push(next)
             if (!node.p.drive) return
             const seen = carry(
@@ -1106,26 +1362,8 @@ export function createLayoutGroup(
                 mapBox(invert(g.inner), g.box),
                 ZERO_VELOCITY
             )
-            drawn.set(node.p, seen.box)
             velocity.set(node.p, seen.velocity)
         })
-        for (const [id, entry] of pending) {
-            const k = frame.findIndex((node) => node.p === entry.parent)
-            if (k < 0 || entry.parent?.removed) continue
-            const shift = composeMoving(after[k]!, invertMoving(before[k]!))
-            const moved = carry(
-                shift,
-                entry.box,
-                entry.velocity ?? ZERO_VELOCITY
-            )
-            retained.set(id, {
-                box: moved.box,
-                velocity: entry.velocity ? moved.velocity : null,
-                radius: entry.radius,
-                until: entry.until,
-                parent: null,
-            })
-        }
     }
 
     function flush(): Promise<LayoutReport> {
@@ -1133,7 +1371,15 @@ export function createLayoutGroup(
         evictAdopted()
         const cap = capture
         capture = null
+        cap?.disarm()
         if (!hasDOM()) return resolved('no-change')
+        /**
+         * Only a fresh capture is a valid measurement of what was presented
+         * (§4.1); without one the flush degrades as §4.4 states, and an aged
+         * capture is a node's last known box.
+         */
+        const fresh = cap !== null && !cap.aged ? cap : null
+        const measured = fresh !== null
 
         // drives of participants that left the document end here (their
         // restores are written with the others, after every read); the author's
@@ -1144,7 +1390,7 @@ export function createLayoutGroup(
                 adoptAuthored(p.element, p.drive.saved, p.drive.written)
             else settle(p, true)
         }
-        const list = [...registry.values()].filter((p) => p.element.isConnected)
+        const { list, parents, index } = participantTree()
         if (list.length === 0) {
             frame = []
             commitWrites()
@@ -1152,72 +1398,34 @@ export function createLayoutGroup(
             stats.tracks = 0
             return resolved('no-change')
         }
-
-        // tree, parents first
-        const parentOf = new Map<Participant, Participant | null>()
-        const depth = new Map<Participant, number>()
-        const depthOf = (p: Participant): number => {
-            const known = depth.get(p)
-            if (known !== undefined) return known
-            const parent = nearestParticipant(p.element)
-            parentOf.set(p, parent)
-            const d = parent ? depthOf(parent) + 1 : 0
-            depth.set(p, d)
-            return d
-        }
-        for (const p of list) depthOf(p)
-        list.sort((a, b) => depth.get(a)! - depth.get(b)! || a.order - b.order)
-        const index = new Map<Participant, number>()
-        list.forEach((p, i) => index.set(p, i))
-        const parents = list.map((p) => {
-            const parent = parentOf.get(p)
-            return parent ? index.get(parent)! : -1
-        })
         const hasChild = list.map(() => false)
         for (const parent of parents) if (parent >= 0) hasChild[parent] = true
+        /** Each node's A at its previous flush, before this one replaces it. */
+        const lastBoxes = list.map((p) => p.lastBox)
 
-        // the engine's own state before this flush
-        if (waapi) syncAnimations()
+        // the engine's own state at t_k: the fresh capture's, or now when there
+        // is none (its last writes describe the presented frame either way)
+        const engine = fresh?.engine ?? engineState()
         /** Each frame node as its running track was planned. */
         const frozen = new Map<Participant, FrameNode>()
         for (const node of frame) frozen.set(node.p, node)
-        const nowSolve = solveNodes(frame)
-        const drawn = new Map<Participant, Box>()
-        const velocity = new Map<Participant, BoxVelocity>()
-        const drawnRadius = new Map<Participant, readonly number[]>()
-        if (frame.length > 0) {
-            const solved = solve(nowSolve)
-            const velocities = drawnVelocities(nowSolve)
-            frame.forEach((node, i) => {
-                const value = solved[i]!
-                const input = nowSolve[i]!
-                drawn.set(node.p, value.drawn)
-                velocity.set(node.p, velocities[i]!)
-                if (value.radius) {
-                    drawnRadius.set(
-                        node.p,
-                        value.radius.map(
-                            (r, j) =>
-                                r *
-                                (j % 2 === 0
-                                    ? value.drawn.w / input.a.w
-                                    : value.drawn.h / input.a.h)
-                        )
-                    )
-                }
-            })
-        }
 
-        // 1. reads: every rect, then computed styles of what the plan needs
+        // 1. reads: every rect and layout size, then computed styles of what
+        // the support check and the plan need
         const doc = list[0]!.element.ownerDocument
         // probed when the scope was created; another document is probed here
         const snapsReference = snapsReferenceBox(doc)
         const dpr = doc.defaultView?.devicePixelRatio ?? 1
-        const scroll = pageScroll(doc)
-        const rects = list.map((p) => pageRect(p.element, scroll))
-        stats.reads += list.length
-        const stale = cap ? scrolledSince(cap.scroll) : false
+        const rects: Box[] = []
+        const offsets: (readonly [number, number])[] = []
+        for (const p of list) {
+            rects.push(viewRect(p.element))
+            offsets.push([p.element.offsetWidth, p.element.offsetHeight])
+        }
+        stats.rects += list.length
+        stats.offsets += list.length
         const viewport = viewportBox(doc)
+        const styleOf = styleReader(list)
 
         const geometry: (Geometry | null)[] = list.map(() => null)
         const fulls: (Map2 | null)[] = list.map(() => null)
@@ -1240,9 +1448,16 @@ export function createLayoutGroup(
                     p.element,
                     ownsRadius(p.options),
                     animatedNow,
-                    snapsReference
+                    snapsReference,
+                    styleOf(i)
                 )
-                stats.reads += 1
+                // the Typed OM origin, where the browser snaps the reference box
+                if (
+                    snapsReference &&
+                    typeof p.element.computedStyleMap === 'function'
+                ) {
+                    stats.styles += 1
+                }
                 if (m.radius && p.drive?.radius) {
                     const radius = [...m.radius]
                     RADIUS_PROPERTIES.forEach((property, corner) => {
@@ -1269,21 +1484,88 @@ export function createLayoutGroup(
             }
             return added
         }
-        // every node with a driven node at or above it divides out poses; the
-        // parent of a lead removed since the last flush carries its box
-        const carriers = new Set<Participant | null>()
-        for (const entry of retained.values()) carriers.add(entry.parent)
+        // every node with a driven node at or above it divides out poses
         const chained: boolean[] = []
         list.forEach((p, i) => {
             const parent = parents[i]!
-            chained.push(
-                p.drive !== null ||
-                    carriers.has(p) ||
-                    (parent >= 0 && chained[parent]!)
-            )
+            chained.push(p.drive !== null || (parent >= 0 && chained[parent]!))
         })
         measureNodes(chained)
-        reconcileLayers(index, geometry, drawn, velocity)
+
+        // the support check (§4.2) on this flush's reads, and on the fresh
+        // capture's: a map the engine does not own snaps its subtree
+        const flushed = supportOf(
+            list,
+            parents,
+            rects,
+            offsets,
+            engine.poses,
+            styleOf
+        )
+        const unowned = list.map(
+            (p, i) => fresh?.unsupported.get(p) ?? flushed[i] ?? null
+        )
+
+        // v: the analytic velocity at t_k, through this flush's layers
+        const velocity = new Map(engine.rates)
+        if (measured) carryRates(index, geometry, velocity)
+
+        /**
+         * `L_k` per node with a fresh B (§4.2): the capture's rect with the
+         * poses the engine had written divided out top-down, through the
+         * inner maps of what was presented (a fresh capture shares this
+         * flush's presence matrices: no rendering opportunity lies between).
+         * Each is kept as its CSS box with its origin offset, so the keep
+         * test can draw it through the matrices its track was planned with
+         * about its own origin (§5.7), not about A's.
+         */
+        const presented: ({
+            css: Box
+            origin: readonly [number, number]
+        } | null)[] = list.map(() => null)
+        if (fresh) {
+            const nodes: PresentedNode[] = []
+            const of: number[] = []
+            const slot = new Map<number, number>()
+            list.forEach((p, i) => {
+                const g = geometry[i]
+                const rect = fresh.rects.get(p)
+                const parent = parents[i]!
+                if (!g || !rect || (parent >= 0 && !slot.has(parent))) return
+                const css = mapBox(invert(g.inner), g.box)
+                slot.set(i, nodes.length)
+                of.push(i)
+                nodes.push({
+                    parent: parent >= 0 ? slot.get(parent)! : -1,
+                    rect,
+                    pose: engine.poses.get(p) ?? IDENTITY_POSE,
+                    inner: innerPose(g.authored, g.matrix),
+                    origin: [g.ox - css.x, g.oy - css.y],
+                })
+            })
+            // L_k = R_parent ∘ Q about L_k's origin: divide the inner maps
+            // back out top-down to recover each L_k's CSS box
+            const rests: Map2[] = []
+            presentedLayoutBoxes(nodes).forEach((box, k) => {
+                const node = nodes[k]!
+                const parentRest =
+                    node.parent >= 0 ? rests[node.parent]! : IDENTITY_MAP
+                const [ox, oy] = node.origin
+                const q = node.inner
+                const css = unmapOwn(mapBox(invert(parentRest), box), {
+                    kx: q.sx,
+                    ky: q.sy,
+                    tx: q.tx,
+                    ty: q.ty,
+                    ox,
+                    oy,
+                })
+                rests.push(
+                    compose(parentRest, aboutOrigin(q, css.x + ox, css.y + oy))
+                )
+                presented[of[k]!] = { css, origin: node.origin }
+            })
+        }
 
         const reduced = reducedMode()
         const ids = new Map<string, IdHistory>()
@@ -1312,13 +1594,16 @@ export function createLayoutGroup(
         }
 
         /**
-         * Every running track's A, and its parent's, under the presence
-         * matrices frozen with the track (§3.1): what A is if only the layout
-         * changed. Parents first.
+         * Every running track's A and `L_k`, and its parent's, under the
+         * presence matrices frozen with the track (§3.2): the keep test
+         * compares them there (§5.7), so a presence layer changed since is
+         * not a move. Parents first.
          */
         const plannedBoxes = (): ({
             own: Box
             parent: Box | null
+            presented: Box | null
+            parentPresented: Box | null
         } | null)[] => {
             const rests: (Map2 | null)[] = []
             const matrices: (Matrix | null)[] = []
@@ -1346,6 +1631,37 @@ export function createLayoutGroup(
                 }
                 return rest
             }
+            /**
+             * The rest map of `i`'s ancestors' `L_k` under the matrices of
+             * its own flush, each about its `L_k`'s origin; null when one has
+             * no `L_k`.
+             */
+            const presentedRest = (
+                i: number,
+                ancestry: ReadonlyMap<Participant, Matrix>
+            ): Map2 | null => {
+                const chain: number[] = []
+                for (let k = parents[i]!; k >= 0; k = parents[k]!)
+                    chain.unshift(k)
+                let rest = IDENTITY_MAP
+                for (const k of chain) {
+                    const ga = geometry[k]
+                    const lk = presented[k]
+                    const m = ancestry.get(list[k]!) ?? matrices[k]
+                    if (!ga || !lk || !m) return null
+                    const au = list[k]!.drive?.authored ?? ga.authored
+                    rest = compose(
+                        rest,
+                        innerOf(
+                            au,
+                            m,
+                            lk.css.x + lk.origin[0],
+                            lk.css.y + lk.origin[1]
+                        )
+                    )
+                }
+                return rest
+            }
             return list.map((p, i) => {
                 const g = geometry[i]
                 const parent = parents[i]!
@@ -1370,38 +1686,123 @@ export function createLayoutGroup(
                 const css = mapBox(invert(g.inner), g.box)
                 const base = epochRest(i, was.ancestry, parentRest)
                 const gp = parent >= 0 ? geometry[parent] : null
+                // L_k through the same matrices, each about L_k's own origin
+                const lk = presented[i]
+                const lkBase = lk ? presentedRest(i, was.ancestry) : null
+                const lkParent = parent >= 0 ? presented[parent] : null
                 return {
                     own: mapBox(base, mapBox(inner, css)),
                     // the parent's CSS box through the same ancestors
                     parent: gp
                         ? mapBox(base, mapBox(invert(gp.inner), gp.box))
                         : null,
+                    presented:
+                        lk && lkBase
+                            ? mapBox(
+                                  lkBase,
+                                  mapBox(
+                                      innerOf(
+                                          au,
+                                          m,
+                                          lk.css.x + lk.origin[0],
+                                          lk.css.y + lk.origin[1]
+                                      ),
+                                      lk.css
+                                  )
+                              )
+                            : null,
+                    parentPresented:
+                        lkParent && lkBase
+                            ? mapBox(lkBase, lkParent.css)
+                            : null,
                 }
             })
         }
 
+        /** A frame node's participant ancestors when its track was planned, nearest first. */
+        const frameChainOf = (node: FrameNode): Participant[] => {
+            const chain: Participant[] = []
+            for (let k = node.parent; k >= 0; k = frame[k]!.parent)
+                chain.push(frame[k]!.p)
+            return chain
+        }
+        const planned = plannedBoxes()
+
+        /**
+         * Per running track, its re-expression (§5.7): `δ = A_new − A_old` of
+         * its origin channels (both rest boxes, each in its own flush's view
+         * space), `ρ` per axis over its participant ancestors, and the path.
+         * A track whose ancestors changed since it was planned retargets.
+         */
+        const reexpress = list.map((p, i) => {
+            const d = p.drive
+            const was = frozen.get(p)
+            const own = planned[i]?.own
+            if (
+                d?.kind !== 'track' ||
+                d.track === null ||
+                trackEnded(d.track, d.elapsed) ||
+                !was ||
+                !own
+            ) {
+                return null
+            }
+            const track = d.track
+            const dx = own.x + track.fx * own.w - track.a[0]
+            const dy = own.y + track.fy * own.h - track.a[1]
+            const before = frameChainOf(was)
+            const ancestors: KeepAncestor[] = []
+            let rhoX = 1
+            let rhoY = 1
+            let same = true
+            let n = 0
+            for (let k = parents[i]!; k >= 0; k = parents[k]!, n++) {
+                const a = list[k]!
+                const ga = geometry[k]
+                const fa = frozen.get(a)
+                if (a !== before[n] || !ga || !fa) {
+                    same = false
+                    break
+                }
+                const pose = engine.poses.get(a) ?? IDENTITY_POSE
+                const innerNow = innerPose(ga.authored, ga.matrix)
+                const innerPlanned = innerPose(
+                    fa.geometry.authored,
+                    was.ancestry.get(a) ?? fa.geometry.matrix
+                )
+                rhoX *= (pose.sx * innerNow.sx) / innerPlanned.sx
+                rhoY *= (pose.sy * innerNow.sy) / innerPlanned.sy
+                ancestors.push({
+                    pose: { sx: pose.sx, sy: pose.sy },
+                    innerNow: { sx: innerNow.sx, sy: innerNow.sy },
+                    innerPlanned: { sx: innerPlanned.sx, sy: innerPlanned.sy },
+                })
+            }
+            if (n !== before.length) same = false
+            const path: KeepPath = same
+                ? keepPath({ delta: { x: dx, y: dy }, ancestors })
+                : 'retarget'
+            return { dx, dy, rho: { x: rhoX, y: rhoY }, path }
+        })
+
+        /** Why each node cannot be animated exactly, for its warning. */
+        const why: (string | null)[] = list.map(() => null)
         const planNodes = (): PlanNode[] => {
-            const planned = plannedBoxes()
             return list.map((p, i) => {
                 const g = geometry[i]
                 const a = g?.a ?? rects[i]!
                 const d = p.drive
-                let before: Box | null = null
-                if (!p.keyChanged) {
-                    if (d) before = drawn.get(p) ?? p.lastBox
-                    else if (cap) {
-                        before =
-                            cap.rects.get(p) ??
-                            (cap.driven.has(p) ? p.lastBox : null)
-                    }
-                }
+                // B is a measurement of what was presented, driven or not
+                const before =
+                    p.keyChanged || !fresh ? null : (fresh.rects.get(p) ?? null)
                 const moving =
                     d?.kind === 'track' &&
                     d.track !== null &&
                     !trackEnded(d.track, d.elapsed)
                 const holding = moving && d!.elapsed < d!.track!.delay
                 const options = p.options
-                let unsupported = g?.unsupported ?? null
+                // the node's own classified cause names the failure first
+                let unsupported = g?.unsupported ?? unowned[i] ?? null
                 if (waapi && !unsupported) {
                     if (parents[i]! >= 0 || hasChild[i])
                         unsupported =
@@ -1427,6 +1828,7 @@ export function createLayoutGroup(
                 }
                 const hasDependency = 'layoutDependency' in options
                 const presence = presenceOf(p.element)
+                why[i] = unsupported
                 return {
                     parent: parents[i]!,
                     order: p.order,
@@ -1444,6 +1846,11 @@ export function createLayoutGroup(
                     trackTarget: moving ? d!.target : null,
                     planned: moving ? (planned[i]?.own ?? null) : null,
                     parentPlanned: moving ? (planned[i]?.parent ?? null) : null,
+                    presented: moving ? (planned[i]?.presented ?? null) : null,
+                    parentPresented: moving
+                        ? (planned[i]?.parentPresented ?? null)
+                        : null,
+                    path: moving ? (reexpress[i]?.path ?? 'retarget') : null,
                     mode: options.layout ?? true,
                     anchor: options.layoutAnchor ?? null,
                     motion: motionOf(p, reduced),
@@ -1479,7 +1886,7 @@ export function createLayoutGroup(
             viewport,
             threshold,
             maxNodes,
-            stale,
+            measured,
         })
         for (;;) {
             const wanted = result.actions.map(
@@ -1500,7 +1907,7 @@ export function createLayoutGroup(
                 viewport,
                 threshold,
                 maxNodes,
-                stale,
+                measured,
             })
         }
 
@@ -1560,11 +1967,8 @@ export function createLayoutGroup(
             }))
         let actions: readonly Action[] = result.actions
         let status: LayoutStatus | null = null
-        if (
-            result.status !== 'run' &&
-            (result.status !== 'stale' || snapped.length > 0)
-        ) {
-            status = result.status
+        if (result.status === 'capped') {
+            status = 'capped'
         } else if (reduced === 'jump') {
             const moves = actions.some(
                 (a) => a.kind === 'track' || a.kind === 'follow'
@@ -1584,13 +1988,71 @@ export function createLayoutGroup(
             actions = actions.map(() => ({ kind: 'none' }) as const)
             status = moves ? 'reduced' : null
         }
+        if (!measured) {
+            // §4.4: every node that may have jumped is reported, once
+            const reported = list.map(() => false)
+            const already = new Set(snapped.map((s) => s.element))
+            result.actions.forEach((action, i) => {
+                const p = list[i]!
+                const node = nodes[i]!
+                if (already.has(p.element) || node.skip) return
+                const r = reexpress[i]
+                if (action.kind === 'keep' && r) {
+                    reported[i] = staleReported(
+                        {
+                            driven: true,
+                            a: node.a,
+                            lastKnown: null,
+                            delta: { x: r.dx, y: r.dy },
+                            rho: r.rho,
+                            translationExact: r.path !== 'retarget',
+                        },
+                        threshold,
+                        () => 0
+                    )
+                } else if (action.kind !== 'follow') {
+                    reported[i] = staleReported(
+                        {
+                            driven: false,
+                            a: node.a,
+                            lastKnown:
+                                cap?.rects.get(p) ?? lastBoxes[i] ?? null,
+                            delta: { x: 0, y: 0 },
+                            rho: { x: 1, y: 1 },
+                            translationExact: true,
+                        },
+                        threshold,
+                        (from, to) =>
+                            moved(from, to, {
+                                mode: node.mode,
+                                anchor: null,
+                                fx: node.fx,
+                                fy: node.fy,
+                            })
+                    )
+                }
+            })
+            // a continuing crossfade follower is drawn at its lead
+            result.actions.forEach((action, i) => {
+                if (
+                    action.kind === 'follow' &&
+                    !already.has(list[i]!.element) &&
+                    reported[action.lead]
+                ) {
+                    reported[i] = true
+                }
+            })
+            list.forEach((p, i) => {
+                if (reported[i])
+                    snapped.push({ element: p.element, reason: 'stale' })
+            })
+        }
         for (const { element, reason } of snapped) {
             if (reason === 'unsupported') {
-                const p = registry.get(element)!
-                const g = p.geometry
+                const i = index.get(registry.get(element)!)!
                 warn(
                     'unsupported',
-                    `a participant cannot be animated exactly and snaps (${g?.unsupported ?? 'unsupported'}).`
+                    `a participant cannot be animated exactly and snaps (${why[i] ?? 'unsupported'}).`
                 )
             } else if (reason === 'capped') {
                 warn(
@@ -1600,7 +2062,7 @@ export function createLayoutGroup(
             } else if (reason === 'stale') {
                 warn(
                     'stale',
-                    'a scroll container scrolled between capture and flush; the change snaps.'
+                    'no valid measurement of what was presented (capture-less or aged flush), so participants that moved appear at their new layout without motion. Call capture() (or update()) in the task that changes the DOM.'
                 )
             }
         }
@@ -1673,8 +2135,8 @@ export function createLayoutGroup(
             return d
         }
 
-        // Radius handoff state is derived entirely from the pre-flush frame,
-        // the current flush's measurements, or a retained removed lead (§5.7).
+        // Radius handoff state comes from B's radii, measured by the fresh
+        // capture, or from a retained removed lead (§4.1, §5.8, §5.9).
         const radiusBlendFrom = new Map<
             number,
             Pick<RadiusBlend, 'from' | 'to'>
@@ -1688,11 +2150,7 @@ export function createLayoutGroup(
                 if (action.handoffFrom >= 0) {
                     const previous = list[action.handoffFrom]!
                     if (!ownsRadius(previous.options)) return
-                    source =
-                        drawnRadius.get(previous) ??
-                        cap?.radius.get(previous) ??
-                        previous.geometry?.radius ??
-                        null
+                    source = fresh?.radius.get(previous) ?? null
                 } else {
                     const id = list[i]!.options.layoutId
                     source =
@@ -1702,7 +2160,7 @@ export function createLayoutGroup(
                 }
             } else if (list[i]!.drive?.radiusBlend) {
                 // A retarget of a running blend starts from what is painted.
-                source = drawnRadius.get(list[i]!) ?? null
+                source = fresh?.radius.get(list[i]!) ?? null
             }
             if (!source) return
             radiusBlendFrom.set(i, { from: source, to: target })
@@ -1746,8 +2204,29 @@ export function createLayoutGroup(
                     if (d && (d.kind !== 'held' || !nodes[i]!.exiting))
                         settle(p)
                     return
-                case 'keep':
+                case 'keep': {
+                    // re-expressed in this flush's view space by δ (§5.7
+                    // path 2; §4.4 whatever the path, with no B to retarget
+                    // from): its pose relative to its layout box is unchanged
+                    const r = reexpress[i]
+                    if (!r || r.path === 'unchanged' || !d?.track || !d.target)
+                        return
+                    d.track = translated(d.track, r.dx, r.dy)
+                    d.target = {
+                        ...d.target,
+                        x: d.target.x + r.dx,
+                        y: d.target.y + r.dy,
+                    }
+                    // the same animation draws it: the WAAPI pose is relative too
+                    const running = animations.get(p)
+                    if (running) {
+                        animations.set(p, {
+                            animation: running.animation,
+                            track: d.track,
+                        })
+                    }
                     return
+                }
                 case 'static': {
                     if (d?.kind === 'held') return
                     if (d?.run) {
@@ -1937,52 +2416,19 @@ export function createLayoutGroup(
             }
             return promise
         }
-        // no track ran: a node refused by reduced motion makes it 'reduced' (§9.3)
+        // no track ran (§9.3): 'reduced', then 'stale', then 'no-change'
         return resolved(
             status ??
                 (snapped.some((s) => s.reason === 'reduced')
                     ? 'reduced'
-                    : 'no-change'),
+                    : snapped.some((s) => s.reason === 'stale')
+                      ? 'stale'
+                      : 'no-change'),
             snapped
         )
     }
 
     /* ───────────────────────── lifecycle ───────────────────────── */
-
-    /** The drawn state of a driven node now, derived without a DOM read. */
-    function currentMotion(p: Participant): {
-        box: Box
-        velocity: BoxVelocity | null
-        radius: readonly number[] | null
-    } | null {
-        const d = p.drive
-        if (!d) return null
-        const at = frame.findIndex((node) => node.p === p)
-        if (at < 0) return null
-        if (waapi) syncAnimations()
-        const nodes = solveNodes(frame)
-        const value = solve(nodes)[at]
-        if (!value) return null
-        const input = nodes[at]!
-        const moving =
-            d.kind === 'track' &&
-            d.track !== null &&
-            !trackEnded(d.track, d.elapsed) &&
-            d.elapsed >= d.track.delay
-        return {
-            box: value.drawn,
-            velocity: moving ? (drawnVelocities(nodes)[at] ?? null) : null,
-            radius: value.radius
-                ? value.radius.map(
-                      (r, j) =>
-                          r *
-                          (j % 2 === 0
-                              ? value.drawn.w / input.a.w
-                              : value.drawn.h / input.a.h)
-                  )
-                : null,
-        }
-    }
 
     function countTracks(): number {
         let tracks = 0
@@ -2082,9 +2528,7 @@ export function createLayoutGroup(
             leads.delete(id)
             retained.delete(id)
         }
-        capture?.rects.delete(p)
-        capture?.radius.delete(p)
-        capture?.driven.delete(p)
+        forgetCaptured(p)
         stopParticipantDrive(p, true)
         warn(
             'document-mismatch',
@@ -2105,12 +2549,18 @@ export function createLayoutGroup(
         p.keyChanged = true
         p.changed = false
         invalidateHold(p)
-        capture?.rects.delete(p)
-        capture?.radius.delete(p)
-        capture?.driven.delete(p)
+        forgetCaptured(p)
         stopParticipantDrive(p, false)
         p.lastBox = null
         p.geometry = null
+    }
+
+    /** A participant whose identity ended has no B in the open capture. */
+    function forgetCaptured(p: Participant): void {
+        capture?.rects.delete(p)
+        capture?.offsets.delete(p)
+        capture?.radius.delete(p)
+        capture?.unsupported.delete(p)
     }
 
     function validateWaapiNesting(element: HTMLElement): void {
@@ -2175,27 +2625,27 @@ export function createLayoutGroup(
                 registry.delete(element)
                 const id = self.options.layoutId
                 if (id !== undefined && leads.get(id) === self) {
-                    // the box and the velocity it left with (§5.6)
-                    const motion = currentMotion(self)
-                    const box =
-                        motion?.box ?? capture?.rects.get(self) ?? self.lastBox
+                    // its last presented box, radius and velocity, in view
+                    // space as the fresh capture measured them (§5.8); with no
+                    // valid measurement nothing is retained
+                    const seen = capture && !capture.aged ? capture : null
+                    const box = seen?.rects.get(self)
                     leads.delete(id)
                     if (
+                        seen &&
                         box &&
                         retain > 0 &&
                         element.ownerDocument === scopeDocument
                     )
                         retained.set(id, {
                             box,
-                            velocity: motion?.velocity ?? null,
+                            velocity: seen.engine.moving.has(self)
+                                ? (seen.engine.rates.get(self) ?? null)
+                                : null,
                             radius: ownsRadius(self.options)
-                                ? (motion?.radius ??
-                                  capture?.radius.get(self) ??
-                                  self.geometry?.radius ??
-                                  null)
+                                ? (seen.radius.get(self) ?? null)
                                 : null,
                             until: now() + retain * 1000,
-                            parent: motion ? self.parent : null,
                         })
                 }
                 const d = self.drive
@@ -2258,6 +2708,7 @@ export function createLayoutGroup(
             try {
                 mutate()
             } catch (error) {
+                capture?.disarm()
                 capture = null
                 throw error
             }
@@ -2273,6 +2724,7 @@ export function createLayoutGroup(
             if (disposed) return
             finishAll('disposed')
             disposed = true
+            capture?.disarm()
             capture = null
             for (const p of registry.values()) p.removed = true
             registry.clear()
@@ -2284,8 +2736,13 @@ export function createLayoutGroup(
         get stats() {
             return {
                 captures: stats.captures,
-                reads: stats.reads,
+                reads: stats.rects + stats.offsets + stats.styles,
+                rects: stats.rects,
+                offsets: stats.offsets,
+                styles: stats.styles,
                 tracks: stats.tracks,
+                // live holds: the drive seam has none yet (§5.10)
+                holds: 0,
             }
         },
     }
