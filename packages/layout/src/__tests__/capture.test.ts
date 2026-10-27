@@ -173,6 +173,36 @@ describe('capture (§4.1)', () => {
         }
     })
 
+    it('C-3b: 1,000 captures while the clock is hidden queue one clock read for the scope, not one per capture; it ages only the capture still armed when it runs', async () => {
+        const { mc, group, b } = await scene()
+        mc.frames(20)
+        await nextTask()
+        const read = vi.spyOn(mc.clock, 'read')
+        mc.setHidden(true)
+        for (let k = 0; k < 1000; k++) {
+            group.capture()
+            await group.flush()
+            await nextTask()
+        }
+        expect(read).toHaveBeenCalledTimes(1)
+        // a capture replaced in a later task keeps the one registration
+        group.capture()
+        await nextTask()
+        group.capture()
+        expect(read).toHaveBeenCalledTimes(1)
+        mc.setHidden(false)
+        mc.frame()
+        model.place(b, box(140))
+        // the clock's read ran: the armed capture is aged
+        const aged = await group.flush()
+        expect(aged.snapped).toEqual([{ element: b, reason: 'stale' }])
+        // once it ran, the next capture registers again
+        await nextTask()
+        group.capture()
+        expect(read).toHaveBeenCalledTimes(2)
+        group.dispose()
+    })
+
     it('C-4: a capture taken while the clock runs a frame is aged at once, with a warning naming the fix', async () => {
         const { mc, group, b } = await scene()
         await nextTask()

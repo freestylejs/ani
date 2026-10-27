@@ -1230,35 +1230,49 @@ export function createLayoutGroup(
     }
 
     /**
+     * The capture the clock's read callback will age, if it is still armed:
+     * at most one `clock.read` registration is pending per scope, and it
+     * holds no capture once that capture is disarmed or replaced.
+     */
+    let markerTarget: Capture | null = null
+    let markerPending = false
+    const onMarkerRead = (): void => {
+        markerPending = false
+        const target = markerTarget
+        markerTarget = null
+        if (!target) return
+        target.aged = true
+        target.disarm()
+    }
+
+    /**
      * Arms the capture's frame marker (§4.1): the clock's read callback and
      * the owner window's animation frame, whichever runs first, ages it. The
      * marker reads and writes nothing; the other half is cancelled (the
-     * clock's cannot be, so the token makes it a no-op).
+     * clock's cannot be: the scope's one pending registration is pointed at
+     * the newest armed capture, or at none).
      */
     function armMarker(current: Capture, view: Window | null): void {
-        const token = { armed: true }
         let request: number | null = null
-        const cancelFrame = () => {
+        let armed = true
+        current.disarm = () => {
+            if (!armed) return
+            armed = false
             if (request !== null) view?.cancelAnimationFrame(request)
             request = null
+            if (markerTarget === current) markerTarget = null
         }
-        current.disarm = () => {
-            if (!token.armed) return
-            token.armed = false
-            cancelFrame()
+        markerTarget = current
+        if (!markerPending) {
+            markerPending = true
+            clock.read(onMarkerRead)
         }
-        clock.read(() => {
-            if (!token.armed) return
-            token.armed = false
-            current.aged = true
-            cancelFrame()
-        })
         if (typeof view?.requestAnimationFrame === 'function') {
             request = view.requestAnimationFrame(() => {
                 request = null
-                if (!token.armed) return
-                token.armed = false
+                if (!armed) return
                 current.aged = true
+                current.disarm()
             })
         }
     }
