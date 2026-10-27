@@ -8,6 +8,7 @@ import type {
     LayoutReport,
 } from '@freestylejs/ani-layout'
 import { createRef, memo, type RefObject, StrictMode, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../../core/src/testing/index'
@@ -819,6 +820,87 @@ describe('react layout adapter', () => {
             expect(root!.members.size).toBe(0)
             expect(live()).toHaveLength(1)
             expect(live()[0]).not.toBe(root)
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('I-5: passes layoutKey through and compares it with Object.is', async () => {
+        function App({ layoutKey }: { layoutKey: unknown }) {
+            return (
+                <LayoutGroup>
+                    <Item id="a" layoutKey={layoutKey} />
+                </LayoutGroup>
+            )
+        }
+        const view = await mount(<App layoutKey={Number.NaN} />)
+        try {
+            const [fake] = live()
+            expect([...fake!.members.values()][0]).toEqual({
+                layoutKey: Number.NaN,
+            })
+            await view.rerender(<App layoutKey={Number.NaN} />)
+            expect(fake!.calls).not.toContain('set')
+
+            await view.rerender(<App layoutKey={+0} />)
+            expect(fake!.calls.filter((call) => call === 'set')).toHaveLength(1)
+            expect([...fake!.members.values()][0]).toEqual({
+                layoutKey: +0,
+            })
+
+            await view.rerender(<App layoutKey={-0} />)
+            expect(fake!.calls.filter((call) => call === 'set')).toHaveLength(2)
+            expect(
+                Object.is([...fake!.members.values()][0]!.layoutKey, -0)
+            ).toBe(true)
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('I-5: a portal into another document inside a LayoutGroup creates or joins that document implicit scope', async () => {
+        const other = document.implementation.createHTMLDocument('portal-doc')
+        const target = other.createElement('ul')
+        other.body.appendChild(target)
+
+        function App({ showPortal }: { showPortal: boolean }) {
+            return (
+                <div>
+                    <LayoutGroup id="g1">
+                        <ul>
+                            <Item id="main" />
+                        </ul>
+                        {showPortal && createPortal(<Item id="p1" />, target)}
+                    </LayoutGroup>
+                    <LayoutGroup id="g2">
+                        {showPortal && createPortal(<Item id="p2" />, target)}
+                    </LayoutGroup>
+                </div>
+            )
+        }
+
+        const view = await mount(<App showPortal={true} />)
+        try {
+            expect(live()).toHaveLength(2)
+            const groupFake = live().find(
+                (fake) =>
+                    [...fake.members.keys()][0]!.ownerDocument === document
+            )!
+            const portalFake = live().find(
+                (fake) => [...fake.members.keys()][0]!.ownerDocument === other
+            )!
+            expect(groupFake).toBeDefined()
+            expect(portalFake).toBeDefined()
+            expect(groupFake).not.toBe(portalFake)
+            expect(groupFake.members.size).toBe(1)
+            // Both portals from g1 and g2 join other's single implicit scope
+            expect(portalFake.members.size).toBe(2)
+
+            await view.rerender(<App showPortal={false} />)
+            await settle()
+            expect(portalFake.disposed).toBe(true)
+            expect(groupFake.disposed).toBe(false)
+            expect(groupFake.members.size).toBe(1)
         } finally {
             await view.unmount()
         }

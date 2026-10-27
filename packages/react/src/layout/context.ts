@@ -23,6 +23,8 @@ export const hasDOM = (): boolean => typeof document !== 'undefined'
  * change or after disposal.
  */
 export interface LayoutScope {
+    readonly document?: Document | undefined
+    readonly clock?: Clock | undefined
     /** Render of a participant, group or presence: the before-boxes. */
     touch(): void
     /** Layout effect: queues the commit's one flush. */
@@ -151,6 +153,7 @@ export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
         (a.layoutCrossfade ?? true) === (b.layoutCrossfade ?? true) &&
         'layoutDependency' in a === 'layoutDependency' in b &&
         Object.is(a.layoutDependency, b.layoutDependency) &&
+        Object.is(a.layoutKey, b.layoutKey) &&
         (a.radius ?? a.layoutId !== undefined) ===
             (b.radius ?? b.layoutId !== undefined) &&
         sameLayoutMotion(a.motion, b.motion)
@@ -159,7 +162,8 @@ export function sameOptions(a: LayoutOptions, b: LayoutOptions): boolean {
 
 export function createLayoutScope(
     initial: LayoutGroupOptions,
-    onEmpty?: () => void
+    onEmpty?: () => void,
+    doc: Document | undefined = hasDOM() ? document : undefined
 ): LayoutScope {
     let options = initial
     let group: LayoutGroup | null = null
@@ -233,6 +237,10 @@ export function createLayoutScope(
     }
 
     const scope: LayoutScope = {
+        document: doc,
+        get clock() {
+            return options.clock
+        },
         touch() {
             if (!hasDOM()) return
             touched = true
@@ -370,7 +378,8 @@ export function rootScope(
                 byDocument.delete(doc)
                 live.delete(created)
                 created.dispose()
-            }
+            },
+            doc
         )
         scope = created
         byDocument.set(doc, scope)
@@ -404,10 +413,11 @@ export function scopeOf(
     context: LayoutContextValue | null,
     element?: Element | null
 ): LayoutScope {
-    return (
-        context?.scope ??
-        rootScope(undefined, element?.ownerDocument ?? document)
-    )
+    const doc = element?.ownerDocument ?? document
+    if (context && (!element || context.scope.document === doc)) {
+        return context.scope
+    }
+    return rootScope(context?.scope.clock, doc)
 }
 
 /**
@@ -418,9 +428,12 @@ export function existingScope(
     context: LayoutContextValue | null,
     element?: Element | null
 ): LayoutScope | undefined {
-    if (context) return context.scope
     if (!hasDOM()) return undefined
-    return peekRootScope(undefined, element?.ownerDocument ?? document)
+    const doc = element?.ownerDocument ?? document
+    if (context && (!element || context.scope.document === doc)) {
+        return context.scope
+    }
+    return peekRootScope(context?.scope.clock, doc)
 }
 
 /**
@@ -434,16 +447,28 @@ export function existingScopes(
     context: LayoutContextValue | null,
     documents: Iterable<Document>
 ): LayoutScope[] {
-    if (context) return [context.scope]
     if (!hasDOM()) return []
     const found: LayoutScope[] = []
+    const add = (scope: LayoutScope | undefined) => {
+        if (scope && !found.includes(scope)) found.push(scope)
+    }
     let known = false
     for (const doc of documents) {
         known = true
-        const scope = peekRootScope(undefined, doc)
-        if (scope && !found.includes(scope)) found.push(scope)
+        if (context && context.scope.document === doc) {
+            add(context.scope)
+        } else {
+            add(peekRootScope(context?.scope.clock, doc))
+        }
     }
-    return known ? found : [...(roots.get(undefined)?.live ?? [])]
+    if (known) return found
+    if (context) add(context.scope)
+    for (const scope of roots.get(context?.scope.clock)?.live ?? []) {
+        if (!context || scope.document !== context.scope.document) {
+            add(scope)
+        }
+    }
+    return found
 }
 
 /** `over` merged onto `base` by the kind-level rule of the layout engine (§5.1). */

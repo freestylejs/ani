@@ -63,6 +63,8 @@ export interface LayoutOptions {
     readonly layoutCrossfade?: boolean
     /** When given and unchanged since the previous flush, the node is not animated. */
     readonly layoutDependency?: unknown
+    /** Semantic identity (§4.7); a change resets the participant to a fresh baseline. */
+    readonly layoutKey?: unknown
     /**
      * Keep the corners' on-screen radius under scale, and blend it across a
      * `layoutId` handoff. Default: `true` with a `layoutId`, else `false`.
@@ -241,6 +243,7 @@ const OPTION_KEYS = [
     'layoutAnchor',
     'layoutCrossfade',
     'layoutDependency',
+    'layoutKey',
     'radius',
     'motion',
 ] as const

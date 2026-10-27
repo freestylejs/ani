@@ -7,6 +7,8 @@ import {
     adoptAuthored,
     animatedOwned,
     borderSize,
+    containsFlat,
+    flatParent,
     type Len,
     type Measured,
     measure,
@@ -208,6 +210,8 @@ interface Participant {
     options: LayoutOptions
     readonly order: number
     changed: boolean
+    /** `layoutKey` changed since the previous flush (§4.7). */
+    keyChanged: boolean
     /** `layoutDependency` at the previous flush, when given. */
     dependency: { readonly value: unknown } | null
     /** Visual box at rest at the previous flush. */
@@ -494,6 +498,7 @@ export function createLayoutGroup(
     >()
 
     const registry = new Map<HTMLElement, Participant>()
+    let scopeDocument: Document | null = null
     let sequence = 0
     let capture: Capture | null = null
     let frame: FrameNode[] = []
@@ -511,6 +516,17 @@ export function createLayoutGroup(
         warned.add(kind)
         // biome-ignore lint/suspicious/noConsole: development warning
         console.warn(`[ani-layout] ${message}`)
+    }
+
+    function assertDocument(element: HTMLElement): void {
+        if (scopeDocument && element.ownerDocument !== scopeDocument) {
+            const targetUrl = element.ownerDocument.URL || 'about:blank'
+            const boundUrl = scopeDocument.URL || 'about:blank'
+            throw invalidOptions(
+                'type',
+                `element belongs to another document (${targetUrl}); this layout scope is bound to ${boundUrl}.`
+            )
+        }
     }
 
     /* ───────────────────────── frame ───────────────────────── */
@@ -837,6 +853,7 @@ export function createLayoutGroup(
 
     function takeCapture(): void {
         if (disposed || !hasDOM()) return
+        evictAdopted()
         if (capture?.live) return
         const rects = new Map<Participant, Box>()
         const radius = new Map<Participant, readonly number[]>()
@@ -895,11 +912,7 @@ export function createLayoutGroup(
     }
 
     function nearestParticipant(element: HTMLElement): Participant | null {
-        for (
-            let node = element.parentElement;
-            node;
-            node = node.parentElement
-        ) {
+        for (let node = flatParent(element); node; node = flatParent(node)) {
             const p = registry.get(node)
             if (p && !p.removed && node.isConnected) return p
         }
@@ -1117,6 +1130,7 @@ export function createLayoutGroup(
 
     function flush(): Promise<LayoutReport> {
         if (disposed) return resolved('disposed')
+        evictAdopted()
         const cap = capture
         capture = null
         if (!hasDOM()) return resolved('no-change')
@@ -1373,11 +1387,13 @@ export function createLayoutGroup(
                 const a = g?.a ?? rects[i]!
                 const d = p.drive
                 let before: Box | null = null
-                if (d) before = drawn.get(p) ?? p.lastBox
-                else if (cap) {
-                    before =
-                        cap.rects.get(p) ??
-                        (cap.driven.has(p) ? p.lastBox : null)
+                if (!p.keyChanged) {
+                    if (d) before = drawn.get(p) ?? p.lastBox
+                    else if (cap) {
+                        before =
+                            cap.rects.get(p) ??
+                            (cap.driven.has(p) ? p.lastBox : null)
+                    }
                 }
                 const moving =
                     d?.kind === 'track' &&
@@ -1431,15 +1447,19 @@ export function createLayoutGroup(
                     mode: options.layout ?? true,
                     anchor: options.layoutAnchor ?? null,
                     motion: motionOf(p, reduced),
-                    layoutId: options.layoutId ?? null,
+                    layoutId: p.keyChanged ? null : (options.layoutId ?? null),
                     crossfade: options.layoutCrossfade ?? true,
                     exiting: exitingPresence(p.element) !== null,
                     presenceOpacity: presence?.opacity ?? false,
                     unsupported: unsupported !== null,
                     skip:
-                        hasDependency &&
-                        p.dependency !== null &&
-                        Object.is(p.dependency.value, options.layoutDependency),
+                        p.keyChanged ||
+                        (hasDependency &&
+                            p.dependency !== null &&
+                            Object.is(
+                                p.dependency.value,
+                                options.layoutDependency
+                            )),
                     // a changed reduced-motion mode re-plans a running track
                     optionsChanged:
                         p.changed || (moving && d!.mode !== reduced),
@@ -1490,12 +1510,27 @@ export function createLayoutGroup(
             if (geometry[i]) p.geometry = geometry[i]
             p.lastBox = geometry[i]?.a ?? rects[i]!
             p.changed = false
+            p.keyChanged = false
             p.dependency =
                 'layoutDependency' in p.options
                     ? { value: p.options.layoutDependency }
                     : null
         })
         for (const [id, lead] of result.leads) leads.set(id, list[lead]!)
+        for (const p of list) {
+            const id = p.options.layoutId
+            if (
+                id === undefined ||
+                result.leads.has(id) ||
+                exitingPresence(p.element) !== null
+            ) {
+                continue
+            }
+            const current = leads.get(id)
+            if (!current || current.removed || p.order >= current.order) {
+                leads.set(id, p)
+            }
+        }
 
         for (const warning of result.warnings) {
             if (warning.kind === 'duplicate-id') {
@@ -1525,7 +1560,10 @@ export function createLayoutGroup(
             }))
         let actions: readonly Action[] = result.actions
         let status: LayoutStatus | null = null
-        if (result.status !== 'run') {
+        if (
+            result.status !== 'run' &&
+            (result.status !== 'stale' || snapped.length > 0)
+        ) {
             status = result.status
         } else if (reduced === 'jump') {
             const moves = actions.some(
@@ -2010,11 +2048,76 @@ export function createLayoutGroup(
         stats.tracks = 0
     }
 
+    function invalidateHold(_p: Participant): void {
+        // P4 drive seam: invalidate any live hold on `_p`
+    }
+
+    function stopParticipantDrive(p: Participant, cancelled: boolean): void {
+        const d = p.drive
+        if (!d) return
+        pending = pending.filter((w) => w.element !== p.element)
+        settle(p, cancelled)
+        commitWrites()
+        rebuildFrame()
+        stats.tracks = countTracks()
+        if (
+            !frame.some(
+                (node) => node.p.drive !== null && node.p.drive.kind !== 'held'
+            )
+        ) {
+            realizer.stop()
+        }
+    }
+
+    /**
+     * Unregisters a participant whose element was adopted into another
+     * document (§4.6, §7.2 `document-mismatch`).
+     */
+    function documentMismatch(p: Participant): void {
+        p.removed = true
+        registry.delete(p.element)
+        invalidateHold(p)
+        const id = p.options.layoutId
+        if (id !== undefined && leads.get(id) === p) {
+            leads.delete(id)
+            retained.delete(id)
+        }
+        capture?.rects.delete(p)
+        capture?.radius.delete(p)
+        capture?.driven.delete(p)
+        stopParticipantDrive(p, true)
+        warn(
+            'document-mismatch',
+            'a participant was adopted into another document; its track was ended and it was unregistered.'
+        )
+    }
+
+    function evictAdopted(): void {
+        if (!scopeDocument) return
+        for (const p of [...registry.values()]) {
+            if (p.element.ownerDocument !== scopeDocument) {
+                documentMismatch(p)
+            }
+        }
+    }
+
+    function resetLayoutKey(p: Participant): void {
+        p.keyChanged = true
+        p.changed = false
+        invalidateHold(p)
+        capture?.rects.delete(p)
+        capture?.radius.delete(p)
+        capture?.driven.delete(p)
+        stopParticipantDrive(p, false)
+        p.lastBox = null
+        p.geometry = null
+    }
+
     function validateWaapiNesting(element: HTMLElement): void {
         for (const other of registry.keys()) {
             if (
                 other !== element &&
-                (other.contains(element) || element.contains(other))
+                (containsFlat(other, element) || containsFlat(element, other))
             ) {
                 throw invalidOptions(
                     'type',
@@ -2028,30 +2131,33 @@ export function createLayoutGroup(
         add(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
             validateMotionLayers([groupMotion, layoutOptions?.motion])
+            assertDocument(element)
             if (waapi) {
                 validateWaapiOptions(layoutOptions, groupMotion)
                 validateWaapiNesting(element)
             }
             if (disposed) return noop
+            scopeDocument ??= element.ownerDocument
+            const nextOptions = layoutOptions ?? {}
             let p = registry.get(element)
             if (p) {
                 // only a change that draws another track retargets (§3.3 inv. 5)
-                if (
-                    !sameTrackOptions(
-                        p.options,
-                        layoutOptions ?? {},
-                        groupMotion
-                    )
-                )
+                if (!Object.is(p.options.layoutKey, nextOptions.layoutKey)) {
+                    resetLayoutKey(p)
+                } else if (
+                    !sameTrackOptions(p.options, nextOptions, groupMotion)
+                ) {
                     p.changed = true
-                p.options = layoutOptions ?? {}
+                }
+                p.options = nextOptions
                 p.motion = null
             } else {
                 p = {
                     element,
-                    options: layoutOptions ?? {},
+                    options: nextOptions,
                     order: ++sequence,
                     changed: false,
+                    keyChanged: false,
                     dependency: null,
                     lastBox: null,
                     drive: null,
@@ -2074,7 +2180,11 @@ export function createLayoutGroup(
                     const box =
                         motion?.box ?? capture?.rects.get(self) ?? self.lastBox
                     leads.delete(id)
-                    if (box && retain > 0)
+                    if (
+                        box &&
+                        retain > 0 &&
+                        element.ownerDocument === scopeDocument
+                    )
                         retained.set(id, {
                             box,
                             velocity: motion?.velocity ?? null,
@@ -2124,13 +2234,16 @@ export function createLayoutGroup(
         set(element, layoutOptions) {
             validateLayoutOptions(layoutOptions)
             validateMotionLayers([groupMotion, layoutOptions?.motion])
+            assertDocument(element)
             if (waapi) {
                 validateWaapiOptions(layoutOptions, groupMotion)
                 validateWaapiNesting(element)
             }
             const p = registry.get(element)
             if (!p) return
-            if (!sameTrackOptions(p.options, layoutOptions, groupMotion))
+            if (!Object.is(p.options.layoutKey, layoutOptions.layoutKey)) {
+                resetLayoutKey(p)
+            } else if (!sameTrackOptions(p.options, layoutOptions, groupMotion))
                 p.changed = true
             p.options = layoutOptions
             p.motion = null

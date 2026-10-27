@@ -392,6 +392,44 @@ export function measure(
 }
 
 /**
+ * Flat-tree parent of `node` (§4.6): `assignedSlot`, else `parentElement`,
+ * else the `host` of `node`'s `ShadowRoot` parent (open or closed).
+ */
+export function flatParent(node: Node): HTMLElement | null {
+    const slot = (node as Partial<Slottable>).assignedSlot
+    if (slot) return slot
+    if (node.parentElement) return node.parentElement
+    const parent = node.parentNode
+    if (
+        parent &&
+        parent.nodeType === 11 &&
+        'host' in parent &&
+        (parent as ShadowRoot).host
+    ) {
+        return (parent as ShadowRoot).host as HTMLElement
+    }
+    return null
+}
+
+/**
+ * Whether `ancestor` contains `node` in the flat tree (`ancestor === node`
+ * included), crossing open and closed shadow roots and slots (§4.6).
+ */
+export function containsFlat(
+    ancestor: Node,
+    node: Node | null | undefined
+): boolean {
+    for (
+        let current: Node | null = node ?? null;
+        current;
+        current = flatParent(current)
+    ) {
+        if (current === ancestor) return true
+    }
+    return false
+}
+
+/**
  * Scroll offsets of every ancestor of `elements` (each ancestor read once),
  * except the document scroller: page boxes already include page scroll.
  */
@@ -402,9 +440,9 @@ export function scrollOffsets(
     for (const element of elements) {
         const scroller = element.ownerDocument.scrollingElement
         for (
-            let node = element.parentElement;
+            let node = flatParent(element);
             node && !offsets.has(node);
-            node = node.parentElement
+            node = flatParent(node)
         ) {
             if (node === scroller) break
             offsets.set(node, [node.scrollLeft, node.scrollTop])
