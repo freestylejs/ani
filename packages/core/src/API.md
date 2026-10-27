@@ -1172,11 +1172,11 @@ const coast = physics.decay(1200); // px a 1200 px/s release coasts at rate 0.99
 ### Usage & Concepts
 
 -   Apple's model: mass 1, stiffness `(2π/D)²`, so `ω₀ = 2π/D`; damping ratio `ζ = 1 − b` for `b ≥ 0` and `ζ = 1/(1 + b)` for `b < 0`. `D` is the **perceptual** duration (finite, > 0); `b` the bounce, strictly inside (−1, 1).
--   `at(t, x0, v0)` is the displacement from the target and `velocity(t, x0, v0)` its derivative, in closed form for every damping (stateless, exact near critical damping, no overflow when heavily overdamped). `at(0) = x0`, `velocity(0) = v0`: a retarget from the presented position and velocity is continuous.
--   `settleTime(x0, v0, { position = 0.1, speed = 1 })` is the first time after which the displacement stays within `position` and the speed within `speed`, computed exactly from the closed form (the last exit from each tolerance). `Infinity` beyond 10⁴ s.
--   `perceptual(t, D) = min(1, s(t)/s(D))` with `s(t) = 1 − (1 + ω₀t)e^(−ω₀t)`: monotone, exactly 1 at `D`, independent of bounce. Use it for what should finish when the motion *looks* done (fades, release of exit holds); the physical settle comes later.
--   `decay(v, rate = 0.998)` is `(v/1000)·r/(1 − r)`: the distance a release coasts under per-millisecond deceleration (UIKit's normal rate 0.998, fast 0.99).
--   Invalid parameters throw `AniError('ANI_INVALID_CONFIG')`.
+-   `at(t, x0, v0)` is the displacement from the target and `velocity(t, x0, v0)` its derivative, in closed form for every damping (stateless, exact near critical damping, no overflow when heavily overdamped), for finite `t`, `x0` and `v0` (`t <= 0` holds `x0` and `v0`). `at(0) = x0`, `velocity(0) = v0`: a retarget from the presented position and velocity is continuous.
+-   `settleTime(x0, v0, { position = 0.1, speed = 1 })` is the first time after which the displacement stays within `position` and the speed within `speed` (finite `x0` and `v0`; finite `position > 0` and `speed > 0`), computed exactly from the closed form (the last exit from each tolerance). `Infinity` beyond 10⁴ s.
+-   `perceptual(t, D) = min(1, s(t)/s(D))` with `s(t) = 1 − (1 + ω₀t)e^(−ω₀t)`, for finite `t` (`0` for `t <= 0`, `1` for `t >= D`) and finite `D > 0`: monotone, exactly 1 at `D`, independent of bounce. Use it for what should finish when the motion *looks* done (fades, release of exit holds); the physical settle comes later.
+-   `decay(v, rate = 0.998)` is `(v/1000)·r/(1 − r)` for finite `v` and `rate` strictly inside `(0, 1)`: the distance a release coasts under per-millisecond deceleration (UIKit's normal rate 0.998, fast 0.99).
+-   Invalid (non-finite or out-of-range) parameters throw `AniError('ANI_INVALID_CONFIG')`.
 -   `timing.spring` is unrelated: it stays a timing curve over a duration.
 
 ### API Reference

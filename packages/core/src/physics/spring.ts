@@ -59,6 +59,28 @@ function invalid(message: string): Error {
     )
 }
 
+function assertInitialState(x0: number, v0: number): void {
+    if (typeof x0 !== 'number' || !Number.isFinite(x0)) {
+        throw invalid(
+            `spring initial displacement x0 must be finite, received ${String(x0)}.`
+        )
+    }
+    if (typeof v0 !== 'number' || !Number.isFinite(v0)) {
+        throw invalid(
+            `spring initial velocity v0 must be finite, received ${String(v0)}.`
+        )
+    }
+}
+
+function assertEvalArgs(t: number, x0: number, v0: number): void {
+    if (typeof t !== 'number' || !Number.isFinite(t)) {
+        throw invalid(
+            `spring time must be a finite number of seconds, received ${String(t)}.`
+        )
+    }
+    assertInitialState(x0, v0)
+}
+
 /**
  * The two basis responses of `d″ + 2ζω d′ + ω² d = 0`: `u` with
  * `u(0) = 1, u′(0) = −ζω` and `w` with `w(0) = 0, w′(0) = 1`, so that
@@ -155,12 +177,14 @@ class PhysicalSpring implements Spring {
     }
 
     public at(t: number, x0: number, v0: number): number {
+        assertEvalArgs(t, x0, v0)
         if (t <= 0) return x0
         const { u, w } = basis(t, this.alpha, this.g2)
         return x0 * u + (v0 + this.alpha * x0) * w
     }
 
     public velocity(t: number, x0: number, v0: number): number {
+        assertEvalArgs(t, x0, v0)
         if (t <= 0) return v0
         const { u, w } = basis(t, this.alpha, this.g2)
         return v0 * u + (this.g2 * x0 - this.alpha * (v0 + this.alpha * x0)) * w
@@ -171,10 +195,26 @@ class PhysicalSpring implements Spring {
         v0: number,
         tolerance?: SettleTolerance
     ): number {
+        assertInitialState(x0, v0)
+        if (
+            tolerance !== undefined &&
+            (typeof tolerance !== 'object' || tolerance === null)
+        ) {
+            throw invalid(
+                `settle tolerance must be an object, received ${String(tolerance)}.`
+            )
+        }
         const ex = tolerance?.position ?? 0.1
         const ev = tolerance?.speed ?? 1
-        if (!(ex > 0) || !(ev > 0)) {
-            throw invalid('settle tolerances must be > 0.')
+        if (
+            typeof ex !== 'number' ||
+            !Number.isFinite(ex) ||
+            !(ex > 0) ||
+            typeof ev !== 'number' ||
+            !Number.isFinite(ev) ||
+            !(ev > 0)
+        ) {
+            throw invalid('settle tolerances must be finite numbers > 0.')
         }
         const alpha = this.alpha
         const g2 = this.g2
@@ -295,6 +335,11 @@ function lastExit(
  * `ANI_INVALID_CONFIG` for a non-finite or out-of-range parameter.
  */
 export function spring(options: SpringOptions): Spring {
+    if (typeof options !== 'object' || options === null) {
+        throw invalid(
+            `spring options must be an object, received ${String(options)}.`
+        )
+    }
     const duration = options.duration
     const bounce = options.bounce ?? 0
     if (
@@ -326,6 +371,15 @@ export function settleTime(
     v0: number,
     tolerance?: SettleTolerance
 ): number {
+    if (
+        typeof s !== 'object' ||
+        s === null ||
+        typeof s.settleTime !== 'function'
+    ) {
+        throw invalid(
+            `settleTime requires a Spring from physics.spring(), received ${String(s)}.`
+        )
+    }
     return s.settleTime(x0, v0, tolerance)
 }
 
@@ -335,7 +389,21 @@ export function settleTime(
  * at `t = D`, independent of bounce.
  */
 export function perceptual(t: number, duration: number): number {
-    if (!(t > 0)) return 0
+    if (typeof t !== 'number' || !Number.isFinite(t)) {
+        throw invalid(
+            `perceptual time must be a finite number of seconds, received ${String(t)}.`
+        )
+    }
+    if (
+        typeof duration !== 'number' ||
+        !Number.isFinite(duration) ||
+        duration <= 0
+    ) {
+        throw invalid(
+            `perceptual duration must be a finite number of seconds > 0, received ${String(duration)}.`
+        )
+    }
+    if (t <= 0) return 0
     if (t >= duration) return 1
     const u = (2 * Math.PI * t) / duration
     const s = 1 - (1 + u) * Math.exp(-u)
@@ -351,12 +419,16 @@ const PERCEPTUAL_END = 1 - (1 + 2 * Math.PI) * Math.exp(-2 * Math.PI)
  * rate is 0.998, its fast rate 0.99.
  */
 export function decay(velocity: number, rate = 0.998): number {
-    if (!Number.isFinite(velocity)) {
+    if (typeof velocity !== 'number' || !Number.isFinite(velocity)) {
         throw invalid(
             `decay velocity must be finite, received ${String(velocity)}.`
         )
     }
-    if (!(rate > 0 && rate < 1)) {
+    if (
+        typeof rate !== 'number' ||
+        !Number.isFinite(rate) ||
+        !(rate > 0 && rate < 1)
+    ) {
         throw invalid(
             `decay rate must be strictly inside (0, 1), received ${String(rate)}.`
         )
