@@ -281,6 +281,64 @@ describe('the capture-less flush report (§4.4)', () => {
         group.dispose()
     })
 
+    it('a half-adopted pose counts what is still applied: the author re-sets translate, layout’s scale stays written, and that scale bounds β (a 0.2 px width change at pose scale ≈ 3.5 is reported)', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const g = element(box(0, 200, 80, 80))
+        const other = element(box(300))
+        group.add(g)
+        group.add(other)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(g, box(0, 200, 20, 20))
+        void group.flush()
+        mc.frames(2)
+        await nextTask()
+        const scale = Number.parseFloat(g.style.scale)
+        expect(scale).toBeGreaterThan(3)
+        // no capture: the author re-sets the owned translate plainly, and
+        // the commit widens g by 0.2 px; layout's scale is still written
+        g.style.setProperty('translate', '0px 0px')
+        model.place(g, box(0, 200, 20.2, 20))
+        const report = await group.flush()
+        // β = (1 + 2s)·0.2 ≈ 1.6 px ≥ threshold; at s = 1 it would be 0.6
+        expect(report).toEqual({
+            status: 'stale',
+            snapped: [{ element: g, reason: 'stale' }],
+        })
+        group.dispose()
+    })
+
+    it('a half-adopted parent’s written scale counts for the path-2 condition: its driven child, nudged 0.1 px, is reported (the translation is not exact under the scale)', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const p = element(box(0, 200, 100, 100))
+        const c = element(box(10, 210), p)
+        group.add(p)
+        group.add(c)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(p, box(0, 200, 200, 200))
+        model.place(c, box(110, 210))
+        void group.flush()
+        mc.frames(2)
+        await nextTask()
+        expect(Number.parseFloat(p.style.scale)).toBeLessThan(0.9)
+        expect(group.stats.tracks).toBe(2)
+        // no capture: the author re-sets p's translate plainly; the commit
+        // nudges c by 0.1 px (β < threshold, but ≥ 0.01)
+        p.style.setProperty('translate', '0px 0px')
+        model.place(c, box(110.1, 210))
+        const report = await group.flush()
+        expect(report).toEqual({
+            status: 'stale',
+            snapped: [{ element: c, reason: 'stale' }],
+        })
+        group.dispose()
+    })
+
     it("a driven node without a valid B in a fresh capture (its owned translate re-set plainly by the author) and its participant subtree follow the §4.4 table: reported 'stale', the rest of the flush plans normally", async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({ clock: mc.clock, motion })

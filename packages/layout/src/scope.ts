@@ -482,15 +482,28 @@ function runs(d: Drive | null): boolean {
 
 /** The pose last written to a node: its own declarations, read back exactly. */
 function writtenPose(d: Drive | null): Pose {
-    const translate = d?.written.get('translate')
-    const scale = d?.written.get('scale')
-    if (translate === undefined || scale === undefined) return IDENTITY_POSE
+    if (!d) return IDENTITY_POSE
+    // what is applied: a declaration the author took back (adoptAuthored)
+    // contributes nothing of layout's, the other one still does
+    const translate = d.written.get('translate')
+    const scale = d.written.get('scale')
+    if (translate === undefined && scale === undefined) return IDENTITY_POSE
+    const au = d.authored
+    let px = 1
+    let py = 1
+    if (scale !== undefined) {
+        const [sx, sy] = scale.split(' ').map((v) => Number.parseFloat(v))
+        px = sx! / au.sx
+        py = (sy ?? sx!) / au.sy
+    }
+    if (translate === undefined) return { tx: 0, ty: 0, sx: px, sy: py }
     const [tx, ty] = translate.split(' ').map((v) => Number.parseFloat(v))
-    const [sx, sy] = scale.split(' ').map((v) => Number.parseFloat(v))
-    const au = d!.authored
-    const px = sx! / au.sx
-    const py = sy! / au.sy
-    return { tx: tx! - px * au.tx, ty: ty! - py * au.ty, sx: px, sy: py }
+    return {
+        tx: tx! - px * au.tx,
+        ty: (ty ?? 0) - py * au.ty,
+        sx: px,
+        sy: py,
+    }
 }
 
 /**
