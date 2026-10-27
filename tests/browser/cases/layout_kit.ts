@@ -24,6 +24,16 @@ export function pageBox(element: Element): OBox {
     return { x: r.left + scrollX, y: r.top + scrollY, w: r.width, h: r.height }
 }
 
+/** Rendered box in view space (`getBoundingClientRect()`, ARCHITECTURE §3.2, §11.1). */
+export function viewBox(element: Element): OBox {
+    const r = element.getBoundingClientRect()
+    return { x: r.left, y: r.top, w: r.width, h: r.height }
+}
+
+export function shiftBox(box: OBox, dx: number, dy: number): OBox {
+    return { x: box.x + dx, y: box.y + dy, w: box.w, h: box.h }
+}
+
 export function node(parent: HTMLElement, css: string): HTMLElement {
     const element = document.createElement('div')
     element.style.cssText = `position: absolute; box-sizing: border-box; ${css}`
@@ -97,6 +107,22 @@ export function expectAt(
     tolerance = TOL
 ): number {
     const got = pageBox(element)
+    const error = maxDiff(got, want)
+    if (!(error <= tolerance)) {
+        throw new Error(
+            `${label}: drawn ${JSON.stringify(got)} differs from ${JSON.stringify(want)} by ${error.toFixed(3)} px`
+        )
+    }
+    return error
+}
+
+export function expectViewAt(
+    element: Element,
+    want: OBox,
+    label: string,
+    tolerance = TOL
+): number {
+    const got = viewBox(element)
     const error = maxDiff(got, want)
     if (!(error <= tolerance)) {
         throw new Error(
