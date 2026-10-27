@@ -154,6 +154,13 @@ export interface SolveNode {
      * its track lives in that flush's visual space (§3.1).
      */
     readonly layers?: readonly Layer[] | null
+    /**
+     * A kept pose timeline (§5.7 path 1, §4.4): the node's own pose now, with
+     * its rate, as a map of its local frame about its origin. The node is
+     * drawn through its parent's map with this pose, whatever its parent
+     * does; `track` is ignored.
+     */
+    readonly posed?: MovingMap | null
 }
 
 /**
@@ -606,7 +613,11 @@ function onto(css: Box, drawn: Box): Map2 {
 function drawnMotion(
     nodes: readonly SolveNode[],
     rates: boolean
-): { boxes: Box[]; velocities: BoxVelocity[] } {
+): {
+    boxes: Box[]
+    velocities: BoxVelocity[]
+    pose: (i: number) => MovingMap
+} {
     const boxes: (Box | undefined)[] = new Array(nodes.length)
     const velocities: (BoxVelocity | undefined)[] = new Array(nodes.length)
     const sources: ({ box: Box; velocity: Box } | undefined)[] = new Array(
@@ -678,6 +689,11 @@ function drawnMotion(
         sources[i] = seen
         return seen
     }
+    /** The parent map of `i` in `i`'s epoch, with its rate. */
+    const parentOf = (i: number): MovingMap => {
+        maps ??= epochs(nodes, full, MOVING)
+        return maps.parent(i)
+    }
     const boxAt = (i: number): Box => {
         const known = boxes[i]
         if (known) return known
@@ -686,6 +702,8 @@ function drawnMotion(
         let box: Box
         if (node.follow >= 0) {
             box = seenFrom(i, node.follow).box
+        } else if (node.posed) {
+            box = mapBox(compose(parentOf(i).map, node.posed.map), node.box)
         } else if (track) {
             box = ownBox(track, node.elapsed)
             if (track.anchor && node.parent >= 0) {
@@ -713,6 +731,12 @@ function drawnMotion(
         let v: BoxVelocity
         if (node.follow >= 0) {
             v = seenFrom(i, node.follow).velocity
+        } else if (node.posed) {
+            v = carry(
+                composeMoving(parentOf(i), node.posed),
+                node.box,
+                ZERO_VELOCITY
+            ).velocity
         } else if (track) {
             const holding = isHolding(track, node.elapsed)
             const t = localTime(track, node.elapsed)
@@ -753,7 +777,27 @@ function drawnMotion(
         boxAt(i)
         if (rates) velocityAt(i)
     }
-    return { boxes: boxes as Box[], velocities: velocities as BoxVelocity[] }
+    /** The own pose of `i` with its rate: `parent⁻¹ ∘ full ∘ inner⁻¹`. */
+    const pose = (i: number): MovingMap =>
+        composeMoving(
+            composeMoving(invertMoving(parentOf(i)), full(i)),
+            still(invert(nodes[i]!.inner))
+        )
+    return {
+        boxes: boxes as Box[],
+        velocities: velocities as BoxVelocity[],
+        pose,
+    }
+}
+
+/**
+ * Each node's own pose with its rate, as a map of its local frame about its
+ * origin: what its pose timeline is at this instant (§5.7).
+ */
+export function poseMotion(
+    nodes: readonly SolveNode[]
+): (i: number) => MovingMap {
+    return drawnMotion(nodes, true).pose
 }
 
 /** Drawn boxes of every node (see `drawnMotion`). */
