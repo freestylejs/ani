@@ -2452,15 +2452,21 @@ export function createLayoutGroup(
                 }
                 ancestry = now.size > 0 ? now : NO_ANCESTRY
             }
+            // path 1 leaves the track alone (§5.7): it keeps the geometry it
+            // was drawn with, so its next pose continues the last written one
+            const untouched =
+                action.kind === 'keep' && reexpress[i]?.path === 'unchanged'
             next.push({
                 p,
                 parent: parent >= 0 ? frameIndex.get(parent)! : -1,
                 geometry: kept
-                    ? keptGeometry(
-                          kept.geometry,
-                          geometry[i]!,
-                          nodes[i]!.planned ?? kept.geometry.a
-                      )
+                    ? untouched
+                        ? kept.geometry
+                        : keptGeometry(
+                              kept.geometry,
+                              geometry[i]!,
+                              nodes[i]!.planned ?? kept.geometry.a
+                          )
                     : geometry[i]!,
                 ancestry,
             })
