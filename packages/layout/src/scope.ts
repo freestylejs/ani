@@ -288,8 +288,6 @@ interface Capture {
     readonly rects: Map<Participant, Box>
     /** Every participant registered at capture, connected or not. */
     readonly registered: ReadonlySet<Participant>
-    /** Per participant, `offsetWidth`/`offsetHeight`. */
-    readonly offsets: Map<Participant, readonly [number, number]>
     /** Participants that failed the support check, with their subtrees. */
     readonly unsupported: Map<Participant, string>
     /** Shared `radius` participants' on-screen corner radii at B. */
@@ -1382,9 +1380,12 @@ export function createLayoutGroup(
             )
         })
         const presentedRects = new Map<Participant, Box>()
+        const failing = new Map<Participant, string>()
         list.forEach((p, i) => {
             if (unpresented[i]) radius.delete(p)
             else presentedRects.set(p, rects[i]!)
+            const reason = unsupported[i]
+            if (reason) failing.set(p, reason)
         })
         const current: Capture = {
             live: true,
@@ -1392,13 +1393,7 @@ export function createLayoutGroup(
             disarm: noop,
             rects: presentedRects,
             registered: new Set(registry.values()),
-            offsets: new Map(list.map((p, i) => [p, offsets[i]!])),
-            unsupported: new Map(
-                list.flatMap((p, i) => {
-                    const reason = unsupported[i]
-                    return reason ? [[p, reason] as const] : []
-                })
-            ),
+            unsupported: failing,
             radius,
             engine,
         }
@@ -3120,7 +3115,6 @@ export function createLayoutGroup(
     /** A participant whose identity ended has no B in the open capture. */
     function forgetCaptured(p: Participant): void {
         capture?.rects.delete(p)
-        capture?.offsets.delete(p)
         capture?.radius.delete(p)
         capture?.unsupported.delete(p)
     }
