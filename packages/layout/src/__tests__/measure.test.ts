@@ -60,7 +60,11 @@ describe('measure: supportCheck (§4.2)', () => {
                     hasChildren: false,
                 },
             ]
-            const res = supportCheck(nodes, () => ({ sx: 1, sy: 1 }))
+            const res = supportCheck(
+                nodes,
+                () => ({ sx: 1, sy: 1 }),
+                (i) => (i === 0 ? { w: 50.49, h: 50.49 } : { w: 1000, h: 1000 })
+            )
             expect(res.supported).toEqual([true, true])
             expect(res.intervals[0]).not.toBeNull()
             expect(res.intervals[1]).not.toBeNull()
@@ -82,8 +86,13 @@ describe('measure: supportCheck (§4.2)', () => {
                     hasChildren: false,
                 },
             ]
-            const resInner = supportCheck(nodesInner, (i) =>
-                i === 0 ? { sx: totalScale, sy: totalScale } : { sx: 1, sy: 1 }
+            const resInner = supportCheck(
+                nodesInner,
+                (i) =>
+                    i === 0
+                        ? { sx: totalScale, sy: totalScale }
+                        : { sx: 1, sy: 1 },
+                (i) => (i === 0 ? { w: 50.49, h: 50.49 } : { w: 1000, h: 1000 })
             )
             expect(resInner.supported).toEqual([true, true])
         }
@@ -159,7 +168,11 @@ describe('measure: supportCheck (§4.2)', () => {
                 hasChildren: hasChildren[i]!,
             }))
 
-            const res = supportCheck(nodes, (i) => innerScales[i]!)
+            const res = supportCheck(
+                nodes,
+                (i) => innerScales[i]!,
+                (i) => ({ w: trueW[i]!, h: trueH[i]! })
+            )
             totalNodes += nodes.length
             totalReads += res.reads.length
 
@@ -212,7 +225,14 @@ describe('measure: supportCheck (§4.2)', () => {
                 hasChildren: false,
             },
         ]
-        const res3Pct = supportCheck(tree3Pct, () => ({ sx: 1, sy: 1 }))
+        const res3Pct = supportCheck(
+            tree3Pct,
+            () => ({ sx: 1, sy: 1 }),
+            (i) => ({
+                w: tree3Pct[i]!.offset[0],
+                h: tree3Pct[i]!.offset[1],
+            })
+        )
         expect(res3Pct.supported).toEqual([true, false, false])
         expect(res3Pct.intervals[0]).not.toBeNull()
         expect(res3Pct.intervals[1]).toBeNull()
@@ -252,10 +272,14 @@ describe('measure: supportCheck (§4.2)', () => {
                     hasChildren: false,
                 },
             ]
-            return supportCheck(nodes, (i) =>
-                i === 0
-                    ? { sx: parentInner, sy: parentInner }
-                    : { sx: 1, sy: 1 }
+            return supportCheck(
+                nodes,
+                (i) =>
+                    i === 0
+                        ? { sx: parentInner, sy: parentInner }
+                        : { sx: 1, sy: 1 },
+                (i) =>
+                    i === 0 ? { w: 1000, h: 1000 } : { w: childW, h: childW }
             )
         }
 
@@ -297,7 +321,14 @@ describe('measure: supportCheck (§4.2)', () => {
                 hasChildren: false,
             },
         ]
-        const narrowRes = supportCheck(narrowNodes, () => ({ sx: 1, sy: 1 }))
+        const narrowRes = supportCheck(
+            narrowNodes,
+            () => ({ sx: 1, sy: 1 }),
+            (i) => ({
+                w: narrowNodes[i]!.offset[0],
+                h: narrowNodes[i]!.offset[1],
+            })
+        )
         expect(narrowRes.supported).toEqual([true, true])
         expect(narrowRes.reads).toEqual([])
 
@@ -327,10 +358,14 @@ describe('measure: supportCheck (§4.2)', () => {
                 hasChildren: false,
             },
         ]
-        const badRes = supportCheck(badTree, (i) => {
-            callCounts[i]! += 1
-            return 'unsupported'
-        })
+        const badRes = supportCheck(
+            badTree,
+            (i) => {
+                callCounts[i]! += 1
+                return 'unsupported'
+            },
+            (i) => ({ w: badTree[i]!.offset[0], h: badTree[i]!.offset[1] })
+        )
         expect(badRes.supported).toEqual([true, false, false])
         expect(badRes.intervals[0]).not.toBeNull()
         expect(badRes.intervals[1]).toBeNull()
@@ -357,10 +392,17 @@ describe('measure: supportCheck (§4.2)', () => {
                 hasChildren: false,
             },
         ]
-        const smallRes = supportCheck(smallParentNodes, (i) => {
-            smallParentCounts[i]! += 1
-            return i === 0 ? { sx: 2, sy: 2 } : { sx: 1, sy: 1 }
-        })
+        const smallRes = supportCheck(
+            smallParentNodes,
+            (i) => {
+                smallParentCounts[i]! += 1
+                return i === 0 ? { sx: 2, sy: 2 } : { sx: 1, sy: 1 }
+            },
+            (i) => ({
+                w: smallParentNodes[i]!.offset[0],
+                h: smallParentNodes[i]!.offset[1],
+            })
+        )
         expect(smallRes.supported).toEqual([true, true])
         expect(smallParentCounts[0]).toBe(1)
         expect(smallParentCounts[1]).toBe(0)
@@ -390,8 +432,14 @@ describe('measure: supportCheck (§4.2)', () => {
                 hasChildren: false,
             },
         ]
-        const res = supportCheck(nodes, (i) =>
-            i === 0 ? { sx: 1.5, sy: 2 } : { sx: 1, sy: 1 }
+        const exactReads: number[] = []
+        const res = supportCheck(
+            nodes,
+            (i) => (i === 0 ? { sx: 1.5, sy: 2 } : { sx: 1, sy: 1 }),
+            (i) => {
+                exactReads.push(i)
+                return i === 0 ? { w: 0, h: 1 } : { w: 0, h: 0 }
+            }
         )
         expect(res.supported).toEqual([true, true, true])
         // Parent's expected scale: x = 1 * 2 * 1.5 = 3, y = 1 * 1.5 * 2 = 3
@@ -400,6 +448,75 @@ describe('measure: supportCheck (§4.2)', () => {
             y: { lo: 3, hi: 3 },
         })
         expect(res.reads).toEqual([0])
+        // Only nodes 0 and 2 have a degenerate axis (offset <= 1)
+        expect(exactReads).toEqual([0, 2])
+    })
+
+    it('SC-6 (P0-N001): degenerate leaf (offset 1 or 0) under unowned zoom: 2 or ancestor transform is detected via readExactSize', () => {
+        // 1px leaf (O = 1, W = 1) under unowned zoom: 2 -> rect is 2x2
+        const leaf1px: SupportNode[] = [
+            {
+                parent: -1,
+                rect: { w: 2, h: 2 },
+                offset: [1, 1],
+                pose: { sx: 1, sy: 1 },
+                hasChildren: false,
+            },
+        ]
+        const exactCalls1: number[] = []
+        const res1px = supportCheck(
+            leaf1px,
+            () => ({ sx: 1, sy: 1 }),
+            (i) => {
+                exactCalls1.push(i)
+                return { w: 1, h: 1 }
+            }
+        )
+        expect(res1px.supported).toEqual([false])
+        expect(res1px.intervals).toEqual([null])
+        expect(res1px.reads).toEqual([0])
+        expect(exactCalls1).toEqual([0])
+
+        // Sub-half-pixel leaf (O = 0, W = 0.4) under unowned zoom: 2 -> rect is 0.8x0.8
+        const leaf0px: SupportNode[] = [
+            {
+                parent: -1,
+                rect: { w: 0.8, h: 0.8 },
+                offset: [0, 0],
+                pose: { sx: 1, sy: 1 },
+                hasChildren: false,
+            },
+        ]
+        const exactCalls0: number[] = []
+        const res0px = supportCheck(
+            leaf0px,
+            () => ({ sx: 1, sy: 1 }),
+            (i) => {
+                exactCalls0.push(i)
+                return { w: 0.4, h: 0.4 }
+            }
+        )
+        expect(res0px.supported).toEqual([false])
+        expect(res0px.intervals).toEqual([null])
+        expect(res0px.reads).toEqual([0])
+        expect(exactCalls0).toEqual([0])
+
+        // True zero-size leaf (O = 0, W = 0) stays supported because the plan snaps zero size
+        const zeroLeaf: SupportNode[] = [
+            {
+                parent: -1,
+                rect: { w: 0, h: 40 },
+                offset: [0, 40],
+                pose: { sx: 1, sy: 1 },
+                hasChildren: false,
+            },
+        ]
+        const resZero = supportCheck(
+            zeroLeaf,
+            () => ({ sx: 1, sy: 1 }),
+            () => ({ w: 0, h: 40 })
+        )
+        expect(resZero.supported).toEqual([true])
     })
 })
 
@@ -506,6 +623,20 @@ describe('measure: keepPath (§5.7)', () => {
                 ],
             })
         ).toBe('unchanged')
+
+        // J-001: delta = 0.009 px amplified by ancestor pose scale 323 (0.009 * 323 = 2.907 >= 0.01) retargets
+        expect(
+            keepPath({
+                delta: { x: 0.009, y: 0 },
+                ancestors: [
+                    {
+                        pose: { sx: 323, sy: 1 },
+                        innerNow: { sx: 1, sy: 1 },
+                        innerPlanned: { sx: 1, sy: 1 },
+                    },
+                ],
+            })
+        ).toBe('retarget')
     })
 
     it('KP-2: ancestor pose != 1 or innerNow != innerPlanned returns retarget', () => {
@@ -601,6 +732,7 @@ describe('measure: staleReported (§4.4)', () => {
             a: baseBox,
             lastKnown: null,
             delta: { x: 0, y: 0 },
+            rho: { x: 1, y: 1 },
             translationExact: true,
         }
         expect(staleReported(neverKnown, 1, diff)).toBe(true)
@@ -610,6 +742,7 @@ describe('measure: staleReported (§4.4)', () => {
             a: { ...baseBox, x: 10.5 },
             lastKnown: baseBox,
             delta: { x: 0, y: 0 },
+            rho: { x: 1, y: 1 },
             translationExact: true,
         }
         expect(staleReported(unmoved, 1, diff)).toBe(false)
@@ -619,17 +752,19 @@ describe('measure: staleReported (§4.4)', () => {
             a: { ...baseBox, x: 11 },
             lastKnown: baseBox,
             delta: { x: 0, y: 0 },
+            rho: { x: 1, y: 1 },
             translationExact: true,
         }
         expect(staleReported(jumped, 1, diff)).toBe(true)
     })
 
-    it('ST-2: driven nodes — max(|dx|, |dy|) >= threshold, or >= 0.01 when !translationExact', () => {
+    it('ST-2: driven nodes — max(|dx|*max(1,rho.x), |dy|*max(1,rho.y)) >= threshold, or >= 0.01 when !translationExact', () => {
         const exactSmall: StaleNode = {
             driven: true,
             a: baseBox,
             lastKnown: baseBox,
             delta: { x: 0.5, y: -0.8 },
+            rho: { x: 1, y: 1 },
             translationExact: true,
         }
         expect(staleReported(exactSmall, 1, diff)).toBe(false)
@@ -639,6 +774,7 @@ describe('measure: staleReported (§4.4)', () => {
             a: baseBox,
             lastKnown: baseBox,
             delta: { x: 0.2, y: -1 },
+            rho: { x: 1, y: 1 },
             translationExact: true,
         }
         expect(staleReported(exactLarge, 1, diff)).toBe(true)
@@ -648,6 +784,7 @@ describe('measure: staleReported (§4.4)', () => {
             a: baseBox,
             lastKnown: baseBox,
             delta: { x: 0.01, y: 0 },
+            rho: { x: 1, y: 1 },
             translationExact: false,
         }
         expect(staleReported(inexactSubThreshold, 1, diff)).toBe(true)
@@ -657,8 +794,20 @@ describe('measure: staleReported (§4.4)', () => {
             a: baseBox,
             lastKnown: baseBox,
             delta: { x: 0.009, y: -0.005 },
+            rho: { x: 1, y: 1 },
             translationExact: false,
         }
         expect(staleReported(inexactTiny, 1, diff)).toBe(false)
+
+        // J-004: delta = 0.009 px amplified by ancestor scale rho = 323 (2.907 px) is reported stale
+        const amplified: StaleNode = {
+            driven: true,
+            a: baseBox,
+            lastKnown: baseBox,
+            delta: { x: 0.009, y: 0 },
+            rho: { x: 323, y: 1 },
+            translationExact: false,
+        }
+        expect(staleReported(amplified, 1, diff)).toBe(true)
     })
 })
