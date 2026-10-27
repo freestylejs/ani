@@ -203,6 +203,41 @@ describe('capture (§4.1)', () => {
         group.dispose()
     })
 
+    it('C-6b: computed values are reused within one check only: a hairline read at capture is read again, once, at its flush, and each count is exact', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const rule = element(0)
+        const other = element(200)
+        model.place(rule, box(0, 10, 100, 1), [100, 1])
+        group.add(rule)
+        group.add(other)
+        group.capture()
+        await group.flush()
+        await nextTask()
+        const spy = vi.mocked(window.getComputedStyle)
+        const readsOf = (e: Element) =>
+            spy.mock.calls.filter(([target]) => target === e).length
+        spy.mockClear()
+        model.reset()
+        const before = group.stats.styles
+        // the degenerate axis reads the exact size at capture
+        group.capture()
+        expect(readsOf(rule)).toBe(1)
+        expect(readsOf(other)).toBe(0)
+        const captured = group.stats.styles
+        expect(captured - before).toBe(model.reads.styles)
+        spy.mockClear()
+        model.reset()
+        // the commit moves it: the flush measures it (its computed values,
+        // the support check's exact size and its q), reading it once anew
+        model.place(rule, box(0, 30, 100, 1), [100, 1])
+        void group.flush()
+        expect(readsOf(rule)).toBe(1)
+        expect(group.stats.styles - captured).toBe(model.reads.styles)
+        expect(model.reads.styles).toBe(spy.mock.calls.length)
+        group.dispose()
+    })
+
     it('C-4: a capture taken while the clock runs a frame is aged at once, with a warning naming the fix', async () => {
         const { mc, group, b } = await scene()
         await nextTask()
