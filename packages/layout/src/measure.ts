@@ -372,19 +372,29 @@ const ZERO_BOX: Box = { x: 0, y: 0, w: 0, h: 0 }
  * parents' scale rates times the node's offset in their frames, their
  * translation rates, and its own pose rate. `rates[k]` is the time
  * derivative of node k's pose (`tx`, `ty`, `sx`, `sy`); null: at rest.
+ * `fractions[k]`, when given, places the origin the browser applied at
+ * capture as fractions of the presented CSS box (the origin the pose was
+ * planned about), instead of `origin`.
  */
 export function presentedVelocities(
     nodes: readonly PresentedNode[],
-    rates: readonly (Pose | null)[]
+    rates: readonly (Pose | null)[],
+    fractions: readonly (readonly [number, number] | null)[] = []
 ): Box[] {
     const fulls: MovingMap[] = []
     const velocities: Box[] = []
     nodes.forEach((node, k) => {
         const parent = node.parent >= 0 ? fulls[node.parent]! : STILL_IDENTITY
         const local = mapBox(invert(parent.map), node.rect)
-        const [ox, oy] = node.origin
         const p = node.pose
         const q = node.inner
+        const f = fractions[k] ?? null
+        const [ox, oy] = f
+            ? [
+                  (f[0] * local.w) / (p.sx * q.sx),
+                  (f[1] * local.h) / (p.sy * q.sy),
+              ]
+            : node.origin
         const own: OwnTransform = {
             kx: p.sx * q.sx,
             ky: p.sy * q.sy,

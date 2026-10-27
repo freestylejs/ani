@@ -721,42 +721,63 @@ describe('the presented velocity v at t_k (§4.2 Velocity, §5.7)', () => {
         await nextTask()
         // σ = 24 px, presented: the child's in-parent offset changes
         model.place(child, box(80, 196, 40, 40))
-        const h = 0.05
-        const b0 = model.rect(child)
-        let v: Box
-        if (commit) {
-            group.capture()
-            // the commit moves the child 5 px (J = 5 < threshold): path 3
-            // under the live scale, a retarget from (B, v)
-            model.place(child, box(85, 196, 40, 40))
-            void group.flush()
-            const c0 = model.rect(child)
-            expectBox(c0, b0, 1e-9)
-            const c: Box[] = [c0]
-            for (let k = 0; k < 3; k++) {
-                mc.frame(h * 1000)
-                c.push(model.rect(child))
-            }
-            const d = (key: keyof Box) =>
-                (-11 * c[0]![key] +
-                    18 * c[1]![key] -
-                    9 * c[2]![key] +
-                    2 * c[3]![key]) /
-                (6 * h)
-            v = { x: d('x'), y: d('y'), w: d('w'), h: d('h') }
-        } else {
-            mc.frame(h * 1000)
-            const b1 = model.rect(child)
-            v = {
-                x: (b1.x - b0.x) / h,
-                y: (b1.y - b0.y) / h,
-                w: (b1.w - b0.w) / h,
-                h: (b1.h - b0.h) / h,
-            }
-        }
+        const v = commit
+            ? retargetVelocity(mc, group, child, () =>
+                  // the commit moves the child 5 px (J = 5 < threshold):
+                  // path 3 under the live scale, a retarget from (B, v)
+                  model.place(child, box(85, 196, 40, 40))
+              )
+            : presentedVelocity(mc, child)
         group.dispose()
         document.body.innerHTML = ''
         return v
+    }
+
+    const STEP = 0.05
+
+    /** The one-sided difference of `e`'s drawn box over one step. */
+    function presentedVelocity(mc: Clock, e: HTMLElement): Box {
+        const b0 = model.rect(e)
+        mc.frame(STEP * 1000)
+        const b1 = model.rect(e)
+        return {
+            x: (b1.x - b0.x) / STEP,
+            y: (b1.y - b0.y) / STEP,
+            w: (b1.w - b0.w) / STEP,
+            h: (b1.h - b0.h) / STEP,
+        }
+    }
+
+    /**
+     * Captures, runs `commit`, flushes, and returns the start velocity of
+     * `e`'s new track (a cubic: four frames give it exactly); its first frame
+     * is the measured B.
+     */
+    function retargetVelocity(
+        mc: Clock,
+        group: ReturnType<typeof createLayoutGroup>,
+        e: HTMLElement,
+        commit: () => void
+    ): Box {
+        const b0 = model.rect(e)
+        group.capture()
+        commit()
+        void group.flush()
+        const c0 = model.rect(e)
+        // the first frame is B, to the 1e-6 precision of the written pose
+        expectBox(c0, b0, 1e-4)
+        const c: Box[] = [c0]
+        for (let k = 0; k < 3; k++) {
+            mc.frame(STEP * 1000)
+            c.push(model.rect(e))
+        }
+        const d = (key: keyof Box) =>
+            (-11 * c[0]![key] +
+                18 * c[1]![key] -
+                9 * c[2]![key] +
+                2 * c[3]![key]) /
+            (6 * STEP)
+        return { x: d('x'), y: d('y'), w: d('w'), h: d('h') }
     }
 
     it('under a live parent scale with a 24 px inner offset presented, the retarget starts at the presented box’s true velocity: the product-rule derivative (parent scale rate × in-parent offset, parent translation rate, own rate), to a finite difference of the presented box (within the 1e-6 write precision)', async () => {
@@ -764,6 +785,38 @@ describe('the presented velocity v at t_k (§4.2 Velocity, §5.7)', () => {
         const actual = await scene(true)
         // the inner offset's own term is visible: −k′·σ = −12 px/s on y
         expect(Math.abs(expected.y + 12)).toBeLessThan(0.01)
+        expectBox(actual, expected, 0.02)
+    })
+
+    it('a node at a live pose scale whose commit resizes it (a 50 % origin moves with A): v is taken about the origin its pose was planned with, on the presented box', async () => {
+        const run = async (commit: boolean) => {
+            const mc = createManualClock()
+            const group = createLayoutGroup({
+                clock: mc.clock,
+                motion: { duration: 1, timing: timing.linear() },
+            })
+            const g = element(box(0, 0, 40, 40))
+            g.style.transformOrigin = '50% 50%'
+            group.add(g)
+            group.capture()
+            await group.flush()
+            group.capture()
+            model.place(g, box(100, 0, 200, 100))
+            void group.flush()
+            mc.frames(5)
+            await nextTask()
+            const v = commit
+                ? retargetVelocity(mc, group, g, () =>
+                      model.place(g, box(100, 0, 120, 60))
+                  )
+                : presentedVelocity(mc, g)
+            group.dispose()
+            document.body.innerHTML = ''
+            return v
+        }
+        const expected = await run(false)
+        const actual = await run(true)
+        expect(expected.w).toBeGreaterThan(100)
         expectBox(actual, expected, 0.02)
     })
 })
