@@ -1,0 +1,7 @@
+$ node tests/browser/run.ts --browser firefox --case core:*
+# commit 81893f3ebb4995d41947eef35baee433b6a697a3
+SKIP core:C1 (CDP: Chromium only)
+SKIP core:C2 (CDP: Chromium only)
+
+0 passed, 0 failed, 0 known failures, 2 skipped (2.0 s)
+# exit 0
