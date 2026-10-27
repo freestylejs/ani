@@ -95,6 +95,7 @@ import {
     INSTANT_LAW,
     type Layer,
     movingParents,
+    poseMotion,
     type RadiusBlend,
     type Solved,
     type SolveNode,
@@ -166,9 +167,49 @@ interface DriveFade {
     readonly law: TrackLaw
 }
 
+/**
+ * The frame a kept pose timeline was drawn in (§5.7 path 1, §4.4): the nodes
+ * its pose depends on, as they stood at the flush that kept it, each with its
+ * own clock. It is solved for poses only and writes nothing.
+ */
+interface Ghost {
+    /** Parents first; `elapsed` and `posed` are filled in when solved. */
+    readonly nodes: readonly SolveNode[]
+    /** Per node, the pose timeline it was itself drawn with, if any. */
+    readonly timelines: readonly (Timeline | null)[]
+    readonly elapsed: number[]
+    readonly started: boolean[]
+    /** The poses solved at `tick`. */
+    solved: {
+        readonly tick: number
+        readonly pose: (i: number) => MovingMap
+    } | null
+}
+
+/**
+ * A kept pose timeline: the node's own pose as a function of time, with its
+ * rate, read from the ghost of the frame it was drawn in (§5.7 path 1).
+ */
+interface Timeline {
+    readonly ghost: Ghost
+    readonly at: number
+    /** The node's origin in the ghost's frame: the pose is about it. */
+    readonly ox: number
+    readonly oy: number
+    /** The ghost nodes its pose depends on: itself, its ancestors, their leads. */
+    readonly deps: readonly number[]
+    /** `finish()`: the pose is identity. */
+    done: boolean
+}
+
 interface Drive {
     kind: 'track' | 'static' | 'follow' | 'held'
     track: Track | null
+    /**
+     * Kept by §5.7 path 1 or §4.4 under a participant ancestor: the pose
+     * timeline it writes, in place of `track` (which keeps its targets).
+     */
+    timeline: Timeline | null
     /** The A its track runs to. */
     target: Box | null
     elapsed: number
@@ -299,6 +340,133 @@ function translated(track: Track, dx: number, dy: number): Track {
         b: [bx + dx, by + dy, bw, bh],
         a: [ax + dx, ay + dy, aw, ah],
     }
+}
+
+/**
+ * A kept top-level track in a new flush's geometry (§5.7): the same pose
+ * timeline about the new origin, so every pose it writes is the one it would
+ * have written, and it lands on the new A.
+ *
+ * With the pose `x ↦ o + t + s·(x − o)` and `q` the box's point at the track's
+ * fractions, a channel is `c = o + t + s·(q − o)` and a size `c_w = s·w`. In
+ * the new geometry `c′ = c + Δo + c_w·Δ(q − o)/w` and `c′_w = c_w·w′/w`: a
+ * linear map of the channels, which every law carries exactly (its path is
+ * linear in the endpoints and the seed).
+ */
+function rebased(track: Track, was: Geometry, now: Geometry): Track {
+    const axis = (
+        o: number,
+        q: number,
+        w: number,
+        o2: number,
+        q2: number,
+        w2: number
+    ) => {
+        if (!(w > 0)) return { shift: o2 - o, mix: 0, scale: 1 }
+        return { shift: o2 - o, mix: (q2 - o2 - (q - o)) / w, scale: w2 / w }
+    }
+    const fx = track.fx
+    const fy = track.fy
+    const x = axis(
+        was.ox,
+        was.box.x + fx * was.box.w,
+        was.box.w,
+        now.ox,
+        now.box.x + fx * now.box.w,
+        now.box.w
+    )
+    const y = axis(
+        was.oy,
+        was.box.y + fy * was.box.h,
+        was.box.h,
+        now.oy,
+        now.box.y + fy * now.box.h,
+        now.box.h
+    )
+    const map = (c: Track['b'], shift: number): Track['b'] => [
+        c[0] + x.shift * shift + x.mix * c[2],
+        c[1] + y.shift * shift + y.mix * c[3],
+        c[2] * x.scale,
+        c[3] * y.scale,
+    ]
+    return {
+        ...track,
+        b: map(track.b, 1),
+        a: map(track.a, 1),
+        // the seed is the law's velocity term: no constant part
+        seed: map(track.seed, 0),
+    }
+}
+
+/**
+ * A pose map about the origin `from` re-expressed about `to`: the same
+ * translate and scale (`x ↦ o + t + s·(x − o)`), with its rate.
+ */
+function aboutNewOrigin(m: MovingMap, dx: number, dy: number): MovingMap {
+    return {
+        map: {
+            x: { k: m.map.x.k, b: m.map.x.b + dx * (1 - m.map.x.k) },
+            y: { k: m.map.y.k, b: m.map.y.b + dy * (1 - m.map.y.k) },
+        },
+        rate: {
+            x: { k: m.rate.x.k, b: m.rate.x.b - dx * m.rate.x.k },
+            y: { k: m.rate.y.k, b: m.rate.y.b - dy * m.rate.y.k },
+        },
+    }
+}
+
+/** The ghosts a timeline's pose is read from, its own and the ones they need. */
+function collectGhosts(timeline: Timeline, into: Set<Ghost>): void {
+    if (into.has(timeline.ghost)) return
+    into.add(timeline.ghost)
+    for (const t of timeline.ghost.timelines) if (t) collectGhosts(t, into)
+}
+
+/** The pose timeline has reached identity: every node it depends on is at rest. */
+function timelineEnded(timeline: Timeline): boolean {
+    if (timeline.done) return true
+    const ghost = timeline.ghost
+    return timeline.deps.every((j) => {
+        const own = ghost.timelines[j]
+        if (own) return timelineEnded(own)
+        const track = ghost.nodes[j]!.track
+        return track === null || trackEnded(track, ghost.elapsed[j]!)
+    })
+}
+
+/** The pose a timeline writes at `tick`, about the node's origin `(ox, oy)` now. */
+function timelinePose(
+    timeline: Timeline,
+    tick: number,
+    ox: number,
+    oy: number
+): MovingMap {
+    if (timelineEnded(timeline)) return STILL_IDENTITY
+    const ghost = timeline.ghost
+    if (ghost.solved?.tick !== tick) {
+        const nodes = ghost.nodes.map((node, j) => {
+            const own = ghost.timelines[j]
+            return {
+                ...node,
+                elapsed: ghost.elapsed[j]!,
+                track: own ? null : node.track,
+                posed: own ? timelinePose(own, tick, node.ox, node.oy) : null,
+            }
+        })
+        ghost.solved = { tick, pose: poseMotion(nodes) }
+    }
+    return aboutNewOrigin(
+        ghost.solved.pose(timeline.at),
+        ox - timeline.ox,
+        oy - timeline.oy
+    )
+}
+
+/** A drive whose own motion still runs: a track before its end, or a timeline. */
+function runs(d: Drive | null): boolean {
+    if (d?.kind !== 'track') return false
+    if (d.timeline) return !timelineEnded(d.timeline)
+    return d.track !== null && !trackEnded(d.track, d.elapsed)
 }
 
 /** The pose last written to a node: its own declarations, read back exactly. */
@@ -535,6 +703,8 @@ export function createLayoutGroup(
     let sequence = 0
     let capture: Capture | null = null
     let frame: FrameNode[] = []
+    /** Advances with every clock update: the instant ghost poses are solved for. */
+    let tick = 0
     let pending: Write[] = []
     let disposed = false
     /** Previous lead per `layoutId`. */
@@ -600,8 +770,13 @@ export function createLayoutGroup(
                 ox: g.ox,
                 oy: g.oy,
                 inner: g.inner,
-                track: live && d.kind === 'track' ? d.track : null,
+                track:
+                    live && d.kind === 'track' && !d.timeline ? d.track : null,
                 elapsed: d?.elapsed ?? 0,
+                posed:
+                    live && d.kind === 'track' && d.timeline
+                        ? timelinePose(d.timeline, tick, g.ox, g.oy)
+                        : null,
                 follow:
                     live && d.kind === 'follow' && d.lead
                         ? (index.get(d.lead) ?? -1)
@@ -814,6 +989,20 @@ export function createLayoutGroup(
                     else d.fade.started = true
                 }
             }
+            // every ghost a kept pose timeline reads runs on the same clock,
+            // each node by its own rule, as its frame would have
+            const ghosts = new Set<Ghost>()
+            for (const node of frame) {
+                const t = node.p.drive?.timeline
+                if (t) collectGhosts(t, ghosts)
+            }
+            for (const ghost of ghosts) {
+                ghost.started.forEach((started, j) => {
+                    if (started) ghost.elapsed[j] = ghost.elapsed[j]! + dt
+                    else ghost.started[j] = true
+                })
+            }
+            tick += 1
         }
         // a follower whose lead left the frame stays where it is
         for (const node of frame) {
@@ -831,11 +1020,7 @@ export function createLayoutGroup(
         for (const node of frame) {
             const d = node.p.drive
             const live = d !== null && d.kind !== 'held'
-            const ownTrack =
-                live &&
-                d.kind === 'track' &&
-                d.track !== null &&
-                !trackEnded(d.track, d.elapsed)
+            const ownTrack = live && runs(d)
             const ownFade = live && d.fade !== null && !fadeEnded(d.fade)
             if (ownTrack) tracks += 1
             animating.push(
@@ -934,10 +1119,8 @@ export function createLayoutGroup(
             poses.set(node.p, solved ? solved[i]!.pose : writtenPose(d))
             rates.set(node.p, velocities[i]!)
             if (
-                d?.kind === 'track' &&
-                d.track !== null &&
-                !trackEnded(d.track, d.elapsed) &&
-                d.elapsed >= d.track.delay
+                runs(d) &&
+                (d!.timeline !== null || d!.elapsed >= d!.track!.delay)
             ) {
                 moving.add(node.p)
             }
@@ -1377,6 +1560,23 @@ export function createLayoutGroup(
          */
         const fresh = cap !== null && !cap.aged ? cap : null
         const measured = fresh !== null
+        /**
+         * The frame as it is drawn at t_k, before any drive changes: a nested
+         * kept track reads its pose timeline from it (§5.7 path 1, §4.4).
+         */
+        const drawnFrame = frame
+        const drawnNodes = frame.some(
+            (node) => node.parent >= 0 && node.p.drive?.kind === 'track'
+        )
+            ? solveNodes(frame)
+            : null
+        const drawnState = frame.map((node) => {
+            const d = node.p.drive
+            return {
+                started: d?.started ?? true,
+                timeline: d?.kind === 'track' ? d.timeline : null,
+            }
+        })
 
         // drives of participants that left the document end here (their
         // restores are written with the others, after every read); the author's
@@ -1742,16 +1942,8 @@ export function createLayoutGroup(
             const d = p.drive
             const was = frozen.get(p)
             const own = planned[i]?.own
-            if (
-                d?.kind !== 'track' ||
-                d.track === null ||
-                trackEnded(d.track, d.elapsed) ||
-                !was ||
-                !own
-            ) {
-                return null
-            }
-            const track = d.track
+            if (!runs(d) || !was || !own) return null
+            const track = d!.track!
             const dx = own.x + track.fx * own.w - track.a[0]
             const dy = own.y + track.fy * own.h - track.a[1]
             const before = frameChainOf(was)
@@ -1870,11 +2062,9 @@ export function createLayoutGroup(
                 // B is a measurement of what was presented, driven or not
                 const before =
                     p.keyChanged || !fresh ? null : (fresh.rects.get(p) ?? null)
-                const moving =
-                    d?.kind === 'track' &&
-                    d.track !== null &&
-                    !trackEnded(d.track, d.elapsed)
-                const holding = moving && d!.elapsed < d!.track!.delay
+                const moving = runs(d)
+                const holding =
+                    moving && !d!.timeline && d!.elapsed < d!.track!.delay
                 const options = p.options
                 // the node's own classified cause names the failure first
                 let unsupported = g?.unsupported ?? unowned[i] ?? null
@@ -2190,6 +2380,7 @@ export function createLayoutGroup(
             const d: Drive = {
                 kind,
                 track: null,
+                timeline: null,
                 target: null,
                 elapsed: 0,
                 started: false,
@@ -2266,6 +2457,85 @@ export function createLayoutGroup(
             })
         })
 
+        /**
+         * Kept tracks under a participant ancestor that keep their pose
+         * timeline (§5.7 path 1; §4.4, whose pose stays relative to its
+         * layout box): their poses are read from one ghost of the frame as
+         * drawn at t_k, holding only the nodes those poses depend on.
+         */
+        const timelines = new Map<number, Timeline>()
+        {
+            const drawnIndex = new Map<Participant, number>()
+            drawnFrame.forEach((node, j) => drawnIndex.set(node.p, j))
+            const wanted: [number, number][] = []
+            actions.forEach((action, i) => {
+                const d = list[i]!.drive
+                if (
+                    action.kind !== 'keep' ||
+                    parents[i]! < 0 ||
+                    !d ||
+                    d.timeline ||
+                    !runs(d) ||
+                    reexpress[i]?.path === 'translate'
+                ) {
+                    return
+                }
+                const j = drawnIndex.get(list[i]!)
+                if (j !== undefined) wanted.push([i, j])
+            })
+            if (wanted.length > 0 && drawnNodes) {
+                const closure = (j: number, into: Set<number>): void => {
+                    for (let k = j; k >= 0 && !into.has(k); ) {
+                        into.add(k)
+                        const lead = drawnNodes[k]!.follow
+                        if (lead >= 0) closure(lead, into)
+                        k = drawnNodes[k]!.parent
+                    }
+                }
+                const all = new Set<number>()
+                for (const [, j] of wanted) closure(j, all)
+                const order = [...all].sort((a, b) => a - b)
+                const slot = new Map<number, number>()
+                order.forEach((j, k) => slot.set(j, k))
+                const ghost: Ghost = {
+                    nodes: order.map((j) => {
+                        const n = drawnNodes[j]!
+                        return {
+                            ...n,
+                            parent: n.parent >= 0 ? slot.get(n.parent)! : -1,
+                            follow: n.follow >= 0 ? slot.get(n.follow)! : -1,
+                            layers:
+                                n.layers?.map((layer) => ({
+                                    at: slot.get(layer.at)!,
+                                    map: layer.map,
+                                })) ?? null,
+                            fade: null,
+                            radius: null,
+                            radiusBlend: null,
+                            posed: null,
+                        }
+                    }),
+                    timelines: order.map((j) => drawnState[j]!.timeline),
+                    elapsed: order.map((j) => drawnNodes[j]!.elapsed),
+                    started: order.map((j) => drawnState[j]!.started),
+                    solved: null,
+                }
+                for (const [i, j] of wanted) {
+                    const deps = new Set<number>()
+                    closure(j, deps)
+                    const g = drawnFrame[j]!.geometry
+                    timelines.set(i, {
+                        ghost,
+                        at: slot.get(j)!,
+                        ox: g.ox,
+                        oy: g.oy,
+                        deps: [...deps].map((k) => slot.get(k)!),
+                        done: false,
+                    })
+                }
+            }
+        }
+
         actions.forEach((action, i) => {
             const p = list[i]!
             const g = geometry[i]
@@ -2278,23 +2548,40 @@ export function createLayoutGroup(
                         settle(p)
                     return
                 case 'keep': {
-                    // re-expressed in this flush's view space by δ (§5.7
-                    // path 2; §4.4 whatever the path, with no B to retarget
-                    // from): its pose relative to its layout box is unchanged
+                    if (!d?.track || !d.target || !g) return
                     const r = reexpress[i]
-                    if (!r || r.path === 'unchanged' || !d?.track || !d.target)
+                    const was = frozen.get(p)?.geometry
+                    if (d.timeline) {
+                        // its pose timeline goes on in this flush's geometry
+                        d.target = g.a
                         return
-                    d.track = translated(d.track, r.dx, r.dy)
-                    d.target = {
-                        ...d.target,
-                        x: d.target.x + r.dx,
-                        y: d.target.y + r.dy,
+                    }
+                    if (parents[i]! < 0 && was) {
+                        // top level: the same poses about the new origin
+                        // (§5.7 paths 1 and 2, §4.4)
+                        d.track = rebased(d.track, was, g)
+                        d.target = g.a
+                    } else if (r?.path === 'translate') {
+                        // path 2: translated by δ, keeping the ancestor
+                        // matrices it was planned with (§3.2)
+                        d.track = translated(d.track, r.dx, r.dy)
+                        d.target = {
+                            ...d.target,
+                            x: d.target.x + r.dx,
+                            y: d.target.y + r.dy,
+                        }
+                    } else {
+                        // path 1 or §4.4 under an ancestor: its pose timeline
+                        const timeline = timelines.get(i)
+                        if (!timeline) return
+                        d.timeline = timeline
+                        d.target = g.a
                     }
                     // the same animation draws it: the WAAPI pose is relative too
-                    const running = animations.get(p)
-                    if (running) {
+                    const playing = animations.get(p)
+                    if (playing) {
                         animations.set(p, {
-                            animation: running.animation,
+                            animation: playing.animation,
                             track: d.track,
                         })
                     }
@@ -2308,6 +2595,7 @@ export function createLayoutGroup(
                     }
                     const drive = startDrive(p, 'static', g!, [])
                     drive.track = null
+                    drive.timeline = null
                     drive.target = null
                     drive.radiusBlend = null
                     return
@@ -2346,6 +2634,7 @@ export function createLayoutGroup(
                     drive.release?.()
                     drive.release = null
                     drive.track = action.track
+                    drive.timeline = null
                     drive.target = nodes[i]!.a
                     drive.elapsed = 0
                     drive.started = continues
@@ -2396,6 +2685,7 @@ export function createLayoutGroup(
                         OPACITY_PROPERTIES
                     )
                     drive.track = null
+                    drive.timeline = null
                     drive.target = null
                     drive.elapsed = 0
                     drive.started = false
@@ -2440,8 +2730,13 @@ export function createLayoutGroup(
             // (§3.1); its CSS box is the current one. A new track starts in
             // this flush's space.
             const action = actions[i]!
+            // a kept pose timeline, and a rebased top-level track, are in
+            // this flush's geometry like every node (§5.7 path 1)
+            const refreshed =
+                action.kind === 'keep' &&
+                (p.drive?.timeline != null || parent < 0)
             const continues =
-                action.kind === 'keep' ||
+                (action.kind === 'keep' && !refreshed) ||
                 (action.kind === 'follow' && !action.start)
             const kept = continues ? frozen.get(p) : undefined
             let ancestry = kept?.ancestry
@@ -2452,26 +2747,15 @@ export function createLayoutGroup(
                 }
                 ancestry = now.size > 0 ? now : NO_ANCESTRY
             }
-            // path 1 leaves the track alone (§5.7): it keeps the geometry it
-            // was drawn with, so its next pose continues the last written one
-            const untouched =
-                action.kind === 'keep' && reexpress[i]?.path === 'unchanged'
             next.push({
                 p,
                 parent: parent >= 0 ? frameIndex.get(parent)! : -1,
                 geometry: kept
-                    ? untouched
-                        ? {
-                              ...kept.geometry,
-                              // the authored corners are this flush's
-                              radius: geometry[i]!.radius,
-                              radiusSource: geometry[i]!.radiusSource,
-                          }
-                        : keptGeometry(
-                              kept.geometry,
-                              geometry[i]!,
-                              nodes[i]!.planned ?? kept.geometry.a
-                          )
+                    ? keptGeometry(
+                          kept.geometry,
+                          geometry[i]!,
+                          nodes[i]!.planned ?? kept.geometry.a
+                      )
                     : geometry[i]!,
                 ancestry,
             })
@@ -2518,13 +2802,7 @@ export function createLayoutGroup(
         let tracks = 0
         for (const node of frame) {
             const d = node.p.drive
-            if (
-                d?.kind === 'track' &&
-                d.track &&
-                !trackEnded(d.track, d.elapsed)
-            ) {
-                tracks += 1
-            }
+            if (runs(d)) tracks += 1
         }
         return tracks
     }
@@ -2560,6 +2838,7 @@ export function createLayoutGroup(
         for (const node of frame) {
             const d = node.p.drive
             if (!d || d.kind === 'held') continue
+            if (d.timeline) d.timeline.done = true
             if (d.track) d.elapsed = trackEndTime(d.track)
             if (d.fade) d.fade.elapsed = d.fade.law.duration
         }
