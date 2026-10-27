@@ -1,4 +1,4 @@
-# iOS-grade layout — production architecture v2 (B completion and the B–C seam)
+# iOS-grade layout — production architecture v3 (B completion and the B–C seam)
 
 **Status:** v3 PROPOSAL, 2026-10-27. Supersedes v1 (`655432b`), which the owner judged "not
 production grade", and v2 (`5d1fb18`). v3 is the result of a three-reviewer design review (R1
