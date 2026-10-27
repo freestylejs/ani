@@ -310,8 +310,14 @@ Top-down, parent before child, per axis, with `R` the rect size and `O` the inte
   `M = [R / (O + 1), R / (O − 1)]` for `O > 1`. A **degenerate axis** (`O ≤ 1`) is not left
   unproven: the check reads that participant's exact computed border-box size `W` on the axis
   (counted in `stats.styles`) and uses `M = [R / W, R / W]`. A zero `W` is a zero-size box, which
-  snaps `'unsupported'` (`zero size`) like today. Both ends are widened by a relative `1e-6`: some
-  engines compute rects in single precision.
+  snaps `'unsupported'` (`zero size`) like today.
+- **Measurement error.** `M` is widened for what the engines actually return:
+  - **Rect.** `R` is used as `R ± ε_R` with `ε_R = 1/30 px`. Firefox quantizes the rect edges of
+    transformed boxes to 1/60 px app units, and Chromium's 1/64 px LayoutUnit is finer.
+  - **Exact size.** A read exact size `W` is used as `W·(1 ± 1e-5)`, since Chromium serializes
+    computed lengths to six significant digits.
+  - **Floating point.** Both ends are then widened by a relative `1e-6` for single-precision
+    arithmetic.
 - **Expected scale.** `E = E_π · p · q` is a number per axis, not an interval:
   - `E_π` is the parent participant's expected scale (1 at the top level, since non-participant
     ancestors only translate, §6);
@@ -325,9 +331,12 @@ Top-down, parent before child, per axis, with `R` the rect size and `O` the inte
     chain with the scales read.
   - The classifier below runs on every node read. A rotation, skew or 3D component in an ancestor
     makes that ancestor unsupported, with its subtree.
+  - **Order independence.** When verification reads an ancestor's scale, every node under that
+    ancestor already compared with the assumed scale is compared again with the read one. The
+    result therefore does not depend on the order of the nodes.
   - The node snaps only when `E ∉ M` still.
   - Reads happen only on a failing chain. Each is counted in `stats.styles` and reused for the rest
-    of the check and for the flush.
+    of that check, never across a capture and its flush: the commit may change computed values.
 
 On a supported tree with every `q` read, `E` is the true total scale, which lies in `M`.
 - **No false positive.** An assumed `q` that hides inside its own node's `M` can make a
@@ -339,7 +348,8 @@ On a supported tree with every `q` read, `E` is the true total scale, which lies
   detected as soon as its composed effect on any participant's box exceeds that node's own
   measurement interval (under 1 px of its own size). It cannot accumulate across a chain, at any
   depth. Smaller effects are drawn as their box, like the small rotations below.
-- **Shared reads.** Both reads of a flush use the same verified scales.
+- **Values already read.** A computed value already read in the same check is that node's `q`, and
+  it is not read again. At flush this includes every active node's values (§9.1).
 
 - A mismatch, or computed values with a rotation, skew or 3D component, means a map the engine
   does not own (a box-changing rotation or skew, 3D, CSS `zoom`). The node and its participant
@@ -399,6 +409,11 @@ A flush with no capture, or with an aged capture, has no valid measurement of wh
 | Undriven | Appears at A (no track). | Reported `'stale'` when its A differs by at least `threshold` from its **last known box**: the aged capture's box when there is one, else its A at its previous flush (that flush's view space). A node with no last known box (registered since its last flush) is reported. |
 | Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is translated by `δ = A_new − A_old`, §5.7; with no valid B there is nothing to retarget from). | Reported `'stale'` when its screen displacement bound `β` (below) reaches `threshold`, or reaches 0.01 px while the translation is not exact (path 2's condition fails). |
 
+**A node without a valid B in a fresh capture** follows this table as if its flush had no capture,
+and so does its participant subtree. Such a node was disconnected at capture, or an owned
+declaration was replaced by the author (§6). Its report and its `onSnap` call are those of the
+table. The rest of the flush plans normally.
+
 **The screen displacement bound `β`.** It holds for any affine map above the node, supported or
 not, so no undetected skew or rotation can make it too small.
 - **Layout change.** `d` is the change of the node's layout box in its parent participant's local
@@ -410,8 +425,15 @@ not, so no undetected skew or rotation can make it too small.
   bounding box of size `(R_x, R_y)` has row sums `|a| + |c| ≤ R_x / min(w, h)` (and likewise for
   `y`). The bound uses the parent's rounded sizes less one (`W > O − 1`), or its exact sizes on a
   degenerate axis.
-- **The bound.** `β = max over axes of (R_axis / min(w, h))·max(e_x, e_y)`. At the top level the
-  factor is 1 (non-participant ancestors only translate, §6).
+- **The parent's frame.** Every point of the parent participant's local frame moves on screen by
+  one vector: its layout moved, and its pose stays relative to its layout box. That vector is at
+  most `β_π`:
+  - for a driven parent, its own `β`;
+  - for an undriven parent, the displacement of its box between its last known box and its A
+    (any edge, unbounded when it has no last known box).
+- **The bound.** `β = β_π + max over axes of (R_axis / min(w, h))·max(e_x, e_y)`, computed top-down.
+  At the top level `β_π = 0` and the factor is 1, with `d` taken in view space (non-participant
+  ancestors only translate, §6).
 
 The rule is **exhaustive and conservative**: every node that may have jumped by `threshold` or more
 is reported, and a node that only moved with a scroll since its last known box may be reported too
@@ -678,6 +700,12 @@ ancestor maps decides that a track may be left alone.
 
 1. **Unchanged** when `|J| < 0.01 px` on every edge (both origins and both sizes). Leaving the
    track alone draws the next frame where the user saw the node.
+   - **What is kept.** The node's pose timeline: its own `translate` and `scale` as functions of
+     time, with timing, elapsed time and velocity.
+   - **What is refreshed.** Like every node, it takes this flush's `Lₙ` and `Oₙ` (§3.2). Its track is
+     re-expressed through this flush's maps so that it writes exactly the poses it would have
+     written, and every node planned in this flush composes with this flush's geometry of its
+     ancestors.
 2. **Translated** by `δ` when the translation is provably exact: at `t_k` every participant
    ancestor's pose has scale 1 on both axes (no ancestor track or hold is changing a scale), and
    every participant ancestor's inner-map scale is the one the track was planned with. Then the
@@ -1146,7 +1174,7 @@ function Toast({ toast }) {
 
 | Condition | Detection | Outcome | Report |
 |---|---|---|---|
-| No valid before-box (no capture, an aged capture) | flush; frame marker (§4.1) | §4.4 | `'stale'`; `capture-less-flush` / `capture-aged` |
+| No valid before-box (no capture, an aged capture, or a node without a valid B in a fresh capture) | flush; frame marker (§4.1) | §4.4 | `'stale'`; `capture-less-flush` / `capture-aged` |
 | Both boxes outside the viewport ± 10 % (the union of B and A) | plan | that node jumps, uncounted toward `maxNodes`; under a moving ancestor it is still counter-projected | `'culled'` (silent) |
 | Visible movers exceed `maxNodes` | plan | the whole flush snaps | status `'capped'`; `mover-cap` |
 | Connected participants exceed `maxParticipants` | count, before any read | capture and flush read nothing; the whole flush snaps | status `'capped'`; `participant-cap` |
