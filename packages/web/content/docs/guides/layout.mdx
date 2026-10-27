@@ -495,7 +495,7 @@ Anything the engine cannot animate exactly jumps to its final layout. Each chang
 | Both boxes are outside the viewport (plus 10 %) | That element jumps, and does not count toward `maxNodes` | `'culled'` |
 | More than `maxNodes` visible elements move | The whole change jumps | `'capped'` |
 | `rotate` or skew; a non-participant ancestor that rotates, skews or scales; a CSS transition or animation on `translate`/`scale`; zero size; `display: contents` or `inline`; a size change beyond 50× | That element and its participants jump | `'unsupported'` |
-| A scroll container inside the page scrolled between capture and flush | The whole change jumps | `'stale'` |
+| No valid capture: none was taken, or it aged past a frame (taken in an earlier task's frame, or inside an animation frame) | Elements appear at their final layout; running animations keep going, moved with their layout. Elements that may have jumped by `threshold` or more are listed | `'stale'` |
 | Reduced motion with `'jump'` | Everything jumps | `'reduced'` |
 
 `'unsupported'`, `'capped'` and `'stale'` print one development warning per group, naming the cause. `'culled'` and `'reduced'` are normal operation and stay silent.
@@ -505,7 +505,8 @@ Anything the engine cannot animate exactly jumps to its final layout. Each chang
 | `'ended'` | Every element of the change settled, or `finish()` was called. |
 | `'interrupted'` | A later change retargeted one of its elements. Its other elements keep running. |
 | `'no-change'` | Nothing moved. |
-| `'reduced'`, `'capped'`, `'stale'` | Everything jumped, for that reason. |
+| `'reduced'`, `'capped'` | Everything jumped, for that reason. |
+| `'stale'` | The change had no valid capture and nothing animated; the elements that may have jumped are listed. |
 | `'disposed'` | The group was disposed or unmounted, or every element of the change was removed. Inline styles are restored. |
 
 Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a stateful timing) throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` when they are passed, never inside a frame.
@@ -553,12 +554,12 @@ group.dispose()
 | :--- | :--- |
 | `add(element, options?)` | Registers a participant and returns an idempotent remove function that restores its styles. |
 | `set(element, options)` | Replaces a participant's options. |
-| `capture()` | Reads the boxes before a change. Repeated calls in the same task reuse the reading; a call in a later task reads again. |
+| `capture()` | Reads the boxes before a change, where they are drawn. Repeated calls in the same task reuse the reading; a call in a later task reads again. The reading is valid until the next frame. |
 | `flush()` | Reads the boxes after the change and starts the animations. Resolves the report. |
 | `update(mutate)` | `capture()`, `mutate()`, `flush()`. A throwing `mutate` discards the capture and rethrows. |
 | `finish()` | Jumps every running animation to its end. |
 | `dispose()` | Cancels everything and restores every style the group wrote. |
-| `stats` | `{ captures, reads, tracks }`. |
+| `stats` | `{ captures, reads, rects, offsets, styles, tracks, holds }`: `reads` is `rects + offsets + styles` (rects, layout-size pairs and computed styles). |
 
 `createLayoutGroup(options?)` takes the group options of the table in [Groups](#groups) plus `motion`. `createPresence(element, motion, options?)` is the presence handle behind `usePresence`: `enter()`, `exit()` and `dispose()`. A participant inside an exiting presence element takes part in a `layoutId` crossfade.
 

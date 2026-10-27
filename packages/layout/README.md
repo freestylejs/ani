@@ -50,7 +50,10 @@ const run = await group.flush() // read the boxes after it and start the run
   over a `layoutId`.
 - `finish()` jumps every running animation to its end. `dispose()` cancels everything and
   restores every inline style the group wrote.
-- `stats` counts `captures`, `reads` and running `tracks`.
+- `capture()` is valid until the next frame: take it in the same task as the change. A capture
+  in a later task reads again.
+- `stats` counts `captures`, the layout reads (`rects`, `offsets` for layout-size pairs and
+  computed `styles`, with `reads` their sum), running `tracks` and live `holds`.
 
 ## Options
 
@@ -116,7 +119,7 @@ is written.
 | `'no-change'` | Nothing moved. |
 | `'reduced'` | Reduced motion with the `'jump'` policy: everything jumped. |
 | `'capped'` | More than `maxNodes` visible elements moved: everything jumped. |
-| `'stale'` | A scroll container scrolled between capture and flush: everything jumped. |
+| `'stale'` | The flush had no valid capture (none was taken, or it aged past a frame) and nothing animated. |
 | `'disposed'` | The group was disposed, or every element of the run was removed. |
 
 `snapped` lists `{ element, reason }` for every element that jumped:
@@ -126,7 +129,7 @@ is written.
 | `'culled'` | Both boxes are outside the viewport (plus 10 %). Silent. |
 | `'capped'` | The change moved more than `maxNodes` visible elements. |
 | `'unsupported'` | `rotate`, skew, a non-translation transform on a non-participant ancestor, a CSS transition or animation on `translate`, `scale` or `all`, zero size, `display: contents` or `inline`, or a size change beyond 50×. |
-| `'stale'` | A scroll container moved between capture and flush. |
+| `'stale'` | No valid measurement of what was presented: no capture, or an aged one. The element may have jumped by `threshold` or more; running animations keep going. |
 | `'reduced'` | Reduced motion with the `'jump'` policy. Silent. |
 
 `'unsupported'`, `'capped'` and `'stale'` also print one development warning per group.
