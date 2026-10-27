@@ -18,6 +18,7 @@ import {
     type LayoutGroupOptions,
     type LayoutOptions,
     type LayoutReport,
+    type LayoutStats,
     shareElement,
     supportsViewTransition,
     viewTransition,
@@ -486,8 +487,10 @@ export async function JOIN(): Promise<string> {
         void h.group.flush()
         await frames(h.mc, 13, noCheck)
         const left = pageBox(a)
-        // the handoff happens between two frames
+        // the handoff happens between two frames; the capture of that task
+        // measures the lead's last presented box (§5.8)
         h.mc.advance(10)
+        h.group.capture()
         removeA()
         a.remove()
         const b = node(
@@ -993,12 +996,21 @@ interface Probe {
     restore(): void
 }
 
-/** Logs every layout read (rect, computed style) and every inline style write while `on`. */
-function probeDom(): Probe {
+/**
+ * Logs every layout read (rect, computed style) and every inline style write
+ * while `on`; with `sizes`, also every layout-size pair (`offsetWidth`, as
+ * 'offset') and every Typed OM read (as 'style'), as `stats` counts them.
+ */
+function probeDom(sizes = false): Probe {
     const rect = Element.prototype.getBoundingClientRect
     const computed = window.getComputedStyle
     const set = CSSStyleDeclaration.prototype.setProperty
     const remove = CSSStyleDeclaration.prototype.removeProperty
+    const offsetWidth = Object.getOwnPropertyDescriptor(
+        HTMLElement.prototype,
+        'offsetWidth'
+    )!
+    const styleMap = Element.prototype.computedStyleMap
     const probe: Probe = {
         log: [],
         on: false,
@@ -1007,7 +1019,29 @@ function probeDom(): Probe {
             window.getComputedStyle = computed
             CSSStyleDeclaration.prototype.setProperty = set
             CSSStyleDeclaration.prototype.removeProperty = remove
+            if (!sizes) return
+            Object.defineProperty(
+                HTMLElement.prototype,
+                'offsetWidth',
+                offsetWidth
+            )
+            if (styleMap) Element.prototype.computedStyleMap = styleMap
         },
+    }
+    if (sizes) {
+        Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+            ...offsetWidth,
+            get(this: HTMLElement) {
+                if (probe.on) probe.log.push('offset')
+                return offsetWidth.get!.call(this)
+            },
+        })
+        if (styleMap) {
+            Element.prototype.computedStyleMap = function (this: Element) {
+                if (probe.on) probe.log.push('style')
+                return styleMap.call(this)
+            }
+        }
     }
     Element.prototype.getBoundingClientRect = function (this: Element) {
         if (probe.on) probe.log.push('rect')
@@ -1034,11 +1068,15 @@ function probeDom(): Probe {
     return probe
 }
 
-/** A running retarget reads before any write; reads per commit = 2N rects + one style per active node; zero reads per frame. */
+/**
+ * A running retarget reads before any write; a capture and a flush each read
+ * one rect and one layout size per participant, driven ones included (§4.1),
+ * plus computed styles for the active nodes; zero reads per frame.
+ */
 export async function T8(): Promise<string> {
     const linear = timing.linear()
     const h = harness({ motion: { duration: 0.4, timing: linear } })
-    const probe = probeDom()
+    const probe = probeDom(true)
     try {
         const elements: HTMLElement[] = []
         for (let i = 0; i < 10; i++) {
@@ -1061,14 +1099,18 @@ export async function T8(): Promise<string> {
         const frameReads = probe.log.filter((e) => e !== 'write').length
         // a running retarget plus a new mover
         probe.log.length = 0
+        const captureBefore = h.group.stats
         h.group.capture()
         const captureReads = probe.log.filter((e) => e === 'rect').length
+        const captureOffsets = probe.log.filter((e) => e === 'offset').length
+        const captureStyles = probe.log.filter((e) => e === 'style').length
         probe.on = false
+        const captureStats = h.group.stats
         elements[0]!.style.top = '200px'
         elements[2]!.style.top = '100px'
         probe.on = true
         probe.log.length = 0
-        const statsBefore = h.group.stats.reads
+        const statsBefore = h.group.stats
         void h.group.flush()
         probe.on = false
         const log = [...probe.log]
@@ -1077,27 +1119,65 @@ export async function T8(): Promise<string> {
             (e, i) => i > firstWrite && e !== 'write'
         )
         const rects = log.filter((e) => e === 'rect').length
+        const offsets = log.filter((e) => e === 'offset').length
         const styles = log.filter((e) => e === 'style').length
+        const statsAfter = h.group.stats
         expectEqual(frameReads, 0, 'reads on steady frames')
         expectEqual(
             firstWrite >= 0 && lateRead < 0,
             true,
             `no read after the first write (${log.join(',')})`
         )
-        expectEqual(captureReads, 8, 'capture skips the 2 driven nodes')
+        expectEqual(captureReads, 10, 'capture reads the 2 driven nodes too')
+        expectEqual(captureOffsets, 10, 'capture reads every layout size')
         expectEqual(rects, 10, 'flush reads every rect')
+        expectEqual(offsets, 10, 'flush reads every layout size')
         if (styles > 3) {
             throw new Error(
                 `computed-style reads ${styles}, expected ≤ 3 active nodes`
             )
         }
-        expectEqual(
-            h.group.stats.reads - statsBefore,
-            rects + styles,
-            'stats.reads'
+        const counted = (
+            from: LayoutStats,
+            to: LayoutStats,
+            want: { rects: number; offsets: number; styles: number },
+            what: string
+        ) => {
+            expectEqual(
+                to.rects - from.rects,
+                want.rects,
+                `${what} stats.rects`
+            )
+            expectEqual(
+                to.offsets - from.offsets,
+                want.offsets,
+                `${what} stats.offsets`
+            )
+            expectEqual(
+                to.styles - from.styles,
+                want.styles,
+                `${what} stats.styles`
+            )
+            expectEqual(
+                to.reads - from.reads,
+                want.rects + want.offsets + want.styles,
+                `${what} stats.reads`
+            )
+        }
+        counted(
+            captureBefore,
+            captureStats,
+            {
+                rects: captureReads,
+                offsets: captureOffsets,
+                styles: captureStyles,
+            },
+            'capture'
         )
+        counted(statsBefore, statsAfter, { rects, offsets, styles }, 'flush')
+        expectEqual(statsAfter.holds, 0, 'stats.holds')
         h.group.finish()
-        return `capture ${captureReads} rects; flush ${rects} rects + ${styles} styles before ${log.filter((e) => e === 'write').length} writes; 0 reads in 5 steady frames`
+        return `capture ${captureReads} rects + ${captureOffsets} sizes + ${captureStyles} styles; flush ${rects} rects + ${offsets} sizes + ${styles} styles before ${log.filter((e) => e === 'write').length} writes; 0 reads in 5 steady frames`
     } finally {
         probe.restore()
         h.dispose()
@@ -1646,28 +1726,31 @@ export async function T10(): Promise<string> {
             h.dispose()
         }
         {
-            // a scroll container scrolled between capture and flush
+            // a flush without a capture: no valid measurement of what was
+            // presented (§4.4); the node that moved from its last known box
+            // appears at A, the one that did not is not reported
             const h = harness()
-            const scroller = node(
-                h.root,
-                'left: 0; top: 0; width: 200px; height: 100px; overflow: auto;'
-            )
-            node(scroller, 'left: 0; top: 0; width: 10px; height: 400px;')
             const a = node(
-                scroller,
+                h.root,
                 'left: 0; top: 0; width: 40px; height: 40px;'
             )
+            const still = node(
+                h.root,
+                'left: 0; top: 60px; width: 40px; height: 40px;'
+            )
             h.add(a)
+            h.add(still)
             h.group.capture()
+            await h.group.flush()
             a.style.left = '100px'
-            scroller.scrollTop = 30
             const r = await h.group.flush()
             expectEqual(r.status, 'stale', 'stale status')
             expectEqual(
-                r.snapped.map((s) => s.reason),
-                ['stale'],
+                r.snapped.map((s) => [s.element === a, s.reason]),
+                [[true, 'stale']],
                 'stale'
             )
+            expectEqual(a.style.translate, '', 'stale: nothing written')
             h.dispose()
         }
         {
@@ -1711,7 +1794,11 @@ export async function T10(): Promise<string> {
             h.dispose()
         }
         expectEqual(reasons, ['culled'], 'onSnap')
-        const needles = ['maxNodes', 'cannot be animated', 'scroll']
+        const needles = [
+            'maxNodes',
+            'cannot be animated',
+            'no valid measurement',
+        ]
         for (const needle of needles) {
             if (!warnings.messages.some((m) => m.includes(needle))) {
                 throw new Error(
@@ -2430,6 +2517,8 @@ export async function J20(): Promise<string> {
         await frames(h.mc, 13, noCheck)
         const left = pageBox(a)
         expectClose(left.x - o.x, 0.192 * 200, 0.01, 'leaving at x')
+        // the removal's task measures the lead's last presented box (§5.8)
+        h.group.capture()
         removeA()
         a.remove()
         const b = node(
@@ -2463,8 +2552,9 @@ export async function J20(): Promise<string> {
     } finally {
         h.dispose()
     }
-    // a presence layer changed above the lead before it left: the handoff is
-    // the box (and the position and size velocity) the user saw at removal
+    // a presence layer changed above the lead after the capture, before it
+    // left: the handoff is the box (and the position and size velocity) the
+    // capture measured, in view space as measured (§5.8)
     let carried = 0
     const c = harness({ motion: { duration: 1, timing: linear } })
     try {
@@ -2488,6 +2578,7 @@ export async function J20(): Promise<string> {
         await frames(c.mc, 13, noCheck)
         // visual 100 → 260 and 32 → 80 wide under scale 0.8, at 0.192 s
         expectAt(a, at(o, 130.72, 0, 41.216, 32), 'drawn under 0.8', 0.01)
+        c.group.capture()
         parent.style.transform = 'none'
         // the same poses through scale 1: local 138.4, 51.52 wide
         expectAt(a, at(o, 138.4, 0, 51.52, 40), 'drawn under 1', 0.01)
@@ -2499,12 +2590,16 @@ export async function J20(): Promise<string> {
         )
         c.add(b, { layoutId: 'x' })
         const done = report(c.group.flush())
-        // 160 px/s and 48 px/s under 0.8 are 200 and 60 under 1
-        const track = spec(at(o, 138.4, 0, 51.52, 40), at(o, 400, 0, 40, 40), {
-            duration: 1,
-            timing: linear,
-            velocity: { x: 200, y: 0, w: 60, h: 0 },
-        })
+        // 200 px/s and 60 px/s locally are 160 and 48 on screen under 0.8
+        const track = spec(
+            at(o, 130.72, 0, 41.216, 32),
+            at(o, 400, 0, 40, 40),
+            {
+                duration: 1,
+                timing: linear,
+                velocity: { x: 160, y: 0, w: 48, h: 0 },
+            }
+        )
         await frames(
             c.mc,
             80,
@@ -2537,6 +2632,7 @@ export async function J20(): Promise<string> {
         a.style.left = '200px'
         void g.group.flush()
         await frames(g.mc, 13, noCheck)
+        g.group.capture()
         removeA()
         a.remove()
         await sleep(60)
@@ -2545,9 +2641,10 @@ export async function J20(): Promise<string> {
             'left: 400px; top: 0; width: 40px; height: 40px;'
         )
         g.add(b, { layoutId: 'x' })
+        g.group.capture()
         await g.group.flush()
         expectAt(b, at(o, 400, 0, 40, 40), 'no handoff after retain', 0.01)
-        return `handoff at x = 38.4 with 200 px/s on the oracle every frame; through a changed parent layer (0.8 → 1) at x = 138.4, w = 51.52 with 200 / 60 px/s, max error ${carried.toFixed(4)} px; none after retain`
+        return `handoff at x = 38.4 with 200 px/s on the oracle every frame; captured before a parent layer change (0.8 → 1) at x = 130.72, w = 41.216 with 160 / 48 px/s, max error ${carried.toFixed(4)} px; none after retain`
     } finally {
         g.dispose()
     }
@@ -4255,6 +4352,7 @@ export async function P2RadiusCaptureAccuracy(): Promise<string> {
                 layoutId: 'radius-capture-retained',
                 radius: true,
             })
+            h.group.capture()
             await h.group.flush()
             old.style.borderRadius = '30px / 18px'
             h.group.capture()
@@ -4324,6 +4422,7 @@ export async function P2RadiusCaptureAccuracy(): Promise<string> {
                 },
                 { clock: h.mc.clock }
             )
+            h.group.capture()
             await h.group.flush()
             old.style.borderRadius = '28px / 16px'
             h.group.capture()
