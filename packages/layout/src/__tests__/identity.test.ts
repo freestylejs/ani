@@ -777,3 +777,202 @@ describe('I-4: layoutKey (§4.7, §7.1)', () => {
         group.dispose()
     })
 })
+
+describe('I-5: closed-root flat ancestry through the known roots (§4.6)', () => {
+    /** A host whose shadow root holds `frame`, with a slot (named `slotName` if given) inside it. */
+    function slotted(mode: ShadowRootMode, slotName?: string) {
+        const host = document.createElement('div')
+        document.body.append(host)
+        const root = host.attachShadow({ mode })
+        const frame = document.createElement('section')
+        const slot = document.createElement('slot')
+        if (slotName !== undefined) slot.name = slotName
+        frame.append(slot)
+        root.append(frame)
+        const child = document.createElement('div')
+        host.append(child)
+        return { host, root, frame, slot, child }
+    }
+
+    it('finds the slot of a node slotted into a known closed root through assignedNodes()', () => {
+        const { host, root, frame, slot, child } = slotted('closed')
+        // the platform hides the slot of a closed root
+        expect(child.assignedSlot).toBeNull()
+        expect(slot.assignedNodes()).toContain(child)
+        const roots = new Map<Element, ShadowRoot>([[host, root]])
+        expect(flatParent(child, roots)).toBe(slot)
+        expect(flatParent(slot, roots)).toBe(frame)
+        expect(flatParent(frame, roots)).toBe(host)
+        expect(containsFlat(frame, child, roots)).toBe(true)
+        expect(containsFlat(slot, child, roots)).toBe(true)
+    })
+
+    it('passes from a node slotted into an unknown closed root straight to its host', () => {
+        const { host, frame, child } = slotted('closed')
+        expect(flatParent(child)).toBe(host)
+        expect(flatParent(child, new Map())).toBe(host)
+        expect(containsFlat(frame, child, new Map())).toBe(false)
+        expect(containsFlat(host, child, new Map())).toBe(true)
+    })
+
+    it('uses assignedSlot for an open root, known or not', () => {
+        const { host, root, slot, child } = slotted('open')
+        expect(flatParent(child)).toBe(slot)
+        expect(flatParent(child, new Map([[host, root]]))).toBe(slot)
+    })
+
+    it('falls back to the parent element for a child of a known host that no slot holds', () => {
+        const { host, root } = slotted('closed', 'named')
+        const loose = document.createElement('div')
+        host.append(loose)
+        expect(flatParent(loose, new Map([[host, root]]))).toBe(host)
+    })
+
+    it('crosses nested known closed roots', () => {
+        const outer = slotted('closed')
+        // inside the outer root, a host with its own closed root and slot
+        const innerHost = document.createElement('div')
+        outer.frame.append(innerHost)
+        const innerRoot = innerHost.attachShadow({ mode: 'closed' })
+        const panel = document.createElement('div')
+        const innerSlot = document.createElement('slot')
+        panel.append(innerSlot)
+        innerRoot.append(panel)
+        const node = document.createElement('span')
+        innerHost.append(node)
+
+        const roots = new Map<Element, ShadowRoot>([
+            [outer.host, outer.root],
+            [innerHost, innerRoot],
+        ])
+        expect(flatParent(node, roots)).toBe(innerSlot)
+        expect(flatParent(innerSlot, roots)).toBe(panel)
+        expect(flatParent(panel, roots)).toBe(innerHost)
+        expect(flatParent(innerHost, roots)).toBe(outer.frame)
+        expect(containsFlat(panel, node, roots)).toBe(true)
+        expect(containsFlat(outer.host, node, roots)).toBe(true)
+        // with only the outer root known, the walk passes over the inner one
+        const outerOnly = new Map<Element, ShadowRoot>([
+            [outer.host, outer.root],
+        ])
+        expect(flatParent(node, outerOnly)).toBe(innerHost)
+        expect(containsFlat(panel, node, outerOnly)).toBe(false)
+    })
+
+    it('follows a slot reassignment between walks', () => {
+        const { host, root, slot, child } = slotted('closed', 'a')
+        const other = document.createElement('slot')
+        other.name = 'b'
+        root.append(other)
+        const roots = new Map<Element, ShadowRoot>([[host, root]])
+        child.slot = 'a'
+        expect(flatParent(child, roots)).toBe(slot)
+        child.slot = 'b'
+        expect(flatParent(child, roots)).toBe(other)
+        child.slot = 'c'
+        expect(flatParent(child, roots)).toBe(host)
+    })
+
+    /** A panel participant in a closed root, with a slotted light-DOM participant under it. */
+    function closedPanel(slotName?: string) {
+        const host = document.createElement('div')
+        document.body.append(host)
+        const root = host.attachShadow({ mode: 'closed' })
+        const panel = document.createElement('div')
+        const slot = document.createElement('slot')
+        if (slotName !== undefined) slot.name = slotName
+        panel.append(slot)
+        root.append(panel)
+        const child = document.createElement('div')
+        host.append(child)
+        return { host, root, panel, slot, child }
+    }
+
+    it('plans a participant slotted into a closed root under its flat-tree parent', async () => {
+        const clock = createManualClock()
+        const group = createLayoutGroup({
+            clock: clock.clock,
+            motion: linearMotion,
+        })
+        const { panel, child } = closedPanel()
+        place(panel, { x: 0, y: 0, w: 100, h: 100 })
+        place(child, { x: 10, y: 10, w: 40, h: 40 })
+        group.add(panel)
+        group.add(child)
+        group.capture()
+        await group.flush()
+
+        // the panel doubles its width; the child's box does not move, so it
+        // is counter-projected under its parent's pose
+        group.capture()
+        place(panel, { x: 0, y: 0, w: 200, h: 100 })
+        const run = group.flush()
+        expect(panel.style.scale).toBe('0.5 1')
+        expect(child.style.scale).toBe('2 1')
+        clock.frames(20)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
+        expect(child.style.cssText).toBe('')
+        group.dispose()
+    })
+
+    it('re-reads the slot at every flush: a reassignment out of the panel unparents the child', async () => {
+        const clock = createManualClock()
+        const group = createLayoutGroup({
+            clock: clock.clock,
+            motion: linearMotion,
+        })
+        const { root, panel, child } = closedPanel('in')
+        const outside = document.createElement('slot')
+        outside.name = 'out'
+        root.append(outside)
+        child.slot = 'in'
+        place(panel, { x: 0, y: 0, w: 100, h: 100 })
+        place(child, { x: 10, y: 10, w: 40, h: 40 })
+        group.add(panel)
+        group.add(child)
+        group.capture()
+        await group.flush()
+
+        group.capture()
+        child.slot = 'out'
+        place(panel, { x: 0, y: 0, w: 200, h: 100 })
+        const run = group.flush()
+        expect(panel.style.scale).toBe('0.5 1')
+        // no longer under the panel: nothing moved it, so nothing is written
+        expect(child.style.cssText).toBe('')
+        clock.frames(20)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
+        group.dispose()
+    })
+
+    it("the 'waapi' nesting check sees a participant slotted into a closed root, in either order", () => {
+        for (const order of ['panel first', 'child first'] as const) {
+            const group = createLayoutGroup({
+                engine: 'waapi',
+                motion: linearMotion,
+            })
+            const { panel, child } = closedPanel()
+            const [first, second] =
+                order === 'panel first' ? [panel, child] : [child, panel]
+            group.add(first, { layout: 'position' })
+            let error: unknown = null
+            try {
+                group.add(second, { layout: 'position' })
+            } catch (caught) {
+                error = caught
+            }
+            expect(isAniError(error), order).toBe(true)
+            expect((error as { code: string }).code).toBe('ANI_INVALID_OPTIONS')
+            group.dispose()
+        }
+    })
+
+    it('exitingPresence walks into a known closed root', () => {
+        const { host, root, panel, child } = closedPanel()
+        const link = { exiting: true, opacity: false, hold: vi.fn() }
+        const unlink = linkPresence(panel, link)
+        expect(exitingPresence(child)).toBeNull()
+        expect(exitingPresence(child, new Map([[host, root]]))).toBe(link)
+        unlink()
+    })
+})
