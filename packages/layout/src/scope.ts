@@ -1192,15 +1192,13 @@ export function createLayoutGroup(
         styleOf: StyleReader
     ): readonly (string | null)[] {
         const poseOf = (i: number) => poses.get(list[i]!) ?? IDENTITY_POSE
-        const nodes: SupportNode[] = list.map((_, i) => {
-            const pose = poseOf(i)
-            return {
-                parent: parents[i]!,
-                rect: rects[i]!,
-                offset: offsets[i]!,
-                pose: { sx: pose.sx, sy: pose.sy },
-            }
-        })
+        // the pose is only read (its scales): the engine's own object serves
+        const nodes: SupportNode[] = list.map((_, i) => ({
+            parent: parents[i]!,
+            rect: rects[i]!,
+            offset: offsets[i]!,
+            pose: poseOf(i),
+        }))
         const causes: (string | null)[] = list.map(() => null)
         const innerOf = (i: number): AxisScale | 'unsupported' => {
             const transform = styleOf.transform(i)
