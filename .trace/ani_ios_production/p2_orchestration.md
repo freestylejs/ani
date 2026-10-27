@@ -13,6 +13,23 @@ runs every gate in the reference container and commits.
 | H3 | DeepSeek v4.1 flash | `ani-h3` | `~/ani-v2/h3` |
 | H4 | DeepSeek v4.1 flash | `ani-h4` | `~/ani-v2/h4` |
 
+### Helper route substitution (2026-10-27, 16:30)
+
+Both owner-named helper routes became unavailable during P2:
+- **DeepSeek.** The MonkeyGPT pool stayed saturated by outside work (5 of 5 workers in use, 3
+  queued), and its tasks went blocked without producing work. The opencode CLI hung on a trivial
+  prompt.
+- **Argon4.** It hit its individual quota ("Resets in 166h59m") while H5 and H4 were in progress.
+  It left uncommitted drafts: H5 about a fifth done, H4 with every row drafted and none run.
+
+From H4 and H5 on, the helpers are **native Claude Code sub-agents** running in the reference
+container, each in its own git worktree.
+- **Roles are unchanged.** The helpers write the code; the orchestrator briefs, reviews, judges,
+  runs the gates and commits; the Chief Justice stays on its own route.
+- **Briefs.** They keep the three prerequisites and are committed under `briefs/`.
+- **Gain.** The container is the pinned §11.5 environment and has all three browsers, so the
+  helpers run browser rows themselves. june-wsl has none.
+
 - **Briefs.** Each brief carries the three prerequisites: the authority documents, the essential
   purpose, and the task boundary as thesis, antithesis and synthesis. They are kept verbatim on
   the Mac under `~/Documents/project/freestylejs/ani-p2-brief/` (`h1.md`, `h3.md`, `h4.md`,
@@ -27,10 +44,10 @@ runs every gate in the reference container and commits.
 |---|---|---|---|
 | H1 measure | Pure `measure.ts`: interval support check (§4.2), `L_k` recovery, keep paths (§5.7), stale rule (§4.4); property tests | Argon4 | Accepted (ba1fe64): 11 tests, 20,000-chain no-false-positive property, 10,000-tree `L_k` property at 1e-9 |
 | H2 capture | §4.1 capture lifecycle | DeepSeek | Withdrawn before start (the pool was blocked); merged into H5, since it is coupled to the flush |
-| H3 identity | Flat-tree ancestry, document affinity (§4.6), `layoutKey` (§4.7) | DeepSeek | Running |
-| H4 rows | `layout_meas` browser rows L-MEAS-1..13 (without 5), L-HAND-1..2, L-KEY-1, L-DOC-1, tests first, with a `knownFailures` worklist that must be empty at the gate | DeepSeek | Queued |
-| H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 | Running |
-| R1 remediation | P1 tribunal P1-001..P1-004; the code side of P0 J-001, J-004 and P0-N001 in `measure.ts` | DeepSeek | Queued |
+| H3 identity | Flat-tree ancestry, document affinity (§4.6), `layoutKey` (§4.7) | Argon4 | Accepted (78bbdba, integrated at f94848d) |
+| H4 rows | `layout_meas` browser rows L-MEAS-1..13 (without 5), L-HAND-1..2, L-KEY-1, L-DOC-1, tests first, with a `knownFailures` worklist that must be empty at the gate | Argon4 (draft), then native helper | Running (`briefs/h4.md`) |
+| H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 (partial), then native helper | Running (`briefs/h5.md`) |
+| R1 remediation | P1 tribunal P1-001..P1-004; the code side of P0 J-001, J-004 and P0-N001 in `measure.ts` | DeepSeek | Accepted (04d1d12..f94848d) |
 | H6 | Active-scroll handoff rule (§5.8), L-MEAS-5 React rows | TBD | After H5 |
 
 ## Tribunal carry-over into P2 (from `p1_spring_trial_result.md`)

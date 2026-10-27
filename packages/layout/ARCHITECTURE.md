@@ -1151,7 +1151,7 @@ snap) resolves by its tracks, and lists the snapped nodes with their reasons.
 | Policy | Automatic motion | Release of a hold |
 |---|---|---|
 | `'jump'` (default) | No tracks; active tracks finish at once; no clock subscription | Lands at A with no motion |
-| `{ maxDuration }` | Timing: delay and duration scaled down to fit. Spring: bounce clamped to ≤ 0; the largest factor `f` of the grid `{1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1}` with `delay·f + T_s(D·f, x₀, v₀) ≤ maxDuration`, each candidate evaluated exactly; if none fits, the same search with `v₀ = 0`; if still none, the node jumps (`'reduced'`). At most 16 evaluations per track, deterministic, no monotonicity assumed | The same clamp |
+| `{ maxDuration }` | Timing: delay and duration scaled down to fit. Spring: bounce clamped to ≤ 0; the largest factor `f` of the grid `{1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1}` with `delay·f + T_s(D·f, x₀, v₀) ≤ maxDuration`, each candidate evaluated exactly; if none fits, the same search with `v₀ = 0`; if still none, the node jumps (`'reduced'`). The chosen candidate stays under the settle cap of §5.3: if its settle exceeds 10 s the track is refused (`'unsupported'`, `spring-timeout`), never planned. At most 16 evaluations per track, deterministic, no monotonicity assumed | The same clamp |
 | `'ignore'` | Plays in full | Full motion |
 
 A held phase is never affected. A mode toggled during a run applies at the next flush to running
