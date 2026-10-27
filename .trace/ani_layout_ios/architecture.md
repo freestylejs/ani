@@ -661,8 +661,8 @@ the perceptual timeline and pose inversion. Every row passes in three engines, a
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture (R1's round-2 counterexample) | (a) no shear, exact `(B, v)`; (b) aged, §3.5 outcome, no rewind |
 | L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
 | L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged) | §3.5 outcomes and reports |
-| L-MEAS-13 an earlier rAF callback moves an ancestor; a later rAF callback calls `update()` (vanilla and via Ani's clock) | Ani's clock: aged, §3.5, never the intermediate box as B; documented third-party case asserted to be outside the adapter path |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly (documented) |
+| L-MEAS-13 an earlier rAF callback moves an ancestor; a later rAF callback calls `update()` (vanilla and via Ani's clock) | Ani's clock: aged, §3.5, never the intermediate box as B; documented third-party case asserted to be outside the adapter path |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
 | L-HAND-2 handoff while the source scroller is active; after `scrollend` | Presence enter, diagnostic; then a normal flight |
 | L-SPRING-1 channels, b ∈ {−0.8, −0.3, 0, 0.2, 0.4, 0.9}, 60/120 Hz | `c(0) = B`, `c′(0) = v`, settle within ε, against the oracle |
