@@ -42,6 +42,7 @@ import {
     type OTrackSpec,
 } from '../../../packages/layout/src/__tests__/oracle'
 import { expectClose, expectEqual } from './assert'
+import { silenceWarnings } from './layout_kit'
 
 export const pageOptions = {}
 
@@ -68,10 +69,13 @@ function byId(host: HTMLElement, id: string): HTMLElement {
     return element
 }
 
-function picture(host: HTMLElement): Map<string, OBox> {
+function picture(
+    host: HTMLElement,
+    boxOf: (element: Element) => OBox = pageBox
+): Map<string, OBox> {
     const boxes = new Map<string, OBox>()
     for (const element of host.querySelectorAll<HTMLElement>('[data-id]')) {
-        boxes.set(element.dataset.id!, pageBox(element))
+        boxes.set(element.dataset.id!, boxOf(element))
     }
     return boxes
 }
@@ -448,20 +452,35 @@ function rotate(order: readonly string[], step: number): string[] {
     return next
 }
 
+interface FrozenOptions {
+    /**
+     * Where a box is compared: page space by default; L-MEAS-5 takes out the
+     * scrolls the user made, which were presented.
+     */
+    readonly boxOf?: (element: Element) => OBox
+    /** Stops checking once true (an aged commit is allowed to snap). */
+    readonly until?: () => boolean
+    /** How long the picture is watched after `body`, ms. */
+    readonly settle?: number
+}
+
 /**
  * Runs `body` with time frozen and checks, after every task and every real
  * frame, that no element moved: commits may only change where things go.
+ * Returns the last presented box of each element, in `boxOf`'s space.
  */
 async function frozen(
     host: HTMLElement,
-    body: () => Promise<void>
-): Promise<{ checks: number; commits: number }> {
-    const still = picture(host)
+    body: () => Promise<void>,
+    { boxOf = pageBox, until = () => false, settle = 300 }: FrozenOptions = {}
+): Promise<{ checks: number; commits: number; still: Map<string, OBox> }> {
+    const still = picture(host, boxOf)
     let checks = 0
     let failure: Error | null = null
     let running = true
     const check = () => {
-        for (const [id, box] of picture(host)) {
+        if (until()) return
+        for (const [id, box] of picture(host, boxOf)) {
             const known = still.get(id)
             if (box.w === 0 && box.h === 0) {
                 // hidden (a suspended boundary's content): it lays out anew
@@ -503,7 +522,7 @@ async function frozen(
     try {
         await body()
         // let every scheduled render and reveal commit
-        await sleep(300)
+        await sleep(settle)
     } finally {
         running = false
         observer.disconnect()
@@ -511,7 +530,7 @@ async function frozen(
     }
     check()
     if (failure) throw failure
-    return { checks, commits }
+    return { checks, commits, still }
 }
 
 async function settleAll(mc: ManualClock, host: HTMLElement): Promise<void> {
@@ -2286,5 +2305,924 @@ export async function RL9(): Promise<string> {
         return `reorder from the old box as one WAAPI animation per item; no inline style; released at the end (${from.y} → ${to.y})`
     } finally {
         view.dispose()
+    }
+}
+
+/* ── L-MEAS-5 (§4.1, §4.4, §11.2): React's slices around a scrolled list ── */
+
+/** How far the user scrolls the list, px. */
+const MEAS5_SCROLL = 30
+/** Slow components in a render: about 90 ms of time slices. */
+const MEAS5_SLOW = 30
+/** The scope's default `threshold` (§4.4). */
+const THRESHOLD = 1
+
+interface Meas5State {
+    readonly order: readonly string[]
+    readonly outside: readonly string[]
+    readonly suspend: number
+}
+
+const MEAS5_START: Meas5State = {
+    order: ['a', 'b', 'c', 'd', 'e', 'f'],
+    outside: ['x', 'y', 'z'],
+    suspend: 0,
+}
+
+/** One commit, seen from outside the engine. */
+interface Meas5Commit {
+    /** The component whose layout effect saw it. */
+    readonly source: 'app' | 'detail'
+    readonly state: Meas5State | null
+    /** Its task, and the task of the last participant render before it. */
+    readonly task: number
+    readonly renderTask: number
+    /** Rendering opportunities since that render. */
+    readonly framesSinceRender: number
+    /** Rendering opportunities since the case began. */
+    readonly frame: number
+    readonly time: number
+    /** The picture the commit's flush drew (t = 0), in the case's space. */
+    drawn: Map<string, OBox> | null
+}
+
+const meas5 = {
+    set: null as ((update: (s: Meas5State) => Meas5State) => void) | null,
+    host: null as HTMLElement | null,
+    boxOf: pageBox as (element: Element) => OBox,
+    commits: [] as Meas5Commit[],
+    /** Render passes of the app since the last reset. */
+    passes: 0,
+    renderTask: 0,
+    renderFrame: 0,
+    /**
+     * The page boxes at the first participant render of the latest task that
+     * rendered one: what the scope's capture read (a render in a later task
+     * refreshes it, §4.1).
+     */
+    rendered: null as Map<string, OBox> | null,
+    renderedTask: 0,
+    /** Slow components rendered since the last reset. */
+    slow: 0,
+    frames: 0,
+}
+
+let taskSeq = 0
+let taskOpen = false
+
+/** The current task's number: a microtask closes it, as the capture's task stamp (§4.1). */
+function currentTask(): number {
+    if (!taskOpen) {
+        taskOpen = true
+        taskSeq++
+        queueMicrotask(() => {
+            taskOpen = false
+        })
+    }
+    return taskSeq
+}
+
+function noteRender(): void {
+    meas5.renderTask = currentTask()
+    meas5.renderFrame = meas5.frames
+    if (
+        meas5.host &&
+        (!meas5.rendered || meas5.renderedTask !== meas5.renderTask)
+    ) {
+        meas5.rendered = picture(meas5.host)
+        meas5.renderedTask = meas5.renderTask
+    }
+}
+
+function Meas5Slow(): ReactNode {
+    busy(3)
+    meas5.slow++
+    return null
+}
+
+function noteCommit(source: Meas5Commit['source'], state: Meas5State | null) {
+    const entry: Meas5Commit = {
+        source,
+        state,
+        task: currentTask(),
+        renderTask: meas5.renderTask,
+        framesSinceRender: meas5.frames - meas5.renderFrame,
+        frame: meas5.frames,
+        time: performance.now(),
+        drawn: null,
+    }
+    meas5.commits.push(entry)
+    // the participants' layout effects queued the flush first
+    const host = meas5.host
+    const boxOf = meas5.boxOf
+    if (host) {
+        queueMicrotask(() => {
+            entry.drawn = picture(host, boxOf)
+        })
+    }
+}
+
+const meas5Gates = new Map<
+    number,
+    { done: boolean; promise: Promise<void>; open(): void }
+>()
+
+/** A resource the case resolves by hand. */
+function meas5Gate(key: number) {
+    let gate = meas5Gates.get(key)
+    if (!gate) {
+        let resolve: () => void = () => undefined
+        const promise = new Promise<void>((done) => {
+            resolve = done
+        })
+        const created = {
+            done: false,
+            promise,
+            open() {
+                created.done = true
+                resolve()
+            },
+        }
+        gate = created
+        meas5Gates.set(key, gate)
+    }
+    return gate
+}
+
+function Meas5Item({ id }: { id: string }): ReactNode {
+    noteRender()
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            width: ITEM.w,
+            height: ITEM.h,
+            margin: ITEM.margin,
+            background: 'rgb(136, 136, 136)',
+        },
+    })
+}
+
+function Meas5Detail({ suspend }: { suspend: number }): ReactNode {
+    if (suspend !== 0) {
+        const gate = meas5Gate(suspend)
+        if (!gate.done) throw gate.promise
+    }
+    noteRender()
+    const ref = useLayout<HTMLParagraphElement>()
+    useLayoutEffect(() => {
+        noteCommit('detail', null)
+    })
+    return h(
+        'p',
+        {
+            ref,
+            'data-id': 'detail',
+            style: { height: 40, margin: 0, width: 200 },
+        },
+        `loaded ${suspend}`
+    )
+}
+
+function Meas5App({
+    clock,
+    slow,
+    last,
+    suspense,
+    onSnap,
+}: {
+    clock: Clock
+    /** Slow components in each render of the app. */
+    slow: number
+    /** Whether the participants render after them, in the committing slice. */
+    last: boolean
+    suspense: boolean
+    onSnap: LayoutGroupProps['onSnap']
+}): ReactNode {
+    meas5.passes++
+    const [state, setState] = useState(MEAS5_START)
+    useLayoutEffect(() => {
+        meas5.set = setState
+    }, [])
+    useLayoutEffect(() => {
+        noteCommit('app', state)
+    })
+    const slows = Array.from({ length: slow }, (_, i) =>
+        h(Meas5Slow, { key: `slow${i}` })
+    )
+    const column = { position: 'relative', display: 'flex' } as const
+    const content = [
+        // an input the user acts on: a discrete event, so its update is
+        // urgent (SyncLane) and interrupts a transition's render
+        h('button', {
+            key: 'urgent',
+            'data-urgent': '',
+            style: { display: 'none' },
+            onClick: () => setState((s) => ({ ...s, outside: NEXT_OUTSIDE })),
+        }),
+        h(
+            'div',
+            { key: 'outside', style: { ...column, flexDirection: 'column' } },
+            state.outside.map((id) => h(Meas5Item, { key: id, id }))
+        ),
+        // the user's scrolls stay theirs: no scroll anchoring here (§11.4
+        // S2 is L-MEAS-14's)
+        h(
+            'div',
+            {
+                key: 'scroller',
+                'data-scroller': '',
+                style: {
+                    position: 'relative',
+                    width: 200,
+                    height: 360,
+                    overflowY: 'scroll',
+                    overflowAnchor: 'none',
+                },
+            },
+            h('div', { style: { height: 60 } }),
+            suspense
+                ? h(
+                      Suspense,
+                      {
+                          fallback: h(
+                              'p',
+                              { style: { height: 12, margin: 0 } },
+                              'loading'
+                          ),
+                      },
+                      h(Meas5Detail, { suspend: state.suspend })
+                  )
+                : null,
+            h(
+                'div',
+                { style: { ...column, flexDirection: 'column' } },
+                state.order.map((id) => h(Meas5Item, { key: id, id }))
+            ),
+            h('div', { style: { height: 600 } })
+        ),
+    ]
+    return h(
+        LayoutGroup,
+        { clock, onSnap },
+        ...(last ? [...slows, ...content] : [...content, ...slows])
+    )
+}
+
+/** The layout box (no pose) in page space, from offsets. */
+function layoutBox(element: HTMLElement): OBox {
+    const parent = element.offsetParent as HTMLElement
+    const origin = parent.getBoundingClientRect()
+    return {
+        x:
+            origin.left +
+            scrollX +
+            parent.clientLeft +
+            element.offsetLeft -
+            parent.scrollLeft,
+        y:
+            origin.top +
+            scrollY +
+            parent.clientTop +
+            element.offsetTop -
+            parent.scrollTop,
+        w: element.offsetWidth,
+        h: element.offsetHeight,
+    }
+}
+
+function premise(what: string): Error {
+    return new Error(`the sequence did not occur: ${what}`)
+}
+
+async function until(done: () => boolean, label: string): Promise<void> {
+    const end = performance.now() + 3000
+    while (!done()) {
+        if (performance.now() > end) throw premise(label)
+        await macrotask()
+    }
+}
+
+interface Meas5Run {
+    readonly mc: ManualClock
+    readonly host: HTMLElement
+    readonly scroller: HTMLElement
+    /** Page space less the scrolls the user made (they were presented). */
+    readonly boxOf: (element: Element) => OBox
+    /** The last presented box of `id` from a `boxOf` box, in page space. */
+    presented(id: string, box: OBox): OBox
+    /** A user scroll of the list, presented at the next frame. */
+    scroll(dy: number): void
+    readonly snaps: { id: string; reason: string }[]
+    dispose(): void
+}
+
+async function meas5Mount(options: {
+    slow: number
+    last: boolean
+    suspense: boolean
+}): Promise<Meas5Run> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    const snaps: { id: string; reason: string }[] = []
+    meas5Gates.clear()
+    meas5.host = view.host
+    meas5.frames = 0
+    let counting = true
+    const tick = () => {
+        if (!counting) return
+        meas5.frames++
+        requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+    await view.render(
+        h(Meas5App, {
+            clock: mc.clock,
+            ...options,
+            onSnap: (element, reason) =>
+                snaps.push({ id: element.dataset.id ?? '?', reason }),
+        })
+    )
+    const scroller = view.host.querySelector<HTMLElement>('[data-scroller]')!
+    const shift = { y: 0 }
+    const boxOf = (element: Element): OBox => {
+        const box = pageBox(element)
+        return scroller.contains(element) ? { ...box, y: box.y + shift.y } : box
+    }
+    meas5.boxOf = boxOf
+    meas5.commits.length = 0
+    meas5.passes = 0
+    meas5.slow = 0
+    meas5.rendered = null
+    snaps.length = 0
+    return {
+        mc,
+        host: view.host,
+        scroller,
+        boxOf,
+        presented(id, box) {
+            return scroller.contains(byId(view.host, id))
+                ? { ...box, y: box.y - shift.y }
+                : box
+        },
+        scroll(dy) {
+            const before = scroller.scrollTop
+            scroller.scrollTop = before + dy
+            shift.y += scroller.scrollTop - before
+        },
+        snaps,
+        dispose() {
+            counting = false
+            meas5.host = null
+            meas5.set = null
+            meas5.boxOf = pageBox
+            view.dispose()
+        },
+    }
+}
+
+/** A fresh start of the next round. */
+function meas5Reset(run: Meas5Run): void {
+    meas5.commits.length = 0
+    meas5.passes = 0
+    meas5.slow = 0
+    meas5.rendered = null
+    run.snaps.length = 0
+}
+
+function authoredStyles(host: HTMLElement): Map<string, string> {
+    const styles = new Map<string, string>()
+    for (const element of host.querySelectorAll<HTMLElement>('[data-id]')) {
+        styles.set(element.dataset.id!, element.style.cssText)
+    }
+    return styles
+}
+
+function expectSnaps(
+    run: Meas5Run,
+    want: readonly string[],
+    label: string
+): void {
+    const got = run.snaps.map((s) => `${s.id}:${s.reason}`).sort()
+    expectEqual(
+        got.join(' '),
+        want
+            .map((id) => `${id}:stale`)
+            .sort()
+            .join(' '),
+        label
+    )
+}
+
+/**
+ * The flush drew every participant at its last presented box (the first
+ * frame), then every frame is on the oracle from there to its layout box;
+ * the settle restores each authored style byte for byte.
+ */
+async function meas5OnOracle(
+    run: Meas5Run,
+    commit: Meas5Commit,
+    still: Map<string, OBox>,
+    authored: Map<string, string>,
+    count = 40,
+    /** Whether React may commit between frames (a task per frame). */
+    tasks = true
+): Promise<number> {
+    const tracks: { element: HTMLElement; id: string; spec: OTrackSpec }[] = []
+    let error = 0
+    for (const element of run.host.querySelectorAll<HTMLElement>('[data-id]')) {
+        // hidden by a suspended boundary: not drawn
+        if (element.offsetWidth === 0) continue
+        const id = element.dataset.id!
+        const drawn = commit.drawn?.get(id)
+        if (!drawn) throw new Error(`${id}: no first frame was drawn`)
+        const box = still.get(id)
+        if (!box) {
+            // revealed or mounted: it appears at its layout box
+            const at = layoutBox(element)
+            const first = maxDiff(run.presented(id, drawn), at)
+            if (!(first <= TOL)) {
+                throw new Error(
+                    `${id}: appeared at ${JSON.stringify(drawn)}, not at its layout box ${JSON.stringify(at)}`
+                )
+            }
+            tracks.push({ element, id, spec: spec(at, at) })
+            continue
+        }
+        const first = maxDiff(drawn, box)
+        if (!(first <= TOL)) {
+            throw new Error(
+                `${id}: first frame ${JSON.stringify(drawn)} is not the last presented box ${JSON.stringify(box)} (${first.toFixed(3)} px)`
+            )
+        }
+        error = Math.max(error, first)
+        tracks.push({
+            element,
+            id,
+            spec: spec(run.presented(id, box), layoutBox(element)),
+        })
+    }
+    const check = (elapsed: number) => {
+        for (const { element, id, spec } of tracks) {
+            error = Math.max(
+                error,
+                expectAt(
+                    element,
+                    expectedBox(spec, elapsed),
+                    `${id} at ${elapsed.toFixed(3)} s`
+                )
+            )
+        }
+    }
+    if (tasks) {
+        await frames(run.mc, count, check)
+    } else {
+        for (let k = 0; k < count; k++) {
+            run.mc.frame(FRAME_MS)
+            check(k * DT)
+            await microtasks()
+        }
+    }
+    for (const { element, id } of tracks) {
+        const want = authored.get(id)
+        if (want !== undefined) {
+            expectEqual(
+                element.style.cssText,
+                want,
+                `${id} restored byte for byte`
+            )
+        }
+    }
+    return error
+}
+
+/**
+ * §4.4 for an aged flush of resting nodes: each participant appears at its
+ * layout box and stays there; exactly those whose box differs from the aged
+ * capture's by `threshold` are reported `'stale'`.
+ */
+async function meas5Aged(
+    run: Meas5Run,
+    authored: Map<string, string>,
+    label: string
+): Promise<string[]> {
+    const captured = meas5.rendered
+    if (!captured) throw premise('no participant rendered')
+    const elements = [
+        ...run.host.querySelectorAll<HTMLElement>('[data-id]'),
+    ].filter((element) => element.offsetWidth > 0)
+    const reported: string[] = []
+    for (const element of elements) {
+        const id = element.dataset.id!
+        const at = layoutBox(element)
+        const before = captured.get(id)
+        if (!before || !(maxDiff(before, at) < THRESHOLD)) reported.push(id)
+    }
+    expectSnaps(run, reported, `${label}: the exact 'stale' set`)
+    await frames(run.mc, 8, (elapsed) => {
+        for (const element of elements) {
+            expectAt(
+                element,
+                layoutBox(element),
+                `${element.dataset.id} at its layout box at ${elapsed.toFixed(3)} s`
+            )
+            expectEqual(
+                element.style.translate,
+                '',
+                `${element.dataset.id} has no track`
+            )
+        }
+    })
+    for (const element of elements) {
+        const want = authored.get(element.dataset.id!)
+        if (want !== undefined) {
+            expectEqual(
+                element.style.cssText,
+                want,
+                `${element.dataset.id} untouched`
+            )
+        }
+    }
+    return reported
+}
+
+/** The development warnings an aged flush gives; any other one fails the case. */
+function expectStaleWarnings(messages: readonly string[]): void {
+    const other = messages.filter(
+        (message) => !message.includes('no valid measurement')
+    )
+    if (other.length > 0) {
+        throw new Error(`unexpected warnings: ${other.join(' | ')}`)
+    }
+}
+
+/**
+ * A commit React may make in a later task than its render (a throttled
+ * Suspense commit): measured, or aged and reported (§11.4 S3), each exactly.
+ */
+function isAged(commit: Meas5Commit): boolean {
+    return commit.task !== commit.renderTask && commit.framesSinceRender > 0
+}
+
+/** A commit whose capture aged: from then on the picture may snap (§4.4). */
+const agedSeen = (): boolean => meas5.commits.some(isAged)
+
+async function meas5Outcome(
+    run: Meas5Run,
+    commit: Meas5Commit,
+    still: Map<string, OBox>,
+    authored: Map<string, string>,
+    messages: readonly string[],
+    label: string,
+    count = 40
+): Promise<string> {
+    if (isAged(commit)) {
+        const reported = await meas5Aged(run, authored, label)
+        expectStaleWarnings(messages)
+        return `${label} committed ${commit.framesSinceRender} frames after its render: aged, 'stale' exactly ${reported.join('')}`
+    }
+    expectEqual(messages.join(' | '), '', `${label}: no warning`)
+    expectSnaps(run, [], `${label} is measured`)
+    const error = await meas5OnOracle(run, commit, still, authored, count)
+    return `${label} measured: first frame = last presented, then on the oracle (max error ${error.toFixed(4)} px)`
+}
+
+const NEXT_ORDER = rotate(MEAS5_START.order, 1)
+const NEXT_OUTSIDE = ['x', 'z', 'y']
+
+/** Attempts at a sequence whose slices React schedules: an aged one is checked, then retried. */
+const MEAS5_ATTEMPTS = 3
+
+/** L-MEAS-5 (a): a time-sliced render scrolled between chunks; a participant renders in the committing slice. */
+export async function L_MEAS_5a(): Promise<string> {
+    const slips: string[] = []
+    for (let attempt = 1; attempt <= MEAS5_ATTEMPTS; attempt++) {
+        const run = await meas5Mount({
+            slow: MEAS5_SLOW,
+            last: true,
+            suspense: false,
+        })
+        const quiet = silenceWarnings()
+        try {
+            const authored = authoredStyles(run.host)
+            let scrolledAt = 0
+            const { still } = await frozen(
+                run.host,
+                async () => {
+                    startTransition(() =>
+                        meas5.set!((s) => ({
+                            ...s,
+                            order: NEXT_ORDER,
+                            outside: NEXT_OUTSIDE,
+                        }))
+                    )
+                    await until(() => meas5.passes > 0, 'the render began')
+                    if (meas5.commits.length > 0) {
+                        throw premise('a scroll between chunks of the render')
+                    }
+                    run.scroll(MEAS5_SCROLL)
+                    scrolledAt = meas5.frames
+                    await until(() => meas5.commits.length > 0, 'a commit')
+                },
+                { boxOf: run.boxOf, until: agedSeen }
+            )
+            const commit = meas5.commits[0]!
+            if (commit.task !== commit.renderTask) {
+                // React yielded after the participants rendered: not this
+                // sequence, but its outcome is checked all the same
+                slips.push(
+                    await meas5Outcome(
+                        run,
+                        commit,
+                        still,
+                        authored,
+                        quiet.messages,
+                        `attempt ${attempt}`
+                    )
+                )
+                continue
+            }
+            if (!(commit.frame > scrolledAt)) {
+                throw premise('the scroll was presented before the commit')
+            }
+            expectEqual(quiet.messages.join(' | '), '', 'no warning')
+            expectSnaps(run, [], 'a fresh capture reports nothing')
+            const error = await meas5OnOracle(run, commit, still, authored)
+            const before = slips.length > 0 ? `${slips.join('; ')}; ` : ''
+            return `${before}slices over ${commit.frame} frames, scrolled ${MEAS5_SCROLL} px between chunks: first frame = last presented, then on the oracle (max error ${error.toFixed(4)} px); restored`
+        } finally {
+            quiet.restore()
+            run.dispose()
+        }
+    }
+    throw premise(
+        `a participant rendered in the committing slice (${slips.join('; ')})`
+    )
+}
+
+/** L-MEAS-5 (b): the same render with no participant in the committing slice: aged (§4.4). */
+export async function L_MEAS_5b(): Promise<string> {
+    const run = await meas5Mount({
+        slow: MEAS5_SLOW,
+        last: false,
+        suspense: false,
+    })
+    const quiet = silenceWarnings()
+    try {
+        const authored = authoredStyles(run.host)
+        await frozen(
+            run.host,
+            async () => {
+                startTransition(() =>
+                    meas5.set!((s) => ({
+                        ...s,
+                        order: NEXT_ORDER,
+                        outside: NEXT_OUTSIDE,
+                    }))
+                )
+                // every participant rendered: the slow tail is rendering
+                await until(() => meas5.slow > 0, 'the slow chunks began')
+                if (meas5.commits.length > 0) {
+                    throw premise('a scroll between chunks of the render')
+                }
+                run.scroll(MEAS5_SCROLL)
+                await until(() => meas5.commits.length > 0, 'a commit')
+            },
+            { boxOf: run.boxOf, until: () => meas5.commits.length > 0 }
+        )
+        const commit = meas5.commits[0]!
+        if (commit.task === commit.renderTask) {
+            throw premise('no participant rendered in the committing slice')
+        }
+        if (!(commit.framesSinceRender > 0)) {
+            throw premise('a rendering opportunity before the commit')
+        }
+        const reported = await meas5Aged(run, authored, 'aged')
+        expectStaleWarnings(quiet.messages)
+        return `aged after ${commit.framesSinceRender} frames: every participant at its layout box; 'stale' exactly ${reported.join('')} (the moved ones and the scrolled list)`
+    } finally {
+        quiet.restore()
+        run.dispose()
+    }
+}
+
+/** L-MEAS-5: a transition, scrolled between chunks, interrupted by an urgent update. */
+export async function L_MEAS_5_URGENT(): Promise<string> {
+    const run = await meas5Mount({
+        slow: MEAS5_SLOW,
+        last: true,
+        suspense: false,
+    })
+    const quiet = silenceWarnings()
+    try {
+        const authored = authoredStyles(run.host)
+        const order = rotate(MEAS5_START.order, 3)
+        const before = await frozen(
+            run.host,
+            async () => {
+                startTransition(() => meas5.set!((s) => ({ ...s, order })))
+                await until(() => meas5.passes > 0, 'the transition began')
+                run.scroll(MEAS5_SCROLL)
+                await sleep(20)
+                if (meas5.commits.length > 0) {
+                    throw premise('the transition was still rendering')
+                }
+                // urgent: React drops the transition's work, commits this,
+                // then renders the transition again
+                run.host
+                    .querySelector('[data-urgent]')!
+                    .dispatchEvent(new MouseEvent('click', { bubbles: true }))
+                await until(() => meas5.commits.length > 0, 'the urgent commit')
+            },
+            { boxOf: run.boxOf, settle: 0 }
+        )
+        const urgent = meas5.commits[0]!
+        expectEqual(
+            `${urgent.state!.order.join('')} ${urgent.state!.outside.join('')}`,
+            `${MEAS5_START.order.join('')} ${NEXT_OUTSIDE.join('')}`,
+            'the urgent update committed first, alone'
+        )
+        if (urgent.task !== urgent.renderTask) {
+            throw premise('the urgent update rendered in its commit task')
+        }
+        expectEqual(quiet.messages.join(' | '), '', 'no warning')
+        expectSnaps(run, [], 'the urgent commit is measured')
+        // its run, to the end, while the transition renders again: no task
+        // passes, so React cannot commit in between
+        const first = await meas5OnOracle(
+            run,
+            urgent,
+            before.still,
+            authored,
+            25,
+            false
+        )
+        if (meas5.commits.length > 1) {
+            throw premise('the transition was still rendering')
+        }
+        // the transition's participants render in its last slice, from here
+        meas5.rendered = null
+        const transition = await frozen(
+            run.host,
+            async () => {
+                await until(
+                    () => meas5.commits.length > 1,
+                    'the transition commit'
+                )
+            },
+            { boxOf: run.boxOf, until: agedSeen }
+        )
+        const last = meas5.commits[1]!
+        expectEqual(
+            `${last.state!.order.join('')} ${last.state!.outside.join('')}`,
+            `${order.join('')} ${NEXT_OUTSIDE.join('')}`,
+            'then the transition'
+        )
+        const outcome = await meas5Outcome(
+            run,
+            last,
+            transition.still,
+            authored,
+            quiet.messages,
+            'the transition'
+        )
+        return `the urgent update committed inside the transition: first frame = last presented, then on the oracle (max error ${first.toFixed(4)} px); ${outcome}`
+    } finally {
+        quiet.restore()
+        run.dispose()
+    }
+}
+
+/** L-MEAS-5: a Suspense fallback, then a reveal while the list is scrolled (late, then quick). */
+export async function L_MEAS_5_SUSPENSE(): Promise<string> {
+    const run = await meas5Mount({ slow: 0, last: true, suspense: true })
+    const outcomes: string[] = []
+    try {
+        const authored = authoredStyles(run.host)
+        authored.delete('detail')
+        for (const [key, late] of [
+            [1, true],
+            [2, false],
+        ] as const) {
+            const round = late ? 'late' : 'quick'
+            // an urgent update suspends the detail: the fallback shifts the
+            // list (React 18.3 may hold its commit for a later task)
+            meas5Reset(run)
+            let quiet = silenceWarnings()
+            try {
+                const shown = () => meas5.commits.length > 0
+                const fallback = await frozen(
+                    run.host,
+                    async () => {
+                        meas5.set!((s) => ({ ...s, suspend: key }))
+                        await until(shown, 'the fallback')
+                    },
+                    { boxOf: run.boxOf, until: shown }
+                )
+                outcomes.push(
+                    await meas5Outcome(
+                        run,
+                        meas5.commits[0]!,
+                        fallback.still,
+                        authored,
+                        quiet.messages,
+                        `${round} fallback`,
+                        25
+                    )
+                )
+            } finally {
+                quiet.restore()
+            }
+            const fallbackAt = meas5.commits[0]!.time
+
+            // the reveal, after a user scroll (React 19 may hold a reveal
+            // that comes soon after its fallback for a later task)
+            meas5Reset(run)
+            quiet = silenceWarnings()
+            try {
+                const revealed = () =>
+                    meas5.commits.some((c) => c.source === 'detail')
+                const reveal = await frozen(
+                    run.host,
+                    async () => {
+                        run.scroll(MEAS5_SCROLL)
+                        await sleep(40)
+                        if (late) {
+                            // past React's fallback throttle (300 ms in
+                            // 19, 500 ms in 18.3)
+                            await sleep(
+                                Math.max(
+                                    0,
+                                    fallbackAt + 650 - performance.now()
+                                )
+                            )
+                        }
+                        meas5Gate(key).open()
+                        await until(revealed, 'the reveal')
+                    },
+                    { boxOf: run.boxOf, until: revealed }
+                )
+                outcomes.push(
+                    await meas5Outcome(
+                        run,
+                        meas5.commits.find((c) => c.source === 'detail')!,
+                        reveal.still,
+                        authored,
+                        quiet.messages,
+                        `${round} reveal`
+                    )
+                )
+            } finally {
+                quiet.restore()
+            }
+        }
+        return outcomes.join('; ')
+    } finally {
+        run.dispose()
+    }
+}
+
+/** L-MEAS-5: two commits in one task, an unpresented scroll between them, coalesce into one flush. */
+export async function L_MEAS_5_COALESCE(): Promise<string> {
+    const run = await meas5Mount({ slow: 0, last: true, suspense: false })
+    try {
+        const authored = authoredStyles(run.host)
+        // a list the user scrolled earlier: presented
+        run.scroll(MEAS5_SCROLL)
+        await sleep(40)
+        const first = rotate(MEAS5_START.order, 1)
+        const second = rotate(first, 3)
+        const { still } = await frozen(
+            run.host,
+            async () => {
+                flushSync(() => meas5.set!((s) => ({ ...s, order: first })))
+                // in the commits' own task, never presented: part of the
+                // change (§4.1 D3), so it is not taken out of the picture
+                run.scroller.scrollTop += MEAS5_SCROLL
+                flushSync(() =>
+                    meas5.set!((s) => ({
+                        ...s,
+                        order: second,
+                        outside: NEXT_OUTSIDE,
+                    }))
+                )
+            },
+            { boxOf: run.boxOf }
+        )
+        expectEqual(meas5.commits.length, 2, 'two commits')
+        const [one, two] = meas5.commits
+        if (one!.task !== two!.task) throw premise('both commits in one task')
+        expectEqual(
+            two!.state!.order.join(''),
+            second.join(''),
+            'the last commit'
+        )
+        expectSnaps(run, [], 'the first capture is fresh')
+        // B from the first capture, A from the last commit
+        const error = await meas5OnOracle(run, two!, still, authored)
+        return `two commits and a scroll in one task, one flush: first frame = last presented, then on the oracle to the last commit's layout (max error ${error.toFixed(4)} px)`
+    } finally {
+        run.dispose()
     }
 }
