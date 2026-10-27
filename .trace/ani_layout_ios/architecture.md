@@ -3,8 +3,9 @@
 **Status:** v3 PROPOSAL, 2026-10-27. Supersedes v1 (`655432b`), which the owner judged "not
 production grade", and v2 (`5d1fb18`). v3 is the result of a three-reviewer design review (R1
 platform and math, R2 API and frameworks, R3 robustness and operations): 35 round-1 findings, a
-cross-examination round, and a round-3 sign-off of v2 whose remaining blockers v3 closes (§0). It
-awaits the decisions of §13 and the reviewers' final sign-off.
+cross-examination round, and a round-3 sign-off of v2 whose remaining blockers v3 closes (§0). All three
+reviewers signed off after a fourth round (round-4 fixes in `1d57bad`). It awaits the owner's
+decisions of §13.
 Nothing here is implemented. On approval it amends `packages/layout/ARCHITECTURE.md` (the
 authority) and opens the checkpoints of §12.
 
