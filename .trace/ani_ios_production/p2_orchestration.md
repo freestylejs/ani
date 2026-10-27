@@ -67,3 +67,22 @@ container, each in its own git worktree.
 | H4 L-MEAS-10 | `flatParent` uses `assignedSlot`, which is null for a node slotted into a closed shadow root, so a slotted participant is planned without its flat-tree parent. The defect was in the authority too: §4.6 named `assignedSlot` as the primitive while claiming closed roots. §4.6 now finds the slot through the shadow roots the scope knows | Authority (orchestrator); code H6 |
 | H4 L-HAND-2 | The §5.8 active-scroller rule is not implemented | H6 |
 | H4 build | The root `pnpm build:fast` fails because turbo.json has no `build:fast` task (predates this work); helpers use `pnpm -r --filter './packages/*' run build:fast` | Noted |
+
+## H5 review round (independent reviewer, then a fix round)
+
+- **Gates on H5's head.** Unit 1,711/1,711 and typecheck 11/11. Chromium 176 pass, failing
+  `layout:COST` and `regressions:Fuzz` (a capture-less warning the case does not expect). Firefox
+  and WebKit: `layout` fails only on COST, and the spring, React layout and WAAPI modules pass.
+- **Reviewer findings.** One S0: path 1 kept the old geometry, so children planned in the flush
+  drew off by (1 − k)·δ. Two S1: a driven node without B was kept and never reported; β missed a
+  child moving with its parent. Two S2: order-dependent verification; the measurement error of
+  real engines. Three S3.
+- **Authority gaps closed (c7493c1).** §4.2 measurement error, order independence, and reuse
+  within one check only; §4.4 nodes without B and the recursive β; §5.7 path-1 geometry; §9.1.
+- **COST attribution.** H5 blamed the offset reads. The reviewer finds that unproven (offsetWidth
+  on a clean layout is cheap) and suspects the support-check recompute, `engineState()` at capture
+  and the ancestor walks. H5 profiles them in the fix round, and a performance slice follows.
+- **H4b** (a fresh native helper; the H4 context could not be resumed once its worktree was
+  removed) fixes L_MEAS_3, 4, 7, 10 and 12 to the amended authority. It also runs the Firefox
+  scroll-anchoring spike: Firefox counts the anchor node's transform, so layout's t = 0 writes
+  re-anchor (L_MEAS_2).
