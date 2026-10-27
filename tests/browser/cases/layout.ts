@@ -999,7 +999,8 @@ interface Probe {
 /**
  * Logs every layout read (rect, computed style) and every inline style write
  * while `on`; with `sizes`, also every layout-size pair (`offsetWidth`, as
- * 'offset') and every Typed OM read (as 'style'), as `stats` counts them.
+ * 'offset') and every Typed OM read (as 'typed'); `stats.styles` counts
+ * 'style' and 'typed' together.
  */
 function probeDom(sizes = false): Probe {
     const rect = Element.prototype.getBoundingClientRect
@@ -1038,7 +1039,7 @@ function probeDom(sizes = false): Probe {
         })
         if (styleMap) {
             Element.prototype.computedStyleMap = function (this: Element) {
-                if (probe.on) probe.log.push('style')
+                if (probe.on) probe.log.push('typed')
                 return styleMap.call(this)
             }
         }
@@ -1104,6 +1105,7 @@ export async function T8(): Promise<string> {
         const captureReads = probe.log.filter((e) => e === 'rect').length
         const captureOffsets = probe.log.filter((e) => e === 'offset').length
         const captureStyles = probe.log.filter((e) => e === 'style').length
+        const captureTyped = probe.log.filter((e) => e === 'typed').length
         probe.on = false
         const captureStats = h.group.stats
         elements[0]!.style.top = '200px'
@@ -1121,6 +1123,7 @@ export async function T8(): Promise<string> {
         const rects = log.filter((e) => e === 'rect').length
         const offsets = log.filter((e) => e === 'offset').length
         const styles = log.filter((e) => e === 'style').length
+        const typed = log.filter((e) => e === 'typed').length
         const statsAfter = h.group.stats
         expectEqual(frameReads, 0, 'reads on steady frames')
         expectEqual(
@@ -1170,14 +1173,19 @@ export async function T8(): Promise<string> {
             {
                 rects: captureReads,
                 offsets: captureOffsets,
-                styles: captureStyles,
+                styles: captureStyles + captureTyped,
             },
             'capture'
         )
-        counted(statsBefore, statsAfter, { rects, offsets, styles }, 'flush')
+        counted(
+            statsBefore,
+            statsAfter,
+            { rects, offsets, styles: styles + typed },
+            'flush'
+        )
         expectEqual(statsAfter.holds, 0, 'stats.holds')
         h.group.finish()
-        return `capture ${captureReads} rects + ${captureOffsets} sizes + ${captureStyles} styles; flush ${rects} rects + ${offsets} sizes + ${styles} styles before ${log.filter((e) => e === 'write').length} writes; 0 reads in 5 steady frames`
+        return `capture ${captureReads} rects + ${captureOffsets} sizes + ${captureStyles} styles; flush ${rects} rects + ${offsets} sizes + ${styles} styles + ${typed} Typed OM before ${log.filter((e) => e === 'write').length} writes; 0 reads in 5 steady frames`
     } finally {
         probe.restore()
         h.dispose()
