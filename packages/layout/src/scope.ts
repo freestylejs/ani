@@ -4,6 +4,7 @@
  */
 import { type Clock, DEV, defaultClock } from '@freestylejs/ani-core'
 import {
+    ANCHOR_PROPERTY,
     adoptAuthored,
     animatedOwned,
     borderSize,
@@ -29,7 +30,13 @@ import {
     viewportFixed,
     viewRect,
 } from './dom'
-import { hasDOM, snapsReferenceBox, supportsLinearEasing } from './feature'
+import {
+    hasDOM,
+    knownTransformAnchoring,
+    probeTransformAnchoring,
+    snapsReferenceBox,
+    supportsLinearEasing,
+} from './feature'
 import {
     aboutOrigin,
     type Box,
@@ -160,6 +167,8 @@ interface Geometry {
     /** The presence part of the computed `transform` at this flush. */
     readonly matrix: Measured['matrix']
     readonly unsupported: string | null
+    /** It is itself a scroll container: the anchoring fallback leaves it alone (§11.4 S2). */
+    readonly scrollContainer: boolean
 }
 
 interface DriveFade {
@@ -1043,6 +1052,10 @@ export function createLayoutGroup(
         const { pose } = solved
         const a = d.authored
         const element = node.p.element
+        // in the same mutation as its first pose write (§11.4 S2)
+        if (d.saved.has(ANCHOR_PROPERTY)) {
+            writeValue(element, d, ANCHOR_PROPERTY, 'none')
+        }
         writeValue(
             element,
             d,
@@ -1706,6 +1719,7 @@ export function createLayoutGroup(
                 radiusSource: m.radius,
                 matrix: m.matrix,
                 unsupported,
+                scrollContainer: m.scrollContainer,
             },
             full,
         }
@@ -1903,6 +1917,21 @@ export function createLayoutGroup(
         const doc = list[0]!.element.ownerDocument
         // probed when the scope was created; another document is probed here
         const snapsReference = snapsReferenceBox(doc)
+        // §11.4 S2: the anchoring probe, once per document, at the start of
+        // the first flush that may write a pose (a fresh capture can start a
+        // track, a running frame writes its poses) and before its first rect
+        // read; its one read (a scroll offset) is counted with the offsets
+        if (
+            !waapi &&
+            knownTransformAnchoring(doc) === undefined &&
+            reducedMode() !== 'jump' &&
+            (fresh !== null || frame.length > 0)
+        ) {
+            probeTransformAnchoring(doc)
+            stats.offsets += 1
+        }
+        /** Each driven participant that is not a scroll container owns `overflow-anchor: none`. */
+        const anchorFallback = !waapi && knownTransformAnchoring(doc) === true
         const dpr = doc.defaultView?.devicePixelRatio ?? 1
         const rects: Box[] = []
         const offsets: (readonly [number, number])[] = []
@@ -2773,17 +2802,27 @@ export function createLayoutGroup(
             properties: readonly string[]
         ): Drive => {
             const existing = p.drive
+            // §11.4 S2: a driven node is never the scroll anchor, unless it
+            // is a scroll container itself
+            const anchor = anchorFallback && !g.scrollContainer
             if (existing) {
                 // an owned property it did not save yet (opacity for a new
                 // crossfade, corners when `radius` was turned on mid-run)
                 const wanted = [...properties]
                 if (ownsRadius(p.options) && g.radius)
                     wanted.push(...RADIUS_PROPERTIES)
+                if (anchor && !waapi) wanted.push(ANCHOR_PROPERTY)
                 const missing = wanted.filter(
                     (prop) => !existing.saved.has(prop)
                 )
                 for (const [k, v] of save(p.element, missing))
                     existing.saved.set(k, v)
+                // a node that became a scroll container gets it back now
+                if (!anchor && existing.saved.has(ANCHOR_PROPERTY)) {
+                    queueRestore(p.element, existing, [ANCHOR_PROPERTY])
+                    existing.saved.delete(ANCHOR_PROPERTY)
+                    existing.written.delete(ANCHOR_PROPERTY)
+                }
                 // corners it no longer owns go back now
                 if (
                     !ownsRadius(p.options) &&
@@ -2805,6 +2844,7 @@ export function createLayoutGroup(
             const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
             if (!waapi && ownsRadius(p.options) && g.radius)
                 all.push(...RADIUS_PROPERTIES)
+            if (!waapi && anchor) all.push(ANCHOR_PROPERTY)
             const d: Drive = {
                 kind,
                 track: null,

@@ -44,10 +44,7 @@ export const pageOptions = {}
  * Rows the current engine cannot pass yet. Each entry names what is missing;
  * the P2 gate requires this record to be empty.
  */
-export const knownFailures: Record<string, string> = {
-    L_MEAS_2:
-        "P2: Firefox only (passes in Chromium and WebKit). §11.4 S2: 'layout's writes neither suppress nor alter anchoring'. Firefox's scroll anchoring counts its anchor node's translate and scale (a change to transform is a suppression trigger there, but not a change to translate or scale), so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B; every later pose write re-anchors again, so the scroll follows the anchor's pose for the whole run (scrollTop 240 → 145.8 in the H4b spike) and the cards' motion is cancelled",
-}
+export const knownFailures: Record<string, string> = {}
 
 const FRAME_MS = 16
 const DT = FRAME_MS / 1000
@@ -193,14 +190,16 @@ function expectRestored(element: HTMLElement, css: string, label: string) {
 
 /**
  * The author's inline style of an element read while it is driven: its
- * `cssText` without the engine's pose declarations (`translate`, `scale`).
- * Only for elements whose author sets neither.
+ * `cssText` without the engine's owned declarations: its pose (`translate`,
+ * `scale`) and, under the scroll-anchoring fallback of §11.4 S2 (Firefox),
+ * `overflow-anchor` (§6). Only for elements whose author sets none of them.
  */
 function authorText(element: HTMLElement): string {
     const probe = document.createElement('div')
     probe.style.cssText = element.style.cssText
     probe.style.removeProperty('translate')
     probe.style.removeProperty('scale')
+    probe.style.removeProperty('overflow-anchor')
     return probe.style.cssText
 }
 
