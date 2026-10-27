@@ -1,0 +1,114 @@
+PASS layout:CAUSES (634 ms)
+    8 causes snap 'unsupported' and name themselves in the warning; 4 look-alikes animate
+FAIL layout:COST (3807 ms)
+    cost gate failed: 1,000 participants, 300 moving: commit reads 6.00 ms (whole commit 14.00 ms); all 1,000 moving: reads 9.00 ms (whole commit 23.00 ms); 300 nested movers (300 tracks): frame p50 0.900 ms, p95 1.600 ms (batches of 20)
+PASS layout:J16 (510 ms)
+    23 flushes with equivalent options (defaults, inherited fields, spring key order; inside the delay too); on the oracle, max error 0.0081 px; omitted ↔ explicit ease-out 16× on the oracle within 0.0080 px, ended; easeIn interrupts
+PASS layout:J17 (414 ms)
+    retarget at 0.48 s: asymmetric opacity within 0.000000, coverage within 0.000000; pair on the oracle within 0.0083 px; release and lead opacity at 1.008 s
+PASS layout:J18 (419 ms)
+    flush 3 reads before 4 writes; 15 frame writes all in commit (3 settle removals)
+PASS layout:J19 (434 ms)
+    toggle at 0.19 s: the active and the delayed track re-planned clamped, on the oracle every frame within 0.0069 px, end within 8 frames (≤ 0.1 s); restored, unsubscribed
+PASS layout:J20 (543 ms)
+    handoff at x = 38.4 with 200 px/s on the oracle every frame; captured before a parent layer change (0.8 → 1) at x = 130.72, w = 41.216 with 160 / 48 px/s, max error 0.0114 px; none after retain
+PASS layout:J21 (456 ms)
+    radius turned on mid-run: on the oracle every frame within 0.0082 px, drawn corners 8 px within 0.0000 px; restored after settle, finish, dispose
+PASS layout:J22 (521 ms)
+    inline translate 4px → 20px and scale 1 → 1.5 mid-run: the run keeps its frozen composition, on the oracle every frame within 0.0000 px; applied after settle, finish, dispose
+PASS layout:J23 (563 ms)
+    sole removal: 'disposed', restored at once, unsubscribed before the next frame; partial removal: the rest on the oracle (0.0000 px), 'ended' once; disconnected: 'disposed'
+PASS layout:J25 (667 ms)
+    after scale 0.8 → 1: B = (138.4, w 40); continuous, on the oracle within 0.0083 px; own scale 0.8 → 1 under a parent moving 200 px/s: B = (38.4, w 40) with vx 200, 63 frames on the oracle within 0.0083 px, identity settle
+PASS layout:J32 (829 ms)
+    child retargeted under a kept parent after scaleX 0.8 → 1: B = (40.0, w 40) with vx 200; layer back to 0.8 mid-run and a no-op flush (both kept); 63 frames: child on its track with the layers since its flush within 0.0081 px, parent within 0.0000 px; identity settle
+PASS layout:J32B (448 ms)
+    parent retargeted after scaleX 0.8 → 1 moves the child's CSS box: the measured jump retargets the child from (60.0, w 40) at 300 px/s; 63 frames: child within 0.0083 px, parent within 0.0083 px; no-op flush kept both; identity settle
+PASS layout:J35 (448 ms)
+    parent layer 0.8 → 1, centred child 40 → 60 wide: B = (120.0, w 40); 63 frames centred on the parent's visual centre within 0.4326 px; no-op flush kept every track; identity settle
+PASS layout:J35B (399 ms)
+    grandparent layer 0.8 → 1, centred child 40 → 60 wide: B = (120.0, w 40); 63 frames centred on the parent's visual centre within 0.4326 px; no-op flush kept every track; identity settle
+PASS layout:J37 (399 ms)
+    noop: pair at (140.0, w 52.0) after the layer change and the no-op flush; 50 frames on x = 100 + 200τ, w = 40 + 60τ within 0.0067 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J37Control (445 ms)
+    control: pair at (140.0, w 52.0) after the layer change; 50 frames on x = 100 + 200τ, w = 40 + 60τ within 0.0067 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J37Moving (509 ms)
+    moving: pair at (160.0, w 52.0) after the layer change and the no-op flush; 50 frames on x = 100 + 300τ, w = 40 + 60τ within 0.0067 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J37Retarget (401 ms)
+    retarget: pair at (140.0, w 52.0) after the layer change and the lead retarget; 63 frames on the retargeted lead track (vx 200, vw 60 → 350, w 100) within 0.0082 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J38 (471 ms)
+    external: pair at B (120, w 40) at the handoff; 63 frames on the track from B at vx 100 to (400, w 100) within 0.0083 px; opacities within 0.0000; release at τ 1.008; zero subscribers
+PASS layout:J38Shared (472 ms)
+    shared: pair at B (120, w 40) at the handoff; 63 frames on the track from B at vx 100 to (400, w 100) within 0.0083 px; opacities within 0.0000; release at τ 1.008; zero subscribers
+PASS layout:J38Unchanged (463 ms)
+    unchanged: pair at B (120, w 32) at the handoff; 63 frames on the track from B at vx 100 to (400, w 100) within 0.0083 px; opacities within 0.0000; release at τ 1.008; zero subscribers
+PASS layout:JOIN (559 ms)
+    handoff 10 ms into a frame: the next frame advances 3.28 px (a full frame), the run on the oracle within 0.0080 px; a lone removal unsubscribes before the next frame
+PASS layout:OPTIONS (410 ms)
+    15 invalid group options throw ANI_INVALID_OPTIONS; boundaries accepted; re-add replaces options, either remove removes once
+PASS layout:ORIGINPCT (369 ms)
+    no Typed OM: no percentages read (7 origins)
+PASS layout:P2RadiusCaptureAccuracy (396 ms)
+    style-only resting radius captured for retained and live handoffs within 0.0001 px
+PASS layout:P2RadiusCrossfade (396 ms)
+    live shared radius 20×12 → 8×24 on both layers within 0.0001 px
+PASS layout:P2RadiusOptOut (416 ms)
+    radius: false on one side does not blend; lead stays 8×24 within 0.0000 px
+PASS layout:P2RadiusReadDiscipline (369 ms)
+    capture 5 rects then 3 styles; no-op flush 5 rects/0 styles; unrelated flush 5 rects/1 style; frames 0 reads
+PASS layout:P2RadiusRetained (452 ms)
+    retained %/elliptical radius 40×10 → 20×50 within 0.0000 px
+PASS layout:P2RadiusRetarget (399 ms)
+    34 frames across retarget, shared radius continuous and lead settles byte-identically within 0.0021 px
+PASS layout:P2ReducedMidCrossfade (396 ms)
+    reduced mid-crossfade holds follower at 0, releases presence, restores byte-identically on unmount
+PASS layout:PRESENCE_LAYER (465 ms)
+    a no-op flush while the presence animates: trajectory identical to the run without it (scaleX 0.0000 px, scaleX + translateY 0.0000 px); the track is kept
+PASS layout:RADIUS_AUTHOR_CHANGE (383 ms)
+    33 frames, new authored corner from next flush; radius within 0.0000 px
+PASS layout:RADIUS_CROSSFADE_REVERSAL (414 ms)
+    34 frames across reversal, shared radius continuous and lead settles byte-identically within 0.0012 px
+PASS layout:RADIUS_NOOP_FLUSH (514 ms)
+    noop: 33 frames, radius within 0.0000 px
+PASS layout:RADIUS_RETARGET_FLUSH (747 ms)
+    retarget: 41 frames, radius within 0.0015 px
+PASS layout:RADIUS_SIBLING_FLUSH (768 ms)
+    sibling: 42 frames, radius within 0.0000 px
+PASS layout:RADIUS_VALUE_KINDS (431 ms)
+    33 frames × 4 value kinds within 0.0000 px; calc 33 frames within 0.0000 px
+PASS layout:REFBOX (415 ms)
+    14 frames × 5 fractional boxes, max error 0.0140 px
+PASS layout:RadiusSharedDefault (418 ms)
+    omitted radius on both sides blends 20×12 → 8×24 within 0.0000 px
+PASS layout:SCALE (3041 ms)
+    50 (50 moving): commit 3.00 ms, frame p50 0.200 / p95 0.300 ms; 300 (300 moving): commit 13.00 ms, frame p50 1.000 / p95 1.800 ms; 1000 (1000 moving): commit 30.00 ms, frame p50 3.200 / p95 4.200 ms
+PASS layout:T1 (540 ms)
+    14 frames, max error 0.0000 px
+PASS layout:T10 (419 ms)
+    culled, capped, unsupported (rotate, scaled ancestor, transition), stale; 5 development warnings
+PASS layout:T11 (442 ms)
+    jump: 0 writes, 0 subscribers; maxDuration 0.1 s: 8 frames; ignore: 14 frames; toggle: the active run finished at the next flush
+PASS layout:T12 (475 ms)
+    finish: ended + restored; dispose: disposed + restored; update rethrows
+PASS layout:T13 (492 ms)
+    26 frames with a re-render every 3rd; max error 0.0000 px
+PASS layout:T2 (465 ms)
+    23 frames × 3 nodes, max error 0.0079 px
+PASS layout:T3 (539 ms)
+    centre error ≤ 0.0083 px; size starts at 0.816 s
+PASS layout:T4 (498 ms)
+    retarget at 108.0 px; first step 574 px/s; max error 0.0080 px
+PASS layout:T5 (572 ms)
+    crossfade opacity within 0.000000, coverage within 0.000000; max error 0.0000 px; release at 0.304 s
+PASS layout:T6 (751 ms)
+    child x at the parent-halfway frame 40.000 px; max error 0.0000 px
+PASS layout:T7 (618 ms)
+    20 frames under a changing presence scale; max error 0.0067 px
+PASS layout:T8 (837 ms)
+    capture 10 rects + 10 sizes + 0 styles; flush 10 rects + 10 sizes + 3 styles + 0 Typed OM before 4 writes; 0 reads in 5 steady frames
+PASS layout:T9 (437 ms)
+    max error 0.0000 px; radius within 0.0000 px
+PASS layout:VT1 (422 ms)
+    view transition: unsupported
+
+55 passed, 1 failed, 0 known failures, 0 skipped (35.6 s)
