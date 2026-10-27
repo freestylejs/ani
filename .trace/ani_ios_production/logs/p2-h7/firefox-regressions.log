@@ -1,0 +1,12 @@
+PASS regressions:Crossfade (1180 ms)
+    33 frames (33 crossfading) re-rendered from above every third frame: boxes within 0.0167 px, opacities within 0.0e+0; opacity 1 and unowned after
+PASS regressions:Fuzz (1314 ms)
+    24 seeds × 60 steps (3609 engine operations): no read after a write, finite values, translate/scale only !important, transform never written; byte-identical styles and no subscription at the end; the §4.4 warning only, once in 24 of 24 scopes
+PASS regressions:Jank (500 ms)
+    after janky frames: 104.1 px/s, 20.7 px/s → 103.5, 20.4 across the retarget (1.449 %)
+PASS regressions:LateStart (1506 ms)
+    first painted frame after a 120 ms block at 0.00 % (then 35.57 %)
+PASS regressions:Unrelated (1216 ms)
+    16 tiles over 33 frames, re-rendered from above every third frame: identical within 0.0000 px
+
+5 passed, 0 failed, 0 known failures, 0 skipped (8.0 s)
