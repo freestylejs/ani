@@ -612,7 +612,8 @@ describe('I-4: layoutKey (§4.7, §7.1)', () => {
         // Immediately upon set(): track ended at identity and owned styles restored
         expect(group.stats.tracks).toBe(0)
         expect(el.style.cssText).toBe(authoredStyle)
-        expect((await firstRun).status).toBe('ended')
+        // §9.1: the run resolves 'disposed' when only such nodes were in it
+        expect((await firstRun).status).toBe('disposed')
 
         // Flush observing the change plans no track, keeps no track, snaps nothing,
         // and does not report 'stale' even though scroller.scrollTop changed
@@ -685,6 +686,57 @@ describe('I-4: layoutKey (§4.7, §7.1)', () => {
         const report = await group.flush()
         expect(report).toEqual({ status: 'no-change', snapped: [] })
         expect(group.stats.tracks).toBe(0)
+
+        group.dispose()
+    })
+
+    it("a layoutKey change mid-run resolves the run 'disposed' when only such nodes were in it, and leaves a mixed run to end (§9.1)", async () => {
+        const clock = createManualClock()
+        const group = createLayoutGroup({
+            clock: clock.clock,
+            motion: linearMotion,
+        })
+        const a = document.createElement('div')
+        const b = document.createElement('div')
+        document.body.append(a, b)
+        place(a, { x: 0, y: 0, w: 100, h: 40 })
+        place(b, { x: 0, y: 100, w: 100, h: 40 })
+        group.add(a, { layoutKey: 1 })
+        group.add(b)
+        group.capture()
+        await group.flush()
+
+        // only the reset node in the run: 'disposed', at once
+        group.capture()
+        place(a, { x: 80, y: 0, w: 100, h: 40 })
+        const sole = group.flush()
+        clock.frames(2)
+        expect(group.stats.tracks).toBe(1)
+        group.set(a, { layoutKey: 2 })
+        expect(group.stats.tracks).toBe(0)
+        expect(a.style.translate).toBe('')
+        expect(await sole).toEqual({ status: 'disposed', snapped: [] })
+
+        // a run with another node: the rest goes on and ends
+        group.capture()
+        await group.flush()
+        group.capture()
+        place(a, { x: 160, y: 0, w: 100, h: 40 })
+        place(b, { x: 80, y: 100, w: 100, h: 40 })
+        const mixed = group.flush()
+        let outcome: string | null = null
+        void mixed.then((r) => {
+            outcome = r.status
+        })
+        clock.frames(2)
+        expect(group.stats.tracks).toBe(2)
+        group.set(a, { layoutKey: 3 })
+        expect(group.stats.tracks).toBe(1)
+        await Promise.resolve()
+        expect(outcome).toBeNull()
+        clock.frames(20)
+        expect(await mixed).toEqual({ status: 'ended', snapped: [] })
+        expect(b.style.translate).toBe('')
 
         group.dispose()
     })
