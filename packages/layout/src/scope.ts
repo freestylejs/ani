@@ -300,9 +300,13 @@ interface Capture {
 
 type Matrix = Geometry['matrix']
 
-/** One check's computed styles (`styleReader`): `has` is true once read. */
+/**
+ * One check's computed styles (`styleReader`): `has` is true once read, and
+ * `transform` classifies a node's computed transforms once per check.
+ */
 type StyleReader = ((i: number) => CSSStyleDeclaration) & {
     readonly has: (i: number) => boolean
+    readonly transform: (i: number) => ReturnType<typeof readTransform>
 }
 
 interface FrameNode {
@@ -1182,7 +1186,7 @@ export function createLayoutGroup(
         })
         const causes: (string | null)[] = list.map(() => null)
         const innerOf = (i: number): AxisScale | 'unsupported' => {
-            const transform = readTransform(styleOf(i))
+            const transform = styleOf.transform(i)
             if (typeof transform === 'string') {
                 causes[i] = transform
                 return 'unsupported'
@@ -1223,11 +1227,15 @@ export function createLayoutGroup(
     /**
      * Computed styles of one batch (one check: a capture, or a flush), each
      * element read at most once and counted; never reused across batches.
+     * Every read of a batch precedes its writes, so a value classified once
+     * is the value of the whole batch.
      */
     function styleReader(list: readonly Participant[]): StyleReader {
         const styles: (CSSStyleDeclaration | undefined)[] = new Array(
             list.length
         )
+        const transforms: (ReturnType<typeof readTransform> | undefined)[] =
+            new Array(list.length)
         const read = (i: number): CSSStyleDeclaration => {
             let style = styles[i]
             if (!style) {
@@ -1239,6 +1247,14 @@ export function createLayoutGroup(
         }
         return Object.assign(read, {
             has: (i: number) => styles[i] !== undefined,
+            transform: (i: number) => {
+                let transform = transforms[i]
+                if (transform === undefined) {
+                    transform = readTransform(read(i))
+                    transforms[i] = transform
+                }
+                return transform
+            },
         })
     }
 
@@ -1715,7 +1731,8 @@ export function createLayoutGroup(
                     ownsRadius(p.options),
                     animatedNow,
                     snapsReference,
-                    styleOf(i)
+                    styleOf(i),
+                    styleOf.transform(i)
                 )
                 // the Typed OM origin, where the browser snaps the reference box
                 if (
