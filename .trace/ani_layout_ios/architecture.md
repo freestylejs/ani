@@ -183,7 +183,18 @@ changes made in that interval's own tasks, which the user has not seen either.
    Both get the diagnostic, and the docs give the fix (render the group in the committing slice,
    or call `update()`/`capture()` immediately before the mutation). Measured frequency in the
    showcase rows is a gate input (§11.3, S1).
-5. **Invariant.** "Animation frames read zero" holds, except for one rect per held element per
+5. **Rendering-callback bound.** A capture must begin in an ordinary task, not inside a
+   rendering-update callback (`requestAnimationFrame`, `ResizeObserver`). There, an earlier callback
+   of the same frame may already have changed the scene without presenting it, and the frame
+   marker cannot fire before a synchronous flush.
+   - `capture()`/`update()` called while Ani's own clock is running a frame is aged at once, with
+     a dev warning.
+   - Third-party callbacks cannot be detected, so calling from them is outside the supported
+     contract, and the docs say so.
+   - The React adapter never captures from such callbacks.
+   - Row L-MEAS-13 covers it.
+   - A detectable presentation token is a follow-up.
+6. **Invariant.** "Animation frames read zero" holds, except for one rect per held element per
    frame (§5.3).
 
 ### 3.4 The measured state, the support check, and the keep test
@@ -531,7 +542,7 @@ animate, some snap) resolves by its tracks, and lists the snapped nodes with the
 
 ```ts
 export type LayoutDiagnosticCode =
-  | 'capture-less-flush' | 'capture-aged' | 'unsupported-geometry' | 'handoff-scroll-active'
+  | 'capture-less-flush' | 'capture-aged' | 'measurement-unsupported' | 'unsupported-geometry' | 'handoff-scroll-active'
   | 'spring-timeout' | 'participant-cap' | 'mover-cap' | 'document-mismatch'
   | 'runtime-disabled' | 'focus-in-follower' | 'callback-error' | 'internal-error'
   | (string & Record<never, never>)   // new codes may be added; existing meanings are stable
@@ -650,6 +661,7 @@ the perceptual timeline and pose inversion. Every row passes in three engines, a
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture (R1's round-2 counterexample) | (a) no shear, exact `(B, v)`; (b) aged, §3.5 outcome, no rewind |
 | L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
 | L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged) | §3.5 outcomes and reports |
+| L-MEAS-13 an earlier rAF callback moves an ancestor; a later rAF callback calls `update()` (vanilla and via Ani's clock) | Ani's clock: aged, §3.5, never the intermediate box as B; documented third-party case asserted to be outside the adapter path |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly (documented) |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
 | L-HAND-2 handoff while the source scroller is active; after `scrollend` | Presence enter, diagnostic; then a normal flight |
@@ -712,7 +724,7 @@ source are decision D5.
 
 | Spike | Must show (three engines) | Fallback |
 |---|---|---|
-| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), including WAAPI-driven boxes. (b) The layout-size check has no false positive at DPR 1, 2 and 3, fractional sizes, and pinch zoom. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) Driven nodes fall back to the authority's analytic drawn box (as today) for that engine. (b) Widen the tolerance to the measured rounding bound. (c) If aging is frequent in a showcase row, the adapter docs and the row are changed before B5 |
+| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), including WAAPI-driven boxes. (b) The layout-size check has no false positive at DPR 1, 2 and 3, fractional sizes, and pinch zoom. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §3.5 (`'stale'`, diagnostic `measurement-unsupported`), and a shared handoff involving it becomes a presence enter. An analytic box never substitutes for B in a new or retargeted plan; a failed spike may reduce animation coverage, never restore predicted presentation. (b) Widen the tolerance to the measured rounding bound. (c) If aging is frequent in a showcase row, the adapter docs and the row are changed before B5 |
 | S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect (forces the correction). If still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree (`'stale'`) |
 | S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one, never a wrong first frame | None needed: aging is the conservative path. The spike measures how often it happens |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.3. The spike then measures that bound |
@@ -759,6 +771,8 @@ These are bounds, not open questions. Each is stated in the docs and measured in
   one frame. It is uniform inside the scrolled layer (no visible effect). Across layers it is
   handled by §3.7 for handoffs and bounded per frame for held elements (§5.3).
 - **Fixed descendants of posed participants** are re-contained (§3.8).
+- **Captures from rendering callbacks** (§3.3-5) are outside the contract when the callback
+  belongs to a third party.
 - **Aged captures** do not animate undriven participants. This is reported, and the fix is
   documented (§3.3).
 - **Bounding-box-preserving author rotations** removed by a commit are not detected. The box
