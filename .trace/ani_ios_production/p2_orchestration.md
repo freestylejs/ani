@@ -49,7 +49,7 @@ container, each in its own git worktree.
 | H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 (partial), then native helper | Accepted after a review round: 25 commits linearized onto the dev branch (e5d4b80..6544e62); every finding of the independent review fixed, each with a test that failed before its fix; gate logs `logs/p2-integ/` |
 | R1 remediation | P1 tribunal P1-001..P1-004; the code side of P0 J-001, J-004 and P0-N001 in `measure.ts` | DeepSeek | Accepted (04d1d12..f94848d) |
 | H7 performance | §11.5 commit cost, behaviour-preserving only (`briefs/h7.md`) | Native helper | Accepted on review: 8 commits, no change to frames, reports or read counts; gates identical to `logs/p2-integ` (`logs/p2-h7/`) |
-| H6 | Closed-root flat ancestry (§4.6, amended), active-scroll handoff rule (§5.8), L-MEAS-5 React rows; L_MEAS_10 and L_HAND_2 out of `knownFailures` | Native helper | After H5 (`briefs/h6.md`) |
+| H6 | Closed-root flat ancestry (§4.6, amended), active-scroll handoff rule (§5.8), L-MEAS-5 React rows; L_MEAS_10 and L_HAND_2 out of `knownFailures` | Native helper | Integrated (2c16008..639a434), all modules green in three engines with empty `knownFailures` but COST (`logs/p2-h6/`); review round H6b open (`briefs/h6b.md`) |
 
 ## Tribunal carry-over into P2 (from `p1_spring_trial_result.md`)
 
@@ -134,3 +134,32 @@ container, each in its own git worktree.
 
   Until the owner decides, the item stays open. A `flush()` restructuring slice follows H6 under
   any option.
+
+## H6 integration and review round
+
+- **Integration.** H6's 7 commits are linearized onto the dev branch after H7 and the review
+  amendment. The one conflict, in `nearestParticipant`, combines H7's per-build memo with
+  `flatParent(node, roots)`; the reviewer confirmed the memo stays correct.
+- **Gates (`logs/p2-h6/`).**
+  - Unit 1,783/1,783, typecheck 11/11, biome 0 errors.
+  - Chromium 194 pass, failing only `layout:COST`.
+  - Firefox: every module passes except `layout:COST`.
+  - WebKit: every module passes, COST included on this run.
+  - `knownFailures` is empty in every module.
+- **Independent review.** It ran three probe tests, which fail on the integrated head.
+  - S0: a root is never re-tracked once set (wrong frame, the old L-MEAS-10 error).
+  - S1: scroll events do not compose, so scrollers in shadow roots that hold no participant were
+    unseen.
+  - S1: the viewport-fixed rule was not applied to reparents.
+  - S1: the probe's 10 × 10 box has an empty scrollport under classic scrollbars.
+  - S2: driven scroll containers exempt from the fallback; the WAAPI engine without probe or
+    fallback; probe and `offsetParent` reads miscounted; a quadratic slot lookup; no test of a
+    degraded lead with a presence.
+  - S3: the active state outlives a disarm; nits.
+- **Rulings.**
+  - The authority is amended (e8ca1c6): §3.3, §4.6, §5.8, §6, §7.1, S2, §12, and rows L-MEAS-10,
+    L-HAND-2 and L-MEAS-14.
+  - Finding 11 (an author's mid-run `overflow-anchor` write is used until the next flush) conforms
+    to §6 and stays.
+  - The focus-in-follower rule the reviewer found missing belongs to P3 (L-A11Y-1).
+  - The code fixes go to H6b.
