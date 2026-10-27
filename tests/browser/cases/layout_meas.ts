@@ -47,7 +47,7 @@ export const pageOptions = {}
  */
 export const knownFailures: Record<string, string> = {
     L_MEAS_2:
-        "P2: Firefox only (passes in Chromium and WebKit). §11.4 S2: 'layout's writes neither suppress nor alter anchoring'. Firefox's scroll anchoring counts its anchor node's transformed position, so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B",
+        "P2: Firefox only (passes in Chromium and WebKit). §11.4 S2: 'layout's writes neither suppress nor alter anchoring'. Firefox's scroll anchoring counts its anchor node's translate and scale (a change to transform is a suppression trigger there, but not a change to translate or scale), so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B; every later pose write re-anchors again, so the scroll follows the anchor's pose for the whole run (scrollTop 240 → 145.8 in the H4b spike) and the cards' motion is cancelled",
     L_MEAS_4:
         "P2: variants (ii) under a live scale 0.5 and 2 (every other variant passes). §5.7 path 1: 'What is refreshed. Like every node, it takes this flush's Lₙ and Oₙ (§3.2). … every node planned in this flush composes with this flush's geometry of its ancestors.' The engine's path 1 keeps the parent's geometry of flush 1 (scope.ts: 'path 1 leaves the track alone: it keeps the geometry it was drawn with'), so the child planned by path 3 in this flush is projected about the parent's flush-1 origin, which the 30 px page scroll has moved since: its first frame is −(k − 1)·Δ off its measured B (6.4 px at k = 0.785, 12.9 px at k = 1.429), against path 3's 'the first frame is B'",
     L_MEAS_10:
