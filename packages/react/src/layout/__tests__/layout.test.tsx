@@ -807,6 +807,112 @@ describe('react layout adapter', () => {
         expect(second.current).toBeNull()
     })
 
+    it('P1-001: validates each LayoutGroup motion layer before merging or touching state', async () => {
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(noop)
+        const codeOf = async (node: React.ReactElement) => {
+            try {
+                const view = await mount(node)
+                await view.unmount()
+                return null
+            } catch (error) {
+                return a.isAniError(error) ? error.code : 'not-ani-error'
+            }
+        }
+        try {
+            // Invalid outer group motion layers, even when the child switches to timing
+            const invalidLayers: unknown[] = [
+                { type: 'spring', duration: 0 },
+                { type: 'spring', stiffness: 100 },
+                { type: 'spring', bounce: 1 },
+                { type: 'spring', bounce: -1 },
+                { type: 'timing', bounce: 0.2 },
+                { bounce: 0.2 },
+            ]
+            for (const bad of invalidLayers) {
+                recorder.fakes.length = 0
+                expect(
+                    await codeOf(
+                        <LayoutGroup motion={bad as LayoutOptions['motion']}>
+                            <Item
+                                id="a"
+                                motion={{
+                                    type: 'timing',
+                                    duration: 0.2,
+                                    timing: a.timing.linear(),
+                                }}
+                            />
+                        </LayoutGroup>
+                    )
+                ).toBe('ANI_INVALID_OPTIONS')
+                expect(recorder.fakes).toHaveLength(0)
+            }
+
+            // WAAPI engine with group-level spring is rejected at the group, even if child switches to timing
+            recorder.fakes.length = 0
+            expect(
+                await codeOf(
+                    <LayoutGroup
+                        engine="waapi"
+                        motion={{ type: 'spring', duration: 0.4 }}
+                    >
+                        <Item
+                            id="a"
+                            layout="position"
+                            motion={{ type: 'timing', duration: 0.2 }}
+                        />
+                    </LayoutGroup>
+                )
+            ).toBe('ANI_INVALID_OPTIONS')
+            expect(recorder.fakes).toHaveLength(0)
+
+            // Nested LayoutGroup with its own invalid layer (and merged spring duration 0) masked by a later kind switch
+            for (const inner of [
+                { type: 'spring', duration: 0 },
+                { type: 'spring', bounce: 1.5 },
+                { duration: 0 },
+            ]) {
+                expect(
+                    await codeOf(
+                        <LayoutGroup motion={{ type: 'spring', duration: 0.4 }}>
+                            <LayoutGroup
+                                motion={inner as LayoutOptions['motion']}
+                            >
+                                <Item
+                                    id="a"
+                                    motion={{
+                                        timing: a.timing.linear(),
+                                        duration: 0.2,
+                                    }}
+                                />
+                            </LayoutGroup>
+                        </LayoutGroup>
+                    )
+                ).toBe('ANI_INVALID_OPTIONS')
+            }
+
+            // Valid kind switch still works and drops spring bounce
+            recorder.fakes.length = 0
+            const linear = a.timing.linear()
+            const view = await mount(
+                <LayoutGroup motion={{ type: 'spring', bounce: 0.2 }}>
+                    <Item id="a" motion={{ timing: linear, duration: 0.2 }} />
+                </LayoutGroup>
+            )
+            try {
+                const [fake] = live()
+                expect([...fake!.members.values()][0]!.motion).toEqual({
+                    type: 'timing',
+                    duration: 0.2,
+                    timing: linear,
+                })
+            } finally {
+                await view.unmount()
+            }
+        } finally {
+            errSpy.mockRestore()
+        }
+    })
+
     it('moves a participant between scopes when a group appears above it', async () => {
         function App({ grouped }: { grouped: boolean }) {
             const item = <Item key="a" id="a" />

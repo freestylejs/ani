@@ -288,6 +288,7 @@ describe('motion: the discriminated union (§5.1, L-SPRING-3)', () => {
                 { type: 'spring', timing: timing.linear() },
             ],
             ['negative duration', { type: 'spring', duration: -1 }],
+            ['zero spring duration', { type: 'spring', duration: 0 }],
             [
                 'infinite delay',
                 { type: 'spring', delay: Number.POSITIVE_INFINITY },
@@ -334,6 +335,17 @@ describe('motion: the discriminated union (§5.1, L-SPRING-3)', () => {
             )
         ).toBeNull()
         expect(code(() => validateMotionLayers([{ duration: 0 }]))).toBeNull()
+        expect(
+            code(() => validateMotionLayers([{ type: 'spring' }], 'waapi'))
+        ).toBe('ANI_INVALID_OPTIONS')
+        expect(
+            code(() =>
+                validateMotionLayers(
+                    [{ type: 'spring' }, { timing: timing.linear() }],
+                    'waapi'
+                )
+            )
+        ).toBeNull()
     })
 
     it('merges by kind: absent kind inherits, duration never switches, a switch drops the old kind fields', () => {
