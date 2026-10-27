@@ -306,8 +306,11 @@ contains the true total scale. Top-down, parent before child, per axis, with `R`
 
 - **Measured interval.** The true layout size `W` satisfies `|W − O| < 1 px` (`offsetWidth` rounds
   or pixel-snaps a LayoutUnit size). So the true total scale `S = R / W` lies in
-  `M = [R / (O + 1), R / (O − 1)]` for `O > 1`, and `M = [0, ∞)` for `O ≤ 1` (a degenerate axis
-  proves nothing). Both ends are widened by a relative `1e-9` for floating-point rounding.
+  `M = [R / (O + 1), R / (O − 1)]` for `O > 1`. A **degenerate axis** (`O ≤ 1`) is not left
+  unproven: the check reads that participant's exact computed border-box size `W` on the axis
+  (counted in `stats.styles`) and uses `M = [R / W, R / W]`. A zero `W` is a zero-size box, which
+  snaps `'unsupported'` (`zero size`) like today. Both ends are widened by a relative `1e-9` for
+  floating-point rounding.
 - **Expected interval.** `E = I_π · p · q`, with `I_π` the parent participant's propagated interval
   (`[1, 1]` at the top level, since non-participant ancestors only translate, §6), `p` the node's
   own pose scale as last written (known exactly) and `q` its inner-map scale. The check first
@@ -383,7 +386,7 @@ A flush with no capture, or with an aged capture, has no valid measurement of wh
 | Node | Outcome | Report |
 |---|---|---|
 | Undriven | Appears at A (no track). | Reported `'stale'` when its A differs by at least `threshold` from its **last known box**: the aged capture's box when there is one, else its A at its previous flush (that flush's view space). A node with no last known box (registered since its last flush) is reported. |
-| Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is translated by `δ = A_new − A_old`, §5.7; with no valid B there is nothing to retarget from). | Reported `'stale'` when `|δ| ≥ threshold`, or when `|δ| ≥ 0.01 px` and the translation is not exact (an ancestor condition of §5.7 fails). |
+| Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is translated by `δ = A_new − A_old`, §5.7; with no valid B there is nothing to retarget from). | Reported `'stale'` when its screen displacement bound `|δ|·max(1, ρ)` (§5.7) reaches `threshold`, or reaches 0.01 px while the translation is not exact (path 2's condition fails). |
 
 The rule is **exhaustive and conservative**: every node that may have jumped by `threshold` or more
 is reported, and a node that only moved with a scroll since its last known box may be reported too
@@ -624,7 +627,13 @@ commit's own task (the mutation, an unpresented scroll) moved A only, so the nod
 **Re-expression of a kept track.** With `δ = A_new − A_old` per axis (both rest boxes, each in its
 own flush's view space), a kept track takes exactly one of three paths:
 
-1. **Unchanged** when `|δ| < 0.01 px` on both axes.
+Every path is judged in **screen space**. With `ρ` per axis the product, over the node's
+participant ancestors, of each one's pose scale at `t_k` and its inner-map scale now divided by the
+one the track was planned with (1 with no ancestors), the presented displacement a kept track
+leaves uncorrected is at most `|δ|·max(1, ρ)` per axis. No rest-space epsilon is ever used alone.
+
+1. **Unchanged** when `|δ|·max(1, ρ) < 0.01 px` on both axes: the screen displacement is below
+   drawing precision whatever the ancestors do.
 2. **Translated** by `δ` when the translation is provably exact: at `t_k` every participant
    ancestor's pose has scale 1 on both axes (no ancestor track or hold is changing a scale), and
    every participant ancestor's inner-map scale is the one the track was planned with. Then the
@@ -1212,14 +1221,14 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-MEAS-1 chat delete under anchoring (page and panel) | No visible message moves > 0.5 px at any frame |
 | L-MEAS-2 kanban: card moved, column auto-scrolls in the layout effect | All participants start at their presented boxes; land on A |
 | L-MEAS-3 accordion + instant `scrollIntoView` | Participants start where seen; non-participants follow the scroll; exact settle |
-| L-MEAS-4 user scroll mid-run (inner and page, under a scaling parent), then a commit | Drawn boxes follow content every frame; the commit continues position and velocity. Under a parent at a live scale (0.5 and 2) the child takes §5.7 path 3 (first frame = measured B ≤ 0.5 px, velocity continuous); with the parent at rest it takes path 2 (no restart) |
+| L-MEAS-4 user scroll mid-run (inner and page, under a scaling parent), then a commit | Drawn boxes follow content every frame; the commit continues position and velocity. Under a parent at a live scale (0.5 and 2) the child takes §5.7 path 3 (first frame = measured B ≤ 0.5 px, velocity continuous); with the parent at rest it takes path 2 (no restart); a sub-0.01 px rest displacement under a live ancestor scale of 300 takes path 3, never path 1 |
 | L-MEAS-5 React 18.3 and 19: time-sliced render scrolled between chunks (a) with a participant in the committing slice, (b) without; a transition interrupted by an urgent update; Suspense fallback then reveal while scrolled; two commits coalesced | (a) first frame = last presented within 0.5 px; (b) §4.4 outcome with `capture-aged`; never a wrong first frame |
 | L-MEAS-6 sticky engages mid-run: (a) no later commit, (b) a later commit | (a) final frame exact, no snap; (b) continuity |
 | L-MEAS-7 browser layout change mid-run (an image above loads), then a commit; flat and nested (a child under a scaling parent) | Continuity ≤ 0.5 px every frame; the §5.7 path taken is the one its ancestor condition selects |
 | L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture | (a) no shear, exact `(B, v)`; (b) aged, §4.4 outcome, no rewind |
 | L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
-| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold` | §4.4 outcomes; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule |
+| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold`; a driven node with a sub-0.01 px δ under a live ancestor scale of 300 | §4.4 outcomes; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule (the amplified case is reported) |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly |
 | L-MEAS-13 an earlier rAF callback moves an ancestor; a later callback calls `update()` (via Ani's clock) | Aged at once, §4.4, never the intermediate box as B |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
@@ -1269,7 +1278,7 @@ marker; use the predicted box instead of the measured one; drop the layout-size 
 
 | Spike | Must show (three engines) | Fallback that ships if it fails |
 |---|---|---|
-| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The interval support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
+| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The interval support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom; a degenerate-axis leaf (a 1 px rule, a 0.5 px hairline) under an unowned `zoom: 2` wrapper is detected through its exact computed size. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
 | S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect; if still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree |
 | S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one | None needed: aging is the conservative path |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.10 |
