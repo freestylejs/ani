@@ -152,16 +152,56 @@ describe('physics.spring', () => {
     })
 
     it('S5: rejects non-finite and out-of-range parameters', () => {
-        for (const duration of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        for (const duration of [
+            0,
+            -1,
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
             expect(() => physics.spring({ duration })).toThrow(
                 expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
             )
         }
-        for (const bounce of [-1, 1, 1.5, Number.NaN]) {
+        for (const bounce of [
+            -1,
+            1,
+            1.5,
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
             expect(() => physics.spring({ duration: 1, bounce })).toThrow(
                 expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
             )
         }
+        const s = physics.spring({ duration: 0.5, bounce: 0 })
+        for (const bad of [
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
+            expect(() => s.at(bad, 100, 0)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.at(0.1, bad, 0)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.at(0.1, 100, bad)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.velocity(bad, 100, 0)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.velocity(0.1, bad, 0)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.velocity(0.1, 100, bad)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+        }
+        expect(s.at(-0.2, 100, -40)).toBe(100)
+        expect(s.velocity(-0.2, 100, -40)).toBe(-40)
     })
 })
 
@@ -230,7 +270,27 @@ describe('physics.settleTime', () => {
         expect(s.settleTime(300, 0, { position: 1, speed: 10 })).toBeLessThan(
             s.settleTime(300, 0)
         )
-        expect(() => s.settleTime(1, 0, { position: 0 })).toThrow()
+        expect(() => s.settleTime(1, 0, { position: 0 })).toThrow(
+            expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+        )
+        for (const bad of [
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
+            expect(() => s.settleTime(bad, 0)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.settleTime(1, bad)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.settleTime(1, 0, { position: bad })).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => s.settleTime(1, 0, { speed: bad })).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+        }
     })
 
     it('T5: a long bouncy spring exceeds the layout cap of 10 s', () => {
@@ -248,6 +308,7 @@ describe('physics.perceptual', () => {
             expect(p).toBeGreaterThanOrEqual(prev)
             prev = p
         }
+        expect(physics.perceptual(-0.2, D)).toBe(0)
         expect(physics.perceptual(0, D)).toBe(0)
         expect(physics.perceptual(D, D)).toBe(1)
         expect(physics.perceptual(2 * D, D)).toBe(1)
@@ -260,13 +321,59 @@ describe('physics.perceptual', () => {
             12
         )
     })
+
+    it('P2: rejects non-finite time and non-finite or non-positive duration (P1-003)', () => {
+        for (const t of [
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
+            expect(() => physics.perceptual(t, 0.5)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+        }
+        for (const duration of [
+            0,
+            -0.5,
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
+            expect(() => physics.perceptual(0.2, duration)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+            expect(() => physics.perceptual(0, duration)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+        }
+    })
 })
 
 describe('physics.decay', () => {
     it('D1: projects v·r/(1 − r) per millisecond', () => {
         expect(physics.decay(1000)).toBeCloseTo(0.998 / 0.002, 9)
         expect(physics.decay(-2000, 0.99)).toBeCloseTo(-2 * 99, 9)
-        expect(() => physics.decay(1, 1)).toThrow()
-        expect(() => physics.decay(Number.NaN)).toThrow()
+        for (const rate of [
+            0,
+            -0.5,
+            1,
+            1.2,
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
+            expect(() => physics.decay(1, rate)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+        }
+        for (const v of [
+            Number.NaN,
+            Number.POSITIVE_INFINITY,
+            Number.NEGATIVE_INFINITY,
+        ]) {
+            expect(() => physics.decay(v)).toThrow(
+                expect.objectContaining({ code: 'ANI_INVALID_CONFIG' })
+            )
+        }
     })
 })
