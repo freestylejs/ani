@@ -45,34 +45,20 @@ export const pageOptions = {}
  * the P2 gate requires this record to be empty.
  */
 export const knownFailures: Record<string, string> = {
-    L_MEAS_1:
-        "P2: view-space capture and flush (§3.2, §4.1). Page variant: the engine compares page-space rects, so the anchoring scroll correction in the commit's task reads as a 70 px move and the messages fly by it",
     L_MEAS_2:
-        "P2: measured B in view space (§4.1 D3). The engine snaps the whole change 'stale' when a scroll container scrolls between capture and flush, so every card appears at A instead of starting where it was seen",
+        "Firefox only (passes in Chromium and WebKit): the §11.4 S2 spike ('layout's writes neither suppress nor alter anchoring') fails there. Firefox's scroll anchoring counts its anchor node's transformed position, so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B; with overflow-anchor: none on the column the row passes in Firefox too",
     L_MEAS_3:
-        "P2: view-space capture and flush (§4.1 D3). In page space the commit's page scroll is not part of the change, so header and footer jump by the scroll instead of gliding from where they were seen",
+        "Row defect, reported (rows are not edited in P2): the authored-style snapshot is taken before the commit's own footer.style.top = '550px', so the restore check expects the pre-commit top (310px). The motion checks pass; with the snapshot taken after the commit the row passes in all three engines",
     L_MEAS_4:
-        'P2: measured B and the §5.7 keep paths judged in screen space. A commit retargets from the analytic drawn box, which misses what was presented since the flush: the inner scroll at rest (path 2), the inner scroll under a live parent scale (path 3), and the 0.005 px shift amplified by ρ ≈ 330 (path 3, not path 1)',
-    L_MEAS_6:
-        'P2: measured B and §5.7 path 2. Variant (b): the later commit retargets from the analytic drawn box, which misses the sticky offset presented since the flush',
+        "The row contradicts amended §5.7 (dd85f28): 'Unchanged when |J| < 0.01 px on every edge (both origins and both sizes). Leaving the track alone draws the next frame where the user saw the node.' The inner scroll is presented before the capture, so J = D − B = 0 and the child's track is kept untouched (path 1, drawn on the oracle and ending on schedule); the live 0.5, live 2 and amplified variants expect path 3 and run 1 'interrupted'",
     L_MEAS_7:
-        'P2: measured B and §5.7 paths 2 and 3. The commit retargets from the analytic drawn box, which misses the layout shift the browser presented since the flush (flat and nested)',
-    L_MEAS_8:
-        'P2: view-space capture and flush (§3.2). In page space a page scroll moves a viewport-fixed sheet, so it flies by the scroll',
-    L_MEAS_9:
-        'P2: §4.1 capture aging and the §4.4 aged flush. Variant (b): a capture one frame old is used as fresh, so the tracks are retargeted instead of being kept and translated by δ',
+        "The row contradicts amended §5.7 (dd85f28), as L_MEAS_4: the layout shift is presented before the capture, so J = 0 and the nested child's track is kept untouched (path 1); the nested variant expects path 3 and run 1 'interrupted'",
     L_MEAS_10:
-        "P2: measured B and §5.7 paths 2 and 3. In both roots the commit misses the 50 px outer scroll presented since the flush. The closed root also has a defect in accepted code: flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent (§4.6)",
-    L_MEAS_11:
-        'P2: the §4.4 capture-less and aged flush. Driven nodes are retargeted instead of keeping their tracks translated by δ, and are not reported by |δ|·max(1, ρ)',
+        "Open root: the row contradicts amended §5.7 (dd85f28), as L_MEAS_4: the 50 px outer scroll is presented before the capture, so J = 0 and path 1 keeps the children's tracks; the row expects path 3 and run 1 'interrupted'. Closed root: a defect in accepted code (a later slice): flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent (§4.6)",
     L_MEAS_12:
-        'P2: the §4.2 interval support check of B. Variant (b): a box-changing rotation present at capture is not detected, so the subtree flies from the rotated bounding box instead of snapping unsupported',
-    L_MEAS_13:
-        "P2: §4.1 aging at once inside the clock's frame (clock.inFrame). update() inside the scope clock's frame takes the unpresented intermediate box as B",
+        'Row defect, reported (rows are not edited in P2): variant (b) expects the child at root + (190, 30), but after the commit the parent is at left 180 and the child at left 70 inside it, so its A is root + (250, 30). The engine snaps the subtree unsupported at A as the row requires; with the expected box at (250, 30) the row passes in all three engines',
     L_HAND_2:
-        'P2: the §5.8 active-scroller rule. A handoff out of a scroller between its scroll and scrollend events flies instead of the lead appearing at A',
-    L_KEY_1:
-        "P2: the §9.1 degradation-table status for a layoutKey change (§4.7). A mid-run layoutKey change resolves its run 'ended'; a run whose only node was ended by the change resolves 'disposed'",
+        'A later slice: the §5.8 active-scroller rule. A handoff out of a scroller between its scroll and scrollend events flies instead of the lead appearing at A',
 }
 
 const FRAME_MS = 16
