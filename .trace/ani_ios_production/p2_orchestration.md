@@ -46,7 +46,7 @@ container, each in its own git worktree.
 | H2 capture | §4.1 capture lifecycle | DeepSeek | Withdrawn before start (the pool was blocked); merged into H5, since it is coupled to the flush |
 | H3 identity | Flat-tree ancestry, document affinity (§4.6), `layoutKey` (§4.7) | Argon4 | Accepted (78bbdba, integrated at f94848d) |
 | H4 rows | `layout_meas` browser rows L-MEAS-1..13 (without 5), L-HAND-1..2, L-KEY-1, L-DOC-1, tests first, with a `knownFailures` worklist that must be empty at the gate | Argon4 (draft), then native helper | Accepted (e682706 draft as received, a3a657e reviewed): 16 rows; 2 pass and 14 are known failures, each failing at the same frame for its named P2 reason in Chromium, Firefox and WebKit; re-run here |
-| H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 (partial), then native helper | Running (`briefs/h5.md`) |
+| H5 core | Measured capture (§4.1), view-space flush (§3.2, §4.3), measured B (§4.2), keep paths (§5.7), §4.4 reporting, the interval support check at flush, view-space retained boxes (§5.8), stats (§7.1) | Argon4 (partial), then native helper | Accepted after a review round: 25 commits linearized onto the dev branch (e5d4b80..6544e62); every finding of the independent review fixed, each with a test that failed before its fix; gate logs `logs/p2-integ/` |
 | R1 remediation | P1 tribunal P1-001..P1-004; the code side of P0 J-001, J-004 and P0-N001 in `measure.ts` | DeepSeek | Accepted (04d1d12..f94848d) |
 | H6 | Closed-root flat ancestry (§4.6, amended), active-scroll handoff rule (§5.8), L-MEAS-5 React rows; L_MEAS_10 and L_HAND_2 out of `knownFailures` | Native helper | After H5 (`briefs/h6.md`) |
 
@@ -86,3 +86,18 @@ container, each in its own git worktree.
   removed) fixes L_MEAS_3, 4, 7, 10 and 12 to the amended authority. It also runs the Firefox
   scroll-anchoring spike: Firefox counts the anchor node's transform, so layout's t = 0 writes
   re-anchor (L_MEAS_2).
+
+## Integration of H5 and H4b (77ec445)
+
+- **Commits.** The 28 helper commits (H5's 25, H4b's 3) are linearized onto the dev branch with
+  session trailers. The code is byte-identical to the helpers' branches.
+- **Gates (`logs/p2-integ/`).**
+  - Unit 1,744/1,744, typecheck 11/11, biome 0 errors.
+  - Chromium full suite 181 passed, failing only `layout:COST`.
+  - Firefox and WebKit: `layout` 55/56 (COST), and `layout_spring`, `react_layout`, `waapi`,
+    `showcase` and `regressions` all pass.
+  - `layout_meas` has 13 passes in Firefox and 14 in WebKit.
+- **Known failures left.** All are H6's: L_HAND_2, L_MEAS_10 (closed root), and L_MEAS_2 in Firefox
+  (S2 fallback). L_MEAS_4 now passes in all three engines, after H5's velocity fix.
+- **COST.** H5's profile shows the whole commit at about 25–45 ms against the 4 ms gate. That is
+  the H7 slice.
