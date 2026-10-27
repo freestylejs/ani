@@ -1,556 +1,739 @@
-# iOS-grade layout — final architecture (B completion and the B–C seam)
+# iOS-grade layout — production architecture v2 (B completion and the B–C seam)
 
-**Status:** FINAL PROPOSAL, 2026-10-27. It supersedes the 2026-10-26 draft (`b16f238`) and
-awaits the user's decisions in §9. Nothing here is implemented. On approval, it amends
-`packages/layout/ARCHITECTURE.md` (the authority) and opens the checkpoint plan of §8.
+**Status:** v2 PROPOSAL, 2026-10-27. Supersedes v1 (`655432b`), which the owner judged "not
+production grade". v2 is the result of a three-reviewer design review (R1 platform and math, R2
+API and frameworks, R3 robustness and operations; two rounds, 35 round-1 findings, a
+cross-examination round) and awaits the decisions of §13 and the reviewers' round-3 sign-off.
+Nothing here is implemented. On approval it amends `packages/layout/ARCHITECTURE.md` (the
+authority) and opens the checkpoints of §12.
 
-**Scope.** Goal B ("optional layout core, targeting iOS native grade layout transitions") is
-partially achieved. This document designs what remains for B and the one interface B must
-open for C (gestures):
+**Bar.** The first release that contains this work must be installable in a production app on day
+one. Concretely: every path either produces the specified frame or a defined, reported safe
+outcome (§6); every platform claim has an oracle that can prove it, including on real devices
+(§11); every public surface is typed, validated, versioned and operable (§9, §7).
 
-1. Layout inside scroll containers and fixed roots (Motion's `layoutScroll` / `layoutRoot`).
-2. A physical, velocity-native spring for layout tracks.
-3. The external-drive seam: an outside driver (C's drag) holds an element and hands it back
-   with a release velocity.
+**Scope.** Goal B ("optional layout core, targeting iOS native grade layout transitions"):
 
-The gesture package itself (C), motion tokens (D) and `GATE_AMENDMENT.md` are out of scope.
+1. Layout that is correct inside scroll containers, fixed and sticky elements, and under
+   browser-driven layout changes.
+2. A physical, velocity-native spring.
+3. The external-drive seam for the gesture package (C).
 
-## 0. Changes from the draft
+C itself, motion tokens (D) and `GATE_AMENDMENT.md` are out of scope.
 
-Found in the final review against ARCHITECTURE §3–§12; each one fixes the draft or makes it exact.
+## 0. What changed from v1, and why
 
-| # | Draft | Final | Why |
+| # | v1 | v2 | Found by |
 |---|---|---|---|
-| 1 | Bounce mapping `ζ = 1 − b` for every `b` | `ζ = 1 − b` for `b ≥ 0`, `ζ = 1/(1 + b)` for `b < 0` (§4.1) | Apple's mapping; the draft gave the wrong damping ratio for every negative bounce |
-| 2 | Perceptual timeline = the lead's own step response, clamped | Critically damped step response with the track's `D`, normalised to 1 at `t = D` (§4.1) | With bounce > 0 the step response oscillates around 1, so opacity would flicker. With bounce 0 it never reaches 1, so a crossfade would end only at settle |
-| 3 | `J_c` "the linear part of the full map" | `J_c(t)` for drawn boxes and `J_c^rest` for rest boxes; the participant at or above the scroller (§3.2) | A scroller under an animating parent has a gain that changes per frame. A rest box uses the map with poses divided out (§3.1 of the authority) |
-| 4 | Fixed roots classified at every flush | Classified only for active nodes whose chain or page offset changed since their plan; memoised on the shared `offsetParent` tree (§3.3-8) | An unscrolled commit pays nothing; the §11 read gate holds as written |
-| 5 | Sticky: own or ancestor sticky, detection unstated | Read from the same walk: sticky elements are positioned, so they are on it (§3.3-9) | The draft could not see a non-participant sticky wrapper |
-| 6 | The chain walks up to the scrolling element | The chain stops at a fixed root (§3.2) | Scrollers above a fixed element do not move it |
-| 7 | Seam: `take` + `onShift`; the driver writes `translate` | `take` → `move(offset)` / `release(v)`; layout keeps writing `translate`/`scale` (§5) | One owner per property (§6 of the authority). The reorder lag is fixed by construction, with no callback, and the size channels keep animating while the element is held |
-| 8 | `spring` and `timing`/`duration` "mutually exclusive" | Exclusive inside one object; across merge layers, a later layer's kind replaces the earlier kind (§4.2) | Both packages merge `motion` field by field (`layout/src/motion.ts` `mergeMotion`, `react/src/layout/context.ts` `mergeMotion`). A group spring under a participant `duration` would otherwise throw |
-| 9 | WAAPI and reduced motion unstated for the spring | Stated (§4.3, §4.4) | The authority's §9 and §10 need both |
-| 10 | — | A fixed element inside a participant is a stated limit with a warning (§3.3-10) | Any non-`none` `translate`/`scale` makes the participant that element's containing block. This is pre-existing and shared with Motion |
-| 11 | D3 trade-off not shown | The cost of visual continuity is shown (§3.1) | A decision needs both sides |
+| 1 | A scroll ledger moved the engine's *predicted* drawn box across scrolls and frame roots, with lazy fixed-root classification | **Measured presentation** (§3): B is the box measured at the last presented frame; the engine's model supplies only velocity. No ledger, no frame-root classification, no scroll listeners for captures | R1-03, R3-02, R3-03, R3-06 led to the redesign; R1, R2 and R3 round 2 found its time-coherence flaw, fixed by the post-commit refresh (§3.3) |
+| 2 | `'stale'` snap kept for sticky | Sticky is browser positioning under the pose and is correct without snapping (§3.6) | R3-07 withdrawn in round 2 by all three |
+| 3 | No failure policy except for one spike | A normative degradation table, a transactional flush, isolated callbacks, statuses `'failed'` and `'disabled'` (§6) | R3-01, R3-04, R2-06, R2-07 |
+| 4 | No operations story | `layoutRuntime` kill switch and a versioned diagnostics stream (§7) | R3-14 |
+| 5 | Spring as the new default | Spring ships **opt-in**; the 0.35 s ease-out default stays (§4, D1) | R2-08, R3 cut list |
+| 6 | `spring` field beside `timing`/`duration`, kind replaced by layer | Discriminated `type: 'timing' \| 'spring'`, kind inherited across layers, `duration` never switches kind (§4.2) | R2-04 |
+| 7 | WAAPI spring via `linear()` | `engine: 'waapi'` rejects springs at validation (§4.4) | R1-07 (the 1000-stop cap breaks the error bound: 4.2 px at bounce 0.95 over 1000 px) |
+| 8 | Reduced-motion bisection | Deterministic finite search; bounce clamped to ≤ 0 under `maxDuration` (§4.5) | R1-08 (counterexample: the settle time is not monotone in the scale factor) |
+| 9 | Drive types in core; `take`/`move`/`release` only | Types live in layout; C declares a structural port; full state machine with `cancel()`; held phase immune to reduced motion; one rect read per held element per frame (§5) | R2-01, R2-02, R2-03, R3-09, R1-06 |
+| 10 | Implicit single-document assumption | Document-affine scopes; flat-tree ancestry (shadow DOM) (§3.8) | R1-04, R1-05, R3-08 |
+| 11 | Recycled DOM nodes unaddressed | `layoutKey` (§3.9) | R2-02 round 2, R3-15 |
+| 12 | Three desktop engines | Two tiers: per-PR deterministic oracle in three engines, plus a release device gate on real iOS and Android (§11) | R1-09, R3-12 |
+| 13 | Spikes as gates, fallbacks mostly undefined | Every spike has a predeclared fallback that ships (§12) | R2-06 |
+| 14 | — | Accessibility contract (§8); support matrix (§1.2); B0 design freeze (§12) | R2-09, R2-10, R3-16 |
+| 15 | Settle example 0.914 s | 0.918 s (1.67 D) | R1-10 |
+
+Review record: `reports/R{1,2,3}_round{1,2}.md` and the orchestrator memo, in the review workspace
+(`ani-fx-brief/B_design/`).
 
 ---
 
-## 1. What "iOS native grade" means, measurably
+## 1. Requirements
 
-Each property is something the oracle can check frame by frame. The right column describes
-Ani as of `a4191c6..0c0e11c`.
+### 1.1 Properties
 
-| # | Property | Source | Ani today |
+| # | Property | Ani before this work |
+|---|---|---|
+| P1 | **The first frame after a change equals the last presented scene, modulo camera motion presented no later than that frame.** A scroll, pinch or visual-viewport pan presented in the same frame moves participants and their surroundings by the same amount | Holds without scroll; fails when a scroll lands between capture and flush (snaps `'stale'`), and for browser layout changes between flushes |
+| P2 | Velocity is continuous on retarget, handoff and gesture release | Retarget and handoff exact; no release seam |
+| P3 | Physical spring set by perceptual duration and bounce (Apple's model) | Curves plus a momentum term |
+| P4 | Interruptible at any frame | Holds |
+| P5 | Correct in scroll containers, fixed sheets, sticky headers, and under browser-driven layout change | Snaps on inner scroll; unmodelled otherwise |
+| P6 | A released drag settles into its slot with the finger's speed | No seam |
+| P7 | Frame-rate independent (60/120 Hz) | Holds |
+| P8 | Reduced motion respected; direct manipulation stays direct | Automatic motion only |
+
+### 1.2 Support matrix (v1 of this work)
+
+| Area | Exact | Defined degradation | Not supported (documented) |
 |---|---|---|---|
-| P1 | The first frame after a change shows exactly what the user saw | Ani §3.3-1; Apple: motion starts from the presented value | Holds without scroll. **Fails** when a scroll the user did not see lands between capture and flush (§2.2) |
-| P2 | Velocity is continuous on retarget, shared-element handoff and gesture release | WWDC23 *Animate with springs*: a retargeted spring "uses the velocity it had when it was retargeted as the initial velocity towards its new destination" | Retarget and handoff are exact (`c′(0) = v`). Gesture release has no API |
-| P3 | Motion follows a damped spring set by perceptual duration and bounce | WWDC23: `stiffness = (2π/duration)²`, `mass = 1`, bounce in [−1, 1]; SwiftUI's default animation is a spring with response 0.55 and damping fraction 1.0 (iOS 17+) | Stateless curves plus a momentum term. Core `timing.spring` is time-rescaled to its settling time and ignores velocity |
-| P4 | Interruptible at any frame | Apple fluid-interface guidance | Holds |
-| P5 | Works inside scrolling lists, panels and fixed sheets | UIKit scroll views are everywhere | Snaps `'stale'` on any inner scroll between capture and flush. A scroll during a run is not in the next flush's B. Fixed roots are untreated |
-| P6 | A released drag settles into its layout slot with the finger's speed | WWDC23: the animation "picks up right where the gesture ends" | No seam. Motion also hands no velocity to layout (§2.1) |
-| P7 | Frame-rate independent (60/120 Hz) | ProMotion | Holds: tracks are analytic in time |
-| P8 | Reduced motion respected | Accessibility | Holds |
+| Packages | `@freestylejs/ani-layout` (vanilla), `@freestylejs/ani-react/layout` (React 18.3, 19) | — | Vue, Solid, Svelte layout bindings (deferred; not advertised) |
+| Engines | Chromium, Gecko, WebKit (desktop and mobile) | — | — |
+| Scroll | Page and nested inner scrollers, scroll anchoring, smooth scroll, scroll snap, momentum, rubber-band, sticky | Shared handoff out of an actively scrolling chain → presence enter (§3.7) | — |
+| Roots | Fixed, top layer (dialog, popover), transformed containing blocks | — | A viewport-fixed descendant *inside* a posed participant is re-contained by the pose (CSS Transforms 2); dev warning, fix is a portal (§3.8) |
+| Viewport | Pinch zoom, visual-viewport pan, dynamic toolbars, on-screen keyboard (uniform camera or measured) | — | — |
+| DOM | Shadow DOM (open and closed), `display: contents` parents | — | Cross-document scopes and handoffs; iframes (§3.8) |
+| Geometry | 2D translate and scale poses; author translate on non-participant ancestors | Rotation, skew, 3D, CSS `zoom` changes on participants or between participants → `'unsupported'` snap | — |
+| Reuse | Keyed React lists; vanilla remove+add | `layoutKey` change → fresh baseline | Recycling a node without remove+add or `layoutKey` |
+| Engine option | `'raf'` (all features) | — | `'waapi'` with springs, drives, nesting (rejected at validation) |
 
-B is complete when P1–P8 hold, each with frame-level evidence in three engines.
+## 2. Platform findings that shape the design
 
-## 2. Findings
+- **Rendering order.** HTML's *update the rendering* runs scroll steps (scroll events) before
+  `requestAnimationFrame` callbacks, and presents afterwards. A scroll whose event fired is
+  presented no later than the frame the engine is about to produce. This is P1's camera rule.
+- **Scroll anchoring** applies its correction when the suppression window ends, or before an
+  operation that depends on scroll position, such as `getBoundingClientRect()` (CSS Scroll
+  Anchoring 1). For Ani, that is the flush's first rect read, so the user never sees the
+  pre-correction offset. Spike S2 confirms this for each engine.
+- **Measured boxes.** `getBoundingClientRect()` of a participant includes its own inline
+  `translate`/`scale`, every ancestor transform, sticky offsets, and every browser-driven layout
+  change. It reflects the main thread's state, which during asynchronous (compositor) scrolling
+  can be up to one frame behind the screen. That lag is uniform for everything inside the
+  scrolled layer, so it matters only when content leaves that layer (§3.7, §5.4).
+- **Visual viewport.** Pinch zoom and visual-viewport panning transform the whole layout viewport.
+  Rects, scroll offsets and the engine's transforms are layout-viewport coordinates, so the
+  visual viewport is a uniform camera. Dynamic toolbars and the on-screen keyboard can move fixed
+  elements: those are browser layout changes, which measurement captures.
+- **`scrollend`** is baseline across engines (WebKit since Safari 26.2). The design uses it only
+  to clear an "actively scrolling" state (§3.7).
+- **Motion 14.6** needs `layoutScroll`/`layoutRoot` markers and keeps content continuity; a drag
+  release never reaches its layout animation. **Apple:** a retargeted spring keeps its velocity;
+  perceptual duration and settling duration are distinct; user-facing state should not wait for
+  settle (WWDC23 *Animate with springs*).
+- **Momentum term vs spring** (unchanged from v1): for the same release velocity the momentum
+  term's peak excursion is exactly `(4/27)·2π·e ≈ 2.53` times a critically damped spring's. That
+  is fine for retargets between nearby targets and wrong for a flick (P6).
 
-### 2.1 Motion 14.6 (source read from the `motion-dom` 14.6.0 package)
-
-- **`layoutScroll`** marks a scroll container. `updateScroll('snapshot')` reads its
-  `scrollLeft/Top` before the change and `updateScroll('measure')` after it.
-  `removeElementScroll` adds each marked ancestor's offset to the measured box. Both boxes
-  become scroll-free, so a scroll between them is not motion: **content continuity**.
-- **Scroll roots.** A marked container whose computed `position` is `fixed` is a *scroll root*
-  (`checkIsScrollRoot`). Boxes under it skip the page scroll.
-- **`layoutRoot`** makes its own node jump (`type: false`, `delay: 0`), so its subtree
-  animates relative to it.
-- **Opt-in.** Both props are opt-in, so an unmarked container still mis-measures.
-- **Drag.** During a drag, `projection.isAnimationBlocked = true`. On release the drag runs
-  its own `inertia` animation on `x`/`y` (`timeConstant: 750`), separate from the layout
-  animation. The release velocity never reaches the layout animation.
-
-### 2.2 Browser scroll semantics, and why content continuity breaks P1
-
-- **Scroll anchoring** applies its correction when the suppression window ends: at the end of
-  the event-loop iteration, or before the next operation whose result depends on scroll
-  position, such as `getBoundingClientRect()` (CSS Scroll Anchoring 1). For Ani, that is the
-  flush's first rect read, so the user never sees the pre-correction offset. Chromium and
-  Gecko ship anchoring. WebKit support was reported recently; spike S-B2 verifies it.
-- **Scroll events** are dispatched in the update-the-rendering step, before
-  `requestAnimationFrame` callbacks (WebKit r252205, matching Chrome and Firefox). A scroll
-  whose event fired has been painted (or is painted in that same frame). A scroll made by
-  script in the commit task has not fired its event when the flush runs.
-
-**Worked example.** A chat panel. A message above the viewport is deleted, and scroll
-anchoring keeps the visible messages still.
-
-- **Before:** a visible message rests at content y = 500 with scrollTop = 300, so it is on
-  screen at y = 200.
-- **After the commit:** its content y is 400 and anchoring sets scrollTop = 200. It is still
-  on screen at 200, and the user expects nothing to move.
-
-The two continuity rules then give:
-
-- **Content continuity** (Motion): the track runs 500 → 400 in content space. Its first frame
-  draws at 500 − 200 = 300: a 100 px jump down, then a slide back up.
-- **Visual continuity** (proposed): the track runs 200 → 200 on screen, so there is no motion.
-
-**Existing defect.** Ani's page boxes (`rect + page scroll`) give the same content continuity
-for the *page* scroller. The example therefore points to an existing P1 defect at document
-level whenever anchoring corrects page scroll. Spike S-B2 must reproduce it before any fix is
-claimed.
-
-### 2.3 The momentum term against a physical spring
-
-The comparison uses the same initial velocity `v` and the same duration `D`:
-
-- **Ani today:** ease-out plus `k·τ(1 − τ)²` (§5.1 of the authority).
-- **Reference:** a critically damped spring with `ω = 2π/D`.
-
-The numbers below were computed in a scratch script.
-
-| Case | Ani momentum term | Spring, bounce 0 | Spring, bounce 0.2 |
-|---|---|---|---|
-| At target, v = 1500 px/s, D = 0.5 s: peak excursion | 111.1 px | 43.9 px | 50.6 px |
-| At target, v = 3000 px/s, D = 0.5 s | 222.2 px | 87.8 px | 101.2 px |
-| 200 px short, moving toward the target at 3000 px/s: overshoot | 83.1 px | 0.1 px | — |
-
-The ratio of peak excursions is exactly `(4/27)·2π·e ≈ 2.530` for every `v` and `D`.
-
-- **Where it is exact:** at `τ = 0` (`c′(0) = v`).
-- **Where it fails:** afterwards it carries too much momentum. This is invisible for retargets
-  between nearby targets and obvious for a flick release (P6).
-- **Conclusion:** the term is the right device for timing *curves*, but it is no substitute
-  for physics (§12 of the authority already says so).
-
-## 3. Design A — frames and the scroll ledger (replaces `'stale'`)
+## 3. Design A — measured presentation (replaces `'stale'` and page boxes)
 
 ### 3.1 Principle
 
-> **Seen scroll is camera; unseen scroll is part of the change.**
+> **B is what was presented. It is measured, never predicted. The engine's model supplies only
+> what cannot be measured: velocity.**
 >
-> A scroll the user watched (its scroll event fired before the flush) moved the content, and
-> tracks follow the content. A scroll the user never saw (script in the commit task, the
-> browser's own anchoring correction) is part of the same transaction. Each participant starts
-> from where the user last saw it, which is P1.
+> A scroll or browser layout change that was presented is in the measurement, and is camera. A
+> change made in the commit's own task (script scroll, the anchoring correction, the mutation)
+> was never presented, so it is part of the change, and each participant starts where it was
+> last seen (decision D3, visual continuity).
 
-This is the UIKit transaction model: cells and `contentOffset` changed in one animation block
-move together on screen. Applied at commit level, Ani gets it without animating the scroller
-itself.
+This is UIKit's transaction model applied at commit level. It needs no scroll-container markers,
+no frame-root classification and no model of sticky, toolbars or third-party layout changes.
 
-**The cost of the rule (decision D3).** After an instant, unseen scroll, participants glide
-from their seen boxes, while non-participant content jumps by the scroll delta. An accordion
-followed by an instant `scrollIntoView` is the example. Every layout change already behaves
-this way: only participants animate.
+**Cost of D3** (unchanged from v1, still accepted by all three reviewers): after an instant,
+unpresented scroll in the commit (an accordion followed by an instant `scrollIntoView`),
+participants glide from where they were seen while non-participant content jumps by the scroll.
+That is how every layout change already behaves: only participants animate. An app that wants
+the scroll to glide uses `behavior: 'smooth'`, which is presented, and therefore camera.
 
-| Case | Visual continuity (proposed) | Content continuity (Motion) |
-|---|---|---|
-| Delete above the viewport, with anchoring | Nothing moves (correct) | Visible participants jump by the correction, then slide back |
-| Instant `scrollIntoView` in the commit | Participants glide through the scroll; other content jumps | Everything jumps by the scroll; participants then animate their own change |
-| P1 (first frame = seen) | Always | Only when no unseen scroll happened |
+### 3.2 Coordinates
 
-An app that wants the scroll itself to glide uses `behavior: 'smooth'`. That scroll is then
-seen, so it counts as camera.
+Every flush plans in **its own view space**: viewport (layout-viewport) coordinates at the flush
+instant. B and A are both taken in it, so no root offset enters a plan. This replaces the
+authority's page boxes (`rect + page scroll`), whose content continuity for the page scroller is
+the existing P1 defect under page-level anchoring (v1 §2.2; spike S2 reproduces it).
 
-### 3.2 Definitions
+Between flushes nothing is converted: a pose is a translate and scale relative to the element's
+own layout box, so whatever moves the box (scroll, sticky, a toolbar, an image loading above)
+moves the drawn box with it, exactly as it moves every non-participant. Frames stay zero-read.
 
-| Term | Definition |
+### 3.3 Capture and post-commit refresh
+
+1. **`capture()` reads every connected participant**, driven ones included: one
+   `getBoundingClientRect` each, plus, for nodes with a presence layer or a shared radius, the
+   computed values the authority already reads (§4.1, §5.7 of the authority). Total rect reads
+   per batch stay ≤ N, so the authority's 2N-per-commit gate is unchanged; it is reached more
+   often during runs.
+2. **Time.** Every capture read happens in a task, after the last frame's writes, so it reflects
+   the state presented at that frame, time `t_k`. The engine's analytic state is evaluated at the
+   same `t_k`.
+3. **Refresh.** While a capture stays open across a rendering opportunity (a time-sliced render,
+   an async vanilla capture), the scope re-reads it **in that rendering opportunity, after every
+   commit-phase write of the clock** (a new post-commit read phase in core's clock, §10, D2). The
+   capture then always equals the last presented state, with all values from one instant.
+   - The DOM is not mutated by the change while a capture is open (React renders do not touch the
+     DOM; a vanilla caller that mutates part of its change and lets a frame present it has shown
+     that part to the user, so measuring it is P1-correct).
+   - Bounds: at most `maxParticipants` rect reads per refresh (§6), and at most 60 refreshes per
+     capture. After 60, the capture **expires**: it is dropped with diagnostic `capture-expired`,
+     and a later flush behaves as capture-less (§3.5). This stops an abandoned render from costing
+     reads indefinitely.
+4. **Invariant restated.** "Animation frames read zero" becomes: "animation frames read zero,
+   except (a) the post-commit refresh of a capture held open across that frame, and (b) one rect
+   per held element (§5.3)". Both are bounded and measured by the cost gates (§11.4).
+
+Why not keep v1's ledger, or the reviewers' residual alternative (`B = V_flush + (M_cap − V_cap)`
+plus a camera delta)? Both need a model of every camera and layout change between capture and
+flush (scroll listeners per document and shadow root, root classification, sticky detection,
+invalidation for unmodelled changes). The refresh needs none of it, and its only cost is bounded
+reads in frames that are already busy rendering.
+
+### 3.4 Driven nodes: the measured state and the keep test
+
+For a node with a running track, the measurement gives its **drawn box** `B` at `t_k`. Dividing
+out the engine's own pose at `t_k` and the presence matrices of that measurement, through the
+parents' maps measured at the same instant, gives the node's **presented layout box** `L_k`
+(exact for the supported 2D model; the solver already recovers poses this way for undriven nodes).
+
+- **Velocity.** The pose velocity at `t_k` is analytic and exact. The layout box is static between
+  frames, so `(B, v)` is the true presented state. Nested parents and children are measured at the
+  same instant and recovered top-down, so no shear can arise.
+- **Consistency check.** A rigid box displacement does not change size. If the measured size
+  differs from the predicted drawn size by more than 0.5 px, the node's map changed in a way the
+  engine does not own (an author rotation or scale, CSS `zoom`). The node and its participant
+  subtree snap `'unsupported'`.
+- **Keep test** (replaces §5.5's comparison against the plan-time A). A running track is kept only
+  when its new A equals `L_k` within `threshold`, judged in rest space as the authority does, and
+  its track options are unchanged. This compares two measured quantities. A presented scroll or
+  layout change moved `L_k` and A together, so the track is kept and continues relative to its box.
+  An unpresented change in the commit moved A only, so the node retargets from `B` with `v` (D3).
+- **No thrash.** The test has the authority's semantics (retarget only when the target moved). A
+  retarget whose target is unchanged cannot occur, so no track restarts on an unrelated commit.
+- **Time.** A flush continues the time of the last painted frame (`t_k`), as the authority does.
+
+### 3.5 Capture-less flush
+
+A flush with no capture, or after an expired one, has no measurement of what was presented:
+
+- an undriven node appears at A (unchanged from today; the React adapter's existing dev warning
+  names the fix);
+- a driven node keeps its track whatever moved. Its pose stays relative to its layout box, so it
+  moves with its layout like any non-participant, and still ends at identity.
+- Each node that would have moved is reported in `snapped` with reason `'stale'` (no
+  before-box), and diagnostic `capture-less-flush`.
+
+### 3.6 Sticky, fixed and browser-driven change
+
+- **Sticky.** The browser applies the sticky offset to the layout box; the pose layers on top. A
+  subtree under a sticky element that engages mid-run moves like any camera and ends at its real
+  sticky position. At the next commit the measurement contains the offset. No snap.
+- **Fixed, top layer, transformed containing blocks** need no classification: B and A are
+  measured in one view space, and frames are relative to the box.
+- **Dynamic toolbars, the on-screen keyboard, image and font loads, third-party style changes**
+  are presented layout changes, so they are in the next measurement. During a run they move the
+  box like a camera.
+
+### 3.7 Shared handoff and retained boxes
+
+- **Handoff** (shared `layoutId`): the lead's B is the follower's measured view box, as today, in
+  the flush's view space.
+- **Retained boxes** (a removed lead, available for `retain` seconds) are stored in view space, as
+  measured, and used as they are: the new lead flies from where the old one was last seen on screen.
+- **Actively scrolling source.** The main thread can lag the compositor by up to one frame during
+  asynchronous scrolling. Inside one scrolled layer this lag is uniform; it is visible only when an
+  element leaves that layer. Rule: a scroll container (or the document) is **active** from its
+  first `scroll` event until its `scrollend`. A handoff, or a reparent of a participant, whose
+  follower is inside an active container while the lead is outside it, does not fly. The lead
+  enters as a presence enter, with diagnostic `handoff-scroll-active`. Time never clears the
+  state; only `scrollend` does. Where `scrollend` is unavailable, every such handoff out of a
+  container that has scrolled degrades the same way.
+  - The listener is one passive capture-phase `scroll` and `scrollend` pair per event root
+    (`Document` and each `ShadowRoot` that holds a participant), armed only while the scope has a
+    shared participant. Each event records its target, with no reads.
+  - On touch devices the tap that starts a handoff normally stops the fling first, so this mostly
+    affects programmatic handoffs.
+
+### 3.8 Ancestry, documents, and fixed descendants
+
+- **Flat-tree ancestry.** One primitive (`assignedSlot`, `parentElement`, `ShadowRoot.host`) is
+  used for every ancestor walk: the nearest participant, the containment test of §3.7, and the
+  dev warning below. Open and closed shadow roots are supported.
+- **Document-affine scopes.** A scope binds to the `ownerDocument` of its first participant.
+  `add`/`set`/`take` with an element of another document throw `ANI_INVALID_OPTIONS`. An element
+  whose `ownerDocument` changes (adoption) has its track ended, styles restored and hold
+  invalidated, and must be re-added. There is no cross-document `layoutId` handoff. In React, a
+  portal into another document creates or joins that document's implicit scope rather than
+  inheriting the outer group's.
+- **A fixed descendant inside a posed participant** is re-contained by the pose. Any non-`none`
+  `translate`/`scale` establishes a fixed containing block (CSS Transforms 2). This is
+  pre-existing and shared with Motion. A dev-only subtree check at `add` (outside production
+  reads) warns once per participant, and the fix is a portal.
+
+### 3.9 Semantic identity: `layoutKey`
+
+`LayoutOptions.layoutKey?: unknown`, compared with `Object.is`. When it changes, the node's track
+ends, owned styles are restored, any hold is invalidated, and the current layout becomes a fresh
+baseline with no interpolation from the previous item. A virtualizer that recycles DOM nodes sets
+it to the item id. React lists keyed by item identity remount instead, and need nothing.
+
+### 3.10 Cost
+
+| Batch | Reads |
 |---|---|
-| **Frame root** `R(n)` | `viewport` when `n` or an ancestor is fixed to the viewport (no ancestor captures it as a fixed containing block); otherwise `document`. |
-| **Root offset** `root(n)` | The page scroll when `R(n) = document`, 0 when `R(n) = viewport`. |
-| **Frame box** | `rect + root(n)`: today's page box, generalised. It is identical for document-rooted nodes and is the viewport rect for fixed ones. |
-| **Scroll chain** `C(n)` | The inner scroll containers above `n` and below its frame root: the page scroller is excluded (it is `root`), and so is every scroller above a fixed root. `dom.scrollOffsets` already walks them; it gains the stop at a fixed root. |
-| **Content gain** | For a scroller `c`, let `π_c` be `c` itself if it participates, otherwise its nearest participant ancestor. `J_c(t)` is the linear part of `π_c`'s full map `M` at time `t`, and `J_c^rest` the linear part of its map with poses divided out (`Ω`, §5.3 of the authority). Both are identity without such a participant. A scroll of `Δ` in `c` moves its content on screen by `−J_c(t)·Δ`. Non-participant ancestors may only translate (§6 of the authority), so both gains are exact and known to the engine. |
-| **Ledger** | The offsets of every chain container at three instants: at the plan of each running track (`S_plan`, plus `root_plan`, stored with the track), at the capture (`S_seen`, `root_seen`, refreshed by rule 2) and at the flush (`S_fl`, `root_fl`). Each container is read once per instant, however many nodes share it. |
+| Commit (capture + flush) | ≤ 2N rects + the authority's computed values; unchanged gate (≤ 4 ms at 1,000 participants) |
+| Refresh (capture open across a frame) | ≤ N rects after the frame's writes (one forced style recalculation, no layout); gate p95 ≤ 2 ms at 1,000 |
+| Held element | 1 rect per held element per frame, before writes |
+| Steady frame | 0 reads; gate p95 ≤ 2 ms unchanged |
+| Events | `scroll`/`scrollend` record targets only, while shared participants exist |
 
-### 3.3 Rules
+`stats` gains `refreshes` and counts every read, including offsets and computed values (R3-05,
+R3-11).
 
-1. **Capture** reads the rects as today, plus the offsets of the chains of *all*
-   participants, driven ones included. `scrollOffsets(elements)` already includes driven
-   elements; only the use of the result changes. Offsets are `scrollLeft/Top` reads, with no
-   rect.
-2. **Seen refresh.** While a capture is open, one passive capture-phase `scroll` listener per
-   document refreshes the capture when a chain container (or the page) fires `scroll`. The
-   refresh re-reads that container's offsets and the rects of the undriven participants under
-   it.
-   - The listener is armed at capture and disarmed at the flush (or `dispose`).
-   - A synchronous commit (capture and flush in one task) can see no scroll event in between,
-     so it never pays this cost.
-   - The cost falls only in a capture held across tasks (a time-sliced render) that the user
-     scrolls between chunks.
-   - React commits and flushes in one task, so a refresh never reads a half-committed DOM.
-3. **B at flush** is computed in the flush's frame space, through the view. `R_t` is the frame
-   root a track was planned in and `R_f` the frame root at this flush (rule 8).
-   - **Undriven node:** `B = rect_seen + root_fl(n)`.
-   - **Driven node:** its seen view box is
-     `view_seen = V(t_fl) − Σ_{c∈C(n)} J_c(t_fl)·(S_seen(c) − S_plan(c)) − root_seen(R_t)`,
-     and `B = view_seen + root_fl(R_f)`.
-     - The middle term is the seen inner scroll since the plan. Only the total `Δ` matters,
-       because the layout offset is static and the gain is applied at the flush instant.
-     - The last pair turns the unseen page-scroll difference into the visual continuity of
-       §3.1. With `R_t = R_f = document` it reduces to `+ (root_fl − root_seen)`.
-     - The velocity is carried unchanged. A scroll adds a constant offset, not a rate, and a
-       scroll *in progress* is camera, as in UIKit.
-4. **A at flush** is the frame box at `S_fl`, as today.
-5. **Keep test** (§5.5 of the authority). A running track is kept only when:
-   - no unseen delta touched it (`S_fl = S_seen` on `C(n)`, `root_fl = root_seen` and
-     `R_f = R_t`);
-   - its target is unchanged in the plan's space, within `threshold`:
-     `A_new = A_old − Σ_{c∈C(n)} J_c^rest·(S_fl(c) − S_plan(c))`.
+## 4. Design B — the physical spring (opt-in)
 
-   Otherwise it is retargeted from its seen drawn box (rule 3) and carries its velocity. A
-   kept track keeps its `S_plan`. The browser applies later scrolls to its layout position,
-   so a kept track needs no per-frame read and no rewrite.
-6. **Frames are unchanged:** zero reads, and the browser moves content under the track. A pose
-   is a translate and scale about an origin attached to the element's box. A scroll of `Δ`
-   shifts the box and the origin together, so the drawn box shifts by `−Δ` in the local frame
-   and by `−J_c(t)·Δ` on screen, every frame. Spike S-B4 checks this in three engines.
-7. **Cross-frame handoff.** A shared `layoutId` handed from a scrolled list to a fixed overlay
-   goes through view space: the follower's seen view box (rule 3) plus the lead's root offset.
-   Crossfade spaces (§5.6 of the authority) are unchanged otherwise.
-8. **Fixed-root classification** happens in the flush read phase, before any write. It is
-   done only for active nodes whose ledger shows a change since their plan or the capture
-   (any `S` or `root` difference). Otherwise no classification is needed, because a constant
-   root offset cancels in every formula above.
-   - **Method.** It walks the `offsetParent` chain, memoised per element per flush, so
-     siblings share work and the cost is the number of distinct positioned ancestors.
-   - **Spec basis.** CSSOM View: `offsetParent` is null for a fixed element "and no ancestor
-     establishes a fixed position containing block". An element (not `body` or `html`, with a
-     box) whose `offsetParent` is null is a viewport-fixed root. A transformed or contained
-     ancestor that captures its fixed descendants yields a non-null chain, which is correct.
-   - **Stored frame root.** Each track stores `R_t`, the frame root classified at its plan or,
-     if none was needed then, at the first later flush that needs it.
-   - **Gate.** S-B1 must prove the walk in three engines. Its fallback is a cached
-     computed-`position` walk.
-9. **Sticky.** The same walk visits every sticky ancestor, since a sticky element is
-   positioned and so lies on the chain. For a node that rule 8 classifies, the walk reads one
-   computed `position` per distinct positioned element. A node whose chain or root scrolled
-   during its run, with a sticky element at or above it below the scroller, snaps `'stale'`.
-   A sticky offset is not linear in the scroll. This is the only remaining use of `'stale'`,
-   and the `SnapReason`/status unions keep it.
-10. **A fixed element inside a participant.** Any non-`none` `translate`/`scale` makes the
-    participant the fixed containing block of its fixed descendants (CSS Transforms 2). While
-    a participant is posed, a viewport-fixed descendant is therefore re-contained and moves
-    with it. This is pre-existing and shared with Motion (`transform`), and no engine can avoid
-    it while writing transforms.
-    - A development warning fires once per scope when a participant whose computed `position`
-      is `fixed` (read with the other computed values of active nodes) has a moving
-      participant ancestor.
-    - The fix is a portal.
+### 4.1 Model (verified by R1)
 
-### 3.4 Public API
+- Inputs: displacement `x₀ = B − A`, incoming velocity `v₀`, perceptual duration `D`.
+- Frequency: `ω₀ = 2π/D`.
+- Damping ratio from bounce `b ∈ (−1, 1)`: `ζ = 1 − b` for `b ≥ 0`, `ζ = 1/(1 + b)` for `b < 0`.
+  This is Apple's mapping (WWDC23: mass 1, stiffness `(2π/D)²`).
 
-**None added.** Every container is a chain member automatically, and fixed roots are
-detected.
-
-- **Against Motion.** Motion needs `layoutScroll` / `layoutRoot` on every container. Ani needs
-  neither, and an unmarked container can no longer mis-measure.
-- **No escape hatch now.** A `scroll: 'content'` option (Motion's semantics) is **not**
-  proposed. It is a small addition later if a real case needs it (D3).
-
-### 3.5 Cost-gate amendment
-
-- **Unscrolled commit:** the flush read set is unchanged, `2N` rects plus one computed style
-  per active node.
-- **Scrolled commit:** a commit whose ledger shows a change adds the memoised walk of rule 8,
-  plus rule 9's `position` reads for the nodes it classifies.
-- **Capture:** it gains offset reads for the chains of driven participants, one per distinct
-  container.
-
-The invariant "steady frames read zero" is restated: "animation frames read zero; a `scroll`
-event during an open capture re-reads the capture under the scrolled container; a held drive
-reads its chain's offsets in `scroll` events (§5.1)". Commit reads at 1,000 participants
-≤ 4 ms and steady frame p95 ≤ 2 ms are unchanged and re-measured, both unscrolled and
-scrolled.
-
-### 3.6 Clipping (accepted, with a later option)
-
-A shared element that flies from a fixed overlay back into a clipped scroller is clipped by
-the scroller while it is outside the scroller's box. The asymmetric crossfade (§5.6 of the
-authority) hides most of this, because the unclipped follower stays opaque until `p = 0.5`.
-
-A *clip-aware crossfade* is a candidate follow-up, not part of this proposal (D4). It would
-hold `out(p)` until the lead's drawn box is inside its clip rect, read once per flush from the
-chain. UIKit avoids the problem with a transition container. The web equivalent is a View
-Transition (`shareElement`), which stays available.
-
-## 4. Design B — the physical spring
-
-### 4.1 Model
-
-A new motion kind, in closed form per channel (the origin point x/y, the size w/h, and the
-anchor offset). It uses:
-
-- displacement `x₀ = B − A` and incoming velocity `v₀`;
-- perceptual duration `D` and natural frequency `ω₀ = 2π/D`;
-- bounce `b ∈ (−1, 1)` and damping ratio `ζ = 1 − b` for `b ≥ 0`, `ζ = 1/(1 + b)` for `b < 0`.
+`physics.spring().at()` returns **displacement** `d(t) = x(t) − A`:
 
 ```
-ζ = 1:  x(t) = A + (x₀ + (v₀ + ω₀x₀)·t)·e^(−ω₀t)
-ζ < 1:  x(t) = A + e^(−ζω₀t)·(x₀·cos ω_d t + ((v₀ + ζω₀x₀)/ω_d)·sin ω_d t),  ω_d = ω₀√(1 − ζ²)
-ζ > 1:  x(t) = A + c₁e^(r₁t) + c₂e^(r₂t),  r₁,₂ = −ω₀(ζ ∓ √(ζ² − 1)),
-        c₁ = (v₀ − r₂x₀)/(r₁ − r₂),  c₂ = x₀ − c₁
+ζ = 1:  d(t) = (x₀ + (v₀ + ω₀x₀)t)·e^(−ω₀t)
+ζ < 1:  d(t) = e^(−ζω₀t)·(x₀ cos ω_d t + ((v₀ + ζω₀x₀)/ω_d) sin ω_d t),  ω_d = ω₀√(1 − ζ²)
+ζ > 1:  d(t) = c₁e^(r₁t) + c₂e^(r₂t),  r₁,₂ = −ω₀(ζ ∓ √(ζ² − 1)),  c₁ = (v₀ − r₂x₀)/(r₁ − r₂),  c₂ = x₀ − c₁
 ```
 
-- **Stateless:** it can be evaluated at any `t`, so seek and sampling are exact. This meets
-  §5.1's statelessness requirement without the momentum term.
-- **Exact velocity:** `x′(0) = v₀` on every channel. Retargeting from the drawn `(x, v)` with
-  the same parameters equals the superposition of the old and new responses, which is the
-  additive model of UIKit and SwiftUI.
-- **Settle:** `T_s` is the first time after which the closed-form envelope bounds hold for
-  every channel: position within ε = 0.1 visual px of A and speed under 1 px/s. Each bound is
-  monotone after its maximum, and that maximum is in closed form, so `T_s` is found by
-  bisection once, at plan, in pure code.
-  - Ending at `T_s` is the identity pose with an invisible jump below ε.
-  - The run's report resolves at settle.
-  - Example: a 300 px move at D = 0.55, bounce 0 settles at 0.914 s (1.66 D).
-- **Perceptual timeline:**
-  `p(t) = min(1, s(t)/s(D))` with `s(t) = 1 − (1 + ω₀t)·e^(−ω₀t)` and `s(D) ≈ 0.98640`,
-  with `t` measured from the lead track's start (after its delay).
-  - It is monotone, exactly 1 at `t = D`, and independent of bounce.
-  - It replaces `p = clamp(e(τ), 0, 1)` for spring leads in the crossfade opacities (§5.6 of
-    the authority), the radius blend (§5.7 of the authority) and presence's release hold. All
-    three therefore end at the perceptual duration, as in SwiftUI, and do not wait for settle.
-  - Curve leads keep `p = clamp(e(τ), 0, 1)`.
-- **Unchanged rules:** the size floor, and the delay rule (only nodes at rest wait).
+- **Exact velocity.** It is stateless, and `d′(0) = v₀` on every channel: the origin point, size
+  and anchor offset. A retarget from the presented `(B, v)` with the same parameters is the
+  superposition model of UIKit and SwiftUI.
+- **Settle.** `T_s` is the first time after which position stays within 0.1 visual px of the
+  target and speed stays under 1 px/s, from closed-form envelopes, evaluated once at plan. Example:
+  300 px, D = 0.55, bounce 0, v₀ = 0 settles at **0.918 s (1.67 D)**. The documentation example is
+  an executable test.
+- **Settle cap.** If `T_s > 10 s` at plan (bounce near 1 with a long D), the node snaps
+  `'unsupported'`, with diagnostic `spring-timeout` and a dev warning naming the parameters.
+- **Perceptual timeline.** `p(t) = min(1, s(t)/s(D))`, where `s(t) = 1 − (1 + ω₀t)e^(−ω₀t)` and
+  `s(D) ≈ 0.986399`. It is monotone, exactly 1 at `D`, and independent of bounce.
+  - It drives the crossfade opacities, the radius blend and presence's release hold for spring
+    leads. All three finish at the perceptual duration.
+  - Curve leads keep `clamp(e(τ), 0, 1)`.
+- **Completion semantics.** `flush()`/`update()` resolve at physical settle, when owned styles are
+  restored. That is later than the perceptual end (0.918 s vs 0.55 s in the example). The docs
+  state it, and recommend not gating UI on the promise for springs. A perceptual-completion signal
+  is a candidate follow-up, not in this release.
 
-### 4.2 API
+### 4.2 API: a discriminated motion type
 
 ```ts
-interface LayoutMotion {
-  readonly duration?: number          // seconds (curves)
-  readonly delay?: number
-  readonly timing?: TimingFunction    // stateless curve; velocity via the momentum term
-  readonly spring?: { readonly duration: number; readonly bounce?: number }  // physical; bounce default 0
-}
+export type LayoutMotion =
+  | { readonly type?: undefined; readonly duration?: number; readonly delay?: number; readonly timing?: TimingFunction; readonly bounce?: never }
+  | { readonly type: 'timing'; readonly duration?: number; readonly delay?: number; readonly timing?: TimingFunction; readonly bounce?: never }
+  | { readonly type: 'spring'; readonly duration?: number; readonly delay?: number; readonly bounce?: number; readonly timing?: never }
 ```
 
-- **Exclusivity.** In one object, `spring` together with `timing` or `duration` throws
-  `ANI_INVALID_OPTIONS`. So does `spring.duration ≤ 0` or a bounce outside (−1, 1).
-- **Merging.** Across merge layers (group, nested group, participant), a layer that names
-  `spring` replaces the curve fields of earlier layers. A layer that names `timing` or
-  `duration` replaces an earlier `spring`. `delay` merges independently.
-- **Comparison.** Specs are compared by value in the keep test (§5.5 of the authority), like a
-  timing's parameters.
-- **Unchanged.** Curves keep today's exact behaviour.
-- **Default:** decision D1.
+- **Merge across layers** (group, nested group, participant):
+  - `type` absent and `timing` absent inherits the current kind;
+  - `duration` never switches the kind (a child's `duration: 0.3` under a group spring makes a
+    0.3 s spring);
+  - `timing` or `type: 'timing'` selects timing;
+  - `type: 'spring'` selects spring;
+  - `delay` merges on its own.
 
-### 4.3 WAAPI engine
+  The root default is timing: ease-out, 0.35 s. A spring with no `duration` after the merge takes
+  0.55 s, and `bounce` defaults to 0.
+- **Validation** is synchronous, throws `ANI_INVALID_OPTIONS`, and runs before any state changes:
+  finite `duration > 0`, finite `delay ≥ 0`, finite `bounce` in (−1, 1), and no `bounce` on timing.
+  It runs in both packages, whose field-by-field `mergeMotion` functions are replaced by this
+  kind-level rule.
+- **Comparison** in the keep test: by effective value, after merge.
+- Docs state the semantic difference from Motion: Motion's duration-based spring ignores gesture
+  velocity, while Ani's physical spring carries it.
 
-The WAAPI engine starts every track at rest (§10 of the authority), so a spring track there
-has `v₀ = 0`. It is realized like a curve:
+### 4.3 Placement
 
-- the animation lasts `T_s`;
-- its easing is the normalised step response `1 − x(t)/x₀`, sampled into `linear()` with the
-  same 0.05 px stop rule;
-- `linear()` outputs may exceed 1, which carries the overshoot of a bouncy spring.
+The closed forms, `settleTime`, `perceptual` and the decay projection C needs
+(`v·r/(1 − r)`, UIKit `decelerationRate` 0.998 per ms) go into a new pure numeric module
+`physics` in core (D2). Core gains no DOM or layout types. `timing.spring` stays a timing curve.
 
-Gate W1 (RAF vs WAAPI ≤ 0.5 px per frame) extends to spring tracks at `v₀ = 0`.
+### 4.4 WAAPI
 
-### 4.4 Reduced motion
+`engine: 'waapi'` with an effective spring motion throws `ANI_INVALID_OPTIONS`, at `add`/`set` and
+when the group's own `motion` is a spring. This follows the WAAPI engine's existing rule ("never
+falls back silently"). An error-bounded adaptive sampler is a follow-up.
 
-`{ maxDuration }` scales a spring's `D` and its delay by one factor, found by bisection in
-`motion.ts`, until `delay + T_s ≤ maxDuration`. `'jump'` and `'ignore'` are unchanged.
+### 4.5 Reduced motion
 
-### 4.5 Placement
+- `'jump'` and `'ignore'` are unchanged for automatic motion.
+- `{ maxDuration }` clamps a spring as follows:
+  1. Bounce is clamped to ≤ 0 (no overshoot).
+  2. The largest factor `f` from the fixed grid `{1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1}` is
+     chosen such that `delay·f + T_s(D·f, x₀, v₀) ≤ maxDuration`, each candidate evaluated
+     exactly.
+  3. If no factor fits, steps 1–2 are retried with `v₀ = 0`.
+  4. If still none fits, the node jumps (`'reduced'`).
 
-Both layout and the gesture package need the closed forms:
-
-- the spring;
-- the exponential decay C needs for momentum projection, `v·r/(1 − r)` with UIKit's
-  `decelerationRate` 0.998 per ms.
-
-C must not depend on layout, so they belong in **core**, as a new pure module `physics`:
-`spring({ duration, bounce }).at(t, x₀, v₀) → { x, v }`, `settleTime`, `perceptual(t)` and
-`decay`. It is distinct from `timing.spring`, which stays a timing curve.
-
-This is additive to core's public API, but it lifts the layout project's "core frozen"
-constraint (decision D2). The fallback is to keep it inside layout and duplicate it in C.
+  The search is deterministic, needs no monotonicity, and costs at most 16 evaluations per track.
+  It is property-tested over the full parameter domain.
 
 ## 5. Design C — the external-drive seam (B–C)
 
-### 5.1 Semantics
+### 5.1 Surface (layout-owned)
 
 ```ts
-// core: types only, so the gesture package depends on core, not on layout
-interface Vec2 { readonly x: number; readonly y: number }
-interface DriveHandle {
-  readonly velocity: Vec2           // drawn velocity of the origin point at take (px/s, view; 0 at rest)
-  readonly active: boolean          // false after release, removal, exit or dispose
-  move(offset: Vec2): void          // drawn origin point = take point + offset (view px)
-  release(velocity?: Vec2): void    // give the element back with this incoming velocity (default 0)
+// @freestylejs/ani-layout
+export interface LayoutDriveVector { readonly x: number; readonly y: number }   // layout-viewport CSS px
+export type LayoutDriveState = 'held' | 'released' | 'cancelled' | 'invalidated'
+export interface LayoutDriveHandle {
+  readonly state: LayoutDriveState
+  readonly velocity: LayoutDriveVector        // drawn origin velocity at take (0 at rest)
+  move(offset: LayoutDriveVector): void       // drawn origin = take point + offset
+  release(velocity?: LayoutDriveVector): void // hand back with this incoming velocity (default 0)
+  cancel(): void                              // hand back to the current slot with zero velocity
 }
-interface ExternalDrive {
-  take(element: HTMLElement): DriveHandle
-}
-// layout: the LayoutGroup implements ExternalDrive ('raf' engine)
+export interface LayoutDrive { take(element: HTMLElement): LayoutDriveHandle }
+export interface LayoutGroup extends LayoutDrive { /* existing members */ }
 ```
 
-- **`take`.** It is valid on a registered participant of this group, under `'raf'`. Taking an
-  unregistered or already-held element, or taking under `'waapi'`, throws
-  `ANI_INVALID_OPTIONS`.
-  - At take, the node's origin-point channels freeze at their drawn value. Their analytic
-    velocity is returned, so a drag can catch a moving card (Apple: grab at any instant)
-    without a jump.
-  - The size channels keep their track: a card can finish shrinking under the finger.
-- **While held.** Layout stays the only writer of `translate`/`scale` (§6 of the authority).
-  Each frame it draws the origin point at `take point + offset` in view space, solved through
-  the parents' maps like any drawn box. This costs no read and needs no driver-written style.
-  - **Reorder.** A flush that moves the held node's slot (a reorder under the finger) changes
-    only its A; the drawn box stays at the pointer. The showcase's lagging row cannot occur,
-    and no callback is needed.
-  - **Scroll.** A seen scroll of the held node's chain or root would carry it with the
-    content. One passive `scroll` listener reads that chain's offsets (no rect) and adds the
-    shift to the held point, so the element stays under the pointer. This is a read in an
-    event, not in a frame.
-  - **Children.** Participant children stay in layout and are solved under the held map, as
-    under any animating parent.
-- **`release(v)`.** The next frame starts the node's origin-point track from its drawn box
-  toward its current A, with incoming velocity `v`. It continues the time of the last painted
-  frame, as a moving node does (§4.3 of the authority). The track uses the node's effective
-  motion:
-  - with the spring (§4), the landing is physically correct;
-  - with a curve, the momentum term carries `v` (§2.3 applies);
-  - releasing without a layout change springs back to the slot, so a snap-back needs no
-    animation code in C.
-- **End of a hold.** Removal, a presence exit, `finish`, `dispose`, or a reduced-motion
-  `'jump'` ends the hold: the handle becomes inactive, and the node follows the rule of that
-  event.
+- The gesture package imports **no** layout type. It declares a structurally identical port, so a
+  `LayoutGroup` satisfies it with no package dependency. Core gains nothing for the seam.
+- **Responsibilities.** C owns pointer capture, `pointerId`, `touch-action`, velocity estimation,
+  coordinate conversion to layout-viewport CSS px, keyboard operation and announcements. C maps
+  `pointercancel`/`lostpointercapture` to `cancel()`. Layout owns every style it writes.
 
-### 5.2 React
+### 5.2 State machine
 
-`useLayoutDrive()` returns the scope's `ExternalDrive`. C's React hook accepts it as an
-option, so the glue is one line in the app or in C's adapter.
+| From | Event | To / effect |
+|---|---|---|
+| — | `take(el)`: `el` registered in this scope, connected, same document, `'raf'`, not held, no held ancestor or descendant | `held`. Origin channels freeze at their presented value; size channels keep their track; `velocity` = analytic origin velocity (catch a moving card without a jump) |
+| — | `take` violating any precondition | throws `ANI_INVALID_OPTIONS`, no state change |
+| `held` | `move(o)` with finite `o` | origin target = take point + `o`; applied next frame |
+| `held` | `move`/`release` with a non-finite component | throws `ANI_INVALID_OPTIONS`, no state change |
+| `held` | `release(v)` | `released`; next frame starts the origin track from the presented box toward the current A with incoming `v`, first frame `dt = 0`, under the node's effective motion and the reduced-motion policy at that moment |
+| `held` | `cancel()` | `cancelled`; as `release({0,0})` |
+| `held` | removal, `ownerDocument` change, `layoutKey` change, `dispose`, `finish`, kill switch (§7) | `invalidated`; the node follows that event's rule; listeners and reads stop |
+| terminal | `release`/`cancel` | no-op (idempotent) |
+| terminal | `move` | no-op, with a dev warning once per handle |
 
-### 5.3 Why not Motion's model
+- **Concurrency.** Distinct participants without an ancestor relation may be held at once (multi-
+  touch). One element belongs to at most one live scope, and `add` to a second scope throws.
+- **Re-render while held.** It updates A and options, not the grip point. Release uses the latest
+  effective motion.
+- **React StrictMode.** The same-task ref detach and re-attach preserves a live hold, as it
+  preserves registration.
 
-Motion blocks projection during the drag and afterwards animates `x`/`y` with its own inertia.
-The layout animation and the momentum animation are two systems. In Ani, layout owns the
-element throughout and one track carries the release velocity into the layout slot. This
-gives P6 by construction and keeps one owner per property.
+### 5.3 While held
 
-## 6. Module changes
+- **Ownership.** Layout stays the only writer of `translate`/`scale`. The hold is an orthogonal
+  field on the node's drive, not a new drive kind: the existing `'held'` kind means an invisible
+  crossfade follower and is unrelated.
+- **The held point is immutable** in view space: `H = take point + offset`. Each frame, in the
+  read phase before any write, the scope reads the held element's rect, divides out the pose it
+  wrote last frame to get the presented layout box (§3.4), and solves the pose that puts the drawn
+  origin at `H`, through the parents' current maps, with the size channels' current values. This
+  holds under any scroll, any animating parent scale, sticky and toolbar changes, with no events
+  and no classification (R1-06).
+- **Children** stay in layout under the held map.
+- **Bound.** During compositor-driven scrolling (mouse wheel or trackpad while dragging), the held
+  element can trail by up to one frame of scroll. The error does not accumulate. Touch drags stop
+  the scroller's own fling, so they are unaffected.
+
+### 5.4 Release and reduced motion
+
+- The held phase is direct manipulation: `move` stays 1:1 under every reduced-motion policy, and a
+  policy change while held never ends the hold (R2-01, matching core's existing
+  "reduced motion does not apply to driven runs").
+- The policy applies at `release`/`cancel`:
+  - `'jump'`: lands at A with no motion;
+  - `{ maxDuration }`: clamps per §4.5;
+  - `'ignore'`: the full motion.
+- With the spring, the landing is physical. With a curve, the momentum term carries `v`. A release
+  with no layout change springs back to the slot, so C needs no animation code.
+
+### 5.5 React
+
+`useLayoutDrive()` returns a `LayoutDrive`. Inside an explicit group it is that group. Outside, it
+is a dispatcher whose `take(el)` resolves the implicit scope of `el.ownerDocument` (portals and
+iframes stay correct). C's React hook accepts it as an option.
+
+## 6. Safety contract
+
+### 6.1 Degradation table (normative)
+
+| Condition | Detection | Outcome | Report |
+|---|---|---|---|
+| No valid before-box (no capture, expired capture) | flush | undriven appear at A; driven keep their tracks (§3.5) | `snapped: 'stale'`; diagnostic `capture-less-flush` / `capture-expired` |
+| Map change the engine does not own (rotation, skew, 3D, `zoom`) | size check (§3.4), the authority's computed-value checks | the subtree snaps to A | `'unsupported'` |
+| Shared handoff out of an active scroller | §3.7 | presence enter at A | diagnostic `handoff-scroll-active` |
+| Spring settle > 10 s; non-finite inputs | plan, validation | snap / throw before any state change | `'unsupported'`; `ANI_INVALID_OPTIONS` |
+| Connected participants > `maxParticipants` (default 2,000) | count, before any read | the whole flush snaps, with no geometry reads | status `'capped'` |
+| Movers > `maxNodes` (default 300) | plan (existing) | the whole flush snaps | status `'capped'` |
+| Detach, document change, `layoutKey` change, dispose | lifecycle checks | track ends, styles restored, hold invalidated, listeners released | per node `snapped`; status `'disposed'` for `dispose` |
+| Reduced motion | at plan and at release | automatic motion per policy; an active hold stays direct | `'reduced'` |
+| Kill switch on | `layoutRuntime.mode` | live tracks finish at identity, holds invalidated, future movers snap | status and reason `'disabled'` |
+| Internal exception during a flush or frame | transactional boundary (§6.2) | abort: restore, release, resolve | status `'failed'`; diagnostic `internal-error` |
+| User callback throws (`onSnap`, a diagnostic listener) | isolation (§6.2) | ignored after the engine's state is consistent; reported | diagnostic `callback-error`; rethrown asynchronously in dev |
+
+`'stale'` no longer comes from scroll. The only remaining meaning is "no measurement of what was
+presented".
+
+### 6.2 Transactions
+
+- `flush()` and every frame callback run inside one idempotent boundary. On an exception it:
+  1. restores every owned declaration byte-identically and cancels WAAPI animations;
+  2. clears pending writes, invalidates holds and releases presence holds;
+  3. disarms listeners and stops the realizer when nothing runs;
+  4. resolves every affected report with `'failed'`;
+  5. reports the error through the diagnostics stream.
+
+  `flush()` keeps its contract: it never rejects.
+- User callbacks run after the engine's state is consistent, each inside its own `try`. A throwing
+  callback cannot change engine state.
+
+### 6.3 Status precedence
+
+`status` describes the run's lifecycle and `snapped` describes per-node degradation. One run
+resolves to the first status that applies, in this order:
+
+1. `'failed'`
+2. `'disposed'`
+3. `'disabled'`
+4. `'capped'`
+5. `'interrupted'`
+6. `'ended'`
+7. `'reduced'`
+8. `'stale'`
+9. `'no-change'`
+
+`'reduced'`, `'stale'` and `'no-change'` apply only when no track ran. A mixed run (some nodes
+animate, some snap) resolves by its tracks, and lists the snapped nodes with their reasons.
+
+## 7. Operations
+
+```ts
+export type LayoutDiagnosticCode =
+  | 'capture-less-flush' | 'capture-expired' | 'unsupported-geometry' | 'handoff-scroll-active'
+  | 'spring-timeout' | 'participant-cap' | 'mover-cap' | 'document-mismatch'
+  | 'runtime-disabled' | 'focus-in-follower' | 'callback-error' | 'internal-error'
+  | (string & Record<never, never>)   // new codes may be added; existing meanings are stable
+
+export interface LayoutDiagnostic {
+  readonly version: 1
+  readonly code: LayoutDiagnosticCode
+  readonly scope: number              // stable per scope for the page's lifetime
+  readonly run: number | null
+  readonly engine: 'raf' | 'waapi'
+  readonly action: 'none' | 'snap' | 'enter' | 'finish' | 'abort'
+  readonly element?: HTMLElement
+  readonly reason?: SnapReason
+  readonly metrics: {
+    readonly participants: number
+    readonly rectReads: number
+    readonly styleReads: number
+    readonly refreshes: number
+    readonly springSettleMs: number | null
+  }
+  readonly error?: unknown
+}
+
+export interface LayoutRuntime {
+  readonly mode: 'animate' | 'snap'
+  setMode(mode: 'animate' | 'snap'): void       // covers explicit and implicit scopes
+  onDiagnostic(listener: (event: LayoutDiagnostic) => void): () => void
+}
+export const layoutRuntime: LayoutRuntime
+```
+
+- **Kill switch.** `setMode('snap')` takes effect synchronously:
+  - live tracks finish at identity with styles restored;
+  - holds become `invalidated`;
+  - pending reports resolve `'disabled'`;
+  - later movers snap `'disabled'`.
+
+  An app wires it to remote config. It is distinct from reduced motion.
+- **Cost of diagnostics.** None when nothing listens; payloads are built only for listeners. The
+  hook works in production. Dev builds additionally log warnings.
+- `onSnap` stays as it is.
+
+## 8. Accessibility contract
+
+- Layout never changes DOM order, never moves focus, and never owns `tabindex`, roles or ARIA. A
+  keyed reorder or a held re-render keeps the same element and `document.activeElement`
+  throughout the motion.
+- **Crossfade followers.** An exiting crossfade follower is set `inert` for its exit, and restored
+  byte-identically if it re-enters, so no duplicate interactive or accessible target exists during
+  a shared crossfade. If focus is inside the follower when the exit starts, the crossfade is
+  skipped for that pair (the lead appears at A) and diagnostic `focus-in-follower` is emitted. The
+  author moves focus.
+- **Gestures.** C must offer keyboard operation through the same port (take, stepwise move,
+  cancel, release), with announcements as component patterns. The held phase is direct
+  manipulation (§5.4).
+- **Reduced motion:** §4.5, §5.4.
+
+## 9. Public API delta (complete)
+
+| Package | Addition / change |
+|---|---|
+| core | `physics` module (pure numeric: `spring`, `settleTime`, `perceptual`, `decay`); clock post-commit read phase (§10). Nothing DOM-related |
+| layout | `LayoutMotion` union (§4.2); `LayoutOptions.layoutKey`; `LayoutGroupOptions.maxParticipants`; `LayoutDrive*` types and `LayoutGroup.take` (§5.1); `LayoutStatus` and `SnapReason` gain `'failed'` and `'disabled'`; `layoutRuntime`, `LayoutDiagnostic*` (§7); `stats.refreshes`; motion merge rule; document-affine scopes |
+| react/layout | `useLayoutDrive()`; `mergeMotion` kind-level rule; portal scoping per document. The `'use client'` directive is a release assertion in both ESM and CJS |
+
+Nothing is removed. Defaults are unchanged (D1 deferred).
+
+**Migration notes** ship with the release:
+
+- **From Motion:** `layoutScroll`/`layoutRoot` are unnecessary. Ani's spring carries gesture
+  velocity. `type: 'spring'` maps by name.
+- **Within Ani:** ordinary scroll no longer produces `'stale'`. A spring's promise resolves at
+  settle.
+
+## 10. Module changes
 
 | Module | Change |
 |---|---|
-| `dom.ts` | Chain offsets (driven included) with the fixed-root stop; the memoised `offsetParent` walk and its `position` reads |
-| `scope.ts` | Ledger; the seen-refresh listener during open captures; keep-test rebasing; `take`/`move`/`release` and the held-scroll listener |
-| `plan.ts` | Unseen-delta and moved tests per §3.3-5; cross-frame handoff; release seeds |
-| `solve.ts` | Spring channel kind; perceptual timeline; held origin channels |
-| `motion.ts` | `spring` validation, exclusivity and kind-level merge; settle and reduced-motion bisection |
-| `realize/waapi.ts` | Spring step response sampled to `linear()` |
-| core `physics` (D2) | Closed-form spring, settle bound, perceptual timeline, decay; pure |
-| core types | `Vec2`, `DriveHandle`, `ExternalDrive` |
-| `react/layout` | `useLayoutDrive`; `mergeMotion` kind-level rule |
+| `layout/dom.ts` | Flat-tree ancestry primitive; all-participant capture reads; held-element read |
+| `layout/scope.ts` | Refresh lifecycle and expiry; view-space planning; measured state; capture-less rules; transactional boundary; the orthogonal hold field and the drive state machine; `layoutKey`; document affinity; active-scroller listeners; runtime and diagnostics plumbing |
+| `layout/plan.ts` | Keep test against `L_k`; status precedence; new reasons |
+| `layout/solve.ts` | Pose inversion of measured boxes; spring channels; perceptual timeline; held origin channels |
+| `layout/motion.ts` | Discriminated union, kind-level merge, validation, settle cap, reduced-motion search |
+| `layout/runtime.ts` (new) | `layoutRuntime`, diagnostics stream |
+| `layout/realize/waapi.ts` | Spring rejection (validation) |
+| core `physics` (new) | Pure closed forms; settle; perceptual; decay |
+| core `loop/clock.ts` | Post-commit read phase (runs after every subscriber's commit, in the same frame) |
+| `react/layout` | `useLayoutDrive`, merge rule, portal document scoping |
 
-The pure modules stay DOM- and clock-free, and only `dom.ts` reads.
+`plan.ts`, `solve.ts`, `motion.ts` and `physics` stay DOM-free and clock-free. Only `dom.ts` reads
+the DOM.
 
-## 7. Verification plan
+## 11. Verification
 
-### 7.1 Spikes (hard gates before production code, as in CP2)
+### 11.1 Tier 1 — per PR (deterministic, Chromium, Firefox, WebKit, manual clock)
 
-| Spike | Must show (Chromium, Firefox, WebKit) |
-|---|---|
-| S-B1 fixed roots | The `offsetParent` walk classifies `R` correctly for: fixed; fixed in a transformed ancestor; `contain: layout`/`paint`; `filter`; `will-change: transform`; top layer; `display: contents` parents; sticky wrappers. Also: a posed participant re-contains a fixed descendant (confirms §3.3-10) |
-| S-B2 anchoring | Reproduce §2.2 on the current engine: a page-level and an inner-scroller anchoring correction, measured on the first frame, with the jump size. Confirm the correction is applied before the flush's first rect read, and that layout's `translate`/`scale` writes neither suppress nor alter anchoring (WebKit included) |
-| S-B3 seen scroll | A React 18/19 transition, time-sliced and scrolled between chunks: the scroll event fires before the commit, and the refreshed capture equals the painted frame within 0.5 px |
-| S-B4 scroll during a run | A user scroll mid-run, inner and page, nested under a scaling parent: drawn boxes equal `V − J_c(t)·Δ` every frame, and the next flush's B equals the painted box |
-
-### 7.2 Oracle and acceptance rows
-
-The oracle gains an independent closed-form spring, the perceptual timeline and the ledger
-arithmetic, sharing no code with the solver or core `physics`. Every row passes in three
-engines, at every frame:
+An independent oracle (sharing no code with the solver or `physics`) holds the closed-form spring,
+the perceptual timeline and pose inversion. Every row passes in three engines, at every frame, and
+**fails on the current engine** for the defect it targets. Every existing row and gate stays green.
 
 | Row | Assertion |
 |---|---|
-| L-SCROLL-1 chat delete under anchoring (page and panel) | No visible message moves more than 0.5 px at any frame |
-| L-SCROLL-2 kanban card moved, column auto-scrolls in the layout effect | Card and column members start at their seen boxes (P1) and land on A |
-| L-SCROLL-3 accordion plus instant `scrollIntoView` | Participants start at their seen boxes; non-participants follow the scroll; settle exact |
-| L-SCROLL-4 user scroll mid-run, then a commit | Tracks follow the content; the next flush continues velocity with no jump |
-| L-SCROLL-5 list item to fixed detail and back (E4 in a scroller) | Shared handoff across frame roots; coverage 1 at every frame |
-| L-SCROLL-6 sticky participant scrolled mid-run | Snaps `'stale'` at the next flush, with the reason reported |
-| L-ROOT-1 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
-| L-SPRING-1 spring channels | `c(0) = B`, `c′(0) = v`, settle within ε, against the oracle for b ∈ {−0.3, 0, 0.2, 0.4}, at 60 and 120 Hz frame steps |
-| L-SPRING-2 crossfade and radius on a spring lead | Coverage 1 at every frame; fade and blend end at `t = D`; presence releases at `D` |
-| L-SPRING-3 WAAPI spring | RAF vs WAAPI ≤ 0.5 px per frame at `v₀ = 0` |
-| L-DRIVE-1 take, move, reorder, release | Pointer-relative offset constant under reorder (≤ 0.5 px); release `c′(0) = v` exactly; snap-back with no layout change |
-| L-DRIVE-2 catch a moving card | `take` returns the analytic velocity; no jump at take; size keeps its track |
-| L-DRIVE-3 scroll while held (inner and page) | The held element stays under the pointer within 0.5 px |
+| L-MEAS-1 chat delete under anchoring (page and panel) | No visible message moves > 0.5 px at any frame (reproduces the page-level P1 defect first) |
+| L-MEAS-2 kanban: card moved, column auto-scrolls in the layout effect | All participants start at their presented boxes; land on A |
+| L-MEAS-3 accordion + instant `scrollIntoView` | Participants start where seen; non-participants follow the scroll; exact settle |
+| L-MEAS-4 user scroll mid-run (inner and page, under a scaling parent), then a commit | Drawn boxes follow content every frame; the commit continues position and velocity |
+| L-MEAS-5 React 18.3 and 19: time-sliced render scrolled between chunks; transition interrupted by an urgent update; Suspense fallback then reveal while scrolled; two commits coalesced | First frame = last presented within 0.5 px; capture refresh counts within budget |
+| L-MEAS-6 sticky engages mid-run: (a) no later commit, (b) a later commit | (a) final frame exact, no snap; (b) continuity |
+| L-MEAS-7 browser layout change mid-run (image above loads), then a commit | Continuity; track kept or retargeted per §3.4 |
+| L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
+| L-MEAS-9 nested driven parent and child, commit after a frame advanced past capture | No shear, no rewind (R1's counterexample) |
+| L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
+| L-MEAS-11 capture-less flush and expired capture | §3.5 outcomes and reports |
+| L-MEAS-12 author rotation added mid-run | Subtree snaps `'unsupported'` |
+| L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
+| L-HAND-2 handoff while the source scroller is active; after `scrollend` | Presence enter, diagnostic; then a normal flight |
+| L-SPRING-1 channels, b ∈ {−0.8, −0.3, 0, 0.2, 0.4, 0.9}, 60/120 Hz | `c(0) = B`, `c′(0) = v`, settle within ε, against the oracle |
+| L-SPRING-2 crossfade, radius and presence release on a spring lead | Coverage 1; fade, blend and release end at `t = D` |
+| L-SPRING-3 merge, validation, WAAPI rejection, settle cap | Union semantics; throws before state change |
+| L-SPRING-4 reduced motion `{maxDuration}` | Grid search property over the domain; never exceeds `maxDuration` |
+| L-DRIVE-1 take, move, reorder, release; snap-back; cancel | Pointer offset constant under reorder (≤ 0.5 px); `c′(0) = v` exactly; first release frame `dt = 0` |
+| L-DRIVE-2 catch a moving card | Analytic velocity; no jump; size keeps its track |
+| L-DRIVE-3 scroll while held, under a parent scaling 1 → 2 | Held element under `H` ≤ 0.5 px every frame |
+| L-DRIVE-4 state machine: stale calls, non-finite input, two scopes, ancestor holds, unmount, StrictMode replay, dispose mid-hold | Per §5.2 |
+| L-DRIVE-5 reduced motion on at take, toggled while held, three policies at release | Per §5.4 |
+| L-OPS-1 kill switch mid-run and mid-hold, explicit and implicit scopes | Per §7 |
+| L-OPS-2 injected exceptions (measure, write, `animate`, `onSnap`, diagnostic listener) | `'failed'`; styles byte-identical; no listener or subscription left |
+| L-KEY-1 recycled node with `layoutKey` change under scroll | Fresh baseline, no interpolation |
+| L-DOC-1 cross-document `add`; adoption; React portal into an iframe | Throw; invalidation; per-document scope |
+| L-A11Y-1 reorder and hold with focus inside; crossfade follower | `activeElement` stable; follower `inert`; focus-in-follower rule |
 
-Every existing row and cost gate stays green. Sensitivity is mandatory: each new row must fail
-on the current engine for the defect it targets.
+**Model-based fuzzing.** A pure model of the scope's lifecycle generates seeded event sequences:
+capture, refresh, flush, presented and unpresented scroll, browser layout change, detach and
+re-add, document change, `layoutKey` change, take, move, release, cancel, reduced-motion toggles,
+the kill switch, visibility changes and injected exceptions. Properties:
 
-### 7.3 Fixtures and the default
+- no NaN;
+- B equals the last presented box, or the node is reported snapped;
+- no read after the first write in a batch;
+- every listener and subscription is released when idle;
+- every handle reaches a terminal state;
+- every report resolves;
+- styles restore byte-identically.
 
-If D1 is approved, every existing row and Motion-parity example that relies on the default
-motion has its motion pinned explicitly first. The rows then keep their meaning, and the
-default change is one line with its own row.
+**Mutation tests** each must fail a named row: skip the refresh; refresh before writes; use the
+predicted box instead of the measured one; drop the size check; ignore `scrollend`; skip cleanup on
+abort; release with `dt ≠ 0`.
 
-## 8. Checkpoints
+### 11.2 Tier 2 — release device gate (mandatory before a release claims B)
 
-Same loop as the cleanup: Task Agent → Valid Agent → orchestrator judgment, retry on FAIL.
+Real devices, not simulators only:
+
+- iPhone, current and previous iOS, one 60 Hz and one ProMotion (120 Hz) device, Safari;
+- Android Chrome on a mid-tier device.
+
+Scripted scenarios:
+
+- touch momentum and rubber-band during capture, run and commit;
+- pinch zoom and visual-viewport pan;
+- dynamic toolbar collapse and the on-screen keyboard;
+- orientation and resize storms;
+- hide and foreground during a run;
+- long-task injection;
+- drag with scroll;
+- the showcase rows (chat, kanban, sheet).
+
+Evidence per scenario: a frame-time trace (60/120 Hz), the diagnostics stream, and a recorded video
+checked against the expected outcome (exact or the defined degradation). Ownership and the device
+source are decision D5.
+
+### 11.3 Spikes (B1), each with the fallback that ships if it fails
+
+| Spike | Must show (three engines) | Fallback |
+|---|---|---|
+| S1 post-commit refresh | A rect read after the frame's writes equals the presented box (0.01 px), including WAAPI-driven boxes; the cost of one forced style recalculation | Refresh in the next frame's read phase. Any frame advanced since the refresh marks the capture aged, and an aged capture behaves as expired (§3.5) |
+| S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect (forces the correction). If still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree (`'stale'`) |
+| S3 React | §3.3 holds under every L-MEAS-5 sequence in 18.3 and 19 | Captures from a render the commit does not refresh behave as expired |
+| S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.3. The spike then measures that bound |
+| S5 `scrollend` | Fires after momentum and smooth scroll in each engine | §3.7's conservative rule (no flight out of any container that has scrolled) |
+
+### 11.4 Cost gates
+
+- Commit: ≤ 4 ms at 1,000 participants (unchanged), both unscrolled and scrolled.
+- Steady frame: p95 ≤ 2 ms (unchanged).
+- Refresh frame: p95 ≤ 2 ms at 1,000.
+- Sustained commits: 60 Hz commits with 300 moving participants hold the steady-frame gate.
+- Held frame: ≤ 0.1 ms per held element.
+
+All gates run in Tier 1 on desktop and are re-measured on the Tier 2 devices.
+
+## 12. Checkpoints
+
+Same loop as before: Task Agent → Valid Agent → orchestrator judgment, retry on FAIL.
 
 | CP | Content | Gate | Depends on |
 |---|---|---|---|
-| B1 | Spikes S-B1 to S-B4 | All stop conditions. A failed spike applies its fallback and re-runs | — |
-| B2 | Ledger, frames, fixed roots, sticky (§3); L-SCROLL and L-ROOT rows | Rows ×3 engines; cost gates (unscrolled exact, scrolled measured) | B1 |
-| B3 | Core `physics` plus spring tracks, WAAPI and reduced motion (§4); L-SPRING rows | Property tests within 1e-9 against the oracle; rows ×3 | — (parallel to B1/B2) |
-| B4 | External drive (§5); L-DRIVE rows | Rows ×3; React adapter tests | B2, B3 |
-| B5 | ARCHITECTURE amendment, docs, showcase rows (chat, kanban, sheet), D1 default | Full gate on a fresh clone | B2–B4 |
+| **B0** design freeze | This document; the owner's decisions (§13); the reviewers' sign-off | No open blocker | — |
+| B1 | Spikes S1–S5 | Each passes or its fallback is applied and documented | B0 |
+| B2 | Measured presentation (§3), safety contract (§6), operations (§7), accessibility of crossfade (§8); L-MEAS, L-HAND, L-OPS, L-KEY, L-DOC, L-A11Y rows; model fuzz | Rows ×3; cost gates; mutation tests | B1 |
+| B3 | Core `physics` and clock phase; spring (§4); L-SPRING rows | Property tests within 1e-9 against the oracle; rows ×3 | B0 (parallel with B1/B2) |
+| B4 | Drive (§5); L-DRIVE rows; React adapter | Rows ×3 | B2, B3 |
+| B5 | Authority amendment; docs, migration notes, layout changelog; showcase rows; package version and peer alignment | Full gate on a fresh clone; Tier 2 device gate | B2–B4 |
 
-## 9. Decisions needed
+## 13. Decisions for the owner
 
 | # | Decision | Recommendation |
 |---|---|---|
-| D1 | Default `motion` | `spring: { duration: 0.55, bounce: 0 }`, SwiftUI's documented default since iOS 17. It reaches 91 % at 0.35 s (today's default ends at 0.35 s) and settles a 300 px move at 0.91 s. It changes the unreleased 0.2.0 default; curves stay available (§7.3). |
-| D2 | Physics in core (additive public API) or inside layout | Core: C needs the same closed forms without importing layout. |
-| D3 | Unseen scroll as part of the change (visual continuity) or Motion's content continuity | Visual continuity (§3.1): it is the only rule consistent with P1 and §3.3-1 of the authority. Its cost is shown in §3.1. |
-| D4 | Clip-aware crossfade | Defer (§3.6). |
+| D1 | Spring as the default motion | **Defer.** All three reviewers: ship the spring opt-in; the default change is a separate later release with migration notes |
+| D2 | Core additions: the pure `physics` module and the clock's post-commit read phase | **Approve.** Both are additive; core gains no DOM or layout types |
+| D3 | Visual continuity (unpresented scroll is part of the change) | **Approve.** Unanimous; the only rule consistent with P1 |
+| D4 | Clip-aware crossfade | **Defer** |
+| D5 | Source of the Tier 2 devices: owner's own iPhone (60 Hz + ProMotion) and Android device, or a device cloud | Owner's call. A release cannot claim B without it |
+| D6 | New public surface: `layoutKey`, `maxParticipants`, `layoutRuntime`, diagnostics, `'failed'`/`'disabled'` | **Approve** as specified in §7 and §9 |
 
-## 10. Risks
+## 14. Documented platform bounds
 
-- **iOS Safari elastic overscroll** is visual only and is not reflected in `scrollTop`. A
-  capture taken mid-rubber-band records the clamped offset, so it is off by the overscroll
-  until the overscroll relaxes. Accepted; S-B4 covers it on WebKit as far as headless allows.
-- **Compositor scroll ahead of the main thread.** During a fast user scroll, the compositor can
-  paint offsets the main thread has not seen yet. The capture is then up to one frame of
-  scroll behind the screen, as in every main-thread layout engine. Accepted.
-- **The seen-refresh and held-scroll listeners** are the only event-driven reads. They exist
-  only while a capture is open across tasks, or while an element is held.
-- **`offsetParent` edge cases** (top layer, shadow trees) depend on S-B1. The fallback is a
-  cached computed-`position` walk.
-- **A fixed element inside a participant** is re-contained by the pose (§3.3-10). This is
-  pre-existing and warned.
-- **Spring runs** last until settle, longer than a curve's D (1.66 D for 300 px at bounce 0).
-  Perceived completion (crossfade, radius blend, presence release) uses `p(t)` and ends at D.
+These are bounds, not open questions. Each is stated in the docs and measured in Tier 2.
 
-## 11. Sources
+- **Compositor lag.** During asynchronous scrolling the main thread can trail the screen by up to
+  one frame. It is uniform inside the scrolled layer (no visible effect). Across layers it is
+  handled by §3.7 for handoffs and bounded per frame for held elements (§5.3).
+- **Fixed descendants of posed participants** are re-contained (§3.8).
+- **Spring runs** last until settle (1.67 D for the example). Perceived completion uses `p(t)` and
+  ends at D. The promise resolves at settle (§4.1).
 
-- Apple, WWDC23 *Animate with springs* (duration/bounce mapping, retargeting velocity,
-  perceptual vs settling duration): https://developer.apple.com/videos/play/wwdc2023/10158/
-- Apple, SwiftUI `Animation.default` (spring, response 0.55, damping fraction 1.0, iOS 17+):
-  https://developer.apple.com/documentation/swiftui/animation/default
-- Apple, `UISpringTimingParameters` (initial velocity):
-  https://developer.apple.com/documentation/uikit/uispringtimingparameters
-- WWDC notes, *Animate with springs* and *Explore SwiftUI animation* (merge and velocity of
-  springs): https://wwdcnotes.com/notes/wwdc23/10158, https://wwdcnotes.com/notes/wwdc23/10156
-- WWDC14 notes, *Building Interruptible and Responsive Interactions*:
-  https://wwdcnotes.com/notes/wwdc14/236
-- Motion docs, layout animations (`layoutScroll`): https://framer.com/docs/layout-animations/
-- `motion-dom` 14.6.0 source, `projection/node/create-projection-node.mjs`,
-  `HTMLProjectionNode.mjs`; `framer-motion` `VisualElementDragControls.mjs` (read locally from
-  the npm packages)
-- CSS Scroll Anchoring Module Level 1 (suppression window, timing):
-  https://www.w3.org/TR/css-scroll-anchoring-1/
-- MDN, scroll anchoring guide:
-  https://developer.mozilla.org/en-US/docs/Web/CSS/overflow-anchor/Guide_to_scroll_anchoring
-- CSSOM View, `offsetParent`: https://drafts.csswg.org/cssom-view/
-- CSS Transforms 2, individual transform properties and containing blocks:
-  https://drafts.csswg.org/css-transforms-2/
-- WebKit r252205 (scroll events in the rendering update, before rAF):
-  https://trac.webkit.org/r252205
-- caniuse `css-overflow-anchor`: https://caniuse.com/css-overflow-anchor
-- Nathan Gitter, *fluid-interfaces* (WWDC18 *Designing Fluid Interfaces* reimplementation):
-  https://github.com/nathangitter/fluid-interfaces
+## 15. Sources
+
+- HTML, update the rendering: https://html.spec.whatwg.org/multipage/webappapis.html#update-the-rendering
+- CSS Scroll Anchoring 1: https://www.w3.org/TR/css-scroll-anchoring-1/
+- CSSOM View (`getBoundingClientRect`, scroll events, `scrollend`): https://drafts.csswg.org/cssom-view/
+- CSS Viewport (visual viewport scale): https://drafts.csswg.org/css-viewport/
+- MDN, viewport concepts: https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/CSSOM_view/Viewport_concepts
+- CSS Positioned Layout (sticky): https://drafts.csswg.org/css-position/
+- CSS Transforms 2 (individual transforms, containing blocks): https://drafts.csswg.org/css-transforms-2/
+- DOM, event `composed`: https://dom.spec.whatwg.org/#dom-event-composed
+- Pointer Events 4: https://www.w3.org/TR/pointerevents4/
+- WCAG 2.2, animation from interactions; focus order: https://www.w3.org/WAI/WCAG22/Understanding/animation-from-interactions , https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html
+- Safari `scrollend` (26.2): https://www.infoq.com/news/2026/04/safari-scrollend-support , https://bugs.webkit.org/show_bug.cgi?id=201556
+- WebKit scrolling architecture: https://trac.webkit.org/wiki/Scrolling
+- Apple, WWDC23 *Animate with springs*: https://developer.apple.com/videos/play/wwdc2023/10158/
+- Apple, SwiftUI `Animation.default`, `Spring.duration`, `Spring.bounce`: https://developer.apple.com/documentation/swiftui/animation/default , https://developer.apple.com/documentation/swiftui/spring/duration , https://developer.apple.com/documentation/swiftui/spring/bounce
+- React: `startTransition`, `useLayoutEffect`, React 19 upgrade guide, `'use client'`: https://react.dev/reference/react/startTransition , https://react.dev/reference/react/useLayoutEffect , https://react.dev/blog/2024/04/25/react-19-upgrade-guide , https://react.dev/reference/rsc/use-client
+- Motion: https://motion.dev/docs/react-layout-animations , https://motion.dev/docs/react-transitions ; `motion-dom` 14.6.0 source (read locally)
+- Playwright browsers (WebKit is not branded Safari): https://playwright.dev/docs/browsers
