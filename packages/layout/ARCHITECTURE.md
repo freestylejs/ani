@@ -1429,6 +1429,49 @@ that value meets the gate in both engines. The report lists every per-run statis
 `g` and the fingerprint, so an independent runner on the pinned environment reaches the same
 pass/fail with no parameter left to choose.
 
+### 11.6 The iOS-grade scene set (P5)
+
+Each scene reproduces a native iOS interaction with the public API only (vanilla scope, and the
+React adapter where marked R). A scene is a scripted sequence on the manual clock, with optional
+interruptions at fixed frames. Its real-clock twin replays the same script on the real clock for
+cost.
+
+| Scene | iOS reference | Sequence | Needs |
+|---|---|---|---|
+| S-CARD | App Store Today card | A card expands to a full-screen sheet (shared `layoutId`, radius 20 → 0, nested title and image), collapses; reversed at 40% of the flight | P2 |
+| S-PHOTO | Photos grid to detail | A thumbnail opens to the aspect-fit detail (aspect change, nested image counter-scale), back while scrolled 1.5 viewports, in a grid of 300 | P2 |
+| S-SEG | Segmented control | The selection pill moves between 4 segments (shared `layoutId`); four taps 80 ms apart, each retargeting the running spring | P2 |
+| S-ACC | Settings disclosure (R) | A row expands, its siblings and the scroller content move; a second row expands mid-flight; the first collapses | P2 |
+| S-STACK | Notification stack | A stack of 6 cards fans out to a list (nested participants, presence on the counts), collapses | P2 |
+| S-ISLAND | Live activity morph | A pill morphs to an expanded card (size, radius, crossfade of contents), interrupted back at 30% | P2 |
+| S-INSERT | Mail, new message on top (R) | Three items enter at the top of a list scrolled by 1.5 viewports, under presence, with the siblings moving | P2 |
+| S-DELETE | Reminders, delete (R) | An item exits under presence, siblings close the gap; a second delete 100 ms later | P2 |
+| S-REORDER | Reminders, drag reorder | A drag through the drive seam with the list reordering under it; release with velocity | P4 |
+| S-SHEET | Sheet detents | A sheet dragged between detents through the drive seam; released with velocity; flick to dismiss | P4 |
+| S-BULK | Large list shuffle | 1,000 participants, 300 moving, shuffled; the §11.5 cost shapes | P2 |
+
+**Frame scoring (manual clock, every frame, every participant).** Chromium and WebKit; Firefox
+advisory.
+
+| Metric | Gate |
+|---|---|
+| Oracle error: drawn rect against the §11.1 oracle | ≤ 0.05 px on every edge |
+| First-frame continuity: the first frame after each change against the last presented frame | ≤ 0.05 px (≤ 0.5 px for an aged capture in a React time slice) |
+| Velocity continuity: at each retarget, the presented edge velocity after against before | ≤ 1% of the larger speed + 1 px/s |
+| Spring fidelity: the drawn edge against the independent spring oracle of §11.1 | ≤ 0.05 px |
+| Settle exactness: after settle, the rect against the layout box, and the pose | ≤ 0.01 px; no pose declaration left |
+| Restoration: every owned inline declaration after settle | byte for byte the authored one |
+| Reports | `status` and `snapped` exactly as the scene script expects |
+
+**Real clock.** Per frame, script cost p95 within the §11.5 steady-frame gate, and no long frame
+(script over 8 ms) after the commit frame. Per commit, the §11.5 commit gate.
+
+**Iterations.** The harness writes one report per run: the fingerprint, every metric per scene
+and engine, and pass/fail. An iteration is a run, then a fix for every failing metric (engine,
+never the gate), then a re-run. `bench/layout/ITERATIONS.md` logs each iteration: the failing
+metrics, the root cause, the fix commit and the re-run's report. P5 closes when one report on the
+pinned environment passes every scene in both engines.
+
 ## 12. Accepted risks and documented platform bounds
 
 - **Scroll anchoring during a run.** A driven node is never the anchor (§11.4 S2). A layout shift
