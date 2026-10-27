@@ -35,7 +35,6 @@ import {
     settleMicrotasks,
     shiftBox,
     silenceWarnings,
-    TOL,
     viewBox,
 } from './layout_kit'
 
@@ -49,9 +48,9 @@ export const knownFailures: Record<string, string> = {
     L_MEAS_2:
         "P2: Firefox only (passes in Chromium and WebKit). §11.4 S2: 'layout's writes neither suppress nor alter anchoring'. Firefox's scroll anchoring counts its anchor node's translate and scale (a change to transform is a suppression trigger there, but not a change to translate or scale), so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B; every later pose write re-anchors again, so the scroll follows the anchor's pose for the whole run (scrollTop 240 → 145.8 in the H4b spike) and the cards' motion is cancelled",
     L_MEAS_4:
-        "P2: variants (ii) under a live scale 0.5 and 2 (every other variant passes). §5.7 path 1: 'What is refreshed. Like every node, it takes this flush's Lₙ and Oₙ (§3.2). … every node planned in this flush composes with this flush's geometry of its ancestors.' The engine's path 1 keeps the parent's geometry of flush 1 (scope.ts: 'path 1 leaves the track alone: it keeps the geometry it was drawn with'), so the child planned by path 3 in this flush is projected about the parent's flush-1 origin, which the 30 px page scroll has moved since: its first frame is −(k − 1)·Δ off its measured B (6.4 px at k = 0.785, 12.9 px at k = 1.429), against path 3's 'the first frame is B'",
+        "P2: variants (ii) under a live scale 0.5 and 2 (every other variant passes in all three engines). §4.2: 'The layout box is static between frames, so (B, v) is the true presented state'; §5.7 path 3: 'the first frame is B and velocity is continuous (invariant 4)'. The first frame is B, but the engine seeds the retarget with the velocity of the child's own track only: it leaves out −k′·σ, the motion on screen of the child's 24 px inner scroll offset under the parent's changing scale (−45 px/s at k′ = 1.874/s, +90 px/s at k′ = −3.747/s), so the next frame is 0.65 px (scale 0.5) and 1.30 px (scale 2) off the continuous retarget, and within 0.000 px of the retarget with that term dropped",
     L_MEAS_10:
-        "P2: two causes. (1) Variants (ii), open and closed root: §5.7 path 1, 'Like every node, it takes this flush's Lₙ and Oₙ (§3.2). … every node planned in this flush composes with this flush's geometry of its ancestors.' The panel kept by path 1 keeps its flush-1 geometry, so both children planned by path 3 under it are projected about its flush-1 origin, which the 50 px outer scroll has moved: the first frame is 21.5 px off B at k = 1.429. (2) Closed root, every variant: §4.6, 'For a node whose parent element hosts a known root, the slot is the one in that root whose assignedNodes() holds the node.' flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent",
+        "P2: closed root only (the open-root variants pass in all three engines). §4.6: 'For a node whose parent element hosts a known root, the slot is the one in that root whose assignedNodes() holds the node.' flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent: its own view-space track is drawn through the panel's pose as well, 60 px off at the flush 1 write",
     L_HAND_2:
         "P2: §5.8, 'A handoff, or a reparent of a participant, whose departing node is inside an active container while the new lead is outside it, does not fly: the lead enters as a presence enter (or appears at A when it has no presence), with diagnostic handoff-scroll-active.' The engine has no active-scroller rule yet: a handoff out of a scroller between its scroll and scrollend events flies from the departing node's box",
 }
@@ -351,39 +350,6 @@ function expectJump(
         )
     }
     return j
-}
-
-/** §5.7 path 1, the sentence a stale kept parent breaks (see `explainStaleOrigin`). */
-const PATH1_REFRESH =
-    "§5.7 path 1: 'What is refreshed. Like every node, it takes this flush's Lₙ and Oₙ (§3.2). Its track is re-expressed through this flush's maps so that it writes exactly the poses it would have written, and every node planned in this flush composes with this flush's geometry of its ancestors.'"
-
-/**
- * Appends a diagnosis to a failed frame check of `element`, a node planned in
- * this flush under a parent kept by path 1, when the drawn box is the one a
- * projection through the parent's geometry as of the parent's own flush
- * gives. The parent's frame has moved by `shift` (view space) since then and
- * its pose scale is `k`; a pose solved about the old origin puts the node
- * `−(k − 1)·shift` off its expected box `want` per axis.
- */
-function explainStaleOrigin(
-    error: unknown,
-    element: Element,
-    want: OBox,
-    k: { readonly x: number; readonly y: number },
-    shift: { readonly x: number; readonly y: number },
-    parentName: string,
-    name: string
-): void {
-    if (!(error instanceof Error)) return
-    if (!(maxDiff(viewBox(element), want) > TOL)) return
-    const stale = shiftBox(want, -(k.x - 1) * shift.x, -(k.y - 1) * shift.y)
-    const off = maxDiff(viewBox(element), stale)
-    if (off > TOL) return
-    if (error.message.includes(PATH1_REFRESH)) {
-        error.message += `; the ${name} likewise is drawn within ${off.toFixed(3)} px of ${JSON.stringify(stale)}`
-    } else {
-        error.message += `; the ${name} is drawn within ${off.toFixed(3)} px of ${JSON.stringify(stale)}, its expected box offset by −(k − 1)·Δ: projected through the ${parentName}'s geometry as of the flush that planned the ${parentName} (its frame has moved Δ = (${shift.x}, ${shift.y}) px since, under its live scale k = (${k.x.toFixed(3)}, ${k.y.toFixed(3)})). The ${parentName}, kept by path 1, did not take this flush's geometry: ${PATH1_REFRESH}`
-    }
 }
 
 /** The frame at which a track from rest planned at frame 0 ends (τ = 1). */
@@ -1019,6 +985,17 @@ async function meas4Live(scale: 0.5 | 2, move: number): Promise<string> {
         const run2 = report(h.group.flush())
         const sRetarget = spec(measured, target, { timing: ease, velocity })
         const sDropped = spec(measured, target, { timing: ease })
+        /**
+         * The retarget with the velocity of the child's own track only: it
+         * leaves out `−k′·σ`, the motion of its scroll offset σ under the
+         * parent's changing scale, which is part of what the user sees.
+         */
+        /** The parent's vertical scale rate at `t_k`, per second. */
+        const kRate = (kyAt(tk + 1e-5) - kyAt(tk - 1e-5)) / 2e-5
+        const sTrackOnly = spec(measured, target, {
+            timing: ease,
+            velocity: velocityOf((t) => expectedBox(sChild, t), tk),
+        })
         const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
         /** The child's expected box `g` frames after the commit, frame `f` since flush 1. */
         const childNow = (fi: number, gi: number): readonly [OBox, string] =>
@@ -1033,7 +1010,11 @@ async function meas4Live(scale: 0.5 | 2, move: number): Promise<string> {
                       `child (path 3) t'=${movingAt(gi).toFixed(3)}`,
                   ]
         const context = `a ${sigma.toFixed(2)} px inner scroll under the parent's live scale ${live.toFixed(3)} and a ${pageScroll} px page scroll presented since flush 1${move === 0 ? '' : `; the commit moved the child ${move} px`}; ${describeJump(jump)}: path ${path}`
-        /** Checks a frame after the commit; a path 3 failure names a stale parent origin. */
+        /**
+         * Checks a frame after the commit. A path 3 failure drawn on the
+         * retarget without `−k′·σ` (within 0.05 px: the engines' rect
+         * quantization) says so and names the authority it breaks.
+         */
         const afterCommit = (
             label: string,
             fi: number,
@@ -1044,16 +1025,15 @@ async function meas4Live(scale: 0.5 | 2, move: number): Promise<string> {
                 return expectAll(label, list)
             } catch (error) {
                 if (path === 3) {
-                    const k = kyAt(restAt(fi))
-                    explainStaleOrigin(
-                        error,
-                        child,
-                        childNow(fi, gi)[0],
-                        { x: k, y: k },
-                        { x: 0, y: -pageScroll },
-                        'parent',
-                        'child'
+                    const trackOnly = shiftBox(
+                        expectedBox(sTrackOnly, movingAt(gi)),
+                        0,
+                        drift(restAt(fi))
                     )
+                    const off = maxDiff(viewBox(child), trackOnly)
+                    if (error instanceof Error && off <= 0.05) {
+                        error.message += `; the child is drawn within ${off.toFixed(3)} px of ${JSON.stringify(trackOnly)}, the retarget whose initial velocity is its own track's alone: it leaves out −k′·σ = ${(-kRate * sigma).toFixed(1)} px/s, the motion of its ${sigma.toFixed(2)} px scroll offset under the parent's changing scale (k′ = ${kRate.toFixed(3)}/s), which the user saw. §4.2: 'The layout box is static between frames, so (B, v) is the true presented state'; §5.7 path 3: 'the first frame is B and velocity is continuous (invariant 4)'`
+                    }
                 }
                 throw error
             }
@@ -2427,39 +2407,10 @@ async function meas10(mode: ShadowRootMode, move: number): Promise<string> {
         const jumpText = kids
             .map((k, i) => `${nameOf(names, k)} ${describeJump(jumps[i]!)}`)
             .join(', ')
-        /** Checks a frame after the commit; a path 3 failure names a stale panel origin. */
-        const afterCommit = (
-            label: string,
-            fi: number,
-            gi: number,
-            list: readonly (readonly [Element, OBox, string])[]
-        ): number => {
-            try {
-                return expectAll(label, list)
-            } catch (error) {
-                if (path === 3) {
-                    const k = panelAt(restAt(fi)).w / aPanel.w
-                    kids.forEach((kid, i) =>
-                        explainStaleOrigin(
-                            error,
-                            kid,
-                            kidNow(i, fi, gi)[0],
-                            { x: k, y: k },
-                            { x: 0, y: -50 },
-                            'panel',
-                            nameOf(names, kid)
-                        )
-                    )
-                }
-                throw error
-            }
-        }
         worst = Math.max(
             worst,
-            afterCommit(
+            expectAll(
                 `${row} commit write (an outer scroll of 50 px presented since flush 1${move === 0 ? '' : `; the commit moved both children ${move} px`}; the panel's live scale ${live.toFixed(3)}; ${jumpText}: path ${path})`,
-                f,
-                0,
                 [
                     [panel, panelAt(tk), 'panel'],
                     ...kids.flatMap((k, i) => [
@@ -2494,7 +2445,7 @@ async function meas10(mode: ShadowRootMode, move: number): Promise<string> {
             await step(h.mc)
             worst = Math.max(
                 worst,
-                afterCommit(`${row} frame ${f}`, f, g, [
+                expectAll(`${row} frame ${f}`, [
                     [panel, panelAt(restAt(f)), 'panel'],
                     ...kids.map((k, i) => [k, ...kidNow(i, f, g)] as const),
                     [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
