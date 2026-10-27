@@ -976,3 +976,53 @@ describe('I-5: closed-root flat ancestry through the known roots (§4.6)', () =>
         unlink()
     })
 })
+
+describe('I-6: one walk per ancestor (§4.6)', () => {
+    it('flatParent reads parentElement once', () => {
+        const parent = document.createElement('div')
+        const child = document.createElement('span')
+        parent.append(child)
+        document.body.append(parent)
+        let reads = 0
+        Object.defineProperty(child, 'parentElement', {
+            configurable: true,
+            get() {
+                reads++
+                return parent
+            },
+        })
+        expect(flatParent(child)).toBe(parent)
+        expect(reads).toBe(1)
+        parent.remove()
+    })
+
+    it("exitingPresence with a pass's memo walks each ancestor once and answers every node below it", () => {
+        const outer = document.createElement('div')
+        const mid = document.createElement('div')
+        const a = document.createElement('span')
+        const b = document.createElement('span')
+        mid.append(a, b)
+        outer.append(mid)
+        document.body.append(outer)
+        const link = { exiting: true, opacity: false, hold: vi.fn() }
+        const unlink = linkPresence(outer, link)
+        const memo = new Map()
+        expect(exitingPresence(a, undefined, memo)).toBe(link)
+        // the walk stopped at the exiting link; every node on it is answered
+        expect([...memo.keys()]).toEqual([a, mid, outer])
+        expect(memo.get(mid)).toBe(link)
+        // the sibling's walk ends at its parent's answer, never above it
+        unlink()
+        expect(exitingPresence(b, undefined, memo)).toBe(link)
+        expect(memo.get(b)).toBe(link)
+        // a lookup without the pass's memo walks the tree as it is now
+        expect(exitingPresence(b)).toBeNull()
+
+        // no exiting link: the walk to the root answers null for each node
+        const fresh = new Map()
+        expect(exitingPresence(a, undefined, fresh)).toBeNull()
+        expect(fresh.get(mid)).toBeNull()
+        expect(fresh.get(document.documentElement)).toBeNull()
+        outer.remove()
+    })
+})
