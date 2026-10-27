@@ -1,27 +1,34 @@
-// Browser rows for v3 measured presentation (ARCHITECTURE §3.2, §4.2–§4.7, §5.7, §5.8, §11.2):
-// L-MEAS-1..4, L-MEAS-6..13, L-HAND-1..2, L-KEY-1, L-DOC-1.
+// L-MEAS, L-HAND, L-KEY and L-DOC rows (ARCHITECTURE §3.2, §4, §5.7, §5.8,
+// §11.2): measured presentation in real browsers on a manual clock. Every
+// frame is checked in view space (`getBoundingClientRect()`) against an
+// independent expectation: the closed-form oracle of the track the authority
+// prescribes, translated by the camera motion presented since its flush, or
+// the measured presented box.
 import {
+    ani,
     createClock,
     isAniError,
     type TimingFunction,
     timing,
 } from '@freestylejs/ani-core'
+import type { ManualClock } from '@freestylejs/ani-core/testing'
 import {
     createLayoutGroup,
     createPresence,
-    type LayoutOptions,
+    type LayoutReport,
     type SnapReason,
 } from '@freestylejs/ani-layout'
 import {
     expectedBox,
+    expectedCrossfade,
     maxDiff,
     type OBox,
     type OTrackSpec,
 } from '../../../packages/layout/src/__tests__/oracle'
-import { expectEqual } from './assert'
+import { expectEqual, nextFrame } from './assert'
 import {
     expectViewAt,
-    frames,
+    type Harness,
     harness,
     node,
     report,
@@ -33,418 +40,507 @@ import {
 
 export const pageOptions = {}
 
-type KeyedLayoutOptions = LayoutOptions & {
-    readonly layoutKey?: unknown
+/**
+ * Rows the current engine cannot pass yet. Each entry names what is missing;
+ * the P2 gate requires this record to be empty.
+ */
+export const knownFailures: Record<string, string> = {
+    L_MEAS_1:
+        "P2: view-space capture and flush (§3.2, §4.1). Page variant: the engine compares page-space rects, so the anchoring scroll correction in the commit's task reads as a 70 px move and the messages fly by it",
+    L_MEAS_2:
+        "P2: measured B in view space (§4.1 D3). The engine snaps the whole change 'stale' when a scroll container scrolls between capture and flush, so every card appears at A instead of starting where it was seen",
+    L_MEAS_3:
+        "P2: view-space capture and flush (§4.1 D3). In page space the commit's page scroll is not part of the change, so header and footer jump by the scroll instead of gliding from where they were seen",
+    L_MEAS_4:
+        'P2: measured B and the §5.7 keep paths judged in screen space. A commit retargets from the analytic drawn box, which misses what was presented since the flush: the inner scroll at rest (path 2), the inner scroll under a live parent scale (path 3), and the 0.005 px shift amplified by ρ ≈ 330 (path 3, not path 1)',
+    L_MEAS_6:
+        'P2: measured B and §5.7 path 2. Variant (b): the later commit retargets from the analytic drawn box, which misses the sticky offset presented since the flush',
+    L_MEAS_7:
+        'P2: measured B and §5.7 paths 2 and 3. The commit retargets from the analytic drawn box, which misses the layout shift the browser presented since the flush (flat and nested)',
+    L_MEAS_8:
+        'P2: view-space capture and flush (§3.2). In page space a page scroll moves a viewport-fixed sheet, so it flies by the scroll',
+    L_MEAS_9:
+        'P2: §4.1 capture aging and the §4.4 aged flush. Variant (b): a capture one frame old is used as fresh, so the tracks are retargeted instead of being kept and translated by δ',
+    L_MEAS_10:
+        "P2: measured B and §5.7 paths 2 and 3. In both roots the commit misses the 50 px outer scroll presented since the flush. The closed root also has a defect in accepted code: flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent (§4.6)",
+    L_MEAS_11:
+        'P2: the §4.4 capture-less and aged flush. Driven nodes are retargeted instead of keeping their tracks translated by δ, and are not reported by |δ|·max(1, ρ)',
+    L_MEAS_12:
+        'P2: the §4.2 interval support check of B. Variant (b): a box-changing rotation present at capture is not detected, so the subtree flies from the rotated bounding box instead of snapping unsupported',
+    L_MEAS_13:
+        "P2: §4.1 aging at once inside the clock's frame (clock.inFrame). update() inside the scope clock's frame takes the unpresented intermediate box as B",
+    L_HAND_2:
+        'P2: the §5.8 active-scroller rule. A handoff out of a scroller between its scroll and scrollend events flies instead of the lead appearing at A',
+    L_KEY_1:
+        "P2: the §9.1 degradation-table status for a layoutKey change (§4.7). A mid-run layoutKey change resolves its run 'ended'; a run whose only node was ended by the change resolves 'disposed'",
 }
 
-const assert = {
-    ok(cond: boolean, message: string): void {
-        if (!cond) throw new Error(message)
-    },
-    equal<T>(actual: T, expected: T, message: string): void {
-        expectEqual(actual, expected, message)
-    },
-    notEqual<T>(actual: T, unexpected: T, message: string): void {
-        if (Object.is(actual, unexpected)) {
-            throw new Error(
-                `${message}: expected value not equal to ${String(unexpected)}`
-            )
-        }
-    },
-}
+const FRAME_MS = 16
+const DT = FRAME_MS / 1000
+/** Duration of every row's motion, seconds. */
+const D = 0.32
 
-const EASE_OUT: TimingFunction = timing.easeOut
-const LINEAR: TimingFunction = timing.linear
+/* ───────────────────────── helpers ───────────────────────── */
 
+type Names = Map<Element, string>
+type Holder = { value: LayoutReport | null }
+type Snap = { readonly element: HTMLElement; readonly reason: SnapReason }
+
+/** A timing track from `before` to `after` (transform origin 0 0 unless given). */
 function spec(
     before: OBox,
     after: OBox,
-    velocity: OBox | null = null,
-    duration = 0.24,
-    timingFn: TimingFunction = EASE_OUT,
-    fx = 0.5,
-    fy = 0.5
+    rest: Partial<OTrackSpec> = {}
 ): OTrackSpec {
     return {
         before,
         after,
-        velocity,
-        fx,
-        fy,
+        velocity: null,
+        fx: 0,
+        fy: 0,
         mode: true,
-        duration,
+        duration: D,
         delay: 0,
-        timing: timingFn,
+        timing: timing.easeOut(),
+        ...rest,
     }
 }
 
-function trackBox(s: OTrackSpec, elapsed: number): OBox {
-    return expectedBox(s, elapsed)
+/**
+ * Elapsed time of a track planned at rest after `f` frames since its flush
+ * (§4.5): `f = 0` is the flush's own write (B), and the first frame has
+ * `dt = 0`.
+ */
+function restAt(f: number): number {
+    return Math.max(0, f - 1) * DT
 }
 
-function trackVelocity(s: OTrackSpec, elapsed: number): OBox {
-    const h = 1e-6
-    const t0 = Math.max(0, elapsed - h)
-    const t1 = Math.min(s.duration, elapsed + h)
-    const dt = t1 - t0
-    const b0 = expectedBox(s, t0)
-    const b1 = expectedBox(s, t1)
+/** Elapsed time of a track planned for a moving node (§4.5): it continues the last painted frame. */
+function movingAt(f: number): number {
+    return f * DT
+}
+
+/** Box velocity (px/s per channel) of `fn` at `t`, by a central difference of the closed form. */
+function velocityOf(fn: (t: number) => OBox, t: number): OBox {
+    const h = 1e-5
+    const a = fn(t - h)
+    const b = fn(t + h)
     return {
-        x: (b1.x - b0.x) / dt,
-        y: (b1.y - b0.y) / dt,
-        w: (b1.w - b0.w) / dt,
-        h: (b1.h - b0.h) / dt,
+        x: (b.x - a.x) / (2 * h),
+        y: (b.y - a.y) / (2 * h),
+        w: (b.w - a.w) / (2 * h),
+        h: (b.h - a.h) / (2 * h),
     }
 }
 
-/** Elapsed time on a track started from rest at `startedAt` (`dt = 0` on its first frame). */
-function since(startedAt: number, elapsed: number): number {
-    return Math.max(0, elapsed - startedAt - 0.016)
+/** One manual-clock frame, then promise reactions. */
+async function step(mc: ManualClock): Promise<void> {
+    mc.frame(FRAME_MS)
+    await settleMicrotasks()
 }
 
-/** Wait one native animation frame so browser scroll/anchoring state settles when needed. */
-function nextRaf(): Promise<void> {
-    return new Promise((resolve) => requestAnimationFrame(() => resolve()))
+function nameOf(names: Names, element: Element): string {
+    return names.get(element) ?? `<${element.tagName.toLowerCase()}>`
+}
+
+function snapList(names: Names, snapped: readonly Snap[]): string[] {
+    return snapped.map((s) => `${nameOf(names, s.element)}: ${s.reason}`).sort()
+}
+
+function describeReport(names: Names, r: LayoutReport): string {
+    return `status '${r.status}', snapped [${snapList(names, r.snapped).join(', ')}]`
+}
+
+/** Throws unless the report is exactly `status` with exactly the `snapped` set. */
+function expectReport(
+    names: Names,
+    r: LayoutReport,
+    status: LayoutReport['status'],
+    snapped: readonly Snap[],
+    label: string
+): void {
+    const got = describeReport(names, r)
+    const want = describeReport(names, { status, snapped })
+    if (got !== want) {
+        throw new Error(`${label}: report is ${got}, expected ${want}`)
+    }
+}
+
+/** Throws unless the `onSnap` calls were exactly `snapped`; clears them. */
+function expectSnapCalls(
+    names: Names,
+    calls: Snap[],
+    snapped: readonly Snap[],
+    label: string
+): void {
+    const got = snapList(names, calls)
+    const want = snapList(names, snapped)
+    calls.length = 0
+    if (got.join('|') !== want.join('|')) {
+        throw new Error(
+            `${label}: onSnap calls [${got.join(', ')}], expected [${want.join(', ')}]`
+        )
+    }
+}
+
+/** A flush that plans tracks resolves when they settle, never before a frame. */
+async function expectRunning(
+    names: Names,
+    run: Holder,
+    label: string
+): Promise<void> {
+    await settleMicrotasks()
+    if (run.value !== null) {
+        throw new Error(
+            `${label}: the run resolved before any frame (${describeReport(names, run.value)}); a flush that plans tracks resolves when they settle`
+        )
+    }
+}
+
+/** A flush that plans no track resolves at once; `why` says why none is expected. */
+async function expectNoRun(
+    run: Holder,
+    label: string,
+    why: string
+): Promise<LayoutReport> {
+    await settleMicrotasks()
+    if (run.value === null) {
+        throw new Error(
+            `${label}: the flush started a run (its report is still pending), expected no new track: ${why}`
+        )
+    }
+    return run.value
+}
+
+/** Every owned declaration is back: the inline style is the author's, byte for byte. */
+function expectRestored(element: HTMLElement, css: string, label: string) {
+    expectEqual(element.style.cssText, css, `${label}: inline style restored`)
 }
 
 /**
- * L-MEAS-1: chat delete under scroll anchoring (page scroller and inner panel scroller).
- * Deleting an off-screen message above the viewport while scroll-anchored leaves
- * every visible message within 0.5 px at every frame and produces no stale snap.
+ * The author's inline style of an element read while it is driven: its
+ * `cssText` without the engine's pose declarations (`translate`, `scale`).
+ * Only for elements whose author sets neither.
  */
-export async function L_MEAS_1(): Promise<string> {
+function authorText(element: HTMLElement): string {
+    const probe = document.createElement('div')
+    probe.style.cssText = element.style.cssText
+    probe.style.removeProperty('translate')
+    probe.style.removeProperty('scale')
+    return probe.style.cssText
+}
+
+/** Checks each `[element, box, name]` and returns the largest error. */
+function expectAll(
+    label: string,
+    list: readonly (readonly [Element, OBox, string])[]
+): number {
     let worst = 0
-
-    // Part 1: Inner panel scroller
-    const hPanel = harness({
-        motion: { duration: 0.24, timing: timing.easeOut },
-    })
-    try {
-        const panel = document.createElement('div')
-        panel.style.cssText =
-            'position: relative; width: 320px; height: 220px; overflow-y: auto; overflow-anchor: auto; box-sizing: border-box;'
-        hPanel.root.append(panel)
-
-        const messages: HTMLElement[] = []
-        for (let i = 0; i < 10; i++) {
-            const msg = document.createElement('div')
-            msg.style.cssText =
-                'position: relative; width: 280px; height: 60px; margin-bottom: 10px; box-sizing: border-box;'
-            msg.textContent = `msg-${i}`
-            panel.append(msg)
-            hPanel.add(msg)
-            messages.push(msg)
-        }
-
-        // Baseline flush and scroll down so messages 0..1 are above the panel viewport
-        await hPanel.group.update(() => {})
-        panel.scrollTop = 210
-        await nextRaf()
-
-        const visiblePanel = messages.slice(3, 6)
-        const beforePanel = visiblePanel.map((el) => viewBox(el))
-
-        hPanel.group.capture()
-        const removedPanel = messages[0]!
-        hPanel.group.remove(removedPanel)
-        removedPanel.remove()
-        // Trigger layout so CSS Scroll Anchoring (when supported by the engine) applies;
-        // if the engine does not implement CSS overflow-anchor (WebKit), apply the 70px
-        // anchor scroll adjustment in the same commit task.
-        void panel.getBoundingClientRect()
-        if (Math.abs(panel.scrollTop - 210) < 1) {
-            panel.scrollTop = 140
-        }
-        const quietPanel = silenceWarnings()
-        let panelResult: Awaited<ReturnType<typeof hPanel.group.flush>>
-        try {
-            const panelRun = hPanel.group.flush()
-            visiblePanel.forEach((el, idx) => {
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        el,
-                        beforePanel[idx]!,
-                        `L_MEAS_1 panel frame 0 msg[${idx + 3}]`
-                    )
-                )
-            })
-            await frames(hPanel.mc, 18, (elapsed, frameIdx) => {
-                visiblePanel.forEach((el, idx) => {
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            el,
-                            beforePanel[idx]!,
-                            `L_MEAS_1 panel frame ${frameIdx + 1} (t=${elapsed.toFixed(3)}) msg[${idx + 3}]`
-                        )
-                    )
-                })
-            })
-            panelResult = await panelRun
-        } finally {
-            quietPanel.restore()
-        }
-        assert.equal(
-            panelResult.status,
-            'no-change',
-            `L_MEAS_1 panel status: expected 'no-change', got '${panelResult.status}'`
-        )
-        assert.equal(
-            panelResult.snapped.length,
-            0,
-            'L_MEAS_1 panel snapped empty'
-        )
-    } finally {
-        hPanel.dispose()
+    for (const [element, want, name] of list) {
+        worst = Math.max(worst, expectViewAt(element, want, `${label} ${name}`))
     }
-
-    // Part 2: Page scroller
-    const hPage = harness({
-        motion: { duration: 0.24, timing: timing.easeOut },
-    })
-    try {
-        hPage.root.style.height = '2200px'
-        const stack = document.createElement('div')
-        stack.style.cssText =
-            'position: relative; width: 320px; overflow-anchor: auto;'
-        hPage.root.append(stack)
-
-        const messages: HTMLElement[] = []
-        for (let i = 0; i < 12; i++) {
-            const msg = document.createElement('div')
-            msg.style.cssText =
-                'position: relative; width: 280px; height: 70px; margin-bottom: 10px; box-sizing: border-box;'
-            msg.textContent = `page-msg-${i}`
-            stack.append(msg)
-            hPage.add(msg)
-            messages.push(msg)
-        }
-
-        await hPage.group.update(() => {})
-        window.scrollTo(0, 240)
-        await nextRaf()
-
-        const visiblePage = messages.slice(3, 6)
-        const beforePage = visiblePage.map((el) => viewBox(el))
-
-        hPage.group.capture()
-        const removedPage = messages[0]!
-        hPage.group.remove(removedPage)
-        removedPage.remove()
-        void document.body.getBoundingClientRect()
-        if (Math.abs(window.scrollY - 240) < 1) {
-            window.scrollTo(0, 160)
-        }
-        const quietPage = silenceWarnings()
-        let pageResult: Awaited<ReturnType<typeof hPage.group.flush>>
-        try {
-            const pageRun = hPage.group.flush()
-            visiblePage.forEach((el, idx) => {
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        el,
-                        beforePage[idx]!,
-                        `L_MEAS_1 page frame 0 msg[${idx + 3}]`
-                    )
-                )
-            })
-            await frames(hPage.mc, 18, (elapsed, frameIdx) => {
-                visiblePage.forEach((el, idx) => {
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            el,
-                            beforePage[idx]!,
-                            `L_MEAS_1 page frame ${frameIdx + 1} (t=${elapsed.toFixed(3)}) msg[${idx + 3}]`
-                        )
-                    )
-                })
-            })
-            pageResult = await pageRun
-        } finally {
-            quietPage.restore()
-        }
-        assert.equal(
-            pageResult.status,
-            'no-change',
-            `L_MEAS_1 page status: expected 'no-change', got '${pageResult.status}'`
-        )
-        assert.equal(
-            pageResult.snapped.length,
-            0,
-            'L_MEAS_1 page snapped empty'
-        )
-    } finally {
-        window.scrollTo(0, 0)
-        hPage.dispose()
-    }
-
-    return report('L_MEAS_1', worst, 'page + panel anchoring')
+    return worst
 }
 
 /**
- * L-MEAS-2: kanban card moves between columns while the target column auto-scrolls
- * in the same task as the mutation.
+ * Runs each variant of a row in turn and reports every variant's first
+ * failure, so a known failure shows its cause per variant.
  */
-export async function L_MEAS_2(): Promise<string> {
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
-    try {
-        const colA = node(
-            h.root,
-            'left: 0; top: 0; width: 160px; height: 220px; overflow-y: auto;'
-        )
-        const colB = node(
-            h.root,
-            'left: 200px; top: 0; width: 160px; height: 220px; overflow-y: auto;'
-        )
-
-        const makeCard = (col: HTMLElement, label: string): HTMLElement => {
-            const card = document.createElement('div')
-            card.style.cssText =
-                'position: relative; width: 140px; height: 60px; margin-bottom: 10px; box-sizing: border-box;'
-            card.textContent = label
-            col.append(card)
-            h.add(card)
-            return card
-        }
-
-        const a0 = makeCard(colA, 'a0')
-        const a1 = makeCard(colA, 'a1')
-        const a2 = makeCard(colA, 'a2')
-        const bCards = [
-            makeCard(colB, 'b0'),
-            makeCard(colB, 'b1'),
-            makeCard(colB, 'b2'),
-            makeCard(colB, 'b3'),
-            makeCard(colB, 'b4'),
-        ]
-        const allCards = [a0, a1, a2, ...bCards]
-
-        await h.group.update(() => {})
-        const bBoxes = new Map<HTMLElement, OBox>(
-            allCards.map((c) => [c, viewBox(c)])
-        )
-
-        // Expected rest boxes after moving a1 to bottom of colB and scrolling colB by 120px:
-        const b0Before = bBoxes.get(bCards[0]!)!
-        const aBoxes = new Map<HTMLElement, OBox>()
-        aBoxes.set(a0, bBoxes.get(a0)!)
-        aBoxes.set(a2, shiftBox(bBoxes.get(a2)!, 0, -70))
-        bCards.forEach((c) => {
-            aBoxes.set(c, shiftBox(bBoxes.get(c)!, 0, -120))
-        })
-        // a1 becomes the 6th card (index 5) in colB: y = b0.y + 5 * 70 - 120
-        aBoxes.set(a1, {
-            x: b0Before.x,
-            y: b0Before.y + 5 * 70 - 120,
-            w: b0Before.w,
-            h: b0Before.h,
-        })
-
-        const quiet = silenceWarnings()
-        let worst = 0
+async function variants(
+    row: string,
+    list: readonly (readonly [string, () => Promise<string>])[]
+): Promise<string> {
+    const notes: string[] = []
+    const errors: string[] = []
+    for (const [name, run] of list) {
         try {
-            h.group.capture()
-            colB.append(a1)
-            colB.scrollTop = 120
-            const run = report(h.group.flush())
+            notes.push(`${name}: ${await run()}`)
+        } catch (error) {
+            errors.push(
+                `${row} [${name}] ${error instanceof Error ? error.message : String(error)}`
+            )
+        } finally {
+            scrollTo(0, 0)
+        }
+    }
+    if (errors.length > 0) throw new Error(errors.join('\n'))
+    return notes.join('; ')
+}
 
-            for (const c of allCards) {
-                const want =
-                    c === a0
-                        ? aBoxes.get(c)!
-                        : trackBox(
-                              spec(
-                                  bBoxes.get(c)!,
-                                  aBoxes.get(c)!,
-                                  null,
-                                  duration
-                              ),
-                              0
-                          )
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        c,
-                        want,
-                        `L_MEAS_2 frame 0 (${c.textContent ?? ''})`
-                    )
+function harnessWithSnaps(motionTiming: TimingFunction = timing.easeOut()): {
+    h: Harness
+    snaps: Snap[]
+    names: Names
+} {
+    const snaps: Snap[] = []
+    const h = harness({
+        motion: { duration: D, timing: motionTiming },
+        onSnap(element, reason) {
+            snaps.push({ element, reason })
+        },
+    })
+    return { h, snaps, names: new Map() }
+}
+
+function addNamed(
+    h: Harness,
+    names: Names,
+    entries: Record<string, HTMLElement>
+): void {
+    for (const [name, element] of Object.entries(entries)) {
+        names.set(element, name)
+        h.add(element)
+    }
+}
+
+/** A flush that changes nothing, so every participant has a last flush (§4.4). */
+async function baseline(h: Harness, label: string): Promise<void> {
+    h.group.capture()
+    const r = await expectNoRun(
+        report(h.group.flush()),
+        `${label} baseline`,
+        'nothing changed'
+    )
+    if (r.status !== 'no-change' || r.snapped.length > 0) {
+        throw new Error(
+            `${label} baseline: report ${r.status} with ${r.snapped.length} snapped, expected 'no-change'`
+        )
+    }
+}
+
+/** The frame at which a track from rest planned at frame 0 ends (τ = 1). */
+const END_FRAME = Math.round(D / DT) + 1
+
+/**
+ * Checks that a run whose tracks were kept ends on its original schedule:
+ * at the frame its oracle track ends, or one frame later (the clock's
+ * floating-point sum of `dt`). A restart would end at least a dozen frames
+ * later.
+ */
+function expectEndedOnSchedule(
+    endedAt: number | null,
+    expected: number,
+    label: string
+): void {
+    if (endedAt === null || endedAt < expected || endedAt > expected + 1) {
+        throw new Error(
+            `${label}: the run ended at frame ${endedAt ?? 'never'}, expected frame ${expected} (no restart)`
+        )
+    }
+}
+
+/* ───────────────────────── L-MEAS-1 ───────────────────────── */
+
+/**
+ * L-MEAS-1: chat delete under scroll anchoring, in an inner panel scroller
+ * and in the page scroller. A message above the visible area is deleted;
+ * scroll anchoring (the browser's, or the app's own where the browser has
+ * none) corrects the scroll in the commit's task, so no remaining message
+ * moves in view space, and none may move > 0.5 px at any frame (§3.1, §4.1
+ * D3, §4.4: a valid capture never reports 'stale').
+ */
+export function L_MEAS_1(): Promise<string> {
+    return variants('L_MEAS_1', [
+        ['panel scroller', () => chatDelete('panel')],
+        ['page scroller', () => chatDelete('page')],
+    ])
+}
+
+async function chatDelete(kind: 'panel' | 'page'): Promise<string> {
+    const row = `L_MEAS_1 ${kind}`
+    const { h, snaps, names } = harnessWithSnaps()
+    try {
+        const anchors = CSS.supports('overflow-anchor', 'auto')
+        const pitch = 70
+        const list = document.createElement('div')
+        if (kind === 'panel') {
+            list.style.cssText =
+                'position: absolute; left: 20px; top: 20px; width: 320px; height: 220px; overflow-y: auto; overflow-anchor: auto;'
+        } else {
+            h.root.style.height = '2400px'
+            list.style.cssText = 'position: relative; width: 320px;'
+        }
+        h.root.append(list)
+        const messages: HTMLElement[] = []
+        const removers: (() => void)[] = []
+        for (let i = 0; i < 12; i++) {
+            const message = document.createElement('div')
+            message.style.cssText = `position: relative; width: 280px; height: ${pitch - 10}px; margin-bottom: 10px; transform-origin: 0 0;`
+            list.append(message)
+            names.set(message, `msg${i}`)
+            removers.push(h.group.add(message))
+            messages.push(message)
+        }
+        await baseline(h, row)
+
+        // three messages above the visible area; the scroll is presented
+        if (kind === 'panel') list.scrollTop = 3 * pitch
+        else scrollTo(0, 3 * pitch)
+        await nextFrame()
+        await nextFrame()
+        const kept = messages.slice(1)
+        const authored = kept.map((m) => m.style.cssText)
+        const before = kept.map(viewBox)
+
+        const scrollBefore = kind === 'panel' ? list.scrollTop : scrollY
+        h.group.capture()
+        removers[0]!()
+        messages[0]!.remove()
+        if (!anchors) {
+            // no CSS scroll anchoring (WebKit): the app anchors in the same task
+            if (kind === 'panel') list.scrollTop -= pitch
+            else scrollBy(0, -pitch)
+        }
+        kept.forEach((m, i) => {
+            const now = viewBox(m)
+            if (maxDiff(now, before[i]!) > 0.01) {
+                throw new Error(
+                    `${row} setup: anchoring left ${nameOf(names, m)} at ${JSON.stringify(now)}, not at ${JSON.stringify(before[i])}`
                 )
             }
-
-            await frames(
-                h.mc,
-                30,
-                (elapsed, frameIdx) => {
-                    const t = since(0, elapsed)
-                    for (const c of allCards) {
-                        const want =
-                            c === a0
-                                ? aBoxes.get(c)!
-                                : trackBox(
-                                      spec(
-                                          bBoxes.get(c)!,
-                                          aBoxes.get(c)!,
-                                          null,
-                                          duration
-                                      ),
-                                      t
-                                  )
-                        worst = Math.max(
-                            worst,
-                            expectViewAt(
-                                c,
-                                want,
-                                `L_MEAS_2 frame ${frameIdx + 1} (t=${elapsed.toFixed(3)}, ${c.textContent ?? ''})`
-                            )
-                        )
-                    }
-                },
-                () => run.value !== null
+        })
+        const scrollAfter = kind === 'panel' ? list.scrollTop : scrollY
+        const context = `(the ${kind} scroll went ${scrollBefore} → ${scrollAfter} px by anchoring in the commit's task)`
+        const run = report(h.group.flush())
+        const check = (label: string) =>
+            expectAll(
+                `${row} ${label} ${context}`,
+                kept.map((m, i) => [m, before[i]!, nameOf(names, m)] as const)
             )
-
-            assert.ok(run.value !== null, 'L_MEAS_2 run settled')
-            assert.equal(
-                run.value.status,
-                'ended',
-                `L_MEAS_2 status: expected 'ended', got '${run.value.status}'`
-            )
-            assert.equal(run.value.snapped.length, 0, 'L_MEAS_2 no snaps')
-        } finally {
-            quiet.restore()
+        let worst = check('delete flush write')
+        const r = await expectNoRun(
+            run,
+            `${row} delete flush`,
+            'no remaining message moved in view space'
+        )
+        expectReport(names, r, 'no-change', [], `${row} delete flush`)
+        expectSnapCalls(names, snaps, [], `${row} delete flush`)
+        for (let f = 1; f <= 25; f++) {
+            await step(h.mc)
+            worst = Math.max(worst, check(`frame ${f}`))
         }
+        kept.forEach((m, i) =>
+            expectRestored(m, authored[i]!, `${row} ${nameOf(names, m)}`)
+        )
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `${kept.length} messages held ≤ ${worst.toFixed(3)} px for 25 frames (${anchors ? 'CSS' : 'app'} anchoring)`
+    } finally {
+        scrollTo(0, 0)
+        h.dispose()
+    }
+}
 
-        return report('L_MEAS_2', worst, 'kanban move + auto-scroll')
+/* ───────────────────────── L-MEAS-2 ───────────────────────── */
+
+/**
+ * L-MEAS-2: kanban. A card moves to another column, and that column
+ * auto-scrolls in the same task as the mutation (a layout effect). The scroll
+ * was never presented, so it is part of the change (§4.1 D3): every
+ * participant starts at its presented box and lands on its A, every frame on
+ * the oracle.
+ */
+export async function L_MEAS_2(): Promise<string> {
+    const row = 'L_MEAS_2'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const column = (left: number) =>
+            node(
+                h.root,
+                `left: ${left}px; top: 0; width: 160px; height: 220px; overflow-y: auto;`
+            )
+        const columnA = column(0)
+        const columnB = column(200)
+        const card = (col: HTMLElement, name: string) => {
+            const element = document.createElement('div')
+            element.style.cssText =
+                'position: relative; width: 140px; height: 60px; margin-bottom: 10px; transform-origin: 0 0;'
+            col.append(element)
+            names.set(element, name)
+            h.add(element)
+            return element
+        }
+        const a0 = card(columnA, 'a0')
+        const a1 = card(columnA, 'a1')
+        const a2 = card(columnA, 'a2')
+        const bs = [0, 1, 2, 3, 4].map((i) => card(columnB, `b${i}`))
+        const cards = [a0, a1, a2, ...bs]
+        await baseline(h, row)
+
+        const authored = cards.map((c) => c.style.cssText)
+        const b = cards.map(viewBox)
+        h.group.capture()
+        columnB.append(a1)
+        columnB.scrollTop = 120
+        if (Math.abs(columnB.scrollTop - 120) > 0.5) {
+            throw new Error(
+                `${row} setup: the column scrolled to ${columnB.scrollTop}, not 120`
+            )
+        }
+        // every card is at rest, so its rect now is its A
+        const a = cards.map(viewBox)
+        const run = report(h.group.flush())
+        const specs = cards.map((_, i) =>
+            maxDiff(b[i]!, a[i]!) >= 1
+                ? spec(b[i]!, a[i]!, { timing: ease })
+                : null
+        )
+        const check = (label: string, t: number) =>
+            expectAll(
+                `${row} ${label} t=${t.toFixed(3)}`,
+                cards.map(
+                    (c, i) =>
+                        [
+                            c,
+                            specs[i] ? expectedBox(specs[i]!, t) : a[i]!,
+                            nameOf(names, c),
+                        ] as const
+                )
+            )
+        let worst = check(
+            "flush write (columnB scrolled 0 → 120 px in the commit's task)",
+            0
+        )
+        await expectRunning(names, run, `${row} move flush`)
+        let f = 0
+        while (run.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, check(`frame ${f}`, restAt(f)))
+        }
+        expectReport(names, run.value!, 'ended', [], `${row} move run`)
+        expectSnapCalls(names, snaps, [], `${row} move run`)
+        cards.forEach((c, i) => {
+            expectViewAt(c, a[i]!, `${row} final ${nameOf(names, c)}`, 0.01)
+            expectRestored(c, authored[i]!, `${row} ${nameOf(names, c)}`)
+        })
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `${specs.filter(Boolean).length} cards from their presented boxes, ${f} frames ≤ ${worst.toFixed(3)} px`
     } finally {
         h.dispose()
     }
 }
 
+/* ───────────────────────── L-MEAS-3 ───────────────────────── */
+
 /**
- * L-MEAS-3: accordion opens, then instant `scrollIntoView` in the same task.
- * Participants start where seen; non-participants follow the scroll immediately; exact settle.
+ * L-MEAS-3: an accordion opens and an instant `scrollIntoView` follows in the
+ * same task. Participants glide from where they were seen; non-participant
+ * content jumps by the scroll; the settle is exact (§4.1 D3).
  */
 export async function L_MEAS_3(): Promise<string> {
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
+    const row = 'L_MEAS_3'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
     try {
         h.root.style.height = '2400px'
-        window.scrollTo(0, 0)
-
-        const nonParticipant = node(
+        const label = node(
             h.root,
             'left: 20px; top: 180px; width: 240px; height: 40px;'
         )
         const header = node(
             h.root,
-            'left: 20px; top: 260px; width: 240px; height: 50px;'
+            'left: 20px; top: 260px; width: 240px; height: 50px; transform-origin: 0 0;'
         )
         const body = node(
             h.root,
@@ -452,2019 +548,2031 @@ export async function L_MEAS_3(): Promise<string> {
         )
         const footer = node(
             h.root,
-            'left: 20px; top: 310px; width: 240px; height: 60px;'
+            'left: 20px; top: 310px; width: 240px; height: 60px; transform-origin: 0 0;'
         )
-        h.add(header)
-        h.add(footer)
+        addNamed(h, names, { header, footer })
+        await baseline(h, row)
 
-        await h.group.update(() => {})
-        const bNon = viewBox(nonParticipant)
+        const authored = [header.style.cssText, footer.style.cssText]
         const bHeader = viewBox(header)
         const bFooter = viewBox(footer)
-
+        const bLabel = viewBox(label)
         h.group.capture()
-        // Open accordion (+240px) and scroll footer to top of viewport in the same task
         body.style.height = '240px'
         footer.style.top = '550px'
         footer.scrollIntoView({ behavior: 'instant', block: 'start' })
-        const scrollDelta = window.scrollY
-        assert.ok(
-            scrollDelta > 100,
-            `L_MEAS_3 scrollIntoView scrolled page (${scrollDelta}px)`
-        )
-
-        const aNon = shiftBox(bNon, 0, -scrollDelta)
-        const aHeader = shiftBox(bHeader, 0, -scrollDelta)
-        const aFooter = shiftBox(bFooter, 0, 240 - scrollDelta)
-
+        const scrolled = scrollY
+        if (!(scrolled > 100)) {
+            throw new Error(
+                `${row} setup: scrollIntoView scrolled ${scrolled} px`
+            )
+        }
+        const aHeader = viewBox(header)
+        const aFooter = viewBox(footer)
+        const aLabel = shiftBox(bLabel, 0, -scrolled)
         const run = report(h.group.flush())
-        let worst = 0
+        const sHeader = spec(bHeader, aHeader, { timing: ease })
+        const sFooter = spec(bFooter, aFooter, { timing: ease })
+        const check = (phase: string, t: number) =>
+            expectAll(`${row} ${phase} t=${t.toFixed(3)}`, [
+                [header, expectedBox(sHeader, t), 'header'],
+                [footer, expectedBox(sFooter, t), 'footer'],
+                // non-participant content jumps by the scroll
+                [label, aLabel, 'non-participant'],
+            ])
+        let worst = check(
+            `flush write (the page scrolled 0 → ${scrolled} px in the commit's task)`,
+            0
+        )
+        await expectRunning(names, run, `${row} open flush`)
+        let f = 0
+        while (run.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, check(`frame ${f}`, restAt(f)))
+        }
+        expectReport(names, run.value!, 'ended', [], `${row} open run`)
+        expectSnapCalls(names, snaps, [], `${row} open run`)
+        expectViewAt(header, aHeader, `${row} final header`, 0.01)
+        expectViewAt(footer, aFooter, `${row} final footer`, 0.01)
+        expectRestored(header, authored[0]!, `${row} header`)
+        expectRestored(footer, authored[1]!, `${row} footer`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `scrollY ${scrolled}; participants glide from their presented boxes, ${f} frames ≤ ${worst.toFixed(3)} px`
+    } finally {
+        scrollTo(0, 0)
+        h.dispose()
+    }
+}
 
-        // Frame 0: participants start where seen (bHeader, bFooter); non-participant is at aNon
+/* ───────────────────────── L-MEAS-4 ───────────────────────── */
+
+/**
+ * L-MEAS-4: a user scroll mid-run (an inner scroller and the page), then a
+ * commit (§5.7). Drawn boxes follow their content every frame; the commit
+ * keeps the tracks and re-expresses them by the path their ancestors select:
+ * - a resting parent: path 2, the original timeline translated by the
+ *   scroll, ending on schedule (no restart);
+ * - a parent running a size track from scale 0.5 or 2: path 3, the child
+ *   retargets from its measured box with its analytic velocity;
+ * - a sub-0.01 px rest displacement under an ancestor whose screen
+ *   amplification is about 300 (a live pose scale times an inner-map change):
+ *   path 3, never path 1.
+ */
+export function L_MEAS_4(): Promise<string> {
+    return variants('L_MEAS_4', [
+        ['parent at rest, path 2', meas4Rest],
+        ['live parent scale 0.5, path 3', () => meas4Live(0.5)],
+        ['live parent scale 2, path 3', () => meas4Live(2)],
+        ['amplified ρ ≈ 300, path 3', meas4Amplified],
+    ])
+}
+
+async function meas4Rest(): Promise<string> {
+    const row = 'L_MEAS_4 rest'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        h.root.style.height = '2000px'
+        const parent = node(
+            h.root,
+            'left: 20px; top: 120px; width: 420px; height: 320px; transform-origin: 0 0;'
+        )
+        const scroller = node(
+            parent,
+            'left: 0; top: 0; width: 400px; height: 220px; overflow-y: auto;'
+        )
+        node(scroller, 'left: 0; top: 0; width: 1px; height: 600px;')
+        const inner = node(
+            scroller,
+            'left: 10px; top: 80px; width: 80px; height: 40px; transform-origin: 0 0;'
+        )
+        const outer = node(
+            parent,
+            'left: 10px; top: 250px; width: 80px; height: 40px; transform-origin: 0 0;'
+        )
+        const trigger = node(
+            h.root,
+            'left: 500px; top: 120px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, inner, outer, trigger })
+        await baseline(h, row)
+
+        const bInner = viewBox(inner)
+        const bOuter = viewBox(outer)
+        h.group.capture()
+        inner.style.left = '170px'
+        outer.style.left = '170px'
+        const authored = [inner.style.cssText, outer.style.cssText]
+        const aInner = viewBox(inner)
+        const aOuter = viewBox(outer)
+        const run1 = report(h.group.flush())
+        const sInner = spec(bInner, aInner, { timing: ease })
+        const sOuter = spec(bOuter, aOuter, { timing: ease })
+        let dyInner = 0
+        let dyOuter = 0
+        let f = 0
+        const tracks = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [inner, shiftBox(expectedBox(sInner, t), 0, dyInner), 'inner'],
+                [outer, shiftBox(expectedBox(sOuter, t), 0, dyOuter), 'outer'],
+                [parent, viewBox(parent), 'parent'],
+            ])
+        }
+        let worst = tracks('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, tracks(`frame ${f}`))
+        }
+
+        // the user scrolls the inner scroller by 40 px and the page by 50 px
+        const parentBefore = viewBox(parent)
+        scroller.scrollTop = 40
+        scrollTo(0, 50)
+        dyInner = -90
+        dyOuter = -50
+        expectViewAt(
+            parent,
+            shiftBox(parentBefore, 0, -50),
+            `${row} setup: the page scrolled`,
+            0.01
+        )
+        while (f < 9) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, tracks(`scrolled frame ${f}`))
+        }
+
+        // the commit: an unrelated participant moves
+        const bTrigger = viewBox(trigger)
+        h.group.capture()
+        trigger.style.left = '580px'
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
         worst = Math.max(
             worst,
-            expectViewAt(header, bHeader, 'L_MEAS_3 frame 0 header'),
-            expectViewAt(footer, bFooter, 'L_MEAS_3 frame 0 footer'),
-            expectViewAt(
-                nonParticipant,
-                aNon,
-                'L_MEAS_3 frame 0 nonParticipant'
+            tracks(
+                'commit write (an inner scroll of 40 px and a page scroll of 50 px presented since flush 1)'
             )
         )
-
-        await frames(
-            h.mc,
-            30,
-            (elapsed, frameIdx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        header,
-                        trackBox(spec(bHeader, aHeader, null, duration), t),
-                        `L_MEAS_3 frame ${frameIdx + 1} (t=${elapsed.toFixed(3)}) header`
-                    ),
-                    expectViewAt(
-                        footer,
-                        trackBox(spec(bFooter, aFooter, null, duration), t),
-                        `L_MEAS_3 frame ${frameIdx + 1} (t=${elapsed.toFixed(3)}) footer`
-                    ),
-                    expectViewAt(
-                        nonParticipant,
-                        aNon,
-                        `L_MEAS_3 frame ${frameIdx + 1} (t=${elapsed.toFixed(3)}) nonParticipant`
-                    )
+        expectViewAt(trigger, bTrigger, `${row} commit write trigger`)
+        await expectRunning(names, run2, `${row} commit`)
+        if (run1.value !== null) {
+            throw new Error(
+                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); path 2 keeps the tracks`
+            )
+        }
+        let g = 0
+        let endedAt: number | null = null
+        while ((run1.value === null || run2.value === null) && f < 80) {
+            f++
+            g++
+            await step(h.mc)
+            worst = Math.max(worst, tracks(`frame ${f}`))
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    trigger,
+                    expectedBox(sTrigger, restAt(g)),
+                    `${row} frame ${f} trigger`
                 )
-            },
-            () => run.value !== null
+            )
+            if (endedAt === null && run1.value !== null) endedAt = f
+        }
+        expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+        expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(
+            inner,
+            shiftBox(aInner, 0, -90),
+            `${row} final inner`,
+            0.01
         )
+        expectViewAt(
+            outer,
+            shiftBox(aOuter, 0, -50),
+            `${row} final outer`,
+            0.01
+        )
+        expectRestored(inner, authored[0]!, `${row} inner`)
+        expectRestored(outer, authored[1]!, `${row} outer`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+    } finally {
+        scrollTo(0, 0)
+        h.dispose()
+    }
+}
 
-        assert.ok(run.value !== null, 'L_MEAS_3 run settled')
-        assert.equal(run.value.status, 'ended', 'L_MEAS_3 status ended')
-        assert.equal(run.value.snapped.length, 0, 'L_MEAS_3 no snaps')
+async function meas4Live(scale: 0.5 | 2): Promise<string> {
+    const row = `L_MEAS_4 live ${scale}`
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        h.root.style.height = '2000px'
+        const restSize = 200
+        const parent = node(
+            h.root,
+            `left: 20px; top: 100px; width: ${restSize * scale}px; height: ${restSize * scale}px; transform-origin: 0 0;`
+        )
+        const scroller = node(
+            parent,
+            'left: 0; top: 0; width: 180px; height: 160px; overflow-y: auto;'
+        )
+        node(scroller, 'left: 0; top: 0; width: 1px; height: 500px;')
+        const child = node(
+            scroller,
+            'left: 10px; top: 60px; width: 60px; height: 30px; transform-origin: 0 0;'
+        )
+        const trigger = node(
+            h.root,
+            'left: 600px; top: 100px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, child, trigger })
+        await baseline(h, row)
+
+        const bParent = viewBox(parent)
+        const bChild = viewBox(child)
+        h.group.capture()
+        parent.style.width = `${restSize}px`
+        parent.style.height = `${restSize}px`
+        child.style.left = '90px'
+        const authored = [parent.style.cssText, child.style.cssText]
+        const aParent = viewBox(parent)
+        const aChild = viewBox(child)
+        const run1 = report(h.group.flush())
+        const sParent = spec(bParent, aParent, { timing: ease })
+        const sChild = spec(bChild, aChild, { timing: ease })
+        const pageScroll = 30
+        let scrolled = false
+        const parentAt = (t: number) =>
+            shiftBox(expectedBox(sParent, t), 0, scrolled ? -pageScroll : 0)
+        /** The parent's live vertical pose scale at `t`. */
+        const kyAt = (t: number) => expectedBox(sParent, t).h / aParent.h
+        // the child's track, with the inner scroll carried through the
+        // parent's live vertical scale, and the page scroll; the inner scroll
+        // offset is the browser's (a transformed scroller may hold a
+        // fractional offset, Firefox)
+        const childAt = (t: number) => {
+            const own = expectedBox(sChild, t)
+            if (!scrolled) return own
+            return shiftBox(own, 0, -kyAt(t) * scroller.scrollTop - pageScroll)
+        }
+        let f = 0
+        const first = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [parent, parentAt(t), 'parent'],
+                [child, childAt(t), 'child'],
+            ])
+        }
+        let worst = first('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`frame ${f}`))
+        }
+        scroller.scrollTop = 24
+        scrollTo(0, pageScroll)
+        scrolled = true
+        if (Math.abs(scroller.scrollTop - 24) > 0.5 || scrollY !== pageScroll) {
+            throw new Error(
+                `${row} setup: scrolled to ${scroller.scrollTop} / ${scrollY}`
+            )
+        }
+        while (f < 9) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`scrolled frame ${f}`))
+        }
+
+        // the commit at t_k: the child is kept (its target moved with the
+        // scroll) and, under a live ancestor scale, retargets from (B, v)
+        const tk = restAt(f)
+        const live = expectedBox(sParent, tk).h / aParent.h
+        const measured = viewBox(child)
+        const velocity = velocityOf(childAt, tk)
+        const sigma = scroller.scrollTop
+        const target = shiftBox(aChild, 0, -sigma - pageScroll)
+        /** A later change of the browser's scroll offset moves the child's layout box under the parent's scale. */
+        const drift = (t: number) => -kyAt(t) * (scroller.scrollTop - sigma)
+        const bTrigger = viewBox(trigger)
+        h.group.capture()
+        trigger.style.left = '680px'
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sRetarget = spec(measured, target, { timing: ease, velocity })
+        const sDropped = spec(measured, target, { timing: ease })
+        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
         worst = Math.max(
             worst,
-            expectViewAt(header, aHeader, 'L_MEAS_3 settle header'),
-            expectViewAt(footer, aFooter, 'L_MEAS_3 settle footer')
+            expectAll(
+                `${row} commit write (a ${sigma.toFixed(2)} px inner scroll under the parent's live scale ${live.toFixed(3)} and a ${pageScroll} px page scroll presented since flush 1)`,
+                [
+                    [child, measured, 'child (measured B)'],
+                    [parent, parentAt(tk), 'parent'],
+                    [trigger, bTrigger, 'trigger'],
+                ]
+            )
         )
-
-        return report('L_MEAS_3', worst, `scrollY=${scrollDelta.toFixed(0)}px`)
+        await settleMicrotasks()
+        if (run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the child's track, so it resolves 'interrupted'`
+            )
+        }
+        await expectRunning(names, run2, `${row} commit`)
+        let g = 0
+        let dropGap = 0
+        while (run2.value === null && f < 90) {
+            f++
+            g++
+            await step(h.mc)
+            const t = movingAt(g)
+            if (g <= 6) {
+                dropGap = Math.max(
+                    dropGap,
+                    maxDiff(expectedBox(sDropped, t), expectedBox(sRetarget, t))
+                )
+            }
+            worst = Math.max(
+                worst,
+                expectAll(`${row} frame ${f}`, [
+                    [
+                        child,
+                        shiftBox(
+                            expectedBox(sRetarget, t),
+                            0,
+                            drift(restAt(f))
+                        ),
+                        `child t'=${t.toFixed(3)}`,
+                    ],
+                    [parent, parentAt(restAt(f)), 'parent'],
+                    [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
+                ])
+            )
+        }
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(
+            child,
+            shiftBox(target, 0, drift(D)),
+            `${row} final child`,
+            0.01
+        )
+        expectViewAt(
+            parent,
+            shiftBox(aParent, 0, -pageScroll),
+            `${row} final parent`,
+            0.01
+        )
+        expectRestored(parent, authored[0]!, `${row} parent`)
+        expectRestored(child, authored[1]!, `${row} child`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        if (!(dropGap > 1)) {
+            throw new Error(
+                `${row} setup: dropping the velocity changes the path by only ${dropGap.toFixed(3)} px, too little to prove continuity`
+            )
+        }
+        return `parent scale ${live.toFixed(3)} at the commit; retarget from (B, v) ≤ ${worst.toFixed(3)} px (a dropped velocity would be ${dropGap.toFixed(1)} px off)`
     } finally {
-        window.scrollTo(0, 0)
+        scrollTo(0, 0)
         h.dispose()
     }
 }
 
 /**
- * L-MEAS-4: user scroll mid-run (inner and page), then a commit:
- * - with parent at rest -> §5.7 path 2 (translate, no restart);
- * - under a live-scaling parent at 0.5 and 2 -> §5.7 path 3 (retarget from measured B, velocity continuous);
- * - a sub-0.01 px rest displacement under a live ancestor scale of 300 -> §5.7 path 3, never path 1.
+ * The amplified case. The ancestor's pose scale is ≤ 50 (a larger size
+ * change snaps, §9.1), so the screen amplification ρ ≈ 300 comes from its
+ * pose scale (≈ 16.6 at t_k) times a presence `transform` change since the
+ * track was planned (scale 0.05 → 1, a visual layer, §3.2). The child sits at
+ * the ancestor's origin, so the layer scales its size and leaves its
+ * position; a non-participant wrapper then shifts it by 0.1 CSS px, a rest
+ * displacement of 0.005 px under the planned matrices, drawn 1.66 px on
+ * screen.
  */
-export async function L_MEAS_4(): Promise<string> {
-    let worst = 0
-    const duration = 0.32
+async function meas4Amplified(): Promise<string> {
+    const row = 'L_MEAS_4 amplified'
+    const linear = timing.linear()
+    const { h, snaps, names } = harnessWithSnaps(linear)
+    try {
+        const q0 = 0.05
+        const anc = node(
+            h.root,
+            `left: 40px; top: 40px; width: 5000px; height: 5000px; transform: scale(${q0}); transform-origin: 0 0;`
+        )
+        const wrap = node(anc, 'left: 0; top: 0; width: 0; height: 0;')
+        const child = node(
+            wrap,
+            'left: 0; top: 0; width: 800px; height: 800px; transform-origin: 0 0;'
+        )
+        const trigger = node(
+            h.root,
+            'left: 700px; top: 40px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { anc, child, trigger })
+        await baseline(h, row)
 
-    // 1. Parent at rest -> §5.7 path 2 (no restart; matches original track translated by scroll)
-    {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            h.root.style.height = '2000px'
-            window.scrollTo(0, 0)
+        const bAnc = viewBox(anc)
+        const bChild = viewBox(child)
+        h.group.capture()
+        anc.style.width = '200px'
+        anc.style.height = '200px'
+        child.style.width = '200px'
+        child.style.height = '200px'
+        const aAnc = viewBox(anc)
+        const aChild = viewBox(child)
+        const run1 = report(h.group.flush())
+        const sAnc = spec(bAnc, aAnc, { timing: linear })
+        const sChild = spec(bChild, aChild, { timing: linear })
+        const origin = { x: aAnc.x, y: aAnc.y }
+        const shift = 0.1
+        let layer = 1
+        let shifted = 0
+        const pose = (t: number) => expectedBox(sAnc, t).w / aAnc.w
+        const ancAt = (t: number) => {
+            const v = expectedBox(sAnc, t)
+            return { x: v.x, y: v.y, w: v.w * layer, h: v.h * layer }
+        }
+        // the child's track through the layer (about the ancestor's origin)
+        // plus the wrapper's shift carried by the ancestor's current scale
+        const childAt = (t: number) => {
+            const v = expectedBox(sChild, t)
+            return {
+                x: origin.x + layer * (v.x - origin.x) + shifted * pose(t),
+                y: origin.y + layer * (v.y - origin.y),
+                w: layer * v.w,
+                h: layer * v.h,
+            }
+        }
+        let f = 0
+        const first = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [anc, ancAt(t), 'ancestor'],
+                [child, childAt(t), 'child'],
+            ])
+        }
+        let worst = first('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 7) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`frame ${f}`))
+        }
+        // the presence layer and the 0.1 px shift, presented by a frame
+        anc.style.transform = 'scale(1)'
+        wrap.style.transform = `translateX(${shift}px)`
+        layer = 1 / q0
+        shifted = shift
+        f++
+        await step(h.mc)
+        worst = Math.max(worst, first(`layered frame ${f}`))
 
-            const parent = node(
-                h.root,
-                'left: 20px; top: 120px; width: 420px; height: 320px; transform-origin: 0 0;'
+        const tk = restAt(f)
+        const rho = pose(tk) * layer
+        const delta = shift * q0
+        const measured = viewBox(child)
+        const velocity = velocityOf(childAt, tk)
+        const target = {
+            x: origin.x + shift,
+            y: origin.y,
+            w: 200,
+            h: 200,
+        }
+        const bTrigger = viewBox(trigger)
+        h.group.capture()
+        trigger.style.left = '780px'
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sRetarget = spec(measured, target, { timing: linear, velocity })
+        const sTrigger = spec(bTrigger, aTrigger, { timing: linear })
+        worst = Math.max(
+            worst,
+            expectAll(
+                `${row} commit write (a ${shift} CSS px wrapper shift: |δ| = ${delta.toFixed(4)} px under ρ = ${rho.toFixed(1)}, presented as ${(delta * rho).toFixed(2)} px)`,
+                [
+                    [child, measured, 'child (measured B)'],
+                    [anc, ancAt(tk), 'ancestor'],
+                    [trigger, bTrigger, 'trigger'],
+                ]
             )
-            const scroller = node(
-                parent,
-                'left: 0; top: 0; width: 400px; height: 220px; overflow-y: auto;'
+        )
+        await settleMicrotasks()
+        if (run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the child's track, so it resolves 'interrupted'`
             )
-            const spacer = node(
-                scroller,
-                'left: 0; top: 0; width: 1px; height: 600px;'
+        }
+        await expectRunning(names, run2, `${row} commit`)
+        let g = 0
+        let path1Gap = 0
+        while (run2.value === null && f < 90) {
+            f++
+            g++
+            await step(h.mc)
+            const t = movingAt(g)
+            path1Gap = Math.max(
+                path1Gap,
+                maxDiff(childAt(restAt(f)), expectedBox(sRetarget, t))
             )
-            void spacer
-            const innerChild = node(
-                scroller,
-                'left: 10px; top: 80px; width: 80px; height: 40px; transform-origin: 0 0;'
-            )
-            const pageChild = node(
-                parent,
-                'left: 10px; top: 250px; width: 80px; height: 40px; transform-origin: 0 0;'
-            )
-            const trigger = node(
-                h.root,
-                'left: 500px; top: 120px; width: 60px; height: 40px;'
-            )
-            h.add(parent)
-            h.add(innerChild)
-            h.add(pageChild)
-            h.add(trigger)
-
-            await h.group.update(() => {})
-            const bInner1 = viewBox(innerChild)
-            const bPage1 = viewBox(pageChild)
-
-            h.group.capture()
-            innerChild.style.left = '170px'
-            pageChild.style.left = '170px'
-            const aInner1 = shiftBox(bInner1, 160, 0)
-            const aPage1 = shiftBox(bPage1, 160, 0)
-            const specInner1 = spec(bInner1, aInner1, null, duration)
-            const specPage1 = spec(bPage1, aPage1, null, duration)
-            const run1 = report(h.group.flush())
-
-            // Advance 5 frames (t = 4 * 0.016 = 0.064s)
-            await frames(h.mc, 5, (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        innerChild,
-                        trackBox(specInner1, t),
-                        `L_MEAS_4 rest pre-scroll frame ${idx + 1} innerChild`
-                    ),
-                    expectViewAt(
-                        pageChild,
-                        trackBox(specPage1, t),
-                        `L_MEAS_4 rest pre-scroll frame ${idx + 1} pageChild`
-                    )
-                )
-            })
-
-            // Mid-run user scroll (inner scroller +40px, page scroller +50px)
-            scroller.scrollTop = 40
-            window.scrollTo(0, 50)
-            const tAtScroll = since(0, 4 * 0.016)
             worst = Math.max(
                 worst,
-                expectViewAt(
-                    innerChild,
-                    shiftBox(trackBox(specInner1, tAtScroll), 0, -90),
-                    'L_MEAS_4 rest immediately after user scroll innerChild'
-                ),
-                expectViewAt(
-                    pageChild,
-                    shiftBox(trackBox(specPage1, tAtScroll), 0, -50),
-                    'L_MEAS_4 rest immediately after user scroll pageChild'
-                )
-            )
-
-            // Commit while scrolled: innerChild and pageChild keep their tracks on path 2 (no restart)
-            h.group.capture()
-            trigger.style.left = '580px'
-            const quiet = silenceWarnings()
-            try {
-                void h.group.flush()
-            } finally {
-                quiet.restore()
-            }
-
-            // Remaining 16 frames of the original 0.32s track (frames 5..20):
-            for (let step = 5; step <= 20; step++) {
-                h.mc.frame(16)
-                await settleMicrotasks()
-                const elapsed = step * 0.016
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        innerChild,
-                        shiftBox(trackBox(specInner1, t), 0, -90),
-                        `L_MEAS_4 path2 frame ${step} (t=${elapsed.toFixed(3)}) innerChild`
-                    ),
-                    expectViewAt(
-                        pageChild,
-                        shiftBox(trackBox(specPage1, t), 0, -50),
-                        `L_MEAS_4 path2 frame ${step} (t=${elapsed.toFixed(3)}) pageChild`
-                    )
-                )
-            }
-            // At t = 0.32s (step 20), run1 has ended and innerChild/pageChild have restored styles (no restart!)
-            assert.ok(
-                run1.value !== null && run1.value.status === 'ended',
-                'L_MEAS_4 path2 original run1 ended on schedule without restart'
-            )
-            assert.equal(
-                innerChild.style.translate,
-                '',
-                'L_MEAS_4 path2 innerChild settled at original duration'
-            )
-            assert.equal(
-                pageChild.style.translate,
-                '',
-                'L_MEAS_4 path2 pageChild settled at original duration'
-            )
-        } finally {
-            window.scrollTo(0, 0)
-            h.dispose()
-        }
-    }
-
-    // 2. Under a live-scaling parent at 0.5 and 2 -> §5.7 path 3 (retarget from measured B, velocity continuous)
-    for (const parentScale of [0.5, 2] as const) {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            h.root.style.height = '2000px'
-            window.scrollTo(0, 0)
-
-            const startW = parentScale === 2 ? 400 : 200
-            const endW = parentScale === 2 ? 200 : 400
-            const parent = node(
-                h.root,
-                `left: 20px; top: 100px; width: ${startW}px; height: ${startW}px; transform-origin: 0 0;`
-            )
-            const scroller = node(
-                parent,
-                'left: 0; top: 0; width: 180px; height: 160px; overflow-y: auto;'
-            )
-            const tall = node(
-                scroller,
-                'left: 0; top: 0; width: 1px; height: 500px;'
-            )
-            void tall
-            const child = node(
-                scroller,
-                'left: 10px; top: 60px; width: 60px; height: 30px; transform-origin: 0 0;'
-            )
-            const trigger = node(
-                h.root,
-                'left: 500px; top: 100px; width: 60px; height: 40px;'
-            )
-            h.add(parent)
-            h.add(child)
-            h.add(trigger)
-
-            await h.group.update(() => {})
-            const bParent1 = viewBox(parent)
-            const bChild1 = viewBox(child)
-
-            h.group.capture()
-            parent.style.width = `${endW}px`
-            parent.style.height = `${endW}px`
-            child.style.left = '90px'
-            const aParent1: OBox = {
-                x: bParent1.x,
-                y: bParent1.y,
-                w: endW,
-                h: endW,
-            }
-            const aChild1: OBox = {
-                x: bParent1.x + 90,
-                y: bChild1.y,
-                w: 60,
-                h: 30,
-            }
-            const specParent1 = spec(
-                bParent1,
-                aParent1,
-                null,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            const specChild1 = spec(
-                bChild1,
-                aChild1,
-                null,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            void h.group.flush()
-
-            // Advance 5 frames (t = 0.064s)
-            await frames(h.mc, 5, (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        parent,
-                        trackBox(specParent1, t),
-                        `L_MEAS_4 scale=${parentScale} pre-scroll frame ${idx + 1} parent`
-                    ),
-                    expectViewAt(
+                expectAll(`${row} frame ${f}`, [
+                    [
                         child,
-                        trackBox(specChild1, t),
-                        `L_MEAS_4 scale=${parentScale} pre-scroll frame ${idx + 1} child`
-                    )
-                )
-            })
-
-            // Mid-run user scroll (inner +24px, page +30px)
-            scroller.scrollTop = 24
-            window.scrollTo(0, 30)
-            const bChildAtCommit = viewBox(child)
-            const bParentAtCommit = viewBox(parent)
-            const tCommit = since(0, 4 * 0.016)
-            const vChildAtCommit = trackVelocity(specChild1, tCommit)
-            const vParentAtCommit = trackVelocity(specParent1, tCommit)
-
-            const aParent2 = shiftBox(aParent1, 0, -30)
-            const aChild2 = shiftBox(aChild1, 0, -24 - 30)
-
-            h.group.capture()
-            trigger.style.left = '580px'
-            const quiet = silenceWarnings()
-            let run2: ReturnType<typeof report>
-            try {
-                run2 = report(h.group.flush())
-            } finally {
-                quiet.restore()
-            }
-
-            // First frame after commit must equal measured B within 0.5 px
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    child,
-                    bChildAtCommit,
-                    `L_MEAS_4 scale=${parentScale} path3 commit frame 0 child`
-                ),
-                expectViewAt(
-                    parent,
-                    bParentAtCommit,
-                    `L_MEAS_4 scale=${parentScale} path3 commit frame 0 parent`
-                )
+                        expectedBox(sRetarget, t),
+                        `child t'=${t.toFixed(3)}`,
+                    ],
+                    [anc, ancAt(restAt(f)), 'ancestor'],
+                    [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
+                ])
             )
-
-            const specChild2 = spec(
-                bChildAtCommit,
-                aChild2,
-                vChildAtCommit,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            await frames(
-                h.mc,
-                30,
-                (elapsed, idx) => {
-                    const t2 = (idx + 1) * 0.016
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            child,
-                            trackBox(specChild2, t2),
-                            `L_MEAS_4 scale=${parentScale} path3 frame ${idx + 1} (t2=${t2.toFixed(3)}) child`
-                        )
-                    )
-                    void vParentAtCommit
-                    void elapsed
-                },
-                () => run2.value !== null
-            )
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    child,
-                    aChild2,
-                    `L_MEAS_4 scale=${parentScale} path3 settle child`
-                )
-            )
-        } finally {
-            window.scrollTo(0, 0)
-            h.dispose()
         }
-    }
-
-    // 3. Sub-0.01 px rest displacement under a live ancestor scale of 300 -> §5.7 path 3, never path 1
-    {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            const anc = node(
-                h.root,
-                'left: 0; top: 0; width: 3000px; height: 3000px; transform: scale(0.1); transform-origin: 0 0;'
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(child, target, `${row} final child`, 0.01)
+        for (const element of [anc, child]) {
+            expectEqual(
+                `${element.style.translate}|${element.style.scale}`,
+                '|',
+                `${row} ${nameOf(names, element)}: pose restored`
             )
-            const wrap = node(
-                anc,
-                'left: 0; top: 0; width: 100px; height: 100px; transform-origin: 0 0;'
-            )
-            const child = node(
-                wrap,
-                'left: 1000px; top: 0; width: 200px; height: 200px; transform-origin: 0 0;'
-            )
-            const trigger = node(
-                h.root,
-                'left: 400px; top: 0; width: 50px; height: 50px;'
-            )
-            h.add(anc)
-            h.add(child)
-            h.add(trigger)
-
-            await h.group.update(() => {})
-            // Flush 1: anc shrinks 30x (300 -> 10 in view space under scale(0.1), pose = 30, innerPlanned = 0.1);
-            // child moves x: 100 -> 0 (w: 20 -> 20).
-            h.group.capture()
-            anc.style.width = '100px'
-            anc.style.height = '100px'
-            child.style.left = '0px'
-            void h.group.flush()
-
-            // Advance 1 frame (dt = 0, anc pose = 30, child at x = 100)
-            h.mc.frame(16)
-            await settleMicrotasks()
-
-            // Switch anc inner scale to 1 (with width 10px so anc's rest box stays 10x10 and drawn box stays 300x300,
-            // giving rho = pose(30) * innerNow(1) / innerPlanned(0.1) = 300), and shift wrap by 0.005px (< 0.01px!).
-            anc.style.width = '10px'
-            anc.style.height = '10px'
-            anc.style.transform = 'scale(1)'
-            child.style.width = '20px'
-            child.style.height = '20px'
-            wrap.style.transform = 'translateX(0.005px)'
-
-            const bChild300 = viewBox(child)
-            const rootBox = viewBox(h.root)
-            const aChild300: OBox = {
-                x: rootBox.x + 0.005,
-                y: rootBox.y,
-                w: 20,
-                h: 20,
-            }
-
-            h.group.capture()
-            trigger.style.left = '480px'
-            const quiet = silenceWarnings()
-            let run300: ReturnType<typeof report>
-            try {
-                run300 = report(h.group.flush())
-            } finally {
-                quiet.restore()
-            }
-
-            // Path 3 retargets from bChild300 (error <= 0.5 px on frame 0; path 1 would jump by > 0.5 px)
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    child,
-                    bChild300,
-                    'L_MEAS_4 scale=300 sub-0.01px path3 frame 0 child'
-                )
-            )
-            await frames(
-                h.mc,
-                30,
-                (elapsed, idx) => {
-                    const t2 = (idx + 1) * 0.016
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            child,
-                            trackBox(
-                                spec(
-                                    bChild300,
-                                    aChild300,
-                                    null,
-                                    duration,
-                                    EASE_OUT,
-                                    0,
-                                    0
-                                ),
-                                t2
-                            ),
-                            `L_MEAS_4 scale=300 sub-0.01px path3 frame ${idx + 1} (t2=${t2.toFixed(3)}) child`
-                        )
-                    )
-                    void elapsed
-                },
-                () => run300.value !== null
-            )
-        } finally {
-            h.dispose()
         }
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        if (!(path1Gap > 5)) {
+            throw new Error(
+                `${row} setup: path 1 would be only ${path1Gap.toFixed(3)} px off, too little to tell the paths apart`
+            )
+        }
+        return `ρ = ${rho.toFixed(1)} (pose ${pose(tk).toFixed(2)} × inner ${layer}), |δ| = ${delta} px, |δ|·ρ = ${(delta * rho).toFixed(2)} px; retarget ≤ ${worst.toFixed(3)} px (path 1 would be ${path1Gap.toFixed(0)} px off)`
+    } finally {
+        h.dispose()
     }
-
-    return report('L_MEAS_4', worst, 'path 2 at rest; path 3 at 0.5, 2, 300')
 }
 
-/**
- * L-MEAS-6: sticky engages mid-run: (a) with no later commit, (b) with a later commit.
- */
-export async function L_MEAS_6(): Promise<string> {
-    let worst = 0
-    const duration = 0.24
+/* ───────────────────────── L-MEAS-6 ───────────────────────── */
 
-    for (const withCommit of [false, true] as const) {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
+/**
+ * L-MEAS-6: sticky engages mid-run. The pose is relative to the layout box,
+ * so the drawn box follows the sticky offset with no read. (a) With no later
+ * commit the run ends exactly on its A, no snap. (b) A later commit keeps the
+ * track (path 2): continuity on the original timeline. The sticky
+ * displacement is measured on an identical non-participant twin.
+ */
+export function L_MEAS_6(): Promise<string> {
+    return variants('L_MEAS_6', [
+        ['(a) no later commit', () => meas6(false)],
+        ['(b) a later commit', () => meas6(true)],
+    ])
+}
+
+async function meas6(withCommit: boolean): Promise<string> {
+    const row = `L_MEAS_6 ${withCommit ? '(b)' : '(a)'}`
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const stickyIn = (left: number, marginLeft: number) => {
             const scroller = node(
                 h.root,
-                'left: 20px; top: 20px; width: 320px; height: 220px; overflow-y: auto;'
+                `left: ${left}px; top: 20px; width: 320px; height: 220px; overflow-y: auto;`
             )
             const flow = document.createElement('div')
             flow.style.cssText =
                 'position: relative; width: 300px; height: 700px; padding-top: 80px; box-sizing: border-box;'
             scroller.append(flow)
+            const sticky = document.createElement('div')
+            sticky.style.cssText = `position: sticky; top: 12px; margin-left: ${marginLeft}px; width: 100px; height: 40px; transform-origin: 0 0;`
+            flow.append(sticky)
+            return { scroller, sticky }
+        }
+        const { scroller, sticky } = stickyIn(20, 10)
+        const twin = stickyIn(420, 150)
+        const trigger = node(
+            h.root,
+            'left: 800px; top: 20px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { sticky, trigger })
+        await baseline(h, row)
 
-            const stickyEl = document.createElement('div')
-            stickyEl.style.cssText =
-                'position: sticky; top: 12px; margin-left: 10px; width: 100px; height: 40px; box-sizing: border-box;'
-            flow.append(stickyEl)
-
-            const trigger = node(
-                h.root,
-                'left: 400px; top: 20px; width: 60px; height: 40px;'
+        const b1 = viewBox(sticky)
+        h.group.capture()
+        sticky.style.marginLeft = '150px'
+        const authored = sticky.style.cssText
+        const a1 = viewBox(sticky)
+        const run1 = report(h.group.flush())
+        const s1 = spec(b1, a1, { timing: ease })
+        let dx = 0
+        let dy = 0
+        let f = 0
+        const at = (label: string) => {
+            const t = restAt(f)
+            return expectViewAt(
+                sticky,
+                shiftBox(expectedBox(s1, t), dx, dy),
+                `${row} ${label} t=${t.toFixed(3)} sticky`
             )
-            h.add(stickyEl)
-            h.add(trigger)
+        }
+        let worst = at('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+        }
 
-            await h.group.update(() => {})
-            const scrollerBox = viewBox(scroller)
-            const b1 = viewBox(stickyEl)
+        // scroll 120 px: sticky engages and its box moves by less
+        const twinBefore = viewBox(twin.sticky)
+        scroller.scrollTop = 120
+        twin.scroller.scrollTop = 120
+        const twinAfter = viewBox(twin.sticky)
+        dx = twinAfter.x - twinBefore.x
+        dy = twinAfter.y - twinBefore.y
+        if (!(dy > -119 && dy < -1)) {
+            throw new Error(
+                `${row} setup: the sticky twin moved ${dy} px for a 120 px scroll; sticky did not engage`
+            )
+        }
 
-            h.group.capture()
-            stickyEl.style.marginLeft = '150px'
-            const a1 = shiftBox(b1, 140, 0)
-            const spec1 = spec(b1, a1, null, duration)
-            const run1 = report(h.group.flush())
-
-            // Advance 5 frames (t = 0.064s) before sticky engages
-            await frames(h.mc, 5, (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        stickyEl,
-                        trackBox(spec1, t),
-                        `L_MEAS_6 (${withCommit ? 'b' : 'a'}) pre-sticky frame ${idx + 1}`
-                    )
-                )
-            })
-
-            // Scroll scroller by 120px: stickyEl was at scrollerBox.y + 80, engages sticky at scrollerBox.y + 12
-            // (so its y shifts by -68px instead of -120px)
-            scroller.scrollTop = 120
-            const stickyDeltaY = scrollerBox.y + 12 - b1.y
-
-            if (!withCommit) {
-                await frames(
-                    h.mc,
-                    25,
-                    (elapsed, idx) => {
-                        const totalElapsed = 4 * 0.016 + (idx + 1) * 0.016
-                        const want = shiftBox(
-                            trackBox(spec1, totalElapsed),
-                            0,
-                            stickyDeltaY
-                        )
-                        worst = Math.max(
-                            worst,
-                            expectViewAt(
-                                stickyEl,
-                                want,
-                                `L_MEAS_6 (a) post-sticky frame ${idx + 1} (t=${totalElapsed.toFixed(3)})`
-                            )
-                        )
-                        void elapsed
-                    },
-                    () => run1.value !== null
-                )
-                assert.ok(run1.value !== null, 'L_MEAS_6 (a) run settled')
-                assert.equal(
-                    run1.value.status,
-                    'ended',
-                    'L_MEAS_6 (a) status ended'
-                )
-                assert.equal(
-                    run1.value.snapped.length,
-                    0,
-                    'L_MEAS_6 (a) no snaps'
-                )
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        stickyEl,
-                        shiftBox(a1, 0, stickyDeltaY),
-                        'L_MEAS_6 (a) final frame exact'
-                    )
-                )
-            } else {
-                const bAtCommit = viewBox(stickyEl)
+        let run2: Holder | null = null
+        let sTrigger: OTrackSpec | null = null
+        let g = 0
+        let endedAt: number | null = null
+        while (
+            (run1.value === null || (run2 && run2.value === null)) &&
+            f < 80
+        ) {
+            if (withCommit && run2 === null && f === 9) {
+                const bTrigger = viewBox(trigger)
                 h.group.capture()
-                trigger.style.left = '480px'
-                const quiet = silenceWarnings()
-                let run2: ReturnType<typeof report>
-                try {
-                    run2 = report(h.group.flush())
-                } finally {
-                    quiet.restore()
+                trigger.style.left = '880px'
+                const aTrigger = viewBox(trigger)
+                run2 = report(h.group.flush())
+                sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+                worst = Math.max(
+                    worst,
+                    at(
+                        `commit write (sticky engaged: a 120 px scroll moved it ${dy.toFixed(2)} px since flush 1)`
+                    )
+                )
+                await expectRunning(names, run2, `${row} commit`)
+                if (run1.value !== null) {
+                    throw new Error(
+                        `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); path 2 keeps the track`
+                    )
                 }
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        stickyEl,
-                        bAtCommit,
-                        'L_MEAS_6 (b) commit frame 0 continuity'
-                    )
-                )
-                await frames(
-                    h.mc,
-                    25,
-                    (elapsed, idx) => {
-                        const totalElapsed = 4 * 0.016 + (idx + 1) * 0.016
-                        const want = shiftBox(
-                            trackBox(spec1, totalElapsed),
-                            0,
-                            stickyDeltaY
-                        )
-                        worst = Math.max(
-                            worst,
-                            expectViewAt(
-                                stickyEl,
-                                want,
-                                `L_MEAS_6 (b) post-commit frame ${idx + 1} (t=${totalElapsed.toFixed(3)})`
-                            )
-                        )
-                        void elapsed
-                    },
-                    () => run2.value !== null
-                )
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        stickyEl,
-                        shiftBox(a1, 0, stickyDeltaY),
-                        'L_MEAS_6 (b) final settle'
-                    )
+            }
+            f++
+            if (run2) g++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+            if (sTrigger) {
+                expectViewAt(
+                    trigger,
+                    expectedBox(sTrigger, restAt(g)),
+                    `${row} frame ${f} trigger`
                 )
             }
-        } finally {
-            h.dispose()
+            if (endedAt === null && run1.value !== null) endedAt = f
         }
+        expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+        expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        if (run2) expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(sticky, shiftBox(a1, dx, dy), `${row} final sticky`, 0.01)
+        expectRestored(sticky, authored, `${row} sticky`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `sticky offset ${dy.toFixed(2)} px; ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+    } finally {
+        h.dispose()
     }
-
-    return report('L_MEAS_6', worst, 'sticky (a) no commit, (b) with commit')
 }
 
+/* ───────────────────────── L-MEAS-7 ───────────────────────── */
+
 /**
- * L-MEAS-7: browser layout change mid-run (an element above grows), then a commit;
- * flat (takes §5.7 path 2) and nested with a child under a live-scaling parent (takes §5.7 path 3).
+ * L-MEAS-7: a browser layout change mid-run (an element above grows, like an
+ * image loading), then a commit. The drawn boxes follow the layout every
+ * frame (≤ 0.5 px); the commit takes the path the ancestor condition selects
+ * (§5.7): flat, path 2 (the original timeline, translated); a child under a
+ * parent with a live size track, path 3 (retarget from its measured box and
+ * analytic velocity) while that parent takes path 2.
  */
-export async function L_MEAS_7(): Promise<string> {
-    let worst = 0
-    const duration = 0.32
+export function L_MEAS_7(): Promise<string> {
+    return variants('L_MEAS_7', [
+        ['flat, path 2', meas7Flat],
+        ['nested under a live scale, path 3', meas7Nested],
+    ])
+}
 
-    // Part 1: Flat -> takes §5.7 path 2 (translate, no restart)
-    {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            const stack = node(
-                h.root,
-                'left: 20px; top: 20px; width: 360px; height: 400px;'
+async function meas7Flat(): Promise<string> {
+    const row = 'L_MEAS_7 flat'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const stack = node(
+            h.root,
+            'left: 20px; top: 20px; width: 360px; height: 400px;'
+        )
+        const banner = document.createElement('div')
+        banner.style.cssText = 'position: relative; width: 300px; height: 40px;'
+        stack.append(banner)
+        const card = document.createElement('div')
+        card.style.cssText =
+            'position: relative; margin-left: 0px; width: 100px; height: 50px; transform-origin: 0 0;'
+        stack.append(card)
+        const trigger = node(
+            h.root,
+            'left: 600px; top: 20px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { card, trigger })
+        await baseline(h, row)
+
+        const b1 = viewBox(card)
+        h.group.capture()
+        card.style.marginLeft = '160px'
+        const authored = card.style.cssText
+        const a1 = viewBox(card)
+        const run1 = report(h.group.flush())
+        const s1 = spec(b1, a1, { timing: ease })
+        let dy = 0
+        let f = 0
+        const at = (label: string) => {
+            const t = restAt(f)
+            return expectViewAt(
+                card,
+                shiftBox(expectedBox(s1, t), 0, dy),
+                `${row} ${label} t=${t.toFixed(3)} card`
             )
-            const banner = document.createElement('div')
-            banner.style.cssText =
-                'position: relative; width: 300px; height: 40px;'
-            stack.append(banner)
-
-            const card = document.createElement('div')
-            card.style.cssText =
-                'position: relative; margin-left: 0px; width: 100px; height: 50px; box-sizing: border-box;'
-            stack.append(card)
-
-            const trigger = node(
-                h.root,
-                'left: 420px; top: 20px; width: 60px; height: 40px;'
+        }
+        let worst = at('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+        }
+        banner.style.height = '100px'
+        dy = 60
+        while (f < 9) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`grown frame ${f}`))
+        }
+        const bTrigger = viewBox(trigger)
+        h.group.capture()
+        trigger.style.left = '680px'
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        worst = Math.max(
+            worst,
+            at(
+                'commit write (the banner above grew 60 px since flush 1, moving the card by the browser alone)'
             )
-            h.add(card)
-            h.add(trigger)
+        )
+        await expectRunning(names, run2, `${row} commit`)
+        if (run1.value !== null) {
+            throw new Error(
+                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); path 2 keeps the track`
+            )
+        }
+        let g = 0
+        let endedAt: number | null = null
+        while ((run1.value === null || run2.value === null) && f < 80) {
+            f++
+            g++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+            expectViewAt(
+                trigger,
+                expectedBox(sTrigger, restAt(g)),
+                `${row} frame ${f} trigger`
+            )
+            if (endedAt === null && run1.value !== null) endedAt = f
+        }
+        expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+        expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(card, shiftBox(a1, 0, 60), `${row} final card`, 0.01)
+        expectRestored(card, authored, `${row} card`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+    } finally {
+        h.dispose()
+    }
+}
 
-            await h.group.update(() => {})
-            const b1 = viewBox(card)
+async function meas7Nested(): Promise<string> {
+    const row = 'L_MEAS_7 nested'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const stack = node(
+            h.root,
+            'left: 20px; top: 20px; width: 420px; height: 500px;'
+        )
+        const banner = document.createElement('div')
+        banner.style.cssText = 'position: relative; width: 300px; height: 40px;'
+        stack.append(banner)
+        const parent = document.createElement('div')
+        parent.style.cssText =
+            'position: relative; width: 320px; height: 200px; transform-origin: 0 0;'
+        stack.append(parent)
+        const child = node(
+            parent,
+            'left: 10px; top: 20px; width: 80px; height: 40px; transform-origin: 0 0;'
+        )
+        const trigger = node(
+            h.root,
+            'left: 600px; top: 20px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, child, trigger })
+        await baseline(h, row)
 
-            h.group.capture()
-            card.style.marginLeft = '160px'
-            const a1 = shiftBox(b1, 160, 0)
-            const spec1 = spec(b1, a1, null, duration)
-            const run1 = report(h.group.flush())
+        const bParent = viewBox(parent)
+        const bChild = viewBox(child)
+        h.group.capture()
+        parent.style.width = '160px'
+        parent.style.height = '100px'
+        child.style.left = '90px'
+        const authored = [parent.style.cssText, child.style.cssText]
+        const aParent = viewBox(parent)
+        const aChild = viewBox(child)
+        const run1 = report(h.group.flush())
+        const sParent = spec(bParent, aParent, { timing: ease })
+        const sChild = spec(bChild, aChild, { timing: ease })
+        let dy = 0
+        // the parent's layout box moved: a pure translation of its frame
+        const parentAt = (t: number) => shiftBox(expectedBox(sParent, t), 0, dy)
+        const childAt = (t: number) => shiftBox(expectedBox(sChild, t), 0, dy)
+        let f = 0
+        const first = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [parent, parentAt(t), 'parent'],
+                [child, childAt(t), 'child'],
+            ])
+        }
+        let worst = first('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`frame ${f}`))
+        }
+        banner.style.height = '90px'
+        dy = 50
+        while (f < 9) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`grown frame ${f}`))
+        }
+        const tk = restAt(f)
+        const live = expectedBox(sParent, tk).w / aParent.w
+        const measured = viewBox(child)
+        const velocity = velocityOf(childAt, tk)
+        const target = shiftBox(aChild, 0, 50)
+        const bTrigger = viewBox(trigger)
+        h.group.capture()
+        trigger.style.left = '680px'
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sRetarget = spec(measured, target, { timing: ease, velocity })
+        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        worst = Math.max(
+            worst,
+            expectAll(
+                `${row} commit write (the banner above grew 50 px since flush 1; parent scale ${live.toFixed(3)})`,
+                [
+                    [child, measured, 'child (measured B)'],
+                    [parent, parentAt(tk), 'parent'],
+                    [trigger, bTrigger, 'trigger'],
+                ]
+            )
+        )
+        await settleMicrotasks()
+        if (run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the child's track, so it resolves 'interrupted'`
+            )
+        }
+        await expectRunning(names, run2, `${row} commit`)
+        let g = 0
+        let path2Gap = 0
+        while (run2.value === null && f < 90) {
+            f++
+            g++
+            await step(h.mc)
+            const t = movingAt(g)
+            path2Gap = Math.max(
+                path2Gap,
+                maxDiff(childAt(restAt(f)), expectedBox(sRetarget, t))
+            )
+            worst = Math.max(
+                worst,
+                expectAll(`${row} frame ${f}`, [
+                    [
+                        child,
+                        expectedBox(sRetarget, t),
+                        `child t'=${t.toFixed(3)}`,
+                    ],
+                    [parent, parentAt(restAt(f)), 'parent'],
+                    [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
+                ])
+            )
+        }
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(child, target, `${row} final child`, 0.01)
+        expectViewAt(
+            parent,
+            shiftBox(aParent, 0, 50),
+            `${row} final parent`,
+            0.01
+        )
+        expectRestored(parent, authored[0]!, `${row} parent`)
+        expectRestored(child, authored[1]!, `${row} child`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        if (!(path2Gap > 1)) {
+            throw new Error(
+                `${row} setup: path 2 would be only ${path2Gap.toFixed(3)} px off, too little to tell the paths apart`
+            )
+        }
+        return `parent scale ${live.toFixed(3)} at the commit; child retargets ≤ ${worst.toFixed(3)} px (path 2 would be ${path2Gap.toFixed(1)} px off)`
+    } finally {
+        h.dispose()
+    }
+}
 
-            await frames(h.mc, 5, (elapsed, idx) => {
+/* ───────────────────────── L-MEAS-8 ───────────────────────── */
+
+/**
+ * L-MEAS-8: a fixed sheet with nested participants while the page scrolls.
+ * A fixed element does not move in view space, so a page scroll in the
+ * commit's task or mid-run moves nothing (§3.2): no motion, no 'stale'; the
+ * inner layout animates on its oracle, and a commit mid-run keeps it.
+ */
+export async function L_MEAS_8(): Promise<string> {
+    const row = 'L_MEAS_8'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    /** Scrolls the page, failing as a setup error when the scroll does not land. */
+    const scrollPage = (y: number) => {
+        scrollTo(0, y)
+        if (scrollY !== y) {
+            throw new Error(
+                `${row} setup: the page scrolled to ${scrollY}, not ${y}`
+            )
+        }
+    }
+    try {
+        h.root.style.height = '2400px'
+        scrollPage(100)
+        const sheet = document.createElement('div')
+        sheet.style.cssText =
+            'position: fixed; left: 40px; top: 60px; width: 260px; height: 180px; box-sizing: border-box; transform-origin: 0 0;'
+        h.root.append(sheet)
+        const inner = node(
+            sheet,
+            'left: 16px; top: 24px; width: 100px; height: 44px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { sheet, inner })
+        await baseline(h, row)
+        const authored = [sheet.style.cssText, inner.style.cssText]
+
+        // 1. the page scrolls in the commit's task; nothing else changes
+        const bSheet = viewBox(sheet)
+        const bInner = viewBox(inner)
+        h.group.capture()
+        scrollPage(380)
+        const scrollOnly = report(h.group.flush())
+        let worst = expectAll(
+            `${row} scroll-only flush write (the page scrolled 100 → 380 px in the commit's task; the sheet is viewport-fixed)`,
+            [
+                [sheet, bSheet, 'sheet'],
+                [inner, bInner, 'inner'],
+            ]
+        )
+        const r1 = await expectNoRun(
+            scrollOnly,
+            `${row} scroll-only flush`,
+            'a fixed sheet does not move in view space'
+        )
+        expectReport(names, r1, 'no-change', [], `${row} scroll-only flush`)
+        expectSnapCalls(names, snaps, [], `${row} scroll-only flush`)
+        for (let f = 1; f <= 3; f++) {
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectAll(`${row} scroll-only frame ${f}`, [
+                    [sheet, bSheet, 'sheet'],
+                    [inner, bInner, 'inner'],
+                ])
+            )
+        }
+        expectRestored(sheet, authored[0]!, `${row} scroll-only sheet`)
+        expectRestored(inner, authored[1]!, `${row} scroll-only inner`)
+
+        // 2. the inner layout changes while the page scrolls in the commit's task
+        h.group.capture()
+        scrollPage(620)
+        sheet.style.width = '320px'
+        inner.style.left = '136px'
+        const authoredRun = [sheet.style.cssText, inner.style.cssText]
+        const aSheet = viewBox(sheet)
+        const aInner = viewBox(inner)
+        const run = report(h.group.flush())
+        const sSheet = spec(bSheet, aSheet, { timing: ease })
+        const sInner = spec(bInner, aInner, { timing: ease })
+        let f = 0
+        const at = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [sheet, expectedBox(sSheet, t), 'sheet'],
+                [inner, expectedBox(sInner, t), 'inner'],
+            ])
+        }
+        worst = Math.max(worst, at('flush write'))
+        await expectRunning(names, run, `${row} flush`)
+        while (run.value === null && f < 60) {
+            if (f === 4) scrollPage(900)
+            if (f === 8) scrollPage(150)
+            if (f === 11) {
+                // a commit mid-run with an unpresented page scroll: kept (δ = 0)
+                h.group.capture()
+                scrollPage(400)
+                const commit = report(h.group.flush())
                 worst = Math.max(
                     worst,
-                    expectViewAt(
-                        card,
-                        trackBox(spec1, since(0, elapsed)),
-                        `L_MEAS_7 flat pre-grow frame ${idx + 1}`
+                    at(
+                        "commit write (the page scrolled 150 → 400 px in the commit's task)"
                     )
                 )
-            })
+                const r = await expectNoRun(
+                    commit,
+                    `${row} commit`,
+                    'nothing moved in view space, so the tracks are kept'
+                )
+                expectReport(names, r, 'no-change', [], `${row} commit`)
+            }
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+        }
+        expectReport(names, run.value!, 'ended', [], `${row} run`)
+        expectSnapCalls(names, snaps, [], `${row} run`)
+        expectViewAt(sheet, aSheet, `${row} final sheet`, 0.01)
+        expectViewAt(inner, aInner, `${row} final inner`, 0.01)
+        expectRestored(sheet, authoredRun[0]!, `${row} sheet`)
+        expectRestored(inner, authoredRun[1]!, `${row} inner`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `page scrolls 100 → 380 → 620 → 900 → 150 → 400 move nothing; ${f} frames ≤ ${worst.toFixed(3)} px`
+    } finally {
+        scrollTo(0, 0)
+        h.dispose()
+    }
+}
 
-            // Unregistered banner above grows by +60px mid-run
-            banner.style.height = '100px'
-            const tAtGrow = since(0, 4 * 0.016)
+/* ───────────────────────── L-MEAS-9 ───────────────────────── */
+
+/**
+ * L-MEAS-9: nested driven parent and child. (a) A fresh capture mid-run:
+ * both retarget from their measured boxes and analytic velocities; each frame
+ * both are on their own oracle, so the child cannot shear. (b) A frame passes
+ * between `capture()` and `flush()`: the capture is aged (§4.1), the flush
+ * keeps both tracks translated by δ and reports them 'stale' (§4.4), and
+ * nothing rewinds to the aged box.
+ */
+export function L_MEAS_9(): Promise<string> {
+    return variants('L_MEAS_9', [
+        ['(a) fresh capture', meas9Fresh],
+        ['(b) aged capture', meas9Aged],
+    ])
+}
+
+async function meas9Fresh(): Promise<string> {
+    const row = 'L_MEAS_9 (a)'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const parent = node(
+            h.root,
+            'left: 20px; top: 20px; width: 200px; height: 120px; transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 10px; top: 15px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, child })
+        await baseline(h, row)
+
+        const bParent = viewBox(parent)
+        const bChild = viewBox(child)
+        h.group.capture()
+        parent.style.left = '140px'
+        parent.style.width = '300px'
+        child.style.left = '90px'
+        child.style.width = '100px'
+        const aParent = viewBox(parent)
+        const aChild = viewBox(child)
+        const run1 = report(h.group.flush())
+        const sParent = spec(bParent, aParent, { timing: ease })
+        const sChild = spec(bChild, aChild, { timing: ease })
+        let f = 0
+        const first = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [parent, expectedBox(sParent, t), 'parent'],
+                [child, expectedBox(sChild, t), 'child'],
+            ])
+        }
+        let worst = first('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`frame ${f}`))
+        }
+
+        const tk = restAt(f)
+        const mParent = viewBox(parent)
+        const mChild = viewBox(child)
+        const vParent = velocityOf((t) => expectedBox(sParent, t), tk)
+        const vChild = velocityOf((t) => expectedBox(sChild, t), tk)
+        const root = viewBox(h.root)
+        h.group.capture()
+        parent.style.left = '60px'
+        parent.style.top = '80px'
+        parent.style.width = '240px'
+        child.style.left = '40px'
+        child.style.top = '35px'
+        child.style.width = '80px'
+        const authored = [authorText(parent), authorText(child)]
+        const aParent2 = { x: root.x + 60, y: root.y + 80, w: 240, h: 120 }
+        const aChild2 = { x: aParent2.x + 40, y: aParent2.y + 35, w: 80, h: 40 }
+        const run2 = report(h.group.flush())
+        const sParent2 = spec(mParent, aParent2, {
+            timing: ease,
+            velocity: vParent,
+        })
+        const sChild2 = spec(mChild, aChild2, {
+            timing: ease,
+            velocity: vChild,
+        })
+        worst = Math.max(
+            worst,
+            expectAll(`${row} retarget write`, [
+                [parent, mParent, 'parent (measured B)'],
+                [child, mChild, 'child (measured B)'],
+            ])
+        )
+        await settleMicrotasks()
+        if (run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} retarget: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; both tracks were replaced, so it resolves 'interrupted'`
+            )
+        }
+        await expectRunning(names, run2, `${row} retarget`)
+        let g = 0
+        while (run2.value === null && g < 60) {
+            g++
+            await step(h.mc)
+            const t = movingAt(g)
+            worst = Math.max(
+                worst,
+                expectAll(`${row} retarget frame ${g} t'=${t.toFixed(3)}`, [
+                    [parent, expectedBox(sParent2, t), 'parent'],
+                    [child, expectedBox(sChild2, t), 'child'],
+                ])
+            )
+        }
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        expectViewAt(parent, aParent2, `${row} final parent`, 0.01)
+        expectViewAt(child, aChild2, `${row} final child`, 0.01)
+        expectRestored(parent, authored[0]!, `${row} parent`)
+        expectRestored(child, authored[1]!, `${row} child`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `both from (B, v), ${g} frames ≤ ${worst.toFixed(3)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+async function meas9Aged(): Promise<string> {
+    const row = 'L_MEAS_9 (b)'
+    const linear = timing.linear()
+    const { h, snaps, names } = harnessWithSnaps(linear)
+    try {
+        const parent = node(
+            h.root,
+            'left: 0; top: 0; width: 200px; height: 100px; transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 0; top: 0; width: 80px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, child })
+        await baseline(h, row)
+
+        const bParent = viewBox(parent)
+        const bChild = viewBox(child)
+        h.group.capture()
+        parent.style.left = '160px'
+        child.style.left = '160px'
+        const aParent = viewBox(parent)
+        const aChild = viewBox(child)
+        const run1 = report(h.group.flush())
+        const sParent = spec(bParent, aParent, { timing: linear })
+        const sChild = spec(bChild, aChild, { timing: linear })
+        let dParent = 0
+        let dChild = 0
+        let f = 0
+        const at = (label: string) => {
+            const t = restAt(f)
+            return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [
+                    parent,
+                    shiftBox(expectedBox(sParent, t), dParent, 0),
+                    'parent',
+                ],
+                [child, shiftBox(expectedBox(sChild, t), dChild, 0), 'child'],
+            ])
+        }
+        let worst = at('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 4) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+        }
+
+        // capture, then a clock frame passes before the flush: aged
+        h.group.capture()
+        const agedChild = viewBox(child)
+        f++
+        await step(h.mc)
+        worst = Math.max(worst, at(`frame ${f} (after the capture)`))
+        if (!(viewBox(child).x > agedChild.x + 5)) {
+            throw new Error(
+                `${row} setup: the child did not move after the capture`
+            )
+        }
+        parent.style.left = '200px'
+        child.style.left = '180px'
+        const quiet = silenceWarnings()
+        let aged: Holder
+        try {
+            aged = report(h.group.flush())
+        } finally {
+            quiet.restore()
+        }
+        // §4.4: both keep their tracks, translated by δ (+40 and +60)
+        dParent = 40
+        dChild = 60
+        worst = Math.max(
+            worst,
+            at(
+                'aged flush write (a frame ran between capture() and flush(); both tracks kept, translated by δ)'
+            )
+        )
+        const r = await expectNoRun(
+            aged,
+            `${row} aged flush`,
+            'an aged capture never supplies B; driven nodes keep their tracks (§4.4)'
+        )
+        const stale: Snap[] = [
+            { element: parent, reason: 'stale' },
+            { element: child, reason: 'stale' },
+        ]
+        expectReport(names, r, 'stale', stale, `${row} aged flush`)
+        expectSnapCalls(names, snaps, stale, `${row} aged flush`)
+        if (run1.value !== null) {
+            throw new Error(
+                `${row} aged flush: run 1 resolved (${describeReport(names, run1.value)}); the kept tracks still run`
+            )
+        }
+        let endedAt: number | null = null
+        while (run1.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+            if (run1.value !== null) endedAt = f
+        }
+        expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+        expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        expectViewAt(
+            parent,
+            shiftBox(aParent, 40, 0),
+            `${row} final parent`,
+            0.01
+        )
+        expectViewAt(child, shiftBox(aChild, 60, 0), `${row} final child`, 0.01)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `aged: both kept and reported, no rewind; ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+/* ───────────────────────── L-MEAS-10 ───────────────────────── */
+
+/**
+ * L-MEAS-10: participants in an open and in a closed shadow root inside an
+ * outer scroller, as L-MEAS-4. In each root a shadow participant (`panel`)
+ * runs a size track from scale 2; inside it a shadow child and a light-DOM
+ * child slotted into the panel's `<slot>` run their own tracks. Their parent
+ * participant in the flat tree (§4.6) is the panel, so both are drawn exactly
+ * on their oracle under its live scale. The outer scroller scrolls mid-run;
+ * a commit then keeps the panel (path 2) and retargets both children from
+ * their measured boxes (path 3).
+ */
+export function L_MEAS_10(): Promise<string> {
+    return variants('L_MEAS_10', [
+        ['open root', () => meas10('open')],
+        ['closed root', () => meas10('closed')],
+    ])
+}
+
+async function meas10(mode: ShadowRootMode): Promise<string> {
+    const row = `L_MEAS_10 ${mode}`
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    /** Set once the slotted child exists: what `assignedSlot` returns for it. */
+    let slotSeen: 'null' | 'the panel slot' | null = null
+    try {
+        const scroller = node(
+            h.root,
+            'left: 20px; top: 20px; width: 420px; height: 300px; overflow-y: auto;'
+        )
+        const content = document.createElement('div')
+        content.style.cssText =
+            'position: relative; width: 400px; height: 800px;'
+        scroller.append(content)
+        const host = node(
+            content,
+            'left: 10px; top: 60px; width: 380px; height: 320px;'
+        )
+        const shadow = host.attachShadow({ mode })
+        const panel = document.createElement('div')
+        panel.style.cssText =
+            'position: absolute; left: 0; top: 0; width: 300px; height: 150px; box-sizing: border-box; transform-origin: 0 0;'
+        shadow.append(panel)
+        const inShadow = document.createElement('div')
+        inShadow.style.cssText =
+            'position: absolute; left: 10px; top: 10px; width: 60px; height: 30px; box-sizing: border-box; transform-origin: 0 0;'
+        panel.append(inShadow)
+        panel.append(document.createElement('slot'))
+        const slotted = node(
+            host,
+            'left: 10px; top: 60px; width: 60px; height: 30px; transform-origin: 0 0;'
+        )
+        slotSeen = slotted.assignedSlot === null ? 'null' : 'the panel slot'
+        const trigger = node(
+            h.root,
+            'left: 600px; top: 20px; width: 60px; height: 40px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, {
+            panel,
+            'shadow child': inShadow,
+            'slotted child': slotted,
+            trigger,
+        })
+        await baseline(h, row)
+
+        const kids = [inShadow, slotted] as const
+        const bPanel = viewBox(panel)
+        const bKids = kids.map(viewBox)
+        h.group.capture()
+        panel.style.width = '150px'
+        panel.style.height = '75px'
+        inShadow.style.left = '70px'
+        slotted.style.left = '70px'
+        const aPanel = viewBox(panel)
+        const aKids = kids.map(viewBox)
+        const run1 = report(h.group.flush())
+        const sPanel = spec(bPanel, aPanel, { timing: ease })
+        const sKids = kids.map((_, i) =>
+            spec(bKids[i]!, aKids[i]!, { timing: ease })
+        )
+        let dy = 0
+        // the outer scroll translates the whole host
+        const panelAt = (t: number) => shiftBox(expectedBox(sPanel, t), 0, dy)
+        const kidAt = (i: number, t: number) =>
+            shiftBox(expectedBox(sKids[i]!, t), 0, dy)
+        /**
+         * Where a child is drawn when its track is planned without the panel
+         * as its parent: the panel's pose (scale about its top-left corner)
+         * applied on top of the child's own track.
+         */
+        const unparented = (i: number, t: number): OBox => {
+            const p = panelAt(t)
+            const o = kidAt(i, t)
+            const k = p.w / aPanel.w
+            const ox = aPanel.x
+            const oy = aPanel.y + dy
+            return {
+                x: p.x + (o.x - ox) * k,
+                y: p.y + (o.y - oy) * k,
+                w: o.w * k,
+                h: o.h * k,
+            }
+        }
+        let f = 0
+        const first = (label: string) => {
+            const t = restAt(f)
+            try {
+                return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                    [panel, panelAt(t), 'panel'],
+                    ...kids.map(
+                        (k, i) => [k, kidAt(i, t), nameOf(names, k)] as const
+                    ),
+                ])
+            } catch (error) {
+                const i = kids.findIndex(
+                    (k, j) => maxDiff(viewBox(k), kidAt(j, t)) > 0.5
+                )
+                if (i >= 0 && error instanceof Error) {
+                    const off = maxDiff(viewBox(kids[i]!), unparented(i, t))
+                    if (off <= 0.5) {
+                        error.message += `; it is drawn within ${off.toFixed(3)} px of ${JSON.stringify(unparented(i, t))}, its own track under the panel's pose: planned without the panel as its parent`
+                    }
+                }
+                throw error
+            }
+        }
+        let worst = first('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 6) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`frame ${f}`))
+        }
+        scroller.scrollTop = 50
+        dy = -50
+        while (f < 9) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, first(`scrolled frame ${f}`))
+        }
+
+        const tk = restAt(f)
+        const measured = kids.map(viewBox)
+        const velocity = kids.map((_, i) => velocityOf((t) => kidAt(i, t), tk))
+        const targets = aKids.map((a) => shiftBox(a, 0, -50))
+        const bTrigger = viewBox(trigger)
+        h.group.capture()
+        trigger.style.left = '680px'
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sRetarget = kids.map((_, i) =>
+            spec(measured[i]!, targets[i]!, {
+                timing: ease,
+                velocity: velocity[i]!,
+            })
+        )
+        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        worst = Math.max(
+            worst,
+            expectAll(
+                `${row} commit write (an outer scroll of 50 px presented since flush 1)`,
+                [
+                    [panel, panelAt(tk), 'panel'],
+                    ...kids.map(
+                        (k, i) =>
+                            [
+                                k,
+                                measured[i]!,
+                                `${nameOf(names, k)} (measured B)`,
+                            ] as const
+                    ),
+                    [trigger, bTrigger, 'trigger'],
+                ]
+            )
+        )
+        await settleMicrotasks()
+        if (run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the children's tracks, so it resolves 'interrupted'`
+            )
+        }
+        await expectRunning(names, run2, `${row} commit`)
+        let g = 0
+        while (run2.value === null && f < 90) {
+            f++
+            g++
+            await step(h.mc)
+            const t = movingAt(g)
+            worst = Math.max(
+                worst,
+                expectAll(`${row} frame ${f}`, [
+                    [panel, panelAt(restAt(f)), 'panel'],
+                    ...kids.map(
+                        (k, i) =>
+                            [
+                                k,
+                                expectedBox(sRetarget[i]!, t),
+                                `${nameOf(names, k)} t'=${t.toFixed(3)}`,
+                            ] as const
+                    ),
+                    [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
+                ])
+            )
+        }
+        expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
+        expectSnapCalls(names, snaps, [], `${row} runs`)
+        kids.forEach((k, i) =>
+            expectViewAt(
+                k,
+                targets[i]!,
+                `${row} final ${nameOf(names, k)}`,
+                0.01
+            )
+        )
+        expectViewAt(
+            panel,
+            shiftBox(aPanel, 0, -50),
+            `${row} final panel`,
+            0.01
+        )
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `shadow and slotted children exact under the panel's live scale; ≤ ${worst.toFixed(3)} px`
+    } catch (error) {
+        // name the flat-tree ancestry the page itself reports, so a failure
+        // caused by a parent lookup through `assignedSlot` shows it (§4.6)
+        if (slotSeen === 'null' && error instanceof Error) {
+            error.message += ` (the slotted child's assignedSlot is null in a ${mode} root although it is slotted into the panel, so a parent lookup through assignedSlot misses the panel)`
+        }
+        throw error
+    } finally {
+        h.dispose()
+    }
+}
+
+/* ───────────────────────── L-MEAS-11 ───────────────────────── */
+
+/**
+ * L-MEAS-11: the §4.4 table, for a capture-less flush and for an aged
+ * capture (an asynchronous gap that lets a rendering opportunity pass, the
+ * window `requestAnimationFrame` half of the frame marker). Nodes: undriven
+ * moved, undriven unmoved, newly registered, driven with |δ| above and below
+ * `threshold`, and an amplified driven node whose |δ| is 0.005 px (below
+ * 0.01) under a screen amplification ρ ≈ 330 (the L-MEAS-4 construction), so
+ * |δ|·max(1, ρ) ≈ 1.7 px reaches `threshold`. `status`, `report.snapped` and
+ * the `onSnap` calls must be exactly the §4.4 set.
+ */
+export function L_MEAS_11(): Promise<string> {
+    return variants('L_MEAS_11', [
+        ['capture-less flush', () => meas11('capture-less')],
+        ['aged capture', () => meas11('aged')],
+    ])
+}
+
+async function meas11(mode: 'capture-less' | 'aged'): Promise<string> {
+    const row = `L_MEAS_11 ${mode}`
+    const linear = timing.linear()
+    const { h, snaps, names } = harnessWithSnaps(linear)
+    try {
+        const box = (top: number) =>
+            node(
+                h.root,
+                `left: 0; top: ${top}px; width: 80px; height: 30px; transform-origin: 0 0;`
+            )
+        const undrivenMoved = box(20)
+        const undrivenUnmoved = box(60)
+        const drivenAbove = box(100)
+        const drivenBelow = box(140)
+        const q0 = 0.05
+        const anc = node(
+            h.root,
+            `left: 300px; top: 40px; width: 5000px; height: 5000px; transform: scale(${q0}); transform-origin: 0 0;`
+        )
+        const wrap = node(anc, 'left: 0; top: 0; width: 0; height: 0;')
+        const amplified = node(
+            wrap,
+            'left: 0; top: 0; width: 800px; height: 800px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, {
+            'undriven moved': undrivenMoved,
+            'undriven unmoved': undrivenUnmoved,
+            'driven above': drivenAbove,
+            'driven below': drivenBelow,
+            ancestor: anc,
+            amplified,
+        })
+        await baseline(h, row)
+
+        // flush 1: four driven tracks
+        const bAbove = viewBox(drivenAbove)
+        const bBelow = viewBox(drivenBelow)
+        const bAnc = viewBox(anc)
+        const bAmp = viewBox(amplified)
+        h.group.capture()
+        drivenAbove.style.left = '160px'
+        drivenBelow.style.left = '160px'
+        anc.style.width = '200px'
+        anc.style.height = '200px'
+        amplified.style.width = '200px'
+        amplified.style.height = '200px'
+        const aAbove = viewBox(drivenAbove)
+        const aBelow = viewBox(drivenBelow)
+        const aAnc = viewBox(anc)
+        const aAmp = viewBox(amplified)
+        const run1 = report(h.group.flush())
+        const sAbove = spec(bAbove, aAbove, { timing: linear })
+        const sBelow = spec(bBelow, aBelow, { timing: linear })
+        const sAnc = spec(bAnc, aAnc, { timing: linear })
+        const sAmp = spec(bAmp, aAmp, { timing: linear })
+        const origin = { x: aAnc.x, y: aAnc.y }
+        const shift = 0.1
+        let layer = 1
+        let shifted = 0
+        let dAbove = 0
+        let dBelow = 0
+        const pose = (t: number) => expectedBox(sAnc, t).w / aAnc.w
+        const ancAt = (t: number) => {
+            const v = expectedBox(sAnc, t)
+            return { x: v.x, y: v.y, w: v.w * layer, h: v.h * layer }
+        }
+        const ampAt = (t: number) => {
+            const v = expectedBox(sAmp, t)
+            return {
+                x: origin.x + layer * (v.x - origin.x) + shifted * pose(t),
+                y: origin.y + layer * (v.y - origin.y),
+                w: layer * v.w,
+                h: layer * v.h,
+            }
+        }
+        let f = 0
+        /** `slack`: the amplified node may be off by its reported bound after the flush (§4.4). */
+        let slack = 0
+        const at = (label: string) => {
+            const t = restAt(f)
+            let worst = expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                [
+                    drivenAbove,
+                    shiftBox(expectedBox(sAbove, t), dAbove, 0),
+                    'driven above',
+                ],
+                [
+                    drivenBelow,
+                    shiftBox(expectedBox(sBelow, t), dBelow, 0),
+                    'driven below',
+                ],
+                [anc, ancAt(t), 'ancestor'],
+            ])
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    amplified,
+                    ampAt(t),
+                    `${row} ${label} t=${t.toFixed(3)} amplified`,
+                    0.5 + slack
+                )
+            )
+            return worst
+        }
+        let worst = at('flush 1 write')
+        await expectRunning(names, run1, `${row} flush 1`)
+        while (f < 7) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+        }
+        // the presence layer and the 0.1 CSS px shift, presented by a frame
+        anc.style.transform = 'scale(1)'
+        wrap.style.transform = `translateX(${shift}px)`
+        layer = 1 / q0
+        shifted = shift
+        f++
+        await step(h.mc)
+        worst = Math.max(worst, at(`layered frame ${f}`))
+        const tk = restAt(f)
+        const rho = pose(tk) * layer
+        const delta = shift * q0
+
+        const quiet = silenceWarnings()
+        let newcomer: HTMLElement
+        let flushed: Holder
+        try {
+            if (mode === 'aged') {
+                h.group.capture()
+                // an asynchronous gap that lets a rendering opportunity pass
+                await nextFrame()
+            }
+            newcomer = box(260)
+            names.set(newcomer, 'newly registered')
+            h.add(newcomer)
+            undrivenMoved.style.left = '80px'
+            drivenAbove.style.left = '200px'
+            drivenBelow.style.left = '160.4px'
+            flushed = report(h.group.flush())
+        } finally {
+            quiet.restore()
+        }
+        dAbove = 40
+        dBelow = 0.4
+        slack = delta * Math.max(1, rho)
+        worst = Math.max(
+            worst,
+            at(
+                `§4.4 flush write (${mode === 'aged' ? 'an aged capture' : 'no capture'}: driven tracks kept, translated by δ)`
+            )
+        )
+        const r = await expectNoRun(
+            flushed,
+            `${row} §4.4 flush`,
+            'with no valid measurement no track starts; driven nodes keep theirs (§4.4)'
+        )
+        const stale: Snap[] = [
+            undrivenMoved,
+            newcomer,
+            drivenAbove,
+            amplified,
+        ].map((element) => ({ element, reason: 'stale' as const }))
+        expectReport(names, r, 'stale', stale, `${row} §4.4 flush`)
+        expectSnapCalls(names, snaps, stale, `${row} §4.4 flush`)
+        for (const element of [undrivenMoved, undrivenUnmoved, newcomer]) {
+            expectEqual(
+                `${element.style.translate}|${element.style.scale}`,
+                '|',
+                `${row} ${nameOf(names, element)}: undriven, appears at A with no track`
+            )
+        }
+        if (run1.value !== null) {
+            throw new Error(
+                `${row} §4.4 flush: run 1 resolved (${describeReport(names, run1.value)}); the kept tracks still run`
+            )
+        }
+        let endedAt: number | null = null
+        while (run1.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            worst = Math.max(worst, at(`frame ${f}`))
+            if (run1.value !== null) endedAt = f
+        }
+        expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+        expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        expectSnapCalls(names, snaps, [], `${row} run 1`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `ρ = ${rho.toFixed(1)}, |δ| = ${delta} px → |δ|·ρ = ${(delta * rho).toFixed(2)} px reported; snapped exactly [${snapList(names, stale).join(', ')}]`
+    } finally {
+        h.dispose()
+    }
+}
+
+/* ───────────────────────── L-MEAS-12 ───────────────────────── */
+
+/**
+ * L-MEAS-12: author rotation. (a) A box-changing rotation added mid-run and
+ * (b) one present at capture and removed by the commit: the support check
+ * (§4.2) snaps the node and its participant subtree 'unsupported', at A with
+ * styles restored. (c) A 180° rotation removed by the commit is not detected
+ * and need not be: its bounding box is its box, so the box moves exactly.
+ */
+export function L_MEAS_12(): Promise<string> {
+    return variants('L_MEAS_12', [
+        ['(a) added mid-run', meas12Added],
+        ['(b) present at capture, removed by the commit', meas12Removed],
+        ['(c) 180° removed by the commit', meas12Half],
+    ])
+}
+
+async function meas12Added(): Promise<string> {
+    const row = 'L_MEAS_12 (a)'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const parent = node(
+            h.root,
+            'left: 20px; top: 20px; width: 160px; height: 60px; transform-origin: 0 0;'
+        )
+        const child = node(
+            parent,
+            'left: 10px; top: 10px; width: 60px; height: 30px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, child })
+        await baseline(h, row)
+        const bParent = viewBox(parent)
+        const bChild = viewBox(child)
+        h.group.capture()
+        parent.style.left = '140px'
+        child.style.left = '50px'
+        const aParent = viewBox(parent)
+        const aChild = viewBox(child)
+        const run1 = report(h.group.flush())
+        const sParent = spec(bParent, aParent, { timing: ease })
+        const sChild = spec(bChild, aChild, { timing: ease })
+        let worst = 0
+        await expectRunning(names, run1, `${row} flush 1`)
+        for (let f = 1; f <= 4; f++) {
+            await step(h.mc)
+            const t = restAt(f)
+            worst = Math.max(
+                worst,
+                expectAll(`${row} frame ${f} t=${t.toFixed(3)}`, [
+                    [parent, expectedBox(sParent, t), 'parent'],
+                    [child, expectedBox(sChild, t), 'child'],
+                ])
+            )
+        }
+        // the author adds a box-changing rotation; a frame presents it
+        parent.style.transform = 'rotate(35deg)'
+        await step(h.mc)
+        const quiet = silenceWarnings()
+        let commit: Holder
+        let authored: string[]
+        try {
+            h.group.capture()
+            parent.style.left = '240px'
+            child.style.left = '80px'
+            authored = [authorText(parent), authorText(child)]
+            commit = report(h.group.flush())
+        } finally {
+            quiet.restore()
+        }
+        const r = await expectNoRun(
+            commit,
+            `${row} commit`,
+            'the rotated subtree snaps unsupported (§4.2)'
+        )
+        const unsupported: Snap[] = [
+            { element: parent, reason: 'unsupported' },
+            { element: child, reason: 'unsupported' },
+        ]
+        expectReport(names, r, 'no-change', unsupported, `${row} commit`)
+        expectSnapCalls(names, snaps, unsupported, `${row} commit`)
+        expectRestored(parent, authored[0]!, `${row} parent at A`)
+        expectRestored(child, authored[1]!, `${row} child at A`)
+        if (run1.value === null) {
+            throw new Error(
+                `${row} commit: run 1 is still pending after its tracks snapped`
+            )
+        }
+        const atA = [viewBox(parent), viewBox(child)]
+        for (let f = 1; f <= 3; f++) {
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectAll(`${row} after the snap frame ${f}`, [
+                    [parent, atA[0]!, 'parent'],
+                    [child, atA[1]!, 'child'],
+                ])
+            )
+        }
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `subtree snapped unsupported at A (run 1 ${run1.value.status}); ≤ ${worst.toFixed(3)} px before`
+    } finally {
+        h.dispose()
+    }
+}
+
+async function meas12Removed(): Promise<string> {
+    const row = 'L_MEAS_12 (b)'
+    const { h, snaps, names } = harnessWithSnaps()
+    try {
+        const parent = node(
+            h.root,
+            'left: 20px; top: 20px; width: 200px; height: 60px; transform: rotate(45deg); transform-origin: 50% 50%;'
+        )
+        const child = node(
+            parent,
+            'left: 10px; top: 10px; width: 60px; height: 30px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { parent, child })
+        await baseline(h, row)
+        const quiet = silenceWarnings()
+        let commit: Holder
+        let authored: string[]
+        try {
+            h.group.capture()
+            parent.style.transform = ''
+            parent.style.left = '180px'
+            child.style.left = '70px'
+            authored = [parent.style.cssText, child.style.cssText]
+            commit = report(h.group.flush())
+        } finally {
+            quiet.restore()
+        }
+        const root = viewBox(h.root)
+        const aParent = { x: root.x + 180, y: root.y + 20, w: 200, h: 60 }
+        const aChild = { x: root.x + 190, y: root.y + 30, w: 60, h: 30 }
+        let worst = expectAll(
+            `${row} commit write (B was presented under rotate(45deg); the commit removed it)`,
+            [
+                [parent, aParent, 'parent'],
+                [child, aChild, 'child'],
+            ]
+        )
+        const r = await expectNoRun(
+            commit,
+            `${row} commit`,
+            'B was measured under a box-changing rotation, so the subtree snaps unsupported (§4.2)'
+        )
+        const unsupported: Snap[] = [
+            { element: parent, reason: 'unsupported' },
+            { element: child, reason: 'unsupported' },
+        ]
+        expectReport(names, r, 'no-change', unsupported, `${row} commit`)
+        expectSnapCalls(names, snaps, unsupported, `${row} commit`)
+        expectRestored(parent, authored[0]!, `${row} parent`)
+        expectRestored(child, authored[1]!, `${row} child`)
+        for (let f = 1; f <= 3; f++) {
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectAll(`${row} frame ${f}`, [
+                    [parent, aParent, 'parent'],
+                    [child, aChild, 'child'],
+                ])
+            )
+        }
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `subtree snapped unsupported at A ≤ ${worst.toFixed(3)} px`
+    } finally {
+        h.dispose()
+    }
+}
+
+async function meas12Half(): Promise<string> {
+    const row = 'L_MEAS_12 (c)'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const card = node(
+            h.root,
+            'left: 20px; top: 20px; width: 140px; height: 50px; transform: rotate(180deg); transform-origin: 50% 50%;'
+        )
+        addNamed(h, names, { card })
+        await baseline(h, row)
+        const b = viewBox(card)
+        h.group.capture()
+        card.style.transform = ''
+        card.style.left = '200px'
+        const authored = card.style.cssText
+        const a = viewBox(card)
+        const run = report(h.group.flush())
+        const s = spec(b, a, { timing: ease, fx: 0.5, fy: 0.5 })
+        let worst = expectViewAt(card, b, `${row} flush write`)
+        await expectRunning(names, run, `${row} flush`)
+        let f = 0
+        while (run.value === null && f < 60) {
+            f++
+            await step(h.mc)
             worst = Math.max(
                 worst,
                 expectViewAt(
                     card,
-                    shiftBox(trackBox(spec1, tAtGrow), 0, 60),
-                    'L_MEAS_7 flat immediately after banner grow'
+                    expectedBox(s, restAt(f)),
+                    `${row} frame ${f} t=${restAt(f).toFixed(3)} card`
                 )
             )
-
-            // Commit: card takes §5.7 path 2 (no restart)
-            h.group.capture()
-            trigger.style.left = '500px'
-            void h.group.flush()
-
-            for (let step = 5; step <= 20; step++) {
-                h.mc.frame(16)
-                await settleMicrotasks()
-                const elapsed = step * 0.016
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        card,
-                        shiftBox(trackBox(spec1, since(0, elapsed)), 0, 60),
-                        `L_MEAS_7 flat path2 frame ${step} (t=${elapsed.toFixed(3)})`
-                    )
-                )
-            }
-            assert.ok(
-                run1.value !== null && run1.value.status === 'ended',
-                'L_MEAS_7 flat run1 ended without restart'
-            )
-            assert.equal(
-                card.style.translate,
-                '',
-                'L_MEAS_7 flat card restored styles on original schedule'
-            )
-        } finally {
-            h.dispose()
         }
-    }
-
-    // Part 2: Nested child under a live-scaling parent -> takes §5.7 path 3 (retarget)
-    {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            const stack = node(
-                h.root,
-                'left: 20px; top: 20px; width: 420px; height: 500px;'
-            )
-            const banner = document.createElement('div')
-            banner.style.cssText =
-                'position: relative; width: 300px; height: 40px;'
-            stack.append(banner)
-
-            const parent = document.createElement('div')
-            parent.style.cssText =
-                'position: relative; width: 320px; height: 200px; transform-origin: 0 0; box-sizing: border-box;'
-            stack.append(parent)
-
-            const child = node(
-                parent,
-                'left: 10px; top: 20px; width: 80px; height: 40px; transform-origin: 0 0;'
-            )
-            const trigger = node(
-                h.root,
-                'left: 460px; top: 20px; width: 60px; height: 40px;'
-            )
-            h.add(parent)
-            h.add(child)
-            h.add(trigger)
-
-            await h.group.update(() => {})
-            const bParent1 = viewBox(parent)
-            const bChild1 = viewBox(child)
-
-            h.group.capture()
-            parent.style.width = '160px'
-            parent.style.height = '100px'
-            child.style.left = '90px'
-            const aParent1: OBox = {
-                x: bParent1.x,
-                y: bParent1.y,
-                w: 160,
-                h: 100,
-            }
-            const aChild1 = shiftBox(bChild1, 80, 0)
-            const specParent1 = spec(
-                bParent1,
-                aParent1,
-                null,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            const specChild1 = spec(
-                bChild1,
-                aChild1,
-                null,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            void h.group.flush()
-
-            await frames(h.mc, 5, (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        parent,
-                        trackBox(specParent1, t),
-                        `L_MEAS_7 nested pre-grow frame ${idx + 1} parent`
-                    ),
-                    expectViewAt(
-                        child,
-                        trackBox(specChild1, t),
-                        `L_MEAS_7 nested pre-grow frame ${idx + 1} child`
-                    )
-                )
-            })
-
-            // Banner above grows by +50px mid-run
-            banner.style.height = '90px'
-            const bChildAtCommit = viewBox(child)
-            const tCommit = since(0, 4 * 0.016)
-            const vChildAtCommit = trackVelocity(specChild1, tCommit)
-            const aChild2 = shiftBox(aChild1, 0, 50)
-
-            h.group.capture()
-            trigger.style.left = '520px'
-            const run2 = report(h.group.flush())
-
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    child,
-                    bChildAtCommit,
-                    'L_MEAS_7 nested path3 frame 0 child'
-                )
-            )
-
-            const specChild2 = spec(
-                bChildAtCommit,
-                aChild2,
-                vChildAtCommit,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            await frames(
-                h.mc,
-                30,
-                (elapsed, idx) => {
-                    const t2 = (idx + 1) * 0.016
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            child,
-                            trackBox(specChild2, t2),
-                            `L_MEAS_7 nested path3 frame ${idx + 1} (t2=${t2.toFixed(3)}) child`
-                        )
-                    )
-                    void elapsed
-                },
-                () => run2.value !== null
-            )
-            worst = Math.max(
-                worst,
-                expectViewAt(child, aChild2, 'L_MEAS_7 nested settle child')
-            )
-        } finally {
-            h.dispose()
-        }
-    }
-
-    return report('L_MEAS_7', worst, 'flat path 2 + nested path 3')
-}
-
-/**
- * L-MEAS-8: fixed sheet with nested participants while the page scrolls.
- * No motion from the page scroll; inner layout animates cleanly in view space.
- */
-export async function L_MEAS_8(): Promise<string> {
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
-    try {
-        h.root.style.height = '2400px'
-        window.scrollTo(0, 100)
-
-        const sheet = document.createElement('div')
-        sheet.style.cssText =
-            'position: fixed; left: 40px; top: 60px; width: 260px; height: 180px; box-sizing: border-box;'
-        h.root.append(sheet)
-        const inner = node(
-            sheet,
-            'left: 16px; top: 24px; width: 100px; height: 44px;'
-        )
-        h.add(sheet)
-        h.add(inner)
-
-        await h.group.update(() => {})
-        const bSheet0 = viewBox(sheet)
-        const bInner0 = viewBox(inner)
-
-        // Phase 1: Page scrolls between capture and flush with no sheet mutation -> zero motion
-        h.group.capture()
-        window.scrollTo(0, 380)
-        const noChangeRun = await h.group.flush()
-        let worst = Math.max(
-            expectViewAt(sheet, bSheet0, 'L_MEAS_8 scroll-only sheet'),
-            expectViewAt(inner, bInner0, 'L_MEAS_8 scroll-only inner')
-        )
-        assert.equal(
-            noChangeRun.status,
-            'no-change',
-            `L_MEAS_8 scroll-only status: expected 'no-change', got '${noChangeRun.status}'`
-        )
-        assert.equal(
-            noChangeRun.snapped.length,
-            0,
-            'L_MEAS_8 scroll-only snapped empty'
-        )
-
-        // Phase 2: Inner layout animates while the page scrolls both at flush and mid-run
-        h.group.capture()
-        window.scrollTo(0, 620)
-        sheet.style.width = '320px'
-        inner.style.left = '136px'
-        const aSheet: OBox = { ...bSheet0, w: 320 }
-        const aInner = shiftBox(bInner0, 120, 0)
-        const specSheet = spec(bSheet0, aSheet, null, duration)
-        const specInner = spec(bInner0, aInner, null, duration)
-        const animRun = report(h.group.flush())
-
-        worst = Math.max(
-            worst,
-            expectViewAt(sheet, bSheet0, 'L_MEAS_8 anim frame 0 sheet'),
-            expectViewAt(inner, bInner0, 'L_MEAS_8 anim frame 0 inner')
-        )
-
-        await frames(
-            h.mc,
-            25,
-            (elapsed, idx) => {
-                if (idx === 4) window.scrollTo(0, 900)
-                if (idx === 9) window.scrollTo(0, 150)
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        sheet,
-                        trackBox(specSheet, t),
-                        `L_MEAS_8 anim frame ${idx + 1} (t=${elapsed.toFixed(3)}) sheet`
-                    ),
-                    expectViewAt(
-                        inner,
-                        trackBox(specInner, t),
-                        `L_MEAS_8 anim frame ${idx + 1} (t=${elapsed.toFixed(3)}) inner`
-                    )
-                )
-            },
-            () => animRun.value !== null
-        )
-
-        assert.ok(animRun.value !== null, 'L_MEAS_8 anim run settled')
-        assert.equal(animRun.value.status, 'ended', 'L_MEAS_8 anim ended')
-
-        return report('L_MEAS_8', worst, 'fixed sheet immune to page scroll')
-    } finally {
-        window.scrollTo(0, 0)
-        h.dispose()
-    }
-}
-
-/**
- * L-MEAS-9: nested driven parent and child:
- * (a) fresh capture mid-run -> no shear, exact (B, v);
- * (b) a frame advanced between capture() and flush() -> aged, §4.4 outcome, no rewind.
- */
-export async function L_MEAS_9(): Promise<string> {
-    let worst = 0
-    const duration = 0.32
-
-    // (a) Fresh capture mid-run
-    {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            const parent = node(
-                h.root,
-                'left: 20px; top: 20px; width: 200px; height: 120px; transform-origin: 0 0;'
-            )
-            const child = node(
-                parent,
-                'left: 10px; top: 15px; width: 60px; height: 40px; transform-origin: 0 0;'
-            )
-            h.add(parent)
-            h.add(child)
-
-            await h.group.update(() => {})
-            const bParent1 = viewBox(parent)
-            const bChild1 = viewBox(child)
-
-            h.group.capture()
-            parent.style.left = '140px'
-            parent.style.width = '300px'
-            child.style.left = '90px'
-            child.style.width = '100px'
-            const aParent1: OBox = {
-                x: bParent1.x + 120,
-                y: bParent1.y,
-                w: 300,
-                h: 120,
-            }
-            const aChild1: OBox = {
-                x: aParent1.x + 90,
-                y: bChild1.y,
-                w: 100,
-                h: 40,
-            }
-            const specParent1 = spec(
-                bParent1,
-                aParent1,
-                null,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            const specChild1 = spec(
-                bChild1,
-                aChild1,
-                null,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            void h.group.flush()
-
-            // Advance 6 frames (t = 5 * 0.016 = 0.080s)
-            await frames(h.mc, 6, (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        parent,
-                        trackBox(specParent1, t),
-                        `L_MEAS_9 (a) pre-retarget frame ${idx + 1} parent`
-                    ),
-                    expectViewAt(
-                        child,
-                        trackBox(specChild1, t),
-                        `L_MEAS_9 (a) pre-retarget frame ${idx + 1} child`
-                    )
-                )
-            })
-
-            const tRetarget = since(0, 5 * 0.016)
-            const bParent2 = viewBox(parent)
-            const bChild2 = viewBox(child)
-            const vParent2 = trackVelocity(specParent1, tRetarget)
-            const vChild2 = trackVelocity(specChild1, tRetarget)
-
-            h.group.capture()
-            parent.style.left = '60px'
-            parent.style.top = '80px'
-            parent.style.width = '240px'
-            child.style.left = '40px'
-            child.style.top = '35px'
-            child.style.width = '80px'
-            const rootBox = viewBox(h.root)
-            const aParent2: OBox = {
-                x: rootBox.x + 60,
-                y: rootBox.y + 80,
-                w: 240,
-                h: 120,
-            }
-            const aChild2: OBox = {
-                x: aParent2.x + 40,
-                y: aParent2.y + 35,
-                w: 80,
-                h: 40,
-            }
-            const specParent2 = spec(
-                bParent2,
-                aParent2,
-                vParent2,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            const specChild2 = spec(
-                bChild2,
-                aChild2,
-                vChild2,
-                duration,
-                EASE_OUT,
-                0,
-                0
-            )
-            const run2 = report(h.group.flush())
-
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    parent,
-                    bParent2,
-                    'L_MEAS_9 (a) retarget frame 0 parent'
-                ),
-                expectViewAt(
-                    child,
-                    bChild2,
-                    'L_MEAS_9 (a) retarget frame 0 child'
-                )
-            )
-
-            await frames(
-                h.mc,
-                30,
-                (elapsed, idx) => {
-                    const t2 = (idx + 1) * 0.016
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            parent,
-                            trackBox(specParent2, t2),
-                            `L_MEAS_9 (a) retarget frame ${idx + 1} (t2=${t2.toFixed(3)}) parent`
-                        ),
-                        expectViewAt(
-                            child,
-                            trackBox(specChild2, t2),
-                            `L_MEAS_9 (a) retarget frame ${idx + 1} (t2=${t2.toFixed(3)}) child`
-                        )
-                    )
-                    void elapsed
-                },
-                () => run2.value !== null
-            )
-            assert.ok(run2.value !== null, 'L_MEAS_9 (a) settled')
-            assert.equal(
-                run2.value.status,
-                'ended',
-                'L_MEAS_9 (a) status ended'
-            )
-        } finally {
-            h.dispose()
-        }
-    }
-
-    // (b) Aged capture: a frame advances between capture() and flush()
-    {
-        const snappedCalls: { element: HTMLElement; reason: SnapReason }[] = []
-        const h = harness({
-            motion: { duration, timing: timing.linear },
-            onSnap(element, reason) {
-                snappedCalls.push({ element, reason })
-            },
-        })
-        try {
-            const parent = node(
-                h.root,
-                'left: 0; top: 0; width: 200px; height: 100px; transform-origin: 0 0;'
-            )
-            const child = node(
-                parent,
-                'left: 0; top: 0; width: 80px; height: 40px; transform-origin: 0 0;'
-            )
-            h.add(parent)
-            h.add(child)
-
-            await h.group.update(() => {})
-            const bParent1 = viewBox(parent)
-            const bChild1 = viewBox(child)
-
-            h.group.capture()
-            parent.style.left = '160px'
-            child.style.left = '160px'
-            const aParent1 = shiftBox(bParent1, 160, 0)
-            const aChild1 = shiftBox(bChild1, 320, 0)
-            const specParent1 = spec(
-                bParent1,
-                aParent1,
-                null,
-                duration,
-                LINEAR,
-                0,
-                0
-            )
-            const specChild1 = spec(
-                bChild1,
-                aChild1,
-                null,
-                duration,
-                LINEAR,
-                0,
-                0
-            )
-            const run1 = report(h.group.flush())
-
-            // Advance 4 frames (t = 3 * 0.016 = 0.048s -> 15% of 0.32s)
-            await frames(h.mc, 4, (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        parent,
-                        trackBox(specParent1, t),
-                        `L_MEAS_9 (b) pre-capture frame ${idx + 1} parent`
-                    ),
-                    expectViewAt(
-                        child,
-                        trackBox(specChild1, t),
-                        `L_MEAS_9 (b) pre-capture frame ${idx + 1} child`
-                    )
-                )
-            })
-
-            // Capture at frame 4, then advance 4 more frames BEFORE flush() so capture is aged!
-            h.group.capture()
-            const agedCaptureChildBox = viewBox(child)
-            await frames(h.mc, 4, () => {})
-            const preFlushChildBox = viewBox(child)
-            assert.ok(
-                preFlushChildBox.x > agedCaptureChildBox.x + 25,
-                'L_MEAS_9 (b) child advanced > 25px after capture before flush'
-            )
-
-            // Mutate parent (+40px) and child (+20px, total +60px in view space) and flush with aged capture
-            parent.style.left = '200px'
-            child.style.left = '180px'
-            const aParent2 = shiftBox(aParent1, 40, 0)
-            const aChild2 = shiftBox(aChild1, 60, 0)
-
-            const quiet = silenceWarnings()
-            let agedReport: Awaited<ReturnType<typeof h.group.flush>>
-            try {
-                agedReport = await h.group.flush()
-            } finally {
-                quiet.restore()
-            }
-
-            // §4.4: status is 'stale'; both driven nodes keep their tracks (translated by delta, NEVER rewound to agedCaptureChildBox)
-            assert.equal(
-                agedReport.status,
-                'stale',
-                `L_MEAS_9 (b) aged flush status: expected 'stale', got '${agedReport.status}'`
-            )
-            assert.equal(
-                agedReport.snapped.length,
-                2,
-                'L_MEAS_9 (b) both driven nodes reported stale'
-            )
-            assert.equal(
-                snappedCalls.length,
-                2,
-                'L_MEAS_9 (b) onSnap called for both driven nodes'
-            )
-
-            // Verify no rewind toward agedCaptureChildBox: drawn box is translated by +60px from the ongoing track
-            const tAtFlush = since(0, 7 * 0.016)
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    parent,
-                    shiftBox(trackBox(specParent1, tAtFlush), 40, 0),
-                    'L_MEAS_9 (b) frame 0 after aged flush parent (no rewind)'
-                ),
-                expectViewAt(
-                    child,
-                    shiftBox(trackBox(specChild1, tAtFlush), 60, 0),
-                    'L_MEAS_9 (b) frame 0 after aged flush child (no rewind)'
-                )
-            )
-
-            await frames(
-                h.mc,
-                20,
-                (elapsed, idx) => {
-                    const totalElapsed = (7 + idx + 1) * 0.016
-                    const t = since(0, totalElapsed)
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            parent,
-                            shiftBox(trackBox(specParent1, t), 40, 0),
-                            `L_MEAS_9 (b) post-aged frame ${idx + 1} parent`
-                        ),
-                        expectViewAt(
-                            child,
-                            shiftBox(trackBox(specChild1, t), 60, 0),
-                            `L_MEAS_9 (b) post-aged frame ${idx + 1} child`
-                        )
-                    )
-                    void elapsed
-                },
-                () => run1.value !== null
-            )
-            worst = Math.max(
-                worst,
-                expectViewAt(parent, aParent2, 'L_MEAS_9 (b) settle parent'),
-                expectViewAt(child, aChild2, 'L_MEAS_9 (b) settle child')
-            )
-        } finally {
-            h.dispose()
-        }
-    }
-
-    return report('L_MEAS_9', worst, '(a) fresh retarget, (b) aged no-rewind')
-}
-
-/**
- * L-MEAS-10: participants in an open and in a closed shadow root inside an outer scroller, as L-MEAS-4.
- */
-export async function L_MEAS_10(): Promise<string> {
-    let worst = 0
-    const duration = 0.32
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
-    try {
-        const scroller = node(
-            h.root,
-            'left: 20px; top: 20px; width: 400px; height: 260px; overflow-y: auto;'
-        )
-        const content = document.createElement('div')
-        content.style.cssText =
-            'position: relative; width: 380px; height: 700px;'
-        scroller.append(content)
-
-        const openHost = node(
-            content,
-            'left: 10px; top: 80px; width: 320px; height: 120px;'
-        )
-        const openRoot = openHost.attachShadow({ mode: 'open' })
-        const openParent = document.createElement('div')
-        openParent.style.cssText =
-            'position: absolute; left: 0; top: 0; width: 300px; height: 100px; transform-origin: 0 0; box-sizing: border-box;'
-        openRoot.append(openParent)
-        const openChild = document.createElement('div')
-        openChild.style.cssText =
-            'position: absolute; left: 10px; top: 10px; width: 60px; height: 30px; transform-origin: 0 0; box-sizing: border-box;'
-        openParent.append(openChild)
-
-        const closedHost = node(
-            content,
-            'left: 10px; top: 220px; width: 320px; height: 120px;'
-        )
-        const closedRoot = closedHost.attachShadow({ mode: 'closed' })
-        const closedParent = document.createElement('div')
-        closedParent.style.cssText =
-            'position: absolute; left: 0; top: 0; width: 150px; height: 50px; transform-origin: 0 0; box-sizing: border-box;'
-        closedRoot.append(closedParent)
-        const closedChild = document.createElement('div')
-        closedChild.style.cssText =
-            'position: absolute; left: 10px; top: 10px; width: 60px; height: 30px; transform-origin: 0 0; box-sizing: border-box;'
-        closedParent.append(closedChild)
-
-        const trigger = node(
-            h.root,
-            'left: 460px; top: 20px; width: 60px; height: 40px;'
-        )
-
-        h.add(openParent)
-        h.add(openChild)
-        h.add(closedParent)
-        h.add(closedChild)
-        h.add(trigger)
-
-        await h.group.update(() => {})
-        const bOpenChild1 = viewBox(openChild)
-        const bClosedChild1 = viewBox(closedChild)
-
-        // Flush 1: openParent shrinks 2x (300 -> 150), closedParent grows 0.5x (150 -> 300), both children move +100px
-        h.group.capture()
-        openParent.style.width = '150px'
-        openParent.style.height = '50px'
-        openChild.style.left = '110px'
-        closedParent.style.width = '300px'
-        closedParent.style.height = '100px'
-        closedChild.style.left = '110px'
-
-        const aOpenChild1 = shiftBox(bOpenChild1, 100, 0)
-        const aClosedChild1 = shiftBox(bClosedChild1, 100, 0)
-        const specOpen1 = spec(
-            bOpenChild1,
-            aOpenChild1,
-            null,
-            duration,
-            EASE_OUT,
-            0,
-            0
-        )
-        const specClosed1 = spec(
-            bClosedChild1,
-            aClosedChild1,
-            null,
-            duration,
-            EASE_OUT,
-            0,
-            0
-        )
-        void h.group.flush()
-
-        await frames(h.mc, 5, (elapsed, idx) => {
-            const t = since(0, elapsed)
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    openChild,
-                    trackBox(specOpen1, t),
-                    `L_MEAS_10 pre-scroll frame ${idx + 1} openChild`
-                ),
-                expectViewAt(
-                    closedChild,
-                    trackBox(specClosed1, t),
-                    `L_MEAS_10 pre-scroll frame ${idx + 1} closedChild`
-                )
-            )
-        })
-
-        // Scroll outer scroller mid-run by 50px, then commit
-        scroller.scrollTop = 50
-        const bOpenCommit = viewBox(openChild)
-        const bClosedCommit = viewBox(closedChild)
-        const tCommit = since(0, 4 * 0.016)
-        const vOpenCommit = trackVelocity(specOpen1, tCommit)
-        const vClosedCommit = trackVelocity(specClosed1, tCommit)
-        const aOpen2 = shiftBox(aOpenChild1, 0, -50)
-        const aClosed2 = shiftBox(aClosedChild1, 0, -50)
-
-        h.group.capture()
-        trigger.style.left = '540px'
-        const quiet = silenceWarnings()
-        let run2: ReturnType<typeof report>
-        try {
-            run2 = report(h.group.flush())
-        } finally {
-            quiet.restore()
-        }
-
-        worst = Math.max(
-            worst,
-            expectViewAt(
-                openChild,
-                bOpenCommit,
-                'L_MEAS_10 commit frame 0 openChild'
-            ),
-            expectViewAt(
-                closedChild,
-                bClosedCommit,
-                'L_MEAS_10 commit frame 0 closedChild'
-            )
-        )
-
-        const specOpen2 = spec(
-            bOpenCommit,
-            aOpen2,
-            vOpenCommit,
-            duration,
-            EASE_OUT,
-            0,
-            0
-        )
-        const specClosed2 = spec(
-            bClosedCommit,
-            aClosed2,
-            vClosedCommit,
-            duration,
-            EASE_OUT,
-            0,
-            0
-        )
-
-        await frames(
-            h.mc,
-            30,
-            (elapsed, idx) => {
-                const t2 = (idx + 1) * 0.016
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        openChild,
-                        trackBox(specOpen2, t2),
-                        `L_MEAS_10 post-commit frame ${idx + 1} openChild`
-                    ),
-                    expectViewAt(
-                        closedChild,
-                        trackBox(specClosed2, t2),
-                        `L_MEAS_10 post-commit frame ${idx + 1} closedChild`
-                    )
-                )
-                void elapsed
-            },
-            () => run2.value !== null
-        )
-
-        worst = Math.max(
-            worst,
-            expectViewAt(openChild, aOpen2, 'L_MEAS_10 settle openChild'),
-            expectViewAt(closedChild, aClosed2, 'L_MEAS_10 settle closedChild')
-        )
-
-        return report('L_MEAS_10', worst, 'open + closed shadow roots')
+        expectReport(names, run.value!, 'ended', [], `${row} run`)
+        expectSnapCalls(names, snaps, [], `${row} run`)
+        expectViewAt(card, a, `${row} final card`, 0.01)
+        expectRestored(card, authored, `${row} card`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `box moves exactly, ${f} frames ≤ ${worst.toFixed(3)} px`
     } finally {
         h.dispose()
     }
 }
 
-/**
- * L-MEAS-11: the §4.4 table: capture-less flush and aged capture (with an async gap
- * between capture() and flush() that lets a frame pass); undriven moved, undriven unmoved,
- * newly registered, driven with |delta| above and below threshold, and a driven node with
- * a sub-0.01 px delta under a live ancestor scale of 300.
- */
-export async function L_MEAS_11(): Promise<string> {
-    let worst = 0
-    const duration = 0.32
-
-    for (const mode of ['capture-less', 'aged'] as const) {
-        const snappedCalls: { element: HTMLElement; reason: SnapReason }[] = []
-        const h = harness({
-            motion: { duration, timing: timing.linear },
-            onSnap(element, reason) {
-                snappedCalls.push({ element, reason })
-            },
-        })
-        try {
-            const undrivenMoved = node(
-                h.root,
-                'left: 0; top: 20px; width: 80px; height: 30px;'
-            )
-            const undrivenUnmoved = node(
-                h.root,
-                'left: 0; top: 60px; width: 80px; height: 30px;'
-            )
-            const drivenAbove = node(
-                h.root,
-                'left: 0; top: 100px; width: 80px; height: 30px; transform-origin: 0 0;'
-            )
-            const drivenBelow = node(
-                h.root,
-                'left: 0; top: 140px; width: 80px; height: 30px; transform-origin: 0 0;'
-            )
-            const anc300 = node(
-                h.root,
-                'left: 0; top: 200px; width: 3000px; height: 3000px; transform: scale(0.1); transform-origin: 0 0;'
-            )
-            const wrap300 = node(
-                anc300,
-                'left: 0; top: 0; width: 100px; height: 100px; transform-origin: 0 0;'
-            )
-            const drivenAmplified = node(
-                wrap300,
-                'left: 1000px; top: 0; width: 200px; height: 200px; transform-origin: 0 0;'
-            )
-
-            h.add(undrivenMoved)
-            h.add(undrivenUnmoved)
-            h.add(drivenAbove)
-            h.add(drivenBelow)
-            h.add(anc300)
-            h.add(drivenAmplified)
-
-            // Establish baseline
-            await h.group.update(() => {})
-            const bAbove1 = viewBox(drivenAbove)
-            const bBelow1 = viewBox(drivenBelow)
-
-            // Flush 1: start tracks on drivenAbove, drivenBelow, anc300 (30x shrink under scale(0.1)), and drivenAmplified
-            h.group.capture()
-            drivenAbove.style.left = '160px'
-            drivenBelow.style.left = '160px'
-            anc300.style.width = '100px'
-            anc300.style.height = '100px'
-            drivenAmplified.style.left = '0px'
-            const aAbove1 = shiftBox(bAbove1, 160, 0)
-            const aBelow1 = shiftBox(bBelow1, 160, 0)
-            const specAbove1 = spec(bAbove1, aAbove1, null, duration, LINEAR)
-            const specBelow1 = spec(bBelow1, aBelow1, null, duration, LINEAR)
-            void h.group.flush()
-
-            // Advance 1 frame (dt = 0)
-            h.mc.frame(16)
-            await settleMicrotasks()
-
-            if (mode === 'aged') {
-                // Take capture, then let an async gap and a frame pass before flush()
-                h.group.capture()
-                await Promise.resolve()
-                h.mc.frame(16)
-                await settleMicrotasks()
-            }
-
-            // Register a brand-new participant with no last known box
-            const newlyRegistered = node(
-                h.root,
-                'left: 0; top: 260px; width: 80px; height: 30px;'
-            )
-            h.add(newlyRegistered)
-
-            // Apply mutations for the §4.4 flush:
-            // 1. undrivenMoved: moves by 80px >= threshold (1px) -> reported 'stale'
-            undrivenMoved.style.left = '80px'
-            // 2. undrivenUnmoved: moves by 0px < threshold -> NOT reported
-            // 3. newlyRegistered: no last known box -> reported 'stale'
-            // 4. drivenAbove: delta = +40px >= threshold -> keeps track (translated), reported 'stale'
-            drivenAbove.style.left = '200px'
-            // 5. drivenBelow: delta = +0.4px < threshold (exact translation) -> keeps track, NOT reported
-            drivenBelow.style.left = '160.4px'
-            // 6. anc300 + drivenAmplified: anc300 switches to width 10px, transform scale(1)
-            //    (so A_anc stays 10x10, delta_anc = 0 -> NOT reported; rho = 30 * (1 / 0.1) = 300),
-            //    while drivenAmplified shifts by delta = 0.005px < 0.01px (|delta| * rho = 1.5px >= threshold) -> reported 'stale'!
-            anc300.style.width = '10px'
-            anc300.style.height = '10px'
-            anc300.style.transform = 'scale(1)'
-            drivenAmplified.style.width = '20px'
-            drivenAmplified.style.height = '20px'
-            wrap300.style.transform = 'translateX(0.005px)'
-
-            const quiet = silenceWarnings()
-            let res: Awaited<ReturnType<typeof h.group.flush>>
-            try {
-                res = await h.group.flush()
-            } finally {
-                quiet.restore()
-            }
-
-            assert.equal(
-                res.status,
-                'stale',
-                `L_MEAS_11 (${mode}) status: expected 'stale', got '${res.status}'`
-            )
-
-            const expectedSnapped = [
-                undrivenMoved,
-                drivenAbove,
-                drivenAmplified,
-                newlyRegistered,
-            ]
-            assert.equal(
-                res.snapped.length,
-                expectedSnapped.length,
-                `L_MEAS_11 (${mode}) snapped count: expected ${expectedSnapped.length}, got ${res.snapped.length}`
-            )
-            for (const el of expectedSnapped) {
-                assert.ok(
-                    res.snapped.some(
-                        (s) => s.element === el && s.reason === 'stale'
-                    ),
-                    `L_MEAS_11 (${mode}) expected element in report.snapped with 'stale'`
-                )
-                assert.ok(
-                    snappedCalls.some(
-                        (s) => s.element === el && s.reason === 'stale'
-                    ),
-                    `L_MEAS_11 (${mode}) expected element in onSnap calls with 'stale'`
-                )
-            }
-            assert.ok(
-                !res.snapped.some((s) => s.element === undrivenUnmoved),
-                `L_MEAS_11 (${mode}) undrivenUnmoved must NOT be reported stale`
-            )
-            assert.ok(
-                !res.snapped.some((s) => s.element === drivenBelow),
-                `L_MEAS_11 (${mode}) drivenBelow must NOT be reported stale`
-            )
-            assert.ok(
-                !res.snapped.some((s) => s.element === anc300),
-                `L_MEAS_11 (${mode}) anc300 (delta=0) must NOT be reported stale`
-            )
-
-            // Verify geometry outcomes: undriven nodes are at A immediately; driven nodes keep their tracks
-            const rootBox = viewBox(h.root)
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    undrivenMoved,
-                    { x: rootBox.x + 80, y: rootBox.y + 20, w: 80, h: 30 },
-                    `L_MEAS_11 (${mode}) undrivenMoved at A`
-                ),
-                expectViewAt(
-                    undrivenUnmoved,
-                    { x: rootBox.x, y: rootBox.y + 60, w: 80, h: 30 },
-                    `L_MEAS_11 (${mode}) undrivenUnmoved at A`
-                ),
-                expectViewAt(
-                    newlyRegistered,
-                    { x: rootBox.x, y: rootBox.y + 260, w: 80, h: 30 },
-                    `L_MEAS_11 (${mode}) newlyRegistered at A`
-                )
-            )
-
-            const framesBefore = mode === 'aged' ? 1 : 0
-            for (let step = 1; step <= 6; step++) {
-                h.mc.frame(16)
-                await settleMicrotasks()
-                const t = (framesBefore + step) * 0.016
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        drivenAbove,
-                        shiftBox(trackBox(specAbove1, t), 40, 0),
-                        `L_MEAS_11 (${mode}) frame ${step} drivenAbove kept track`
-                    ),
-                    expectViewAt(
-                        drivenBelow,
-                        shiftBox(trackBox(specBelow1, t), 0.4, 0),
-                        `L_MEAS_11 (${mode}) frame ${step} drivenBelow kept track`
-                    )
-                )
-            }
-        } finally {
-            h.dispose()
-        }
-    }
-
-    return report('L_MEAS_11', worst, 'capture-less + aged §4.4 table')
-}
+/* ───────────────────────── L-MEAS-13 ───────────────────────── */
 
 /**
- * L-MEAS-12: author rotation:
- * (a) box-changing rotation added mid-run -> subtree snaps 'unsupported';
- * (b) box-changing rotation present at capture and removed by the commit -> subtree snaps 'unsupported';
- * (c) a 180° rotation removed by the commit -> box moves exactly.
- */
-export async function L_MEAS_12(): Promise<string> {
-    let worst = 0
-    const duration = 0.24
-
-    // (a) Box-changing rotation added mid-run -> subtree snaps 'unsupported'
-    {
-        const snappedCalls: { element: HTMLElement; reason: SnapReason }[] = []
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-            onSnap(element, reason) {
-                snappedCalls.push({ element, reason })
-            },
-        })
-        try {
-            const parent = node(
-                h.root,
-                'left: 20px; top: 20px; width: 160px; height: 60px; transform-origin: 50% 50%;'
-            )
-            const child = node(
-                parent,
-                'left: 10px; top: 10px; width: 60px; height: 30px;'
-            )
-            h.add(parent)
-            h.add(child)
-
-            await h.group.update(() => {})
-            h.group.capture()
-            parent.style.left = '140px'
-            child.style.left = '50px'
-            void h.group.flush()
-
-            await frames(h.mc, 4, () => {})
-
-            // Add box-changing rotation mid-run, then commit
-            parent.style.transform = 'rotate(35deg)'
-            const quiet = silenceWarnings()
-            let resA: Awaited<ReturnType<typeof h.group.flush>>
-            try {
-                h.group.capture()
-                parent.style.left = '240px'
-                child.style.left = '80px'
-                resA = await h.group.flush()
-            } finally {
-                quiet.restore()
-            }
-
-            assert.ok(
-                resA.snapped.some(
-                    (s) => s.element === parent && s.reason === 'unsupported'
-                ),
-                'L_MEAS_12 (a) parent snapped unsupported'
-            )
-            assert.ok(
-                resA.snapped.some(
-                    (s) => s.element === child && s.reason === 'unsupported'
-                ),
-                'L_MEAS_12 (a) child in subtree snapped unsupported'
-            )
-            assert.ok(
-                snappedCalls.some(
-                    (s) => s.element === parent && s.reason === 'unsupported'
-                ),
-                'L_MEAS_12 (a) onSnap parent unsupported'
-            )
-            assert.equal(
-                parent.style.translate,
-                '',
-                'L_MEAS_12 (a) parent styles restored'
-            )
-            assert.equal(
-                child.style.translate,
-                '',
-                'L_MEAS_12 (a) child styles restored'
-            )
-        } finally {
-            h.dispose()
-        }
-    }
-
-    // (b) Box-changing rotation present at capture and removed by the commit -> subtree snaps 'unsupported'
-    {
-        const snappedCalls: { element: HTMLElement; reason: SnapReason }[] = []
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-            onSnap(element, reason) {
-                snappedCalls.push({ element, reason })
-            },
-        })
-        try {
-            const parent = node(
-                h.root,
-                'left: 20px; top: 20px; width: 200px; height: 60px; transform: rotate(45deg); transform-origin: 50% 50%;'
-            )
-            const child = node(
-                parent,
-                'left: 10px; top: 10px; width: 60px; height: 30px;'
-            )
-            h.add(parent)
-            h.add(child)
-
-            const quiet = silenceWarnings()
-            let resB: Awaited<ReturnType<typeof h.group.flush>>
-            try {
-                // Capture while rotated 45deg (rect width ~183.85px vs offsetWidth 200px)
-                h.group.capture()
-                // Remove rotation in the commit and move both nodes
-                parent.style.transform = ''
-                parent.style.left = '180px'
-                child.style.left = '70px'
-                resB = await h.group.flush()
-            } finally {
-                quiet.restore()
-            }
-
-            assert.ok(
-                resB.snapped.some(
-                    (s) => s.element === parent && s.reason === 'unsupported'
-                ),
-                'L_MEAS_12 (b) parent with rotation at capture snapped unsupported'
-            )
-            assert.ok(
-                resB.snapped.some(
-                    (s) => s.element === child && s.reason === 'unsupported'
-                ),
-                'L_MEAS_12 (b) child under rotated parent at capture snapped unsupported'
-            )
-            assert.ok(
-                snappedCalls.some(
-                    (s) => s.element === parent && s.reason === 'unsupported'
-                ),
-                'L_MEAS_12 (b) onSnap parent unsupported'
-            )
-            const rootBox = viewBox(h.root)
-            worst = Math.max(
-                worst,
-                expectViewAt(
-                    parent,
-                    { x: rootBox.x + 180, y: rootBox.y + 20, w: 200, h: 60 },
-                    'L_MEAS_12 (b) parent at rest box A'
-                ),
-                expectViewAt(
-                    child,
-                    { x: rootBox.x + 250, y: rootBox.y + 30, w: 60, h: 30 },
-                    'L_MEAS_12 (b) child at rest box A'
-                )
-            )
-        } finally {
-            h.dispose()
-        }
-    }
-
-    // (c) A 180° rotation removed by the commit -> the box moves exactly
-    {
-        const h = harness({
-            motion: { duration, timing: timing.easeOut },
-        })
-        try {
-            const card = node(
-                h.root,
-                'left: 20px; top: 20px; width: 140px; height: 50px; transform: rotate(180deg); transform-origin: 50% 50%;'
-            )
-            h.add(card)
-
-            const bCard = viewBox(card)
-            h.group.capture()
-            card.style.transform = ''
-            card.style.left = '200px'
-            const aCard = shiftBox(bCard, 180, 0)
-            const specCard = spec(bCard, aCard, null, duration)
-            const runC = report(h.group.flush())
-
-            worst = Math.max(
-                worst,
-                expectViewAt(card, bCard, 'L_MEAS_12 (c) frame 0')
-            )
-
-            await frames(
-                h.mc,
-                25,
-                (elapsed, idx) => {
-                    const t = since(0, elapsed)
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            card,
-                            trackBox(specCard, t),
-                            `L_MEAS_12 (c) frame ${idx + 1} (t=${elapsed.toFixed(3)})`
-                        )
-                    )
-                },
-                () => runC.value !== null
-            )
-
-            assert.ok(runC.value !== null, 'L_MEAS_12 (c) run settled')
-            assert.equal(runC.value.status, 'ended', 'L_MEAS_12 (c) ended')
-            assert.equal(
-                runC.value.snapped.length,
-                0,
-                'L_MEAS_12 (c) no snaps'
-            )
-            worst = Math.max(
-                worst,
-                expectViewAt(card, aCard, 'L_MEAS_12 (c) settle')
-            )
-        } finally {
-            h.dispose()
-        }
-    }
-
-    return report('L_MEAS_12', worst, 'rotation (a), (b) snap; (c) 180deg exact')
-}
-
-/**
- * L-MEAS-13: an earlier requestAnimationFrame callback moves an ancestor;
- * a later callback calls update() through the scope clock's frame (clock.inFrame is true).
- * Aged at once (§4.3, §4.4), never using the intermediate unpresented box as B.
+ * L-MEAS-13: in one rendering update, an earlier `requestAnimationFrame`
+ * callback moves an ancestor, and a later callback, the scope clock's own
+ * frame (`clock.read`, so `clock.inFrame` is true), calls `update()`. The
+ * capture is aged at once (§4.1): the card is undriven, so it appears at A
+ * with no track and is reported 'stale' (§4.4); the intermediate box the
+ * earlier callback produced, never presented, is never its B.
  */
 export async function L_MEAS_13(): Promise<string> {
-    let worst = 0
-    const rAFQueue: FrameRequestCallback[] = []
-    const customClock = createClock({
-        now: () => 0,
-        requestFrame: (cb) => {
-            rAFQueue.push(cb)
-            return rAFQueue.length
+    const row = 'L_MEAS_13'
+    const clock = createClock()
+    const snaps: Snap[] = []
+    const names: Names = new Map()
+    const group = createLayoutGroup({
+        clock,
+        motion: { duration: D, timing: timing.easeOut() },
+        onSnap(element, reason) {
+            snaps.push({ element, reason })
         },
-        cancelFrame: () => {},
     })
-
-    const snappedCalls: { element: HTMLElement; reason: SnapReason }[] = []
     document.body.style.margin = '0'
     const root = document.createElement('div')
     root.style.cssText = 'position: relative; width: 900px; height: 700px;'
     document.body.append(root)
-
-    const group = createLayoutGroup({
-        clock: customClock,
-        motion: { duration: 0.24, timing: timing.easeOut },
-        onSnap(element, reason) {
-            snappedCalls.push({ element, reason })
-        },
-    })
-
     try {
         const ancestor = node(
             root,
@@ -2472,96 +2580,118 @@ export async function L_MEAS_13(): Promise<string> {
         )
         const card = node(
             ancestor,
-            'left: 0; top: 20px; width: 100px; height: 40px;'
+            'left: 0; top: 20px; width: 100px; height: 40px; transform-origin: 0 0;'
         )
+        names.set(card, 'card')
         group.add(card)
-
-        await group.update(() => {})
+        group.capture()
+        await expectNoRun(
+            report(group.flush()),
+            `${row} baseline`,
+            'nothing changed'
+        )
+        await nextFrame()
+        const presented = viewBox(card)
         const rootBox = viewBox(root)
+        const wantA = { x: rootBox.x + 200, y: rootBox.y + 20, w: 100, h: 40 }
 
-        // Schedule an earlier rAF callback that moves `ancestor` to an unpresented intermediate x = 80px,
-        // and a clock.read callback (which runs inside the clock's rAF tick where customClock.inFrame === true)
-        // that calls group.update() moving `card` to left = 120px (final rest x = 80 + 120 = 200px).
-        let sawInFrame = false
-        let updatePromise: Promise<Awaited<ReturnType<typeof group.flush>>> | null =
-            null
-
-        rAFQueue.unshift(() => {
-            ancestor.style.left = '80px'
-        })
-        customClock.read(() => {
-            sawInFrame = customClock.inFrame
-            updatePromise = group.update(() => {
-                card.style.left = '120px'
+        const outcome = await new Promise<{
+            inFrame: boolean
+            intermediate: OBox
+            drawn: OBox
+            translate: string
+            run: Holder
+        }>((resolve) => {
+            // registered first, so it runs first in the same rendering update
+            requestAnimationFrame(() => {
+                ancestor.style.left = '80px'
+            })
+            clock.read(() => {
+                const inFrame = clock.inFrame
+                const intermediate = viewBox(card)
+                const quiet = silenceWarnings()
+                try {
+                    const run = report(
+                        group.update(() => {
+                            card.style.left = '120px'
+                        })
+                    )
+                    resolve({
+                        inFrame,
+                        intermediate,
+                        drawn: viewBox(card),
+                        translate: card.style.translate,
+                        run,
+                    })
+                } finally {
+                    quiet.restore()
+                }
             })
         })
-
-        const quiet = silenceWarnings()
-        let res: Awaited<ReturnType<typeof group.flush>>
-        try {
-            const batch = rAFQueue.splice(0, rAFQueue.length)
-            for (const fn of batch) fn(16)
-            assert.ok(sawInFrame, 'L_MEAS_13 customClock.inFrame was true')
-            assert.ok(updatePromise !== null, 'L_MEAS_13 update() ran')
-            res = await updatePromise!
-        } finally {
-            quiet.restore()
-        }
-
-        // Because capture() happened while clock.inFrame === true, it is aged at once (§4.3):
-        // card must appear immediately at A (x = 200), NEVER starting a track from the unpresented intermediate x = 80!
-        const wantA: OBox = {
-            x: rootBox.x + 200,
-            y: rootBox.y + 20,
-            w: 100,
-            h: 40,
-        }
-        worst = Math.max(
-            worst,
-            expectViewAt(
-                card,
-                wantA,
-                'L_MEAS_13 card at final A (never at intermediate B x=80)'
+        if (!outcome.inFrame) {
+            throw new Error(
+                `${row} setup: clock.inFrame was false in the clock's read callback`
             )
+        }
+        if (maxDiff(outcome.intermediate, shiftBox(presented, 80, 0)) > 0.01) {
+            throw new Error(
+                `${row} setup: the earlier callback did not move the card (it is at ${JSON.stringify(outcome.intermediate)})`
+            )
+        }
+        const error = maxDiff(outcome.drawn, wantA)
+        if (!(error <= 0.5)) {
+            const fromIntermediate =
+                maxDiff(outcome.drawn, outcome.intermediate) <= 0.5
+            throw new Error(
+                `${row} update in the clock's frame: drawn ${JSON.stringify(outcome.drawn)} differs from A ${JSON.stringify(wantA)} by ${error.toFixed(3)} px${fromIntermediate ? ' (the unpresented intermediate box was used as B)' : ''}`
+            )
+        }
+        expectEqual(outcome.translate, '', `${row}: no pose written (no track)`)
+        const r = await expectNoRun(
+            outcome.run,
+            `${row} update`,
+            'a capture taken while the clock runs a frame is aged at once (§4.1)'
         )
-        assert.equal(
-            res.status,
-            'stale',
-            `L_MEAS_13 status: expected 'stale', got '${res.status}'`
-        )
-        assert.equal(res.snapped.length, 1, 'L_MEAS_13 card reported stale')
-        assert.equal(res.snapped[0]?.element, card, 'L_MEAS_13 snapped card')
-        assert.equal(res.snapped[0]?.reason, 'stale', 'L_MEAS_13 reason stale')
-        assert.equal(
-            snappedCalls.length,
-            1,
-            'L_MEAS_13 onSnap called once with stale'
-        )
-        assert.equal(
-            card.style.translate,
-            '',
-            'L_MEAS_13 no track started from intermediate box'
-        )
-
-        return report('L_MEAS_13', worst, 'clock.inFrame aged at once')
+        const stale: Snap[] = [{ element: card, reason: 'stale' }]
+        expectReport(names, r, 'stale', stale, `${row} update`)
+        expectSnapCalls(names, snaps, stale, `${row} update`)
+        for (let i = 1; i <= 3; i++) {
+            await nextFrame()
+            expectViewAt(card, wantA, `${row} real frame ${i} card`)
+        }
+        expectEqual(clock.size, 0, `${row}: no clock subscription`)
+        return `aged at once; card at A (${wantA.x}), never at the intermediate ${outcome.intermediate.x}`
     } finally {
         group.dispose()
-        customClock.dispose()
+        clock.dispose()
         root.remove()
     }
 }
 
+/* ───────────────────────── L-HAND-1 ───────────────────────── */
+
+const presenceMotion = () =>
+    ({
+        present: { translateY: 0 },
+        exit: ani({
+            to: { translateY: 0 },
+            duration: 0.1,
+            timing: timing.linear(),
+        }),
+    }) as const
+
 /**
- * L-HAND-1: a list item inside a scroller to a fixed detail and back (shared layoutId).
- * Shared handoff; source-over opacity coverage >= 0.99 at every frame.
+ * L-HAND-1: a list item in a scrolled scroller hands its `layoutId` to a
+ * fixed detail and back. Each handoff flies from the departing node's
+ * presented box (view space, §5.8) to the new lead's A; both layers are drawn
+ * at the lead's box, the opacities follow the crossfade law, and the pair's
+ * source-over coverage is 1 at every frame.
  */
 export async function L_HAND_1(): Promise<string> {
-    let worst = 0
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
-    const presence = createPresence({ clock: h.mc.clock })
+    const row = 'L_HAND_1'
+    const linear = timing.linear()
+    const { h, snaps, names } = harnessWithSnaps(linear)
+    const presences: { dispose(): void }[] = []
     try {
         const scroller = node(
             h.root,
@@ -2571,207 +2701,154 @@ export async function L_HAND_1(): Promise<string> {
         content.style.cssText =
             'position: relative; width: 240px; height: 600px;'
         scroller.append(content)
-
-        // Scroll scroller BEFORE registering shared layoutId so scroller is settled at scrollTop = 100
+        // scrolled before the scope binds, and presented
         scroller.scrollTop = 100
-
-        const listItem = node(
-            content,
-            'left: 10px; top: 140px; width: 180px; height: 50px; border-radius: 8px; transform-origin: 0 0;'
-        )
-        h.add(listItem, { layoutId: 'hand-1-card', radius: true })
-        await h.group.update(() => {})
-        scroller.dispatchEvent(new Event('scrollend'))
-
-        const bItem = viewBox(listItem)
-
-        // 1. Forward handoff: listItem (exiting under presence) -> fixed detail
-        h.group.capture()
-        void presence.exit(listItem, () => {
-            h.group.remove(listItem)
-            listItem.remove()
+        await nextFrame()
+        await nextFrame()
+        const listItem = () =>
+            node(
+                content,
+                'left: 10px; top: 140px; width: 180px; height: 50px; transform-origin: 0 0;'
+            )
+        const item = listItem()
+        names.set(item, 'item')
+        const removeItem = h.group.add(item, { layoutId: 'hand' })
+        const itemPresence = createPresence(item, presenceMotion(), {
+            clock: h.mc.clock,
         })
-        const detail = document.createElement('div')
-        detail.style.cssText =
-            'position: fixed; left: 320px; top: 40px; width: 280px; height: 200px; border-radius: 20px; transform-origin: 0 0; box-sizing: border-box;'
-        h.root.append(detail)
-        h.add(detail, { layoutId: 'hand-1-card', radius: true })
+        presences.push(itemPresence)
+        await baseline(h, row)
 
-        const aDetail: OBox = { x: 320, y: 40, w: 280, h: 200 }
-        const specForward = spec(bItem, aDetail, null, duration, EASE_OUT, 0, 0)
-        const forwardRun = report(h.group.flush())
-
-        const checkCoverage = (
-            leadEl: HTMLElement,
-            followEl: HTMLElement,
-            label: string
+        const flight = async (
+            leg: string,
+            follower: HTMLElement,
+            followerPresence: { exit(): Promise<unknown> },
+            mount: () => HTMLElement
         ) => {
-            if (!followEl.isConnected) return
-            const alphaLead = Number.parseFloat(
-                getComputedStyle(leadEl).opacity || '1'
-            )
-            const alphaFollow = Number.parseFloat(
-                getComputedStyle(followEl).opacity || '1'
-            )
-            const cov = alphaLead + alphaFollow * (1 - alphaLead)
-            assert.ok(
-                cov >= 0.99 - 1e-6,
-                `${label}: source-over coverage ${cov.toFixed(4)} < 0.99 (lead=${alphaLead.toFixed(3)}, follower=${alphaFollow.toFixed(3)})`
-            )
+            const b = viewBox(follower)
+            h.group.capture()
+            let exited: unknown = null
+            void followerPresence.exit().then((result) => {
+                exited = result
+            })
+            const lead = mount()
+            const authored = lead.style.cssText
+            const a = viewBox(lead)
+            const run = report(h.group.flush())
+            const s = spec(b, a, { timing: linear })
+            let worst = 0
+            let coverageError = 0
+            let opacityError = 0
+            const check = (label: string, t: number) => {
+                const want = expectedBox(s, t)
+                worst = Math.max(
+                    worst,
+                    expectAll(`${row} ${leg} ${label} t=${t.toFixed(3)}`, [
+                        [lead, want, nameOf(names, lead)],
+                        [
+                            follower,
+                            want,
+                            `${nameOf(names, follower)} (follower)`,
+                        ],
+                    ])
+                )
+                const leadOpacity = Number(getComputedStyle(lead).opacity)
+                const followerOpacity = Number(
+                    getComputedStyle(follower).opacity
+                )
+                const fade = expectedCrossfade(linear, t / D)
+                opacityError = Math.max(
+                    opacityError,
+                    Math.abs(leadOpacity - fade.lead),
+                    Math.abs(followerOpacity - fade.follower)
+                )
+                const coverage = 1 - (1 - leadOpacity) * (1 - followerOpacity)
+                coverageError = Math.max(coverageError, Math.abs(coverage - 1))
+                if (coverageError > 1e-5 || opacityError > 1e-3) {
+                    throw new Error(
+                        `${row} ${leg} ${label}: opacities lead ${leadOpacity}, follower ${followerOpacity}; expected ${fade.lead.toFixed(4)}, ${fade.follower.toFixed(4)} (coverage ${coverage})`
+                    )
+                }
+            }
+            check('flush write', 0)
+            await expectRunning(names, run, `${row} ${leg}`)
+            let f = 0
+            while ((run.value === null || exited === null) && f < 60) {
+                f++
+                await step(h.mc)
+                check(`frame ${f}`, restAt(f))
+            }
+            expectReport(names, run.value!, 'ended', [], `${row} ${leg} run`)
+            expectSnapCalls(names, snaps, [], `${row} ${leg} run`)
+            expectEqual(exited, 'exited', `${row} ${leg}: follower exit`)
+            expectViewAt(lead, a, `${row} ${leg} final lead`, 0.01)
+            expectRestored(lead, authored, `${row} ${leg} lead`)
+            return { worst, coverageError, frames: f }
         }
 
-        worst = Math.max(
-            worst,
-            expectViewAt(detail, bItem, 'L_HAND_1 forward frame 0 detail'),
-            expectViewAt(listItem, bItem, 'L_HAND_1 forward frame 0 listItem')
-        )
-        checkCoverage(detail, listItem, 'L_HAND_1 forward frame 0')
+        // 1. item → fixed detail
+        let detailPresence: {
+            exit(): Promise<unknown>
+            dispose(): void
+        } | null = null
+        let removeDetail: (() => void) | null = null
+        const detailMount = () => {
+            const detail = document.createElement('div')
+            detail.style.cssText =
+                'position: fixed; left: 360px; top: 40px; width: 280px; height: 200px; box-sizing: border-box; transform-origin: 0 0;'
+            h.root.append(detail)
+            names.set(detail, 'detail')
+            removeDetail = h.group.add(detail, { layoutId: 'hand' })
+            detailPresence = createPresence(detail, presenceMotion(), {
+                clock: h.mc.clock,
+            })
+            presences.push(detailPresence)
+            return detail
+        }
+        const forward = await flight('forward', item, itemPresence, detailMount)
+        removeItem()
+        item.remove()
+        const detail = [...names.keys()].find(
+            (k) => names.get(k) === 'detail'
+        ) as HTMLElement
 
-        await frames(
-            h.mc,
-            25,
-            (elapsed, idx) => {
-                const t = since(0, elapsed)
-                const want = trackBox(specForward, t)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        detail,
-                        want,
-                        `L_HAND_1 forward frame ${idx + 1} (t=${elapsed.toFixed(3)}) detail`
-                    )
-                )
-                if (listItem.isConnected && forwardRun.value === null) {
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            listItem,
-                            want,
-                            `L_HAND_1 forward frame ${idx + 1} (t=${elapsed.toFixed(3)}) listItem`
-                        )
-                    )
-                    checkCoverage(
-                        detail,
-                        listItem,
-                        `L_HAND_1 forward frame ${idx + 1}`
-                    )
-                }
-            },
-            () => forwardRun.value !== null
-        )
-
-        assert.ok(forwardRun.value !== null, 'L_HAND_1 forward settled')
-        assert.equal(
-            forwardRun.value.status,
-            'ended',
-            'L_HAND_1 forward status ended'
-        )
-        worst = Math.max(
-            worst,
-            expectViewAt(detail, aDetail, 'L_HAND_1 forward settle detail')
-        )
-
-        // 2. Reverse handoff: fixed detail (exiting under presence) -> listItemBack inside scroller
-        const bDetail = viewBox(detail)
-        h.group.capture()
-        void presence.exit(detail, () => {
-            h.group.remove(detail)
-            detail.remove()
-        })
-        const listItemBack = node(
-            content,
-            'left: 10px; top: 180px; width: 180px; height: 50px; border-radius: 8px; transform-origin: 0 0;'
-        )
-        h.add(listItemBack, { layoutId: 'hand-1-card', radius: true })
-        const aItemBack = shiftBox(bItem, 0, 40)
-        const specBack = spec(
-            bDetail,
-            aItemBack,
-            null,
-            duration,
-            EASE_OUT,
-            0,
-            0
-        )
-        const backRun = report(h.group.flush())
-
-        worst = Math.max(
-            worst,
-            expectViewAt(
-                listItemBack,
-                bDetail,
-                'L_HAND_1 reverse frame 0 listItemBack'
-            ),
-            expectViewAt(detail, bDetail, 'L_HAND_1 reverse frame 0 detail')
-        )
-        checkCoverage(listItemBack, detail, 'L_HAND_1 reverse frame 0')
-
-        await frames(
-            h.mc,
-            25,
-            (elapsed, idx) => {
-                const t = since(0, elapsed)
-                const want = trackBox(specBack, t)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        listItemBack,
-                        want,
-                        `L_HAND_1 reverse frame ${idx + 1} (t=${elapsed.toFixed(3)}) listItemBack`
-                    )
-                )
-                if (detail.isConnected && backRun.value === null) {
-                    worst = Math.max(
-                        worst,
-                        expectViewAt(
-                            detail,
-                            want,
-                            `L_HAND_1 reverse frame ${idx + 1} (t=${elapsed.toFixed(3)}) detail`
-                        )
-                    )
-                    checkCoverage(
-                        listItemBack,
-                        detail,
-                        `L_HAND_1 reverse frame ${idx + 1}`
-                    )
-                }
-            },
-            () => backRun.value !== null
-        )
-
-        assert.ok(backRun.value !== null, 'L_HAND_1 reverse settled')
-        assert.equal(
-            backRun.value.status,
-            'ended',
-            'L_HAND_1 reverse status ended'
-        )
-        worst = Math.max(
-            worst,
-            expectViewAt(
-                listItemBack,
-                aItemBack,
-                'L_HAND_1 reverse settle listItemBack'
+        // 2. detail → the list item again (a new element in the scroller)
+        const back = await flight('back', detail, detailPresence!, () => {
+            const again = listItem()
+            names.set(again, 'item again')
+            h.group.add(again, { layoutId: 'hand' })
+            presences.push(
+                createPresence(again, presenceMotion(), { clock: h.mc.clock })
             )
-        )
-
-        return report('L_HAND_1', worst, 'scroller <-> fixed detail handoff')
+            return again
+        })
+        removeDetail!()
+        detail.remove()
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `forward ${forward.frames} and back ${back.frames} frames; pair ≤ ${Math.max(forward.worst, back.worst).toFixed(3)} px, coverage within ${Math.max(forward.coverageError, back.coverageError).toExponential(1)}`
     } finally {
-        presence.dispose()
+        for (const p of presences) p.dispose()
         h.dispose()
     }
 }
 
+/* ───────────────────────── L-HAND-2 ───────────────────────── */
+
 /**
- * L-HAND-2: handoff while the source scroller is active (between scroll and scrollend),
- * then after scrollend.
+ * L-HAND-2: a handoff whose departing node is inside a scroller between its
+ * `scroll` and `scrollend` events does not fly (§5.8): the new lead, with no
+ * presence, appears at A, and time does not clear the state. After
+ * `scrollend` a handoff out of the same scroller is a normal flight. Where
+ * the browser has no `scrollend` (§5.8), every handoff out of a container that
+ * scrolled since the scope bound degrades the same way, so the second leg is
+ * expected not to fly there.
  */
 export async function L_HAND_2(): Promise<string> {
-    let worst = 0
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
+    const row = 'L_HAND_2'
+    const linear = timing.linear()
+    const { h, snaps, names } = harnessWithSnaps(linear)
     try {
+        const hasScrollEnd = 'onscrollend' in window
         const scroller = node(
             h.root,
             'left: 20px; top: 20px; width: 240px; height: 180px; overflow-y: auto;'
@@ -2780,154 +2857,157 @@ export async function L_HAND_2(): Promise<string> {
         content.style.cssText =
             'position: relative; width: 220px; height: 600px;'
         scroller.append(content)
-
         const item1 = node(
             content,
             'left: 10px; top: 100px; width: 160px; height: 44px; transform-origin: 0 0;'
         )
-        h.add(item1, { layoutId: 'hand-2-card' })
-        await h.group.update(() => {})
-
-        // 1. Activate scroller via `scroll` event (without `scrollend`); time passing does NOT clear it
-        scroller.scrollTop = 60
-        scroller.dispatchEvent(new Event('scroll'))
-        await frames(h.mc, 10, () => {})
-
-        // Handoff out of active scroller -> does NOT fly from item1; appears at A_detail1 immediately
-        h.group.capture()
-        h.group.remove(item1)
-        item1.remove()
-        const detail1 = node(
-            h.root,
-            'left: 320px; top: 40px; width: 240px; height: 140px; transform-origin: 0 0;'
+        const item2 = node(
+            content,
+            'left: 10px; top: 160px; width: 160px; height: 44px; transform-origin: 0 0;'
         )
-        h.add(detail1, { layoutId: 'hand-2-card' })
-        const rootBox = viewBox(h.root)
-        const aDetail1: OBox = {
-            x: rootBox.x + 320,
-            y: rootBox.y + 40,
-            w: 240,
-            h: 140,
+        names.set(item1, 'item 1')
+        names.set(item2, 'item 2')
+        const remove1 = h.group.add(item1, { layoutId: 'first' })
+        const remove2 = h.group.add(item2, { layoutId: 'second' })
+        await baseline(h, row)
+
+        // a real scroll, presented and finished
+        scroller.scrollTop = 60
+        await nextFrame()
+        await nextFrame()
+        // then the scroller is active: a scroll event, no scrollend, and time passes
+        scroller.dispatchEvent(new Event('scroll'))
+        for (let i = 0; i < 10; i++) await step(h.mc)
+
+        const handoff = (
+            departing: HTMLElement,
+            remove: () => void,
+            id: string,
+            top: number,
+            name: string
+        ) => {
+            const b = viewBox(departing)
+            h.group.capture()
+            remove()
+            departing.remove()
+            const lead = node(
+                h.root,
+                `left: 360px; top: ${top}px; width: 240px; height: 140px; transform-origin: 0 0;`
+            )
+            names.set(lead, name)
+            h.group.add(lead, { layoutId: id })
+            const authored = lead.style.cssText
+            const a = viewBox(lead)
+            const quiet = silenceWarnings()
+            let run: Holder
+            try {
+                run = report(h.group.flush())
+            } finally {
+                quiet.restore()
+            }
+            return { b, a, lead, authored, run }
         }
-        const quiet1 = silenceWarnings()
-        let resActive: Awaited<ReturnType<typeof h.group.flush>>
-        try {
-            const activeRun = h.group.flush()
-            // On frame 0, detail1 must already be at aDetail1 (NOT flying from item1 inside active scroller)
+        const expectNoFlight = async (
+            leg: string,
+            x: ReturnType<typeof handoff>
+        ) => {
+            let worst = expectViewAt(
+                x.lead,
+                x.a,
+                `${row} ${leg} flush write ${nameOf(names, x.lead)} (no flight)`
+            )
+            const r = await expectNoRun(
+                x.run,
+                `${row} ${leg}`,
+                'a handoff out of an active scroller does not fly (§5.8)'
+            )
+            expectReport(names, r, 'no-change', [], `${row} ${leg}`)
+            expectSnapCalls(names, snaps, [], `${row} ${leg}`)
+            expectEqual(
+                x.lead.style.cssText,
+                x.authored,
+                `${row} ${leg}: no pose`
+            )
+            for (let f = 1; f <= 3; f++) {
+                await step(h.mc)
+                worst = Math.max(
+                    worst,
+                    expectViewAt(x.lead, x.a, `${row} ${leg} frame ${f} lead`)
+                )
+            }
+            return worst
+        }
+
+        // 1. while active: no flight
+        let worst = await expectNoFlight(
+            'active',
+            handoff(item1, remove1, 'first', 40, 'detail 1')
+        )
+
+        // 2. after scrollend: a normal flight
+        scroller.dispatchEvent(new Event('scrollend'))
+        const second = handoff(item2, remove2, 'second', 220, 'detail 2')
+        if (!hasScrollEnd) {
+            worst = Math.max(
+                worst,
+                await expectNoFlight('no scrollend', second)
+            )
+            expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+            return `active: no flight; no scrollend in this browser: the second handoff degrades too; ≤ ${worst.toFixed(3)} px`
+        }
+        const s = spec(second.b, second.a, { timing: linear })
+        worst = Math.max(
+            worst,
+            expectViewAt(
+                second.lead,
+                second.b,
+                `${row} after scrollend flush write lead`
+            )
+        )
+        await expectRunning(names, second.run, `${row} after scrollend`)
+        let f = 0
+        while (second.run.value === null && f < 60) {
+            f++
+            await step(h.mc)
             worst = Math.max(
                 worst,
                 expectViewAt(
-                    detail1,
-                    aDetail1,
-                    'L_HAND_2 active-scroll frame 0 detail1 at A (no fly)'
+                    second.lead,
+                    expectedBox(s, restAt(f)),
+                    `${row} after scrollend frame ${f} t=${restAt(f).toFixed(3)} lead`
                 )
             )
-            resActive = await activeRun
-        } finally {
-            quiet1.restore()
         }
-        assert.equal(
-            resActive.status,
-            'no-change',
-            `L_HAND_2 active-scroll status: expected 'no-change', got '${resActive.status}'`
-        )
-        assert.equal(
-            detail1.style.translate,
-            '',
-            'L_HAND_2 active-scroll detail1 has no layout track'
-        )
-
-        // 2. Now place item2 inside scroller, fire `scrollend` to clear active scroll state, and hand off again
-        const item2 = node(
-            content,
-            'left: 10px; top: 120px; width: 160px; height: 44px; transform-origin: 0 0;'
-        )
-        h.add(item2, { layoutId: 'hand-2-card-after' })
-        await h.group.update(() => {})
-
-        scroller.scrollTop = 80
-        scroller.dispatchEvent(new Event('scroll'))
-        scroller.dispatchEvent(new Event('scrollend'))
-
-        const bItem2 = viewBox(item2)
-        h.group.capture()
-        h.group.remove(item2)
-        item2.remove()
-        const detail2 = node(
-            h.root,
-            'left: 320px; top: 200px; width: 240px; height: 140px; transform-origin: 0 0;'
-        )
-        h.add(detail2, { layoutId: 'hand-2-card-after' })
-        const aDetail2: OBox = {
-            x: rootBox.x + 320,
-            y: rootBox.y + 200,
-            w: 240,
-            h: 140,
-        }
-        const specAfter = spec(bItem2, aDetail2, null, duration, EASE_OUT, 0, 0)
-        const afterRun = report(h.group.flush())
-
-        // After scrollend, shared handoff flies from bItem2 to aDetail2!
-        worst = Math.max(
-            worst,
-            expectViewAt(
-                detail2,
-                bItem2,
-                'L_HAND_2 after-scrollend frame 0 detail2 starts at bItem2'
-            )
-        )
-        await frames(
-            h.mc,
-            25,
-            (elapsed, idx) => {
-                const t = since(0, elapsed)
-                worst = Math.max(
-                    worst,
-                    expectViewAt(
-                        detail2,
-                        trackBox(specAfter, t),
-                        `L_HAND_2 after-scrollend frame ${idx + 1} (t=${elapsed.toFixed(3)}) detail2`
-                    )
-                )
-            },
-            () => afterRun.value !== null
-        )
-        assert.ok(afterRun.value !== null, 'L_HAND_2 after-scrollend settled')
-        assert.equal(
-            afterRun.value.status,
+        expectReport(
+            names,
+            second.run.value!,
             'ended',
-            'L_HAND_2 after-scrollend status ended'
+            [],
+            `${row} after scrollend`
         )
-        worst = Math.max(
-            worst,
-            expectViewAt(
-                detail2,
-                aDetail2,
-                'L_HAND_2 after-scrollend settle detail2'
-            )
-        )
-
-        return report(
-            'L_HAND_2',
-            worst,
-            'active scroll skips fly; scrollend restores fly'
-        )
+        expectSnapCalls(names, snaps, [], `${row} after scrollend`)
+        expectViewAt(second.lead, second.a, `${row} final lead`, 0.01)
+        expectRestored(second.lead, second.authored, `${row} lead`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `active: no flight; after scrollend: ${f} frames on the oracle ≤ ${worst.toFixed(3)} px`
     } finally {
         h.dispose()
     }
 }
 
+/* ───────────────────────── L-KEY-1 ───────────────────────── */
+
 /**
- * L-KEY-1: a recycled node whose layoutKey changes under scroll.
- * Changing layoutKey ends any running track, restores owned styles, and establishes
- * a fresh baseline with no interpolation.
+ * L-KEY-1: a recycled node (a virtualizer row) whose `layoutKey` changes
+ * under a scroll in the commit's task. The flush that sees the change plans
+ * nothing for it (§4.7): at rest it appears at its new A with no motion;
+ * mid-run its track ends, its styles are restored and its run resolves
+ * 'disposed'. With the same key it animates normally from that baseline.
  */
 export async function L_KEY_1(): Promise<string> {
-    let worst = 0
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
+    const row = 'L_KEY_1'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
     try {
         const scroller = node(
             h.root,
@@ -2937,273 +3017,285 @@ export async function L_KEY_1(): Promise<string> {
         content.style.cssText =
             'position: relative; width: 240px; height: 800px;'
         scroller.append(content)
-
         const recycled = node(
             content,
             'left: 10px; top: 20px; width: 180px; height: 40px; transform-origin: 0 0;'
         )
-        const initialOpts: KeyedLayoutOptions = { layoutKey: 'row-0' }
-        h.add(recycled, initialOpts)
-        await h.group.update(() => {})
+        names.set(recycled, 'row')
+        h.add(recycled, { layoutKey: 'item-0' })
+        await baseline(h, row)
+        let worst = 0
 
-        // 1. Recycle resting node under scroll with a new layoutKey -> fresh baseline, no track
+        // 1. at rest: recycled for item 8 while the list scrolls
+        const b0 = viewBox(recycled)
         h.group.capture()
         scroller.scrollTop = 160
         recycled.style.top = '200px'
         recycled.style.width = '200px'
-        const secondOpts: KeyedLayoutOptions = { layoutKey: 'row-8' }
-        h.group.set(recycled, secondOpts)
-
-        const scrollerBox = viewBox(scroller)
-        const aRecycled1: OBox = {
-            x: scrollerBox.x + 10,
-            y: scrollerBox.y + 200 - 160,
-            w: 200,
-            h: 40,
+        h.group.set(recycled, { layoutKey: 'item-8' })
+        const a1 = viewBox(recycled)
+        if (!(maxDiff(a1, b0) >= 1)) {
+            throw new Error(
+                `${row} setup: the recycled row did not move in view space`
+            )
         }
-        const res1 = await h.group.flush()
-        assert.equal(
-            res1.status,
-            'no-change',
-            `L_KEY_1 resting recycle status: expected 'no-change', got '${res1.status}'`
-        )
-        assert.equal(res1.snapped.length, 0, 'L_KEY_1 resting recycle no snaps')
-        assert.equal(
-            recycled.style.translate,
-            '',
-            'L_KEY_1 resting recycle no inline translate'
-        )
+        const rest = report(h.group.flush())
         worst = Math.max(
             worst,
-            expectViewAt(
-                recycled,
-                aRecycled1,
-                'L_KEY_1 resting recycle frame 0 at new A'
-            )
+            expectViewAt(recycled, a1, `${row} recycle at rest flush write row`)
         )
-
-        // 2. With the SAME layoutKey ('row-8'), a layout change animates normally from the fresh baseline
-        h.group.capture()
-        recycled.style.left = '50px'
-        const aRecycled2 = shiftBox(aRecycled1, 40, 0)
-        const spec2 = spec(
-            aRecycled1,
-            aRecycled2,
-            null,
-            duration,
-            EASE_OUT,
-            0,
-            0
+        const r1 = await expectNoRun(
+            rest,
+            `${row} recycle at rest`,
+            'a layoutKey change is a fresh baseline (§4.7)'
         )
-        const run2 = report(h.group.flush())
-
-        await frames(h.mc, 4, (elapsed, idx) => {
-            const t = since(0, elapsed)
+        expectReport(names, r1, 'no-change', [], `${row} recycle at rest`)
+        for (let f = 1; f <= 3; f++) {
+            await step(h.mc)
             worst = Math.max(
                 worst,
                 expectViewAt(
                     recycled,
-                    trackBox(spec2, t),
-                    `L_KEY_1 same-key anim frame ${idx + 1} (t=${elapsed.toFixed(3)})`
+                    a1,
+                    `${row} recycle at rest frame ${f} row`
                 )
             )
-        })
-        assert.equal(
-            run2.value,
-            null,
-            'L_KEY_1 run2 still mid-flight at frame 4'
+        }
+        expectEqual(
+            h.mc.clock.size,
+            0,
+            `${row} recycle at rest: no clock subscription`
         )
 
-        // 3. Recycle mid-run under scroll with a new layoutKey ('row-16') -> ends running track ('disposed'),
-        //    restores styles, and establishes a fresh baseline at new A!
+        // 2. the same key: a normal track from the fresh baseline
+        h.group.capture()
+        recycled.style.left = '50px'
+        const a2 = viewBox(recycled)
+        const run2 = report(h.group.flush())
+        const s2 = spec(a1, a2, { timing: ease })
+        worst = Math.max(
+            worst,
+            expectViewAt(recycled, a1, `${row} same key flush write row`)
+        )
+        await expectRunning(names, run2, `${row} same key`)
+        for (let f = 1; f <= 5; f++) {
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    recycled,
+                    expectedBox(s2, restAt(f)),
+                    `${row} same key frame ${f} t=${restAt(f).toFixed(3)} row`
+                )
+            )
+        }
+
+        // 3. mid-run: recycled for item 16 while the list scrolls
+        const scrollerBox = viewBox(scroller)
         h.group.capture()
         scroller.scrollTop = 300
         recycled.style.left = '10px'
         recycled.style.top = '360px'
         recycled.style.width = '160px'
-        const thirdOpts: KeyedLayoutOptions = { layoutKey: 'row-16' }
-        h.group.set(recycled, thirdOpts)
-        const aRecycled3: OBox = {
+        const authored = authorText(recycled)
+        h.group.set(recycled, { layoutKey: 'item-16' })
+        const a3 = {
             x: scrollerBox.x + 10,
-            y: scrollerBox.y + 360 - 300,
+            y: scrollerBox.y + 60,
             w: 160,
             h: 40,
         }
-        const res3 = await h.group.flush()
-        await settleMicrotasks()
-
-        assert.equal(
-            res3.status,
-            'no-change',
-            `L_KEY_1 mid-run recycle status: expected 'no-change', got '${res3.status}'`
-        )
-        assert.ok(run2.value !== null, 'L_KEY_1 interrupted run2 resolved')
-        assert.equal(
-            run2.value.status,
-            'disposed',
-            `L_KEY_1 mid-run recycle resolved previous run as 'disposed', got '${run2.value.status}'`
-        )
-        assert.equal(
-            recycled.style.translate,
-            '',
-            'L_KEY_1 mid-run recycle restored translate'
-        )
-        assert.equal(
-            recycled.style.scale,
-            '',
-            'L_KEY_1 mid-run recycle restored scale'
-        )
+        const mid = report(h.group.flush())
         worst = Math.max(
             worst,
-            expectViewAt(
-                recycled,
-                aRecycled3,
-                'L_KEY_1 mid-run recycle at new A'
-            )
+            expectViewAt(recycled, a3, `${row} recycle mid-run flush write row`)
         )
-
-        return report('L_KEY_1', worst, 'layoutKey recycle at rest + mid-run')
+        const r3 = await expectNoRun(
+            mid,
+            `${row} recycle mid-run`,
+            'a layoutKey change ends the track and is a fresh baseline (§4.7)'
+        )
+        expectReport(names, r3, 'no-change', [], `${row} recycle mid-run`)
+        if (run2.value === null) {
+            throw new Error(
+                `${row} recycle mid-run: the ended track's run is still pending`
+            )
+        }
+        expectReport(names, run2.value, 'disposed', [], `${row} recycled run`)
+        expectRestored(recycled, authored, `${row} recycle mid-run`)
+        expectSnapCalls(names, snaps, [], `${row} recycles`)
+        for (let f = 1; f <= 3; f++) {
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    recycled,
+                    a3,
+                    `${row} recycle mid-run frame ${f} row`
+                )
+            )
+        }
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `fresh baselines at rest and mid-run, no interpolation; ≤ ${worst.toFixed(3)} px`
     } finally {
         h.dispose()
     }
 }
 
+/* ───────────────────────── L-DOC-1 ───────────────────────── */
+
 /**
- * L-DOC-1: document affinity (vanilla parts):
- * - add / set of an element from another document (an iframe's document) throws ANI_INVALID_OPTIONS;
- * - adoption of a registered element into another document ends its track, restores its styles and unregisters it.
+ * L-DOC-1 (vanilla parts, §4.6): `add` or `set` with an element of another
+ * document (an iframe's) throws `ANI_INVALID_OPTIONS`; adopting a registered,
+ * animating element into another document ends its track, restores its
+ * styles byte for byte and unregisters it, so after coming back it does not
+ * animate until it is added again.
  */
 export async function L_DOC_1(): Promise<string> {
-    let worst = 0
-    const duration = 0.24
-    const h = harness({
-        motion: { duration, timing: timing.easeOut },
-    })
+    const row = 'L_DOC_1'
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
     const iframe = document.createElement('iframe')
     iframe.style.cssText =
-        'position: absolute; left: 500px; top: 0; width: 200px; height: 150px; border: 0;'
+        'position: absolute; left: 600px; top: 0; width: 200px; height: 150px; border: 0;'
     h.root.append(iframe)
     try {
-        const otherDoc = iframe.contentDocument
-        assert.ok(otherDoc !== null, 'L_DOC_1 iframe has contentDocument')
-
-        const mainEl = node(
+        const other = iframe.contentDocument
+        if (!other) throw new Error(`${row} setup: the iframe has no document`)
+        const card = node(
             h.root,
-            'left: 20px; top: 20px; width: 100px; height: 40px; translate: 6px 0px;'
+            'left: 20px; top: 20px; width: 100px; height: 40px; translate: 6px 0px; transform-origin: 0 0;'
         )
-        h.add(mainEl)
-        await h.group.update(() => {})
+        names.set(card, 'card')
+        h.group.add(card)
+        await baseline(h, row)
 
-        // 1. Adding or setting an element from another document throws ANI_INVALID_OPTIONS
-        const foreignEl = otherDoc.createElement('div')
-        otherDoc.body.append(foreignEl)
-
-        let addErr: unknown = null
-        try {
-            h.group.add(foreignEl)
-        } catch (err) {
-            addErr = err
+        const foreign = other.createElement('div')
+        other.body.append(foreign)
+        const code = (fn: () => void) => {
+            try {
+                fn()
+                return 'no error'
+            } catch (error) {
+                return isAniError(error) ? error.code : String(error)
+            }
         }
-        assert.ok(
-            isAniError(addErr) && addErr.code === 'ANI_INVALID_OPTIONS',
-            `L_DOC_1 group.add(foreignEl) must throw ANI_INVALID_OPTIONS, got ${String(addErr)}`
+        expectEqual(
+            code(() => h.group.add(foreign)),
+            'ANI_INVALID_OPTIONS',
+            `${row}: add of another document's element`
+        )
+        expectEqual(
+            code(() => h.group.set(foreign, {})),
+            'ANI_INVALID_OPTIONS',
+            `${row}: set of another document's element`
         )
 
-        let setErr: unknown = null
-        try {
-            h.group.set(foreignEl, {})
-        } catch (err) {
-            setErr = err
-        }
-        assert.ok(
-            isAniError(setErr) && setErr.code === 'ANI_INVALID_OPTIONS',
-            `L_DOC_1 group.set(foreignEl) must throw ANI_INVALID_OPTIONS, got ${String(setErr)}`
-        )
-
-        // 2. Start a track on mainEl, then adopt mainEl into otherDoc mid-run
-        const bMain = viewBox(mainEl)
+        const b = viewBox(card)
         h.group.capture()
-        mainEl.style.left = '180px'
-        const aMain = shiftBox(bMain, 160, 0)
-        const specMain = spec(bMain, aMain, null, duration)
-        const runMain = report(h.group.flush())
-
-        await frames(h.mc, 3, (elapsed, idx) => {
-            const t = since(0, elapsed)
+        card.style.left = '180px'
+        const authored = card.style.cssText
+        const a = viewBox(card)
+        const run = report(h.group.flush())
+        const s = spec(b, a, { timing: ease })
+        let worst = expectViewAt(card, b, `${row} flush write card`)
+        await expectRunning(names, run, `${row} flush`)
+        for (let f = 1; f <= 3; f++) {
+            await step(h.mc)
             worst = Math.max(
                 worst,
                 expectViewAt(
-                    mainEl,
-                    trackBox(specMain, t),
-                    `L_DOC_1 pre-adopt frame ${idx + 1} (t=${elapsed.toFixed(3)})`
+                    card,
+                    expectedBox(s, restAt(f)),
+                    `${row} frame ${f} card`
                 )
             )
-        })
-        assert.notEqual(
-            mainEl.style.translate,
-            '6px 0px',
-            'L_DOC_1 mainEl has engine-written translate mid-run'
+        }
+        expectEqual(
+            card.style.getPropertyPriority('translate'),
+            'important',
+            `${row}: the engine owns translate mid-run`
         )
 
-        // Adopt mainEl into iframe's document
-        otherDoc.body.append(otherDoc.adoptNode(mainEl))
-        assert.equal(
-            mainEl.ownerDocument,
-            otherDoc,
-            'L_DOC_1 mainEl ownerDocument is otherDoc after adoptNode'
-        )
-
+        // adopted into the iframe's document mid-run
+        other.body.append(other.adoptNode(card))
         const quiet = silenceWarnings()
         try {
             h.group.capture()
-            await h.group.flush()
-            h.mc.frame(16)
-            await settleMicrotasks()
+            await expectNoRun(
+                report(h.group.flush()),
+                `${row} flush after adoption`,
+                'its only participant left the document'
+            )
         } finally {
             quiet.restore()
         }
+        if (run.value === null) {
+            throw new Error(
+                `${row} adoption: the adopted card's run is still pending`
+            )
+        }
+        expectReport(names, run.value, 'disposed', [], `${row} adopted run`)
+        expectRestored(card, authored, `${row} adopted card`)
+        expectSnapCalls(names, snaps, [], `${row} adoption`)
 
-        assert.ok(
-            runMain.value !== null,
-            'L_DOC_1 adopted element run resolved'
-        )
-        assert.equal(
-            runMain.value.status,
-            'disposed',
-            `L_DOC_1 adopted element run status: expected 'disposed', got '${runMain.value.status}'`
-        )
-        assert.equal(
-            mainEl.style.translate,
-            '6px 0px',
-            'L_DOC_1 adopted element saved inline translate restored byte-for-byte'
-        )
-        assert.equal(
-            mainEl.style.scale,
-            '',
-            'L_DOC_1 adopted element inline scale restored'
-        )
-
-        // 3. Adopting mainEl back into main document does NOT animate it unless re-added (it was unregistered)
-        h.root.append(document.adoptNode(mainEl))
-        const afterBack = viewBox(mainEl)
+        // back in this document it is no longer registered
+        h.root.append(document.adoptNode(card))
+        const back = viewBox(card)
         h.group.capture()
-        mainEl.style.left = '260px'
-        const unregRes = await h.group.flush()
-        assert.equal(
-            unregRes.status,
-            'no-change',
-            'L_DOC_1 adopted element was unregistered and does not animate until re-added'
-        )
+        card.style.left = '260px'
+        const unregistered = report(h.group.flush())
         worst = Math.max(
             worst,
-             maxDiff(viewBox(mainEl), shiftBox(afterBack, 80, 0))
+            expectViewAt(
+                card,
+                shiftBox(back, 80, 0),
+                `${row} unregistered flush write card`
+            )
+        )
+        const r = await expectNoRun(
+            unregistered,
+            `${row} unregistered flush`,
+            'the adopted card was unregistered'
+        )
+        expectReport(names, r, 'no-change', [], `${row} unregistered flush`)
+        expectEqual(
+            card.style.getPropertyPriority('translate'),
+            '',
+            `${row}: no pose on the unregistered card`
         )
 
-        return report('L_DOC_1', worst, 'cross-doc add throws; adopt disposes')
+        // added again, it animates
+        h.group.add(card)
+        const b2 = viewBox(card)
+        h.group.capture()
+        card.style.left = '20px'
+        const a2 = viewBox(card)
+        const again = report(h.group.flush())
+        const s2 = spec(b2, a2, { timing: ease })
+        worst = Math.max(
+            worst,
+            expectViewAt(card, b2, `${row} re-added flush write card`)
+        )
+        await expectRunning(names, again, `${row} re-added`)
+        let f = 0
+        while (again.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    card,
+                    expectedBox(s2, restAt(f)),
+                    `${row} re-added frame ${f} card`
+                )
+            )
+        }
+        expectReport(names, again.value!, 'ended', [], `${row} re-added run`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `foreign add/set throw; adoption ends the run 'disposed' with styles restored; re-added card animates ≤ ${worst.toFixed(3)} px`
     } finally {
         iframe.remove()
         h.dispose()
     }
 }
-
-export const knownFailures: Record<string, string> = {}
