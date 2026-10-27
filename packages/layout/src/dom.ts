@@ -508,13 +508,13 @@ export function adoptAuthored(
 ): boolean {
     let adopted = false
     for (const [property, [value, priority]] of saved) {
-        const now = element.style.getPropertyValue(property)
         const nowPriority = element.style.getPropertyPriority(property)
         // an important declaration is layout's own (written, or written and
         // queued for restore); an author's inline write replaces it plainly
+        if (nowPriority === OWNED_PRIORITY) continue
+        const now = element.style.getPropertyValue(property)
         const replaced =
-            nowPriority !== OWNED_PRIORITY &&
-            (written.has(property) || now !== value || nowPriority !== priority)
+            written.has(property) || now !== value || nowPriority !== priority
         if (!replaced) continue
         saved.set(property, [now, nowPriority])
         written.delete(property)
