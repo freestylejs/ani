@@ -326,6 +326,7 @@ export function createTrack(
             const s = physics.spring({ duration, bounce })
             const settle = settleOf(s, carry)
             if (motion.delay * f + settle <= max) {
+                if (!(settle <= SPRING_SETTLE_CAP)) return 'spring-timeout'
                 return build(duration, motion.delay * f, carry, settle, s)
             }
         }
