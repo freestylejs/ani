@@ -8,20 +8,25 @@ import {
     invert,
     mapBox,
 } from '../geometry'
-import { resolveMotion } from '../motion'
+import { resolveMotion, type TimingMotion } from '../motion'
 import {
-    type AnchorRule,
-    createTrack,
+    type AnchorPath,
     drawnBoxes,
     drawnVelocities,
+    fadeEnded,
+    fadeOpacity,
     type Layer,
+    createTrack as planTrack,
     type SolveNode,
     solve,
     trackEnded,
+    trackEndTime,
+    trackProgress,
 } from '../solve'
-import { rootNode } from './nodes'
+import { trackOf as createTrack, rootNode } from './nodes'
 import {
     applyPose,
+    crossfadeAt,
     easing,
     easingSlope0,
     expectedBox,
@@ -32,8 +37,10 @@ import {
     type OBox,
     type ONode,
     type OTrackSpec,
+    perceptualOracle,
     rendered,
     rng,
+    springOracle,
 } from './oracle'
 
 const TOL = 1e-9
@@ -90,21 +97,35 @@ interface Built {
     nodes: SolveNode[]
     dom: ONode[]
     specs: OTrackSpec[]
-    anchors: ({ u: number; v: number } | null)[]
+    anchors: (OAnchor | null)[]
 }
+
+/** The oracle's anchor terms: timing momentum `k`, or a spring's relative `v₀`. */
+interface OAnchor {
+    u: number
+    v: number
+    kx: number
+    ky: number
+    vx: number
+    vy: number
+}
+
+const BOUNCES = [-0.8, -0.3, 0, 0.2, 0.4, 0.9] as const
+/** Random trees move thousands of px over long durations: a very bouncy or heavily overdamped spring there would exceed the 10 s cap. */
+const TREE_BOUNCES = [-0.3, -0.1, 0, 0.2, 0.4, 0.6] as const
 
 /**
  * A random tree (depth ≤ 5) where every node has a CSS box, an origin and an
  * own transform in its parent's frame, a track between visual boxes and a
  * random elapsed time.
  */
-function randomTree(seed: number): Built {
+function randomTree(seed: number, springs = 0): Built {
     const random = rng(seed)
     const count = 1 + Math.floor(random() * 24)
     const nodes: SolveNode[] = []
     const dom: ONode[] = []
     const specs: OTrackSpec[] = []
-    const anchors: ({ u: number; v: number } | null)[] = []
+    const anchors: (OAnchor | null)[] = []
     const depth: number[] = []
     for (let i = 0; i < count; i++) {
         let parent = -1
@@ -143,8 +164,20 @@ function randomTree(seed: number): Built {
         const fn = timings(random)
         const duration = 0.05 + random() * 1.2
         const delay = random() < 0.3 ? random() * 0.4 : 0
-        const motion = resolveMotion([{ duration, delay, timing: fn }])
-        let rule: AnchorRule | null = null
+        const spring =
+            springs > 0 && random() < springs
+                ? {
+                      duration: 0.15 + random(),
+                      bounce: TREE_BOUNCES[
+                          Math.floor(random() * TREE_BOUNCES.length)
+                      ]!,
+                  }
+                : null
+        const motion = spring
+            ? resolveMotion([{ type: 'spring', ...spring, delay }])
+            : resolveMotion([{ duration, delay, timing: fn }])
+        let rule: AnchorPath | null = null
+        let ks: Omit<OAnchor, 'u' | 'v'> | null = null
         if (anchored) {
             const u = random()
             const v = random()
@@ -170,12 +203,21 @@ function randomTree(seed: number): Built {
             rule = {
                 u,
                 v,
-                kx,
-                ky,
                 fromX,
                 fromY,
                 toX,
                 toY,
+                velocity: velocity && {
+                    x: velocity.x + u * velocity.w - (pv.x + u * pv.w),
+                    y: velocity.y + v * velocity.h - (pv.y + v * pv.h),
+                },
+            }
+            // the oracle's own momentum terms (timing) and relative velocity (spring)
+            ks = {
+                kx,
+                ky,
+                vx: rule.velocity?.x ?? 0,
+                vy: rule.velocity?.y ?? 0,
             }
         }
         const track = createTrack(
@@ -196,7 +238,10 @@ function randomTree(seed: number): Built {
             oy,
             inner: aboutOrigin(inner, ox, oy),
             track,
-            elapsed: random() * (delay + duration) * 1.3,
+            elapsed:
+                random() *
+                (delay + (spring ? 2 * spring.duration : duration)) *
+                1.3,
             follow: -1,
             fade: null,
             radius: null,
@@ -211,8 +256,12 @@ function randomTree(seed: number): Built {
             duration,
             delay,
             timing: fn,
+            spring:
+                spring && track.law.kind === 'spring'
+                    ? { ...spring, end: track.law.settle }
+                    : undefined,
         })
-        anchors.push(rule ? { u: rule.u, v: rule.v } : null)
+        anchors.push(rule && ks ? { u: rule.u, v: rule.v, ...ks } : null)
     }
     return { nodes, dom, specs, anchors }
 }
@@ -231,24 +280,28 @@ function oracleDrawn(built: Built): OBox[] {
         const parent = out[node.parent]!
         const rule = node.track!.anchor!
         const t = node.elapsed - spec.delay
-        const tau = t <= 0 ? 0 : Math.min(1, t / spec.duration)
-        const rest = 1 - easing(spec.timing, tau)
-        const bump = tau > 0 && tau < 1 ? tau * (1 - tau) ** 2 : 0
+        let offX: number
+        let offY: number
+        if (spec.spring) {
+            const { duration: D, bounce, end } = spec.spring
+            const at = (from: number, to: number, v0: number) =>
+                t <= 0
+                    ? from
+                    : t >= end
+                      ? to
+                      : to + springOracle(D, bounce, from - to, v0, t).d
+            offX = at(rule.fromX, rule.toX, anchor.vx)
+            offY = at(rule.fromY, rule.toY, anchor.vy)
+        } else {
+            const tau = t <= 0 ? 0 : Math.min(1, t / spec.duration)
+            const rest = 1 - easing(spec.timing, tau)
+            const bump = tau > 0 && tau < 1 ? tau * (1 - tau) ** 2 : 0
+            offX = rule.toX + (rule.fromX - rule.toX) * rest + anchor.kx * bump
+            offY = rule.toY + (rule.fromY - rule.toY) * rest + anchor.ky * bump
+        }
         out.push({
-            x:
-                parent.x +
-                anchor.u * parent.w -
-                anchor.u * own.w +
-                rule.toX +
-                (rule.fromX - rule.toX) * rest +
-                rule.kx * bump,
-            y:
-                parent.y +
-                anchor.v * parent.h -
-                anchor.v * own.h +
-                rule.toY +
-                (rule.fromY - rule.toY) * rest +
-                rule.ky * bump,
+            x: parent.x + anchor.u * parent.w - anchor.u * own.w + offX,
+            y: parent.y + anchor.v * parent.h - anchor.v * own.h + offY,
             w: own.w,
             h: own.h,
         })
@@ -477,7 +530,7 @@ describe('solve: track endpoints and velocity', () => {
             const analytic = drawnVelocities(built.nodes)
             built.nodes.forEach((node, i) => {
                 const t = node.track!
-                const tau = (node.elapsed - t.delay) / t.duration
+                const tau = (node.elapsed - t.delay) / t.law.duration
                 // skip the instants where a piecewise channel has a corner
                 if (Math.abs(tau) < 1e-3 || Math.abs(tau - 1) < 1e-3) return
                 const fd = {
@@ -607,8 +660,11 @@ describe('solve: crossfade and radius', () => {
             role: 'lead',
             from: 0,
             elapsed: 0.25,
-            duration: 1,
-            curve: motion.curve,
+            law: {
+                kind: 'timing',
+                duration: 1,
+                curve: (motion as TimingMotion).curve,
+            },
         },
         radius: [20, 20, 20, 20, 20, 20, 20, 20],
     })
@@ -622,8 +678,11 @@ describe('solve: crossfade and radius', () => {
                 role: 'follower',
                 from: 1,
                 elapsed: 0.25,
-                duration: 1,
-                curve: motion.curve,
+                law: {
+                    kind: 'timing',
+                    duration: 1,
+                    curve: (motion as TimingMotion).curve,
+                },
             },
         }
     )
@@ -1185,15 +1244,14 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
         )
         // the child: 40 → 60 wide, its centre on the parent's (offset 0)
         const css = { x: 270, y: 30, w: 60, h: 40 }
-        const rule: AnchorRule = {
+        const rule: AnchorPath = {
             u: 0.5,
             v: 0.5,
             fromX: 0,
             fromY: 0,
             toX: 0,
             toY: 0,
-            kx: 0,
-            ky: 0,
+            velocity: null,
         }
         const child = rootNode(css, {
             parent: 0,
@@ -1235,5 +1293,332 @@ describe('solve: a node composes its ancestors at its own flush (§3.1; CP6 tria
             expect(seen.w).toBeCloseTo(W, 9)
             expect(mapBox(parentMap, parentCss).x + 100).toBeCloseTo(R + 100, 9)
         }
+    })
+})
+
+describe('solve: spring tracks (§5.3)', () => {
+    it('L-SPRING-1: random trees with springs match the closed-form oracle within 1e-9', () => {
+        let springs = 0
+        for (let seed = 1; seed <= 400; seed++) {
+            const built = randomTree(seed, 0.6)
+            const solved = solve(built.nodes)
+            const expected = oracleDrawn(built)
+            built.nodes.forEach((node, i) => {
+                if (node.track?.law.kind === 'spring') springs += 1
+                const got = rendered(
+                    i,
+                    built.dom,
+                    solved.map((s) => s.pose)
+                )
+                expect(
+                    relative(got, expected[i]!),
+                    `seed ${seed} node ${i}`
+                ).toBeLessThan(TOL)
+            })
+        }
+        expect(springs).toBeGreaterThan(1000)
+    })
+
+    it('L-SPRING-1: analytic velocities of spring trees equal finite differences', () => {
+        for (let seed = 700; seed < 800; seed++) {
+            const built = randomTree(seed, 1)
+            const h = 1e-6
+            const shift = (dt: number) =>
+                built.nodes.map((n) => ({ ...n, elapsed: n.elapsed + dt }))
+            const lo = drawnBoxes(shift(-h))
+            const hi = drawnBoxes(shift(h))
+            const analytic = drawnVelocities(built.nodes)
+            built.nodes.forEach((node, i) => {
+                const t = node.track!
+                const local = node.elapsed - t.delay
+                const end =
+                    t.law.kind === 'spring' ? t.law.settle : t.law.duration
+                // skip the corners: the start, the settle, a size floor
+                if (Math.abs(local) < 1e-3 || Math.abs(local - end) < 1e-3)
+                    return
+                const fd = {
+                    x: (hi[i]!.x - lo[i]!.x) / (2 * h),
+                    y: (hi[i]!.y - lo[i]!.y) / (2 * h),
+                    w: (hi[i]!.w - lo[i]!.w) / (2 * h),
+                    h: (hi[i]!.h - lo[i]!.h) / (2 * h),
+                }
+                const scale = Math.max(
+                    1,
+                    ...Object.values(analytic[i]!).map(Math.abs)
+                )
+                expect(
+                    maxDiff(fd, analytic[i]!) / scale,
+                    `seed ${seed} node ${i}`
+                ).toBeLessThan(1e-4)
+            })
+        }
+    })
+
+    it('L-SPRING-1: c(0) = B and c′(0) = v exactly on every channel, for every bounce, at 60 and 120 Hz', () => {
+        const b = { x: 10, y: 20, w: 100, h: 80 }
+        const a = { x: 400, y: -50, w: 160, h: 40 }
+        const v = { x: 1200, y: -800, w: 300, h: -150 }
+        for (const bounce of BOUNCES) {
+            const motion = resolveMotion([
+                { type: 'spring', duration: 0.5, bounce },
+            ])
+            const track = createTrack(b, a, v, 0.5, 0.5, true, motion, null)
+            const node = (elapsed: number) =>
+                rootNode(a, { fx: 0.5, fy: 0.5, track, elapsed })
+            expect(maxDiff(drawnBoxes([node(0)])[0]!, b)).toBe(0)
+            const v0 = drawnVelocities([node(0)])[0]!
+            expect(maxDiff(v0, v)).toBeLessThan(1e-9)
+            // every frame on the oracle, at 60 and 120 Hz
+            if (track.law.kind !== 'spring') throw new Error('spring')
+            const { settle } = track.law
+            for (const hz of [60, 120]) {
+                for (let f = 0; f * (1 / hz) < settle + 0.1; f++) {
+                    const t = f / hz
+                    const got = drawnBoxes([node(t)])[0]!
+                    const want = expectedBox(
+                        {
+                            before: b,
+                            after: a,
+                            velocity: v,
+                            fx: 0.5,
+                            fy: 0.5,
+                            mode: true,
+                            duration: 0.5,
+                            delay: 0,
+                            timing: timing.linear(),
+                            spring: { duration: 0.5, bounce, end: settle },
+                        },
+                        t
+                    )
+                    expect(
+                        maxDiff(got, want),
+                        `${bounce} ${hz} Hz f${f}`
+                    ).toBeLessThan(1e-9)
+                }
+            }
+        }
+    })
+
+    it('settles exactly: the documented example ends at 0.918 s; A is drawn from the settle on', () => {
+        const b = { x: 300, y: 0, w: 100, h: 100 }
+        const a = { x: 0, y: 0, w: 100, h: 100 }
+        const motion = resolveMotion([{ type: 'spring', duration: 0.55 }])
+        const track = createTrack(b, a, null, 0, 0, true, motion, null)
+        if (track.law.kind !== 'spring') throw new Error('spring')
+        expect(track.law.settle).toBeGreaterThan(0.9175)
+        expect(track.law.settle).toBeLessThan(0.9185)
+        expect(trackEndTime(track)).toBe(track.law.settle)
+        const at = (elapsed: number) =>
+            drawnBoxes([rootNode(a, { track, elapsed })])[0]!
+        // within 0.1 px before the end, exactly A from it on
+        const before = at(track.law.settle - 1e-9)
+        expect(Math.abs(before.x)).toBeLessThanOrEqual(0.1)
+        expect(at(track.law.settle)).toEqual(a)
+        expect(trackEnded(track, track.law.settle)).toBe(true)
+        expect(trackEnded(track, track.law.settle - 1e-6)).toBe(false)
+    })
+
+    it('a spring settling later than 10 s is refused (spring-timeout)', () => {
+        const motion = resolveMotion([
+            { type: 'spring', duration: 4, bounce: 0.99 },
+        ])
+        expect(
+            planTrack(
+                { x: 500, y: 0, w: 10, h: 10 },
+                { x: 0, y: 0, w: 10, h: 10 },
+                null,
+                0,
+                0,
+                true,
+                motion,
+                null
+            )
+        ).toBe('spring-timeout')
+    })
+
+    it('a delayed spring holds B through its delay, then starts at rest', () => {
+        const b = { x: 100, y: 0, w: 50, h: 50 }
+        const a = { x: 0, y: 0, w: 50, h: 50 }
+        const motion = resolveMotion([
+            { type: 'spring', duration: 0.4, bounce: 0.3, delay: 0.2 },
+        ])
+        const track = createTrack(b, a, null, 0, 0, 'position', motion, null)
+        const node = (elapsed: number) => rootNode(a, { track, elapsed })
+        expect(drawnBoxes([node(0.1)])[0]).toEqual(b)
+        expect(drawnVelocities([node(0.1)])[0]).toEqual({
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
+        })
+        const t = 0.15
+        expect(drawnBoxes([node(0.2 + t)])[0]!.x).toBeCloseTo(
+            springOracle(0.4, 0.3, 100, 0, t).d,
+            9
+        )
+    })
+})
+
+describe('solve: the perceptual timeline of a spring lead (§5.3, §5.8, §5.9)', () => {
+    const motion = resolveMotion([
+        { type: 'spring', duration: 0.5, bounce: 0.3 },
+    ])
+    const lead = createTrack(
+        { x: 0, y: 0, w: 50, h: 50 },
+        { x: 300, y: 200, w: 200, h: 120 },
+        null,
+        0.5,
+        0.5,
+        true,
+        motion,
+        null
+    )
+
+    it('L-SPRING-2: crossfade opacities follow p(t), keep coverage 1, and end at t = D', () => {
+        for (let k = 0; k <= 120; k++) {
+            const elapsed = (k / 100) * 0.5
+            const p = perceptualOracle(elapsed, 0.5)
+            const want = crossfadeAt(p)
+            const leadFade = {
+                role: 'lead' as const,
+                from: 0,
+                elapsed,
+                law: lead.law,
+            }
+            const follower = {
+                role: 'follower' as const,
+                from: 1,
+                elapsed,
+                law: lead.law,
+            }
+            const L = fadeOpacity(leadFade)
+            const F = fadeOpacity(follower)
+            expect(L).toBeCloseTo(want.lead, 12)
+            expect(F).toBeCloseTo(want.follower, 12)
+            expect(1 - (1 - L) * (1 - F)).toBeGreaterThanOrEqual(1 - 1e-12)
+            expect(fadeEnded(leadFade)).toBe(elapsed >= 0.5)
+        }
+        // the fade ends at D, long before the physical settle
+        if (lead.law.kind !== 'spring') throw new Error('spring')
+        expect(lead.law.settle).toBeGreaterThan(0.5)
+        expect(
+            fadeOpacity({
+                role: 'follower',
+                from: 1,
+                elapsed: 0.5,
+                law: lead.law,
+            })
+        ).toBe(0)
+    })
+
+    it('L-SPRING-2: the radius blend follows p(t) and reaches its end at t = D', () => {
+        for (const elapsed of [0, 0.05, 0.2, 0.35, 0.5, 0.7]) {
+            expect(trackProgress(lead, elapsed)).toBeCloseTo(
+                perceptualOracle(elapsed, 0.5),
+                12
+            )
+        }
+        const node = rootNode(
+            { x: 300, y: 200, w: 200, h: 120 },
+            {
+                fx: 0.5,
+                fy: 0.5,
+                track: lead,
+                elapsed: 0.5,
+                radius: [8, 8, 8, 8, 8, 8, 8, 8],
+                radiusBlend: {
+                    from: [30, 30, 30, 30, 30, 30, 30, 30],
+                    to: [8, 8, 8, 8, 8, 8, 8, 8],
+                    track: lead,
+                    elapsed: 0.5,
+                },
+            }
+        )
+        const [out] = solve([node])
+        const drawn = out!.drawn
+        // at D the on-screen radius is the authored end, whatever the box is doing
+        expect(out!.radius![0]! * (drawn.w / 200)).toBeCloseTo(8, 9)
+    })
+})
+
+describe('solve: reduced motion { maxDuration } on a spring (§9.4)', () => {
+    const GRID = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1]
+    it('L-SPRING-4: the largest grid factor that fits, no overshoot, never beyond maxDuration', () => {
+        const random = rng(0x4ed0)
+        let fitted = 0
+        let jumped = 0
+        for (let i = 0; i < 600; i++) {
+            const D = 0.1 + random() * 1.5
+            const bounce = BOUNCES[Math.floor(random() * BOUNCES.length)]!
+            const delay = random() < 0.3 ? random() * 0.3 : 0
+            const max = 0.05 + random() * 1.5
+            const dx = (random() - 0.5) * 1200
+            const moving = random() < 0.5
+            const v = moving
+                ? { x: (random() - 0.5) * 8000, y: 0, w: 0, h: 0 }
+                : null
+            const base = resolveMotion([
+                { type: 'spring', duration: D, bounce, delay },
+            ])
+            const motion = { ...base, maxDuration: max } as typeof base
+            const b = { x: dx, y: 0, w: 40, h: 40 }
+            const a = { x: 0, y: 0, w: 40, h: 40 }
+            const track = planTrack(b, a, v, 0, 0, 'position', motion, null)
+            // the oracle's own settle: sample the response finely past the
+            // candidate's end and check the 0.1 px / 1 px/s bound holds
+            if (track === 'reduced') {
+                jumped += 1
+                continue
+            }
+            if (typeof track === 'string' || track.law.kind !== 'spring')
+                throw new Error(String(track))
+            fitted += 1
+            const law = track.law
+            expect(track.delay + law.settle).toBeLessThanOrEqual(max + 1e-12)
+            expect(law.spring.bounce).toBeLessThanOrEqual(0)
+            const f = law.duration / D
+            expect(GRID.some((g) => Math.abs(g - f) < 1e-12)).toBe(true)
+            expect(track.delay).toBeCloseTo(delay * f, 12)
+            // a larger factor would not have fitted with the same start
+            const larger = GRID.filter((g) => g > f + 1e-12)
+            const carried = track.seed[0] !== 0
+            for (const g of larger) {
+                const s = resolveMotion([
+                    {
+                        type: 'spring',
+                        duration: D * g,
+                        bounce: Math.min(bounce, 0),
+                    },
+                ])
+                const t = planTrack(
+                    b,
+                    a,
+                    carried ? v : null,
+                    0,
+                    0,
+                    'position',
+                    s,
+                    null
+                )
+                if (typeof t === 'string' || t.law.kind !== 'spring') continue
+                expect(delay * g + t.law.settle).toBeGreaterThan(max)
+            }
+            // after the end the oracle response stays inside the settle bound
+            const v0 = carried ? v!.x : 0
+            for (let k = 0; k <= 50; k++) {
+                const t = law.settle + (k / 50) * law.duration
+                const o = springOracle(
+                    law.duration,
+                    law.spring.bounce,
+                    dx,
+                    v0,
+                    t
+                )
+                expect(Math.abs(o.d)).toBeLessThanOrEqual(0.1 + 1e-9)
+                expect(Math.abs(o.v)).toBeLessThanOrEqual(1 + 1e-9)
+            }
+        }
+        expect(fitted).toBeGreaterThan(100)
+        expect(jumped).toBeGreaterThan(10)
     })
 })

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import type { Box } from '../geometry'
 import { resolveMotion } from '../motion'
 import { type IdHistory, type PlanInput, type PlanNode, plan } from '../plan'
-import { createTrack, drawnBoxes, drawnVelocities } from '../solve'
-import { rootNode } from './nodes'
+import { drawnBoxes, drawnVelocities } from '../solve'
+import { trackOf as createTrack, rootNode } from './nodes'
 
 const motion = resolveMotion([
     { duration: 0.4, delay: 0.2, timing: timing.linear() },
@@ -70,7 +70,7 @@ describe('plan: movers and threshold', () => {
         const action = result.actions[1]!
         if (action.kind !== 'track') throw new Error('expected a track')
         expect(action.track.delay).toBe(0.2)
-        expect(action.track.k).toEqual([0, 0, 0, 0])
+        expect(action.track.seed).toEqual([0, 0, 0, 0])
     })
 
     it("judges only the animated channels: 'position' ignores a size change around a fixed origin point", () => {
@@ -425,8 +425,8 @@ describe('plan: nesting and anchors', () => {
             fromY: 0,
             toX: 0,
             toY: 0,
-            kx: 0,
-            ky: 0,
+            seedX: 0,
+            seedY: 0,
         })
         expect(action.track.delay).toBe(0.8)
         void child
@@ -752,5 +752,58 @@ describe('plan: CP3 trial regressions', () => {
         expect(result.status).toBe('run')
         expect(result.actions.map((a) => a.kind)).toEqual(['track', 'static'])
         expect(result.snapped).toEqual([{ index: 1, reason: 'culled' }])
+    })
+})
+
+describe('plan: spring refusals (§5.3, §9.4)', () => {
+    it('a spring settling later than 10 s snaps unsupported, with a warning', () => {
+        const result = plan(
+            input([
+                node({
+                    before: { x: 900, y: 100, w: 100, h: 50 },
+                    motion: resolveMotion([
+                        { type: 'spring', duration: 4, bounce: 0.99 },
+                    ]),
+                }),
+            ])
+        )
+        expect(result.actions[0]!.kind).toBe('none')
+        expect(result.snapped).toEqual([{ index: 0, reason: 'unsupported' }])
+        expect(result.warnings).toEqual([{ kind: 'spring-timeout', index: 0 }])
+    })
+
+    it('reduced motion with no fitting factor jumps (reduced)', () => {
+        const spring = resolveMotion([{ type: 'spring', duration: 1 }])
+        const result = plan(
+            input([
+                node({
+                    before: { x: 900, y: 100, w: 100, h: 50 },
+                    motion: { ...spring, maxDuration: 0.01 } as typeof spring,
+                }),
+            ])
+        )
+        expect(result.actions[0]!.kind).toBe('none')
+        expect(result.snapped).toEqual([{ index: 0, reason: 'reduced' }])
+    })
+
+    it('a moving node retargets on a spring with its velocity and no delay', () => {
+        const spring = resolveMotion([
+            { type: 'spring', duration: 0.5, bounce: 0.2, delay: 0.3 },
+        ])
+        const result = plan(
+            input([
+                node({
+                    before: { x: 500, y: 100, w: 100, h: 50 },
+                    velocity: { x: 900, y: 0, w: 0, h: 0 },
+                    moving: true,
+                    motion: spring,
+                }),
+            ])
+        )
+        const action = result.actions[0]!
+        if (action.kind !== 'track') throw new Error('expected a track')
+        expect(action.track.delay).toBe(0)
+        expect(action.track.law.kind).toBe('spring')
+        expect(action.track.seed).toEqual([900, 0, 0, 0])
     })
 })

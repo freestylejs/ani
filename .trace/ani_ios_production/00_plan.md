@@ -39,10 +39,10 @@
 
 | Role | Who | Use |
 |---|---|---|
-| Orchestrator, director, implementer | Claude (this session) | Plans, implements, validates, self-judges each checkpoint, commits and pushes to `dev/ecstatic-ramanujan-1mjr9q` |
+| Orchestrator, director, top-level judge | Claude (this session) | Plans; implements P0–P1 (the foundation) itself; from P2 on writes no product code: slices each phase, briefs the helpers, reviews and judges every patch, runs every gate, self-judges each checkpoint, commits and pushes to `dev/ecstatic-ramanujan-1mjr9q` (owner's instruction, 2026-10-27) |
 | Chief Justice | MonkeyGPT `gpt-5.6-sol`, thinking high (one reused task) | Tribunal per checkpoint under `judging-checkpoint-completion`; writes `{part}_trial_result.md` |
-| Helper, mid level | MonkeyGPT `opencode-go/deepseek-v4.1-flash`, thinking max | Bounded, well-specified slices (patch output) when it saves time without risking quality |
-| Helper, high level | Argon4 (`agy --model gemini-4-argon-high`, via MonkeyGPT bash) | Bounded design or code slices (patch output) |
+| Helper, mid level | MonkeyGPT `opencode-go/deepseek-v4.1-flash`, thinking max | From P2: writes the code and tests of bounded, fully specified slices |
+| Helper, high level | Argon4 (`agy --model gemini-4-argon-high`, via MonkeyGPT bash) | From P2: writes the code and tests of the hardest slices (solver, measurement, drive) |
 
 At most six sub-agents are live at once. Each sub-agent receives three prerequisites:
 
@@ -53,7 +53,11 @@ At most six sub-agents are live at once. Each sub-agent receives three prerequis
 
 ## Machines
 
-- **Implementation and every run** happen in this container. Chromium 1187, WebKit 2203 and
+- **Helpers write code** in their own clone on the Mac (`~/Documents/project/freestylejs/ani-h<n>`,
+  reset to the pushed checkpoint), with light checks only (edits, `git diff`), and may run unit tests on
+  june-wsl (`~/ani-v2/h<n>`, an rsync mirror). The orchestrator pulls each patch into this
+  container, reviews it and runs every gate here.
+- **Every gate run** happens in this container. Chromium 1187, WebKit 2203 and
   Firefox 1490 are installed under `/home/user/.pw-extra` (`PLAYWRIGHT_BROWSERS_PATH`), with
   WebKit's system libraries installed. Runs use 4 cores.
 - **The Chief Justice** works read-only in `~/Documents/project/freestylejs/ani-trial` on the Mac,
@@ -82,7 +86,7 @@ Each phase ends at a checkpoint:
 | P1 | `p1_spring` | Core `physics`; the discriminated `LayoutMotion` and kind-level merge (layout and React); validation; spring tracks; perceptual timeline for crossfade, radius and presence release; reduced-motion grid; settle cap; WAAPI rejection | Unit and property tests against an independent oracle (1e-9); L-SPRING-1..4 in Chromium, Firefox, WebKit; existing suites green |
 | P2 | `p2_measured` | Measured presentation: capture of all participants, aging marker and the rendering-callback bound, view-space planning, pose inversion and the keep test, layout-size support check, capture-less and aged flush, flat-tree ancestry, document affinity, `layoutKey`, the active-scroll handoff rule, retained view boxes. Page boxes and the scroll `'stale'` path are removed | L-MEAS-1..13, L-HAND-1..2, L-KEY-1, L-DOC-1 ×3 engines; every existing row updated to the new authority and green |
 | P3 | `p3_safety` | Transactional flush and frames, callback isolation, the `'failed'`/`'disabled'` statuses and their precedence, `maxParticipants`, `layoutRuntime` and diagnostics, the crossfade `inert` and focus rule, model-based lifecycle fuzz, mutation tests | L-OPS-1..2, L-A11Y-1, fuzz and mutation suite ×3 engines |
-| P4 | `p4_drive` | The drive seam: `take`/`move`/`release`/`cancel`, the state machine, the held read, reduced-motion rules, React `useLayoutDrive` | L-DRIVE-1..5 ×3 engines; React adapter tests |
+| P4 | `p4_drive` | The drive seam: `take`/`move`/`release`/`cancel`, the state machine, the held read, reduced-motion rules, React `useLayoutDrive` | L-DRIVE-1..6 ×3 engines; React adapter tests |
 | P5 | `p5_bench` | iOS-grade example set and harness (Chromium, WebKit): per-scene frame scoring, perf gates (commit, steady frame, sustained commits, held frame), iterations until every scene passes | Bench report all green in both engines; cost gates met; iteration log |
 | P6 | `p6_board_core` | The board tool's authority document and its core: document model, history, infinite canvas, shapes, selection, keyboard, persistence | Unit and integration tests; e2e smoke in Chromium and WebKit |
 | P7 | `p7_board_motion` | Board interaction and motion: drag through the drive seam with snapping, resize, connectors, frames with auto-layout, the layer panel reorder, align and distribute, undo and redo motion, presence of shapes | e2e flows; frame-level motion rows on the bench harness |

@@ -35,11 +35,11 @@ stale* (an implementation gap that a phase closes). No question to the owner rem
 | DR-11 | S1 | ARCHITECTURE §10 | WAAPI shape rules | WAAPI rejects springs and drives | Doc + Code stale | Rewrite; implement | P0, P1, P4 |
 | DR-12 | S1 | ARCHITECTURE §7, §9 | Status union without `'failed'`, `'disabled'`; no diagnostics, no kill switch, no `maxParticipants`, no `layoutKey` | v3 §6, §7, §3.9 | Doc + Code stale | Rewrite; implement | P0, P2, P3 |
 | DR-13 | S1 | ARCHITECTURE (absent) | No external-drive seam | v3 §5 | Doc + Code stale | New §5.8; implement | P0, P4 |
-| DR-14 | S1 | ARCHITECTURE (absent) | No failure transaction; `onSnap` not isolated (`scope.ts` has no `try/finally` in `flush`) | v3 §6.2 | Doc + Code stale | New text; implement | P0, P3 |
+| DR-14 | S1 | ARCHITECTURE (absent) | No failure transaction; `onSnap` not isolated (`scope.ts` has no `try/finally` in `flush`) | v3 §6.2 | Doc + Code stale | New text (§9.2; §7.2 keeps the `onSnap` surface and names its isolation as the P3 change); implement | P0, P3 |
 | DR-15 | S2 | ARCHITECTURE §6 | No `inert` owner; crossfade follower stays focusable | v3 §8 | Doc + Code stale | Rewrite; implement | P0, P3 |
 | DR-16 | S2 | ARCHITECTURE §7.2 | `useLayout`, `LayoutGroup`, `useLayoutGroup` only | `useLayoutDrive()` dispatcher; per-document portal scope | Doc + Code stale | Rewrite; implement | P0, P2, P4 |
 | DR-17 | S1 | ARCHITECTURE §11 | Cost gates measured "somewhere"; three-engine rows only | Two tiers; bench harness in Chromium and WebKit proves the gates (D5) | Doc stale + missing evidence | Rewrite §11; build the harness | P0, P5 |
-| DR-18 | S1 | `tests/browser` `layout:COST` | Gate passes on the earlier host | Fails in this container (commit 6.9 ms, frame p95 3.07 ms on 4 vCPU); the gate machine was never stated | Missing evidence | State the reference machine in §11; P5 meets it | P0, P5 |
+| DR-18 | S1 | `tests/browser` `layout:COST` | Gate passes on the earlier host | Fails in this container (commit 6.9 ms, frame p95 3.07 ms on 4 vCPU); the gate machine was never stated | Missing evidence | §11.5 pins the environment (image, CPU, memory, Node, Playwright and browser builds, load) and the measurement and aggregation protocol; a report with a mismatched fingerprint is advisory; P5 meets the gates on it | P0, P5 |
 | DR-19 | S2 | `packages/layout/package.json` | `version 0.1.0`; changeset says 0.2.0; React peers `^0.2.0` | One shipped version, aligned | Code stale | Align in P9 | P9 |
 | DR-20 | S3 | ARCHITECTURE header | "Execution plan and evidence: `.trace/ani_layout_final/`" | This program's trace | Doc stale | Rewrite header | P0 |
 
@@ -50,5 +50,6 @@ whose fix is code or tests are an implementation gap report, assigned to the pha
 
 ## Blocked or missing evidence
 
-- DR-18: the cost gate has no stated reference machine. P5 makes the bench harness the
-  measuring instrument and states the machine.
+- DR-18: the cost gate had no stated reference machine. Closed at authority level after the P0
+  tribunal (J-006): §11.5 pins the environment and the protocol. P5 makes the bench harness the
+  measuring instrument and meets the gates on that environment.

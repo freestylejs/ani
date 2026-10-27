@@ -5,7 +5,7 @@
 import type { Box } from './geometry'
 import type { LayoutAnchor, LayoutMode, Motion } from './motion'
 import {
-    type AnchorRule,
+    type AnchorPath,
     type BoxVelocity,
     channelsOf,
     createTrack,
@@ -103,6 +103,7 @@ export type Action =
 export type PlanWarning =
     | { readonly kind: 'duplicate-id'; readonly id: string }
     | { readonly kind: 'presence-opacity'; readonly index: number }
+    | { readonly kind: 'spring-timeout'; readonly index: number }
 
 export interface Plan {
     readonly status: 'run' | 'capped' | 'stale'
@@ -178,30 +179,27 @@ function visible(before: Box, after: Box, viewport: Box): boolean {
 }
 
 /**
- * The offset path of an anchored node. A moving node carries its velocity
- * relative to the parent's anchor point: `k = v·D + (from − to)·e′(0)`.
+ * The offset path of an anchored node, with the node's incoming velocity
+ * relative to the parent's anchor point when it is moving (§5.6).
  */
-function anchorRule(
+function anchorPath(
     anchor: LayoutAnchor,
     before: Box,
     after: Box,
     parentBefore: Box,
     parentAfter: Box,
     velocity: BoxVelocity | null,
-    parentVelocity: BoxVelocity | null,
-    motion: Motion
-): AnchorRule {
+    parentVelocity: BoxVelocity | null
+): AnchorPath {
     const from = anchorOffsetOf(anchor, before, parentBefore)
     const to = anchorOffsetOf(anchor, after, parentAfter)
-    let kx = 0
-    let ky = 0
+    let relative: { x: number; y: number } | null = null
     if (velocity) {
         const pv = parentVelocity ?? { x: 0, y: 0, w: 0, h: 0 }
-        const vx = velocity.x + anchor.x * velocity.w - (pv.x + anchor.x * pv.w)
-        const vy = velocity.y + anchor.y * velocity.h - (pv.y + anchor.y * pv.h)
-        const slope = motion.curve.slope0
-        kx = vx * motion.duration + (from.x - to.x) * slope
-        ky = vy * motion.duration + (from.y - to.y) * slope
+        relative = {
+            x: velocity.x + anchor.x * velocity.w - (pv.x + anchor.x * pv.w),
+            y: velocity.y + anchor.y * velocity.h - (pv.y + anchor.y * pv.h),
+        }
     }
     return {
         u: anchor.x,
@@ -210,8 +208,7 @@ function anchorRule(
         fromY: from.y,
         toX: to.x,
         toY: to.y,
-        kx,
-        ky,
+        velocity: relative,
     }
 }
 
@@ -417,31 +414,40 @@ export function plan(input: PlanInput): Plan {
             const velocity = carried[i]!
             // a moving node starts at once so its velocity is never dropped
             const motion = velocity ? { ...node.motion, delay: 0 } : node.motion
-            let rule: AnchorRule | null = null
-            if (parentNode) {
-                rule = anchorRule(
-                    node.anchor!,
-                    from,
-                    node.a,
-                    parentBefore!,
-                    parentNode.a,
-                    velocity,
-                    parentNode.velocity,
-                    motion
-                )
+            const path = parentNode
+                ? anchorPath(
+                      node.anchor!,
+                      from,
+                      node.a,
+                      parentBefore!,
+                      parentNode.a,
+                      velocity,
+                      parentNode.velocity
+                  )
+                : null
+            const track = createTrack(
+                from,
+                node.a,
+                velocity,
+                node.fx,
+                node.fy,
+                node.mode,
+                motion,
+                path
+            )
+            if (typeof track === 'string') {
+                // reduced motion found no fit, or the spring would run too long
+                snapped.push({
+                    index: i,
+                    reason: track === 'reduced' ? 'reduced' : 'unsupported',
+                })
+                if (track === 'spring-timeout')
+                    warnings.push({ kind: 'spring-timeout', index: i })
+                return underMotion ? STATIC : NONE
             }
             own = {
                 kind: 'track',
-                track: createTrack(
-                    from,
-                    node.a,
-                    velocity,
-                    node.fx,
-                    node.fy,
-                    node.mode,
-                    motion,
-                    rule
-                ),
+                track,
                 fadeLead: fadeLead.has(i),
                 handoffFrom: handoffFrom.get(i),
             }

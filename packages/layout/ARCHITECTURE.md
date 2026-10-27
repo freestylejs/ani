@@ -204,7 +204,9 @@ follower, §5.8) keeps those matrices, its own and its ancestors', but not its C
    the single physical limit: a size channel never drops below one pixel). WAAPI deliberately drops
    retarget velocity (§10).
 5. A node whose target did not move is never retargeted: an unrelated re-render or a presented
-   scroll cannot restart anything (§5.7).
+   scroll cannot restart anything (§5.7). The one exception is a kept track whose translation
+   cannot be proven exact (a live ancestor scale, §5.7 path 3): it restarts from its measured
+   `(B, v)`, continuous in position and velocity.
 6. Anything the solver cannot do exactly snaps, with a typed reason; anything that fails restores
    and reports `'failed'` (§9).
 7. Steady frames read nothing, except one rect per held element per frame, read before any write.
@@ -297,14 +299,33 @@ not a remembered one.
 
 ### 4.2 Measured state, the support check, and the presented layout box
 
-**Support check** (production, every participant, at capture and at flush). Top-down, parent
-before child, each participant's measured total scale per axis is `S = rect size / layout size`
-(`offsetWidth`, `offsetHeight`). The expected scale is the parent participant's measured `S` (1 at
-the top level) times the node's own last written pose scale times its inner-map scale. The check
-first assumes an inner-map scale of 1; on a mismatch it reads the computed values of item 2 of
-§4.1 (at flush, the active node's values are read anyway) and uses their scale. It passes when
-`|rect size / expected scale − layout size| ≤ 1 px + 0.5 % of the layout size` on both axes, which
-covers the integer rounding of `offsetWidth`/`offsetHeight` at any scale.
+**Support check** (production, every participant, at capture and at flush). It never treats a
+scale derived from a rounded layout size as exact; it propagates a **scale interval** that provably
+contains the true total scale. Top-down, parent before child, per axis, with `R` the rect size and
+`O` the integer layout size (`offsetWidth`, `offsetHeight`):
+
+- **Measured interval.** The true layout size `W` satisfies `|W − O| < 1 px` (`offsetWidth` rounds
+  or pixel-snaps a LayoutUnit size). So the true total scale `S = R / W` lies in
+  `M = [R / (O + 1), R / (O − 1)]` for `O > 1`, and `M = [0, ∞)` for `O ≤ 1` (a degenerate axis
+  proves nothing). Both ends are widened by a relative `1e-9` for floating-point rounding.
+- **Expected interval.** `E = I_π · p · q`, with `I_π` the parent participant's propagated interval
+  (`[1, 1]` at the top level, since non-participant ancestors only translate, §6), `p` the node's
+  own pose scale as last written (known exactly) and `q` its inner-map scale. The check first
+  assumes `q = 1`; on a mismatch it reads the computed values of item 2 of §4.1 (at flush, the
+  active node's values are read anyway) and uses their scale.
+- **Pass** when `M ∩ E ≠ ∅` on both axes.
+- **Propagated interval.** `I = M ∩ E` when `q` was read; `I = M` when `q` was assumed (an assumed
+  `q` is not knowledge). When `I` is wider than ±0.5 % relative (`O` below about 200 px, or a wide
+  parent interval) and the node has participant children, its computed values are read as on a
+  mismatch, so `I = M ∩ (I_π · p · q)` and every propagated interval stays within ±0.5 % of the
+  truth by induction from the top level.
+
+On a supported tree the true `S` lies in `M` and in `E` at every node, so the check has **no false
+positive** at any scale, size or nesting depth: rounding can widen an interval but never exclude
+the truth. It detects an unsupported map whose effect on the box exceeds the measurement interval
+(about 1 px of the node's own size plus 0.5 % from its parent); smaller effects are drawn as their
+box, like the small rotations below. The same intervals serve both reads of a flush; the computed
+reads they add are counted in `stats.styles`.
 
 - A mismatch, or computed values with a rotation, skew or 3D component, means a map the engine
   does not own (a box-changing rotation or skew, 3D, CSS `zoom`). The node and its participant
@@ -361,12 +382,16 @@ A flush with no capture, or with an aged capture, has no valid measurement of wh
 
 | Node | Outcome | Report |
 |---|---|---|
-| Undriven | Appears at A (no track). | With an aged capture: reported `'stale'` when its A differs from the aged box by at least `threshold`. With no capture: not reported (nothing is known). |
-| Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is re-expressed by `δ = A_new − A_old`, §5.7). | Reported `'stale'` when `|δ| ≥ threshold` (this may include nodes moved only by a presented scroll). |
+| Undriven | Appears at A (no track). | Reported `'stale'` when its A differs by at least `threshold` from its **last known box**: the aged capture's box when there is one, else its A at its previous flush (that flush's view space). A node with no last known box (registered since its last flush) is reported. |
+| Driven (a running track) | Keeps its track whatever moved. Its pose stays relative to its layout box, so it moves with its layout like any non-participant and still ends at identity (the track is translated by `δ = A_new − A_old`, §5.7; with no valid B there is nothing to retarget from). | Reported `'stale'` when `|δ| ≥ threshold`, or when `|δ| ≥ 0.01 px` and the translation is not exact (an ancestor condition of §5.7 fails). |
 
-The flush emits one diagnostic, `capture-less-flush` or `capture-aged`, with the count of reported
-nodes. `'stale'` has this meaning only: **no valid measurement of what was presented**. A scroll,
-inner or page, never produces it.
+The rule is **exhaustive and conservative**: every node that may have jumped by `threshold` or more
+is reported, and a node that only moved with a scroll since its last known box may be reported too
+(there is no measurement to tell them apart). The same rule fills `report.snapped`, the `onSnap`
+calls and the diagnostic's count. The flush emits one diagnostic, `capture-less-flush` or
+`capture-aged`, with the count of reported nodes. `'stale'` has this meaning only: **no valid
+measurement of what was presented**. A flush with a valid capture never produces it, whatever
+scrolled.
 
 ### 4.5 Frames
 
@@ -449,6 +474,9 @@ each layer and on the effective motion:
   layer;
 - a timing must be stateless with a finite initial slope `e′(0)` (§5.2).
 
+A refused track (the settle cap of §5.3, or no reduced-motion fit, §9.4) snaps its node, and a run
+in which no track ran but a node was refused by reduced motion resolves `'reduced'` (§9.3).
+
 **Comparison** in the keep test is by effective value after the merge (§5.7).
 
 ### 5.2 Timing track
@@ -496,8 +524,10 @@ displacement:
   anchor offset. A retarget from the presented `(B, v)` with the same parameters is the
   superposition model of UIKit and SwiftUI. Delay and the size floor follow §5.2.
 - **Settle.** The track's settle time `T_s` is the first time after which every channel stays
-  within 0.1 px of its target and its speed under 1 px/s, from closed-form envelopes, computed once
-  at plan. At `T_s` the channels are set to A exactly (a final step under 0.1 px). Example: 300 px,
+  within 0.1 px of its target and its speed within 1 px/s, computed once at plan and exactly from
+  the closed form: the closed-form envelopes bound it, and the last exit from each tolerance is
+  found between the response's zeros and extremes, where its magnitude is monotone (an envelope
+  alone ends an underdamped run up to several frames late). At `T_s` the channels are set to A exactly (a final step under 0.1 px). Example: 300 px,
   `D = 0.55`, bounce 0, `v₀ = 0` settles at **0.918 s (1.67 D)**; the documentation example is an
   executable test.
 - **Settle cap.** If `T_s > 10 s` at plan (bounce near 1 with a long `D`), the node snaps
@@ -591,12 +621,25 @@ commit's own task (the mutation, an unpresented scroll) moved A only, so the nod
 `(B, v)` (D3). A presented resize of the box changed its size target, so the node retargets from
 `(B, v)`, which keeps the first frame exact.
 
-**Re-expression of a kept track.** A kept track is moved into the new view space by
-`δ = A_new − A_old` on its origin channels (and its anchor offset target, unchanged); its shape,
-timing, elapsed time, velocity and size channels are unchanged. Its B and A therefore stay its
-previous ones translated by the presented camera, and it lands exactly on `A_new`. It keeps the
-ancestor matrices it was planned with (§3.2), while a node planned now starts in this flush's
-space.
+**Re-expression of a kept track.** With `δ = A_new − A_old` per axis (both rest boxes, each in its
+own flush's view space), a kept track takes exactly one of three paths:
+
+1. **Unchanged** when `|δ| < 0.01 px` on both axes.
+2. **Translated** by `δ` when the translation is provably exact: at `t_k` every participant
+   ancestor's pose has scale 1 on both axes (no ancestor track or hold is changing a scale), and
+   every participant ancestor's inner-map scale is the one the track was planned with. Then the
+   node's drawn box moved by exactly the rest-space `δ` (the composed linear map from its layout
+   box to the screen is the same at rest and at `t_k`), so translating its origin channels (and
+   its anchor offset target, unchanged) by `δ` reproduces the measured B. Shape, timing, elapsed
+   time, velocity and size channels are unchanged; it lands exactly on `A_new`, and it keeps the
+   ancestor matrices it was planned with (§3.2).
+3. **Retargeted from `(B, v)`** otherwise. Under an ancestor whose scale is live, the camera moved
+   the drawn box by `k·δ`, not by `δ` (a 20 px presented scroll inside a parent at scale 0.5 moves
+   the child's B by 10 px while `A_new − A_old` is 20 px), so no translation of the old track is
+   exact. The node is planned now from its measured presented box and analytic velocity toward
+   `A_new`, in this flush's space: the first frame is B and velocity is continuous (invariant 4).
+
+A node planned now starts in this flush's space.
 
 `layoutId`, `layoutCrossfade` and `layoutDependency` act at the flush and never restart a track. A
 reduced-motion mode that changed since a track was planned (§9.4) re-plans it at the next flush from
@@ -714,7 +757,7 @@ estimation, conversion to view-space CSS px, keyboard operation and announcement
 | — | `take` while the runtime mode is `'snap'` | returns a handle already `invalidated` (diagnostic `runtime-disabled`); the gesture layer moves nothing through layout |
 | `held` | `move(o)` with finite `o` | origin target = take point + `o`; applied at the next frame |
 | `held` | `move`/`release` with a non-finite component | throws `ANI_INVALID_OPTIONS`, no state change |
-| `held` | `release(v)` | `released`; the next frame starts the origin track from the presented origin toward the current A with incoming `v`, first update `dt = 0`, under the node's effective motion and the reduced-motion policy at that moment |
+| `held` | `release(v)` | `released`; the next frame starts the origin track from the presented origin toward the current A with incoming `v`, first update `dt = 0`, under the node's effective motion and the reduced-motion policy at that moment; descendants keep their residuals and ride `h` (below) |
 | `held` | `cancel()` | `cancelled`; as `release({ x: 0, y: 0 })` |
 | `held` | removal, `ownerDocument` change, `layoutKey` change, `dispose`, `finish`, kill switch, a failed support check of the held read, a `'failed'` abort | `invalidated`; the node follows that event's rule; reads stop |
 | terminal | `release`/`cancel` | no-op (idempotent) |
@@ -737,11 +780,27 @@ estimation, conversion to view-space CSS px, keyboard operation and announcement
   the drawn origin at `H` through the parents' current maps, with the size channels' current values.
   This holds under any scroll, any animating parent scale, sticky and toolbar changes, with no events
   and no classification.
-- **Descendants ride.** Each descendant participant is drawn at its own track box (or A) translated
-  by the hold offset `h = drawn origin − rest origin` of the held node, both in current view space,
-  so a card's content moves with the card. At release every descendant participant starts a track
-  from its drawn box toward its A with the release velocity added to its own, under its own
-  effective motion; with the parent's motion it rides the landing exactly.
+- **Descendants ride one common displacement.** The held node owns one **inherited displacement**
+  `h(t) = drawn origin(t) − rest origin(t)` (its origin as drawn minus the origin of its current A,
+  both in current view space). `h` is a single function: the held point while held, and the held
+  node's own origin track after release, until that track settles (`h = 0`). Every descendant
+  participant, whatever its mode (`'size'` included) and whether or not it has a track, is drawn at
+  `own(t) + h(t)`, where `own(t)` is its **residual**: its own track box, or its A when it has
+  none. Its geometry relative to the held node therefore depends on its own residual only, never on
+  how fast the shared displacement decays, so a 100 ms child cannot detach from a 500 ms parent.
+- **At take**, each descendant's running track is re-planned as a residual from
+  `(drawn box − h(t_take), drawn velocity − ḣ(t_take⁻))` toward its A, under its own effective
+  motion, where `ḣ(t_take⁻)` is the held node's analytic origin velocity just before the take (the
+  part of the descendant's motion it inherited from its ancestor's flight). Its drawn box is
+  continuous at the take; from the take its drawn velocity is its residual velocity plus `ḣ`, so a
+  caught card stops its content's inherited motion with it while their own relative motion goes on.
+  A descendant with no track gets none (its residual is A).
+- **At release**, the release velocity enters exactly once, as the held node's origin track's
+  incoming velocity; descendants inherit it through `h` and their residuals receive none. The run
+  ends when `h` and every residual have settled.
+- **A flush while held or landing** plans a descendant's residual from its measured `(B − h(t_k),
+  v − ḣ(t_k))`, with `h` and `ḣ` analytic at `t_k`, and keeps or retargets it by §5.7 on the
+  residual. A descendant whose own residual ends first is drawn at `A + h` until `h` settles.
 - **Bound.** During compositor-driven scrolling (wheel or trackpad while dragging) the held element
   can trail by up to one frame of scroll. The error does not accumulate. Touch drags stop the
   scroller's own fling, so they are unaffected.
@@ -843,6 +902,10 @@ interface LayoutGroup extends LayoutDrive {
 }
 
 function createLayoutGroup(options?: LayoutGroupOptions): LayoutGroup
+
+// the §5.1 rule, for adapters that merge their own layers
+function mergeLayoutMotion(layers: readonly (LayoutMotion | undefined)[]): LayoutMotion  // kind explicit, defaults absent
+function sameLayoutMotion(a: LayoutMotion | undefined, b: LayoutMotion | undefined): boolean  // by effective value
 ```
 
 - `flush()` and `update()` follow core's run contract: the promise never rejects and resolves once
@@ -914,7 +977,9 @@ const layoutRuntime: LayoutRuntime
 - **Isolation.** Listeners run after the engine's state is consistent, each inside its own `try`. A
   throwing listener is reported as `callback-error` to the *other* listeners only, never back to
   itself and never recursively, and is rethrown asynchronously in dev.
-- `onSnap` stays as it is, isolated the same way.
+- `onSnap` keeps its API surface; its calls become isolated the same way (each inside its own
+  `try`, after the engine's state is consistent). Today's direct call is not isolated; the
+  isolation is a behaviour change of the safety phase (§9.2).
 - The runtime is a module singleton of the installed package copy.
 
 ### 7.3 React — `@freestylejs/ani-react/layout`
@@ -988,7 +1053,7 @@ usePresenceControl(options?): { isPresent, safeToRemove }
 
 The pure modules and `physics` import nothing from the DOM or the clock. Only `dom.ts` reads layout
 and writes owned styles, and only `realize/*` realizes tracks. The React adapter calls only the
-public group API, `layoutRuntime` and the shared merge function.
+public group API, `layoutRuntime`, `mergeLayoutMotion` and `sameLayoutMotion`.
 
 ```tsx
 // List reorder: mark the items, nothing else
@@ -1147,14 +1212,14 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-MEAS-1 chat delete under anchoring (page and panel) | No visible message moves > 0.5 px at any frame |
 | L-MEAS-2 kanban: card moved, column auto-scrolls in the layout effect | All participants start at their presented boxes; land on A |
 | L-MEAS-3 accordion + instant `scrollIntoView` | Participants start where seen; non-participants follow the scroll; exact settle |
-| L-MEAS-4 user scroll mid-run (inner and page, under a scaling parent), then a commit | Drawn boxes follow content every frame; the commit continues position and velocity |
+| L-MEAS-4 user scroll mid-run (inner and page, under a scaling parent), then a commit | Drawn boxes follow content every frame; the commit continues position and velocity. Under a parent at a live scale (0.5 and 2) the child takes §5.7 path 3 (first frame = measured B ≤ 0.5 px, velocity continuous); with the parent at rest it takes path 2 (no restart) |
 | L-MEAS-5 React 18.3 and 19: time-sliced render scrolled between chunks (a) with a participant in the committing slice, (b) without; a transition interrupted by an urgent update; Suspense fallback then reveal while scrolled; two commits coalesced | (a) first frame = last presented within 0.5 px; (b) §4.4 outcome with `capture-aged`; never a wrong first frame |
 | L-MEAS-6 sticky engages mid-run: (a) no later commit, (b) a later commit | (a) final frame exact, no snap; (b) continuity |
-| L-MEAS-7 browser layout change mid-run (an image above loads), then a commit | Continuity; track kept or retargeted per §5.7 |
+| L-MEAS-7 browser layout change mid-run (an image above loads), then a commit; flat and nested (a child under a scaling parent) | Continuity ≤ 0.5 px every frame; the §5.7 path taken is the one its ancestor condition selects |
 | L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture | (a) no shear, exact `(B, v)`; (b) aged, §4.4 outcome, no rewind |
 | L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
-| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged) | §4.4 outcomes and reports |
+| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold` | §4.4 outcomes; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly |
 | L-MEAS-13 an earlier rAF callback moves an ancestor; a later callback calls `update()` (via Ani's clock) | Aged at once, §4.4, never the intermediate box as B |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
@@ -1165,6 +1230,7 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-SPRING-4 reduced motion `{ maxDuration }` | Grid search property over the domain; never exceeds `maxDuration` |
 | L-DRIVE-1 take, move, reorder, release; snap-back; cancel | Pointer offset constant under reorder (≤ 0.5 px); `c′(0) = v` exactly; first release update `dt = 0` |
 | L-DRIVE-2 catch a moving card | Analytic velocity; no jump; size keeps its track |
+| L-DRIVE-6 descendants: parent spring 0.5 s with a child timing 0.1 s, a `layout: 'size'` child, a child already moving at take; take, move, release | Every descendant drawn at residual + `h` (≤ 0.5 px every frame); child-to-parent geometry follows the residual only; release velocity counted once (descendant velocity = residual + `ḣ`) |
 | L-DRIVE-3 scroll while held, under a parent scaling 1 → 2 | Held element under `H` ≤ 0.5 px every frame |
 | L-DRIVE-4 state machine: stale calls, non-finite input, two scopes, ancestor holds, unmount, StrictMode replay, dispose mid-hold | Per §5.10 |
 | L-DRIVE-5 reduced motion on at take, toggled while held, three policies at release | Per §5.10 and §9.4 |
@@ -1203,7 +1269,7 @@ marker; use the predicted box instead of the measured one; drop the layout-size 
 
 | Spike | Must show (three engines) | Fallback that ships if it fails |
 |---|---|---|
-| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The layout-size check has no false positive at DPR 1, 2 and 3, fractional sizes, and pinch zoom. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen the tolerance to the measured rounding bound. (c) Change the adapter docs and the row |
+| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The interval support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
 | S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect; if still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree |
 | S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one | None needed: aging is the conservative path |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.10 |
@@ -1229,8 +1295,41 @@ Cost gates, measured by the harness:
 - Read counts are exact: a commit reads ≤ 2N rects and 2N layout-size pairs, plus the computed
   values of §4.1 and §4.3; steady frames read zero; `stats` counts every read.
 
-**Reference machine:** Linux x86-64, 4 vCPU (Xeon class, 2.8 GHz), 16 GB, headless, the Playwright
-1.55 builds of Chromium and WebKit; the median of 5 runs after one warm-up run is gated.
+**Reference environment.** The cost gates are decided on one pinned environment, and every bench
+report records its fingerprint:
+
+| Item | Pinned value |
+|---|---|
+| Image | Ubuntu 24.04.5 LTS, x86-64, kernel 6.18.44 (the project's Claude Code cloud container image) |
+| CPU and memory | 4 vCPU, `model name` "Intel(R) Xeon(R) Processor @ 2.80GHz", 16 GB, no CPU quota below 4 |
+| Runtime | Node 22.22.0, Playwright 1.55.0 |
+| Browsers | `chromium_headless_shell-1187` (Chromium), `webkit-2203` (WebKit), headless |
+| Load | 1-minute load average below 1.0 at start; no other browser or build running |
+
+The fingerprint is the `/etc/os-release` `PRETTY_NAME`, `uname -r`, the CPU `model name` and count
+from `/proc/cpuinfo`, `MemTotal`, `node --version`, the Playwright version and the browser build
+directories. A report whose fingerprint differs anywhere is **advisory** for the cost gates (its
+frame-scoring gates still decide); only a matching report decides a cost gate.
+
+**Measurement.** The bench page is served cross-origin isolated (COOP `same-origin`, COEP
+`require-corp`) and measures script cost with `performance.now()` around the engine's own work: a
+commit is `capture()` start to `flush()` return; a frame is the clock's `update` and `commit`
+phases. Each run first measures the timer granularity `g` (the smallest non-zero difference over
+1,000 consecutive reads). When `g ≤ 0.05 ms`, a frame sample is one frame; otherwise a sample is the
+mean of 20 consecutive frames timed as one interval. Percentiles are nearest-rank.
+
+| Gate | Per-run statistic |
+|---|---|
+| Commit ≤ 4 ms (1,000 participants; unscrolled, and scrolled by 1.5 viewports) | median of 30 commits, after 5 commits discarded |
+| Steady frame p95 ≤ 2 ms (300 nested movers) | p95 of 600 frame samples |
+| Sustained commits (60 Hz commits, 300 moving participants, 5 s) | p95 of every frame sample in the window ≤ 2 ms |
+| Held frame ≤ 0.1 ms per held element (1 and 10 held) | p95 of 600 frame samples, divided by the held count |
+
+**Aggregation.** Per engine, one warm-up run is discarded, then 5 runs are measured, each in a fresh
+browser process. A gate's value is the median of the 5 per-run statistics, and it passes only when
+that value meets the gate in both engines. The report lists every per-run statistic, the medians,
+`g` and the fingerprint, so an independent runner on the pinned environment reaches the same
+pass/fail with no parameter left to choose.
 
 ## 12. Accepted risks and documented platform bounds
 

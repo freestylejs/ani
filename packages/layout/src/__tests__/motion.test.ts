@@ -3,11 +3,16 @@ import { describe, expect, it } from 'vitest'
 import {
     clampMotion,
     curveOf,
+    type LayoutMotion,
+    mergeMotion,
     ownsRadius,
     resolveMotion,
+    sameLayoutMotion,
     sameTrackOptions,
+    type TimingMotion,
     validateLayoutOptions,
     validateMotion,
+    validateMotionLayers,
     validateReducedMotion,
 } from '../motion'
 
@@ -123,10 +128,10 @@ describe('motion: defaults, merge and clamp', () => {
         const m = resolveMotion([])
         expect(m.duration).toBe(0.35)
         expect(m.delay).toBe(0)
-        expect(m.curve.slope0).toBeCloseTo(1 / 0.58, 4)
+        expect((m as TimingMotion).curve.slope0).toBeCloseTo(1 / 0.58, 4)
     })
 
-    it('later layers win field by field', () => {
+    it('later layers win within one kind', () => {
         const fn = timing.linear()
         const m = resolveMotion([
             { duration: 1, delay: 0.5 },
@@ -135,7 +140,7 @@ describe('motion: defaults, merge and clamp', () => {
             { timing: fn },
         ])
         expect(m).toMatchObject({ duration: 0.2, delay: 0.5 })
-        expect(m.curve).toBe(curveOf(fn))
+        expect((m as TimingMotion).curve).toBe(curveOf(fn))
     })
 
     it('maxDuration scales delay + duration to fit; shorter runs untouched', () => {
@@ -265,5 +270,170 @@ describe('motion: curves', () => {
     it('is cached per timing instance', () => {
         const fn = timing.ease()
         expect(curveOf(fn)).toBe(curveOf(fn))
+    })
+})
+
+describe('motion: the discriminated union (§5.1, L-SPRING-3)', () => {
+    it('validates each layer: type, bounce only on a spring, no curve on a spring', () => {
+        const bad: [string, unknown][] = [
+            ['unknown type', { type: 'physics' }],
+            ['bounce without a spring', { bounce: 0.2 }],
+            ['bounce on a timing', { type: 'timing', bounce: 0.2 }],
+            ['bounce at 1', { type: 'spring', bounce: 1 }],
+            ['bounce at -1', { type: 'spring', bounce: -1 }],
+            ['bounce NaN', { type: 'spring', bounce: Number.NaN }],
+            ['bounce as a string', { type: 'spring', bounce: '0.2' }],
+            [
+                'a curve on a spring',
+                { type: 'spring', timing: timing.linear() },
+            ],
+            ['negative duration', { type: 'spring', duration: -1 }],
+            [
+                'infinite delay',
+                { type: 'spring', delay: Number.POSITIVE_INFINITY },
+            ],
+            ['unknown key', { type: 'spring', stiffness: 100 }],
+        ]
+        for (const [name, motion] of bad) {
+            expect(
+                code(() => validateMotion(motion)),
+                name
+            ).toBe('ANI_INVALID_OPTIONS')
+            expect(
+                code(() => validateLayoutOptions({ motion })),
+                name
+            ).toBe('ANI_INVALID_OPTIONS')
+        }
+        for (const motion of [
+            { type: 'spring' },
+            { type: 'spring', duration: 0.3, bounce: -0.99, delay: 0.1 },
+            { type: 'timing', duration: 0 },
+            { duration: 0 },
+            { type: 'timing', timing: timing.linear() },
+        ]) {
+            expect(code(() => validateMotion(motion))).toBeNull()
+        }
+    })
+
+    it('a merged spring needs a duration > 0; a timing keeps duration 0 (a jump)', () => {
+        expect(
+            code(() =>
+                validateMotionLayers([{ type: 'spring' }, { duration: 0 }])
+            )
+        ).toBe('ANI_INVALID_OPTIONS')
+        expect(
+            code(() => validateMotionLayers([{ type: 'spring', duration: 0 }]))
+        ).toBe('ANI_INVALID_OPTIONS')
+        // a curve layer after it switches to timing, where 0 is a jump
+        expect(
+            code(() =>
+                validateMotionLayers([
+                    { type: 'spring', duration: 0 },
+                    { timing: timing.linear(), duration: 0 },
+                ])
+            )
+        ).toBeNull()
+        expect(code(() => validateMotionLayers([{ duration: 0 }]))).toBeNull()
+    })
+
+    it('merges by kind: absent kind inherits, duration never switches, a switch drops the old kind fields', () => {
+        const curve = timing.linear()
+        const cases: [(LayoutMotion | undefined)[], LayoutMotion][] = [
+            [[], { type: 'timing' }],
+            [[{ duration: 0.5 }], { type: 'timing', duration: 0.5 }],
+            [
+                [{ type: 'spring', bounce: 0.3 }, { duration: 0.3 }],
+                { type: 'spring', duration: 0.3, bounce: 0.3 },
+            ],
+            [
+                [
+                    { type: 'spring', bounce: 0.3, duration: 0.8 },
+                    { timing: curve },
+                ],
+                { type: 'timing', timing: curve },
+            ],
+            [
+                [
+                    { duration: 0.5, timing: curve, delay: 0.1 },
+                    { type: 'spring' },
+                ],
+                { type: 'spring', delay: 0.1 },
+            ],
+            [
+                [
+                    { type: 'spring', bounce: 0.3 },
+                    { type: 'spring', duration: 0.2 },
+                ],
+                { type: 'spring', duration: 0.2, bounce: 0.3 },
+            ],
+            [
+                [{ type: 'spring', bounce: 0.3 }, { type: 'timing' }],
+                { type: 'timing' },
+            ],
+            [
+                [{ delay: 0.2 }, undefined, { type: 'spring' }, { delay: 0 }],
+                { type: 'spring', delay: 0 },
+            ],
+        ]
+        for (const [layers, want] of cases) {
+            expect(mergeMotion(layers), JSON.stringify(layers)).toEqual(want)
+        }
+    })
+
+    it('resolves defaults per kind: a spring is 0.55 s, bounce 0; a timing is ease-out 0.35 s', () => {
+        expect(resolveMotion([{ type: 'spring' }])).toEqual({
+            kind: 'spring',
+            duration: 0.55,
+            delay: 0,
+            bounce: 0,
+            maxDuration: null,
+        })
+        const t = resolveMotion([{ type: 'spring' }, { timing: timing.ease() }])
+        expect(t.kind).toBe('timing')
+        expect(t.duration).toBe(0.35)
+    })
+
+    it('compares by effective value: same kind and parameters keep a track', () => {
+        expect(
+            sameTrackOptions(
+                { motion: { duration: 0.3 } },
+                { motion: { duration: 0.3 } },
+                { type: 'spring' }
+            )
+        ).toBe(true)
+        expect(
+            sameTrackOptions(
+                {},
+                { motion: { type: 'spring', bounce: 0 } },
+                { type: 'spring' }
+            )
+        ).toBe(true)
+        expect(
+            sameTrackOptions(
+                { motion: { type: 'spring', bounce: 0.1 } },
+                { motion: { type: 'spring', bounce: 0.2 } }
+            )
+        ).toBe(false)
+        // the same duration under the other kind is another track
+        expect(
+            sameTrackOptions(
+                { motion: { type: 'spring', duration: 0.35 } },
+                { motion: { duration: 0.35 } }
+            )
+        ).toBe(false)
+        expect(sameLayoutMotion({ timing: timing.easeOut() }, undefined)).toBe(
+            true
+        )
+        expect(
+            sameLayoutMotion(
+                { type: 'spring' },
+                { type: 'spring', duration: 0.55 }
+            )
+        ).toBe(true)
+    })
+
+    it('reduced motion { maxDuration } on a spring is applied per track at plan time', () => {
+        const s = resolveMotion([{ type: 'spring', duration: 2 }])
+        expect(clampMotion(s, 0.4)).toEqual({ ...s, maxDuration: 0.4 })
     })
 })

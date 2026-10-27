@@ -155,7 +155,15 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
     const value = useMemo<LayoutContextValue>(
         () => ({ scope, namespace, motion }),
         // `motion` by value: an inline object is new every render
-        [scope, namespace, motion?.duration, motion?.delay, motion?.timing]
+        [
+            scope,
+            namespace,
+            motion?.type,
+            motion?.duration,
+            motion?.delay,
+            motion?.timing,
+            motion?.bounce,
+        ]
     )
     return createElement(LayoutContext.Provider, { value }, props.children)
 }

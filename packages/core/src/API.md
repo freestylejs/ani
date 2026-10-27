@@ -1142,11 +1142,52 @@ By default timelines share one process-wide clock with a **single** `requestAnim
 | `resetDefaultClock()` | `@freestylejs/ani-core/testing`. Disposes `defaultClock` and restores its defaults (timing options, `timeScale` 1, not paused); the instance stays the same (test isolation, hot reload). |
 | `clock.size` | Number of subscribed animatables. |
 | `clock.read(fn)` | Runs `fn` once in the read phase of the next frame, before any subscriber's `read` / `update`. |
+| `clock.inFrame` | Read-only: `true` while the clock runs a frame (its read callbacks, read, update and commit phases), `false` otherwise. A layout engine uses it to tell a capture made inside a rendering callback from one made in an ordinary task. |
 | `clock.configure({ lagThreshold?, maxDeltaTime? })` | Reconfigures the timing of any clock (`defaultClock`, `createClock()`, `createManualClock().clock`) with the same validation as the constructor options. Atomic: an invalid field throws a `RangeError` and changes nothing. |
 | `clock.timeScale` | Get / set the delta multiplier (finite, >= 0, default 1). Throws `RangeError` otherwise. |
 | `clock.pause()` / `clock.resume()` / `clock.paused` | Stop the frame loop keeping subscribers / restart it without the paused gap / whether it is paused. |
 | `AniError` code `ANI_SUBSCRIBER_QUARANTINED` | Reported when a subscriber is unsubscribed after 3 consecutive failing ticks; `cause` is its last error. |
 | `Animatable` | `{ read?(): void; update(dt: number): void; commit?(): void }`. |
+
+---
+
+## `physics`
+
+> **Pure numeric physics: the physical spring, its settle time, its perceptual timeline, and the decay projection of a released gesture.**
+
+### Example
+
+```typescript
+import { physics } from "@freestylejs/ani-core";
+
+const spring = physics.spring({ duration: 0.55, bounce: 0 });
+const x0 = 300; // px from the target
+const v0 = 0; // px/s
+const x = spring.at(0.2, x0, v0); // displacement after 0.2 s
+const settle = physics.settleTime(spring, x0, v0); // 0.918 s (1.67 D)
+const p = physics.perceptual(0.2, spring.duration); // 0..1, exactly 1 at D
+const coast = physics.decay(1200); // px a 1200 px/s release coasts at rate 0.998
+```
+
+### Usage & Concepts
+
+-   Apple's model: mass 1, stiffness `(2π/D)²`, so `ω₀ = 2π/D`; damping ratio `ζ = 1 − b` for `b ≥ 0` and `ζ = 1/(1 + b)` for `b < 0`. `D` is the **perceptual** duration (finite, > 0); `b` the bounce, strictly inside (−1, 1).
+-   `at(t, x0, v0)` is the displacement from the target and `velocity(t, x0, v0)` its derivative, in closed form for every damping (stateless, exact near critical damping, no overflow when heavily overdamped). `at(0) = x0`, `velocity(0) = v0`: a retarget from the presented position and velocity is continuous.
+-   `settleTime(x0, v0, { position = 0.1, speed = 1 })` is the first time after which the displacement stays within `position` and the speed within `speed`, computed exactly from the closed form (the last exit from each tolerance). `Infinity` beyond 10⁴ s.
+-   `perceptual(t, D) = min(1, s(t)/s(D))` with `s(t) = 1 − (1 + ω₀t)e^(−ω₀t)`: monotone, exactly 1 at `D`, independent of bounce. Use it for what should finish when the motion *looks* done (fades, release of exit holds); the physical settle comes later.
+-   `decay(v, rate = 0.998)` is `(v/1000)·r/(1 − r)`: the distance a release coasts under per-millisecond deceleration (UIKit's normal rate 0.998, fast 0.99).
+-   Invalid parameters throw `AniError('ANI_INVALID_CONFIG')`.
+-   `timing.spring` is unrelated: it stays a timing curve over a duration.
+
+### API Reference
+
+| Member | Description |
+| :--- | :--- |
+| `physics.spring({ duration, bounce? })` | A `Spring`: `{ duration, bounce, omega, zeta, at(t, x0, v0), velocity(t, x0, v0), settleTime(x0, v0, tolerance?) }`. |
+| `physics.settleTime(spring, x0, v0, tolerance?)` | `spring.settleTime` as a free function. |
+| `physics.perceptual(t, duration)` | Perceptual progress, 0–1. |
+| `physics.decay(velocity, rate?)` | Projected coast distance in px. |
+| `Spring`, `SpringOptions`, `SettleTolerance` | Types. |
 
 ---
 

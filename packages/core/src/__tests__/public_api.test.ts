@@ -26,6 +26,7 @@ const NAMESPACE = [
     'delay',
     'loop',
     'parallel',
+    'physics',
     'rafTimeline',
     'sequence',
     'stagger',

@@ -126,6 +126,11 @@ export type Clock = AnimationClockInterface & {
      */
     read(fn: () => void): void
     /**
+     * Whether the clock is running a frame right now: its read callbacks,
+     * read, update and commit phases. Read-only.
+     */
+    readonly inFrame: boolean
+    /**
      * Multiplier of every delta handed to `update` (finite, >= 0, default 1).
      * `0` freezes animation time while frames keep running. Takes effect from
      * the next frame; an invalid value throws a `RangeError` and changes
@@ -520,6 +525,10 @@ class AnimationClock implements Clock {
      * subscriber's `read` / `update`. Runs once and does not keep the loop
      * alive afterwards. Without a frame source it is a silent no-op.
      */
+    public get inFrame(): boolean {
+        return this.ticking
+    }
+
     public read(fn: () => void): void {
         const source = this.resolveSource()
         if (!source) return

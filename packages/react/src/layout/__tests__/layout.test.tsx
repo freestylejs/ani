@@ -221,13 +221,53 @@ describe('react layout adapter', () => {
             const [options] = [...live()[0]!.members.values()]
             expect(options).toEqual({
                 layoutId: 'page/card/hero',
-                motion: { duration: 0.5, delay: 0.1, timing: spring },
+                // the kind-level merge: the curve layer keeps the timing kind,
+                // so the outer duration stays
+                motion: {
+                    type: 'timing',
+                    duration: 0.5,
+                    delay: 0.1,
+                    timing: spring,
+                },
             })
             // the nested threshold is not a scope option
             expect(live()[0]!.options.threshold).toBeUndefined()
             expect(warn).toHaveBeenCalledWith(
                 expect.stringContaining('nested LayoutGroup')
             )
+        } finally {
+            await view.unmount()
+        }
+    })
+
+    it('merges motion by kind: a spring group, a child duration, a child curve', async () => {
+        const curve = a.timing.linear()
+        function App() {
+            return (
+                <LayoutGroup motion={{ type: 'spring', bounce: 0.2 }}>
+                    <LayoutGroup motion={{ delay: 0.05 }}>
+                        <Item id="s" motion={{ duration: 0.3 }} />
+                        <Item id="t" motion={{ timing: curve }} />
+                    </LayoutGroup>
+                </LayoutGroup>
+            )
+        }
+        const view = await mount(<App />)
+        try {
+            const members = [...live()[0]!.members.values()]
+            // `duration` never switches the kind: a 0.3 s spring
+            expect(members[0]!.motion).toEqual({
+                type: 'spring',
+                duration: 0.3,
+                delay: 0.05,
+                bounce: 0.2,
+            })
+            // a curve switches to timing and drops the spring's own fields
+            expect(members[1]!.motion).toEqual({
+                type: 'timing',
+                delay: 0.05,
+                timing: curve,
+            })
         } finally {
             await view.unmount()
         }
