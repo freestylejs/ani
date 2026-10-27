@@ -274,9 +274,17 @@ export function createLayoutScope(
                     group?.set(element, participant)
                 }
             } else {
+                // a group this registration creates has presented no
+                // participant: its capture is the empty one a render of an
+                // existing scope would have taken, so the commit's flush is
+                // measured and the new participants appear at their layout
+                // box (§4.1, §4.4)
+                const created = group === null
+                const current = live()
+                if (created) current.capture()
                 member = {
                     options: participant,
-                    remove: live().add(element, participant),
+                    remove: current.add(element, participant),
                     leaving: false,
                 }
                 members.set(element, member)
