@@ -1,0 +1,10 @@
+PASS layout_spring:L_SPRING_1 (678 ms)
+    60Hz b=-0.8: 380 frames ≤ 0.100 px; 60Hz b=-0.3: 97 frames ≤ 0.098 px; 60Hz b=0: 52 frames ≤ 0.080 px; 60Hz b=0.2: 48 frames ≤ 0.050 px; 60Hz b=0.4: 69 frames ≤ 0.018 px; 60Hz b=0.9: 388 frames ≤ 0.038 px; 120Hz b=-0.8: 759 frames ≤ 0.100 px; 120Hz b=-0.3: 193 frames ≤ 0.098 px; 120Hz b=0: 103 frames ≤ 0.080 px; 120Hz b=0.2: 95 frames ≤ 0.050 px; 120Hz b=0.4: 136 frames ≤ 0.025 px; 120Hz b=0.9: 775 frames ≤ 0.038 px; retarget ≤ 0.045 px (23.2 px from a rest restart)
+PASS layout_spring:L_SPRING_2 (388 ms)
+    max 0.066 px; opacity 4.7e-7; radius 0.0000; release 0.304 s; settle 0.480 s
+PASS layout_spring:L_SPRING_3 (366 ms)
+    waapi rejects springs; validation before any state change; duration keeps the spring kind; settle cap snaps unsupported
+PASS layout_spring:L_SPRING_4 (376 ms)
+    b=0.5 max 0.4: factor 0.2, 0.384 s, ≤ 0.000 px; b=0 max 0.25: factor 0.1, 0.208 s, ≤ 0.000 px; b=-0.3 max 0.6: factor 0.1, 0.368 s, ≤ 0.000 px; max 0.02: jump
+
+4 passed, 0 failed, 0 known failures, 0 skipped (2.3 s)

@@ -207,3 +207,143 @@ PASS react_layout:RL4 (1183 ms)
     106 checks over 4 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
 PASS react_layout:RL5 (1034 ms)
     104 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailacdebf)
+PASS react_layout:RL6 (2818 ms)
+    memoized subtree: snapped with one warning; update(fn) on the oracle, max error 0.0000 px; rendered class: animated, 0 warnings, memoized class: b (0, 50) → (40, 0) with 1 warning, rendered style: animated, 0 warnings, memoized style: b (0, 50) → (40, 0) with 1 warning
+PASS react_layout:RL7 (601 ms)
+    30 frames, a re-render every 3rd: trajectories differ by 0.0000 px
+PASS react_layout:RL8 (936 ms)
+    implicit root: mid-run at 22.6 between 4 and 42; settled and restored
+PASS react_layout:RL9 (314 ms)
+    reorder from the old box as one WAAPI animation per item; no inline style; released at the end (4 → 38)
+PASS acceptance:E1Anchor (730 ms)
+    parent on the oracle (0.0001 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance:E2Create (769 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0003 px)
+PASS acceptance:E3Folder (1363 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0017 px, no foreign occluder, radius bounds within 0.0001 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance:E4Card (971 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance:E5Toasts (888 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance:Gallery (1637 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0001 px
+PASS acceptance:Honest (846 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+PASS showcase:Accordion (1185 ms)
+    accordion: 3 runs, 27 element tracks over 99 frames on the oracle (worst 0.0001 px at accordion-0-body); 3 mid-flight changes: 7 element chains over 46 frames on the oracle, velocity carried (worst 0.0001 px at accordion-2-body, 0 tracks kept)
+PASS showcase:Dialog (1398 ms)
+    family dialog: 3 runs, 9 element tracks over 99 frames on the oracle (worst 0.0078 px at dialog-label); 3 mid-flight changes: 3 element chains over 44 frames on the oracle, velocity carried (worst 0.0076 px at dialog-label, 0 tracks kept); next-step sheet/button radii over 33 frames within 0.0001 px
+PASS showcase:DragReorder (783 ms)
+    drag to reorder: 2 runs, 7 element tracks over 66 frames on the oracle (worst 0.0000 px at drag-0); 1 mid-flight changes: 1 element chains over 33 frames on the oracle, velocity carried (worst 0.0000 px at drag-2, 0 tracks kept)
+PASS showcase:Folder (1236 ms)
+    iOS folder: 3 runs, 15 element tracks over 99 frames on the oracle (worst 0.0017 px at folder-surface); 3 mid-flight changes: 5 element chains over 43 frames on the oracle, velocity carried (worst 0.0015 px at folder-surface, 0 tracks kept)
+PASS showcase:Gallery (1502 ms)
+    gallery: 4 runs, 64 element tracks over 132 frames on the oracle (worst 0.0002 px at gallery-0); 4 mid-flight changes: 16 element chains over 46 frames on the oracle, velocity carried (worst 0.0005 px at gallery-13, 30 tracks kept)
+PASS showcase:Nav (894 ms)
+    smooth tabs: 2 runs, 2 element tracks over 66 frames on the oracle (worst 0.0000 px at nav-highlight); 7 mid-flight changes: 1 element chains over 50 frames on the oracle, velocity carried (worst 0.0001 px at nav-highlight, 0 tracks kept)
+PASS showcase:Shuffle (854 ms)
+    shuffle: 2 runs, 24 element tracks over 66 frames on the oracle (worst 0.0000 px at shuffle-6); 3 mid-flight changes: 12 element chains over 46 frames on the oracle, velocity carried (worst 0.0004 px at shuffle-9, 1 tracks kept)
+PASS showcase:Stack (1429 ms)
+    stacked notifications: 5 runs, 38 element tracks over 165 frames on the oracle (worst 0.0003 px at stack-3-text); 3 mid-flight changes: 6 element chains over 43 frames on the oracle, velocity carried (worst 0.0009 px at stack-4, 0 tracks kept)
+PASS showcase:Switch (751 ms)
+    switch: 2 runs, 6 element tracks over 60 frames on the oracle (worst 0.0000 px at switch-0); 3 mid-flight changes: 1 element chains over 38 frames on the oracle, velocity carried (worst 0.0000 px at switch-0, 0 tracks kept)
+PASS showcase:Tabs (823 ms)
+    tabs: 2 runs, 2 element tracks over 66 frames on the oracle (worst 0.0000 px at tab-underline); 3 mid-flight changes: 1 element chains over 43 frames on the oracle, velocity carried (worst 0.0000 px at tab-underline, 0 tracks kept)
+PASS showcase:TodoList (1061 ms)
+    to-do list: 3 runs, 10 element tracks over 99 frames on the oracle (worst 0.0000 px at todo-c); 3 mid-flight changes: 2 element chains over 33 frames on the oracle, velocity carried (worst 0.0000 px at todo-a, 4 tracks kept)
+PASS regressions:Crossfade (747 ms)
+    33 frames (33 crossfading) re-rendered from above every third frame: boxes within 0.0009 px, opacities within 0.0e+0; opacity 1 and unowned after
+PASS regressions:Fuzz (972 ms)
+    24 seeds × 60 steps (3609 engine operations): no read after a write, finite values, translate/scale only !important, transform never written; byte-identical styles and no subscription at the end; the §4.4 warning only, once in 24 of 24 scopes
+PASS regressions:Jank (296 ms)
+    after janky frames: 104.1 px/s, 20.7 px/s → 103.5, 20.7 across the retarget (0.535 %)
+PASS regressions:LateStart (1144 ms)
+    first painted frame after a 120 ms block at 0.00 % (then 4.18 %)
+PASS regressions:Unrelated (820 ms)
+    16 tiles over 33 frames, re-rendered from above every third frame: identical within 0.0000 px
+PASS waapi:W1 (253 ms)
+    RAF vs WAAPI every frame: max 0.0322 px (linear 0.0000, linear +delay 0.0000, ease-out 0.0193, ease-out +delay 0.0170, spring 0.0143, spring +delay 0.0322); no inline style written
+PASS waapi:W2 (253 ms)
+    retarget from (243.45, 20) at 0.16 s: on the oracle within 0.0076 px; ended, nothing left
+PASS waapi:W3 (981 ms)
+    first painted frame after a 120 ms block at 0.00 %
+PASS waapi:W4 (250 ms)
+    7 add and 6 set invalid shapes throw ANI_INVALID_OPTIONS; radius false is allowed; later nesting and missing CSS linear() snap unsupported
+PASS waapi:W5 (289 ms)
+    finish, removal, reduced motion and dispose cancel their animations with exact reports; no inline style written
+PASS waapi:W6 (415 ms)
+    clock timeScale 0; document timeline advanced to x = 75.00 px; reduced motion is covered by W5
+PASS react_layout_r18:E5 (1239 ms)
+    5 adds 80 ms apart: every enter (spring, 0.4 s, centre-bottom) and every layout track (6 interrupted with their velocity) on the expectation every frame, max error 0.0001 px; exit (y 10, scaleX 0.9, 0.2 s spring) on the expectation every frame, bottom edge within 0.0000 px, released at 0.208 s; siblings final at t = 0 and on their tracks, max error 0.0000 px
+PASS react_layout_r18:J16 (281 ms)
+    {} → {"duration":1}: x 40.000/44.000/48.000 (error 0.0000 px); {} → {"delay":0}: x 40.000/44.000/48.000 (error 0.0000 px); spring {m,k,c} → {c,k,m}: x 141.264/154.129/165.416 (error 0.0000 px); every frame on the first track; {} → {"duration":0.5} retargets
+PASS react_layout_r18:J26 (288 ms)
+    equal { maxDuration: 0.1 }: x 40.000/44.000/48.000 at 0.2/0.22/0.24 s, every frame on the first track (error 0.0000 px), one subscriber; { maxDuration: 0.2 } re-creates: x 200.000, 0 subscribers
+PASS react_layout_r18:J27 (355 ms)
+    mid-enter exit: lifted to 50px/80px 100px × 50px, drawn (50, 94, 80, 40) until the release at 0.208 s (error 0.0000 px); mid-layout exit: lifted to top 30px, on its track through 0.680 s (error 0.0000 px)
+PASS react_layout_r18:J28 (1045 ms)
+    mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error 0.0000); mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at 1.000 s (max error 0.0000); nothing subscribed after the settle
+PASS react_layout_r18:J29 (929 ms)
+    main document y 50 (translate 0px 50px), iframe y 50 (translate 0px 50px) at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left
+PASS react_layout_r18:RL1 (438 ms)
+    reorder: 4 items on the oracle every frame, max error 0.0000 px; styles restored
+PASS react_layout_r18:RL2 (610 ms)
+    StrictMode: two reorders on the oracle, max error 0.0000 px
+PASS react_layout_r18:RL3 (1070 ms)
+    113 checks over 4 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL4 (1163 ms)
+    117 checks over 4 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL5 (1035 ms)
+    105 checks over 1 DOM mutations, picture unmoved; 4 nodes animated and settled (detailacdebf)
+PASS react_layout_r18:RL6 (2732 ms)
+    memoized subtree: snapped with one warning; update(fn) on the oracle, max error 0.0000 px; rendered class: animated, 0 warnings, memoized class: b (0, 50) → (40, 0) with 1 warning, rendered style: animated, 0 warnings, memoized style: b (0, 50) → (40, 0) with 1 warning
+PASS react_layout_r18:RL7 (572 ms)
+    30 frames, a re-render every 3rd: trajectories differ by 0.0000 px
+PASS react_layout_r18:RL8 (896 ms)
+    implicit root: mid-run at 22.6 between 4 and 42; settled and restored
+PASS react_layout_r18:RL9 (289 ms)
+    reorder from the old box as one WAAPI animation per item; no inline style; released at the end (4 → 38)
+PASS acceptance_r18:E1Anchor (636 ms)
+    parent on the oracle (0.0001 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance_r18:E2Create (647 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0003 px)
+PASS acceptance_r18:E3Folder (1402 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0017 px, no foreign occluder, radius bounds within 0.0001 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance_r18:E4Card (835 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance_r18:E5Toasts (683 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance_r18:Gallery (1520 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0001 px
+PASS acceptance_r18:Honest (860 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+PASS acceptance_rc:E1Anchor (619 ms)
+    parent on the oracle (0.0001 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance_rc:E2Create (634 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0003 px)
+PASS acceptance_rc:E3Folder (1252 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0017 px, no foreign occluder, radius bounds within 0.0001 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance_rc:E4Card (867 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance_rc:E5Toasts (680 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance_rc:Gallery (1555 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0001 px
+PASS acceptance_rc:Honest (795 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+PASS acceptance_r18c:E1Anchor (663 ms)
+    parent on the oracle (0.0001 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance_r18c:E2Create (638 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0003 px)
+PASS acceptance_r18c:E3Folder (1278 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0017 px, no foreign occluder, radius bounds within 0.0001 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance_r18c:E4Card (835 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance_r18c:E5Toasts (651 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance_r18c:Gallery (1581 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0001 px
+PASS acceptance_r18c:Honest (831 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+
+181 passed, 1 failed, 2 known failures, 0 skipped (109.0 s)
