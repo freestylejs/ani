@@ -96,7 +96,7 @@ import {
     plan,
     type SnapReason,
 } from './plan'
-import { exitingPresence, presenceOf } from './presence_link'
+import { exitingPresence, type PresenceLink, presenceOf } from './presence_link'
 import { createRaf } from './realize/raf'
 import { elapsedOf, play } from './realize/waapi'
 import {
@@ -2438,6 +2438,10 @@ export function createLayoutGroup(
 
         /** Why each node cannot be animated exactly, for its warning. */
         const why: (string | null)[] = list.map(() => null)
+        /** Each node's exiting presence, walked once for the whole plan. */
+        const exitingMemo = new Map<Element, PresenceLink | null>()
+        const exitingNow = (p: Participant): boolean =>
+            exitingPresence(p.element, roots, exitingMemo) !== null
         const planNodes = (): PlanNode[] => {
             return list.map((p, i) => {
                 const g = geometry[i]
@@ -2507,7 +2511,7 @@ export function createLayoutGroup(
                     motion: motionOf(p, reduced),
                     layoutId: p.keyChanged ? null : (options.layoutId ?? null),
                     crossfade: options.layoutCrossfade ?? true,
-                    exiting: exitingPresence(p.element, roots) !== null,
+                    exiting: exitingNow(p),
                     presenceOpacity: presence?.opacity ?? false,
                     unsupported: unsupported !== null,
                     skip:
@@ -2554,7 +2558,7 @@ export function createLayoutGroup(
                     layoutId: p.keyChanged
                         ? null
                         : (p.options.layoutId ?? null),
-                    exiting: exitingPresence(p.element, roots) !== null,
+                    exiting: exitingNow(p),
                     order: p.order,
                 })),
                 idsOf()
@@ -2635,11 +2639,7 @@ export function createLayoutGroup(
         for (const [id, lead] of result.leads) leads.set(id, list[lead]!)
         for (const p of list) {
             const id = p.options.layoutId
-            if (
-                id === undefined ||
-                result.leads.has(id) ||
-                exitingPresence(p.element, roots) !== null
-            ) {
+            if (id === undefined || result.leads.has(id) || exitingNow(p)) {
                 continue
             }
             const current = leads.get(id)

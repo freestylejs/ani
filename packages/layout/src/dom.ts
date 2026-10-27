@@ -423,9 +423,9 @@ export function isShadowRoot(node: Node): node is ShadowRoot {
  */
 function knownSlot(
     node: Node,
+    host: Element | null,
     roots: KnownRoots | undefined
 ): HTMLSlotElement | null {
-    const host = node.parentElement
     const root = host ? roots?.get(host) : undefined
     if (!root || root.mode === 'open') return null
     const slots = root.querySelectorAll('slot')
@@ -445,10 +445,12 @@ function knownSlot(
  * straight to its host.
  */
 export function flatParent(node: Node, roots?: KnownRoots): HTMLElement | null {
+    const element = node.parentElement
     const slot =
-        (node as Partial<Slottable>).assignedSlot ?? knownSlot(node, roots)
+        (node as Partial<Slottable>).assignedSlot ??
+        knownSlot(node, element, roots)
     if (slot) return slot
-    if (node.parentElement) return node.parentElement
+    if (element) return element
     const parent = node.parentNode
     if (parent && isShadowRoot(parent) && parent.host) {
         return parent.host as HTMLElement
