@@ -864,6 +864,7 @@ describe('measure: staleReported and screenBound (§4.4)', () => {
         // top level: e_x = 0.3 + 3·1·0.1 = 0.6, e_y = 0.2
         expect(
             screenBound({
+                frame: 0,
                 change,
                 pose: { sx: 1, sy: 1 },
                 origin: { fx: 0.5, fy: 0.5 },
@@ -873,6 +874,7 @@ describe('measure: staleReported and screenBound (§4.4)', () => {
         // an origin outside the box and a pose scale of 2: e_x = 0.3 + 5·1.5·0.1
         expect(
             screenBound({
+                frame: 0,
                 change,
                 pose: { sx: 2, sy: 1 },
                 origin: { fx: -1.5, fy: 0 },
@@ -881,6 +883,7 @@ describe('measure: staleReported and screenBound (§4.4)', () => {
         ).toBeCloseTo(1.05, 12)
         // J-004: a 0.009 px change under a parent drawn 300× (100 → 30,000 px)
         const amplified = screenBound({
+            frame: 0,
             change: { x: 0.009, y: 0, w: 0, h: 0 },
             pose: { sx: 1, sy: 1 },
             origin: { fx: 0.5, fy: 0.5 },
@@ -894,6 +897,7 @@ describe('measure: staleReported and screenBound (§4.4)', () => {
         // a zero-size parent side bounds nothing: reported
         expect(
             screenBound({
+                frame: 0,
                 change: { x: 0, y: 0, w: 0, h: 0 },
                 pose: { sx: 1, sy: 1 },
                 origin: { fx: 0, fy: 0 },
@@ -970,6 +974,7 @@ describe('measure: staleReported and screenBound (§4.4)', () => {
             const to = edges(screen(after))
             const moved = Math.max(...from.map((v, i) => Math.abs(to[i]! - v)))
             const bound = screenBound({
+                frame: 0,
                 change: real,
                 pose: s,
                 origin: f,
@@ -980,5 +985,221 @@ describe('measure: staleReported and screenBound (§4.4)', () => {
         }
         // the bound is attained up to a constant, not vacuous
         expect(worst).toBeGreaterThan(0.1)
+    })
+
+    /**
+     * A two-level chain under a map `G` above the parent: the parent's and the
+     * child's layouts move and resize, each pose is held relative to its
+     * layout box (§4.4). Returns the child's drawn corners before and after.
+     */
+    type Chain = {
+        g: {
+            a: number
+            b: number
+            c: number
+            d: number
+            ex: number
+            ey: number
+        }
+        gsize: { w: number; h: number }
+        parent: {
+            box: Box
+            change: Box
+            s: { sx: number; sy: number }
+            f: { fx: number; fy: number }
+            t: { x: number; y: number }
+        }
+        child: {
+            rel: Box
+            change: Box
+            s: { sx: number; sy: number }
+            f: { fx: number; fy: number }
+            t: { x: number; y: number }
+        }
+    }
+    const corners = (b: Box): [number, number][] => [
+        [b.x, b.y],
+        [b.x + b.w, b.y],
+        [b.x, b.y + b.h],
+        [b.x + b.w, b.y + b.h],
+    ]
+    const posed = (
+        b: Box,
+        s: { sx: number; sy: number },
+        f: { fx: number; fy: number },
+        t: { x: number; y: number }
+    ) => {
+        const ox = b.x + f.fx * b.w
+        const oy = b.y + f.fy * b.h
+        return ([x, y]: [number, number]): [number, number] => [
+            ox + t.x + s.sx * (x - ox),
+            oy + t.y + s.sy * (y - oy),
+        ]
+    }
+    const grow = (b: Box, d: Box): Box => ({
+        x: b.x + d.x,
+        y: b.y + d.y,
+        w: b.w + d.w,
+        h: b.h + d.h,
+    })
+    const drawnChain = (k: Chain, after: boolean) => {
+        const P = after ? grow(k.parent.box, k.parent.change) : k.parent.box
+        const rel = after ? grow(k.child.rel, k.child.change) : k.child.rel
+        const C: Box = { x: P.x + rel.x, y: P.y + rel.y, w: rel.w, h: rel.h }
+        const G = ([x, y]: [number, number]): [number, number] => [
+            k.g.a * x + k.g.c * y + k.g.ex,
+            k.g.b * x + k.g.d * y + k.g.ey,
+        ]
+        const parentPose = posed(P, k.parent.s, k.parent.f, k.parent.t)
+        const childPose = posed(C, k.child.s, k.child.f, k.child.t)
+        return {
+            parent: corners(P).map((c) => G(parentPose(c))),
+            child: corners(C).map((c) => G(parentPose(childPose(c)))),
+        }
+    }
+    const bboxOf = (points: [number, number][]) => {
+        const xs = points.map((p) => p[0])
+        const ys = points.map((p) => p[1])
+        const x = Math.min(...xs)
+        const y = Math.min(...ys)
+        return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
+    }
+    const randomChain = (random: () => number, g: Chain['g']): Chain => {
+        const signed = (scale: number) => (random() * 2 - 1) * scale
+        const size = () => 2 + random() * 400
+        const change = (big: number): Box => ({
+            x: signed(random() < 0.5 ? 0.01 : big),
+            y: signed(random() < 0.5 ? 0.01 : big),
+            w: random() < 0.3 ? 0 : signed(1),
+            h: random() < 0.3 ? 0 : signed(1),
+        })
+        const pose = () => ({
+            s: { sx: 0.05 + random() * 5, sy: 0.05 + random() * 5 },
+            f: { fx: signed(2), fy: signed(2) },
+            t: { x: signed(100), y: signed(100) },
+        })
+        return {
+            g,
+            gsize: { w: size(), h: size() },
+            parent: {
+                box: { x: signed(300), y: signed(300), w: size(), h: size() },
+                change: change(30),
+                ...pose(),
+            },
+            child: {
+                rel: { x: signed(200), y: signed(200), w: size(), h: size() },
+                change: change(10),
+                ...pose(),
+            },
+        }
+    }
+    const displacement = (from: [number, number][], to: [number, number][]) =>
+        Math.max(
+            ...from.map((p, i) =>
+                Math.max(Math.abs(to[i]![0] - p[0]), Math.abs(to[i]![1] - p[1]))
+            )
+        )
+
+    it('ST-5: property — a driven child under a driven parent whose layout moves and resizes, poses varying, under any affine map above: no corner of the child moves on screen by more than β = β_π + bound', () => {
+        const random = rng(0x5b05_2026)
+        const signed = (scale: number) => (random() * 2 - 1) * scale
+        let worst = 0
+        let framed = 0
+        for (let trial = 0; trial < 20_000; trial++) {
+            const g = {
+                a: signed(3),
+                b: random() < 0.5 ? 0 : signed(1),
+                c: random() < 0.5 ? 0 : signed(1),
+                d: signed(3),
+                ex: signed(500),
+                ey: signed(500),
+            }
+            const k = randomChain(random, g)
+            const before = drawnChain(k, false)
+            const after = drawnChain(k, true)
+            const gp = {
+                w: Math.abs(g.a) * k.gsize.w + Math.abs(g.c) * k.gsize.h,
+                h: Math.abs(g.b) * k.gsize.w + Math.abs(g.d) * k.gsize.h,
+            }
+            const parentBound = screenBound({
+                frame: 0,
+                change: k.parent.change,
+                pose: k.parent.s,
+                origin: k.parent.f,
+                parent: { rect: gp, size: k.gsize },
+            })
+            const P = grow(k.parent.box, k.parent.change)
+            const bound = screenBound({
+                frame: parentBound,
+                change: k.child.change,
+                pose: k.child.s,
+                origin: k.child.f,
+                parent: {
+                    rect: bboxOf(after.parent),
+                    size: { w: P.w, h: P.h },
+                },
+            })
+            const moved = displacement(before.child, after.child)
+            expect(moved).toBeLessThanOrEqual(bound * (1 + 1e-9) + 1e-9)
+            if (bound > 0) worst = Math.max(worst, moved / bound)
+            // the frame term is needed: without it the bound fails somewhere
+            const without = bound - parentBound
+            if (moved > without * (1 + 1e-9) + 1e-9) framed += 1
+        }
+        expect(worst).toBeGreaterThan(0.1)
+        expect(framed).toBeGreaterThan(100)
+    })
+
+    it("ST-6: property — under an undriven parent (pose identity) the parent's box displacement on any edge bounds its frame, for every map the support check passes (axis-aligned scales, quarter turns)", () => {
+        const random = rng(0x5b06_2026)
+        const signed = (scale: number) => (random() * 2 - 1) * scale
+        let framed = 0
+        for (let trial = 0; trial < 20_000; trial++) {
+            const kx = 0.1 + random() * 5
+            const ky = 0.1 + random() * 5
+            const turn = Math.floor(random() * 4)
+            const rot = [
+                [1, 0, 0, 1],
+                [0, 1, -1, 0],
+                [-1, 0, 0, -1],
+                [0, -1, 1, 0],
+            ][turn]!
+            const g = {
+                a: rot[0]! * kx,
+                b: rot[1]! * kx,
+                c: rot[2]! * ky,
+                d: rot[3]! * ky,
+                ex: signed(500),
+                ey: signed(500),
+            }
+            const k = randomChain(random, g)
+            k.parent.s = { sx: 1, sy: 1 }
+            k.parent.t = { x: 0, y: 0 }
+            const before = drawnChain(k, false)
+            const after = drawnChain(k, true)
+            const from = bboxOf(before.parent)
+            const to = bboxOf(after.parent)
+            const frame = Math.max(
+                Math.abs(to.x - from.x),
+                Math.abs(to.y - from.y),
+                Math.abs(to.x + to.w - from.x - from.w),
+                Math.abs(to.y + to.h - from.y - from.h)
+            )
+            const P = grow(k.parent.box, k.parent.change)
+            const bound = screenBound({
+                frame,
+                change: k.child.change,
+                pose: k.child.s,
+                origin: k.child.f,
+                parent: {
+                    rect: bboxOf(after.parent),
+                    size: { w: P.w, h: P.h },
+                },
+            })
+            const moved = displacement(before.child, after.child)
+            expect(moved).toBeLessThanOrEqual(bound * (1 + 1e-9) + 1e-9)
+            if (moved > (bound - frame) * (1 + 1e-9) + 1e-9) framed += 1
+        }
+        expect(framed).toBeGreaterThan(100)
     })
 })
