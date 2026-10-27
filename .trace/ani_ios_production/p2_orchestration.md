@@ -163,3 +163,20 @@ container, each in its own git worktree.
     to §6 and stays.
   - The focus-in-follower rule the reviewer found missing belongs to P3 (L-A11Y-1).
   - The code fixes go to H6b.
+
+## H6b review round (integrated as 3458bee and 492a9f0)
+
+- **Scope.** All eleven thesis items of `briefs/h6b.md` are done, each with a test that failed
+  before its fix. Unit tests went from 1,783 to 1,798.
+- **Findings beyond the brief.**
+  - Gecko gives a `position: fixed` element the body as its offset parent. The viewport-fixed test
+    therefore reads the computed `position` of the walk's elements from its end backwards. The
+    authority is amended to state this (7910ca2).
+  - The classic-scrollbar run needs its own headed Firefox. Headless Firefox hides every scrollbar,
+    so the runner starts Xvfb when `DISPLAY` is unset.
+- **Readings accepted.**
+  - A per-root unlisten keeps that root's active state.
+  - Only a participant whose own flat parent changed runs the reparent viewport-fixed test. An
+    ancestor moved into a fixed sheet is now a §12 risk (7910ca2).
+- **Commit messages** were rewritten to the repository's conventional style, with the session
+  trailers. The code is byte-identical to the helper's branch. Gates: `logs/p2-h6b/`.
