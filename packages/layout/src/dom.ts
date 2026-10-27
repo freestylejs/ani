@@ -365,10 +365,11 @@ export function measure(
     transform: Transform | string = readTransform(style)
 ): Measured {
     const origin = style.transformOrigin.split(' ').map(px)
+    const display = style.display
     let unsupported: string | null = null
-    if (style.display === 'contents' || style.display === 'none') {
-        unsupported = `display: ${style.display}`
-    } else if (style.display === 'inline') {
+    if (display === 'contents' || display === 'none') {
+        unsupported = `display: ${display}`
+    } else if (display === 'inline') {
         unsupported = 'display: inline (transforms do not apply)'
     } else if (typeof transform === 'string') {
         unsupported = transform
