@@ -9,7 +9,9 @@ import {
     animatedOwned,
     borderSize,
     containsFlat,
+    type FlatTree,
     flatParent,
+    flatTree,
     isShadowRoot,
     type KnownRoots,
     type Len,
@@ -167,8 +169,6 @@ interface Geometry {
     /** The presence part of the computed `transform` at this flush. */
     readonly matrix: Measured['matrix']
     readonly unsupported: string | null
-    /** It is itself a scroll container: the anchoring fallback leaves it alone (§11.4 S2). */
-    readonly scrollContainer: boolean
 }
 
 interface DriveFade {
@@ -314,6 +314,8 @@ interface Capture {
     readonly engine: EngineState
     /** Per participant, the actively scrolling containers it was inside (§5.8). */
     readonly scrolling: ReadonlyMap<Participant, readonly EventTarget[]>
+    /** Per connected participant, its flat parent at capture (§5.8 reparents). */
+    readonly flat: ReadonlyMap<Participant, HTMLElement | null>
 }
 
 type Matrix = Geometry['matrix']
@@ -340,6 +342,7 @@ interface FrameNode {
 }
 
 const NO_ANCESTRY: ReadonlyMap<Participant, Matrix> = new Map()
+const NO_FLAT: ReadonlyMap<Participant, HTMLElement | null> = new Map()
 
 function sameMatrix(a: Matrix, b: Matrix): boolean {
     return a.a === b.a && a.d === b.d && a.e === b.e && a.f === b.f
@@ -784,7 +787,15 @@ export function createLayoutGroup(
     const retained = new Map<string, Retained>()
     const warned = new Set<string>()
     /** Every read the engine makes, counted where it is made (§7.1). */
-    const stats = { captures: 0, rects: 0, offsets: 0, styles: 0, tracks: 0 }
+    const stats = {
+        captures: 0,
+        rects: 0,
+        offsets: 0,
+        styles: 0,
+        probes: 0,
+        parents: 0,
+        tracks: 0,
+    }
 
     function warn(kind: string, message: string): void {
         if (!DEV || warned.has(kind)) return
@@ -795,28 +806,33 @@ export function createLayoutGroup(
 
     /**
      * Tracks the root node of a participant's element (§4.6): a shadow root
-     * is known from then on, a document holds none. An element that is not
-     * in a document or a shadow root yet is tracked when first seen connected.
+     * is known from then on, a document holds none. Run at `add` and, for
+     * every connected participant, at each capture and flush: an element
+     * found under another root node than the one tracked drops the old root
+     * and tracks the new one (`getRootNode()`, no layout read). An element
+     * that is not in a document or a shadow root yet is tracked when first
+     * seen connected.
      */
     function trackRoot(p: Participant): void {
-        if (p.root !== undefined) return
         const node = p.element.getRootNode()
-        if (isShadowRoot(node)) {
-            p.root = node
-            const users = rootUsers.get(node) ?? 0
-            rootUsers.set(node, users + 1)
-            roots.set(node.host, node)
-            if (users === 0) listen(node)
-        } else if (node.nodeType === 9) {
-            p.root = null
-        }
+        const root = isShadowRoot(node)
+            ? node
+            : node.nodeType === 9
+              ? null
+              : undefined
+        if (root === undefined || root === p.root) return
+        dropRoot(p)
+        p.root = root
+        if (!root) return
+        rootUsers.set(root, (rootUsers.get(root) ?? 0) + 1)
+        roots.set(root.host, root)
     }
 
     /** Drops a root with the last participant inside it. */
     function dropRoot(p: Participant): void {
         const root = p.root
-        if (!root) return
         p.root = undefined
+        if (!root) return
         const users = (rootUsers.get(root) ?? 1) - 1
         if (users > 0) {
             rootUsers.set(root, users)
@@ -824,7 +840,8 @@ export function createLayoutGroup(
         }
         rootUsers.delete(root)
         if (roots.get(root.host) === root) roots.delete(root.host)
-        unlisten(root)
+        // its listeners stay until the end of the task (§5.8)
+        syncListeners()
     }
 
     /** The known roots with `element`'s own, for a check made before it is registered. */
@@ -845,9 +862,17 @@ export function createLayoutGroup(
     const active = new Set<EventTarget>()
     /** Registered participants with a `layoutId`: the listeners are armed while there is one. */
     let shared = 0
-    /** Per event root (the document, each known shadow root), its listeners' removal. */
+    /**
+     * Per event root, its listeners' removal: the document, every shadow root
+     * holding a participant, and every shadow root on a participant's
+     * flat-ancestor chain as the last pass walked it.
+     */
     let listening: Map<Document | ShadowRoot, () => void> | null = null
     let scrollEnds = false
+    /** The shadow roots on the flat-ancestor chains of the last capture or flush (§5.8). */
+    let chainRoots: ReadonlySet<ShadowRoot> = new Set()
+    /** The end-of-task check is queued. */
+    let checking = false
     const onScroll = (event: Event): void => {
         if (event.target) active.add(event.target)
     }
@@ -877,18 +902,58 @@ export function createLayoutGroup(
         listening!.delete(root)
     }
 
-    /** Arms the listeners while the scope has a shared participant, disarms them when it has none. */
+    /**
+     * Arms the listeners while the scope has a shared participant: on the
+     * document, every shadow root holding a participant and every shadow
+     * root on the chains the last pass walked. What they no longer cover is
+     * disarmed once, at the end of the task (§5.8).
+     */
     function syncListeners(): void {
-        if (shared > 0 && !listening && scopeDocument) {
-            listening = new Map()
-            const view = scopeDocument.defaultView
-            scrollEnds = 'onscrollend' in (view ?? scopeDocument)
-            listen(scopeDocument)
+        if (shared > 0 && scopeDocument) {
+            if (!listening) {
+                listening = new Map()
+                const view = scopeDocument.defaultView
+                scrollEnds = 'onscrollend' in (view ?? scopeDocument)
+                listen(scopeDocument)
+            }
             for (const root of rootUsers.keys()) listen(root)
-        } else if (shared === 0 && listening) {
-            for (const remove of listening.values()) remove()
-            listening = null
+            for (const root of chainRoots) listen(root)
         }
+        if (listening && !checking) {
+            checking = true
+            microtask(endOfTask)
+        }
+    }
+
+    /**
+     * The end of the task (§5.8): with no shared participant left, a real
+     * disarm, which clears the active state; otherwise a shadow root that no
+     * participant's chain reaches any more stops listening. A lead removed
+     * and re-added within the task keeps every listener and the state.
+     */
+    function endOfTask(): void {
+        checking = false
+        if (!listening) return
+        if (shared === 0) {
+            disarm()
+            return
+        }
+        for (const root of [...listening.keys()]) {
+            if (
+                isShadowRoot(root) &&
+                !rootUsers.has(root) &&
+                !chainRoots.has(root)
+            ) {
+                unlisten(root)
+            }
+        }
+    }
+
+    /** Removes every listener and clears the active state (§3.3). */
+    function disarm(): void {
+        if (listening) for (const remove of listening.values()) remove()
+        listening = null
+        active.clear()
     }
 
     /** Counts a participant's `layoutId` in or out (`sign` 1 or -1). */
@@ -902,7 +967,9 @@ export function createLayoutGroup(
      * capture read its B (§5.8). One walk per DOM node, shared by siblings.
      */
     function scrollingAround(
-        list: readonly Participant[]
+        list: readonly Participant[],
+        flat: readonly (HTMLElement | null)[],
+        tree: FlatTree
     ): Map<Participant, readonly EventTarget[]> {
         const around = new Map<Participant, readonly EventTarget[]>()
         if (active.size === 0) return around
@@ -913,33 +980,35 @@ export function createLayoutGroup(
         }
         const top: readonly EventTarget[] =
             scopeDocument && active.has(scopeDocument) ? [scopeDocument] : []
-        const memo = new Map<Node, readonly EventTarget[]>()
-        const containersOf = (node: Node | null): readonly EventTarget[] => {
-            if (!node) return top
-            const known = memo.get(node)
-            if (known) return known
-            const above = containersOf(flatParent(node, roots))
-            const value = active.has(node) ? [...above, node] : above
-            memo.set(node, value)
-            return value
-        }
-        for (const p of list) {
-            const containers = containersOf(flatParent(p.element, roots))
+        const containersOf = ancestorsAmong(active, tree, top)
+        list.forEach((p, i) => {
+            const containers = containersOf(flat[i]!)
             if (containers.length > 0) around.set(p, containers)
-        }
+        })
         return around
     }
 
-    /** `container` holds `element` now: a proper flat-tree ancestor, or the document scroller unless it is viewport-fixed. */
-    function insideNow(container: EventTarget, element: HTMLElement): boolean {
-        if (container === scopeDocument) {
-            stats.styles += 1
-            return !viewportFixed(element)
+    /**
+     * The members of `candidates` at or above a node in the flat tree,
+     * outermost first, after `top`: one walk per DOM node, shared by every
+     * node below it (one pass, the DOM unchanged).
+     */
+    function ancestorsAmong(
+        candidates: ReadonlySet<EventTarget>,
+        tree: FlatTree,
+        top: readonly EventTarget[] = []
+    ): (node: Node | null) => readonly EventTarget[] {
+        const memo = new Map<Node, readonly EventTarget[]>()
+        const of = (node: Node | null): readonly EventTarget[] => {
+            if (!node) return top
+            const known = memo.get(node)
+            if (known) return known
+            const above = of(flatParent(node, tree))
+            const value = candidates.has(node) ? [...above, node] : above
+            memo.set(node, value)
+            return value
         }
-        return (
-            container !== element &&
-            containsFlat(container as Node, element, roots)
-        )
+        return of
     }
 
     function assertDocument(element: HTMLElement): void {
@@ -1160,6 +1229,10 @@ export function createLayoutGroup(
                     duration: law.duration,
                     delay: track.delay,
                     curve: law.curve,
+                    // §11.4 S2: where a transform moves the scroll anchor
+                    noAnchor:
+                        knownTransformAnchoring(p.element.ownerDocument) ===
+                        true,
                 },
                 () => {
                     if (animations.get(p)?.animation !== animation) return
@@ -1294,21 +1367,35 @@ export function createLayoutGroup(
 
     /* ───────────────────────── capture ───────────────────────── */
 
-    /** Connected participants, parents first, with their nearest participant ancestors. */
+    /**
+     * One pass's participant tree (a capture, a flush): the connected
+     * participants, parents first, with their nearest participant ancestors
+     * and their flat parents. Each participant's root is re-tracked first
+     * (§4.6); the pass's flat tree is built after, and the shadow roots on the
+     * chains its walks pass are the ones the listeners cover (§5.8).
+     */
     function participantTree(): {
         list: Participant[]
         parents: number[]
         index: Map<Participant, number>
+        /** Each participant's flat parent, by its index in `list`. */
+        flat: (HTMLElement | null)[]
+        tree: FlatTree
     } {
         const list = [...registry.values()].filter((p) => p.element.isConnected)
         for (const p of list) trackRoot(p)
+        const passed = new Set<ShadowRoot>()
+        const tree = flatTree(roots, passed)
         const parentOf = new Map<Participant, Participant | null>()
+        const flatOf = new Map<Participant, HTMLElement | null>()
         const depth = new Map<Participant, number>()
         const above = new Map<Node, Participant | null>()
         const depthOf = (p: Participant): number => {
             const known = depth.get(p)
             if (known !== undefined) return known
-            const parent = nearestParticipant(p.element, above)
+            const first = flatParent(p.element, tree)
+            flatOf.set(p, first)
+            const parent = nearestParticipant(first, tree, above)
             parentOf.set(p, parent)
             const d = parent ? depthOf(parent) + 1 : 0
             depth.set(p, d)
@@ -1322,7 +1409,18 @@ export function createLayoutGroup(
             const parent = parentOf.get(p)
             return parent ? index.get(parent)! : -1
         })
-        return { list, parents, index }
+        // every chain was walked, from each participant up: with their own
+        // roots, the shadow roots on them
+        for (const p of list) if (p.root) passed.add(p.root)
+        chainRoots = passed
+        syncListeners()
+        return {
+            list,
+            parents,
+            index,
+            flat: list.map((p) => flatOf.get(p)!),
+            tree,
+        }
     }
 
     /**
@@ -1510,7 +1608,7 @@ export function createLayoutGroup(
         // a capture that begins inside a rendering-update callback may follow
         // an unpresented change of the same frame: it is aged at once (§4.1)
         const inFrame = clock.inFrame
-        const { list, parents } = participantTree()
+        const { list, parents, flat, tree } = participantTree()
         const engine = engineState()
         // 1. one rect and one layout size per connected participant
         const rects: Box[] = []
@@ -1570,6 +1668,7 @@ export function createLayoutGroup(
             const reason = unsupported[i]
             if (reason) failing.set(p, reason)
         })
+        const scrolling = scrollingAround(list, flat, tree)
         const current: Capture = {
             live: true,
             aged: inFrame,
@@ -1579,7 +1678,12 @@ export function createLayoutGroup(
             unsupported: failing,
             radius,
             engine,
-            scrolling: scrollingAround(list),
+            scrolling,
+            // only a participant inside an active container can be degraded
+            flat:
+                scrolling.size > 0
+                    ? new Map(list.map((p, i) => [p, flat[i]!]))
+                    : NO_FLAT,
         }
         if (inFrame) {
             warn(
@@ -1618,23 +1722,24 @@ export function createLayoutGroup(
     }
 
     /**
-     * The nearest live participant above `element` in the flat tree. With
-     * `above` (one tree build, the registry unchanged), every ancestor
-     * walked that is not one remembers the answer, so siblings share the
-     * walk of their common ancestors.
+     * The nearest live participant at or above `first` (an element's flat
+     * parent) in the pass's flat tree. Every ancestor walked that is not one
+     * remembers the answer in `above` (one tree build, the registry
+     * unchanged), so siblings share the walk of their common ancestors.
      */
     function nearestParticipant(
-        element: HTMLElement,
-        above?: Map<Node, Participant | null>
+        first: HTMLElement | null,
+        tree: FlatTree,
+        above: Map<Node, Participant | null>
     ): Participant | null {
         let found: Participant | null = null
         const walked: Node[] = []
         for (
-            let node = flatParent(element, roots);
+            let node: HTMLElement | null = first;
             node;
-            node = flatParent(node, roots)
+            node = flatParent(node, tree)
         ) {
-            const known = above?.get(node)
+            const known = above.get(node)
             if (known !== undefined) {
                 found = known
                 break
@@ -1646,7 +1751,7 @@ export function createLayoutGroup(
             }
             walked.push(node)
         }
-        if (above) for (const node of walked) above.set(node, found)
+        for (const node of walked) above.set(node, found)
         return found
     }
 
@@ -1719,7 +1824,6 @@ export function createLayoutGroup(
                 radiusSource: m.radius,
                 matrix: m.matrix,
                 unsupported,
-                scrollContainer: m.scrollContainer,
             },
             full,
         }
@@ -1871,7 +1975,7 @@ export function createLayoutGroup(
                 adoptAuthored(p.element, p.drive.saved, p.drive.written)
             else settle(p, true)
         }
-        const { list, parents, index } = participantTree()
+        const { list, parents, index, flat, tree } = participantTree()
         if (list.length === 0) {
             frame = []
             commitWrites()
@@ -1918,20 +2022,22 @@ export function createLayoutGroup(
         // probed when the scope was created; another document is probed here
         const snapsReference = snapsReferenceBox(doc)
         // §11.4 S2: the anchoring probe, once per document, at the start of
-        // the first flush that may write a pose (a fresh capture can start a
-        // track, a running frame writes its poses) and before its first rect
-        // read; its one read (a scroll offset) is counted with the offsets
+        // the first flush that may write a pose, with either engine (a fresh
+        // capture can start a track, a running frame writes its poses) and
+        // before its first rect read; counted in `stats.probes`
         if (
-            !waapi &&
             knownTransformAnchoring(doc) === undefined &&
             reducedMode() !== 'jump' &&
             (fresh !== null || frame.length > 0)
         ) {
             probeTransformAnchoring(doc)
-            stats.offsets += 1
+            stats.probes += 1
         }
-        /** Each driven participant that is not a scroll container owns `overflow-anchor: none`. */
-        const anchorFallback = !waapi && knownTransformAnchoring(doc) === true
+        /**
+         * A transform moves the scroll anchor here: every driven participant,
+         * scroll containers included, is kept from being the anchor (§6).
+         */
+        const anchorFallback = knownTransformAnchoring(doc) === true
         const dpr = doc.defaultView?.devicePixelRatio ?? 1
         const rects: Box[] = []
         const offsets: (readonly [number, number])[] = []
@@ -2441,7 +2547,7 @@ export function createLayoutGroup(
         /** Each node's exiting presence, walked once for the whole plan. */
         const exitingMemo = new Map<Element, PresenceLink | null>()
         const exitingNow = (p: Participant): boolean =>
-            exitingPresence(p.element, roots, exitingMemo) !== null
+            exitingPresence(p.element, tree, exitingMemo) !== null
         const planNodes = (): PlanNode[] => {
             return list.map((p, i) => {
                 const g = geometry[i]
@@ -2549,10 +2655,36 @@ export function createLayoutGroup(
             (fresh.scrolling.size > 0 ||
                 [...retained.values()].some((r) => r.scrolling.length > 0))
         ) {
+            // every container a departing node was inside, but the document
+            const departed = new Set<EventTarget>()
+            for (const containers of fresh.scrolling.values()) {
+                for (const c of containers) departed.add(c)
+            }
+            for (const r of retained.values()) {
+                for (const c of r.scrolling) departed.add(c)
+            }
+            departed.delete(scopeDocument!)
+            /** Each node's containers now: one walk per DOM node for the flush. */
+            const around = ancestorsAmong(departed, tree)
+            const now: (readonly EventTarget[] | undefined)[] = []
+            const fixed: (boolean | undefined)[] = []
+            /**
+             * `containers` holds node `i` no longer: a container that is not a
+             * proper flat-tree ancestor now, or the document scroller when the
+             * node is viewport-fixed (an `offsetParent` walk, run once).
+             */
             const outside = (
                 containers: readonly EventTarget[] | undefined,
-                element: HTMLElement
-            ) => containers?.some((c) => !insideNow(c, element)) ?? false
+                i: number
+            ) =>
+                containers?.some((c) => {
+                    if (c === scopeDocument) {
+                        fixed[i] ??= viewportFixed(list[i]!.element, stats)
+                        return fixed[i]!
+                    }
+                    now[i] ??= around(flat[i]!)
+                    return !now[i]!.includes(c)
+                }) ?? false
             const changes = leadChanges(
                 list.map((p) => ({
                     layoutId: p.keyChanged
@@ -2571,15 +2703,26 @@ export function createLayoutGroup(
                     from === 'retained'
                         ? retained.get(id)?.scrolling
                         : fresh.scrolling.get(list[from]!)
-                if (outside(departing, list[i]!.element)) scrollActive[i] = true
+                if (outside(departing, i)) scrollActive[i] = true
             }
-            // a reparent cannot leave the document: only containers count
+            // a reparent: the participant as captured departs, the same one
+            // at this flush is the new lead; it can leave the document
+            // scroller only by a change of its flat parent since the capture
             list.forEach((p, i) => {
                 if (scrollActive[i] || unmeasured[i] || p.keyChanged) return
-                const containers = fresh.scrolling
-                    .get(p)
-                    ?.filter((c) => c !== scopeDocument)
-                if (outside(containers, p.element)) scrollActive[i] = true
+                const containers = fresh.scrolling.get(p)
+                if (!containers) return
+                const reparented = fresh.flat.get(p) !== flat[i]
+                if (
+                    outside(
+                        reparented
+                            ? containers
+                            : containers.filter((c) => c !== scopeDocument),
+                        i
+                    )
+                ) {
+                    scrollActive[i] = true
+                }
             })
         }
 
@@ -2802,27 +2945,21 @@ export function createLayoutGroup(
             properties: readonly string[]
         ): Drive => {
             const existing = p.drive
-            // §11.4 S2: a driven node is never the scroll anchor, unless it
-            // is a scroll container itself
-            const anchor = anchorFallback && !g.scrollContainer
+            // §11.4 S2: a driven node is never the scroll anchor; the WAAPI
+            // engine carries the declaration in its keyframes instead (§6)
+            const anchor = anchorFallback && !waapi
             if (existing) {
                 // an owned property it did not save yet (opacity for a new
                 // crossfade, corners when `radius` was turned on mid-run)
                 const wanted = [...properties]
                 if (ownsRadius(p.options) && g.radius)
                     wanted.push(...RADIUS_PROPERTIES)
-                if (anchor && !waapi) wanted.push(ANCHOR_PROPERTY)
+                if (anchor) wanted.push(ANCHOR_PROPERTY)
                 const missing = wanted.filter(
                     (prop) => !existing.saved.has(prop)
                 )
                 for (const [k, v] of save(p.element, missing))
                     existing.saved.set(k, v)
-                // a node that became a scroll container gets it back now
-                if (!anchor && existing.saved.has(ANCHOR_PROPERTY)) {
-                    queueRestore(p.element, existing, [ANCHOR_PROPERTY])
-                    existing.saved.delete(ANCHOR_PROPERTY)
-                    existing.written.delete(ANCHOR_PROPERTY)
-                }
                 // corners it no longer owns go back now
                 if (
                     !ownsRadius(p.options) &&
@@ -2844,7 +2981,7 @@ export function createLayoutGroup(
             const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
             if (!waapi && ownsRadius(p.options) && g.radius)
                 all.push(...RADIUS_PROPERTIES)
-            if (!waapi && anchor) all.push(ANCHOR_PROPERTY)
+            if (anchor) all.push(ANCHOR_PROPERTY)
             const d: Drive = {
                 kind,
                 track: null,
@@ -3166,7 +3303,7 @@ export function createLayoutGroup(
                         started: continues,
                         law: track?.law ?? INSTANT_LAW,
                     }
-                    const presence = exitingPresence(p.element, roots)
+                    const presence = exitingPresence(p.element, tree)
                     if (presence) {
                         let release!: () => void
                         presence.hold(
@@ -3398,7 +3535,7 @@ export function createLayoutGroup(
 
     function validateWaapiNesting(element: HTMLElement): void {
         // the new element's root counts before it is registered
-        const known = rootsWith(element)
+        const known = flatTree(rootsWith(element))
         for (const other of registry.keys()) {
             if (
                 other !== element &&
@@ -3581,8 +3718,8 @@ export function createLayoutGroup(
             }
             registry.clear()
             shared = 0
-            syncListeners()
-            active.clear()
+            chainRoots = new Set()
+            disarm()
             frame = []
             leads.clear()
             retained.clear()
@@ -3595,6 +3732,8 @@ export function createLayoutGroup(
                 rects: stats.rects,
                 offsets: stats.offsets,
                 styles: stats.styles,
+                probes: stats.probes,
+                parents: stats.parents,
                 tracks: stats.tracks,
                 // live holds: the drive seam has none yet (§5.10)
                 holds: 0,

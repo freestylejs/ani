@@ -12,6 +12,8 @@ import { createLayoutGroup } from '../scope'
  * Each test binds to a document of its own: the probe runs once per document.
  */
 
+const noop = (): void => undefined
+
 const motion = {
     type: 'timing' as const,
     duration: 0.2,
@@ -125,15 +127,29 @@ describe('§11.4 S2 the anchoring probe', () => {
         // a capture-less flush with nothing running writes no pose
         await group.flush()
         expect(log).toEqual(['rect'])
-        expect(group.stats.offsets).toBe(1)
+        expect(group.stats).toMatchObject({
+            rects: 1,
+            offsets: 1,
+            probes: 0,
+            parents: 0,
+        })
 
         // a fresh capture may start a track: the probe runs first
         group.capture()
         log = []
         await group.flush()
         expect(log).toEqual(['scrollTop', 'rect'])
-        // one read: the probe's scroll offset, with the participant's size
-        expect(group.stats.offsets).toBe(3 + 1)
+        // the probe is counted in stats.probes, not with the layout sizes:
+        // one rect and one size per pass for the participant
+        const stats = group.stats
+        expect(stats).toMatchObject({
+            captures: 1,
+            rects: 3,
+            offsets: 3,
+            probes: 1,
+            parents: 0,
+        })
+        expect(stats.reads).toBe(stats.rects + stats.offsets + stats.styles)
         // removed in the same task
         expect(doc.documentElement.children.length).toBe(children)
 
@@ -152,24 +168,56 @@ describe('§11.4 S2 the anchoring probe', () => {
         log = []
         await other.flush()
         expect(log).not.toContain('scrollTop')
+        expect(group.stats.probes).toBe(1)
+        expect(other.stats.probes).toBe(0)
         clock.frames(30)
         await run
         group.dispose()
         other.dispose()
     })
 
-    it('does not run for the WAAPI engine, which writes no inline style', async () => {
-        const { group, element } = await setup('firefox', '', {
+    it('runs for the WAAPI engine too, before its first rect read', async () => {
+        const animations = fakeAnimate()
+        const { group, element } = await setup('chromium', '', {
             engine: 'waapi',
         })
         group.capture()
         place(element, { x: 50, y: 0, w: 100, h: 40 })
         log = []
         void group.flush()
-        expect(log).not.toContain('scrollTop')
-        expect(element.style.getPropertyValue('overflow-anchor')).toBe('')
+        expect(log).toEqual(['scrollTop', 'rect'])
+        expect(group.stats.probes).toBe(1)
+        expect(animations).toHaveLength(1)
         group.dispose()
     })
+})
+
+/** `Element.animate` as the WAAPI engine uses it: each call's keyframes, recorded. */
+function fakeAnimate(): { element: Element; keyframes: Keyframe[] }[] {
+    const calls: { element: Element; keyframes: Keyframe[] }[] = []
+    Object.defineProperty(Element.prototype, 'animate', {
+        configurable: true,
+        value(this: Element, keyframes: Keyframe[]) {
+            calls.push({ element: this, keyframes })
+            // held at τ = 0: nothing plays, nothing finishes
+            return {
+                currentTime: 0,
+                playState: 'paused',
+                pause: noop,
+                play: noop,
+                cancel: noop,
+                finished: new Promise(() => undefined),
+            }
+        },
+    })
+    vi.stubGlobal('CSS', { supports: () => true })
+    vi.stubGlobal('requestAnimationFrame', () => 0)
+    return calls
+}
+
+afterEach(() => {
+    Reflect.deleteProperty(Element.prototype, 'animate')
+    vi.unstubAllGlobals()
 })
 
 describe('§11.4 S2 the fallback where a transform moves the anchor', () => {
@@ -224,19 +272,49 @@ describe('§11.4 S2 the fallback where a transform moves the anchor', () => {
         group.dispose()
     })
 
-    it('leaves a driven scroll container alone', async () => {
-        const { clock, group, element } = await setup(
-            'firefox',
-            'overflow: auto;'
-        )
+    it('covers a driven scroll container too', async () => {
+        for (const overflow of ['auto', 'hidden', 'scroll'] as const) {
+            const { clock, group, element } = await setup(
+                'firefox',
+                `overflow: ${overflow};`
+            )
+            group.capture()
+            place(element, { x: 50, y: 0, w: 100, h: 40 })
+            const run = group.flush()
+            expect(element.style.translate).toBe('-50px 0px')
+            expect(element.style.getPropertyValue('overflow-anchor')).toBe(
+                'none'
+            )
+            expect(element.style.getPropertyPriority('overflow-anchor')).toBe(
+                'important'
+            )
+            clock.frames(30)
+            await run
+            expect(element.style.cssText).toBe(`overflow: ${overflow};`)
+            group.dispose()
+        }
+    })
+
+    it('the WAAPI engine carries overflow-anchor: none in both keyframes, with no inline style', async () => {
+        const animations = fakeAnimate()
+        const authored = 'overflow-anchor: auto;'
+        const { group, element } = await setup('firefox', authored, {
+            engine: 'waapi',
+        })
         group.capture()
         place(element, { x: 50, y: 0, w: 100, h: 40 })
-        const run = group.flush()
-        expect(element.style.translate).toBe('-50px 0px')
-        expect(element.style.getPropertyValue('overflow-anchor')).toBe('')
-        clock.frames(30)
-        await run
-        expect(element.style.cssText).toBe('overflow: auto;')
+        void group.flush()
+        expect(animations).toHaveLength(1)
+        const [from, to] = animations[0]!.keyframes
+        expect(from).toMatchObject({
+            translate: '-50px 0px',
+            overflowAnchor: 'none',
+        })
+        expect(to).toMatchObject({
+            translate: '0px 0px',
+            overflowAnchor: 'none',
+        })
+        expect(element.style.cssText).toBe(authored)
         group.dispose()
     })
 
@@ -273,6 +351,21 @@ describe('§11.4 S2 no fallback where a transform does not move the anchor', () 
         clock.frames(30)
         await run
         expect(element.style.cssText).toBe('')
+        group.dispose()
+    })
+
+    it('the WAAPI engine animates translate only', async () => {
+        const animations = fakeAnimate()
+        const { group, element } = await setup('chromium', '', {
+            engine: 'waapi',
+        })
+        group.capture()
+        place(element, { x: 50, y: 0, w: 100, h: 40 })
+        void group.flush()
+        expect(animations).toHaveLength(1)
+        for (const keyframe of animations[0]!.keyframes) {
+            expect(Object.keys(keyframe)).toEqual(['translate'])
+        }
         group.dispose()
     })
 })

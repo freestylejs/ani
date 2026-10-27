@@ -3,7 +3,7 @@
 import { isAniError, timing } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../core/src/testing/index'
-import { containsFlat, flatParent } from '../dom'
+import { containsFlat, flatParent, flatTree } from '../dom'
 import type { Box } from '../geometry'
 import { validateLayoutOptions } from '../motion'
 import { exitingPresence, linkPresence } from '../presence_link'
@@ -800,32 +800,32 @@ describe('I-5: closed-root flat ancestry through the known roots (§4.6)', () =>
         expect(child.assignedSlot).toBeNull()
         expect(slot.assignedNodes()).toContain(child)
         const roots = new Map<Element, ShadowRoot>([[host, root]])
-        expect(flatParent(child, roots)).toBe(slot)
-        expect(flatParent(slot, roots)).toBe(frame)
-        expect(flatParent(frame, roots)).toBe(host)
-        expect(containsFlat(frame, child, roots)).toBe(true)
-        expect(containsFlat(slot, child, roots)).toBe(true)
+        expect(flatParent(child, flatTree(roots))).toBe(slot)
+        expect(flatParent(slot, flatTree(roots))).toBe(frame)
+        expect(flatParent(frame, flatTree(roots))).toBe(host)
+        expect(containsFlat(frame, child, flatTree(roots))).toBe(true)
+        expect(containsFlat(slot, child, flatTree(roots))).toBe(true)
     })
 
     it('passes from a node slotted into an unknown closed root straight to its host', () => {
         const { host, frame, child } = slotted('closed')
         expect(flatParent(child)).toBe(host)
-        expect(flatParent(child, new Map())).toBe(host)
-        expect(containsFlat(frame, child, new Map())).toBe(false)
-        expect(containsFlat(host, child, new Map())).toBe(true)
+        expect(flatParent(child, flatTree(new Map()))).toBe(host)
+        expect(containsFlat(frame, child, flatTree(new Map()))).toBe(false)
+        expect(containsFlat(host, child, flatTree(new Map()))).toBe(true)
     })
 
     it('uses assignedSlot for an open root, known or not', () => {
         const { host, root, slot, child } = slotted('open')
         expect(flatParent(child)).toBe(slot)
-        expect(flatParent(child, new Map([[host, root]]))).toBe(slot)
+        expect(flatParent(child, flatTree(new Map([[host, root]])))).toBe(slot)
     })
 
     it('falls back to the parent element for a child of a known host that no slot holds', () => {
         const { host, root } = slotted('closed', 'named')
         const loose = document.createElement('div')
         host.append(loose)
-        expect(flatParent(loose, new Map([[host, root]]))).toBe(host)
+        expect(flatParent(loose, flatTree(new Map([[host, root]])))).toBe(host)
     })
 
     it('crosses nested known closed roots', () => {
@@ -845,18 +845,18 @@ describe('I-5: closed-root flat ancestry through the known roots (§4.6)', () =>
             [outer.host, outer.root],
             [innerHost, innerRoot],
         ])
-        expect(flatParent(node, roots)).toBe(innerSlot)
-        expect(flatParent(innerSlot, roots)).toBe(panel)
-        expect(flatParent(panel, roots)).toBe(innerHost)
-        expect(flatParent(innerHost, roots)).toBe(outer.frame)
-        expect(containsFlat(panel, node, roots)).toBe(true)
-        expect(containsFlat(outer.host, node, roots)).toBe(true)
+        expect(flatParent(node, flatTree(roots))).toBe(innerSlot)
+        expect(flatParent(innerSlot, flatTree(roots))).toBe(panel)
+        expect(flatParent(panel, flatTree(roots))).toBe(innerHost)
+        expect(flatParent(innerHost, flatTree(roots))).toBe(outer.frame)
+        expect(containsFlat(panel, node, flatTree(roots))).toBe(true)
+        expect(containsFlat(outer.host, node, flatTree(roots))).toBe(true)
         // with only the outer root known, the walk passes over the inner one
         const outerOnly = new Map<Element, ShadowRoot>([
             [outer.host, outer.root],
         ])
-        expect(flatParent(node, outerOnly)).toBe(innerHost)
-        expect(containsFlat(panel, node, outerOnly)).toBe(false)
+        expect(flatParent(node, flatTree(outerOnly))).toBe(innerHost)
+        expect(containsFlat(panel, node, flatTree(outerOnly))).toBe(false)
     })
 
     it('follows a slot reassignment between walks', () => {
@@ -866,11 +866,11 @@ describe('I-5: closed-root flat ancestry through the known roots (§4.6)', () =>
         root.append(other)
         const roots = new Map<Element, ShadowRoot>([[host, root]])
         child.slot = 'a'
-        expect(flatParent(child, roots)).toBe(slot)
+        expect(flatParent(child, flatTree(roots))).toBe(slot)
         child.slot = 'b'
-        expect(flatParent(child, roots)).toBe(other)
+        expect(flatParent(child, flatTree(roots))).toBe(other)
         child.slot = 'c'
-        expect(flatParent(child, roots)).toBe(host)
+        expect(flatParent(child, flatTree(roots))).toBe(host)
     })
 
     /** A panel participant in a closed root, with a slotted light-DOM participant under it. */
@@ -972,7 +972,9 @@ describe('I-5: closed-root flat ancestry through the known roots (§4.6)', () =>
         const link = { exiting: true, opacity: false, hold: vi.fn() }
         const unlink = linkPresence(panel, link)
         expect(exitingPresence(child)).toBeNull()
-        expect(exitingPresence(child, new Map([[host, root]]))).toBe(link)
+        expect(exitingPresence(child, flatTree(new Map([[host, root]])))).toBe(
+            link
+        )
         unlink()
     })
 })
@@ -1024,5 +1026,141 @@ describe('I-6: one walk per ancestor (§4.6)', () => {
         expect(fresh.get(mid)).toBeNull()
         expect(fresh.get(document.documentElement)).toBeNull()
         outer.remove()
+    })
+})
+
+describe('I-7: roots re-tracked at every pass (§4.6, L-MEAS-10 (b))', () => {
+    /** A host whose closed root holds nothing yet, with a light-DOM child. */
+    function closedHost() {
+        const host = document.createElement('div')
+        document.body.append(host)
+        const root = host.attachShadow({ mode: 'closed' })
+        const child = document.createElement('div')
+        host.append(child)
+        return { host, root, child }
+    }
+
+    /** The panel doubles its width while the child stays put: the child is counter-projected under it. */
+    async function expectPlannedUnder(
+        group: ReturnType<typeof createLayoutGroup>,
+        clock: ReturnType<typeof createManualClock>,
+        panel: HTMLElement,
+        child: HTMLElement,
+        label: string
+    ) {
+        group.capture()
+        place(panel, { x: 0, y: 0, w: 200, h: 100 })
+        const run = group.flush()
+        expect(panel.style.scale, label).toBe('0.5 1')
+        expect(child.style.scale, label).toBe('2 1')
+        clock.frames(20)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
+        place(panel, { x: 0, y: 0, w: 100, h: 100 })
+        group.capture()
+        await group.flush()
+    }
+
+    it('a participant registered in the document and moved into a closed root is tracked from the next pass', async () => {
+        const clock = createManualClock()
+        const group = createLayoutGroup({
+            clock: clock.clock,
+            motion: linearMotion,
+        })
+        const { root, child } = closedHost()
+        const panel = document.createElement('div')
+        panel.append(document.createElement('slot'))
+        // registered in the document first
+        document.body.append(panel)
+        place(panel, { x: 0, y: 0, w: 100, h: 100 })
+        place(child, { x: 10, y: 10, w: 40, h: 40 })
+        group.add(panel)
+        group.add(child)
+        group.capture()
+        await group.flush()
+        // moved into the closed root between flushes (a component upgrade)
+        root.append(panel)
+        group.capture()
+        await group.flush()
+        await expectPlannedUnder(group, clock, panel, child, 'moved in')
+        group.dispose()
+    })
+
+    it('a participant moved from one closed root into another is tracked under the new one, and the old one is dropped', async () => {
+        const clock = createManualClock()
+        const group = createLayoutGroup({
+            clock: clock.clock,
+            motion: linearMotion,
+        })
+        const first = closedHost()
+        const second = closedHost()
+        const panel = document.createElement('div')
+        panel.append(document.createElement('slot'))
+        first.root.append(panel)
+        const child = first.child
+        place(panel, { x: 0, y: 0, w: 100, h: 100 })
+        place(child, { x: 10, y: 10, w: 40, h: 40 })
+        group.add(panel)
+        group.add(child)
+        group.capture()
+        await group.flush()
+        await expectPlannedUnder(group, clock, panel, child, 'first root')
+
+        // the panel moves into the second root, and the child with it
+        second.root.append(panel)
+        second.host.append(child)
+        // a slot left in the first root: a pass that still knew the root
+        // would build its map
+        const left = document.createElement('slot')
+        first.root.append(left)
+        const leftCalls = vi.spyOn(left, 'assignedNodes')
+        group.capture()
+        await group.flush()
+        await expectPlannedUnder(group, clock, panel, child, 'second root')
+        expect(leftCalls).not.toHaveBeenCalled()
+        group.dispose()
+    })
+})
+
+describe('I-8: one node-to-slot map per known closed root per pass (§4.6)', () => {
+    it('a capture and a flush each call assignedNodes() once per slot, however many participants are slotted', async () => {
+        const clock = createManualClock()
+        const group = createLayoutGroup({
+            clock: clock.clock,
+            motion: linearMotion,
+        })
+        const host = document.createElement('div')
+        document.body.append(host)
+        const root = host.attachShadow({ mode: 'closed' })
+        const panel = document.createElement('div')
+        root.append(panel)
+        place(panel, { x: 0, y: 0, w: 1000, h: 1000 })
+        group.add(panel)
+        const SLOTS = 24
+        const children: HTMLElement[] = []
+        for (let i = 0; i < SLOTS; i++) {
+            const slot = document.createElement('slot')
+            slot.name = `s${i}`
+            panel.append(slot)
+            const child = document.createElement('div')
+            child.slot = `s${i}`
+            host.append(child)
+            place(child, { x: 10, y: i * 40, w: 40, h: 30 })
+            group.add(child)
+            children.push(child)
+        }
+        group.capture()
+        await group.flush()
+        const calls = vi.spyOn(HTMLSlotElement.prototype, 'assignedNodes')
+        group.capture()
+        expect(calls).toHaveBeenCalledTimes(SLOTS)
+        calls.mockClear()
+        place(panel, { x: 0, y: 0, w: 2000, h: 1000 })
+        const run = group.flush()
+        expect(calls).toHaveBeenCalledTimes(SLOTS)
+        // every child is planned under the panel
+        for (const child of children) expect(child.style.scale).toBe('2 1')
+        clock.frames(20)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
+        group.dispose()
     })
 })
