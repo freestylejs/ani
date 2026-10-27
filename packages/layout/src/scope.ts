@@ -2550,7 +2550,7 @@ export function createLayoutGroup(
         p.changed = false
         invalidateHold(p)
         forgetCaptured(p)
-        stopParticipantDrive(p, false)
+        stopParticipantDrive(p, true)
         p.lastBox = null
         p.geometry = null
     }
