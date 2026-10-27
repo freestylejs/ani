@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import {
@@ -78,6 +79,15 @@ type ModuleName = (typeof MODULES)[number]
 interface PageOptions {
     reducedMotion?: 'reduce' | 'no-preference'
     ssr?: boolean
+    /**
+     * Firefox only: the case runs in a browser of its own with classic (space-taking)
+     * scrollbars, the user preference `ui.useOverlayScrollbars` set to 0. Headless
+     * Firefox under Playwright hides every scrollbar (its agent sheet sets
+     * `scrollbar-width: none !important`) and viewport emulation forces overlay
+     * scrollbars, so that browser is headed, without a viewport, on the display
+     * set in `DISPLAY` or on a virtual one (`Xvfb`). Other engines ignore it.
+     */
+    classicScrollbars?: boolean
 }
 
 interface CaseModule {
@@ -368,11 +378,80 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
     }
 }
 
+/**
+ * An X display for a headed browser: `DISPLAY` when it is set, else a virtual
+ * one that `Xvfb` opens on a free display number (stopped by `close`).
+ */
+async function xDisplay(): Promise<{ display: string; close(): void }> {
+    const set = process.env.DISPLAY
+    if (set) {
+        return {
+            display: set,
+            close() {
+                // the display is not ours to stop
+            },
+        }
+    }
+    const server = spawn(
+        'Xvfb',
+        ['-displayfd', '3', '-screen', '0', '1280x1024x24', '-nolisten', 'tcp'],
+        { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] }
+    )
+    const display = await new Promise<string>((resolve, reject) => {
+        let text = ''
+        server.stdio[3]?.on('data', (chunk: Buffer) => {
+            text += chunk.toString()
+            if (text.includes('\n')) resolve(`:${text.trim()}`)
+        })
+        server.once('error', (error) =>
+            reject(
+                new Error(
+                    `a classic-scrollbar run needs Xvfb: ${error.message}`
+                )
+            )
+        )
+        server.once('exit', (code) =>
+            reject(
+                new Error(
+                    `Xvfb exited with code ${code} before it opened a display`
+                )
+            )
+        )
+    })
+    return { display, close: () => server.kill() }
+}
+
+/** A Firefox of its own with classic scrollbars (`PageOptions.classicScrollbars`). */
+async function classicFirefox(): Promise<{
+    browser: Browser
+    close(): Promise<void>
+}> {
+    const x = await xDisplay()
+    try {
+        const own = await firefox.launch({
+            headless: false,
+            firefoxUserPrefs: { 'ui.useOverlayScrollbars': 0 },
+            env: { ...process.env, DISPLAY: x.display },
+        })
+        return {
+            browser: own,
+            async close() {
+                await own.close().catch(() => undefined)
+                x.close()
+            },
+        }
+    } catch (error) {
+        x.close()
+        throw error
+    }
+}
+
 async function runCase(
-    browser: Browser,
+    shared: Browser,
     module: CaseModule,
     name: string,
-    engine: EngineCoverage | null
+    engine: EngineCoverage | null,
+    browserName: BrowserName
 ): Promise<Outcome> {
     const coverage = engine?.wants(module.code, module.timed.includes(name))
         ? engine
@@ -381,9 +460,17 @@ async function runCase(
     const problems: string[] = []
     const failures: string[] = []
     let detail: string | null = null
-    const context = await browser.newContext()
+    const options = module.pageOptions[name] ?? {}
+    let own: Awaited<ReturnType<typeof classicFirefox>> | null = null
+    let context: BrowserContext | null = null
     try {
-        const options = module.pageOptions[name] ?? {}
+        if (options.classicScrollbars && browserName === 'firefox') {
+            own = await classicFirefox()
+        }
+        // without viewport emulation, which would force overlay scrollbars
+        context = await (own?.browser ?? shared).newContext(
+            own ? { viewport: null } : {}
+        )
         const markup = options.ssr
             ? await renderToMarkup(module.name as 'react' | 'vue')
             : ''
@@ -436,7 +523,8 @@ async function runCase(
     } catch (error) {
         failures.push(describeError(error))
     } finally {
-        await context.close().catch(() => undefined)
+        await context?.close().catch(() => undefined)
+        await own?.close()
     }
 
     failures.push(...problems)
@@ -583,7 +671,8 @@ async function main(): Promise<number> {
                     browser,
                     module,
                     caseName,
-                    coverage
+                    coverage,
+                    options.browser
                 )
                 counts[outcome.status] += 1
                 report(id, outcome)
