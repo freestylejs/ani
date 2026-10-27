@@ -48,6 +48,7 @@ import {
     usedOrigin,
 } from './geometry'
 import {
+    type AxisScale,
     type KeepAncestor,
     type KeepPath,
     keepPath,
@@ -295,6 +296,11 @@ interface Capture {
 }
 
 type Matrix = Geometry['matrix']
+
+/** One check's computed styles (`styleReader`): `has` is true once read. */
+type StyleReader = ((i: number) => CSSStyleDeclaration) & {
+    readonly has: (i: number) => boolean
+}
 
 interface FrameNode {
     readonly p: Participant
@@ -1144,7 +1150,7 @@ export function createLayoutGroup(
         rects: readonly Box[],
         offsets: readonly (readonly [number, number])[],
         poses: ReadonlyMap<Participant, Pose>,
-        styleOf: (i: number) => CSSStyleDeclaration
+        styleOf: StyleReader
     ): readonly (string | null)[] {
         const poseOf = (i: number) => poses.get(list[i]!) ?? IDENTITY_POSE
         const nodes: SupportNode[] = list.map((_, i) => {
@@ -1157,27 +1163,30 @@ export function createLayoutGroup(
             }
         })
         const causes: (string | null)[] = list.map(() => null)
+        const innerOf = (i: number): AxisScale | 'unsupported' => {
+            const transform = readTransform(styleOf(i))
+            if (typeof transform === 'string') {
+                causes[i] = transform
+                return 'unsupported'
+            }
+            // the computed scale holds the pose the engine wrote
+            const pose = poseOf(i)
+            return {
+                sx: (transform.scale[0] * transform.matrix.a) / pose.sx,
+                sy: (transform.scale[1] * transform.matrix.d) / pose.sy,
+            }
+        }
         const { supported } = supportCheck(
             nodes,
-            (i) => {
-                const transform = readTransform(styleOf(i))
-                if (typeof transform === 'string') {
-                    causes[i] = transform
-                    return 'unsupported'
-                }
-                // the computed scale holds the pose the engine wrote
-                const pose = poseOf(i)
-                return {
-                    sx: (transform.scale[0] * transform.matrix.a) / pose.sx,
-                    sy: (transform.scale[1] * transform.matrix.d) / pose.sy,
-                }
-            },
+            innerOf,
             (i) => {
                 const size = borderSize(styleOf(i))
                 return size
                     ? { w: size[0], h: size[1] }
                     : { w: Number.NaN, h: Number.NaN }
-            }
+            },
+            // values already read in this check are q, not assumed (§4.2)
+            (i) => (styleOf.has(i) ? innerOf(i) : null)
         )
         const reasons: (string | null)[] = []
         list.forEach((_, i) => {
@@ -1193,14 +1202,15 @@ export function createLayoutGroup(
         return reasons
     }
 
-    /** Computed styles of one batch, each element read at most once and counted. */
-    function styleReader(
-        list: readonly Participant[]
-    ): (i: number) => CSSStyleDeclaration {
+    /**
+     * Computed styles of one batch (one check: a capture, or a flush), each
+     * element read at most once and counted; never reused across batches.
+     */
+    function styleReader(list: readonly Participant[]): StyleReader {
         const styles: (CSSStyleDeclaration | undefined)[] = new Array(
             list.length
         )
-        return (i) => {
+        const read = (i: number): CSSStyleDeclaration => {
             let style = styles[i]
             if (!style) {
                 style = getComputedStyle(list[i]!.element)
@@ -1209,6 +1219,9 @@ export function createLayoutGroup(
             }
             return style
         }
+        return Object.assign(read, {
+            has: (i: number) => styles[i] !== undefined,
+        })
     }
 
     /**
@@ -1714,18 +1727,23 @@ export function createLayoutGroup(
         measureNodes(chained)
 
         // the support check (§4.2) on this flush's reads, and on the fresh
-        // capture's: a map the engine does not own snaps its subtree
-        const flushed = supportOf(
-            list,
-            parents,
-            rects,
-            offsets,
-            engine.poses,
-            styleOf
-        )
-        const unowned = list.map(
-            (p, i) => fresh?.unsupported.get(p) ?? flushed[i] ?? null
-        )
+        // capture's: a map the engine does not own snaps its subtree. Every
+        // active node's computed values read in this flush are its q; the
+        // check runs again when the plan measures more of them (no new read)
+        const supportNow = () => {
+            const flushed = supportOf(
+                list,
+                parents,
+                rects,
+                offsets,
+                engine.poses,
+                styleOf
+            )
+            return list.map(
+                (p, i) => fresh?.unsupported.get(p) ?? flushed[i] ?? null
+            )
+        }
+        let unowned = supportNow()
 
         // v: the analytic velocity at t_k, through this flush's layers
         const velocity = new Map(engine.rates)
@@ -2214,12 +2232,22 @@ export function createLayoutGroup(
                 (action) => action.kind !== 'none'
             )
             const added = measureNodes(wanted)
+            let verdicts = false
+            if (added.length > 0) {
+                const now = supportNow()
+                verdicts = now.some((r, i) => r !== unowned[i])
+                unowned = now
+            }
             // the plan assumed a centred origin and support for every node it
             // had not measured; it is redone only when that assumption failed
-            const assumed = added.every((i) => {
-                const g = geometry[i]!
-                return g.unsupported === null && g.fx === 0.5 && g.fy === 0.5
-            })
+            const assumed =
+                !verdicts &&
+                added.every((i) => {
+                    const g = geometry[i]!
+                    return (
+                        g.unsupported === null && g.fx === 0.5 && g.fy === 0.5
+                    )
+                })
             if (assumed) break
             nodes = planNodes()
             result = plan({

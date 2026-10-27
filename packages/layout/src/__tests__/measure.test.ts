@@ -616,6 +616,161 @@ describe('measure: supportCheck (§4.2)', () => {
             expect(classified.reads).toEqual([0])
         }
     })
+
+    /**
+     * The reviewer's scene: p is 100 px with q = 1.003 hiding in its own M;
+     * j is 2000 px under a non-participant zoom of 1/1.003 (its rect is
+     * 2000 px, its true E is 1.003); i is 2000 px under p alone.
+     */
+    function reviewerScene(order: 'jFirst' | 'iFirst') {
+        const q = 1.003
+        const p: SupportNode = {
+            parent: -1,
+            rect: { w: 100 * q, h: 100 * q },
+            offset: [100, 100],
+            pose: { sx: 1, sy: 1 },
+        }
+        const j: SupportNode = {
+            parent: 0,
+            rect: { w: 2000 * q * (1 / q), h: 2000 * q * (1 / q) },
+            offset: [2000, 2000],
+            pose: { sx: 1, sy: 1 },
+        }
+        const i: SupportNode = {
+            parent: 0,
+            rect: { w: 2000 * q, h: 2000 * q },
+            offset: [2000, 2000],
+            pose: { sx: 1, sy: 1 },
+        }
+        const nodes = order === 'jFirst' ? [p, j, i] : [p, i, j]
+        const jAt = order === 'jFirst' ? 1 : 2
+        const iAt = order === 'jFirst' ? 2 : 1
+        return { q, nodes, jAt, iAt }
+    }
+
+    for (const order of ['jFirst', 'iFirst'] as const) {
+        const name = order === 'jFirst' ? '[p, j, i]' : '[p, i, j]'
+        it(`SC-8: order independence — in the order ${name}, reading p's q while verifying i compares j again, and j is detected; every node is read at most once`, () => {
+            const { q, nodes, jAt, iAt } = reviewerScene(order)
+            const res = supportCheck(
+                nodes,
+                (k) => (k === 0 ? { sx: q, sy: q } : { sx: 1, sy: 1 }),
+                () => ({ w: Number.NaN, h: Number.NaN })
+            )
+            const expected = [true, true, true]
+            expected[jAt] = false
+            expect(res.supported).toEqual(expected)
+            expect(res.scales[iAt]).toEqual({ sx: q, sy: q })
+            // p is read for i, then j for its own verification
+            expect(res.reads).toEqual([0, iAt, jAt])
+        })
+
+        it(`SC-8: values already read — in the order ${name}, p's q known from a value already read is used at the first comparison and not read again`, () => {
+            const { q, nodes, jAt } = reviewerScene(order)
+            const res = supportCheck(
+                nodes,
+                () => ({ sx: 1, sy: 1 }),
+                () => ({ w: Number.NaN, h: Number.NaN }),
+                (k) => (k === 0 ? { sx: q, sy: q } : null)
+            )
+            const expected = [true, true, true]
+            expected[jAt] = false
+            expect(res.supported).toEqual(expected)
+            expect(res.reads).toEqual([jAt])
+            // a known classifier failure snaps the node and its subtree, unread
+            const rotated = supportCheck(
+                nodes,
+                () => ({ sx: 1, sy: 1 }),
+                () => ({ w: Number.NaN, h: Number.NaN }),
+                (k) => (k === 0 ? 'unsupported' : null)
+            )
+            expect(rotated.supported).toEqual([false, false, false])
+            expect(rotated.reads).toEqual([])
+        })
+    }
+
+    /** Nodes whose every field access is counted: the check's work. */
+    function counted(nodes: SupportNode[]): {
+        nodes: SupportNode[]
+        work: () => number
+    } {
+        let work = 0
+        const wrapped = nodes.map((node) => ({
+            get parent() {
+                work += 1
+                return node.parent
+            },
+            get rect() {
+                work += 1
+                return node.rect
+            },
+            get offset() {
+                work += 1
+                return node.offset
+            },
+            get pose() {
+                work += 1
+                return node.pose
+            },
+        }))
+        return { nodes: wrapped, work: () => work }
+    }
+
+    it('SC-9: work stays linear — 1,000 nodes that all fail their first comparison (siblings under a zoom, top-level nodes under a zoom, a 1,000-deep chain hiding q = 1.01 at every level): each read once, and field accesses within a small constant per node', () => {
+        const N = 1000
+        const unit = { sx: 1, sy: 1 }
+        const flat: SupportNode[] = [
+            {
+                parent: -1,
+                rect: { w: 200, h: 200 },
+                offset: [200, 200],
+                pose: unit,
+            },
+            ...Array.from({ length: N - 1 }, () => ({
+                parent: 0,
+                rect: { w: 220, h: 220 },
+                offset: [200, 200] as const,
+                pose: unit,
+            })),
+        ]
+        const top: SupportNode[] = Array.from({ length: N }, () => ({
+            parent: -1,
+            rect: { w: 220, h: 220 },
+            offset: [200, 200] as const,
+            pose: unit,
+        }))
+        const deep: SupportNode[] = Array.from({ length: N }, (_, k) => ({
+            parent: k - 1,
+            rect: { w: 200 * 1.01 ** (k + 1), h: 200 * 1.01 ** (k + 1) },
+            offset: [200, 200] as const,
+            pose: unit,
+        }))
+        const cases = [
+            {
+                nodes: flat,
+                q: unit,
+                supported: [true, ...new Array(N - 1).fill(false)],
+            },
+            { nodes: top, q: unit, supported: new Array(N).fill(false) },
+            {
+                nodes: deep,
+                q: { sx: 1.01, sy: 1.01 },
+                supported: new Array(N).fill(true),
+            },
+        ]
+        for (const c of cases) {
+            const { nodes, work } = counted(c.nodes)
+            const res = supportCheck(
+                nodes,
+                () => c.q,
+                () => ({ w: Number.NaN, h: Number.NaN })
+            )
+            expect(res.supported).toEqual(c.supported)
+            expect(res.reads.length).toBe(N)
+            expect(new Set(res.reads).size).toBe(N)
+            expect(work()).toBeLessThan(30 * N)
+        }
+    })
 })
 
 describe('measure: presentedLayoutBoxes (§4.2)', () => {

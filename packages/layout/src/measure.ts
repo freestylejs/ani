@@ -99,39 +99,58 @@ function within(e: number, m: AxisInterval): boolean {
 }
 
 /**
+ * A computed value already read in the same check (§4.2 "Values already
+ * read"): that node's inner-map scale, or 'unsupported' when its classifier
+ * failed; `null` when it was not read. It is not read again nor counted.
+ */
+export type KnownInner = (index: number) => AxisScale | 'unsupported' | null
+
+/**
  * §4.2, §9.1: the support check per participant and axis, top-down. Each
  * node's measured interval `M` is compared with the exact model of its total
  * scale, `E = E_π · p · q`, never with a scale derived from a measurement. An
- * inner scale `q` is assumed 1 until read; when `E ∉ M`, the node and every
- * participant ancestor whose `q` is still assumed are read top-down, the
- * classifier runs on each read (a rotation, skew or 3D component snaps that
- * node with its subtree), `E` is recomputed with the scales read, and the
- * node fails only when `E ∉ M` still. A read ancestor whose own model then
- * leaves its own `M` fails too, with its subtree.
+ * inner scale `q` is assumed 1 until read (or known from a value already
+ * read); when `E ∉ M`, the node and every participant ancestor whose `q` is
+ * still assumed are read top-down, the classifier runs on each read (a
+ * rotation, skew or 3D component snaps that node with its subtree), and `E`
+ * is recomputed with the scales read.
+ *
+ * Order independence: a read scale changes `E` for the whole subtree, so
+ * every node under it already compared with the assumed scale is compared
+ * again (and verified in turn when it now fails). A node fails only when
+ * `E ∉ M` with every scale above it that verification could read. The work
+ * is incremental: a read recomputes only the compared subtree under the
+ * topmost scale it changed, and each node's scale is read at most once.
  */
 export function supportCheck(
     nodes: readonly SupportNode[],
     readInner: InnerScaleReader,
-    readExactSize: ExactSizeReader
+    readExactSize: ExactSizeReader,
+    known: KnownInner = () => null
 ): SupportResult {
     const n = nodes.length
+    const children: number[][] = nodes.map(() => [])
+    nodes.forEach((node, i) => {
+        if (node.parent >= 0) children[node.parent]!.push(i)
+    })
+    /** The node itself failed: a classifier, an invalid pose, or E ∉ M. */
     const failed: boolean[] = new Array(n).fill(false)
-    const known: (AxisScale | null)[] = new Array(n).fill(null)
-    const expected: { x: number; y: number }[] = []
-    const measured: { x: AxisInterval; y: AxisInterval }[] = []
+    /** It or an ancestor failed: its subtree snaps. */
+    const dead: boolean[] = new Array(n).fill(false)
+    /** `q`: null while assumed 1. */
+    const inner: (AxisScale | null)[] = new Array(n).fill(null)
+    /** Its `q` was read (or was known): never read again. */
+    const settled: boolean[] = new Array(n).fill(false)
+    /** Compared with its `M` at least once. */
+    const compared: boolean[] = new Array(n).fill(false)
+    const expected: { x: number; y: number }[] = new Array(n)
+    const measured: { x: AxisInterval; y: AxisInterval }[] = new Array(n)
     const reads: number[] = []
 
-    const inherited = (i: number): boolean => {
-        for (let k = nodes[i]!.parent; k >= 0; k = nodes[k]!.parent) {
-            if (failed[k]) return true
-        }
-        return false
-    }
-    /** E of node `i` from its parent's E and its own p and q (1 when assumed). */
     const model = (i: number): { x: number; y: number } => {
         const node = nodes[i]!
         const parent = node.parent >= 0 ? expected[node.parent]! : null
-        const q = known[i]
+        const q = inner[i]
         return {
             x: (parent ? parent.x : 1) * node.pose.sx * (q ? q.sx : 1),
             y: (parent ? parent.y : 1) * node.pose.sy * (q ? q.sy : 1),
@@ -140,59 +159,138 @@ export function supportCheck(
     const passes = (i: number): boolean =>
         within(expected[i]!.x, measured[i]!.x) &&
         within(expected[i]!.y, measured[i]!.y)
+    /** Marks `i` failed and its compared subtree dead. */
+    const fail = (i: number): void => {
+        failed[i] = true
+        const stack = [i]
+        while (stack.length > 0) {
+            const k = stack.pop()!
+            if (dead[k] && k !== i) continue
+            dead[k] = true
+            for (const c of children[k]!) if (compared[c]) stack.push(c)
+        }
+    }
+    /** Every compared, live node of `top`'s subtree, parents first. */
+    const subtree = (top: number): number[] => {
+        const out: number[] = []
+        const stack = [top]
+        while (stack.length > 0) {
+            const k = stack.pop()!
+            if (!compared[k] || dead[k]) continue
+            out.push(k)
+            for (const c of children[k]!) stack.push(c)
+        }
+        // a stack walk visits a parent before its children; indices too
+        return out.sort((a, b) => a - b)
+    }
+    /**
+     * The nearest node at or above `k` whose `q` is still assumed, -1 when
+     * none: settled only grows, so the walk is path-compressed (a deep
+     * chain of failing nodes stays linear).
+     */
+    const skip: number[] = nodes.map((_, i) => i)
+    const unsettled = (k: number): number => {
+        let r = k
+        while (r >= 0 && settled[r]) {
+            const s = skip[r]!
+            r = s === r ? nodes[r]!.parent : s
+        }
+        // compress: every settled node on the way now points at r
+        while (k >= 0 && k !== r && settled[k]) {
+            const s = skip[k]!
+            const nextK = s === k ? nodes[k]!.parent : s
+            skip[k] = r
+            k = nextK
+        }
+        return r
+    }
+    /** `E ∉ M` at `i`: read what is still assumed above it, or fail. */
+    const verify = (i: number): void => {
+        const chain: number[] = []
+        for (let k = unsettled(i); k >= 0; k = unsettled(nodes[k]!.parent)) {
+            chain.push(k)
+        }
+        chain.reverse()
+        if (chain.length === 0) {
+            fail(i)
+            return
+        }
+        let top = -1
+        for (const k of chain) {
+            reads.push(k)
+            settled[k] = true
+            const q = readInner(k)
+            if (
+                q === 'unsupported' ||
+                !validPositive(q.sx) ||
+                !validPositive(q.sy)
+            ) {
+                fail(k)
+                break
+            }
+            if (q.sx !== 1 || q.sy !== 1) {
+                inner[k] = q
+                if (top < 0) top = k
+            }
+        }
+        if (top >= 0) {
+            // the scales read change E below `top`: every node there already
+            // compared is compared again, parents first (also when a
+            // classifier below `top` failed: its siblings still use them)
+            for (const k of subtree(top)) expected[k] = model(k)
+            for (const k of subtree(top)) {
+                if (dead[k] || passes(k)) continue
+                verify(k)
+            }
+        } else if (!dead[i]) {
+            // nothing read changed E: it fails as compared
+            fail(i)
+        }
+    }
 
     for (let i = 0; i < n; i++) {
         const node = nodes[i]!
+        const parent = node.parent
+        compared[i] = true
+        dead[i] = parent >= 0 && dead[parent]!
         const ox = node.offset[0]
         const oy = node.offset[1]
-        if (
+        const invalid =
             !validPositive(node.pose.sx) ||
             !validPositive(node.pose.sy) ||
             !(node.rect.w >= 0) ||
             !(node.rect.h >= 0)
-        ) {
-            failed[i] = true
-        }
         const exact =
-            !failed[i] && (!(ox > 1) || !(oy > 1))
+            !invalid && !dead[i] && (!(ox > 1) || !(oy > 1))
                 ? readExactSize(i)
                 : { w: 0, h: 0 }
-        measured.push({
+        measured[i] = {
             x: measuredAxis(node.rect.w, ox, exact.w),
             y: measuredAxis(node.rect.h, oy, exact.h),
-        })
-        expected.push(model(i))
-        if (failed[i] || inherited(i) || passes(i)) continue
-
-        // verification: this node and its ancestors with an assumed q
-        const chain: number[] = []
-        for (let k = i; k >= 0; k = nodes[k]!.parent) {
-            if (known[k] === null) chain.unshift(k)
         }
-        for (const k of chain) {
-            reads.push(k)
-            const inner = readInner(k)
+        const value = known(i)
+        if (value !== null) {
+            settled[i] = true
             if (
-                inner === 'unsupported' ||
-                !validPositive(inner.sx) ||
-                !validPositive(inner.sy)
+                value === 'unsupported' ||
+                !validPositive(value.sx) ||
+                !validPositive(value.sy)
             ) {
-                failed[k] = true
-                break
+                fail(i)
+            } else {
+                inner[i] = value
             }
-            known[k] = inner
         }
-        // every model below a read scale is recomputed, parents first
-        for (let k = 0; k <= i; k++) expected[k] = model(k)
-        for (const k of chain) {
-            if (!failed[k] && !inherited(k) && !passes(k)) failed[k] = true
-        }
+        if (invalid) fail(i)
+        expected[i] = model(i)
+        if (dead[i] || passes(i)) continue
+        verify(i)
     }
 
     const supported: boolean[] = []
     const scales: (AxisScale | null)[] = []
     for (let i = 0; i < n; i++) {
-        const ok = !failed[i] && !inherited(i)
+        const ok = !dead[i]
         supported.push(ok)
         scales.push(ok ? { sx: expected[i]!.x, sy: expected[i]!.y } : null)
     }
