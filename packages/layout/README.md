@@ -53,7 +53,8 @@ const run = await group.flush() // read the boxes after it and start the run
 - `capture()` is valid until the next frame: take it in the same task as the change. A capture
   in a later task reads again.
 - `stats` counts `captures`, the layout reads (`rects`, `offsets` for layout-size pairs and
-  computed `styles`, with `reads` their sum), running `tracks` and live `holds`.
+  computed `styles`, with `reads` their sum), the scroll-anchoring `probes`, the `parents`
+  (`offsetParent` reads of the viewport-fixed test), running `tracks` and live `holds`.
 
 ## Options
 

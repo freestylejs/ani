@@ -19,6 +19,12 @@ export interface WaapiTrack {
     readonly duration: number
     readonly delay: number
     readonly curve: Curve
+    /**
+     * The node is never the scroll anchor (§6, §11.4 S2): both keyframes
+     * carry `overflow-anchor: none`, a discrete value held for the whole
+     * animation, its delay included (`fill: 'backwards'`).
+     */
+    readonly noAnchor: boolean
 }
 
 function format(n: number): string {
@@ -61,22 +67,22 @@ export function play(
 ): Animation {
     const [fx, fy] = track.from
     const [tx, ty] = track.to
-    const animation = element.animate(
-        [
-            { translate: `${format(fx)}px ${format(fy)}px` },
-            { translate: `${format(tx)}px ${format(ty)}px` },
-        ],
-        {
-            duration: track.duration * 1000,
-            delay: track.delay * 1000,
-            easing: linearEasing(
-                track.curve,
-                Math.max(Math.abs(fx - tx), Math.abs(fy - ty))
-            ),
-            // the delay holds the start; at the end the layout box is A
-            fill: 'backwards',
-        }
-    )
+    const keyframe = (x: number, y: number): Keyframe => {
+        const translate = `${format(x)}px ${format(y)}px`
+        return track.noAnchor
+            ? { translate, overflowAnchor: 'none' }
+            : { translate }
+    }
+    const animation = element.animate([keyframe(fx, fy), keyframe(tx, ty)], {
+        duration: track.duration * 1000,
+        delay: track.delay * 1000,
+        easing: linearEasing(
+            track.curve,
+            Math.max(Math.abs(fx - tx), Math.abs(fy - ty))
+        ),
+        // the delay holds the start; at the end the layout box is A
+        fill: 'backwards',
+    })
     // held at τ = 0 until the next animation frame: a pending play would
     // count a main-thread block after the flush as elapsed time in Gecko and
     // WebKit; started from a frame, every browser starts it at that frame

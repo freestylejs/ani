@@ -4,7 +4,7 @@
  * release holds. Adapters see none of it.
  */
 
-import { flatParent, type KnownRoots } from './dom'
+import { type FlatTree, flatParent } from './dom'
 
 export interface PresenceLink {
     readonly exiting: boolean
@@ -25,13 +25,13 @@ export function linkPresence(element: Element, link: PresenceLink): () => void {
 
 /**
  * The nearest presence link at or above `element` in the flat tree, through
- * the scope's known shadow roots (§4.6), if any is exiting. A `memo` shared
- * by the lookups of one pass (no presence changes phase in it) holds each
- * node's answer, so every ancestor is walked once.
+ * the pass's view of the scope's known shadow roots (§4.6), if any is
+ * exiting. A `memo` shared by the lookups of one pass (no presence changes
+ * phase in it) holds each node's answer, so every ancestor is walked once.
  */
 export function exitingPresence(
     element: Element,
-    roots?: KnownRoots,
+    tree?: FlatTree,
     memo?: Map<Element, PresenceLink | null>
 ): PresenceLink | null {
     const walked: Element[] = []
@@ -39,7 +39,7 @@ export function exitingPresence(
     for (
         let node: Element | null = element;
         node;
-        node = flatParent(node, roots)
+        node = flatParent(node, tree)
     ) {
         const known = memo?.get(node)
         if (known !== undefined) {

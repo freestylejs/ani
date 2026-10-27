@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { timing } from '@freestylejs/ani-core'
+import { ani, timing } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../core/src/testing/index'
 import type { Box } from '../geometry'
+import { createPresence } from '../presence'
 import { linkPresence } from '../presence_link'
 import { createLayoutGroup } from '../scope'
 
@@ -155,9 +156,13 @@ describe('§5.8 listeners', () => {
         expect(added).toHaveBeenCalledTimes(2)
 
         removeShared()
+        await Promise.resolve()
         expect(removed).not.toHaveBeenCalled()
-        // dropping the last layoutId disarms, adding one back re-arms
+        // dropping the last layoutId disarms at the end of the task (§5.8),
+        // adding one back re-arms
         group.set(other, {})
+        expect(removed).not.toHaveBeenCalled()
+        await Promise.resolve()
         expect(removed.mock.calls).toEqual([
             ['scroll', added.mock.calls[0]![1], options],
             ['scrollend', added.mock.calls[1]![1], options],
@@ -166,6 +171,7 @@ describe('§5.8 listeners', () => {
         expect(added).toHaveBeenCalledTimes(4)
         removeOther()
         removePlain()
+        await Promise.resolve()
         expect(removed).toHaveBeenCalledTimes(4)
         group.dispose()
     })
@@ -181,7 +187,7 @@ describe('§5.8 listeners', () => {
         group.dispose()
     })
 
-    it('listens on every shadow root holding a participant, and drops it with the last one; dispose disarms everything', () => {
+    it('listens on every shadow root holding a participant, and drops it with the last one; dispose disarms everything', async () => {
         scrollEnd(true)
         const host = document.createElement('div')
         document.body.append(host)
@@ -200,7 +206,8 @@ describe('§5.8 listeners', () => {
             'scrollend',
         ])
         removeA()
-        // disarmed: no shared participant left
+        // disarmed at the end of the task: no shared participant left
+        await Promise.resolve()
         expect(removed).toHaveBeenCalledTimes(2)
         const c = document.createElement('div')
         root.append(c)
@@ -389,6 +396,39 @@ describe('§5.8 the document scroller and the viewport-fixed lead', () => {
         expect(await run).toEqual(NO_FLIGHT)
         group.dispose()
     })
+
+    it('a fixed lead whose offsetParent walk passes the fixed element on to the body (Gecko) is viewport-fixed', async () => {
+        for (const nested of [false, true]) {
+            const { group, item, removeItem } = await setup({
+                scrollEnd: true,
+            })
+            const sheet = document.createElement('div')
+            sheet.style.position = 'fixed'
+            document.body.append(sheet)
+            // Gecko gives a fixed element the body as its offset parent
+            vi.spyOn(
+                HTMLElement.prototype,
+                'offsetParent',
+                'get'
+            ).mockImplementation(function (this: HTMLElement) {
+                if (this.style.position === 'fixed') return document.body
+                if (this.parentElement === sheet) return sheet
+                return null
+            })
+            document.dispatchEvent(new Event('scroll'))
+            const { lead, authored, run } = handoff(
+                group,
+                item,
+                removeItem,
+                nested ? sheet : document.body,
+                nested ? '' : 'position: fixed;'
+            )
+            expect(lead.style.cssText).toBe(authored)
+            expect(await run).toEqual(NO_FLIGHT)
+            group.dispose()
+            document.body.innerHTML = ''
+        }
+    })
 })
 
 describe('§5.8 a reparent out of an active container', () => {
@@ -442,6 +482,308 @@ describe('§5.8 a reparent out of an active container', () => {
         clock.frames(30)
         expect(await run).toEqual({ status: 'ended', snapped: [] })
         expect(warnings).toEqual([])
+        group.dispose()
+    })
+})
+
+describe('§5.8 listeners on every shadow root of the flat-ancestor chain', () => {
+    it('a scroller inside an open root that holds no participant, around the slot of a shared item: the handoff out of it does not fly', async () => {
+        scrollEnd(true)
+        const clock = createManualClock()
+        const group = createLayoutGroup({ clock: clock.clock, motion })
+        const host = document.createElement('div')
+        document.body.append(host)
+        const root = host.attachShadow({ mode: 'open' })
+        const scroller = document.createElement('div')
+        scroller.append(document.createElement('slot'))
+        root.append(scroller)
+        const item = document.createElement('div')
+        host.append(item)
+        expect(item.assignedSlot).not.toBeNull()
+        place(item, ITEM)
+        const removeItem = group.add(item, { layoutId: 'card', radius: false })
+        group.capture()
+        await group.flush()
+        // the platform's scroll event is not composed: only the root sees it
+        scroller.dispatchEvent(new Event('scroll'))
+        const { lead, authored, run } = handoff(
+            group,
+            item,
+            removeItem,
+            document.body
+        )
+        expect(lead.style.cssText).toBe(authored)
+        expect(await run).toEqual(NO_FLIGHT)
+        expect(warnings).toHaveLength(1)
+        group.dispose()
+    })
+
+    it('a scroller in an outer root around the root that holds the shared item: the handoff out of it does not fly', async () => {
+        for (const mode of ['open', 'closed'] as const) {
+            scrollEnd(true)
+            warnings = []
+            const clock = createManualClock()
+            const group = createLayoutGroup({ clock: clock.clock, motion })
+            const outer = document.createElement('div')
+            document.body.append(outer)
+            const outerRoot = outer.attachShadow({ mode })
+            const scroller = document.createElement('div')
+            outerRoot.append(scroller)
+            const inner = document.createElement('div')
+            scroller.append(inner)
+            const innerRoot = inner.attachShadow({ mode: 'closed' })
+            const item = document.createElement('div')
+            innerRoot.append(item)
+            place(item, ITEM)
+            const removeItem = group.add(item, {
+                layoutId: 'card',
+                radius: false,
+            })
+            group.capture()
+            await group.flush()
+            scroller.dispatchEvent(new Event('scroll'))
+            const { lead, authored, run } = handoff(
+                group,
+                item,
+                removeItem,
+                document.body
+            )
+            expect(lead.style.cssText, mode).toBe(authored)
+            expect(await run, mode).toEqual(NO_FLIGHT)
+            group.dispose()
+            document.body.innerHTML = ''
+        }
+    })
+
+    it('arms a root on the chain at the pass that walks it, and disarms it at the end of the task in which no chain reaches it', async () => {
+        scrollEnd(true)
+        const clock = createManualClock()
+        const group = createLayoutGroup({ clock: clock.clock, motion })
+        const host = document.createElement('div')
+        document.body.append(host)
+        const root = host.attachShadow({ mode: 'open' })
+        const added = vi.spyOn(root, 'addEventListener')
+        const removed = vi.spyOn(root, 'removeEventListener')
+        const scroller = document.createElement('div')
+        scroller.append(document.createElement('slot'))
+        root.append(scroller)
+        const item = document.createElement('div')
+        host.append(item)
+        place(item, ITEM)
+        group.add(item, { layoutId: 'card', radius: false })
+        expect(added).not.toHaveBeenCalled()
+        group.capture()
+        expect(added.mock.calls.map((call) => call[0])).toEqual([
+            'scroll',
+            'scrollend',
+        ])
+        await group.flush()
+        expect(added).toHaveBeenCalledTimes(2)
+        expect(removed).not.toHaveBeenCalled()
+        // the item leaves the slot: the next pass does not reach the root
+        document.body.append(item)
+        group.capture()
+        await group.flush()
+        expect(removed.mock.calls.map((call) => call[0])).toEqual([
+            'scroll',
+            'scrollend',
+        ])
+        // back under the slot: armed again
+        host.append(item)
+        group.capture()
+        expect(added).toHaveBeenCalledTimes(4)
+        group.dispose()
+        expect(removed).toHaveBeenCalledTimes(4)
+    })
+})
+
+describe('§5.8 the viewport-fixed test covers reparents', () => {
+    /** A shared participant arms the listeners; `card` is a plain participant in the document. */
+    async function cardSetup() {
+        scrollEnd(true)
+        const clock = createManualClock()
+        const group = createLayoutGroup({ clock: clock.clock, motion })
+        const shared = document.createElement('div')
+        document.body.append(shared)
+        place(shared, { x: 0, y: 500, w: 10, h: 10 })
+        group.add(shared, { layoutId: 'arm', radius: false })
+        const card = document.createElement('div')
+        document.body.append(card)
+        place(card, { x: 10, y: 200, w: 100, h: 40 })
+        group.add(card)
+        group.capture()
+        await group.flush()
+        const sheet = document.createElement('div')
+        sheet.style.position = 'fixed'
+        document.body.append(sheet)
+        // the offsetParent walk ends at the fixed sheet
+        vi.spyOn(
+            HTMLElement.prototype,
+            'offsetParent',
+            'get'
+        ).mockImplementation(function (this: HTMLElement) {
+            return this.parentElement === sheet ? sheet : null
+        })
+        return { clock, group, card, sheet }
+    }
+
+    it('a card reparented into a fixed sheet while the document scrolls appears at A; each offsetParent read is counted', async () => {
+        const { group, card, sheet } = await cardSetup()
+        document.dispatchEvent(new Event('scroll'))
+        group.capture()
+        sheet.append(card)
+        place(card, { x: 400, y: 20, w: 100, h: 40 })
+        const before = group.stats
+        const run = group.flush()
+        expect(card.style.cssText).toBe('')
+        expect(await run).toEqual(NO_FLIGHT)
+        expect(warnings).toHaveLength(1)
+        // card → sheet → null: two reads, and the computed style of the sheet
+        expect(group.stats.parents - before.parents).toBe(2)
+        group.dispose()
+    })
+
+    it('a card reparented into a plain parent while the document scrolls still flies', async () => {
+        const { clock, group, card } = await cardSetup()
+        const plain = document.createElement('div')
+        document.body.append(plain)
+        document.dispatchEvent(new Event('scroll'))
+        group.capture()
+        plain.append(card)
+        place(card, { x: 400, y: 20, w: 100, h: 40 })
+        const before = group.stats
+        const run = group.flush()
+        expect(card.style.translate).toBe('-390px 180px')
+        expect(group.stats.parents - before.parents).toBe(1)
+        clock.frames(30)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
+        group.dispose()
+    })
+
+    it('a card whose flat parent did not change runs no offsetParent walk', async () => {
+        const { clock, group, card } = await cardSetup()
+        document.dispatchEvent(new Event('scroll'))
+        group.capture()
+        place(card, { x: 60, y: 200, w: 100, h: 40 })
+        const before = group.stats
+        const run = group.flush()
+        expect(card.style.translate).toBe('-50px 0px')
+        expect(group.stats.parents).toBe(before.parents)
+        clock.frames(30)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
+        group.dispose()
+    })
+})
+
+describe('§5.8 a degraded lead with a presence', () => {
+    it('enters under its presence, with no flight', async () => {
+        const { clock, group, scroller, item, removeItem } = await setup({
+            scrollEnd: true,
+        })
+        scroller.dispatchEvent(new Event('scroll'))
+        group.capture()
+        removeItem()
+        item.remove()
+        const lead = document.createElement('div')
+        document.body.append(lead)
+        place(lead, DETAIL)
+        group.add(lead, { layoutId: 'card', radius: false })
+        const presence = createPresence(
+            lead,
+            {
+                initial: { translateY: 24 },
+                present: { translateY: 0 },
+                enter: ani({
+                    to: { translateY: 0 },
+                    duration: 0.1,
+                    timing: timing.linear(),
+                }),
+                exit: ani({
+                    to: { translateY: 24 },
+                    duration: 0.1,
+                    timing: timing.linear(),
+                }),
+            },
+            { clock: clock.clock }
+        )
+        const entered = presence.enter()
+        const run = group.flush()
+        expect(await run).toEqual(NO_FLIGHT)
+        expect(warnings).toHaveLength(1)
+        const seen: string[] = []
+        for (let f = 0; f < 12; f++) {
+            clock.frames(1)
+            // the presence draws the enter; layout writes no pose
+            seen.push(lead.style.transform)
+            expect(lead.style.translate).toBe('')
+            expect(lead.style.scale).toBe('')
+        }
+        expect(await entered).toBe('ended')
+        expect(new Set(seen).size).toBeGreaterThan(2)
+        presence.dispose()
+        group.dispose()
+    })
+})
+
+describe('§5.8 disarm at the end of the task', () => {
+    it('a lead removed and re-added in one task keeps the listeners and the active state', async () => {
+        const { group, scroller, item, removeItem } = await setup({
+            scrollEnd: true,
+        })
+        const removed = vi.spyOn(document, 'removeEventListener')
+        scroller.dispatchEvent(new Event('scroll'))
+        // one task: the lead unmounts and a new one mounts in its place
+        removeItem()
+        item.remove()
+        const again = document.createElement('div')
+        scroller.append(again)
+        place(again, ITEM)
+        const removeAgain = group.add(again, {
+            layoutId: 'card',
+            radius: false,
+        })
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(removed).not.toHaveBeenCalled()
+        group.capture()
+        await group.flush()
+        // the scroller is still active: a handoff out of it does not fly
+        const { lead, authored, run } = handoff(
+            group,
+            again,
+            removeAgain,
+            document.body
+        )
+        expect(lead.style.cssText).toBe(authored)
+        expect(await run).toEqual(NO_FLIGHT)
+        group.dispose()
+    })
+
+    it('a real disarm clears the active state', async () => {
+        const { clock, group, scroller, item, removeItem } = await setup({
+            scrollEnd: true,
+        })
+        const removed = vi.spyOn(document, 'removeEventListener')
+        scroller.dispatchEvent(new Event('scroll'))
+        removeItem()
+        await Promise.resolve()
+        expect(removed).toHaveBeenCalledTimes(2)
+        // a later task: a shared participant in the same scroller again
+        const again = document.createElement('div')
+        scroller.append(again)
+        place(again, ITEM)
+        const removeAgain = group.add(again, {
+            layoutId: 'card',
+            radius: false,
+        })
+        group.capture()
+        await group.flush()
+        item.remove()
+        const { lead, run } = handoff(group, again, removeAgain, document.body)
+        // nothing scrolled since the listeners were armed again: it flies
+        expect(lead.style.translate).toBe('-350px 60px')
+        clock.frames(30)
+        expect(await run).toEqual({ status: 'ended', snapped: [] })
         group.dispose()
     })
 })

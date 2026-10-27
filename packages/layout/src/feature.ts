@@ -50,12 +50,14 @@ export function knownTransformAnchoring(doc: Document): boolean | undefined {
  * Whether a transform of a scroll container's anchor node moves its scroll
  * offset (Firefox counts the anchor's transform; Chromium suppresses on it;
  * WebKit has no CSS anchoring), §11.4 S2. Run once per document: a fixed,
- * hidden 10 × 10 scroll container at `scrollTop` 10 with one child, one
- * `translate` write on the child, a 1 px reflow of the container (a reflow
- * of the anchor itself would suppress the adjustment), one `scrollTop` read.
- * The container is removed in the same task. The translate moves the anchor
- * down, so a scroll offset past 10 is the browser following it; without
- * layout the offset stays where it was set, or at 0.
+ * hidden 10 × 10 scroll container with no scrollbar (`scrollbar-width: none`:
+ * a classic scrollbar would take its whole scrollport, so nothing could
+ * scroll or anchor) at `scrollTop` 10 with one child, one `translate` write
+ * on the child, a 1 px reflow of the container (a reflow of the anchor
+ * itself would suppress the adjustment), one `scrollTop` read. The container
+ * is removed in the same task. The translate moves the anchor down, so a
+ * scroll offset past 10 is the browser following it; without layout the
+ * offset stays where it was set, or at 0.
  */
 export function probeTransformAnchoring(doc: Document): boolean {
     const known = transformAnchors.get(doc)
@@ -65,7 +67,7 @@ export function probeTransformAnchoring(doc: Document): boolean {
     if (parent) {
         const box = doc.createElement('div')
         box.style.cssText =
-            'position:fixed;left:0;top:0;width:10px;height:10px;margin:0;padding:0;border:0;overflow:scroll;overflow-anchor:auto;visibility:hidden;pointer-events:none;'
+            'position:fixed;left:0;top:0;width:10px;height:10px;margin:0;padding:0;border:0;overflow:scroll;scrollbar-width:none;overflow-anchor:auto;visibility:hidden;pointer-events:none;'
         const child = doc.createElement('div')
         child.style.cssText =
             'display:block;height:40px;margin:0;padding:0;border:0;overflow-anchor:auto;'

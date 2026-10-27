@@ -36,8 +36,6 @@ export interface Measured {
     readonly originPct: readonly [number, number] | null
     /** Corner radii (tl, tr, br, bl as x/y pairs), when asked for. */
     readonly radius: readonly Len[] | null
-    /** It is itself a scroll container (an `overflow` other than `visible` or `clip`). */
-    readonly scrollContainer: boolean
 }
 
 const IDENTITY_MATRIX = { a: 1, d: 1, e: 0, f: 0 }
@@ -394,15 +392,7 @@ export function measure(
         origin: [origin[0] ?? 0, origin[1] ?? 0],
         originPct: snapsReference ? originPercents(element) : null,
         radius: radii,
-        scrollContainer:
-            scrollsOverflow(style.overflowX) ||
-            scrollsOverflow(style.overflowY),
     }
-}
-
-/** An `overflow` value that makes a scroll container. */
-function scrollsOverflow(value: string): boolean {
-    return value !== '' && value !== 'visible' && value !== 'clip'
 }
 
 /**
@@ -417,43 +407,65 @@ export function isShadowRoot(node: Node): node is ShadowRoot {
 }
 
 /**
- * The slot that holds `node` in the known closed root of its parent element:
- * the one whose `assignedNodes()` holds it (§4.6). `assignedSlot` is null for
- * a node slotted into a closed root; an open root needs no search.
+ * One pass's view of the flat tree (§4.6): the known roots, and the
+ * node-to-slot map of every known closed root, built once when the pass
+ * starts (`assignedSlot` is null for a node slotted into a closed root; an
+ * open root needs no map). The DOM does not change while it is used.
  */
-function knownSlot(
-    node: Node,
-    host: Element | null,
-    roots: KnownRoots | undefined
-): HTMLSlotElement | null {
-    const root = host ? roots?.get(host) : undefined
-    if (!root || root.mode === 'open') return null
-    const slots = root.querySelectorAll('slot')
-    for (let i = 0; i < slots.length; i++) {
-        const slot = slots[i]!
-        if (slot.assignedNodes().includes(node as ChildNode)) return slot
+export interface FlatTree {
+    readonly roots: KnownRoots
+    /** Per node slotted into a known closed root, its slot. */
+    readonly slots: ReadonlyMap<Node, HTMLSlotElement>
+    /**
+     * When collected, the shadow root each step of a walk enters (an
+     * assigned slot's root, a host's root): with the root of each walk's
+     * first node, every shadow root on the chains walked (§5.8).
+     */
+    readonly passed: Set<ShadowRoot> | null
+}
+
+/** The flat tree of one pass over `roots`; `passed` collects the shadow roots its walks enter. */
+export function flatTree(
+    roots: KnownRoots,
+    passed: Set<ShadowRoot> | null = null
+): FlatTree {
+    const slots = new Map<Node, HTMLSlotElement>()
+    for (const root of roots.values()) {
+        if (root.mode === 'open') continue
+        const list = root.querySelectorAll('slot')
+        for (let i = 0; i < list.length; i++) {
+            const slot = list[i]!
+            for (const node of slot.assignedNodes()) slots.set(node, slot)
+        }
     }
-    return null
+    return { roots, slots, passed }
 }
 
 /**
  * Flat-tree parent of `node` (§4.6): its assigned slot (`assignedSlot`, or
- * for a node whose parent element hosts a known closed root, the slot of that
- * root that holds it), else `parentElement`, else the `host` of `node`'s
- * `ShadowRoot` parent (open or closed). A closed root the scope does not know
- * holds no participant, so the walk passes from a node slotted into it
- * straight to its host.
+ * for a node slotted into a known closed root, its slot in the pass's map),
+ * else `parentElement`, else the `host` of `node`'s `ShadowRoot` parent (open
+ * or closed). A closed root the scope does not know holds no participant, so
+ * the walk passes from a node slotted into it straight to its host.
  */
-export function flatParent(node: Node, roots?: KnownRoots): HTMLElement | null {
+export function flatParent(node: Node, tree?: FlatTree): HTMLElement | null {
     const element = node.parentElement
     const slot =
-        (node as Partial<Slottable>).assignedSlot ??
-        knownSlot(node, element, roots)
-    if (slot) return slot
+        (node as Partial<Slottable>).assignedSlot ?? tree?.slots.get(node)
+    if (slot) {
+        // a slot lives in a shadow root: the step enters it
+        tree?.passed?.add(slot.getRootNode() as ShadowRoot)
+        return slot
+    }
     if (element) return element
     const parent = node.parentNode
     if (parent && isShadowRoot(parent) && parent.host) {
-        return parent.host as HTMLElement
+        const host = parent.host as HTMLElement
+        if (tree?.passed) {
+            const root = host.getRootNode()
+            if (isShadowRoot(root)) tree.passed.add(root)
+        }
+        return host
     }
     return null
 }
@@ -465,12 +477,12 @@ export function flatParent(node: Node, roots?: KnownRoots): HTMLElement | null {
 export function containsFlat(
     ancestor: Node,
     node: Node | null | undefined,
-    roots?: KnownRoots
+    tree?: FlatTree
 ): boolean {
     for (
         let current: Node | null = node ?? null;
         current;
-        current = flatParent(current, roots)
+        current = flatParent(current, tree)
     ) {
         if (current === ancestor) return true
     }
@@ -479,19 +491,27 @@ export function containsFlat(
 
 /**
  * Whether `element` is viewport-fixed: its `offsetParent` walk ends at a fixed
- * element (§5.8). One computed-style read, of the walk's end. A fixed element
- * has no offset parent, so the walk ends at it.
+ * element (§5.8). A fixed element has no offset parent, so the walk ends at
+ * it; Gecko gives it the body instead, so the walk's elements are read from
+ * its end back until one is fixed. Each `offsetParent` read is counted in
+ * `count.parents`, each computed-style read in `count.styles`.
  */
-export function viewportFixed(element: HTMLElement): boolean {
-    let end: Element = element
-    for (
-        let next = element.offsetParent;
-        next;
-        next = (next as HTMLElement).offsetParent
-    ) {
-        end = next
+export function viewportFixed(
+    element: HTMLElement,
+    count: { parents: number; styles: number }
+): boolean {
+    const walk: Element[] = [element]
+    for (;;) {
+        count.parents += 1
+        const next = (walk[walk.length - 1] as HTMLElement).offsetParent
+        if (!next) break
+        walk.push(next)
     }
-    return getComputedStyle(end).position === 'fixed'
+    for (let i = walk.length - 1; i >= 0; i--) {
+        count.styles += 1
+        if (getComputedStyle(walk[i]!).position === 'fixed') return true
+    }
+    return false
 }
 
 /* ───────────────────────── owned styles ───────────────────────── */

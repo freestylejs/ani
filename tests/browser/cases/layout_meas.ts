@@ -38,7 +38,8 @@ import {
     viewBox,
 } from './layout_kit'
 
-export const pageOptions = {}
+/** `L_MEAS_14_CLASSIC` runs in a Firefox of its own with classic scrollbars (`run.ts`). */
+export const pageOptions = { L_MEAS_14_CLASSIC: { classicScrollbars: true } }
 
 /**
  * Rows the current engine cannot pass yet. Each entry names what is missing;
@@ -2217,7 +2218,165 @@ export function L_MEAS_10(): Promise<string> {
         ['open root (ii), path 3', () => meas10('open', SUB_MOVE)],
         ['closed root (i), path 1', () => meas10('closed', 0)],
         ['closed root (ii), path 3', () => meas10('closed', SUB_MOVE)],
+        [
+            '(b) moved from the document into a closed root',
+            () => meas10Moved('document'),
+        ],
+        [
+            '(b) moved from one closed root into another',
+            () => meas10Moved('closed root'),
+        ],
     ])
+}
+
+/**
+ * L-MEAS-10 (b): a registered panel (a participant holding a `<slot>`) moves
+ * into a closed root between flushes, from the document or from another
+ * closed root, and a light-DOM participant of that root's host is slotted
+ * into it. From the next pass the panel's new root is tracked (§4.6): a
+ * commit that runs the panel's size track from scale 2 draws the slotted
+ * child exactly on its own oracle, counter-projected under the panel, and
+ * no pass looks into the root the panel left.
+ */
+async function meas10Moved(from: 'document' | 'closed root'): Promise<string> {
+    const row = `L_MEAS_10 (b) from ${from}`
+    const ease = timing.easeOut()
+    const { h, snaps, names } = harnessWithSnaps(ease)
+    try {
+        const scroller = node(
+            h.root,
+            'left: 20px; top: 20px; width: 420px; height: 400px; overflow-y: auto;'
+        )
+        const content = document.createElement('div')
+        content.style.cssText =
+            'position: relative; width: 400px; height: 800px;'
+        scroller.append(content)
+        /** A host whose closed root has a frame with the default slot (the child's place until a panel takes it). */
+        const closedHost = (top: number) => {
+            const host = node(
+                content,
+                `left: 10px; top: ${top}px; width: 380px; height: 320px;`
+            )
+            const shadow = host.attachShadow({ mode: 'closed' })
+            const frame = document.createElement('div')
+            frame.style.cssText =
+                'position: absolute; left: 0; top: 200px; width: 300px; height: 100px;'
+            const fallback = document.createElement('slot')
+            frame.append(fallback)
+            shadow.append(frame)
+            return { host, shadow, fallback }
+        }
+        const target = closedHost(60)
+        const panel = document.createElement('div')
+        panel.style.cssText =
+            'position: absolute; left: 0; top: 0; width: 300px; height: 150px; box-sizing: border-box; transform-origin: 0 0;'
+        panel.append(document.createElement('slot'))
+        const slotted = document.createElement('div')
+        slotted.style.cssText =
+            'position: absolute; left: 10px; top: 60px; width: 60px; height: 30px; box-sizing: border-box; transform-origin: 0 0;'
+        let left: { slot: HTMLSlotElement; calls: number } | null = null
+        if (from === 'document') {
+            content.append(panel)
+            target.host.append(slotted)
+        } else {
+            const source = closedHost(420)
+            source.shadow.prepend(panel)
+            source.host.append(slotted)
+            const slot = source.fallback
+            const counter = { slot, calls: 0 }
+            const assigned = slot.assignedNodes.bind(slot)
+            slot.assignedNodes = (options?: AssignedNodesOptions) => {
+                counter.calls++
+                return assigned(options)
+            }
+            left = counter
+        }
+        addNamed(h, names, { panel, 'slotted child': slotted })
+        await baseline(h, row)
+
+        // between flushes: the panel moves into the target's closed root and
+        // takes the slotted child (the first default slot in tree order)
+        h.group.capture()
+        target.shadow.prepend(panel)
+        if (from === 'closed root') target.host.append(slotted)
+        if (left) left.calls = 0
+        const quiet = silenceWarnings()
+        try {
+            void h.group.flush()
+            h.group.finish()
+        } finally {
+            quiet.restore()
+        }
+        snaps.length = 0
+        await settleMicrotasks()
+        await baseline(h, `${row} after the move`)
+
+        const bPanel = viewBox(panel)
+        const bKid = viewBox(slotted)
+        h.group.capture()
+        panel.style.width = '150px'
+        panel.style.height = '75px'
+        slotted.style.left = '70px'
+        const authoredPanel = panel.style.cssText
+        const authoredKid = slotted.style.cssText
+        const aPanel = viewBox(panel)
+        const aKid = viewBox(slotted)
+        const run = report(h.group.flush())
+        const sPanel = spec(bPanel, aPanel, { timing: ease })
+        const sKid = spec(bKid, aKid, { timing: ease })
+        let worst = 0
+        const check = (label: string, f: number) => {
+            const t = restAt(f)
+            try {
+                worst = Math.max(
+                    worst,
+                    expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
+                        [panel, expectedBox(sPanel, t), 'panel'],
+                        [slotted, expectedBox(sKid, t), 'slotted child'],
+                    ])
+                )
+            } catch (error) {
+                // where it is drawn when planned without the panel as parent
+                const p = expectedBox(sPanel, t)
+                const o = expectedBox(sKid, t)
+                const k = p.w / aPanel.w
+                const unparented = {
+                    x: p.x + (o.x - aPanel.x) * k,
+                    y: p.y + (o.y - aPanel.y) * k,
+                    w: o.w * k,
+                    h: o.h * k,
+                }
+                if (
+                    error instanceof Error &&
+                    maxDiff(viewBox(slotted), unparented) <= 0.5
+                ) {
+                    error.message += `; it is drawn at ${JSON.stringify(unparented)}, its own track under the panel's pose: planned without the panel as its parent, so the panel's new root is not tracked (§4.6)`
+                }
+                throw error
+            }
+        }
+        check('flush write', 0)
+        await expectRunning(names, run, `${row} flush`)
+        let f = 0
+        while (run.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            check(`frame ${f}`, f)
+        }
+        expectReport(names, run.value!, 'ended', [], `${row} run`)
+        expectSnapCalls(names, snaps, [], `${row} run`)
+        expectRestored(panel, authoredPanel, `${row} panel`)
+        expectRestored(slotted, authoredKid, `${row} slotted child`)
+        if (left && left.calls !== 0) {
+            throw new Error(
+                `${row}: a pass called assignedNodes() ${left.calls} times on a slot of the closed root the panel left, which holds no participant: the old root was not dropped (§4.6)`
+            )
+        }
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `${f} frames, panel and slotted child on the oracle ≤ ${worst.toFixed(3)} px`
+    } finally {
+        h.dispose()
+    }
 }
 
 async function meas10(mode: ShadowRootMode, move: number): Promise<string> {
@@ -3063,12 +3222,21 @@ const ANCHOR_FRAMES = 24
  * scroll offset absorbs the shift; there is none in WebKit, which has no CSS
  * anchoring); with only driven cards visible the shift is presented
  * uncompensated and the cards follow content. The fallback (`overflow-anchor:
- * none` on every driven card) is written only where the probe says a
- * transform moves the anchor: in Firefox, never in Chromium or WebKit.
+ * none` on every driven card, scroll containers included; the WAAPI engine
+ * carries it in both keyframes of each animation) applies only where the
+ * probe says a transform moves the anchor: in Firefox, never in Chromium or
+ * WebKit. (a) also runs with `overflow: hidden` cards (each a scroll
+ * container) and with the WAAPI engine; `L_MEAS_14_CLASSIC` runs it in
+ * Firefox with classic scrollbars.
  */
 export function L_MEAS_14(): Promise<string> {
     return variants('L_MEAS_14', [
-        ['(a) a commit that also scrolls', meas14Scroll],
+        ['(a) a commit that also scrolls', () => meas14Scroll()],
+        [
+            '(a) overflow: hidden cards',
+            () => meas14Scroll({ overflow: 'hidden' }),
+        ],
+        ['(a) the WAAPI engine', () => meas14Scroll({ engine: 'waapi' })],
         [
             '(b) a banner grows, non-driven content visible',
             () => meas14Shift('grow', 'mixed'),
@@ -3089,33 +3257,101 @@ export function L_MEAS_14(): Promise<string> {
 }
 
 /**
- * The S2 fallback on each driven card: `overflow-anchor: none !important`
- * where a transform moves the scroll anchor (Firefox, §11.4 S2), nothing
- * elsewhere.
+ * L-MEAS-14 (a) in Firefox with classic scrollbars (`ui.useOverlayScrollbars`
+ * 0, `pageOptions`): a scrollbar that takes space must not empty the probe's
+ * 10 × 10 scrollport, or the probe reads no anchoring and the fallback is
+ * never applied (§11.4 S2: the probe has no scrollbar). Elsewhere it runs as
+ * (a).
+ */
+export async function L_MEAS_14_CLASSIC(): Promise<string> {
+    let note = ''
+    if (navigator.userAgent.includes('Firefox')) {
+        const probe = document.createElement('div')
+        probe.style.cssText =
+            'position: absolute; width: 100px; height: 100px; overflow: scroll;'
+        document.body.append(probe)
+        const thickness = probe.offsetWidth - probe.clientWidth
+        probe.remove()
+        if (thickness <= 0) {
+            throw new Error(
+                'L_MEAS_14_CLASSIC setup: Firefox draws overlay scrollbars here (an overflow: scroll box keeps its whole width); the run needs classic scrollbars (ui.useOverlayScrollbars 0)'
+            )
+        }
+        note = `classic scrollbars ${thickness} px; `
+    }
+    return note + (await meas14Scroll({ label: 'classic scrollbars' }))
+}
+
+/**
+ * The S2 fallback on each driven card where a transform moves the scroll
+ * anchor (Firefox, §11.4 S2), nothing elsewhere: with the `'raf'` engine an
+ * owned `overflow-anchor: none !important`; with the WAAPI engine no inline
+ * declaration, and `overflow-anchor: none` in both keyframes of the card's
+ * animation (§6).
  */
 function expectAnchorFallback(
     names: Names,
     driven: readonly HTMLElement[],
-    label: string
+    label: string,
+    engine: 'raf' | 'waapi' = 'raf'
 ): void {
     const fallback = navigator.userAgent.includes('Firefox')
+    const why = fallback
+        ? 'Firefox counts the anchor node’s transform'
+        : 'this engine does not re-anchor on a transform'
     for (const card of driven) {
         const value = card.style.getPropertyValue('overflow-anchor')
         const priority = card.style.getPropertyPriority('overflow-anchor')
-        const want = fallback ? 'none !important' : 'no declaration'
         const got = value === '' ? 'no declaration' : `${value} !${priority}`
+        const want =
+            fallback && engine === 'raf' ? 'none !important' : 'no declaration'
         if (got !== want) {
             throw new Error(
-                `${label} ${nameOf(names, card)}: overflow-anchor is ${got}, expected ${want} (${fallback ? 'Firefox counts the anchor node’s transform' : 'this engine does not re-anchor on a transform'}, §11.4 S2)`
+                `${label} ${nameOf(names, card)}: overflow-anchor is ${got}, expected ${want} (${why}, §11.4 S2)`
+            )
+        }
+        if (engine !== 'waapi') continue
+        const keyframes = card
+            .getAnimations()
+            .flatMap((a) => (a.effect as KeyframeEffect).getKeyframes())
+        const carried = keyframes.map((k) => k.overflowAnchor ?? 'absent')
+        const expected = keyframes.map(() => (fallback ? 'none' : 'absent'))
+        if (
+            keyframes.length !== 2 ||
+            carried.join(',') !== expected.join(',')
+        ) {
+            throw new Error(
+                `${label} ${nameOf(names, card)}: its animation's keyframes carry overflow-anchor [${carried.join(', ')}], expected [${expected.join(', ')}] (${why}, §6, §11.4 S2)`
             )
         }
     }
 }
 
-async function meas14Scroll(): Promise<string> {
-    const row = 'L_MEAS_14 (a)'
+/**
+ * (a): cards of two columns are driven from a commit that moves one card to
+ * the other column and scrolls it (the L-MEAS-2 shape); `overflow: hidden`
+ * makes every card a scroll container; the WAAPI engine draws the same
+ * tracks, each animation paused and seeked to the frame's time (§10).
+ */
+async function meas14Scroll(
+    variant: {
+        readonly overflow?: 'hidden'
+        readonly engine?: 'waapi'
+        readonly label?: string
+    } = {}
+): Promise<string> {
+    const engine = variant.engine ?? 'raf'
+    const row = `L_MEAS_14 (a)${variant.overflow ? ` overflow: ${variant.overflow}` : ''}${engine === 'waapi' ? ' WAAPI' : ''}${variant.label ? ` ${variant.label}` : ''}`
     const ease = timing.easeOut()
-    const { h, snaps, names } = harnessWithSnaps(ease)
+    const snaps: Snap[] = []
+    const names: Names = new Map()
+    const h = harness({
+        motion: { duration: D, timing: ease },
+        ...(engine === 'waapi' ? { engine } : {}),
+        onSnap(element, reason) {
+            snaps.push({ element, reason })
+        },
+    })
     try {
         const column = (left: number) =>
             node(
@@ -3126,11 +3362,13 @@ async function meas14Scroll(): Promise<string> {
         const columnB = column(200)
         const card = (col: HTMLElement, name: string) => {
             const element = document.createElement('div')
-            element.style.cssText =
-                'position: relative; width: 140px; height: 60px; margin-bottom: 10px; transform-origin: 0 0;'
+            element.style.cssText = `position: relative; width: 140px; height: 60px; margin-bottom: 10px; transform-origin: 0 0;${variant.overflow ? ` overflow: ${variant.overflow};` : ''}`
             col.append(element)
             names.set(element, name)
-            h.add(element)
+            h.add(
+                element,
+                engine === 'waapi' ? { layout: 'position' } : undefined
+            )
             return element
         }
         const as = [0, 1, 2].map((i) => card(columnA, `a${i}`))
@@ -3157,7 +3395,19 @@ async function meas14Scroll(): Promise<string> {
                 : null
         )
         const driven = cards.filter((_, i) => specs[i] !== null)
+        // the WAAPI tracks are drawn at each frame's time (§10)
+        const animations =
+            engine === 'waapi' ? driven.flatMap((c) => c.getAnimations()) : []
+        if (engine === 'waapi' && animations.length !== driven.length) {
+            throw new Error(
+                `${row}: ${animations.length} animations for ${driven.length} driven cards`
+            )
+        }
+        for (const animation of animations) animation.pause()
         const check = (label: string, t: number) => {
+            for (const animation of animations) {
+                animation.currentTime = t * 1000
+            }
             const offsets = [columnA.scrollTop, columnB.scrollTop]
             if (offsets[0] !== scrolled[0] || offsets[1] !== scrolled[1]) {
                 throw new Error(
@@ -3177,13 +3427,33 @@ async function meas14Scroll(): Promise<string> {
             )
         }
         let worst = check('flush write', 0)
-        expectAnchorFallback(names, driven, `${row} flush write`)
+        expectAnchorFallback(names, driven, `${row} flush write`, engine)
         await expectRunning(names, run, `${row} flush`)
         for (let f = 1; f <= ANCHOR_FRAMES; f++) {
             await step(h.mc)
             worst = Math.max(worst, check(`frame ${f}`, restAt(f)))
-            if (run.value === null) {
+            if (run.value === null && engine === 'raf') {
                 expectAnchorFallback(names, driven, `${row} frame ${f}`)
+            }
+            if (engine === 'waapi') {
+                // the WAAPI engine writes no inline style (§10)
+                cards.forEach((c, i) =>
+                    expectEqual(
+                        c.style.cssText,
+                        authored[i]!,
+                        `${row} frame ${f} ${nameOf(names, c)}: no inline write`
+                    )
+                )
+            }
+        }
+        if (engine === 'waapi') {
+            for (const animation of animations) {
+                animation.play()
+                animation.finish()
+            }
+            for (let i = 0; i < 3 && run.value === null; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 0))
+                await settleMicrotasks()
             }
         }
         expectReport(names, run.value!, 'ended', [], `${row} run`)
@@ -3477,34 +3747,135 @@ export async function L_HAND_1(): Promise<string> {
 /* ───────────────────────── L-HAND-2 ───────────────────────── */
 
 /**
- * L-HAND-2: a handoff whose departing node is inside a scroller between its
- * `scroll` and `scrollend` events does not fly (§5.8): the new lead, with no
- * presence, appears at A, and time does not clear the state. After
- * `scrollend` a handoff out of the same scroller is a normal flight. Where
- * the browser has no `scrollend` (§5.8), every handoff out of a container that
- * scrolled since the scope bound degrades the same way, so the second leg is
- * expected not to fly there.
+ * L-HAND-2: a handoff whose departing node is inside an active scroll
+ * container (between its `scroll` and `scrollend` events) while the new lead
+ * is outside it does not fly (§5.8): the new lead appears at A (with a
+ * presence, it enters under its presence alone), and time does not clear the
+ * state. After `scrollend` a handoff out of the same container is a normal
+ * flight. Where the browser has no `scrollend` (§5.8), every handoff out of a
+ * container that scrolled since the scope bound degrades the same way, so
+ * the second leg is expected not to fly there. The source container is an
+ * inner scroller; the document (with a viewport-fixed lead); a scroller
+ * inside an open root that holds no participant, around the slot of the
+ * items; a scroller in an outer root around the closed root that holds the
+ * items. `scroll` and `scrollend` are not composed, so only listeners on
+ * those roots see them (§4.6, §5.8). A reparent into a viewport-fixed sheet
+ * while the document scrolls degrades the same way.
  */
-export async function L_HAND_2(): Promise<string> {
-    const row = 'L_HAND_2'
+export function L_HAND_2(): Promise<string> {
+    return variants('L_HAND_2', [
+        ['an inner scroller', () => hand2('scroller', false)],
+        ['the document, a viewport-fixed lead', () => hand2('document', false)],
+        [
+            'a scroller in an open root that holds no participant, around a slot',
+            () => hand2('open root', false),
+        ],
+        [
+            'a scroller in an outer root, around the root that holds the items',
+            () => hand2('outer root', false),
+        ],
+        [
+            'an inner scroller, the new lead with a presence',
+            () => hand2('scroller', true),
+        ],
+        [
+            'a reparent into a viewport-fixed sheet while the document scrolls',
+            hand2Reparent,
+        ],
+    ])
+}
+
+type Hand2Source = 'scroller' | 'document' | 'open root' | 'outer root'
+
+/**
+ * The source container of a L-HAND-2 variant: the element its items are
+ * appended to, its scroll event target, and the real scroll that is presented
+ * before it becomes active.
+ */
+function hand2Source(
+    root: HTMLElement,
+    source: Hand2Source
+): {
+    readonly parent: HTMLElement
+    readonly target: EventTarget
+    readonly scroller: HTMLElement | null
+} {
+    const scrollerCss =
+        'left: 20px; top: 20px; width: 240px; height: 180px; overflow-y: auto;'
+    const contentCss = 'position: relative; width: 220px; height: 600px;'
+    if (source === 'document') {
+        return { parent: root, target: document, scroller: null }
+    }
+    if (source === 'scroller') {
+        const scroller = node(root, scrollerCss)
+        const content = document.createElement('div')
+        content.style.cssText = contentCss
+        scroller.append(content)
+        return { parent: content, target: scroller, scroller }
+    }
+    if (source === 'open root') {
+        // the items are the host's light DOM, slotted into the root's content
+        const host = node(
+            root,
+            'left: 20px; top: 20px; width: 240px; height: 180px;'
+        )
+        const shadow = host.attachShadow({ mode: 'open' })
+        const scroller = document.createElement('div')
+        scroller.style.cssText = `position: absolute; box-sizing: border-box; ${scrollerCss} left: 0; top: 0;`
+        const content = document.createElement('div')
+        content.style.cssText = contentCss
+        content.append(document.createElement('slot'))
+        scroller.append(content)
+        shadow.append(scroller)
+        return { parent: host, target: scroller, scroller }
+    }
+    // the items are in a closed root, inside a scroller of an outer root
+    const outer = node(
+        root,
+        'left: 20px; top: 20px; width: 240px; height: 180px;'
+    )
+    const outerRoot = outer.attachShadow({ mode: 'closed' })
+    const scroller = document.createElement('div')
+    scroller.style.cssText = `position: absolute; box-sizing: border-box; ${scrollerCss} left: 0; top: 0;`
+    const content = document.createElement('div')
+    content.style.cssText = contentCss
+    scroller.append(content)
+    outerRoot.append(scroller)
+    const inner = document.createElement('div')
+    inner.style.cssText = 'position: absolute; inset: 0;'
+    content.append(inner)
+    const innerRoot = inner.attachShadow({ mode: 'closed' })
+    const wrapper = document.createElement('div')
+    wrapper.style.cssText = contentCss
+    innerRoot.append(wrapper)
+    return { parent: wrapper, target: scroller, scroller }
+}
+
+/** The presence `translate` of an element (its computed `transform`), px. */
+function presenceShift(element: Element): readonly [number, number] {
+    const transform = getComputedStyle(element).transform
+    if (transform === 'none') return [0, 0]
+    const m = new DOMMatrixReadOnly(transform)
+    return [m.e, m.f]
+}
+
+async function hand2(
+    source: Hand2Source,
+    withPresence: boolean
+): Promise<string> {
+    const row = `L_HAND_2 ${source}${withPresence ? ', presence' : ''}`
     const linear = timing.linear()
     const { h, snaps, names } = harnessWithSnaps(linear)
+    const presences: { dispose(): void }[] = []
     try {
         const hasScrollEnd = 'onscrollend' in window
-        const scroller = node(
-            h.root,
-            'left: 20px; top: 20px; width: 240px; height: 180px; overflow-y: auto;'
-        )
-        const content = document.createElement('div')
-        content.style.cssText =
-            'position: relative; width: 220px; height: 600px;'
-        scroller.append(content)
+        const { parent, target, scroller } = hand2Source(h.root, source)
         const item1 = node(
-            content,
+            parent,
             'left: 10px; top: 100px; width: 160px; height: 44px; transform-origin: 0 0;'
         )
         const item2 = node(
-            content,
+            parent,
             'left: 10px; top: 160px; width: 160px; height: 44px; transform-origin: 0 0;'
         )
         names.set(item1, 'item 1')
@@ -3513,20 +3884,30 @@ export async function L_HAND_2(): Promise<string> {
         const remove2 = h.group.add(item2, { layoutId: 'second' })
         await baseline(h, row)
 
-        // a real scroll, presented and finished
-        scroller.scrollTop = 60
-        await nextFrame()
-        await nextFrame()
-        // then the scroller is active: a scroll event, no scrollend, and time passes
-        scroller.dispatchEvent(new Event('scroll'))
+        if (scroller) {
+            // a real scroll, presented and finished
+            scroller.scrollTop = 60
+            await nextFrame()
+            await nextFrame()
+            if (Math.abs(scroller.scrollTop - 60) > 0.5) {
+                throw new Error(
+                    `${row} setup: the source scroller scrolled to ${scroller.scrollTop}, not 60`
+                )
+            }
+        }
+        // then the container is active: a scroll event, no scrollend, and time passes
+        target.dispatchEvent(new Event('scroll'))
         for (let i = 0; i < 10; i++) await step(h.mc)
 
+        // outside the document scroller only when viewport-fixed (§5.8)
+        const leadPosition = source === 'document' ? 'position: fixed; ' : ''
         const handoff = (
             departing: HTMLElement,
             remove: () => void,
             id: string,
             top: number,
-            name: string
+            name: string,
+            presence: boolean
         ) => {
             const b = viewBox(departing)
             h.group.capture()
@@ -3534,12 +3915,35 @@ export async function L_HAND_2(): Promise<string> {
             departing.remove()
             const lead = node(
                 h.root,
-                `left: 360px; top: ${top}px; width: 240px; height: 140px; transform-origin: 0 0;`
+                `${leadPosition}left: 360px; top: ${top}px; width: 240px; height: 140px; transform-origin: 0 0;`
             )
             names.set(lead, name)
             h.group.add(lead, { layoutId: id })
             const authored = lead.style.cssText
             const a = viewBox(lead)
+            let entered: Promise<unknown> | null = null
+            if (presence) {
+                const handle = createPresence(
+                    lead,
+                    {
+                        initial: { translateY: 24 },
+                        present: { translateY: 0 },
+                        enter: ani({
+                            to: { translateY: 0 },
+                            duration: 0.1,
+                            timing: timing.linear(),
+                        }),
+                        exit: ani({
+                            to: { translateY: 24 },
+                            duration: 0.1,
+                            timing: timing.linear(),
+                        }),
+                    },
+                    { clock: h.mc.clock }
+                )
+                presences.push(handle)
+                entered = handle.enter()
+            }
             const quiet = silenceWarnings()
             let run: Holder
             try {
@@ -3547,7 +3951,21 @@ export async function L_HAND_2(): Promise<string> {
             } finally {
                 quiet.restore()
             }
-            return { b, a, lead, authored, run }
+            return { b, a, lead, authored, run, entered }
+        }
+        /** Without a presence the lead is at A; with one, at A under its presence's translate. */
+        const leadBox = (x: ReturnType<typeof handoff>): OBox => {
+            if (!x.entered) return x.a
+            const [tx, ty] = presenceShift(x.lead)
+            return shiftBox(x.a, tx, ty)
+        }
+        /** The lead's inline style without the presence's `transform`: layout writes nothing. */
+        const layoutText = (x: ReturnType<typeof handoff>): string => {
+            if (!x.entered) return x.lead.style.cssText
+            const probe = document.createElement('div')
+            probe.style.cssText = x.lead.style.cssText
+            probe.style.removeProperty('transform')
+            return probe.style.cssText
         }
         const expectNoFlight = async (
             leg: string,
@@ -3557,7 +3975,7 @@ export async function L_HAND_2(): Promise<string> {
             try {
                 worst = expectViewAt(
                     x.lead,
-                    x.a,
+                    leadBox(x),
                     `${row} ${leg} flush write ${nameOf(names, x.lead)} (no flight)`
                 )
             } catch (error) {
@@ -3576,17 +3994,36 @@ export async function L_HAND_2(): Promise<string> {
             )
             expectReport(names, r, 'no-change', [], `${row} ${leg}`)
             expectSnapCalls(names, snaps, [], `${row} ${leg}`)
-            expectEqual(
-                x.lead.style.cssText,
-                x.authored,
-                `${row} ${leg}: no pose`
-            )
-            for (let f = 1; f <= 3; f++) {
+            expectEqual(layoutText(x), x.authored, `${row} ${leg}: no pose`)
+            let entered: unknown = null
+            void x.entered?.then((result) => {
+                entered = result
+            })
+            const shifts = new Set<number>()
+            for (let f = 1; f <= 3 || (x.entered && !entered && f <= 30); f++) {
                 await step(h.mc)
                 worst = Math.max(
                     worst,
-                    expectViewAt(x.lead, x.a, `${row} ${leg} frame ${f} lead`)
+                    expectViewAt(
+                        x.lead,
+                        leadBox(x),
+                        `${row} ${leg} frame ${f} lead${x.entered ? ' (A under its presence enter)' : ''}`
+                    )
                 )
+                expectEqual(
+                    layoutText(x),
+                    x.authored,
+                    `${row} ${leg} frame ${f}: no pose`
+                )
+                shifts.add(presenceShift(x.lead)[1])
+            }
+            if (x.entered) {
+                expectEqual(entered, 'ended', `${row} ${leg}: presence enter`)
+                if (shifts.size < 3 || !shifts.has(0)) {
+                    throw new Error(
+                        `${row} ${leg}: the presence enter drew translateY ${[...shifts].join(', ')}; expected it to animate to 0`
+                    )
+                }
             }
             return worst
         }
@@ -3594,12 +4031,12 @@ export async function L_HAND_2(): Promise<string> {
         // 1. while active: no flight
         let worst = await expectNoFlight(
             'active',
-            handoff(item1, remove1, 'first', 40, 'detail 1')
+            handoff(item1, remove1, 'first', 40, 'detail 1', withPresence)
         )
 
         // 2. after scrollend: a normal flight
-        scroller.dispatchEvent(new Event('scrollend'))
-        const second = handoff(item2, remove2, 'second', 220, 'detail 2')
+        target.dispatchEvent(new Event('scrollend'))
+        const second = handoff(item2, remove2, 'second', 220, 'detail 2', false)
         if (!hasScrollEnd) {
             worst = Math.max(
                 worst,
@@ -3641,6 +4078,148 @@ export async function L_HAND_2(): Promise<string> {
         expectSnapCalls(names, snaps, [], `${row} after scrollend`)
         expectViewAt(second.lead, second.a, `${row} final lead`, 0.01)
         expectRestored(second.lead, second.authored, `${row} lead`)
+        expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        return `active: no flight; after scrollend: ${f} frames on the oracle ≤ ${worst.toFixed(3)} px`
+    } finally {
+        for (const p of presences) p.dispose()
+        h.dispose()
+    }
+}
+
+/**
+ * L-HAND-2, a reparent: while the document scrolls, a card moves from the
+ * page into a `position: fixed` sheet. The departing node is the card as
+ * captured, inside the document scroller; the new lead is the same card at
+ * the flush, viewport-fixed (its flat parent changed since the capture, so
+ * the reparent rule counts the document, §5.8): it appears at A. After
+ * `scrollend` the same move of another card is a normal flight.
+ */
+async function hand2Reparent(): Promise<string> {
+    const row = 'L_HAND_2 reparent into a fixed sheet'
+    const linear = timing.linear()
+    const { h, snaps, names } = harnessWithSnaps(linear)
+    try {
+        const hasScrollEnd = 'onscrollend' in window
+        // a shared participant arms the listeners (§5.8)
+        const anchor = node(
+            h.root,
+            'left: 600px; top: 600px; width: 20px; height: 20px;'
+        )
+        names.set(anchor, 'shared')
+        h.group.add(anchor, { layoutId: 'arm', radius: false })
+        const card = (top: number, name: string) => {
+            const element = node(
+                h.root,
+                `left: 10px; top: ${top}px; width: 160px; height: 44px; transform-origin: 0 0;`
+            )
+            names.set(element, name)
+            h.group.add(element)
+            return element
+        }
+        const card1 = card(100, 'card 1')
+        const card2 = card(160, 'card 2')
+        const sheet = node(
+            h.root,
+            'position: fixed; left: 360px; top: 40px; width: 300px; height: 320px;'
+        )
+        await baseline(h, row)
+        document.dispatchEvent(new Event('scroll'))
+        for (let i = 0; i < 10; i++) await step(h.mc)
+
+        const reparent = (element: HTMLElement, top: number) => {
+            const b = viewBox(element)
+            h.group.capture()
+            sheet.append(element)
+            element.style.top = `${top}px`
+            const authored = element.style.cssText
+            const a = viewBox(element)
+            const quiet = silenceWarnings()
+            let run: Holder
+            try {
+                run = report(h.group.flush())
+            } finally {
+                quiet.restore()
+            }
+            return { b, a, authored, run, element }
+        }
+        const expectNoFlight = async (
+            leg: string,
+            x: ReturnType<typeof reparent>
+        ) => {
+            let worst = expectViewAt(
+                x.element,
+                x.a,
+                `${row} ${leg} flush write ${nameOf(names, x.element)} (no flight)`
+            )
+            const r = await expectNoRun(
+                x.run,
+                `${row} ${leg}`,
+                'a reparent out of an active container does not fly (§5.8)'
+            )
+            expectReport(names, r, 'no-change', [], `${row} ${leg}`)
+            expectSnapCalls(names, snaps, [], `${row} ${leg}`)
+            expectEqual(
+                x.element.style.cssText,
+                x.authored,
+                `${row} ${leg}: no pose`
+            )
+            for (let f = 1; f <= 3; f++) {
+                await step(h.mc)
+                worst = Math.max(
+                    worst,
+                    expectViewAt(x.element, x.a, `${row} ${leg} frame ${f}`)
+                )
+            }
+            return worst
+        }
+
+        // 1. while the document is active: no flight
+        let worst = await expectNoFlight('active', reparent(card1, 20))
+
+        // 2. after scrollend: a normal flight
+        document.dispatchEvent(new Event('scrollend'))
+        const second = reparent(card2, 120)
+        if (!hasScrollEnd) {
+            worst = Math.max(
+                worst,
+                await expectNoFlight('no scrollend', second)
+            )
+            expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+            return `active: no flight; no scrollend in this browser: the second reparent degrades too; ≤ ${worst.toFixed(3)} px`
+        }
+        const s = spec(second.b, second.a, { timing: linear })
+        worst = Math.max(
+            worst,
+            expectViewAt(
+                second.element,
+                second.b,
+                `${row} after scrollend flush write card 2`
+            )
+        )
+        await expectRunning(names, second.run, `${row} after scrollend`)
+        let f = 0
+        while (second.run.value === null && f < 60) {
+            f++
+            await step(h.mc)
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    second.element,
+                    expectedBox(s, restAt(f)),
+                    `${row} after scrollend frame ${f} t=${restAt(f).toFixed(3)} card 2`
+                )
+            )
+        }
+        expectReport(
+            names,
+            second.run.value!,
+            'ended',
+            [],
+            `${row} after scrollend`
+        )
+        expectSnapCalls(names, snaps, [], `${row} after scrollend`)
+        expectViewAt(second.element, second.a, `${row} final card 2`, 0.01)
+        expectRestored(second.element, second.authored, `${row} card 2`)
         expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
         return `active: no flight; after scrollend: ${f} frames on the oracle ≤ ${worst.toFixed(3)} px`
     } finally {

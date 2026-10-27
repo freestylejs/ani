@@ -559,7 +559,7 @@ group.dispose()
 | `update(mutate)` | `capture()`, `mutate()`, `flush()`. A throwing `mutate` discards the capture and rethrows. |
 | `finish()` | Jumps every running animation to its end. |
 | `dispose()` | Cancels everything and restores every style the group wrote. |
-| `stats` | `{ captures, reads, rects, offsets, styles, tracks, holds }`: `reads` is `rects + offsets + styles` (rects, layout-size pairs and computed styles). |
+| `stats` | `{ captures, reads, rects, offsets, styles, probes, parents, tracks, holds }`: `reads` is `rects + offsets + styles` (rects, layout-size pairs and computed styles); `probes` counts the one-time scroll-anchoring probe, `parents` the `offsetParent` reads of the viewport-fixed test. |
 
 `createLayoutGroup(options?)` takes the group options of the table in [Groups](#groups) plus `motion`. `createPresence(element, motion, options?)` is the presence handle behind `usePresence`: `enter()`, `exit()` and `dispose()`. A participant inside an exiting presence element takes part in a `layoutId` crossfade.
 
