@@ -74,6 +74,14 @@ export interface PlanNode {
     readonly optionsChanged: boolean
     /** The lead this node follows in a running crossfade, or -1. */
     readonly following: number
+    /**
+     * Its B is a valid measurement of what was presented (§4.4): false in a
+     * flush with no fresh capture, and for a node without a valid B in a fresh
+     * one (disconnected at capture, an owned declaration replaced by the
+     * author) and its participant subtree. Such a node starts nothing: a
+     * running track is kept whatever moved, any other node appears at A.
+     */
+    readonly measured: boolean
 }
 
 export interface IdHistory {
@@ -91,12 +99,6 @@ export interface PlanInput {
     readonly viewport: Box
     readonly threshold: number
     readonly maxNodes: number
-    /**
-     * The flush consumed a fresh capture, a valid measurement of what was
-     * presented. Without one (§4.4) nothing starts: every running track is
-     * kept whatever moved, and every other node appears at A.
-     */
-    readonly measured: boolean
 }
 
 export type Action =
@@ -310,10 +312,9 @@ function targetMoved(node: PlanNode, parentAfter: Box | undefined): number {
 function keeps(
     node: PlanNode,
     parentAfter: Box | undefined,
-    measured: boolean,
     threshold: number
 ): boolean {
-    if (!measured || node.before === null) return true
+    if (!node.measured || node.before === null) return true
     if (node.optionsChanged || node.path === 'retarget' || !node.presented) {
         return false
     }
@@ -351,7 +352,13 @@ export function plan(input: PlanInput): Plan {
     const newFollower = new Map<number, number>()
     for (const lead of leadList) {
         const node = nodes[lead.index]!
-        if (lead.handoff === null || !input.measured) continue
+        if (
+            lead.handoff === null ||
+            !node.measured ||
+            (lead.follower >= 0 && !nodes[lead.follower]!.measured)
+        ) {
+            continue
+        }
         before[lead.index] = lead.handoff
         carried[lead.index] = lead.handoffVelocity
         handoffFrom.set(lead.index, lead.follower)
@@ -432,7 +439,7 @@ export function plan(input: PlanInput): Plan {
             node.moving &&
             node.track &&
             node.trackTarget &&
-            keeps(node, parentAfter, input.measured, threshold)
+            keeps(node, parentAfter, threshold)
         ) {
             own = KEEP
             // a kept track with no measured B cannot be shown to be outside
@@ -440,7 +447,7 @@ export function plan(input: PlanInput): Plan {
             if (b === null) return own
         } else if (
             // without a valid measurement nothing starts: the node appears at A
-            input.measured &&
+            node.measured &&
             (node.moving ||
                 (b !== null && movedFrom(b) >= threshold) ||
                 parentMoves ||
