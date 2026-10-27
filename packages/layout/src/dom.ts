@@ -36,6 +36,8 @@ export interface Measured {
     readonly originPct: readonly [number, number] | null
     /** Corner radii (tl, tr, br, bl as x/y pairs), when asked for. */
     readonly radius: readonly Len[] | null
+    /** It is itself a scroll container (an `overflow` other than `visible` or `clip`). */
+    readonly scrollContainer: boolean
 }
 
 const IDENTITY_MATRIX = { a: 1, d: 1, e: 0, f: 0 }
@@ -392,7 +394,15 @@ export function measure(
         origin: [origin[0] ?? 0, origin[1] ?? 0],
         originPct: snapsReference ? originPercents(element) : null,
         radius: radii,
+        scrollContainer:
+            scrollsOverflow(style.overflowX) ||
+            scrollsOverflow(style.overflowY),
     }
+}
+
+/** An `overflow` value that makes a scroll container. */
+function scrollsOverflow(value: string): boolean {
+    return value !== '' && value !== 'visible' && value !== 'clip'
 }
 
 /**
@@ -486,6 +496,8 @@ export function viewportFixed(element: HTMLElement): boolean {
 
 export const POSE_PROPERTIES = ['translate', 'scale'] as const
 export const OPACITY_PROPERTIES = ['opacity'] as const
+/** Owned only under the scroll-anchoring fallback (§6, §11.4 S2). */
+export const ANCHOR_PROPERTY = 'overflow-anchor'
 export { RADIUS_PROPERTIES }
 
 /** Inline declarations as they were before layout owned them (or as the author last set them). */
@@ -539,6 +551,8 @@ export function replacedOwned(
     written: ReadonlyMap<string, string>
 ): boolean {
     for (const property of written.keys()) {
+        // anchor selection draws nothing: the box is drawn as written
+        if (property === ANCHOR_PROPERTY) continue
         if (element.style.getPropertyPriority(property) !== OWNED_PRIORITY)
             return true
     }

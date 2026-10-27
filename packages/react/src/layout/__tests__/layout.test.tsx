@@ -813,6 +813,26 @@ describe('react layout adapter', () => {
         }
     })
 
+    it("the scroll-anchoring fallback's overflow-anchor write is an owned write, not a trigger-contract miss (§6, §11.4 S2)", async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
+        const view = await mount(<List ids={['a', 'b']} />)
+        try {
+            await settle()
+            const item = view.container.querySelector('li')!
+            await act(async () => {
+                item.style.setProperty('overflow-anchor', 'none', 'important')
+            })
+            await settle()
+            await act(async () => {
+                item.style.removeProperty('overflow-anchor')
+            })
+            await settle()
+            expect(warn).not.toHaveBeenCalled()
+        } finally {
+            await view.unmount()
+        }
+    })
+
     it('forwards a ref and moves it when the ref prop changes', async () => {
         function Child({
             target,

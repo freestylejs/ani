@@ -85,15 +85,17 @@ export function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * Declarations layout (`!important` poses, crossfade opacity, owned corners),
- * presence and Core (`transform`, `opacity`) write while they animate: they
- * never change a layout box, so changing them is no trigger-contract miss.
+ * Declarations layout (`!important` poses, crossfade opacity, owned corners,
+ * `overflow-anchor` under the scroll-anchoring fallback), presence and Core
+ * (`transform`, `opacity`) write while they animate: they never change a
+ * layout box, so changing them is no trigger-contract miss.
  */
 const OWNED_STYLE = new Set([
     'translate',
     'scale',
     'transform',
     'opacity',
+    'overflow-anchor',
     'border-radius',
     'border-top-left-radius',
     'border-top-right-radius',
