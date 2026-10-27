@@ -142,10 +142,18 @@ export function supportCheck(
     known: KnownInner = () => null
 ): SupportResult {
     const n = nodes.length
-    const children: number[][] = nodes.map(() => [])
-    nodes.forEach((node, i) => {
-        if (node.parent >= 0) children[node.parent]!.push(i)
-    })
+    /** Each node's children, built on the first failure (a passing check walks no subtree). */
+    let children: number[][] | null = null
+    const childrenOf = (k: number): readonly number[] => {
+        if (!children) {
+            const built: number[][] = nodes.map(() => [])
+            nodes.forEach((node, i) => {
+                if (node.parent >= 0) built[node.parent]!.push(i)
+            })
+            children = built
+        }
+        return children[k]!
+    }
     /** The node itself failed: a classifier, an invalid pose, or E ∉ M. */
     const failed: boolean[] = new Array(n).fill(false)
     /** It or an ancestor failed: its subtree snaps. */
@@ -180,7 +188,7 @@ export function supportCheck(
             const k = stack.pop()!
             if (dead[k] && k !== i) continue
             dead[k] = true
-            for (const c of children[k]!) if (compared[c]) stack.push(c)
+            for (const c of childrenOf(k)) if (compared[c]) stack.push(c)
         }
     }
     /** Every compared, live node of `top`'s subtree, parents first. */
@@ -191,7 +199,7 @@ export function supportCheck(
             const k = stack.pop()!
             if (!compared[k] || dead[k]) continue
             out.push(k)
-            for (const c of children[k]!) stack.push(c)
+            for (const c of childrenOf(k)) stack.push(c)
         }
         // a stack walk visits a parent before its children; indices too
         return out.sort((a, b) => a - b)
