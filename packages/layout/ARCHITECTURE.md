@@ -711,9 +711,12 @@ ancestor maps decides that a track may be left alone.
    every participant ancestor's inner-map scale is the one the track was planned with. Then the
    node's drawn box moved by exactly the rest-space `δ` (the composed linear map from its layout
    box to the screen is the same at rest and at `t_k`), so translating its origin channels (and
-   its anchor offset target, unchanged) by `δ` reproduces the measured B. Shape, timing, elapsed
-   time, velocity and size channels are unchanged; it lands exactly on `A_new`, and it keeps the
-   ancestor matrices it was planned with (§3.2).
+   its anchor offset target, unchanged) by `δ` moves the drawn box by exactly `J`.
+   - Path 2 is reached only when `|J| ≥ 0.01 px`, that is, for the commit's own change, and the
+     keep test bounds it below `threshold`. So the drawn box takes that sub-threshold change at
+     once, as any sub-threshold change does (§5.1), and the timeline is not restarted.
+   - Shape, timing, elapsed time, velocity and size channels are unchanged. It lands exactly on
+     `A_new`, and it keeps the ancestor matrices it was planned with (§3.2).
 3. **Retargeted from `(B, v)`** otherwise. Under an ancestor whose scale is live, the camera moved
    the drawn box by `k·δ`, not by `δ` (a 20 px presented scroll inside a parent at scale 0.5 moves
    the child's B by 10 px while `A_new − A_old` is 20 px), so no translation of the old track is
@@ -902,6 +905,7 @@ position-only track is an `Element.animate()` effect on `translate` (§10).
 
 | Property | Owner | Rule |
 |---|---|---|
+| `overflow-anchor` | Layout, only under the S2 fallback (§11.4) | Written `none !important` on a driven participant that is not a scroll container, with its first pose write; the authored declaration is restored byte for byte at settle. |
 | `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.2), frozen for the run and restored byte for byte. Layout writes them `!important`; an author's inline write during the run (React re-rendering a `style` prop) replaces that declaration, so it is recognised by its priority and taken in at the next flush or settle: the run keeps its frozen composition and the author's value is what the settle restores. A CSS transition configured on them (`translate`, `scale` or `all`) or a running CSS animation of them snaps the node `'unsupported'` with a development warning naming the fix (e.g. Tailwind `transition-colors` instead of `transition`). |
 | `transform` | Presence and Core | Part of the inner map (§3.2); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes (with its Typed OM value where the browser snaps the reference box, §5.5). |
@@ -1305,6 +1309,7 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold`; a driven node with a sub-0.01 px δ under a live ancestor scale of 300 | §4.4 outcomes, with `β` as defined there; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule (the amplified case is reported) |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly |
 | L-MEAS-13 an earlier rAF callback moves an ancestor; a later callback calls `update()` (via Ani's clock) | Aged at once, §4.4, never the intermediate box as B |
+| L-MEAS-14 scroll anchoring during a run, in a scrolled column: (a) cards driven from a commit that also scrolls (the L-MEAS-2 shape) for 24 frames; (b) a banner above grows mid-run, with non-driven content visible between the cards, and with only driven cards visible; (c) a deletion above mid-run | (a) `scrollTop` never moves by layout's writes in any engine, and every frame is on the oracle. (b) With non-driven content visible, the browser's compensation holds; with only driven cards, the shift is presented uncompensated (§12) and the cards follow content. (c) As (b). The S2 fallback is applied only where the probe says so: none in Chromium and WebKit |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
 | L-HAND-2 handoff while the source scroller is active; after `scrollend` | Presence enter and diagnostic; then a normal flight |
 | L-SPRING-1 channels, b ∈ {−0.8, −0.3, 0, 0.2, 0.4, 0.9}, 60/120 Hz | `c(0) = B`, `c′(0) = v`, settle within ε, against the oracle |
@@ -1353,7 +1358,7 @@ marker; use the predicted box instead of the measured one; drop the layout-size 
 | Spike | Must show (three engines) | Fallback that ships if it fails |
 |---|---|---|
 | S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom; a degenerate-axis leaf (a 1 px rule, a 0.5 px hairline) under an unowned `zoom: 2` wrapper is detected through its exact computed size; a chain of participants each with a sub-resolution skew (201 px squares, `skewX` of 0.0048 per level, 3 and 1,999 levels) is detected at the first participant whose box the composed skew changes by its measurement interval, never inherited. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
-| S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect; if still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree |
+| S2 anchoring | The correction is applied before the flush's first rect read. Layout's writes never move a scroll offset, and a driven node is never the anchor. Measured: Chromium never re-anchors on a transform (it treats a pose change of the anchor as a suppression trigger); WebKit has no CSS anchoring; **Firefox counts the anchor node's transform**, so a pose write re-anchors (120 px at t = 0, drifting on every frame) | **Normative fallback, Firefox:** on an engine where the probe below shows that a transform moves the anchor, each driven participant that is not itself a scroll container gets `overflow-anchor: none` as an owned declaration, in the same mutation as its first pose write, restored byte for byte at settle (§6). **Probe:** once per document, at the start of the first flush that will write a pose and before its first rect read, on a fixed, hidden 10 × 10 scroll container with `scrollTop` 10 and one child: one `translate` write, a 1 px reflow, one `scrollTop` read. It is removed in the same task, and its reads and writes are counted in `stats` |
 | S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one | None needed: aging is the conservative path |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.10 |
 | S5 `scrollend` | Fires after momentum and smooth scroll | §5.8's conservative rule |
@@ -1415,6 +1420,11 @@ that value meets the gate in both engines. The report lists every per-run statis
 pass/fail with no parameter left to choose.
 
 ## 12. Accepted risks and documented platform bounds
+
+- **Scroll anchoring during a run.** A driven node is never the anchor (§11.4 S2). A layout shift
+  presented mid-run is compensated by the browser only through non-driven content. With only
+  driven nodes visible in a scroller, the shift is presented uncompensated, as on a page without
+  anchoring. Chromium already suppresses compensation when the anchor's pose changes.
 
 - **Compositor lag.** During asynchronous scrolling the main thread can trail the screen by up to
   one frame. It is uniform inside the scrolled layer (no visible effect); across layers it is
