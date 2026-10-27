@@ -456,18 +456,45 @@ function checkOperation(
 }
 
 /**
+ * The §4.4 development warning, printed once per scope: an author's inline
+ * write of an owned property mid-run leaves that node without a valid B.
+ */
+const STALE_WARNING =
+    '[ani-layout] no valid measurement of what was presented (capture-less or aged flush), so participants that moved appear at their new layout without motion. Call capture() (or update()) in the task that changes the DOM.'
+
+/** Captures `console.warn` (the kit's `silenceWarnings` pattern). */
+function captureWarnings(): { readonly messages: string[]; restore(): void } {
+    // biome-ignore lint/suspicious/noConsole: capture the expected development warnings
+    const original = console.warn
+    const messages: string[] = []
+    console.warn = (...args: unknown[]) => {
+        messages.push(args.map(String).join(' '))
+    }
+    return {
+        messages,
+        restore() {
+            console.warn = original
+        },
+    }
+}
+
+/**
  * Seeded random trees, options, DOM changes, removals, reduced-motion toggles
  * and janky frames; every flush and frame keeps the read/write discipline
  * and ownership, and every element ends byte-identical to its authored style
- * with no subscription left.
+ * with no subscription left. The only warning allowed is §4.4's, at most
+ * once per scope; any other fails the row.
  */
 export async function Fuzz(): Promise<string> {
     const probe = probeDom()
+    const warnings = captureWarnings()
     const SEEDS = 24
     const STEPS = 60
     let operations = 0
+    let staleScopes = 0
     try {
         for (let seed = 1; seed <= SEEDS; seed++) {
+            warnings.messages.length = 0
             const random = rng(seed)
             const int = (n: number) => Math.floor(random() * n)
             const pick = <T>(values: readonly T[]): T =>
@@ -634,9 +661,23 @@ export async function Fuzz(): Promise<string> {
             for (const remove of removers.values()) remove()
             group.dispose()
             root.remove()
+            for (const message of warnings.messages) {
+                if (message !== STALE_WARNING) {
+                    throw new Error(
+                        `seed ${seed}: an unexpected warning: ${message}`
+                    )
+                }
+            }
+            if (warnings.messages.length > 1) {
+                throw new Error(
+                    `seed ${seed}: the §4.4 warning printed ${warnings.messages.length} times; it is once per scope`
+                )
+            }
+            staleScopes += warnings.messages.length
         }
-        return `${SEEDS} seeds × ${STEPS} steps (${operations} engine operations): no read after a write, finite values, translate/scale only !important, transform never written; byte-identical styles and no subscription at the end`
+        return `${SEEDS} seeds × ${STEPS} steps (${operations} engine operations): no read after a write, finite values, translate/scale only !important, transform never written; byte-identical styles and no subscription at the end; the §4.4 warning only, once in ${staleScopes} of ${SEEDS} scopes`
     } finally {
+        warnings.restore()
         probe.restore()
     }
 }
