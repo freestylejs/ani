@@ -282,6 +282,8 @@ interface Capture {
     disarm: () => void
     /** B per connected participant: the raw rect, nothing divided out. */
     readonly rects: Map<Participant, Box>
+    /** Every participant registered at capture, connected or not. */
+    readonly registered: ReadonlySet<Participant>
     /** Per participant, `offsetWidth`/`offsetHeight`. */
     readonly offsets: Map<Participant, readonly [number, number]>
     /** Participants that failed the support check, with their subtrees. */
@@ -1313,6 +1315,7 @@ export function createLayoutGroup(
             aged: inFrame,
             disarm: noop,
             rects: presentedRects,
+            registered: new Set(registry.values()),
             offsets: new Map(list.map((p, i) => [p, offsets[i]!])),
             unsupported: new Map(
                 list.flatMap((p, i) => {
@@ -1597,6 +1600,24 @@ export function createLayoutGroup(
         }
         const hasChild = list.map(() => false)
         for (const parent of parents) if (parent >= 0) hasChild[parent] = true
+        /**
+         * Per node, no valid B (§4.4): no fresh capture, or a fresh capture
+         * without its B (it was disconnected at capture, or an owned
+         * declaration was replaced by the author), and its participant
+         * subtree. Such a node follows the §4.4 table; the rest of the flush
+         * plans normally.
+         */
+        const unmeasured: boolean[] = []
+        list.forEach((p, i) => {
+            const parent = parents[i]!
+            unmeasured.push(
+                !fresh ||
+                    (parent >= 0 && unmeasured[parent]!) ||
+                    (!p.keyChanged &&
+                        fresh.registered.has(p) &&
+                        !fresh.rects.has(p))
+            )
+        })
         /** Each node's A at its previous flush, before this one replaces it. */
         const lastBoxes = list.map((p) => p.lastBox)
         /** Each node's geometry and participant parent at its previous flush. */
@@ -2061,7 +2082,9 @@ export function createLayoutGroup(
                 const d = p.drive
                 // B is a measurement of what was presented, driven or not
                 const before =
-                    p.keyChanged || !fresh ? null : (fresh.rects.get(p) ?? null)
+                    p.keyChanged || unmeasured[i]
+                        ? null
+                        : (fresh?.rects.get(p) ?? null)
                 const moving = runs(d)
                 const holding =
                     moving && !d!.timeline && d!.elapsed < d!.track!.delay
@@ -2139,6 +2162,7 @@ export function createLayoutGroup(
                         d?.kind === 'follow' && d.lead
                             ? (index.get(d.lead) ?? -1)
                             : -1,
+                    measured: !unmeasured[i],
                 }
             })
         }
@@ -2151,7 +2175,6 @@ export function createLayoutGroup(
             viewport,
             threshold,
             maxNodes,
-            measured,
         })
         for (;;) {
             const wanted = result.actions.map(
@@ -2172,7 +2195,6 @@ export function createLayoutGroup(
                 viewport,
                 threshold,
                 maxNodes,
-                measured,
             })
         }
 
@@ -2253,14 +2275,16 @@ export function createLayoutGroup(
             actions = actions.map(() => ({ kind: 'none' }) as const)
             status = moves ? 'reduced' : null
         }
-        if (!measured) {
-            // §4.4: every node that may have jumped is reported, once
+        if (unmeasured.some(Boolean)) {
+            // §4.4: every node without a valid B that may have jumped is
+            // reported, once
             const reported = list.map(() => false)
             const already = new Set(snapped.map((s) => s.element))
             result.actions.forEach((action, i) => {
                 const p = list[i]!
                 const node = nodes[i]!
-                if (already.has(p.element) || node.skip) return
+                if (!unmeasured[i] || already.has(p.element) || node.skip)
+                    return
                 const r = reexpress[i]
                 if (action.kind === 'keep') {
                     reported[i] = staleReported(
@@ -2279,8 +2303,12 @@ export function createLayoutGroup(
                         {
                             driven: false,
                             a: node.a,
+                            // the aged capture's box; with a fresh capture
+                            // this node is judged as if it had none
                             lastKnown:
-                                cap?.rects.get(p) ?? lastBoxes[i] ?? null,
+                                (fresh ? null : cap?.rects.get(p)) ??
+                                lastBoxes[i] ??
+                                null,
                             bound: 0,
                             translationExact: true,
                         },
@@ -2476,7 +2504,7 @@ export function createLayoutGroup(
                     !d ||
                     d.timeline ||
                     !runs(d) ||
-                    reexpress[i]?.path === 'translate'
+                    (reexpress[i]?.path === 'translate' && !unmeasured[i])
                 ) {
                     return
                 }
@@ -2561,7 +2589,7 @@ export function createLayoutGroup(
                         // (§5.7 paths 1 and 2, §4.4)
                         d.track = rebased(d.track, was, g)
                         d.target = g.a
-                    } else if (r?.path === 'translate') {
+                    } else if (r?.path === 'translate' && !unmeasured[i]) {
                         // path 2: translated by δ, keeping the ancestor
                         // matrices it was planned with (§3.2)
                         d.track = translated(d.track, r.dx, r.dy)

@@ -39,6 +39,7 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         skip: false,
         optionsChanged: false,
         following: -1,
+        measured: true,
         ...overrides,
     }
 }
@@ -50,7 +51,6 @@ function input(nodes: PlanNode[], extra: Partial<PlanInput> = {}): PlanInput {
         viewport: VIEWPORT,
         threshold: 1,
         maxNodes: 300,
-        measured: true,
         ...extra,
     }
 }
@@ -582,7 +582,11 @@ describe('plan: snaps', () => {
             input(
                 [
                     // undriven, moved: no B, so it appears at A
-                    node({ before: null, a: { x: 300, y: 0, w: 100, h: 50 } }),
+                    node({
+                        before: null,
+                        a: { x: 300, y: 0, w: 100, h: 50 },
+                        measured: false,
+                    }),
                     // a running track whose A moved: kept whatever moved
                     node({
                         before: null,
@@ -592,9 +596,10 @@ describe('plan: snaps', () => {
                         trackTarget: target,
                         path: 'retarget',
                         optionsChanged: true,
+                        measured: false,
                     }),
                     // a new lead does not take over the retained box
-                    node({ before: null, layoutId: 'x' }),
+                    node({ before: null, layoutId: 'x', measured: false }),
                     // an unsupported running track still snaps
                     node({
                         before: null,
@@ -602,9 +607,10 @@ describe('plan: snaps', () => {
                         track,
                         trackTarget: target,
                         unsupported: true,
+                        measured: false,
                     }),
                 ],
-                { ids, measured: false }
+                { ids }
             )
         )
         expect(result.status).toBe('run')

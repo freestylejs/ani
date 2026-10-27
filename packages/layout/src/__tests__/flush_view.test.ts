@@ -281,6 +281,75 @@ describe('the capture-less flush report (§4.4)', () => {
         group.dispose()
     })
 
+    it("a driven node without a valid B in a fresh capture (its owned translate re-set plainly by the author) and its participant subtree follow the §4.4 table: reported 'stale', the rest of the flush plans normally", async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(box(0, 0, 100, 100))
+        const inside = element(box(10, 10), a)
+        const other = element(box(300))
+        for (const e of [a, inside, other]) group.add(e)
+        group.capture()
+        await group.flush()
+        group.capture()
+        // `a` moves; `inside` stays where it is (undriven, counter-projected)
+        model.place(a, box(100, 0, 100, 100))
+        void group.flush()
+        mc.frames(2)
+        await nextTask()
+        expect(group.stats.tracks).toBe(1)
+        // the author re-sets the owned translate inline, plainly, then the
+        // capture and the commit follow in the same task
+        a.style.setProperty('translate', '0px 0px')
+        group.capture()
+        model.place(a, box(150, 0, 100, 100))
+        model.place(inside, box(60, 10))
+        model.place(other, box(340))
+        const seenOther = model.rect(other)
+        const report = group.flush()
+        // the rest of the flush plans normally: `other` starts at its B
+        expect(model.rect(other).x).toBeCloseTo(300, 9)
+        expect(seenOther.x).toBe(340)
+        mc.frames(FRAMES)
+        expect(await report).toEqual({
+            status: 'ended',
+            snapped: [
+                { element: a, reason: 'stale' },
+                { element: inside, reason: 'stale' },
+            ],
+        })
+        expect(
+            warnings.filter((w) => w.includes('no valid measurement'))
+        ).toHaveLength(1)
+        group.dispose()
+    })
+
+    it('a driven node disconnected at the capture and back in the commit has no valid B: it is kept and reported by β, never translated silently', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(box(0))
+        const other = element(box(300))
+        group.add(a)
+        group.add(other)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(a, box(100))
+        void group.flush()
+        mc.frames(2)
+        await nextTask()
+        a.remove()
+        group.capture()
+        document.body.append(a)
+        model.place(a, box(150))
+        const report = await group.flush()
+        expect(report).toEqual({
+            status: 'stale',
+            snapped: [{ element: a, reason: 'stale' }],
+        })
+        expect(group.stats.tracks).toBe(1)
+        group.dispose()
+    })
+
     it("an undriven node is judged against the aged capture's box when there is one; nothing reported is 'no-change'", async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({ clock: mc.clock, motion })
