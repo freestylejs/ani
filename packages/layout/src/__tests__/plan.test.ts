@@ -2,7 +2,13 @@ import { timing } from '@freestylejs/ani-core'
 import { describe, expect, it } from 'vitest'
 import type { Box } from '../geometry'
 import { resolveMotion } from '../motion'
-import { type IdHistory, type PlanInput, type PlanNode, plan } from '../plan'
+import {
+    type IdHistory,
+    leadChanges,
+    type PlanInput,
+    type PlanNode,
+    plan,
+} from '../plan'
 import { drawnBoxes, drawnVelocities } from '../solve'
 import { trackOf as createTrack, rootNode } from './nodes'
 
@@ -40,6 +46,7 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         optionsChanged: false,
         following: -1,
         measured: true,
+        scrollActive: false,
         ...overrides,
     }
 }
@@ -930,5 +937,157 @@ describe('plan: spring refusals (§5.3, §9.4)', () => {
         expect(action.track.delay).toBe(0)
         expect(action.track.law.kind).toBe('spring')
         expect(action.track.seed).toEqual([900, 0, 0, 0])
+    })
+})
+
+describe('plan: out of an actively scrolling container (§5.8)', () => {
+    const cardBox = { x: 10, y: 10, w: 80, h: 80 }
+    const detailBox = { x: 200, y: 50, w: 400, h: 300 }
+    const degraded = [{ index: 1, reason: 'handoff-scroll-active' }]
+
+    it('a lead taking over from a live exiting node does not fly and does not crossfade', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        a: detailBox,
+                        before: null,
+                        order: 2,
+                        scrollActive: true,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.leads.get('card')).toBe(1)
+        expect(result.actions.map((a) => a.kind)).toEqual(['none', 'none'])
+        expect(result.snapped).toEqual([])
+        expect(result.degraded).toEqual(degraded)
+    })
+
+    it('a lead taking over a retained box does not fly', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: null, retained: cardBox, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node(),
+                    node({
+                        layoutId: 'card',
+                        a: detailBox,
+                        before: null,
+                        scrollActive: true,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.actions.map((a) => a.kind)).toEqual(['none', 'none'])
+        expect(result.degraded).toEqual(degraded)
+    })
+
+    it('an already registered lead appears at A instead of moving from its own B', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: null, retained: cardBox, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node(),
+                    node({
+                        layoutId: 'card',
+                        a: detailBox,
+                        before: { x: 300, y: 50, w: 400, h: 300 },
+                        scrollActive: true,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.actions[1]).toEqual({ kind: 'none' })
+        expect(result.degraded).toEqual(degraded)
+    })
+
+    it('a reparented node ends its running track; under a moving parent it is counter-projected', () => {
+        const a = { x: 100, y: 100, w: 100, h: 50 }
+        const running = createTrack(
+            { x: 0, y: 0, w: 100, h: 50 },
+            a,
+            null,
+            0.5,
+            0.5,
+            true,
+            motion,
+            null
+        )
+        const result = plan(
+            input([
+                node({ before: { x: 0, y: 0, w: 100, h: 50 } }),
+                node({
+                    moving: true,
+                    track: running,
+                    trackTarget: a,
+                    path: 'retarget',
+                    before: { x: 40, y: 40, w: 100, h: 50 },
+                    scrollActive: true,
+                }),
+                node({
+                    parent: 0,
+                    before: { x: 10, y: 0, w: 10, h: 10 },
+                    a: { x: 30, y: 0, w: 10, h: 10 },
+                    scrollActive: true,
+                }),
+            ])
+        )
+        expect(result.actions.map((a) => a.kind)).toEqual([
+            'track',
+            'none',
+            'static',
+        ])
+        expect(result.snapped).toEqual([])
+        expect(result.degraded).toEqual([
+            { index: 1, reason: 'handoff-scroll-active' },
+            { index: 2, reason: 'handoff-scroll-active' },
+        ])
+    })
+})
+
+describe('leadChanges (§5.8)', () => {
+    it('names the node each new lead takes over from', () => {
+        const box = { x: 0, y: 0, w: 10, h: 10 }
+        const nodes = [
+            { layoutId: 'a', exiting: true, order: 1 },
+            { layoutId: 'a', exiting: false, order: 2 },
+            { layoutId: 'b', exiting: false, order: 3 },
+            { layoutId: 'c', exiting: false, order: 4 },
+            { layoutId: 'd', exiting: false, order: 5 },
+            { layoutId: 'd', exiting: false, order: 6 },
+            { layoutId: null, exiting: false, order: 7 },
+        ]
+        const ids = new Map<string, IdHistory>([
+            ['a', { lead: 0, retained: null, retainedVelocity: null }],
+            ['b', { lead: null, retained: box, retainedVelocity: null }],
+            ['c', { lead: null, retained: null, retainedVelocity: null }],
+            ['d', { lead: 4, retained: null, retainedVelocity: null }],
+        ])
+        expect(leadChanges(nodes, ids)).toEqual([
+            { id: 'a', index: 1, from: 0, duplicate: false },
+            { id: 'b', index: 2, from: 'retained', duplicate: false },
+            { id: 'c', index: 3, from: null, duplicate: false },
+            // the previous lead is live and not exiting: a duplicate id
+            { id: 'd', index: 5, from: null, duplicate: true },
+        ])
     })
 })
