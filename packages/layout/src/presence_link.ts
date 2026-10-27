@@ -4,6 +4,8 @@
  * release holds. Adapters see none of it.
  */
 
+import { flatParent } from './dom'
+
 export interface PresenceLink {
     readonly exiting: boolean
     /** The presence record names `opacity`. */
@@ -23,7 +25,7 @@ export function linkPresence(element: Element, link: PresenceLink): () => void {
 
 /** The nearest presence link at or above `element`, if any is exiting. */
 export function exitingPresence(element: Element): PresenceLink | null {
-    for (let node: Element | null = element; node; node = node.parentElement) {
+    for (let node: Element | null = element; node; node = flatParent(node)) {
         const link = links.get(node)
         if (link?.exiting) return link
     }

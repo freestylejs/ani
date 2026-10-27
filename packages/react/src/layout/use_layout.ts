@@ -41,6 +41,9 @@ function resolve(
         ...('layoutDependency' in options && {
             layoutDependency: options.layoutDependency,
         }),
+        ...('layoutKey' in options && {
+            layoutKey: options.layoutKey,
+        }),
         ...(options.radius !== undefined && { radius: options.radius }),
         ...(motion !== undefined && { motion }),
     }
@@ -102,6 +105,8 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
     }, [options.ref])
 
     const scope = context?.scope
+    const contextRef = useRef(context)
+    contextRef.current = context
     return useMemo<RefCallback<E>>(
         () => (next) => {
             registration.current?.remove()
@@ -110,7 +115,7 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
             assignRef(latest.current.ref, next)
             if (!next) return
             // the namespace and motion reach a registration through `set`
-            const target = scope ?? scopeOf(null, next)
+            const target = scopeOf(contextRef.current, next)
             const participant = latestResolved.current
             registration.current = {
                 scope: target,
