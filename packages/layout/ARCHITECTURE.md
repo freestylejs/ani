@@ -188,7 +188,7 @@ follower, §5.8) keeps those matrices, its own and its ancestors', but not its C
 | Hold per held node: take point, offset, handle state | Scope (drive) | Until a terminal state |
 | Pose per node per frame | Solver output | One frame |
 | Registry: element → options and `layoutKey`; `layoutId` → lead and exiting follower; retained boxes; the scope's document | Scope | Until removal (+ `retain`) |
-| Active scroll containers (event targets between `scroll` and `scrollend`) | Scope | While the scope has a shared participant |
+| Active scroll containers (event targets between `scroll` and `scrollend`) | Scope | While the scope has a shared participant at the end of a task; cleared by a real disarm (§5.8) |
 | Presence state: present / entering / exiting / exited | Presence handle | Until exit settles |
 
 ### 3.4 Invariants
@@ -478,16 +478,18 @@ This subsection is the default `'raf'` frame contract; WAAPI timing is §10.
   `assignedSlot` finds the slot only in an open root (it is null for a node slotted into a
   closed one). So the scope keeps the shadow roots that hold a participant: the root node of each
   registered element, open or closed, keyed by host. For a node whose parent element hosts a
-  known root, the slot is the one in that root whose `assignedNodes()` holds the node.
+  known root, the slot is the one in that root whose `assignedNodes()` holds the node; each pass
+  (a capture, a flush) builds that node-to-slot map once per known closed root.
 
   A closed root the scope does not know holds no participant, so the walk may pass from a slotted
   node straight to the host:
   - the nearest participant is the same;
-  - the containment tests treat the host as the container, which is conservative (a scroll
-    container inside that root reaches the document's listeners retargeted to the host, §5.8).
+  - the containment tests treat the host as the container. `scroll` and `scrollend` are not
+    composed, so a scroll container inside such a root is invisible to §5.8 (a §12 risk).
 
-  Open and closed shadow roots are supported. The roots are tracked at `add` and dropped with the
-  last participant inside them, with no reads.
+  Open and closed shadow roots are supported. A root is tracked at `add`, re-tracked whenever a
+  capture or a flush finds a registered element under another root node (`getRootNode()`, no
+  layout read), and dropped with the last participant inside it.
 - **Document-affine scopes.** A scope binds to the `ownerDocument` of its first participant. `add`,
   `set` or `take` with an element of another document throws `ANI_INVALID_OPTIONS`. An element whose
   `ownerDocument` changes (adoption) has its track ended, styles restored and hold invalidated, is
@@ -752,10 +754,16 @@ the same keep test applies (§10).
   `handoff-scroll-active`. Time never clears the state; only `scrollend` does. Where `scrollend` is
   unavailable, every such handoff out of a container that has scrolled since the scope bound
   degrades the same way. The listeners are one passive capture-phase `scroll` and `scrollend` pair
-  per event root (the `Document` and each `ShadowRoot` holding a participant), armed only while the
-  scope has a shared participant; each event records its target, with no reads. When the departing
-  node is in the document scroller and the new lead is viewport-fixed (an `offsetParent` walk that
-  ends at a fixed element, run on this path only), the lead is outside it.
+  per event root: the `Document` and every `ShadowRoot` on a participant's flat-ancestor chain
+  (each walked node's root and each assigned slot's root, collected by the walks of the capture and
+  the flush, with no reads). They are armed while the scope has a shared participant. Disarming is
+  checked once at the end of the task (a microtask), so a lead removed and re-added in one task
+  keeps them; a real disarm clears the active state. Each event records its target, with no
+  reads. For a reparent, the departing node is the participant as captured and the new lead is the
+  same participant at the flush. When the departing node is in the document scroller and the new
+  lead is viewport-fixed (an `offsetParent` walk that ends at a fixed element, run on this path
+  only, for a reparent only on a participant whose flat parent changed since its capture), the
+  lead is outside it.
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting under
   presence, the box moved by at least `threshold` (or the pair is reversing, below), neither node
   sets `layoutCrossfade: false`, and focus is not inside the follower (§8). Both nodes draw at the
@@ -905,7 +913,7 @@ position-only track is an `Element.animate()` effect on `translate` (§10).
 
 | Property | Owner | Rule |
 |---|---|---|
-| `overflow-anchor` | Layout, only under the S2 fallback (§11.4) | Written `none !important` on a driven participant that is not a scroll container, with its first pose write; the authored declaration is restored byte for byte at settle. |
+| `overflow-anchor` | Layout, only under the S2 fallback (§11.4) | Written `none !important` on every driven participant, scroll containers included, with its first pose write; the authored declaration is restored byte for byte at settle. The WAAPI engine writes no inline style: it carries `overflow-anchor: none` in both keyframes of the node's animation instead. |
 | `translate`, `scale` | Layout | Authored values (inline or stylesheet, e.g. Tailwind `translate-*`, `hover:scale-105`) are composed (§3.2), frozen for the run and restored byte for byte. Layout writes them `!important`; an author's inline write during the run (React re-rendering a `style` prop) replaces that declaration, so it is recognised by its priority and taken in at the next flush or settle: the run keeps its frozen composition and the author's value is what the settle restores. A CSS transition configured on them (`translate`, `scale` or `all`) or a running CSS animation of them snaps the node `'unsupported'` with a development warning naming the fix (e.g. Tailwind `transition-colors` instead of `transition`). |
 | `transform` | Presence and Core | Part of the inner map (§3.2); never written by layout. |
 | `transform-origin` | Author | Read once per flush for active nodes (with its Typed OM value where the browser snaps the reference box, §5.5). |
@@ -972,6 +980,8 @@ interface LayoutStats {
   readonly rects: number      // getBoundingClientRect calls
   readonly offsets: number    // offsetWidth/offsetHeight pairs
   readonly styles: number     // computed-style reads
+  readonly probes: number     // anchoring probes (§11.4 S2): one write, one reflow, one scrollTop read each
+  readonly parents: number    // offsetParent reads of the viewport-fixed test (§5.8)
   readonly tracks: number     // running tracks
   readonly holds: number      // live holds
 }
@@ -1305,13 +1315,13 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-MEAS-7 browser layout change mid-run (an image above loads), then a commit; flat and nested (a child under a scaling parent); and the same change made in the commit's own task | Continuity ≤ 0.5 px every frame. A presented change gives `J = 0`, so §5.7 path 1 (no restart, on the content-following oracle). The same change unpresented, in the commit's task, moves A only, so the node retargets from `(B, v)` (D3) |
 | L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
 | L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture | (a) no shear, exact `(B, v)`; (b) aged, §4.4 outcome, no rewind |
-| L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller, each with a slotted light-DOM participant under a participant inside the root | As L-MEAS-4; the slotted participant is planned under its flat-tree parent (§4.6) |
+| L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller, each with a slotted light-DOM participant under a participant inside the root; (b) a registered participant moved into a closed root between flushes | As L-MEAS-4; the slotted participant is planned under its flat-tree parent (§4.6); (b) the moved root is tracked from the next pass and the old one dropped |
 | L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged); undriven moved, undriven unmoved, newly registered, driven with `|δ|` above and below `threshold`; a driven node with a sub-0.01 px δ under a live ancestor scale of 300 (pose × presence layer; a pose alone is capped at 50, §9.1) | §4.4 outcomes, with `β` as defined there; `status`, `report.snapped`, the `onSnap` calls and the diagnostic count agree exactly with the §4.4 rule (the amplified case is reported) |
 | L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly |
 | L-MEAS-13 an earlier rAF callback moves an ancestor; a later callback calls `update()` (via Ani's clock) | Aged at once, §4.4, never the intermediate box as B |
-| L-MEAS-14 scroll anchoring during a run, in a scrolled column: (a) cards driven from a commit that also scrolls (the L-MEAS-2 shape) for 24 frames; (b) a banner above grows mid-run, with non-driven content visible between the cards, and with only driven cards visible; (c) a deletion above mid-run | (a) `scrollTop` never moves by layout's writes in any engine, and every frame is on the oracle. (b) With non-driven content visible, the browser's compensation holds; with only driven cards, the shift is presented uncompensated (§12) and the cards follow content. (c) As (b). The S2 fallback is applied only where the probe says so: none in Chromium and WebKit |
+| L-MEAS-14 scroll anchoring during a run, in a scrolled column: (a) cards driven from a commit that also scrolls (the L-MEAS-2 shape) for 24 frames, also with `overflow: hidden` cards, with the WAAPI engine, and in Firefox with classic scrollbars; (b) a banner above grows mid-run, with non-driven content visible between the cards, and with only driven cards visible; (c) a deletion above mid-run | (a) `scrollTop` never moves by layout's writes in any engine, and every frame is on the oracle. (b) With non-driven content visible, the browser's compensation holds; with only driven cards, the shift is presented uncompensated (§12) and the cards follow content. (c) As (b). The S2 fallback is applied only where the probe says so: none in Chromium and WebKit |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
-| L-HAND-2 handoff while the source scroller is active; after `scrollend` | Presence enter and diagnostic; then a normal flight |
+| L-HAND-2 handoff while the source scroller is active (the document; a scroller inside an open root holding no participant, around a slot; a scroller in an outer root around the root holding the participant), with and without a presence on the new lead; a reparent into a viewport-fixed sheet while the document scrolls; after `scrollend` | Presence enter (or A without a presence) and diagnostic (from P3); then a normal flight |
 | L-SPRING-1 channels, b ∈ {−0.8, −0.3, 0, 0.2, 0.4, 0.9}, 60/120 Hz | `c(0) = B`, `c′(0) = v`, settle within ε, against the oracle |
 | L-SPRING-2 crossfade, radius and presence release on a spring lead | Coverage 1; fade, blend and release end at `t = D` |
 | L-SPRING-3 merge, validation, WAAPI rejection, settle cap | Union semantics; throws before any state change |
@@ -1358,7 +1368,7 @@ marker; use the predicted box instead of the measured one; drop the layout-size 
 | Spike | Must show (three engines) | Fallback that ships if it fails |
 |---|---|---|
 | S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), WAAPI-driven boxes included. (b) The support check (§4.2) has no false positive at DPR 1, 2 and 3, fractional parent and child sizes (50.49 px parent, 1000 px child), total scales 0.1, 1 and 10, and pinch zoom; a degenerate-axis leaf (a 1 px rule, a 0.5 px hairline) under an unowned `zoom: 2` wrapper is detected through its exact computed size; a chain of participants each with a sub-resolution skew (201 px squares, `skewX` of 0.0048 per level, 3 and 1,999 levels) is detected at the first participant whose box the composed skew changes by its measurement interval, never inherited. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) On that engine a driven participant's measurement is invalid: its subtree degrades as §4.4 (`'stale'`, `measurement-unsupported`) and a shared handoff involving it becomes a presence enter; an analytic box never substitutes for B. (b) Widen `|W − O|` to the measured rounding bound. (c) Change the adapter docs and the row |
-| S2 anchoring | The correction is applied before the flush's first rect read. Layout's writes never move a scroll offset, and a driven node is never the anchor. Measured: Chromium never re-anchors on a transform (it treats a pose change of the anchor as a suppression trigger); WebKit has no CSS anchoring; **Firefox counts the anchor node's transform**, so a pose write re-anchors (120 px at t = 0, drifting on every frame) | **Normative fallback, Firefox:** on an engine where the probe below shows that a transform moves the anchor, each driven participant that is not itself a scroll container gets `overflow-anchor: none` as an owned declaration, in the same mutation as its first pose write, restored byte for byte at settle (§6). **Probe:** once per document, at the start of the first flush that will write a pose and before its first rect read, on a fixed, hidden 10 × 10 scroll container with `scrollTop` 10 and one child: one `translate` write, a 1 px reflow, one `scrollTop` read. It is removed in the same task, and its reads and writes are counted in `stats` |
+| S2 anchoring | The correction is applied before the flush's first rect read. Layout's writes never move a scroll offset, and a driven node is never the anchor. Measured: Chromium never re-anchors on a transform (it treats a pose change of the anchor as a suppression trigger); WebKit has no CSS anchoring; **Firefox counts the anchor node's transform**, so a pose write re-anchors (120 px at t = 0, drifting on every frame) | **Normative fallback, Firefox:** on an engine where the probe below shows that a transform moves the anchor, each driven participant, scroll containers included, gets `overflow-anchor: none` as an owned declaration, in the same mutation as its first pose write, restored byte for byte at settle (§6); the WAAPI engine carries it in both keyframes of the node's animation. **Probe:** once per document, at the start of the first flush that will write a pose (either engine) and before its first rect read, on a fixed, hidden 10 × 10 scroll container with no scrollbar (`scrollbar-width: none`, so classic scrollbars cannot empty its scrollport), `scrollTop` 10 and one child: one `translate` write, a 1 px reflow of the container, one `scrollTop` read. It is removed in the same task and counted in `stats.probes` |
 | S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one | None needed: aging is the conservative path |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.10 |
 | S5 `scrollend` | Fires after momentum and smooth scroll | §5.8's conservative rule |
@@ -1425,6 +1435,11 @@ pass/fail with no parameter left to choose.
   presented mid-run is compensated by the browser only through non-driven content. With only
   driven nodes visible in a scroller, the shift is presented uncompensated, as on a page without
   anchoring. Chromium already suppresses compensation when the anchor's pose changes.
+  Under the Firefox fallback a driven scroll container does not anchor its own content for the run
+  either (its `overflow-anchor: none` applies to itself as a scroller).
+- **Scrollers inside unknown closed shadow roots.** A closed root that holds no participant hides
+  its scroll events and its slots (§4.6), so a handoff out of a scroller inside it while it scrolls
+  is not degraded by §5.8. Registering any element inside that root as a participant makes it known.
 
 - **Compositor lag.** During asynchronous scrolling the main thread can trail the screen by up to
   one frame. It is uniform inside the scrolled layer (no visible effect); across layers it is
