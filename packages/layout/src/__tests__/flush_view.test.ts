@@ -487,6 +487,34 @@ describe('the support check at flush (§4.2)', () => {
         })
     }
 
+    it("at flush an active node's computed values already read are its q: a 1.003 authored scale hiding in a 100 px parent's M exposes a 2000 px child under a non-participant 1/1.003 scale, which snaps 'unsupported'", async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const q = 1.003
+        const p = element(box(0, 0, 100, 100))
+        p.style.scale = String(q)
+        const wrap = element(box(0, 0, 2000, 40), p)
+        wrap.style.scale = String(1 / q)
+        const j = element(box(0, 0, 2000, 40), wrap)
+        group.add(p)
+        group.add(j)
+        group.capture()
+        await group.flush()
+        await nextTask()
+        group.capture()
+        // the commit moves p (and its content with it): p is active
+        model.place(p, box(30, 0, 100, 100))
+        model.place(wrap, box(30, 0, 2000, 40))
+        model.place(j, box(30, 0, 2000, 40))
+        const report = group.flush()
+        mc.frames(FRAMES)
+        expect(await report).toEqual({
+            status: 'ended',
+            snapped: [{ element: j, reason: 'unsupported' }],
+        })
+        group.dispose()
+    })
+
     it("an unowned ancestor scale set in the commit snaps its participant 'unsupported'; the run resolves by its tracks and lists the snapped node (§9.3)", async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({ clock: mc.clock, motion })

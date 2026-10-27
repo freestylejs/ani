@@ -9,7 +9,12 @@ import { validateLayoutOptions } from '../motion'
 import { exitingPresence, linkPresence } from '../presence_link'
 import { createLayoutGroup } from '../scope'
 
-function place(element: HTMLElement, box: Box): void {
+/** `offset` is the layout size when the rect is drawn through a scale. */
+function place(
+    element: HTMLElement,
+    box: Box,
+    offset: readonly [number, number] = [Math.round(box.w), Math.round(box.h)]
+): void {
     element.getBoundingClientRect = () =>
         ({
             x: box.x,
@@ -24,11 +29,11 @@ function place(element: HTMLElement, box: Box): void {
         }) as DOMRect
     Object.defineProperty(element, 'offsetWidth', {
         configurable: true,
-        value: Math.round(box.w),
+        value: offset[0],
     })
     Object.defineProperty(element, 'offsetHeight', {
         configurable: true,
-        value: Math.round(box.h),
+        value: offset[1],
     })
 }
 
@@ -466,14 +471,16 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         el.setAttribute('style', 'opacity: 0.75; scale: 1.25 1.25;')
         const beforeStyle = el.getAttribute('style')
 
-        place(el, { x: 0, y: 0, w: 100, h: 40 })
+        // the rect is drawn through the authored 1.25 scale (§4.2: at flush
+        // the active node's computed scale is its q)
+        place(el, { x: 0, y: 0, w: 100, h: 40 }, [80, 32])
         group.add(el, { layout: true })
         // a measured baseline (a capture-less one reports the new node, §4.4)
         group.capture()
         await group.flush()
 
         group.capture()
-        place(el, { x: 60, y: 20, w: 150, h: 80 })
+        place(el, { x: 60, y: 20, w: 150, h: 80 }, [120, 64])
         const run = group.flush()
         clock.frames(1)
         expect(group.stats.tracks).toBe(1)
