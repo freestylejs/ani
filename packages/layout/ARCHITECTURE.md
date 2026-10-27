@@ -761,9 +761,12 @@ the same keep test applies (§10).
   keeps them; a real disarm clears the active state. Each event records its target, with no
   reads. For a reparent, the departing node is the participant as captured and the new lead is the
   same participant at the flush. When the departing node is in the document scroller and the new
-  lead is viewport-fixed (an `offsetParent` walk that ends at a fixed element, run on this path
-  only, for a reparent only on a participant whose flat parent changed since its capture), the
-  lead is outside it.
+  lead is viewport-fixed, the lead is outside it. The test runs on this path only, and for a
+  reparent only on a participant whose own flat parent changed since its capture. It is the
+  lead's `offsetParent` walk; then the computed `position` of the walk's elements, read from its
+  end backwards: the lead is viewport-fixed when one is `fixed`. Gecko gives a fixed element the
+  body as its offset parent, so the fixed element need not be the walk's end. Every
+  `offsetParent` read is counted in `stats.parents`, every computed-style read in `stats.styles`.
 - **Crossfade** runs only when the lead changed in this flush, the previous lead is exiting under
   presence, the box moved by at least `threshold` (or the pair is reversing, below), neither node
   sets `layoutCrossfade: false`, and focus is not inside the follower (§8). Both nodes draw at the
@@ -1483,6 +1486,10 @@ pinned environment passes every scene in both engines.
 - **Scrollers inside unknown closed shadow roots.** A closed root that holds no participant hides
   its scroll events and its slots (§4.6), so a handoff out of a scroller inside it while it scrolls
   is not degraded by §5.8. Registering any element inside that root as a participant makes it known.
+- **A participant moved by an ancestor.** The viewport-fixed test of §5.8 runs for a reparent only
+  when the participant's own flat parent changed. A non-participant ancestor moved into a
+  viewport-fixed sheet while the document scrolls carries its participants without it; register
+  the moved container as a participant to cover it.
 
 - **Compositor lag.** During asynchronous scrolling the main thread can trail the screen by up to
   one frame. It is uniform inside the scrolled layer (no visible effect); across layers it is
