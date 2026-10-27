@@ -13,6 +13,8 @@ import {
     mergeMotion,
     sameOptions,
     scopeOf,
+    validateMotion,
+    validateMotionLayers,
 } from './context'
 
 export interface UseLayoutOptions<E extends HTMLElement> extends LayoutOptions {
@@ -24,6 +26,8 @@ function resolve(
     options: LayoutOptions,
     context: LayoutContextValue | null
 ): LayoutOptions {
+    validateMotion(options.motion)
+    validateMotionLayers([context?.motion, options.motion], context?.engine)
     const motion = mergeMotion(context?.motion, options.motion)
     const layoutId =
         options.layoutId !== undefined && context?.namespace !== undefined

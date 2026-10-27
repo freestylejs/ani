@@ -8,6 +8,8 @@ import {
     type LayoutReport,
     mergeLayoutMotion,
     sameLayoutMotion,
+    validateMotion,
+    validateMotionLayers,
 } from '@freestylejs/ani-layout'
 import { createContext, type Ref, type RefCallback } from 'react'
 import { flushSync } from 'react-dom'
@@ -404,7 +406,11 @@ export interface LayoutContextValue {
     readonly namespace: string | undefined
     /** The enclosing groups' `motion`, merged outermost first. */
     readonly motion: LayoutMotion | undefined
+    /** The outermost group's `engine`, if set. */
+    readonly engine?: LayoutGroupOptions['engine'] | undefined
 }
+
+export { validateMotion, validateMotionLayers }
 
 export const LayoutContext = createContext<LayoutContextValue | null>(null)
 

@@ -6,7 +6,12 @@ export {
     supportsLinearEasing,
     supportsViewTransition,
 } from './feature'
-export { mergeMotion as mergeLayoutMotion, sameLayoutMotion } from './motion'
+export {
+    mergeMotion as mergeLayoutMotion,
+    sameLayoutMotion,
+    validateMotion,
+    validateMotionLayers,
+} from './motion'
 export { createPresence } from './presence'
 export { reconcilePresence, settlePresence } from './presence_state'
 export { createLayoutGroup } from './scope'

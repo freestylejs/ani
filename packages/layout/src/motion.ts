@@ -173,6 +173,12 @@ export function validateMotion(value: unknown, label = 'motion'): void {
         )
     }
     assertSeconds(value.duration, 'duration')
+    if (type === 'spring' && value.duration === 0) {
+        throw invalidOptions(
+            'range',
+            'a spring motion needs a duration > 0 seconds; a timing motion jumps with duration 0.'
+        )
+    }
     assertSeconds(value.delay, 'delay')
     if (value.bounce !== undefined) {
         if (type !== 'spring') {
@@ -223,16 +229,24 @@ export function validateMotion(value: unknown, label = 'motion'): void {
 
 /**
  * The merged motion of validated layers (§5.1): a spring needs a duration
- * > 0 once every layer is applied.
+ * > 0 once every layer is applied, and the `'waapi'` engine realizes timing
+ * curves only.
  */
 export function validateMotionLayers(
-    layers: readonly (LayoutMotion | undefined)[]
+    layers: readonly (LayoutMotion | undefined)[],
+    engine?: 'raf' | 'waapi'
 ): void {
     const merged = mergeMotion(layers)
     if (merged.type === 'spring' && merged.duration === 0) {
         throw invalidOptions(
             'range',
             'a spring motion needs a duration > 0 seconds; a timing motion jumps with duration 0.'
+        )
+    }
+    if (engine === 'waapi' && merged.type === 'spring') {
+        throw invalidOptions(
+            'type',
+            "the 'waapi' engine realizes timing curves only; a spring motion needs the 'raf' engine."
         )
     }
 }

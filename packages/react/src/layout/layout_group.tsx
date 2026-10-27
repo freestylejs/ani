@@ -17,6 +17,8 @@ import {
     type LayoutScope,
     mergeMotion,
     sameValue,
+    validateMotion,
+    validateMotionLayers,
 } from './context'
 
 /** Every option may also be passed as `undefined` (the default), as React props are. */
@@ -73,6 +75,9 @@ interface Owned {
  */
 export function LayoutGroup(props: LayoutGroupProps): ReactNode {
     const parent = useContext(LayoutContext)
+    const engine = parent ? parent.engine : props.engine
+    validateMotion(props.motion)
+    validateMotionLayers([parent?.motion, props.motion], engine)
     const onSnap = useRef(props.onSnap)
     onSnap.current = props.onSnap
     const owned = useRef<Owned | null>(null)
@@ -153,11 +158,12 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
               : `${parent.namespace}/${props.id}`
     const motion = mergeMotion(parent?.motion, props.motion)
     const value = useMemo<LayoutContextValue>(
-        () => ({ scope, namespace, motion }),
+        () => ({ scope, namespace, motion, engine }),
         // `motion` by value: an inline object is new every render
         [
             scope,
             namespace,
+            engine,
             motion?.type,
             motion?.duration,
             motion?.delay,
