@@ -1,9 +1,10 @@
 # iOS-grade layout — production architecture v2 (B completion and the B–C seam)
 
-**Status:** v2 PROPOSAL, 2026-10-27. Supersedes v1 (`655432b`), which the owner judged "not
-production grade". v2 is the result of a three-reviewer design review (R1 platform and math, R2
-API and frameworks, R3 robustness and operations; two rounds, 35 round-1 findings, a
-cross-examination round) and awaits the decisions of §13 and the reviewers' round-3 sign-off.
+**Status:** v3 PROPOSAL, 2026-10-27. Supersedes v1 (`655432b`), which the owner judged "not
+production grade", and v2 (`5d1fb18`). v3 is the result of a three-reviewer design review (R1
+platform and math, R2 API and frameworks, R3 robustness and operations): 35 round-1 findings, a
+cross-examination round, and a round-3 sign-off of v2 whose remaining blockers v3 closes (§0). It
+awaits the decisions of §13 and the reviewers' final sign-off.
 Nothing here is implemented. On approval it amends `packages/layout/ARCHITECTURE.md` (the
 authority) and opens the checkpoints of §12.
 
@@ -25,7 +26,7 @@ C itself, motion tokens (D) and `GATE_AMENDMENT.md` are out of scope.
 
 | # | v1 | v2 | Found by |
 |---|---|---|---|
-| 1 | A scroll ledger moved the engine's *predicted* drawn box across scrolls and frame roots, with lazy fixed-root classification | **Measured presentation** (§3): B is the box measured at the last presented frame; the engine's model supplies only velocity. No ledger, no frame-root classification, no scroll listeners for captures | R1-03, R3-02, R3-03, R3-06 led to the redesign; R1, R2 and R3 round 2 found its time-coherence flaw, fixed by the post-commit refresh (§3.3) |
+| 1 | A scroll ledger moved the engine's *predicted* drawn box across scrolls and frame roots, with lazy fixed-root classification | **Measured presentation** (§3): B is measured by a capture read in the flush's own rendering interval; the engine's model supplies only velocity. A capture that crossed a frame is aged and degrades (§3.3). No ledger, no frame-root classification | R1-03, R3-02, R3-03, R3-06 led to the redesign. Round 2 (all three) found a time-coherence flaw; v2's in-frame refresh fixed it, but round 3 (R1, R3) showed later rAF/observer callbacks defeat it, so v3 ages instead |
 | 2 | `'stale'` snap kept for sticky | Sticky is browser positioning under the pose and is correct without snapping (§3.6) | R3-07 withdrawn in round 2 by all three |
 | 3 | No failure policy except for one spike | A normative degradation table, a transactional flush, isolated callbacks, statuses `'failed'` and `'disabled'` (§6) | R3-01, R3-04, R2-06, R2-07 |
 | 4 | No operations story | `layoutRuntime` kill switch and a versioned diagnostics stream (§7) | R3-14 |
@@ -40,6 +41,10 @@ C itself, motion tokens (D) and `GATE_AMENDMENT.md` are out of scope.
 | 13 | Spikes as gates, fallbacks mostly undefined | Every spike has a predeclared fallback that ships (§12) | R2-06 |
 | 14 | — | Accessibility contract (§8); support matrix (§1.2); B0 design freeze (§12) | R2-09, R2-10, R3-16 |
 | 15 | Settle example 0.914 s | 0.918 s (1.67 D) | R1-10 |
+| 16 | v2: bounding-box size check as the unsupported-geometry proof | Layout-size (`offsetWidth/Height`) vs rect check in production; ancestors are a dev-checked precondition; box-preserving rotations documented (§3.4) | R1, R3 round 3 |
+| 17 | v2: `useLayoutDrive()` inside a group returns that group | Always a dispatcher that routes `take` to the scope owning the element (§5.5) | R2 round 3 |
+| 18 | v2: every `duration > 0` | Timing keeps `duration ≥ 0` (existing jump); only springs need `> 0` (§4.2) | R2 round 3 |
+| 19 | v2: a core clock post-commit read phase | Not needed; core gains only `physics` (§9) | follows from 1 |
 
 Review record: `reports/R{1,2,3}_round{1,2}.md` and the orchestrator memo, in the review workspace
 (`ani-fx-brief/B_design/`).
@@ -52,7 +57,7 @@ Review record: `reports/R{1,2,3}_round{1,2}.md` and the orchestrator memo, in th
 
 | # | Property | Ani before this work |
 |---|---|---|
-| P1 | **The first frame after a change equals the last presented scene, modulo camera motion presented no later than that frame.** A scroll, pinch or visual-viewport pan presented in the same frame moves participants and their surroundings by the same amount | Holds without scroll; fails when a scroll lands between capture and flush (snaps `'stale'`), and for browser layout changes between flushes |
+| P1 | **The first frame after a change equals the last presented scene, modulo camera motion presented no later than that frame.** A scroll, pinch or visual-viewport pan presented in the same frame moves participants and their surroundings by the same amount. It holds for every flush whose capture was read in the flush's rendering interval; any other flush degrades as reported (§3.3, §3.5) | Holds without scroll; fails when a scroll lands between capture and flush (snaps `'stale'`), and for browser layout changes between flushes |
 | P2 | Velocity is continuous on retarget, handoff and gesture release | Retarget and handoff exact; no release seam |
 | P3 | Physical spring set by perceptual duration and bounce (Apple's model) | Curves plus a momentum term |
 | P4 | Interruptible at any frame | Holds |
@@ -135,70 +140,100 @@ Between flushes nothing is converted: a pose is a translate and scale relative t
 own layout box, so whatever moves the box (scroll, sticky, a toolbar, an image loading above)
 moves the drawn box with it, exactly as it moves every non-participant. Frames stay zero-read.
 
-### 3.3 Capture and post-commit refresh
+### 3.3 Capture and its rendering interval
 
-1. **`capture()` reads every connected participant**, driven ones included: one
-   `getBoundingClientRect` each, plus, for nodes with a presence layer or a shared radius, the
-   computed values the authority already reads (§4.1, §5.7 of the authority). Total rect reads
-   per batch stay ≤ N, so the authority's 2N-per-commit gate is unchanged; it is reached more
-   often during runs.
-2. **Time.** Every capture read happens in a task, after the last frame's writes, so it reflects
-   the state presented at that frame, time `t_k`. The engine's analytic state is evaluated at the
-   same `t_k`.
-3. **Refresh.** While a capture stays open across a rendering opportunity (a time-sliced render,
-   an async vanilla capture), the scope re-reads it **in that rendering opportunity, after every
-   commit-phase write of the clock** (a new post-commit read phase in core's clock, §10, D2). The
-   capture then always equals the last presented state, with all values from one instant.
-   - The DOM is not mutated by the change while a capture is open (React renders do not touch the
-     DOM; a vanilla caller that mutates part of its change and lets a frame present it has shown
-     that part to the user, so measuring it is P1-correct).
-   - Bounds: at most `maxParticipants` rect reads per refresh (§6), and at most 60 refreshes per
-     capture. After 60, the capture **expires**: it is dropped with diagnostic `capture-expired`,
-     and a later flush behaves as capture-less (§3.5). This stops an abandoned render from costing
-     reads indefinitely.
-4. **Invariant restated.** "Animation frames read zero" becomes: "animation frames read zero,
-   except (a) the post-commit refresh of a capture held open across that frame, and (b) one rect
-   per held element (§5.3)". Both are bounded and measured by the cost gates (§11.4).
+A **rendering interval** is the time between two rendering opportunities (two presented frames).
+Nothing the engine reads inside one interval can differ from the presented scene except through
+changes made in that interval's own tasks, which the user has not seen either.
 
-Why not keep v1's ledger, or the reviewers' residual alternative (`B = V_flush + (M_cap − V_cap)`
-plus a camera delta)? Both need a model of every camera and layout change between capture and
-flush (scroll listeners per document and shadow root, root classification, sticky detection,
-invalidation for unmodelled changes). The refresh needs none of it, and its only cost is bounded
-reads in frames that are already busy rendering.
+1. **`capture()` reads every connected participant**, driven ones included:
+   - one `getBoundingClientRect` and one `offsetWidth`/`offsetHeight` pair each (the support
+     check of §3.4);
+   - for nodes with a presence layer or a shared radius, the computed values the authority
+     already reads (§4.1 and §5.7 of the authority).
 
-### 3.4 Driven nodes: the measured state and the keep test
+   The rect reads stay ≤ N per batch, so the authority's 2N-per-commit rect gate is unchanged. It
+   is reached more often during runs, and the gate is re-measured with the added offset reads
+   (§11.4).
+2. **Time.** A capture is read in a task, after the last frame's writes. It reflects the state
+   presented at that frame, time `t_k`, and the engine's analytic state is evaluated at the same
+   `t_k`.
+3. **Aging.** Opening a capture subscribes a one-shot **frame marker** to the scope's clock: no
+   reads, no writes, independent of whether any track runs. If the marker fires before the flush,
+   a rendering opportunity has passed and the capture is **aged**.
+   - A rendering opportunity may have presented changes the capture cannot see: a scroll, a
+     layout change, or a mutation by a later animation-frame or observer callback. An aged
+     capture therefore never supplies B.
+   - The authority's existing re-read rule (`capture()` in a later task reads again) replaces an
+     aged capture with a fresh one. In React this happens whenever any participant renders in the
+     slice that commits.
+   - A flush that consumes an aged capture degrades exactly as a capture-less flush does (§3.5),
+     with diagnostic `capture-aged`.
+   - **Why no in-frame refresh** (v2 re-measured open captures after each frame's writes): the
+     reviewers showed that later `requestAnimationFrame` and `ResizeObserver` callbacks can still
+     change the scene before paint. The platform offers no "after all callbacks, before paint"
+     hook, so an in-frame read is not proof of what was presented. A verified "quiet window"
+     upgrade, which would let an aged capture animate when nothing could have changed, is a
+     follow-up and is not in this release.
+4. **Who is affected.** A capture is aged only when no participant renders in the task that
+   commits:
+   - in React, a render longer than one time slice whose last slice renders no participant;
+   - in vanilla code, an asynchronous gap between `capture()` and `flush()`.
 
-For a node with a running track, the measurement gives its **drawn box** `B` at `t_k`. Dividing
-out the engine's own pose at `t_k` and the presence matrices of that measurement, through the
-parents' maps measured at the same instant, gives the node's **presented layout box** `L_k`
-(exact for the supported 2D model; the solver already recovers poses this way for undriven nodes).
+   Both get the diagnostic, and the docs give the fix (render the group in the committing slice,
+   or call `update()`/`capture()` immediately before the mutation). Measured frequency in the
+   showcase rows is a gate input (§11.3, S1).
+5. **Invariant.** "Animation frames read zero" holds, except for one rect per held element per
+   frame (§5.3).
+
+### 3.4 The measured state, the support check, and the keep test
+
+For a node with a running track, the capture gives its **drawn box** `B` at `t_k`. The scope
+recovers the node's **presented layout box** `L_k` top-down: it divides out the engine's own
+pose at `t_k` and the presence matrices of that capture, through the parents' maps at the same
+instant. This is exact for the supported 2D model, and the solver already recovers poses this way
+for undriven nodes. R1 verified 10,000 random nested cases to 1.4e-13.
 
 - **Velocity.** The pose velocity at `t_k` is analytic and exact. The layout box is static between
-  frames, so `(B, v)` is the true presented state. Nested parents and children are measured at the
-  same instant and recovered top-down, so no shear can arise.
-- **Consistency check.** A rigid box displacement does not change size. If the measured size
-  differs from the predicted drawn size by more than 0.5 px, the node's map changed in a way the
-  engine does not own (an author rotation or scale, CSS `zoom`). The node and its participant
-  subtree snap `'unsupported'`.
-- **Keep test** (replaces §5.5's comparison against the plan-time A). A running track is kept only
+  frames, so `(B, v)` is the true presented state. Nested parents and children come from one
+  capture, so they cannot shear.
+- **Support check** (production, every participant, every capture and flush). The layout size
+  `offsetWidth × offsetHeight` (untransformed), multiplied by the known scales (the node's own pose
+  and its participant ancestors' maps), must equal the rect's size within 1 px plus 0.5 %.
+  - A mismatch means a map the engine does not own: a rotation or skew that changes the bounding
+    box, 3D, or CSS `zoom`. The node and its participant subtree snap `'unsupported'`, with
+    diagnostic `unsupported-geometry`.
+  - The flush additionally runs the authority's computed-value classifier on active nodes, as
+    today.
+- **Bounding-box-preserving author rotations** (180°, or 90° of a square) present at capture and
+  removed by the commit are not detected, and need not be. The bounding box *is* the box, so the
+  box's motion is exact. The orientation change is the author's own instant change in that
+  commit, like a colour or text change, which layout does not animate. This is documented.
+- **Non-participant ancestors** must not rotate, skew, apply 3D or change `zoom` (the authority's
+  existing precondition: they may only translate). Dev builds check this with a memoised
+  computed-style walk at `add` and at the first flush, and warn once. Production does not read
+  ancestors.
+- **Keep test** (replaces §5.5's comparison with the plan-time A). A running track is kept only
   when its new A equals `L_k` within `threshold`, judged in rest space as the authority does, and
-  its track options are unchanged. This compares two measured quantities. A presented scroll or
-  layout change moved `L_k` and A together, so the track is kept and continues relative to its box.
-  An unpresented change in the commit moved A only, so the node retargets from `B` with `v` (D3).
-- **No thrash.** The test has the authority's semantics (retarget only when the target moved). A
-  retarget whose target is unchanged cannot occur, so no track restarts on an unrelated commit.
+  its track options are unchanged.
+  - A presented scroll or layout change moved `L_k` and A together, so the track is kept and
+    continues relative to its box.
+  - A change in the commit's own task (the mutation, an unpresented scroll) moved A only, so the
+    node retargets from `B` with `v` (D3).
+- **No thrash.** The test has the authority's semantics: a node retargets only when its target
+  moved. R1 and R3 confirmed that the residual-retarget loop of the round-2 proposal is gone.
 - **Time.** A flush continues the time of the last painted frame (`t_k`), as the authority does.
 
-### 3.5 Capture-less flush
+### 3.5 Capture-less or aged flush
 
-A flush with no capture, or after an expired one, has no measurement of what was presented:
+A flush with no capture, or with an aged capture, has no valid measurement of what was presented:
 
-- an undriven node appears at A (unchanged from today; the React adapter's existing dev warning
+- an undriven node appears at A, unchanged from today (the React adapter's existing dev warning
   names the fix);
 - a driven node keeps its track whatever moved. Its pose stays relative to its layout box, so it
-  moves with its layout like any non-participant, and still ends at identity.
-- Each node that would have moved is reported in `snapped` with reason `'stale'` (no
-  before-box), and diagnostic `capture-less-flush`.
+  moves with its layout like any non-participant, and still ends at identity;
+- each node that would have moved is reported in `snapped` with reason `'stale'` (no valid
+  before-box), with diagnostic `capture-less-flush` or `capture-aged`.
 
 ### 3.6 Sticky, fixed and browser-driven change
 
@@ -258,14 +293,13 @@ it to the item id. React lists keyed by item identity remount instead, and need 
 
 | Batch | Reads |
 |---|---|
-| Commit (capture + flush) | ≤ 2N rects + the authority's computed values; unchanged gate (≤ 4 ms at 1,000 participants) |
-| Refresh (capture open across a frame) | ≤ N rects after the frame's writes (one forced style recalculation, no layout); gate p95 ≤ 2 ms at 1,000 |
+| Commit (capture + flush) | ≤ 2N rects, 2N `offsetWidth/Height` pairs, and the authority's computed values; gate ≤ 4 ms at 1,000 participants, re-measured |
+| Open capture | 0 reads; one frame marker |
 | Held element | 1 rect per held element per frame, before writes |
 | Steady frame | 0 reads; gate p95 ≤ 2 ms unchanged |
 | Events | `scroll`/`scrollend` record targets only, while shared participants exist |
 
-`stats` gains `refreshes` and counts every read, including offsets and computed values (R3-05,
-R3-11).
+`stats` counts every read, including offset sizes and computed values (R3-05, R3-11).
 
 ## 4. Design B — the physical spring (opt-in)
 
@@ -322,8 +356,12 @@ export type LayoutMotion =
 
   The root default is timing: ease-out, 0.35 s. A spring with no `duration` after the merge takes
   0.55 s, and `bounce` defaults to 0.
-- **Validation** is synchronous, throws `ANI_INVALID_OPTIONS`, and runs before any state changes:
-  finite `duration > 0`, finite `delay ≥ 0`, finite `bounce` in (−1, 1), and no `bounce` on timing.
+- **Validation** is synchronous, throws `ANI_INVALID_OPTIONS`, and runs before any state changes.
+  It is kind-specific after merge:
+  - timing: finite `duration ≥ 0` (`0` keeps today's synchronous jump);
+  - spring: finite `duration > 0`;
+  - both: finite `delay ≥ 0`;
+  - `bounce`: finite and strictly inside (−1, 1), and never on timing.
   It runs in both packages, whose field-by-field `mergeMotion` functions are replaced by this
   kind-level rule.
 - **Comparison** in the keep test: by effective value, after merge.
@@ -432,9 +470,10 @@ export interface LayoutGroup extends LayoutDrive { /* existing members */ }
 
 ### 5.5 React
 
-`useLayoutDrive()` returns a `LayoutDrive`. Inside an explicit group it is that group. Outside, it
-is a dispatcher whose `take(el)` resolves the implicit scope of `el.ownerDocument` (portals and
-iframes stay correct). C's React hook accepts it as an option.
+`useLayoutDrive()` always returns a dispatcher. `take(el)` routes to the live scope that currently
+owns the registered element: the explicit group only when it owns `el`, otherwise the implicit
+scope of `el.ownerDocument` (portals into other documents stay correct). If no scope owns `el`,
+`take` throws `ANI_INVALID_OPTIONS`. C's React hook accepts the dispatcher as an option.
 
 ## 6. Safety contract
 
@@ -442,8 +481,8 @@ iframes stay correct). C's React hook accepts it as an option.
 
 | Condition | Detection | Outcome | Report |
 |---|---|---|---|
-| No valid before-box (no capture, expired capture) | flush | undriven appear at A; driven keep their tracks (§3.5) | `snapped: 'stale'`; diagnostic `capture-less-flush` / `capture-expired` |
-| Map change the engine does not own (rotation, skew, 3D, `zoom`) | size check (§3.4), the authority's computed-value checks | the subtree snaps to A | `'unsupported'` |
+| No valid before-box (no capture, or an aged capture) | flush; frame marker (§3.3) | undriven appear at A; driven keep their tracks (§3.5) | `snapped: 'stale'`; diagnostic `capture-less-flush` / `capture-aged` |
+| Map change the engine does not own (box-changing rotation or skew, 3D, `zoom`) on a participant | layout-size vs rect check at capture and flush (§3.4); the authority's computed-value checks | the subtree snaps to A | `'unsupported'` |
 | Shared handoff out of an active scroller | §3.7 | presence enter at A | diagnostic `handoff-scroll-active` |
 | Spring settle > 10 s; non-finite inputs | plan, validation | snap / throw before any state change | `'unsupported'`; `ANI_INVALID_OPTIONS` |
 | Connected participants > `maxParticipants` (default 2,000) | count, before any read | the whole flush snaps, with no geometry reads | status `'capped'` |
@@ -492,7 +531,7 @@ animate, some snap) resolves by its tracks, and lists the snapped nodes with the
 
 ```ts
 export type LayoutDiagnosticCode =
-  | 'capture-less-flush' | 'capture-expired' | 'unsupported-geometry' | 'handoff-scroll-active'
+  | 'capture-less-flush' | 'capture-aged' | 'unsupported-geometry' | 'handoff-scroll-active'
   | 'spring-timeout' | 'participant-cap' | 'mover-cap' | 'document-mismatch'
   | 'runtime-disabled' | 'focus-in-follower' | 'callback-error' | 'internal-error'
   | (string & Record<never, never>)   // new codes may be added; existing meanings are stable
@@ -510,7 +549,6 @@ export interface LayoutDiagnostic {
     readonly participants: number
     readonly rectReads: number
     readonly styleReads: number
-    readonly refreshes: number
     readonly springSettleMs: number | null
   }
   readonly error?: unknown
@@ -533,6 +571,8 @@ export const layoutRuntime: LayoutRuntime
   An app wires it to remote config. It is distinct from reduced motion.
 - **Cost of diagnostics.** None when nothing listens; payloads are built only for listeners. The
   hook works in production. Dev builds additionally log warnings.
+- **Isolation.** A throwing listener is reported as `callback-error` to the *other* listeners only,
+  never back to itself, and never recursively.
 - `onSnap` stays as it is.
 
 ## 8. Accessibility contract
@@ -554,8 +594,8 @@ export const layoutRuntime: LayoutRuntime
 
 | Package | Addition / change |
 |---|---|
-| core | `physics` module (pure numeric: `spring`, `settleTime`, `perceptual`, `decay`); clock post-commit read phase (§10). Nothing DOM-related |
-| layout | `LayoutMotion` union (§4.2); `LayoutOptions.layoutKey`; `LayoutGroupOptions.maxParticipants`; `LayoutDrive*` types and `LayoutGroup.take` (§5.1); `LayoutStatus` and `SnapReason` gain `'failed'` and `'disabled'`; `layoutRuntime`, `LayoutDiagnostic*` (§7); `stats.refreshes`; motion merge rule; document-affine scopes |
+| core | `physics` module (pure numeric: `spring`, `settleTime`, `perceptual`, `decay`). Nothing DOM-related; the clock is unchanged |
+| layout | `LayoutMotion` union (§4.2); `LayoutOptions.layoutKey`; `LayoutGroupOptions.maxParticipants`; `LayoutDrive*` types and `LayoutGroup.take` (§5.1); `LayoutStatus` and `SnapReason` gain `'failed'` and `'disabled'`; `layoutRuntime`, `LayoutDiagnostic*` (§7); motion merge rule; document-affine scopes |
 | react/layout | `useLayoutDrive()`; `mergeMotion` kind-level rule; portal scoping per document. The `'use client'` directive is a release assertion in both ESM and CJS |
 
 Nothing is removed. Defaults are unchanged (D1 deferred).
@@ -564,22 +604,26 @@ Nothing is removed. Defaults are unchanged (D1 deferred).
 
 - **From Motion:** `layoutScroll`/`layoutRoot` are unnecessary. Ani's spring carries gesture
   velocity. `type: 'spring'` maps by name.
-- **Within Ani:** ordinary scroll no longer produces `'stale'`. A spring's promise resolves at
-  settle.
+- **Within Ani:**
+  - ordinary scroll no longer produces `'stale'`;
+  - `'stale'` now means "no valid before-box" (§3.5);
+  - `LayoutStatus` and `SnapReason` gain `'failed'` and `'disabled'`, so exhaustive switches must
+    handle them;
+  - a spring's promise resolves at settle;
+  - timing `duration: 0` is unchanged.
 
 ## 10. Module changes
 
 | Module | Change |
 |---|---|
-| `layout/dom.ts` | Flat-tree ancestry primitive; all-participant capture reads; held-element read |
-| `layout/scope.ts` | Refresh lifecycle and expiry; view-space planning; measured state; capture-less rules; transactional boundary; the orthogonal hold field and the drive state machine; `layoutKey`; document affinity; active-scroller listeners; runtime and diagnostics plumbing |
+| `layout/dom.ts` | Flat-tree ancestry primitive; all-participant capture reads and the layout-size check; held-element read; dev-only ancestor classifier |
+| `layout/scope.ts` | Capture aging (frame marker); view-space planning; measured state; capture-less rules; transactional boundary; the orthogonal hold field and the drive state machine; `layoutKey`; document affinity; active-scroller listeners; runtime and diagnostics plumbing |
 | `layout/plan.ts` | Keep test against `L_k`; status precedence; new reasons |
 | `layout/solve.ts` | Pose inversion of measured boxes; spring channels; perceptual timeline; held origin channels |
 | `layout/motion.ts` | Discriminated union, kind-level merge, validation, settle cap, reduced-motion search |
 | `layout/runtime.ts` (new) | `layoutRuntime`, diagnostics stream |
 | `layout/realize/waapi.ts` | Spring rejection (validation) |
 | core `physics` (new) | Pure closed forms; settle; perceptual; decay |
-| core `loop/clock.ts` | Post-commit read phase (runs after every subscriber's commit, in the same frame) |
 | `react/layout` | `useLayoutDrive`, merge rule, portal document scoping |
 
 `plan.ts`, `solve.ts`, `motion.ts` and `physics` stay DOM-free and clock-free. Only `dom.ts` reads
@@ -599,14 +643,14 @@ the perceptual timeline and pose inversion. Every row passes in three engines, a
 | L-MEAS-2 kanban: card moved, column auto-scrolls in the layout effect | All participants start at their presented boxes; land on A |
 | L-MEAS-3 accordion + instant `scrollIntoView` | Participants start where seen; non-participants follow the scroll; exact settle |
 | L-MEAS-4 user scroll mid-run (inner and page, under a scaling parent), then a commit | Drawn boxes follow content every frame; the commit continues position and velocity |
-| L-MEAS-5 React 18.3 and 19: time-sliced render scrolled between chunks; transition interrupted by an urgent update; Suspense fallback then reveal while scrolled; two commits coalesced | First frame = last presented within 0.5 px; capture refresh counts within budget |
+| L-MEAS-5 React 18.3 and 19: time-sliced render scrolled between chunks (a) with a participant in the committing slice, (b) without; transition interrupted by an urgent update; Suspense fallback then reveal while scrolled; two commits coalesced | (a) first frame = last presented within 0.5 px; (b) §3.5 outcome with `capture-aged`; never a wrong first frame |
 | L-MEAS-6 sticky engages mid-run: (a) no later commit, (b) a later commit | (a) final frame exact, no snap; (b) continuity |
 | L-MEAS-7 browser layout change mid-run (image above loads), then a commit | Continuity; track kept or retargeted per §3.4 |
 | L-MEAS-8 fixed sheet with nested participants while the page scrolls | No motion from the page scroll; inner layout animates |
-| L-MEAS-9 nested driven parent and child, commit after a frame advanced past capture | No shear, no rewind (R1's counterexample) |
+| L-MEAS-9 nested driven parent and child: (a) fresh capture mid-run, (b) a frame advanced past the capture (R1's round-2 counterexample) | (a) no shear, exact `(B, v)`; (b) aged, §3.5 outcome, no rewind |
 | L-MEAS-10 participant in an open and a closed shadow root inside an outer scroller | As L-MEAS-4 |
-| L-MEAS-11 capture-less flush and expired capture | §3.5 outcomes and reports |
-| L-MEAS-12 author rotation added mid-run | Subtree snaps `'unsupported'` |
+| L-MEAS-11 capture-less flush; vanilla capture with an async gap (aged) | §3.5 outcomes and reports |
+| L-MEAS-12 author rotation: (a) box-changing rotation added mid-run, (b) present at capture and removed by the commit, (c) a 180° rotation removed by the commit | (a), (b) subtree snaps `'unsupported'`; (c) the box moves exactly (documented) |
 | L-HAND-1 list item → fixed detail and back (in a scroller) | Shared handoff; coverage 1 at every frame |
 | L-HAND-2 handoff while the source scroller is active; after `scrollend` | Presence enter, diagnostic; then a normal flight |
 | L-SPRING-1 channels, b ∈ {−0.8, −0.3, 0, 0.2, 0.4, 0.9}, 60/120 Hz | `c(0) = B`, `c′(0) = v`, settle within ε, against the oracle |
@@ -625,20 +669,21 @@ the perceptual timeline and pose inversion. Every row passes in three engines, a
 | L-A11Y-1 reorder and hold with focus inside; crossfade follower | `activeElement` stable; follower `inert`; focus-in-follower rule |
 
 **Model-based fuzzing.** A pure model of the scope's lifecycle generates seeded event sequences:
-capture, refresh, flush, presented and unpresented scroll, browser layout change, detach and
+capture, frame markers, flush, presented and unpresented scroll, browser layout change, detach and
 re-add, document change, `layoutKey` change, take, move, release, cancel, reduced-motion toggles,
 the kill switch, visibility changes and injected exceptions. Properties:
 
 - no NaN;
-- B equals the last presented box, or the node is reported snapped;
+- B equals the box at a capture read in the flush's rendering interval, or the node is reported
+  snapped;
 - no read after the first write in a batch;
 - every listener and subscription is released when idle;
 - every handle reaches a terminal state;
 - every report resolves;
 - styles restore byte-identically.
 
-**Mutation tests** each must fail a named row: skip the refresh; refresh before writes; use the
-predicted box instead of the measured one; drop the size check; ignore `scrollend`; skip cleanup on
+**Mutation tests** each must fail a named row: consume an aged capture; skip the frame marker; use
+the predicted box instead of the measured one; drop the layout-size check; ignore `scrollend`; skip cleanup on
 abort; release with `dt ≠ 0`.
 
 ### 11.2 Tier 2 — release device gate (mandatory before a release claims B)
@@ -667,9 +712,9 @@ source are decision D5.
 
 | Spike | Must show (three engines) | Fallback |
 |---|---|---|
-| S1 post-commit refresh | A rect read after the frame's writes equals the presented box (0.01 px), including WAAPI-driven boxes; the cost of one forced style recalculation | Refresh in the next frame's read phase. Any frame advanced since the refresh marks the capture aged, and an aged capture behaves as expired (§3.5) |
+| S1 measurement | (a) A capture of a driven node equals its presented box (0.01 px), including WAAPI-driven boxes. (b) The layout-size check has no false positive at DPR 1, 2 and 3, fractional sizes, and pinch zoom. (c) The aging frequency in the showcase rows, React 18.3 and 19 | (a) Driven nodes fall back to the authority's analytic drawn box (as today) for that engine. (b) Widen the tolerance to the measured rounding bound. (c) If aging is frequent in a showcase row, the adapter docs and the row are changed before B5 |
 | S2 anchoring | The correction is applied before the flush's first rect read; layout's writes neither suppress nor alter anchoring | Read one scroll offset per anchoring candidate container before the first rect (forces the correction). If still not exact, an unpresented anchoring correction behaves as a capture-less flush for that subtree (`'stale'`) |
-| S3 React | §3.3 holds under every L-MEAS-5 sequence in 18.3 and 19 | Captures from a render the commit does not refresh behave as expired |
+| S3 React | Every L-MEAS-5 sequence in 18.3 and 19 gives a fresh capture or a reported aged one, never a wrong first frame | None needed: aging is the conservative path. The spike measures how often it happens |
 | S4 held read | A per-frame rect read before writes is exact and costs ≤ 0.1 ms per held element | None needed: an inexact read only adds the bound of §5.3. The spike then measures that bound |
 | S5 `scrollend` | Fires after momentum and smooth scroll in each engine | §3.7's conservative rule (no flight out of any container that has scrolled) |
 
@@ -677,7 +722,6 @@ source are decision D5.
 
 - Commit: ≤ 4 ms at 1,000 participants (unchanged), both unscrolled and scrolled.
 - Steady frame: p95 ≤ 2 ms (unchanged).
-- Refresh frame: p95 ≤ 2 ms at 1,000.
 - Sustained commits: 60 Hz commits with 300 moving participants hold the steady-frame gate.
 - Held frame: ≤ 0.1 ms per held element.
 
@@ -692,7 +736,7 @@ Same loop as before: Task Agent → Valid Agent → orchestrator judgment, retry
 | **B0** design freeze | This document; the owner's decisions (§13); the reviewers' sign-off | No open blocker | — |
 | B1 | Spikes S1–S5 | Each passes or its fallback is applied and documented | B0 |
 | B2 | Measured presentation (§3), safety contract (§6), operations (§7), accessibility of crossfade (§8); L-MEAS, L-HAND, L-OPS, L-KEY, L-DOC, L-A11Y rows; model fuzz | Rows ×3; cost gates; mutation tests | B1 |
-| B3 | Core `physics` and clock phase; spring (§4); L-SPRING rows | Property tests within 1e-9 against the oracle; rows ×3 | B0 (parallel with B1/B2) |
+| B3 | Core `physics`; spring (§4); L-SPRING rows | Property tests within 1e-9 against the oracle; rows ×3 | B0 (parallel with B1/B2) |
 | B4 | Drive (§5); L-DRIVE rows; React adapter | Rows ×3 | B2, B3 |
 | B5 | Authority amendment; docs, migration notes, layout changelog; showcase rows; package version and peer alignment | Full gate on a fresh clone; Tier 2 device gate | B2–B4 |
 
@@ -701,7 +745,7 @@ Same loop as before: Task Agent → Valid Agent → orchestrator judgment, retry
 | # | Decision | Recommendation |
 |---|---|---|
 | D1 | Spring as the default motion | **Defer.** All three reviewers: ship the spring opt-in; the default change is a separate later release with migration notes |
-| D2 | Core additions: the pure `physics` module and the clock's post-commit read phase | **Approve.** Both are additive; core gains no DOM or layout types |
+| D2 | Core addition: the pure `physics` module | **Approve.** Additive; core gains no DOM or layout types, and the clock is unchanged |
 | D3 | Visual continuity (unpresented scroll is part of the change) | **Approve.** Unanimous; the only rule consistent with P1 |
 | D4 | Clip-aware crossfade | **Defer** |
 | D5 | Source of the Tier 2 devices: owner's own iPhone (60 Hz + ProMotion) and Android device, or a device cloud | Owner's call. A release cannot claim B without it |
@@ -715,6 +759,10 @@ These are bounds, not open questions. Each is stated in the docs and measured in
   one frame. It is uniform inside the scrolled layer (no visible effect). Across layers it is
   handled by §3.7 for handoffs and bounded per frame for held elements (§5.3).
 - **Fixed descendants of posed participants** are re-contained (§3.8).
+- **Aged captures** do not animate undriven participants. This is reported, and the fix is
+  documented (§3.3).
+- **Bounding-box-preserving author rotations** removed by a commit are not detected. The box
+  motion stays exact (§3.4).
 - **Spring runs** last until settle (1.67 D for the example). Perceived completion uses `p(t)` and
   ends at D. The promise resolves at settle (§4.1).
 
