@@ -465,6 +465,23 @@ export function containsFlat(
     return false
 }
 
+/**
+ * Whether `element` is viewport-fixed: its `offsetParent` walk ends at a fixed
+ * element (§5.8). One computed-style read, of the walk's end. A fixed element
+ * has no offset parent, so the walk ends at it.
+ */
+export function viewportFixed(element: HTMLElement): boolean {
+    let end: Element = element
+    for (
+        let next = element.offsetParent;
+        next;
+        next = (next as HTMLElement).offsetParent
+    ) {
+        end = next
+    }
+    return getComputedStyle(end).position === 'fixed'
+}
+
 /* ───────────────────────── owned styles ───────────────────────── */
 
 export const POSE_PROPERTIES = ['translate', 'scale'] as const

@@ -26,6 +26,7 @@ import {
     type Saved,
     save,
     viewportBox,
+    viewportFixed,
     viewRect,
 } from './dom'
 import { hasDOM, snapsReferenceBox, supportsLinearEasing } from './feature'
@@ -82,6 +83,7 @@ import {
 import {
     type Action,
     type IdHistory,
+    leadChanges,
     moved,
     type PlanNode,
     plan,
@@ -301,6 +303,8 @@ interface Capture {
     readonly radius: Map<Participant, readonly number[]>
     /** The engine's state at `t_k`. */
     readonly engine: EngineState
+    /** Per participant, the actively scrolling containers it was inside (§5.8). */
+    readonly scrolling: ReadonlyMap<Participant, readonly EventTarget[]>
 }
 
 type Matrix = Geometry['matrix']
@@ -573,6 +577,8 @@ interface Retained {
     readonly velocity: BoxVelocity | null
     /** The removed lead's on-screen radii, when it owned radius. */
     readonly radius: readonly number[] | null
+    /** The actively scrolling containers it was inside when its box was measured (§5.8). */
+    readonly scrolling: readonly EventTarget[]
     readonly until: number
 }
 
@@ -788,8 +794,10 @@ export function createLayoutGroup(
         const node = p.element.getRootNode()
         if (isShadowRoot(node)) {
             p.root = node
-            rootUsers.set(node, (rootUsers.get(node) ?? 0) + 1)
+            const users = rootUsers.get(node) ?? 0
+            rootUsers.set(node, users + 1)
             roots.set(node.host, node)
+            if (users === 0) listen(node)
         } else if (node.nodeType === 9) {
             p.root = null
         }
@@ -807,6 +815,7 @@ export function createLayoutGroup(
         }
         rootUsers.delete(root)
         if (roots.get(root.host) === root) roots.delete(root.host)
+        unlisten(root)
     }
 
     /** The known roots with `element`'s own, for a check made before it is registered. */
@@ -814,6 +823,114 @@ export function createLayoutGroup(
         const node = element.getRootNode()
         if (!isShadowRoot(node) || roots.get(node.host) === node) return roots
         return new Map(roots).set(node.host, node)
+    }
+
+    /* ─────────────── actively scrolling containers (§5.8) ─────────────── */
+
+    /**
+     * Scroll event targets (a scroll container, or the document) from their
+     * first `scroll` event until their `scrollend`; where `scrollend` is
+     * unavailable, every target that scrolled since the listeners were armed.
+     * Time never clears it.
+     */
+    const active = new Set<EventTarget>()
+    /** Registered participants with a `layoutId`: the listeners are armed while there is one. */
+    let shared = 0
+    /** Per event root (the document, each known shadow root), its listeners' removal. */
+    let listening: Map<Document | ShadowRoot, () => void> | null = null
+    let scrollEnds = false
+    const onScroll = (event: Event): void => {
+        if (event.target) active.add(event.target)
+    }
+    const onScrollEnd = (event: Event): void => {
+        if (event.target) active.delete(event.target)
+    }
+    const LISTENER = { capture: true, passive: true } as const
+
+    /** One passive capture-phase `scroll` and `scrollend` pair on an event root, while armed. */
+    function listen(root: Document | ShadowRoot): void {
+        if (!listening || listening.has(root)) return
+        root.addEventListener('scroll', onScroll, LISTENER)
+        if (scrollEnds)
+            root.addEventListener('scrollend', onScrollEnd, LISTENER)
+        listening.set(root, () => {
+            root.removeEventListener('scroll', onScroll, LISTENER)
+            if (scrollEnds) {
+                root.removeEventListener('scrollend', onScrollEnd, LISTENER)
+            }
+        })
+    }
+
+    function unlisten(root: Document | ShadowRoot): void {
+        const remove = listening?.get(root)
+        if (!remove) return
+        remove()
+        listening!.delete(root)
+    }
+
+    /** Arms the listeners while the scope has a shared participant, disarms them when it has none. */
+    function syncListeners(): void {
+        if (shared > 0 && !listening && scopeDocument) {
+            listening = new Map()
+            const view = scopeDocument.defaultView
+            scrollEnds = 'onscrollend' in (view ?? scopeDocument)
+            listen(scopeDocument)
+            for (const root of rootUsers.keys()) listen(root)
+        } else if (shared === 0 && listening) {
+            for (const remove of listening.values()) remove()
+            listening = null
+        }
+    }
+
+    /** Counts a participant's `layoutId` in or out (`sign` 1 or -1). */
+    function share(options: LayoutOptions, sign: 1 | -1): void {
+        if (options.layoutId !== undefined) shared += sign
+    }
+
+    /**
+     * Per connected participant, the active containers it was inside (a
+     * proper flat-tree ancestor; the document for every node) when the
+     * capture read its B (§5.8). One walk per DOM node, shared by siblings.
+     */
+    function scrollingAround(
+        list: readonly Participant[]
+    ): Map<Participant, readonly EventTarget[]> {
+        const around = new Map<Participant, readonly EventTarget[]>()
+        if (active.size === 0) return around
+        // a removed container scrolls nothing a participant is drawn in
+        for (const target of active) {
+            if (target !== scopeDocument && !(target as Node).isConnected)
+                active.delete(target)
+        }
+        const top: readonly EventTarget[] =
+            scopeDocument && active.has(scopeDocument) ? [scopeDocument] : []
+        const memo = new Map<Node, readonly EventTarget[]>()
+        const containersOf = (node: Node | null): readonly EventTarget[] => {
+            if (!node) return top
+            const known = memo.get(node)
+            if (known) return known
+            const above = containersOf(flatParent(node, roots))
+            const value = active.has(node) ? [...above, node] : above
+            memo.set(node, value)
+            return value
+        }
+        for (const p of list) {
+            const containers = containersOf(flatParent(p.element, roots))
+            if (containers.length > 0) around.set(p, containers)
+        }
+        return around
+    }
+
+    /** `container` holds `element` now: a proper flat-tree ancestor, or the document scroller unless it is viewport-fixed. */
+    function insideNow(container: EventTarget, element: HTMLElement): boolean {
+        if (container === scopeDocument) {
+            stats.styles += 1
+            return !viewportFixed(element)
+        }
+        return (
+            container !== element &&
+            containsFlat(container as Node, element, roots)
+        )
     }
 
     function assertDocument(element: HTMLElement): void {
@@ -1449,6 +1566,7 @@ export function createLayoutGroup(
             unsupported: failing,
             radius,
             engine,
+            scrolling: scrollingAround(list),
         }
         if (inFrame) {
             warn(
@@ -2379,7 +2497,56 @@ export function createLayoutGroup(
                             ? (index.get(d.lead) ?? -1)
                             : -1,
                     measured: !unmeasured[i],
+                    scrollActive: scrollActive[i]!,
                 }
+            })
+        }
+
+        /**
+         * §5.8: whether each node would fly from a box measured inside an
+         * actively scrolling container that it is outside of now. A handoff
+         * takes over the departing node's box (measured at this flush's
+         * capture, or retained from the capture before its removal); a
+         * reparent takes the node out of a container. Reads (the fixed test of
+         * a lead against the document scroller) happen before any write.
+         */
+        const scrollActive = list.map(() => false)
+        if (
+            fresh &&
+            (fresh.scrolling.size > 0 ||
+                [...retained.values()].some((r) => r.scrolling.length > 0))
+        ) {
+            const outside = (
+                containers: readonly EventTarget[] | undefined,
+                element: HTMLElement
+            ) => containers?.some((c) => !insideNow(c, element)) ?? false
+            const changes = leadChanges(
+                list.map((p) => ({
+                    layoutId: p.keyChanged
+                        ? null
+                        : (p.options.layoutId ?? null),
+                    exiting: exitingPresence(p.element, roots) !== null,
+                    order: p.order,
+                })),
+                idsOf()
+            )
+            for (const { id, index: i, from } of changes) {
+                // without a valid B on either side nothing is handed over
+                if (from === null || unmeasured[i]) continue
+                if (from !== 'retained' && unmeasured[from]) continue
+                const departing =
+                    from === 'retained'
+                        ? retained.get(id)?.scrolling
+                        : fresh.scrolling.get(list[from]!)
+                if (outside(departing, list[i]!.element)) scrollActive[i] = true
+            }
+            // a reparent cannot leave the document: only containers count
+            list.forEach((p, i) => {
+                if (scrollActive[i] || unmeasured[i] || p.keyChanged) return
+                const containers = fresh.scrolling
+                    .get(p)
+                    ?.filter((c) => c !== scopeDocument)
+                if (outside(containers, p.element)) scrollActive[i] = true
             })
         }
 
@@ -2470,6 +2637,16 @@ export function createLayoutGroup(
                     'presence animates opacity on a layoutId participant, so it hands off without a crossfade. Animate opacity on a child instead.'
                 )
             }
+        }
+        // §5.8 degradations are not snaps: `report.snapped` does not list
+        // them; their reason names the diagnostic
+        for (const { reason } of result.degraded) {
+            warn(
+                reason,
+                scrollEnds
+                    ? 'a shared handoff (or a participant moved) out of a container that is still scrolling does not fly: the new lead appears at its layout, with its presence enter if it has one. It flies once the container has fired scrollend.'
+                    : 'a shared handoff (or a participant moved) out of a container that has scrolled does not fly in this browser, which has no scrollend: the new lead appears at its layout, with its presence enter if it has one.'
+            )
         }
 
         // 3. outcome
@@ -3137,6 +3314,8 @@ export function createLayoutGroup(
         p.removed = true
         registry.delete(p.element)
         dropRoot(p)
+        share(p.options, -1)
+        syncListeners()
         invalidateHold(p)
         const id = p.options.layoutId
         if (id !== undefined && leads.get(id) === p) {
@@ -3216,6 +3395,8 @@ export function createLayoutGroup(
                 ) {
                     p.changed = true
                 }
+                share(p.options, -1)
+                share(nextOptions, 1)
                 p.options = nextOptions
                 p.motion = null
             } else {
@@ -3236,13 +3417,17 @@ export function createLayoutGroup(
                 }
                 registry.set(element, p)
                 trackRoot(p)
+                share(nextOptions, 1)
             }
+            syncListeners()
             const self = p
             return () => {
                 if (self.removed || registry.get(element) !== self) return
                 self.removed = true
                 registry.delete(element)
                 dropRoot(self)
+                share(self.options, -1)
+                syncListeners()
                 const id = self.options.layoutId
                 if (id !== undefined && leads.get(id) === self) {
                     // its last presented box, radius and velocity, in view
@@ -3265,6 +3450,7 @@ export function createLayoutGroup(
                             radius: ownsRadius(self.options)
                                 ? (seen.radius.get(self) ?? null)
                                 : null,
+                            scrolling: seen.scrolling.get(self) ?? [],
                             until: now() + retain * 1000,
                         })
                 }
@@ -3315,8 +3501,11 @@ export function createLayoutGroup(
                 resetLayoutKey(p)
             } else if (!sameTrackOptions(p.options, layoutOptions, groupMotion))
                 p.changed = true
+            share(p.options, -1)
+            share(layoutOptions, 1)
             p.options = layoutOptions
             p.motion = null
+            syncListeners()
         },
 
         capture: takeCapture,
@@ -3351,6 +3540,9 @@ export function createLayoutGroup(
                 dropRoot(p)
             }
             registry.clear()
+            shared = 0
+            syncListeners()
+            active.clear()
             frame = []
             leads.clear()
             retained.clear()

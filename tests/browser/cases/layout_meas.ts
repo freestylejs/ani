@@ -47,8 +47,6 @@ export const pageOptions = {}
 export const knownFailures: Record<string, string> = {
     L_MEAS_2:
         "P2: Firefox only (passes in Chromium and WebKit). §11.4 S2: 'layout's writes neither suppress nor alter anchoring'. Firefox's scroll anchoring counts its anchor node's translate and scale (a change to transform is a suppression trigger there, but not a change to translate or scale), so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B; every later pose write re-anchors again, so the scroll follows the anchor's pose for the whole run (scrollTop 240 → 145.8 in the H4b spike) and the cards' motion is cancelled",
-    L_HAND_2:
-        "P2: §5.8, 'A handoff, or a reparent of a participant, whose departing node is inside an active container while the new lead is outside it, does not fly: the lead enters as a presence enter (or appears at A when it has no presence), with diagnostic handoff-scroll-active.' The engine has no active-scroller rule yet: a handoff out of a scroller between its scroll and scrollend events flies from the departing node's box",
 }
 
 const FRAME_MS = 16

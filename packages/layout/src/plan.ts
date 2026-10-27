@@ -82,6 +82,14 @@ export interface PlanNode {
      * running track is kept whatever moved, any other node appears at A.
      */
     readonly measured: boolean
+    /**
+     * It would fly from a box measured inside an actively scrolling container
+     * that it is outside of now (§5.8): a handoff out of that container, or a
+     * reparent out of it. It does not fly: it appears at A (a presence enter
+     * plays its own motion), a running track of its own ends, and nothing is
+     * handed over to it.
+     */
+    readonly scrollActive: boolean
 }
 
 export interface IdHistory {
@@ -124,6 +132,15 @@ export type PlanWarning =
     | { readonly kind: 'presence-opacity'; readonly index: number }
     | { readonly kind: 'spring-timeout'; readonly index: number }
 
+/**
+ * A defined degradation that is not a snap (`report.snapped` does not list
+ * it), with the reason of its diagnostic (§5.8, §9.1).
+ */
+export interface Degraded {
+    readonly index: number
+    readonly reason: 'handoff-scroll-active'
+}
+
 export interface Plan {
     readonly status: 'run' | 'capped'
     readonly actions: readonly Action[]
@@ -131,6 +148,7 @@ export interface Plan {
         readonly index: number
         readonly reason: SnapReason
     }[]
+    readonly degraded: readonly Degraded[]
     /** The lead of every `layoutId` that has one. */
     readonly leads: ReadonlyMap<string, number>
     readonly warnings: readonly PlanWarning[]
@@ -240,44 +258,76 @@ interface Lead {
     readonly follower: number
 }
 
-function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
+/**
+ * Per `layoutId`, its lead and the node a handoff takes over from (§5.8).
+ * `from` is the departing live node (an exiting previous lead), `'retained'`
+ * for a previous lead that left the scope within `retain`, and `null` when
+ * nothing is handed over (no change of lead, or a previous lead that is still
+ * live and not exiting: a duplicate id).
+ */
+export interface LeadChange {
+    readonly id: string
+    readonly index: number
+    readonly from: number | 'retained' | null
+    /** Two live, non-exiting nodes share the id. */
+    readonly duplicate: boolean
+}
+
+export function leadChanges(
+    nodes: readonly Pick<PlanNode, 'layoutId' | 'exiting' | 'order'>[],
+    ids: ReadonlyMap<string, IdHistory>
+): LeadChange[] {
     const byId = new Map<string, number[]>()
-    input.nodes.forEach((node, index) => {
+    nodes.forEach((node, index) => {
         if (node.layoutId === null) return
         const list = byId.get(node.layoutId)
         if (list) list.push(index)
         else byId.set(node.layoutId, [index])
     })
-    const leads: Lead[] = []
+    const changes: LeadChange[] = []
     for (const [id, members] of byId) {
-        const live = members.filter((i) => !input.nodes[i]!.exiting)
+        const live = members.filter((i) => !nodes[i]!.exiting)
         if (live.length === 0) continue
-        if (live.length > 1) warnings.push({ kind: 'duplicate-id', id })
         let index = live[0]!
         for (const i of live) {
-            if (input.nodes[i]!.order > input.nodes[index]!.order) index = i
+            if (nodes[i]!.order > nodes[index]!.order) index = i
         }
-        const history = input.ids.get(id)
+        const history = ids.get(id)
         const previous = history?.lead ?? null
-        let handoff: Box | null = null
-        let handoffVelocity: BoxVelocity | null = null
-        let follower = -1
+        let from: LeadChange['from'] = null
         if (previous !== index) {
             if (previous === null) {
-                // the previous lead left the scope: its retained box and velocity
-                handoff = history?.retained ?? null
-                handoffVelocity = history?.retainedVelocity ?? null
-            } else if (input.nodes[previous]!.exiting) {
-                const old = input.nodes[previous]!
+                // the previous lead left the scope: its retained box
+                if (history?.retained) from = 'retained'
+            } else if (nodes[previous]!.exiting) {
+                from = previous
+            }
+        }
+        changes.push({ id, index, from, duplicate: live.length > 1 })
+    }
+    return changes
+}
+
+function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
+    return leadChanges(input.nodes, input.ids).map(
+        ({ id, index, from, duplicate }) => {
+            if (duplicate) warnings.push({ kind: 'duplicate-id', id })
+            let handoff: Box | null = null
+            let handoffVelocity: BoxVelocity | null = null
+            let follower = -1
+            if (from === 'retained') {
+                const history = input.ids.get(id)!
+                handoff = history.retained
+                handoffVelocity = history.retainedVelocity
+            } else if (from !== null) {
+                const old = input.nodes[from]!
                 handoff = old.before ?? old.a
                 handoffVelocity = old.velocity
-                follower = previous
+                follower = from
             }
-            // a previous lead that is still live keeps its own motion (duplicate id)
+            return { id, index, handoff, handoffVelocity, follower }
         }
-        leads.push({ id, index, handoff, handoffVelocity, follower })
-    }
-    return leads
+    )
 }
 
 /**
@@ -339,6 +389,7 @@ export function plan(input: PlanInput): Plan {
     const { nodes, threshold } = input
     const warnings: PlanWarning[] = []
     const snapped: { index: number; reason: SnapReason }[] = []
+    const degraded: Degraded[] = []
     const leadList = resolveLeads(input, warnings)
     const leads = new Map(leadList.map((lead) => [lead.id, lead.index]))
 
@@ -355,6 +406,8 @@ export function plan(input: PlanInput): Plan {
         if (
             lead.handoff === null ||
             !node.measured ||
+            // out of an actively scrolling container: nothing is handed over
+            node.scrollActive ||
             (lead.follower >= 0 && !nodes[lead.follower]!.measured)
         ) {
             continue
@@ -419,6 +472,12 @@ export function plan(input: PlanInput): Plan {
                 snapped.push({ index: i, reason: 'unsupported' })
             }
             return NONE
+        }
+        if (node.scrollActive) {
+            // §5.8: it does not fly from where the scrolling container drew
+            // it; it appears at A, reported as a degradation, not a snap
+            degraded.push({ index: i, reason: 'handoff-scroll-active' })
+            return underMotion ? STATIC : NONE
         }
         const lead = newFollower.get(i)
         if (lead !== undefined) return { kind: 'follow', lead, start: true }
@@ -527,9 +586,11 @@ export function plan(input: PlanInput): Plan {
             status: 'capped',
             actions: nodes.map(() => NONE),
             snapped: [...snapped, ...capped],
+            // the whole flush snaps 'capped': nothing degrades on its own
+            degraded: [],
             leads,
             warnings,
         }
     }
-    return { status: 'run', actions, snapped, leads, warnings }
+    return { status: 'run', actions, snapped, degraded, leads, warnings }
 }
