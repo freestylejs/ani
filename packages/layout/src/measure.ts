@@ -51,6 +51,15 @@ export type InnerScaleReader = (
     index: number
 ) => { readonly sx: number; readonly sy: number } | 'unsupported'
 
+/**
+ * Reads node `index`'s true CSS width and height (`getComputedStyle`), called
+ * at most once per node and only when `offset[0] <= 1` or `offset[1] <= 1`.
+ */
+export type ExactSizeReader = (index: number) => {
+    readonly w: number
+    readonly h: number
+}
+
 export interface SupportResult {
     /** false: the node fails, or sits under a node that failed (its subtree snaps). */
     readonly supported: readonly boolean[]
@@ -70,8 +79,17 @@ const TOP_INTERVAL: ScaleInterval = {
     y: { lo: 1, hi: 1 },
 }
 
-function measuredAxis(r: number, o: number): AxisInterval {
-    if (!(o > 1)) return { lo: 0, hi: Number.POSITIVE_INFINITY }
+function measuredAxis(r: number, o: number, exact: number): AxisInterval {
+    if (!(o > 1)) {
+        if (!validPositive(exact)) {
+            return { lo: 0, hi: Number.POSITIVE_INFINITY }
+        }
+        const scale = r / exact
+        return {
+            lo: scale * (1 - ROUNDING_SLACK),
+            hi: scale * (1 + ROUNDING_SLACK),
+        }
+    }
     return {
         lo: (r / (o + 1)) * (1 - ROUNDING_SLACK),
         hi: (r / (o - 1)) * (1 + ROUNDING_SLACK),
@@ -112,7 +130,8 @@ function validPositive(n: number): boolean {
  */
 export function supportCheck(
     nodes: readonly SupportNode[],
-    readInner: InnerScaleReader
+    readInner: InnerScaleReader,
+    readExactSize: ExactSizeReader
 ): SupportResult {
     const supported: boolean[] = []
     const intervals: (ScaleInterval | null)[] = []
@@ -141,8 +160,11 @@ export function supportCheck(
             continue
         }
 
-        const mx = measuredAxis(node.rect.w, node.offset[0])
-        const my = measuredAxis(node.rect.h, node.offset[1])
+        const ox = node.offset[0]
+        const oy = node.offset[1]
+        const exact = !(ox > 1) || !(oy > 1) ? readExactSize(i) : { w: 0, h: 0 }
+        const mx = measuredAxis(node.rect.w, ox, exact.w)
+        const my = measuredAxis(node.rect.h, oy, exact.h)
 
         let ex = expectedAxis(parentInterval.x, px, 1)
         let ey = expectedAxis(parentInterval.y, py, 1)
@@ -293,10 +315,15 @@ function sameRelativeScale(a: number, b: number): boolean {
  * 'retarget' when an ancestor has a live pose scale or changed inner scale).
  */
 export function keepPath(input: KeepPathInput): KeepPath {
-    if (
-        Math.abs(input.delta.x) < UNCHANGED_DELTA_PX &&
-        Math.abs(input.delta.y) < UNCHANGED_DELTA_PX
-    ) {
+    let rhoX = 1
+    let rhoY = 1
+    for (const anc of input.ancestors) {
+        rhoX *= (anc.pose.sx * anc.innerNow.sx) / anc.innerPlanned.sx
+        rhoY *= (anc.pose.sy * anc.innerNow.sy) / anc.innerPlanned.sy
+    }
+    const dx = Math.abs(input.delta.x) * Math.max(1, rhoX)
+    const dy = Math.abs(input.delta.y) * Math.max(1, rhoY)
+    if (dx < UNCHANGED_DELTA_PX && dy < UNCHANGED_DELTA_PX) {
         return 'unchanged'
     }
     for (const anc of input.ancestors) {
@@ -321,6 +348,8 @@ export interface StaleNode {
     readonly lastKnown: Box | null
     /** Driven: δ = A_new − A_old of its origin channels. */
     readonly delta: { readonly x: number; readonly y: number }
+    /** Driven: ancestor scale amplification factor on each axis (1, 1 when none). */
+    readonly rho: { readonly x: number; readonly y: number }
     /** Driven: whether keepPath(...) would be 'unchanged' or 'translate' (translation exact). */
     readonly translationExact: boolean
 }
@@ -339,7 +368,9 @@ export function staleReported(
             difference(node.lastKnown, node.a) >= threshold
         )
     }
-    const maxDelta = Math.max(Math.abs(node.delta.x), Math.abs(node.delta.y))
+    const dx = Math.abs(node.delta.x) * Math.max(1, node.rho.x)
+    const dy = Math.abs(node.delta.y) * Math.max(1, node.rho.y)
+    const maxDelta = Math.max(dx, dy)
     return (
         maxDelta >= threshold ||
         (maxDelta >= UNCHANGED_DELTA_PX && !node.translationExact)
