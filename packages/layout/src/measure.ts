@@ -319,7 +319,7 @@ export interface PresentedNode {
     readonly pose: Pose
     /** The inner map Q (authored translate/scale composed with the presence matrix it is judged under). */
     readonly inner: Pose
-    /** The transform origin, px from the CSS box's top-left. */
+    /** The transform origin applied at capture, px from the presented CSS box's top-left. */
     readonly origin: readonly [number, number]
 }
 
@@ -372,14 +372,10 @@ const ZERO_BOX: Box = { x: 0, y: 0, w: 0, h: 0 }
  * parents' scale rates times the node's offset in their frames, their
  * translation rates, and its own pose rate. `rates[k]` is the time
  * derivative of node k's pose (`tx`, `ty`, `sx`, `sy`); null: at rest.
- * `fractions[k]`, when given, places the origin the browser applied at
- * capture as fractions of the presented CSS box (the origin the pose was
- * planned about), instead of `origin`.
  */
 export function presentedVelocities(
     nodes: readonly PresentedNode[],
-    rates: readonly (Pose | null)[],
-    fractions: readonly (readonly [number, number] | null)[] = []
+    rates: readonly (Pose | null)[]
 ): Box[] {
     const fulls: MovingMap[] = []
     const velocities: Box[] = []
@@ -388,13 +384,7 @@ export function presentedVelocities(
         const local = mapBox(invert(parent.map), node.rect)
         const p = node.pose
         const q = node.inner
-        const f = fractions[k] ?? null
-        const [ox, oy] = f
-            ? [
-                  (f[0] * local.w) / (p.sx * q.sx),
-                  (f[1] * local.h) / (p.sy * q.sy),
-              ]
-            : node.origin
+        const [ox, oy] = node.origin
         const own: OwnTransform = {
             kx: p.sx * q.sx,
             ky: p.sy * q.sy,

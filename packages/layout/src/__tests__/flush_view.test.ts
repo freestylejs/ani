@@ -120,6 +120,37 @@ async function nested(inner: number) {
     return { mc, group, parent, child, first }
 }
 
+describe('the presented layout box L_k is recovered about the origin applied at capture (§4.2)', () => {
+    it('a node at a live pose scale (≈ 18.5) with a 50 % origin, resized 0.5 px by the commit: L_k is its presented box, so A is within threshold of it and the track is kept (A’s origin would put L_k Δo·(1 − k) ≈ 4.4 px off and retarget)', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion: { duration: 1, timing: timing.linear() },
+        })
+        const g = element(box(0, 0, 400, 400))
+        g.style.transformOrigin = '50% 50%'
+        group.add(g)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(g, box(0, 0, 20, 20))
+        const first = group.flush()
+        mc.frames(5)
+        await nextTask()
+        expect(Number.parseFloat(g.style.scale)).toBeGreaterThan(18)
+        group.capture()
+        // the commit widens g by 0.5 px: its 50 % origin moves 0.25 px
+        model.place(g, box(0, 0, 20.5, 20.5))
+        const second = group.flush()
+        mc.frames(70)
+        // kept: run 1 ends on its own schedule, nothing new starts
+        expect(await first).toEqual({ status: 'ended', snapped: [] })
+        expect(await second).toEqual({ status: 'no-change', snapped: [] })
+        expectBox(model.rect(g), box(0, 0, 20.5, 20.5), 1e-6)
+        group.dispose()
+    })
+})
+
 describe('keep paths judged by the measured jump J = D − B (§5.7)', () => {
     it("path 1, a sibling's commit: J = 0, the running track is left untouched and ends on schedule", async () => {
         const expected = await control()
