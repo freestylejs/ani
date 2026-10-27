@@ -1613,6 +1613,7 @@ export async function J26(): Promise<string> {
         // registered since its last flush and drawn mid-run until now, is
         // reported 'stale' (§4.4)
         const warnings: string[] = []
+        // biome-ignore lint/suspicious/noConsole: the row asserts the warning
         const warn = console.warn
         console.warn = (...args: unknown[]) => {
             warnings.push(String(args[0]))
