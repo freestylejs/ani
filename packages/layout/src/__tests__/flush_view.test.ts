@@ -449,6 +449,94 @@ describe('the capture-less flush report (§4.4)', () => {
 })
 
 describe('the support check at flush (§4.2)', () => {
+    for (const engine of ['chromium', 'firefox'] as const) {
+        const precision =
+            engine === 'chromium'
+                ? 'computed sizes to six significant digits'
+                : 'transformed rect edges on 1/60 px'
+        it(`measurement error (${engine}: ${precision}): a 1.203125 px hairline passes, and under zoom: 2 it is still detected`, async () => {
+            model.precision(
+                engine === 'chromium'
+                    ? { widths: 'chromium' }
+                    : { rects: 'firefox' }
+            )
+            for (const zoomed of [false, true]) {
+                const mc = createManualClock()
+                const group = createLayoutGroup({ clock: mc.clock, motion })
+                const wrapper = element(box(0, 0, 200, 100))
+                const rule = element(box(0, 10.3, 100, 1.203125), wrapper)
+                model.place(rule, box(0, 10.3, 100, 1.203125), [100, 1])
+                group.add(rule)
+                group.capture()
+                await group.flush()
+                await nextTask()
+                group.capture()
+                if (zoomed) wrapper.style.zoom = '2'
+                model.place(rule, box(0, 30.3, 100, 1.203125), [100, 1])
+                const report = group.flush()
+                mc.frames(FRAMES)
+                expect(await report).toEqual(
+                    zoomed
+                        ? {
+                              status: 'no-change',
+                              snapped: [
+                                  { element: rule, reason: 'unsupported' },
+                              ],
+                          }
+                        : { status: 'ended', snapped: [] }
+                )
+                group.dispose()
+                document.body.innerHTML = ''
+            }
+        })
+
+        it(`measurement error (${engine}: ${precision}): a 1 px hairline drawn at its track's pose scale 0.73 passes the capture right after its flush, and under zoom: 2 it is still detected`, async () => {
+            model.precision(
+                engine === 'chromium'
+                    ? { widths: 'chromium' }
+                    : { rects: 'firefox' }
+            )
+            for (const zoomed of [false, true]) {
+                const mc = createManualClock()
+                const group = createLayoutGroup({
+                    clock: mc.clock,
+                    motion: { duration: 1, timing: timing.linear() },
+                })
+                const wrapper = element(box(0, 0, 200, 100))
+                const rule = element(box(0, 10.3, 100, 0.73), wrapper)
+                model.place(rule, box(0, 10.3, 100, 0.73), [100, 1])
+                const other = element(box(300, 0))
+                group.add(rule)
+                group.add(other)
+                group.capture()
+                await group.flush()
+                await nextTask()
+                group.capture()
+                model.place(rule, box(0, 30.3, 100, 1), [100, 1])
+                const run = group.flush()
+                // the capture right after the flush sees the t = 0 pose
+                group.capture()
+                if (zoomed) wrapper.style.zoom = '2'
+                model.place(other, box(340, 0))
+                const report = group.flush()
+                mc.frames(70)
+                expect(await report).toEqual(
+                    zoomed
+                        ? {
+                              status: 'ended',
+                              snapped: [
+                                  { element: rule, reason: 'unsupported' },
+                              ],
+                          }
+                        : { status: 'ended', snapped: [] }
+                )
+                expect((await run).snapped).toEqual([])
+                group.dispose()
+                document.body.innerHTML = ''
+            }
+        })
+    }
+
     for (const height of [1, 0.5]) {
         it(`a ${height} px hairline under an unowned vertical scale is detected through its exact computed size on the degenerate axis`, async () => {
             for (const scaled of [false, true]) {

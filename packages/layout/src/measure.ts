@@ -73,6 +73,10 @@ export interface SupportResult {
 
 /** Some engines compute rects in single precision (§4.2). */
 const ROUNDING_SLACK = 1e-6
+/** Firefox quantizes transformed rect edges to 1/60 px (§4.2 measurement error). */
+const RECT_SLACK = 1 / 30
+/** Chromium serializes computed lengths to six significant digits. */
+const SIZE_SLACK = 1e-5
 const SCALE_TOLERANCE = 1e-12
 const UNCHANGED_PX = 0.01
 
@@ -80,21 +84,26 @@ function validPositive(n: number): boolean {
     return Number.isFinite(n) && n > 0
 }
 
-/** The measured interval `M` of one axis (§4.2). */
+/**
+ * The measured interval `M` of one axis (§4.2): `R ± 1/30 px` over the true
+ * layout size (`O ± 1`, or a read exact size `W·(1 ± 1e-5)` on a degenerate
+ * axis), then widened by a relative `1e-6`.
+ */
 function measuredAxis(r: number, o: number, exact: number): AxisInterval {
+    const rLo = Math.max(0, r - RECT_SLACK)
+    const rHi = r + RECT_SLACK
     if (!(o > 1)) {
         if (!validPositive(exact)) {
             return { lo: 0, hi: Number.POSITIVE_INFINITY }
         }
-        const scale = r / exact
         return {
-            lo: scale * (1 - ROUNDING_SLACK),
-            hi: scale * (1 + ROUNDING_SLACK),
+            lo: (rLo / (exact * (1 + SIZE_SLACK))) * (1 - ROUNDING_SLACK),
+            hi: (rHi / (exact * (1 - SIZE_SLACK))) * (1 + ROUNDING_SLACK),
         }
     }
     return {
-        lo: (r / (o + 1)) * (1 - ROUNDING_SLACK),
-        hi: (r / (o - 1)) * (1 + ROUNDING_SLACK),
+        lo: (rLo / (o + 1)) * (1 - ROUNDING_SLACK),
+        hi: (rHi / (o - 1)) * (1 + ROUNDING_SLACK),
     }
 }
 
