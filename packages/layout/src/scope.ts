@@ -484,6 +484,20 @@ function runs(d: Drive | null): boolean {
     return d.track !== null && !trackEnded(d.track, d.elapsed)
 }
 
+/**
+ * The second space-separated component of a declaration layout wrote, as
+ * `split(' ')[1]` parses it, without the array; `undefined` when there is
+ * none.
+ */
+function secondComponent(value: string): number | undefined {
+    const space = value.indexOf(' ')
+    if (space < 0) return undefined
+    const next = value.indexOf(' ', space + 1)
+    return Number.parseFloat(
+        next < 0 ? value.slice(space + 1) : value.slice(space + 1, next)
+    )
+}
+
 /** The pose last written to a node: its own declarations, read back exactly. */
 function writtenPose(d: Drive | null): Pose {
     if (!d) return IDENTITY_POSE
@@ -496,14 +510,16 @@ function writtenPose(d: Drive | null): Pose {
     let px = 1
     let py = 1
     if (scale !== undefined) {
-        const [sx, sy] = scale.split(' ').map((v) => Number.parseFloat(v))
-        px = sx! / au.sx
-        py = (sy ?? sx!) / au.sy
+        const sx = Number.parseFloat(scale)
+        const sy = secondComponent(scale)
+        px = sx / au.sx
+        py = (sy ?? sx) / au.sy
     }
     if (translate === undefined) return { tx: 0, ty: 0, sx: px, sy: py }
-    const [tx, ty] = translate.split(' ').map((v) => Number.parseFloat(v))
+    const tx = Number.parseFloat(translate)
+    const ty = secondComponent(translate)
     return {
-        tx: tx! - px * au.tx,
+        tx: tx - px * au.tx,
         ty: (ty ?? 0) - py * au.ty,
         sx: px,
         sy: py,
