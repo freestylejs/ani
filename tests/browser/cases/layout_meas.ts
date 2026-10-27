@@ -35,6 +35,7 @@ import {
     settleMicrotasks,
     shiftBox,
     silenceWarnings,
+    TOL,
     viewBox,
 } from './layout_kit'
 
@@ -46,19 +47,13 @@ export const pageOptions = {}
  */
 export const knownFailures: Record<string, string> = {
     L_MEAS_2:
-        "Firefox only (passes in Chromium and WebKit): the §11.4 S2 spike ('layout's writes neither suppress nor alter anchoring') fails there. Firefox's scroll anchoring counts its anchor node's transformed position, so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B; with overflow-anchor: none on the column the row passes in Firefox too",
-    L_MEAS_3:
-        "Row defect, reported (rows are not edited in P2): the authored-style snapshot is taken before the commit's own footer.style.top = '550px', so the restore check expects the pre-commit top (310px). The motion checks pass; with the snapshot taken after the commit the row passes in all three engines",
+        "P2: Firefox only (passes in Chromium and WebKit). §11.4 S2: 'layout's writes neither suppress nor alter anchoring'. Firefox's scroll anchoring counts its anchor node's transformed position, so the t = 0 translate writes on the scrolled column's cards re-anchor the column (scrollTop 120 → 240) and its cards draw 120 px off B",
     L_MEAS_4:
-        "The row contradicts amended §5.7 (dd85f28): 'Unchanged when |J| < 0.01 px on every edge (both origins and both sizes). Leaving the track alone draws the next frame where the user saw the node.' The inner scroll is presented before the capture, so J = D − B = 0 and the child's track is kept untouched (path 1, drawn on the oracle and ending on schedule); the live 0.5, live 2 and amplified variants expect path 3 and run 1 'interrupted'",
-    L_MEAS_7:
-        "The row contradicts amended §5.7 (dd85f28), as L_MEAS_4: the layout shift is presented before the capture, so J = 0 and the nested child's track is kept untouched (path 1); the nested variant expects path 3 and run 1 'interrupted'",
+        "P2: variants (ii) under a live scale 0.5 and 2 (every other variant passes). §5.7 path 1: 'What is refreshed. Like every node, it takes this flush's Lₙ and Oₙ (§3.2). … every node planned in this flush composes with this flush's geometry of its ancestors.' The engine's path 1 keeps the parent's geometry of flush 1 (scope.ts: 'path 1 leaves the track alone: it keeps the geometry it was drawn with'), so the child planned by path 3 in this flush is projected about the parent's flush-1 origin, which the 30 px page scroll has moved since: its first frame is −(k − 1)·Δ off its measured B (6.4 px at k = 0.785, 12.9 px at k = 1.429), against path 3's 'the first frame is B'",
     L_MEAS_10:
-        "Open root: the row contradicts amended §5.7 (dd85f28), as L_MEAS_4: the 50 px outer scroll is presented before the capture, so J = 0 and path 1 keeps the children's tracks; the row expects path 3 and run 1 'interrupted'. Closed root: a defect in accepted code (a later slice): flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent (§4.6)",
-    L_MEAS_12:
-        'Row defect, reported (rows are not edited in P2): variant (b) expects the child at root + (190, 30), but after the commit the parent is at left 180 and the child at left 70 inside it, so its A is root + (250, 30). The engine snaps the subtree unsupported at A as the row requires; with the expected box at (250, 30) the row passes in all three engines',
+        "P2: two causes. (1) Variants (ii), open and closed root: §5.7 path 1, 'Like every node, it takes this flush's Lₙ and Oₙ (§3.2). … every node planned in this flush composes with this flush's geometry of its ancestors.' The panel kept by path 1 keeps its flush-1 geometry, so both children planned by path 3 under it are projected about its flush-1 origin, which the 50 px outer scroll has moved: the first frame is 21.5 px off B at k = 1.429. (2) Closed root, every variant: §4.6, 'For a node whose parent element hosts a known root, the slot is the one in that root whose assignedNodes() holds the node.' flatParent in packages/layout/src/dom.ts finds a slotted node's parent through assignedSlot, which is null in a closed root, so the slotted child is planned without the panel as its parent",
     L_HAND_2:
-        'A later slice: the §5.8 active-scroller rule. A handoff out of a scroller between its scroll and scrollend events flies instead of the lead appearing at A',
+        "P2: §5.8, 'A handoff, or a reparent of a participant, whose departing node is inside an active container while the new lead is outside it, does not fly: the lead enters as a presence enter (or appears at A when it has no presence), with diagnostic handoff-scroll-active.' The engine has no active-scroller rule yet: a handoff out of a scroller between its scroll and scrollend events flies from the departing node's box",
 }
 
 const FRAME_MS = 16
@@ -253,7 +248,10 @@ async function variants(
     return notes.join('; ')
 }
 
-function harnessWithSnaps(motionTiming: TimingFunction = timing.easeOut()): {
+function harnessWithSnaps(
+    motionTiming: TimingFunction = timing.easeOut(),
+    threshold?: number
+): {
     h: Harness
     snaps: Snap[]
     names: Names
@@ -261,6 +259,7 @@ function harnessWithSnaps(motionTiming: TimingFunction = timing.easeOut()): {
     const snaps: Snap[] = []
     const h = harness({
         motion: { duration: D, timing: motionTiming },
+        ...(threshold === undefined ? {} : { threshold }),
         onSnap(element, reason) {
             snaps.push({ element, reason })
         },
@@ -291,6 +290,99 @@ async function baseline(h: Harness, label: string): Promise<void> {
         throw new Error(
             `${label} baseline: report ${r.status} with ${r.snapped.length} snapped, expected 'no-change'`
         )
+    }
+}
+
+/**
+ * The `threshold` of the rows whose commit moves a running node by less than
+ * it (§5.7 keep test 1), and that move. The move is ten times the per-frame
+ * tolerance, so every frame tells the three paths apart: path 1 would draw
+ * the node `SUB_MOVE` px off its new A, and path 2 under a live ancestor scale
+ * would jump by `(1 − k)·SUB_MOVE` px at the commit.
+ */
+const KEEP_THRESHOLD = 8
+const SUB_MOVE = 5
+
+/** Below this measured jump on every edge, §5.7 path 1 applies. */
+const UNCHANGED_PX = 0.01
+
+/**
+ * The measured jump `J = D − B` of §5.7, read in the commit's task after the
+ * mutation and before `flush()`: `D` is the node's rect with the commit
+ * applied, under the pose the engine last wrote; `b` is its presented box
+ * (what the capture read). The flush reads the same rect first, so this read
+ * changes nothing the engine sees.
+ */
+function measuredJump(element: Element, b: OBox): OBox {
+    const d = viewBox(element)
+    return { x: d.x - b.x, y: d.y - b.y, w: d.w - b.w, h: d.h - b.h }
+}
+
+function largestEdge(j: OBox): number {
+    return Math.max(Math.abs(j.x), Math.abs(j.y), Math.abs(j.w), Math.abs(j.h))
+}
+
+function describeJump(j: OBox): string {
+    const px = (v: number) => (Math.abs(v) < 5e-5 ? 0 : v).toFixed(4)
+    return `J = (${px(j.x)}, ${px(j.y)}, ${px(j.w)}, ${px(j.h)})`
+}
+
+/**
+ * The row's premise about `J`, checked as a setup error so a wrong premise is
+ * never read as an engine result: 'zero' for a change presented before the
+ * capture (§5.7 path 1), 'visible' for a change in the commit's own task.
+ */
+function expectJump(
+    label: string,
+    element: Element,
+    b: OBox,
+    want: 'zero' | 'visible',
+    range: readonly [number, number] = [UNCHANGED_PX, Number.POSITIVE_INFINITY]
+): OBox {
+    const j = measuredJump(element, b)
+    const size = largestEdge(j)
+    const ok =
+        want === 'zero'
+            ? size < UNCHANGED_PX
+            : size >= range[0] && size <= range[1]
+    if (!ok) {
+        throw new Error(
+            `${label} setup: measured ${describeJump(j)} (largest edge ${size.toFixed(4)} px), expected ${want === 'zero' ? `|J| < ${UNCHANGED_PX} px on every edge` : `a largest edge in [${range[0]}, ${range[1]}] px`}`
+        )
+    }
+    return j
+}
+
+/** §5.7 path 1, the sentence a stale kept parent breaks (see `explainStaleOrigin`). */
+const PATH1_REFRESH =
+    "§5.7 path 1: 'What is refreshed. Like every node, it takes this flush's Lₙ and Oₙ (§3.2). Its track is re-expressed through this flush's maps so that it writes exactly the poses it would have written, and every node planned in this flush composes with this flush's geometry of its ancestors.'"
+
+/**
+ * Appends a diagnosis to a failed frame check of `element`, a node planned in
+ * this flush under a parent kept by path 1, when the drawn box is the one a
+ * projection through the parent's geometry as of the parent's own flush
+ * gives. The parent's frame has moved by `shift` (view space) since then and
+ * its pose scale is `k`; a pose solved about the old origin puts the node
+ * `−(k − 1)·shift` off its expected box `want` per axis.
+ */
+function explainStaleOrigin(
+    error: unknown,
+    element: Element,
+    want: OBox,
+    k: { readonly x: number; readonly y: number },
+    shift: { readonly x: number; readonly y: number },
+    parentName: string,
+    name: string
+): void {
+    if (!(error instanceof Error)) return
+    if (!(maxDiff(viewBox(element), want) > TOL)) return
+    const stale = shiftBox(want, -(k.x - 1) * shift.x, -(k.y - 1) * shift.y)
+    const off = maxDiff(viewBox(element), stale)
+    if (off > TOL) return
+    if (error.message.includes(PATH1_REFRESH)) {
+        error.message += `; the ${name} likewise is drawn within ${off.toFixed(3)} px of ${JSON.stringify(stale)}`
+    } else {
+        error.message += `; the ${name} is drawn within ${off.toFixed(3)} px of ${JSON.stringify(stale)}, its expected box offset by −(k − 1)·Δ: projected through the ${parentName}'s geometry as of the flush that planned the ${parentName} (its frame has moved Δ = (${shift.x}, ${shift.y}) px since, under its live scale k = (${k.x.toFixed(3)}, ${k.y.toFixed(3)})). The ${parentName}, kept by path 1, did not take this flush's geometry: ${PATH1_REFRESH}`
     }
 }
 
@@ -471,18 +563,28 @@ export async function L_MEAS_2(): Promise<string> {
                 ? spec(b[i]!, a[i]!, { timing: ease })
                 : null
         )
-        const check = (label: string, t: number) =>
-            expectAll(
-                `${row} ${label} t=${t.toFixed(3)}`,
-                cards.map(
-                    (c, i) =>
-                        [
-                            c,
-                            specs[i] ? expectedBox(specs[i]!, t) : a[i]!,
-                            nameOf(names, c),
-                        ] as const
+        const check = (label: string, t: number) => {
+            try {
+                return expectAll(
+                    `${row} ${label} t=${t.toFixed(3)}`,
+                    cards.map(
+                        (c, i) =>
+                            [
+                                c,
+                                specs[i] ? expectedBox(specs[i]!, t) : a[i]!,
+                                nameOf(names, c),
+                            ] as const
+                    )
                 )
-            )
+            } catch (error) {
+                // the column was at 120 when A was read; the engine's
+                // writes must not move it (§11.4 S2)
+                if (error instanceof Error && columnB.scrollTop !== 120) {
+                    error.message += `; columnB's scrollTop is ${columnB.scrollTop}, not the 120 it held when A was read: scroll anchoring re-anchored the column after the engine's pose writes, which §11.4 S2 forbids ('layout's writes neither suppress nor alter anchoring')`
+                }
+                throw error
+            }
+        }
         let worst = check(
             "flush write (columnB scrolled 0 → 120 px in the commit's task)",
             0
@@ -539,13 +641,14 @@ export async function L_MEAS_3(): Promise<string> {
         addNamed(h, names, { header, footer })
         await baseline(h, row)
 
-        const authored = [header.style.cssText, footer.style.cssText]
         const bHeader = viewBox(header)
         const bFooter = viewBox(footer)
         const bLabel = viewBox(label)
         h.group.capture()
         body.style.height = '240px'
         footer.style.top = '550px'
+        // the author's inline styles after the commit's own changes
+        const authored = [header.style.cssText, footer.style.cssText]
         footer.scrollIntoView({ behavior: 'instant', block: 'start' })
         const scrolled = scrollY
         if (!(scrolled > 100)) {
@@ -594,30 +697,52 @@ export async function L_MEAS_3(): Promise<string> {
 /* ───────────────────────── L-MEAS-4 ───────────────────────── */
 
 /**
- * L-MEAS-4: a user scroll mid-run (an inner scroller and the page), then a
- * commit (§5.7). Drawn boxes follow their content every frame; the commit
- * keeps the tracks and re-expresses them by the path their ancestors select:
- * - a resting parent: path 2, the original timeline translated by the
- *   scroll, ending on schedule (no restart);
- * - a parent running a size track from scale 0.5 or 2: path 3, the child
- *   retargets from its measured box with its analytic velocity;
- * - a sub-0.01 px rest displacement under an ancestor whose screen
- *   amplification is about 300 (a live pose scale times an inner-map change):
- *   path 3, never path 1.
+ * L-MEAS-4: a user scroll mid-run, of an inner scroller and of the page,
+ * presented by frames before the commit (§3.1). Drawn boxes follow their
+ * content every frame. The commit's path is decided by the measured jump
+ * `J = D − B` (§5.7), which each variant reads as its premise:
+ * - (i) the commit does not move the node. The scroll was presented, so
+ *   `J = 0` and path 1 keeps the track, at rest and under a parent at a live
+ *   scale of 0.5 and 2: no restart, and run 1 ends on schedule on the
+ *   content-following oracle.
+ * - (ii) the commit also moves the node by less than `threshold`. At rest,
+ *   path 2: no restart, and the node lands on its new A. Under the live
+ *   scale, path 3: the first frame is the measured B, the velocity is
+ *   continuous, and run 1 resolves 'interrupted'.
+ * - (iii) the commit moves the node 0.005 px (rest space) under a screen
+ *   amplification of about 300: `J` is about 1.5 px, so path 3, never path 1.
  */
 export function L_MEAS_4(): Promise<string> {
     return variants('L_MEAS_4', [
-        ['parent at rest, path 2', meas4Rest],
-        ['live parent scale 0.5, path 3', () => meas4Live(0.5)],
-        ['live parent scale 2, path 3', () => meas4Live(2)],
-        ['amplified ρ ≈ 300, path 3', meas4Amplified],
+        ['(i) parent at rest, path 1', () => meas4Rest(0)],
+        ['(i) live parent scale 0.5, path 1', () => meas4Live(0.5, 0)],
+        ['(i) live parent scale 2, path 1', () => meas4Live(2, 0)],
+        ['(ii) parent at rest, path 2', () => meas4Rest(SUB_MOVE)],
+        ['(ii) live parent scale 0.5, path 3', () => meas4Live(0.5, SUB_MOVE)],
+        ['(ii) live parent scale 2, path 3', () => meas4Live(2, SUB_MOVE)],
+        ['(iii) amplified ρ ≈ 300, path 3', meas4Amplified],
     ])
 }
 
-async function meas4Rest(): Promise<string> {
-    const row = 'L_MEAS_4 rest'
+/**
+ * (i) and (ii) under a resting parent. An inner child (in a scroller inside
+ * the parent) and an outer child (directly in the parent) run tracks; the
+ * user scrolls the scroller 40 px and the page 50 px; then a commit moves an
+ * unrelated participant and, with `move > 0`, both children `move` px right.
+ * With `move = 0`, `J = 0`: path 1 leaves both timelines alone. With
+ * `move > 0`, `J = move` and every ancestor is at scale 1: path 2 translates
+ * both tracks by δ, so the commit's own sub-threshold move is drawn at once
+ * and each lands on its new A. Either way run 1 ends on its original
+ * schedule.
+ */
+async function meas4Rest(move: number): Promise<string> {
+    const path = move === 0 ? 1 : 2
+    const row = `L_MEAS_4 ${move === 0 ? '(i)' : '(ii)'} rest`
     const ease = timing.easeOut()
-    const { h, snaps, names } = harnessWithSnaps(ease)
+    const { h, snaps, names } = harnessWithSnaps(
+        ease,
+        move === 0 ? undefined : KEEP_THRESHOLD
+    )
     try {
         h.root.style.height = '2000px'
         const parent = node(
@@ -644,26 +769,27 @@ async function meas4Rest(): Promise<string> {
         addNamed(h, names, { parent, inner, outer, trigger })
         await baseline(h, row)
 
+        const parentRest = viewBox(parent)
         const bInner = viewBox(inner)
         const bOuter = viewBox(outer)
         h.group.capture()
         inner.style.left = '170px'
         outer.style.left = '170px'
-        const authored = [inner.style.cssText, outer.style.cssText]
         const aInner = viewBox(inner)
         const aOuter = viewBox(outer)
         const run1 = report(h.group.flush())
         const sInner = spec(bInner, aInner, { timing: ease })
         const sOuter = spec(bOuter, aOuter, { timing: ease })
+        let dx = 0
         let dyInner = 0
         let dyOuter = 0
         let f = 0
         const tracks = (label: string) => {
             const t = restAt(f)
             return expectAll(`${row} ${label} t=${t.toFixed(3)}`, [
-                [inner, shiftBox(expectedBox(sInner, t), 0, dyInner), 'inner'],
-                [outer, shiftBox(expectedBox(sOuter, t), 0, dyOuter), 'outer'],
-                [parent, viewBox(parent), 'parent'],
+                [inner, shiftBox(expectedBox(sInner, t), dx, dyInner), 'inner'],
+                [outer, shiftBox(expectedBox(sOuter, t), dx, dyOuter), 'outer'],
+                [parent, shiftBox(parentRest, 0, dyOuter), 'parent (at rest)'],
             ])
         }
         let worst = tracks('flush 1 write')
@@ -675,41 +801,55 @@ async function meas4Rest(): Promise<string> {
         }
 
         // the user scrolls the inner scroller by 40 px and the page by 50 px
-        const parentBefore = viewBox(parent)
         scroller.scrollTop = 40
         scrollTo(0, 50)
+        if (scroller.scrollTop !== 40 || scrollY !== 50) {
+            throw new Error(
+                `${row} setup: scrolled to ${scroller.scrollTop} / ${scrollY}, not 40 / 50`
+            )
+        }
         dyInner = -90
         dyOuter = -50
-        expectViewAt(
-            parent,
-            shiftBox(parentBefore, 0, -50),
-            `${row} setup: the page scrolled`,
-            0.01
-        )
         while (f < 9) {
             f++
             await step(h.mc)
             worst = Math.max(worst, tracks(`scrolled frame ${f}`))
         }
 
-        // the commit: an unrelated participant moves
+        // the commit: an unrelated participant moves, and with `move` both children
+        const presented = [viewBox(inner), viewBox(outer)]
         const bTrigger = viewBox(trigger)
         h.group.capture()
         trigger.style.left = '580px'
+        if (move !== 0) {
+            inner.style.left = `${170 + move}px`
+            outer.style.left = `${170 + move}px`
+        }
+        const authored = [authorText(inner), authorText(outer)]
+        const jumps = [inner, outer].map((element, i) =>
+            expectJump(
+                `${row} ${nameOf(names, element)}`,
+                element,
+                presented[i]!,
+                move === 0 ? 'zero' : 'visible',
+                move === 0 ? undefined : [move - 0.01, move + 0.01]
+            )
+        )
         const aTrigger = viewBox(trigger)
         const run2 = report(h.group.flush())
         const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        dx = move
         worst = Math.max(
             worst,
             tracks(
-                'commit write (an inner scroll of 40 px and a page scroll of 50 px presented since flush 1)'
+                `commit write (an inner scroll of 40 px and a page scroll of 50 px presented since flush 1${move === 0 ? '' : `; the commit moved both children ${move} px`}; inner ${describeJump(jumps[0]!)}, outer ${describeJump(jumps[1]!)}: path ${path})`
             )
         )
         expectViewAt(trigger, bTrigger, `${row} commit write trigger`)
         await expectRunning(names, run2, `${row} commit`)
         if (run1.value !== null) {
             throw new Error(
-                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); path 2 keeps the tracks`
+                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); path ${path} keeps the tracks`
             )
         }
         let g = 0
@@ -735,30 +875,47 @@ async function meas4Rest(): Promise<string> {
         expectSnapCalls(names, snaps, [], `${row} runs`)
         expectViewAt(
             inner,
-            shiftBox(aInner, 0, -90),
+            shiftBox(aInner, move, -90),
             `${row} final inner`,
             0.01
         )
         expectViewAt(
             outer,
-            shiftBox(aOuter, 0, -50),
+            shiftBox(aOuter, move, -50),
             `${row} final outer`,
             0.01
         )
         expectRestored(inner, authored[0]!, `${row} inner`)
         expectRestored(outer, authored[1]!, `${row} outer`)
         expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
-        return `kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+        return `path ${path} (inner ${describeJump(jumps[0]!)}): kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
     } finally {
         scrollTo(0, 0)
         h.dispose()
     }
 }
 
-async function meas4Live(scale: 0.5 | 2): Promise<string> {
-    const row = `L_MEAS_4 live ${scale}`
+/**
+ * (i) and (ii) under a live scale. A parent runs a size track from scale
+ * `scale` to 1; its child, in a scroller inside it, runs its own track. The
+ * user scrolls the scroller (carried on screen by the parent's live scale)
+ * and the page; then a commit moves an unrelated participant and, with
+ * `move > 0`, the child `move` px right.
+ * - `move = 0`: the scroll was presented, so `J = 0` and path 1 leaves the
+ *   child's timeline alone. Its oracle is its own track with the scroll
+ *   carried through the parent's live scale, to the end of run 1.
+ * - `move > 0`: `J ≠ 0` and an ancestor's pose scale is not 1, so no
+ *   translation is exact (§5.7 path 2's condition fails): path 3 retargets the
+ *   child from its measured B with its analytic velocity toward its new A.
+ */
+async function meas4Live(scale: 0.5 | 2, move: number): Promise<string> {
+    const path = move === 0 ? 1 : 3
+    const row = `L_MEAS_4 ${move === 0 ? '(i)' : '(ii)'} live ${scale}`
     const ease = timing.easeOut()
-    const { h, snaps, names } = harnessWithSnaps(ease)
+    const { h, snaps, names } = harnessWithSnaps(
+        ease,
+        move === 0 ? undefined : KEEP_THRESHOLD
+    )
     try {
         h.root.style.height = '2000px'
         const restSize = 200
@@ -788,7 +945,7 @@ async function meas4Live(scale: 0.5 | 2): Promise<string> {
         parent.style.width = `${restSize}px`
         parent.style.height = `${restSize}px`
         child.style.left = '90px'
-        const authored = [parent.style.cssText, child.style.cssText]
+        const authoredParent = parent.style.cssText
         const aParent = viewBox(parent)
         const aChild = viewBox(child)
         const run1 = report(h.group.flush())
@@ -800,10 +957,10 @@ async function meas4Live(scale: 0.5 | 2): Promise<string> {
             shiftBox(expectedBox(sParent, t), 0, scrolled ? -pageScroll : 0)
         /** The parent's live vertical pose scale at `t`. */
         const kyAt = (t: number) => expectedBox(sParent, t).h / aParent.h
-        // the child's track, with the inner scroll carried through the
-        // parent's live vertical scale, and the page scroll; the inner scroll
-        // offset is the browser's (a transformed scroller may hold a
-        // fractional offset, Firefox)
+        // the content-following oracle: the child's track, with the inner
+        // scroll carried through the parent's live vertical scale, and the
+        // page scroll; the inner scroll offset is the browser's (a
+        // transformed scroller may hold a fractional offset, Firefox)
         const childAt = (t: number) => {
             const own = expectedBox(sChild, t)
             if (!scrolled) return own
@@ -838,37 +995,86 @@ async function meas4Live(scale: 0.5 | 2): Promise<string> {
             worst = Math.max(worst, first(`scrolled frame ${f}`))
         }
 
-        // the commit at t_k: the child is kept (its target moved with the
-        // scroll) and, under a live ancestor scale, retargets from (B, v)
+        // the commit at t_k
         const tk = restAt(f)
         const live = expectedBox(sParent, tk).h / aParent.h
         const measured = viewBox(child)
         const velocity = velocityOf(childAt, tk)
         const sigma = scroller.scrollTop
-        const target = shiftBox(aChild, 0, -sigma - pageScroll)
+        const target = shiftBox(aChild, move, -sigma - pageScroll)
         /** A later change of the browser's scroll offset moves the child's layout box under the parent's scale. */
         const drift = (t: number) => -kyAt(t) * (scroller.scrollTop - sigma)
         const bTrigger = viewBox(trigger)
         h.group.capture()
         trigger.style.left = '680px'
+        if (move !== 0) child.style.left = `${90 + move}px`
+        const authoredChild = authorText(child)
+        const jump = expectJump(
+            `${row} child`,
+            child,
+            measured,
+            move === 0 ? 'zero' : 'visible'
+        )
         const aTrigger = viewBox(trigger)
         const run2 = report(h.group.flush())
         const sRetarget = spec(measured, target, { timing: ease, velocity })
         const sDropped = spec(measured, target, { timing: ease })
         const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        /** The child's expected box `g` frames after the commit, frame `f` since flush 1. */
+        const childNow = (fi: number, gi: number): readonly [OBox, string] =>
+            path === 1
+                ? [childAt(restAt(fi)), 'child (path 1, its own timeline)']
+                : [
+                      shiftBox(
+                          expectedBox(sRetarget, movingAt(gi)),
+                          0,
+                          drift(restAt(fi))
+                      ),
+                      `child (path 3) t'=${movingAt(gi).toFixed(3)}`,
+                  ]
+        const context = `a ${sigma.toFixed(2)} px inner scroll under the parent's live scale ${live.toFixed(3)} and a ${pageScroll} px page scroll presented since flush 1${move === 0 ? '' : `; the commit moved the child ${move} px`}; ${describeJump(jump)}: path ${path}`
+        /** Checks a frame after the commit; a path 3 failure names a stale parent origin. */
+        const afterCommit = (
+            label: string,
+            fi: number,
+            gi: number,
+            list: readonly (readonly [Element, OBox, string])[]
+        ): number => {
+            try {
+                return expectAll(label, list)
+            } catch (error) {
+                if (path === 3) {
+                    const k = kyAt(restAt(fi))
+                    explainStaleOrigin(
+                        error,
+                        child,
+                        childNow(fi, gi)[0],
+                        { x: k, y: k },
+                        { x: 0, y: -pageScroll },
+                        'parent',
+                        'child'
+                    )
+                }
+                throw error
+            }
+        }
+        const [atCommit, commitName] = childNow(f, 0)
         worst = Math.max(
             worst,
-            expectAll(
-                `${row} commit write (a ${sigma.toFixed(2)} px inner scroll under the parent's live scale ${live.toFixed(3)} and a ${pageScroll} px page scroll presented since flush 1)`,
-                [
-                    [child, measured, 'child (measured B)'],
-                    [parent, parentAt(tk), 'parent'],
-                    [trigger, bTrigger, 'trigger'],
-                ]
-            )
+            afterCommit(`${row} commit write (${context})`, f, 0, [
+                [child, atCommit, commitName],
+                [child, measured, 'child (measured B)'],
+                [parent, parentAt(tk), 'parent'],
+                [trigger, bTrigger, 'trigger'],
+            ])
         )
         await settleMicrotasks()
-        if (run1.value?.status !== 'interrupted') {
+        if (path === 1 && run1.value !== null) {
+            throw new Error(
+                `${row} commit: run 1 resolved at the commit (${describeReport(names, run1.value)}); J = 0, so path 1 keeps the child's track`
+            )
+        }
+        if (path === 3 && run1.value?.status !== 'interrupted') {
             throw new Error(
                 `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the child's track, so it resolves 'interrupted'`
             )
@@ -876,39 +1082,38 @@ async function meas4Live(scale: 0.5 | 2): Promise<string> {
         await expectRunning(names, run2, `${row} commit`)
         let g = 0
         let dropGap = 0
-        while (run2.value === null && f < 90) {
+        let endedAt: number | null = null
+        while ((run1.value === null || run2.value === null) && f < 90) {
             f++
             g++
             await step(h.mc)
-            const t = movingAt(g)
-            if (g <= 6) {
+            if (path === 3 && g <= 6) {
+                const t = movingAt(g)
                 dropGap = Math.max(
                     dropGap,
                     maxDiff(expectedBox(sDropped, t), expectedBox(sRetarget, t))
                 )
             }
+            const [want, name] = childNow(f, g)
             worst = Math.max(
                 worst,
-                expectAll(`${row} frame ${f}`, [
-                    [
-                        child,
-                        shiftBox(
-                            expectedBox(sRetarget, t),
-                            0,
-                            drift(restAt(f))
-                        ),
-                        `child t'=${t.toFixed(3)}`,
-                    ],
+                afterCommit(`${row} frame ${f}`, f, g, [
+                    [child, want, name],
                     [parent, parentAt(restAt(f)), 'parent'],
                     [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
                 ])
             )
+            if (endedAt === null && run1.value !== null) endedAt = f
+        }
+        if (path === 1) {
+            expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+            expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
         }
         expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
         expectSnapCalls(names, snaps, [], `${row} runs`)
         expectViewAt(
             child,
-            shiftBox(target, 0, drift(D)),
+            shiftBox(aChild, move, -scroller.scrollTop - pageScroll),
             `${row} final child`,
             0.01
         )
@@ -918,15 +1123,18 @@ async function meas4Live(scale: 0.5 | 2): Promise<string> {
             `${row} final parent`,
             0.01
         )
-        expectRestored(parent, authored[0]!, `${row} parent`)
-        expectRestored(child, authored[1]!, `${row} child`)
+        expectRestored(parent, authoredParent, `${row} parent`)
+        expectRestored(child, authoredChild, `${row} child`)
         expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
+        if (path === 1) {
+            return `path 1 (${describeJump(jump)}) under the parent's live scale ${live.toFixed(3)}: kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+        }
         if (!(dropGap > 1)) {
             throw new Error(
                 `${row} setup: dropping the velocity changes the path by only ${dropGap.toFixed(3)} px, too little to prove continuity`
             )
         }
-        return `parent scale ${live.toFixed(3)} at the commit; retarget from (B, v) ≤ ${worst.toFixed(3)} px (a dropped velocity would be ${dropGap.toFixed(1)} px off)`
+        return `path 3 (${describeJump(jump)}) under the parent's live scale ${live.toFixed(3)}: retarget from (B, v) ≤ ${worst.toFixed(3)} px (a dropped velocity would be ${dropGap.toFixed(1)} px off)`
     } finally {
         scrollTo(0, 0)
         h.dispose()
@@ -934,17 +1142,19 @@ async function meas4Live(scale: 0.5 | 2): Promise<string> {
 }
 
 /**
- * The amplified case. The ancestor's pose scale is ≤ 50 (a larger size
+ * (iii) The amplified case. The ancestor's pose scale is ≤ 50 (a larger size
  * change snaps, §9.1), so the screen amplification ρ ≈ 300 comes from its
  * pose scale (≈ 16.6 at t_k) times a presence `transform` change since the
- * track was planned (scale 0.05 → 1, a visual layer, §3.2). The child sits at
- * the ancestor's origin, so the layer scales its size and leaves its
- * position; a non-participant wrapper then shifts it by 0.1 CSS px, a rest
- * displacement of 0.005 px under the planned matrices, drawn 1.66 px on
- * screen.
+ * track was planned (scale 0.05 → 1, a visual layer, §3.2), presented by a
+ * frame before the commit. The child sits at the ancestor's origin, so the
+ * layer scales its size and leaves its position. The commit then shifts a
+ * non-participant wrapper by 0.1 CSS px: a rest displacement of 0.005 px
+ * under the planned matrices, far below `threshold` (so the track is kept),
+ * drawn about 1.66 px on screen. `J` is not below 0.01 px, so path 1 must not
+ * apply; the ancestor's scale is live, so path 3.
  */
 async function meas4Amplified(): Promise<string> {
-    const row = 'L_MEAS_4 amplified'
+    const row = 'L_MEAS_4 (iii) amplified'
     const linear = timing.linear()
     const { h, snaps, names } = harnessWithSnaps(linear)
     try {
@@ -987,7 +1197,8 @@ async function meas4Amplified(): Promise<string> {
             return { x: v.x, y: v.y, w: v.w * layer, h: v.h * layer }
         }
         // the child's track through the layer (about the ancestor's origin)
-        // plus the wrapper's shift carried by the ancestor's current scale
+        // plus the wrapper's shift carried by the ancestor's current scale:
+        // what path 1 draws once the wrapper has shifted
         const childAt = (t: number) => {
             const v = expectedBox(sChild, t)
             return {
@@ -1012,11 +1223,9 @@ async function meas4Amplified(): Promise<string> {
             await step(h.mc)
             worst = Math.max(worst, first(`frame ${f}`))
         }
-        // the presence layer and the 0.1 px shift, presented by a frame
+        // the presence layer, presented by a frame
         anc.style.transform = 'scale(1)'
-        wrap.style.transform = `translateX(${shift}px)`
         layer = 1 / q0
-        shifted = shift
         f++
         await step(h.mc)
         worst = Math.max(worst, first(`layered frame ${f}`))
@@ -1034,7 +1243,17 @@ async function meas4Amplified(): Promise<string> {
         }
         const bTrigger = viewBox(trigger)
         h.group.capture()
+        // the commit: the wrapper shifts the child 0.1 CSS px
+        wrap.style.transform = `translateX(${shift}px)`
         trigger.style.left = '780px'
+        const jump = expectJump(
+            `${row} child`,
+            child,
+            measured,
+            'visible',
+            [1, 2.5]
+        )
+        shifted = shift
         const aTrigger = viewBox(trigger)
         const run2 = report(h.group.flush())
         const sRetarget = spec(measured, target, { timing: linear, velocity })
@@ -1042,7 +1261,7 @@ async function meas4Amplified(): Promise<string> {
         worst = Math.max(
             worst,
             expectAll(
-                `${row} commit write (a ${shift} CSS px wrapper shift: |δ| = ${delta.toFixed(4)} px under ρ = ${rho.toFixed(1)}, presented as ${(delta * rho).toFixed(2)} px)`,
+                `${row} commit write (a ${shift} CSS px wrapper shift in the commit: |δ| = ${delta.toFixed(4)} px under ρ = ${rho.toFixed(1)}, measured ${describeJump(jump)})`,
                 [
                     [child, measured, 'child (measured B)'],
                     [anc, ancAt(tk), 'ancestor'],
@@ -1053,7 +1272,7 @@ async function meas4Amplified(): Promise<string> {
         await settleMicrotasks()
         if (run1.value?.status !== 'interrupted') {
             throw new Error(
-                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the child's track, so it resolves 'interrupted'`
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; J is ${largestEdge(jump).toFixed(3)} px, so not path 1, and the ancestor's scale is live, so path 3 replaces the child's track and run 1 resolves 'interrupted'`
             )
         }
         await expectRunning(names, run2, `${row} commit`)
@@ -1074,7 +1293,7 @@ async function meas4Amplified(): Promise<string> {
                     [
                         child,
                         expectedBox(sRetarget, t),
-                        `child t'=${t.toFixed(3)}`,
+                        `child (path 3) t'=${t.toFixed(3)}`,
                     ],
                     [anc, ancAt(restAt(f)), 'ancestor'],
                     [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
@@ -1097,7 +1316,7 @@ async function meas4Amplified(): Promise<string> {
                 `${row} setup: path 1 would be only ${path1Gap.toFixed(3)} px off, too little to tell the paths apart`
             )
         }
-        return `ρ = ${rho.toFixed(1)} (pose ${pose(tk).toFixed(2)} × inner ${layer}), |δ| = ${delta} px, |δ|·ρ = ${(delta * rho).toFixed(2)} px; retarget ≤ ${worst.toFixed(3)} px (path 1 would be ${path1Gap.toFixed(0)} px off)`
+        return `ρ = ${rho.toFixed(1)} (pose ${pose(tk).toFixed(2)} × inner ${layer}), |δ| = ${delta} px, measured |J| = ${largestEdge(jump).toFixed(3)} px; path 3 ≤ ${worst.toFixed(3)} px (path 1 would be ${path1Gap.toFixed(0)} px off)`
     } finally {
         h.dispose()
     }
@@ -1243,22 +1462,34 @@ async function meas6(withCommit: boolean): Promise<string> {
 /* ───────────────────────── L-MEAS-7 ───────────────────────── */
 
 /**
- * L-MEAS-7: a browser layout change mid-run (an element above grows, like an
- * image loading), then a commit. The drawn boxes follow the layout every
- * frame (≤ 0.5 px); the commit takes the path the ancestor condition selects
- * (§5.7): flat, path 2 (the original timeline, translated); a child under a
- * parent with a live size track, path 3 (retarget from its measured box and
- * analytic velocity) while that parent takes path 2.
+ * L-MEAS-7: a browser layout change (an element above grows, like an image
+ * loading), then a commit; flat, and nested (a child under a parent with a
+ * live size track). The drawn boxes follow the layout every frame
+ * (≤ 0.5 px), and the commit's path is decided by the measured jump (§5.7):
+ * - presented mid-run (a frame draws it before the capture): the change
+ *   moved B and D together, so `J = 0` and path 1 keeps every track, on the
+ *   content-following oracle, ending on schedule;
+ * - made in the commit's own task: never presented, so it moved A only (D3).
+ *   Every moved node is planned again from its measured B and analytic
+ *   velocity toward its new A, and run 1 resolves 'interrupted'.
  */
 export function L_MEAS_7(): Promise<string> {
     return variants('L_MEAS_7', [
-        ['flat, path 2', meas7Flat],
-        ['nested under a live scale, path 3', meas7Nested],
+        ['flat, presented: path 1', () => meas7Flat(true)],
+        ["flat, in the commit's task: from (B, v)", () => meas7Flat(false)],
+        [
+            'nested under a live scale, presented: path 1',
+            () => meas7Nested(true),
+        ],
+        [
+            "nested under a live scale, in the commit's task: from (B, v)",
+            () => meas7Nested(false),
+        ],
     ])
 }
 
-async function meas7Flat(): Promise<string> {
-    const row = 'L_MEAS_7 flat'
+async function meas7Flat(presented: boolean): Promise<string> {
+    const row = `L_MEAS_7 flat ${presented ? 'presented' : "in the commit's task"}`
     const ease = timing.easeOut()
     const { h, snaps, names } = harnessWithSnaps(ease)
     try {
@@ -1287,13 +1518,15 @@ async function meas7Flat(): Promise<string> {
         const a1 = viewBox(card)
         const run1 = report(h.group.flush())
         const s1 = spec(b1, a1, { timing: ease })
+        const grow = 60
         let dy = 0
+        const cardAt = (t: number) => shiftBox(expectedBox(s1, t), 0, dy)
         let f = 0
         const at = (label: string) => {
             const t = restAt(f)
             return expectViewAt(
                 card,
-                shiftBox(expectedBox(s1, t), 0, dy),
+                cardAt(t),
                 `${row} ${label} t=${t.toFixed(3)} card`
             )
         }
@@ -1304,60 +1537,127 @@ async function meas7Flat(): Promise<string> {
             await step(h.mc)
             worst = Math.max(worst, at(`frame ${f}`))
         }
-        banner.style.height = '100px'
-        dy = 60
+        if (presented) {
+            banner.style.height = `${40 + grow}px`
+            dy = grow
+        }
         while (f < 9) {
             f++
             await step(h.mc)
-            worst = Math.max(worst, at(`grown frame ${f}`))
+            worst = Math.max(
+                worst,
+                at(presented ? `grown frame ${f}` : `frame ${f}`)
+            )
         }
+
+        // the commit at t_k
+        const tk = restAt(f)
+        const measured = viewBox(card)
+        const velocity = velocityOf(cardAt, tk)
+        const target = shiftBox(a1, 0, grow)
         const bTrigger = viewBox(trigger)
         h.group.capture()
+        if (!presented) banner.style.height = `${40 + grow}px`
         trigger.style.left = '680px'
+        const jump = expectJump(
+            `${row} card`,
+            card,
+            measured,
+            presented ? 'zero' : 'visible',
+            presented ? undefined : [grow - 0.01, grow + 0.01]
+        )
         const aTrigger = viewBox(trigger)
         const run2 = report(h.group.flush())
         const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        const sRetarget = spec(measured, target, { timing: ease, velocity })
+        const sDropped = spec(measured, target, { timing: ease })
+        const context = presented
+            ? `the banner above grew ${grow} px, presented since flush 1; ${describeJump(jump)}: path 1`
+            : `the banner above grew ${grow} px in the commit's task; ${describeJump(jump)}: A moved, B did not`
         worst = Math.max(
             worst,
-            at(
-                'commit write (the banner above grew 60 px since flush 1, moving the card by the browser alone)'
-            )
+            expectAll(`${row} commit write (${context})`, [
+                [card, measured, 'card (measured B)'],
+                [card, cardAt(tk), 'card (oracle at t_k)'],
+                [trigger, bTrigger, 'trigger'],
+            ])
         )
-        await expectRunning(names, run2, `${row} commit`)
-        if (run1.value !== null) {
+        await settleMicrotasks()
+        if (presented && run1.value !== null) {
             throw new Error(
-                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); path 2 keeps the track`
+                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); J = 0, so path 1 keeps the track`
             )
         }
+        if (!presented && run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; the unpresented change moved A only, so the card is planned again from (B, v) and run 1 resolves 'interrupted'`
+            )
+        }
+        await expectRunning(names, run2, `${row} commit`)
         let g = 0
+        let dropGap = 0
         let endedAt: number | null = null
         while ((run1.value === null || run2.value === null) && f < 80) {
             f++
             g++
             await step(h.mc)
-            worst = Math.max(worst, at(`frame ${f}`))
-            expectViewAt(
-                trigger,
-                expectedBox(sTrigger, restAt(g)),
-                `${row} frame ${f} trigger`
+            if (presented) {
+                worst = Math.max(worst, at(`frame ${f}`))
+            } else {
+                const t = movingAt(g)
+                if (g <= 6) {
+                    dropGap = Math.max(
+                        dropGap,
+                        maxDiff(
+                            expectedBox(sDropped, t),
+                            expectedBox(sRetarget, t)
+                        )
+                    )
+                }
+                worst = Math.max(
+                    worst,
+                    expectViewAt(
+                        card,
+                        expectedBox(sRetarget, t),
+                        `${row} frame ${f} card (from (B, v)) t'=${t.toFixed(3)}`
+                    )
+                )
+            }
+            worst = Math.max(
+                worst,
+                expectViewAt(
+                    trigger,
+                    expectedBox(sTrigger, restAt(g)),
+                    `${row} frame ${f} trigger`
+                )
             )
             if (endedAt === null && run1.value !== null) endedAt = f
         }
-        expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
-        expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        if (presented) {
+            expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+            expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
+        }
         expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
         expectSnapCalls(names, snaps, [], `${row} runs`)
-        expectViewAt(card, shiftBox(a1, 0, 60), `${row} final card`, 0.01)
+        expectViewAt(card, target, `${row} final card`, 0.01)
         expectRestored(card, authored, `${row} card`)
         expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
-        return `kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+        if (presented) {
+            return `path 1 (${describeJump(jump)}): kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+        }
+        if (!(dropGap > 1)) {
+            throw new Error(
+                `${row} setup: dropping the velocity changes the path by only ${dropGap.toFixed(3)} px, too little to prove continuity`
+            )
+        }
+        return `from (B, v) (${describeJump(jump)}) ≤ ${worst.toFixed(3)} px (a dropped velocity would be ${dropGap.toFixed(1)} px off)`
     } finally {
         h.dispose()
     }
 }
 
-async function meas7Nested(): Promise<string> {
-    const row = 'L_MEAS_7 nested'
+async function meas7Nested(presented: boolean): Promise<string> {
+    const row = `L_MEAS_7 nested ${presented ? 'presented' : "in the commit's task"}`
     const ease = timing.easeOut()
     const { h, snaps, names } = harnessWithSnaps(ease)
     try {
@@ -1395,6 +1695,7 @@ async function meas7Nested(): Promise<string> {
         const run1 = report(h.group.flush())
         const sParent = spec(bParent, aParent, { timing: ease })
         const sChild = spec(bChild, aChild, { timing: ease })
+        const grow = 50
         let dy = 0
         // the parent's layout box moved: a pure translation of its frame
         const parentAt = (t: number) => shiftBox(expectedBox(sParent, t), 0, dy)
@@ -1414,85 +1715,137 @@ async function meas7Nested(): Promise<string> {
             await step(h.mc)
             worst = Math.max(worst, first(`frame ${f}`))
         }
-        banner.style.height = '90px'
-        dy = 50
+        if (presented) {
+            banner.style.height = `${40 + grow}px`
+            dy = grow
+        }
         while (f < 9) {
             f++
             await step(h.mc)
-            worst = Math.max(worst, first(`grown frame ${f}`))
+            worst = Math.max(
+                worst,
+                first(presented ? `grown frame ${f}` : `frame ${f}`)
+            )
         }
+
+        // the commit at t_k
         const tk = restAt(f)
         const live = expectedBox(sParent, tk).w / aParent.w
-        const measured = viewBox(child)
-        const velocity = velocityOf(childAt, tk)
-        const target = shiftBox(aChild, 0, 50)
+        const measured = [viewBox(parent), viewBox(child)] as const
+        const velocity = [velocityOf(parentAt, tk), velocityOf(childAt, tk)]
+        const targets = [shiftBox(aParent, 0, grow), shiftBox(aChild, 0, grow)]
         const bTrigger = viewBox(trigger)
         h.group.capture()
+        if (!presented) banner.style.height = `${40 + grow}px`
         trigger.style.left = '680px'
-        const aTrigger = viewBox(trigger)
-        const run2 = report(h.group.flush())
-        const sRetarget = spec(measured, target, { timing: ease, velocity })
-        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
-        worst = Math.max(
-            worst,
-            expectAll(
-                `${row} commit write (the banner above grew 50 px since flush 1; parent scale ${live.toFixed(3)})`,
-                [
-                    [child, measured, 'child (measured B)'],
-                    [parent, parentAt(tk), 'parent'],
-                    [trigger, bTrigger, 'trigger'],
-                ]
+        const jumps = [parent, child].map((element, i) =>
+            expectJump(
+                `${row} ${nameOf(names, element)}`,
+                element,
+                measured[i]!,
+                presented ? 'zero' : 'visible',
+                presented ? undefined : [grow - 0.01, grow + 0.01]
             )
         )
+        const aTrigger = viewBox(trigger)
+        const run2 = report(h.group.flush())
+        const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        const sRetarget = [0, 1].map((i) =>
+            spec(measured[i]!, targets[i]!, {
+                timing: ease,
+                velocity: velocity[i]!,
+            })
+        )
+        const sDropped = spec(measured[1], targets[1]!, { timing: ease })
+        const context = `${presented ? `the banner above grew ${grow} px, presented since flush 1` : `the banner above grew ${grow} px in the commit's task`}; parent scale ${live.toFixed(3)}; child ${describeJump(jumps[1]!)}: ${presented ? 'path 1' : 'A moved, B did not'}`
+        worst = Math.max(
+            worst,
+            expectAll(`${row} commit write (${context})`, [
+                [parent, measured[0], 'parent (measured B)'],
+                [child, measured[1], 'child (measured B)'],
+                [parent, parentAt(tk), 'parent (oracle at t_k)'],
+                [child, childAt(tk), 'child (oracle at t_k)'],
+                [trigger, bTrigger, 'trigger'],
+            ])
+        )
         await settleMicrotasks()
-        if (run1.value?.status !== 'interrupted') {
+        if (presented && run1.value !== null) {
             throw new Error(
-                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the child's track, so it resolves 'interrupted'`
+                `${row} commit: the kept run resolved at the commit (${describeReport(names, run1.value)}); J = 0, so path 1 keeps both tracks`
+            )
+        }
+        if (!presented && run1.value?.status !== 'interrupted') {
+            throw new Error(
+                `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; the unpresented change moved A only, so both nodes are planned again from (B, v) and run 1 resolves 'interrupted'`
             )
         }
         await expectRunning(names, run2, `${row} commit`)
         let g = 0
-        let path2Gap = 0
-        while (run2.value === null && f < 90) {
+        let dropGap = 0
+        let endedAt: number | null = null
+        while ((run1.value === null || run2.value === null) && f < 90) {
             f++
             g++
             await step(h.mc)
-            const t = movingAt(g)
-            path2Gap = Math.max(
-                path2Gap,
-                maxDiff(childAt(restAt(f)), expectedBox(sRetarget, t))
-            )
+            if (presented) {
+                worst = Math.max(worst, first(`frame ${f}`))
+            } else {
+                const t = movingAt(g)
+                if (g <= 6) {
+                    dropGap = Math.max(
+                        dropGap,
+                        maxDiff(
+                            expectedBox(sDropped, t),
+                            expectedBox(sRetarget[1]!, t)
+                        )
+                    )
+                }
+                worst = Math.max(
+                    worst,
+                    expectAll(`${row} frame ${f} t'=${t.toFixed(3)}`, [
+                        [
+                            parent,
+                            expectedBox(sRetarget[0]!, t),
+                            'parent (from (B, v))',
+                        ],
+                        [
+                            child,
+                            expectedBox(sRetarget[1]!, t),
+                            'child (from (B, v))',
+                        ],
+                    ])
+                )
+            }
             worst = Math.max(
                 worst,
-                expectAll(`${row} frame ${f}`, [
-                    [
-                        child,
-                        expectedBox(sRetarget, t),
-                        `child t'=${t.toFixed(3)}`,
-                    ],
-                    [parent, parentAt(restAt(f)), 'parent'],
-                    [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
-                ])
+                expectViewAt(
+                    trigger,
+                    expectedBox(sTrigger, restAt(g)),
+                    `${row} frame ${f} trigger`
+                )
             )
+            if (endedAt === null && run1.value !== null) endedAt = f
+        }
+        if (presented) {
+            expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+            expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
         }
         expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
         expectSnapCalls(names, snaps, [], `${row} runs`)
-        expectViewAt(child, target, `${row} final child`, 0.01)
-        expectViewAt(
-            parent,
-            shiftBox(aParent, 0, 50),
-            `${row} final parent`,
-            0.01
-        )
+        expectViewAt(parent, targets[0]!, `${row} final parent`, 0.01)
+        expectViewAt(child, targets[1]!, `${row} final child`, 0.01)
         expectRestored(parent, authored[0]!, `${row} parent`)
         expectRestored(child, authored[1]!, `${row} child`)
         expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
-        if (!(path2Gap > 1)) {
+        if (presented) {
+            return `path 1 under the parent's live scale ${live.toFixed(3)} (child ${describeJump(jumps[1]!)}): kept on the original timeline, ended at frame ${endedAt}; ≤ ${worst.toFixed(3)} px`
+        }
+        if (!(dropGap > 1)) {
             throw new Error(
-                `${row} setup: path 2 would be only ${path2Gap.toFixed(3)} px off, too little to tell the paths apart`
+                `${row} setup: dropping the child's velocity changes its path by only ${dropGap.toFixed(3)} px, too little to prove continuity`
             )
         }
-        return `parent scale ${live.toFixed(3)} at the commit; child retargets ≤ ${worst.toFixed(3)} px (path 2 would be ${path2Gap.toFixed(1)} px off)`
+        return `parent and child from (B, v) under the parent's live scale ${live.toFixed(3)} ≤ ${worst.toFixed(3)} px (a dropped velocity would be ${dropGap.toFixed(1)} px off)`
     } finally {
         h.dispose()
     }
@@ -1877,21 +2230,31 @@ async function meas9Aged(): Promise<string> {
  * runs a size track from scale 2; inside it a shadow child and a light-DOM
  * child slotted into the panel's `<slot>` run their own tracks. Their parent
  * participant in the flat tree (§4.6) is the panel, so both are drawn exactly
- * on their oracle under its live scale. The outer scroller scrolls mid-run;
- * a commit then keeps the panel (path 2) and retargets both children from
- * their measured boxes (path 3).
+ * on their oracle under its live scale. The outer scroller scrolls mid-run,
+ * presented by frames; then a commit:
+ * - (i) moves an unrelated participant: `J = 0` for every node, so path 1
+ *   keeps every track, and run 1 ends on schedule (§5.7);
+ * - (ii) also moves both children by less than `threshold`: `J ≠ 0` under
+ *   the panel's live scale, so path 3 retargets both from their measured
+ *   boxes and velocities, while the panel keeps its track (path 1).
  */
 export function L_MEAS_10(): Promise<string> {
     return variants('L_MEAS_10', [
-        ['open root', () => meas10('open')],
-        ['closed root', () => meas10('closed')],
+        ['open root (i), path 1', () => meas10('open', 0)],
+        ['open root (ii), path 3', () => meas10('open', SUB_MOVE)],
+        ['closed root (i), path 1', () => meas10('closed', 0)],
+        ['closed root (ii), path 3', () => meas10('closed', SUB_MOVE)],
     ])
 }
 
-async function meas10(mode: ShadowRootMode): Promise<string> {
-    const row = `L_MEAS_10 ${mode}`
+async function meas10(mode: ShadowRootMode, move: number): Promise<string> {
+    const path = move === 0 ? 1 : 3
+    const row = `L_MEAS_10 ${mode} ${move === 0 ? '(i)' : '(ii)'}`
     const ease = timing.easeOut()
-    const { h, snaps, names } = harnessWithSnaps(ease)
+    const { h, snaps, names } = harnessWithSnaps(
+        ease,
+        move === 0 ? undefined : KEEP_THRESHOLD
+    )
     /** Set once the slotted child exists: what `assignedSlot` returns for it. */
     let slotSeen: 'null' | 'the panel slot' | null = null
     try {
@@ -1942,6 +2305,7 @@ async function meas10(mode: ShadowRootMode): Promise<string> {
         panel.style.height = '75px'
         inShadow.style.left = '70px'
         slotted.style.left = '70px'
+        const authoredPanel = panel.style.cssText
         const aPanel = viewBox(panel)
         const aKids = kids.map(viewBox)
         const run1 = report(h.group.flush())
@@ -2003,6 +2367,11 @@ async function meas10(mode: ShadowRootMode): Promise<string> {
             worst = Math.max(worst, first(`frame ${f}`))
         }
         scroller.scrollTop = 50
+        if (scroller.scrollTop !== 50) {
+            throw new Error(
+                `${row} setup: the outer scroller scrolled to ${scroller.scrollTop}, not 50`
+            )
+        }
         dy = -50
         while (f < 9) {
             f++
@@ -2011,12 +2380,26 @@ async function meas10(mode: ShadowRootMode): Promise<string> {
         }
 
         const tk = restAt(f)
+        const live = expectedBox(sPanel, tk).w / aPanel.w
         const measured = kids.map(viewBox)
         const velocity = kids.map((_, i) => velocityOf((t) => kidAt(i, t), tk))
-        const targets = aKids.map((a) => shiftBox(a, 0, -50))
+        const targets = aKids.map((a) => shiftBox(a, move, -50))
         const bTrigger = viewBox(trigger)
         h.group.capture()
         trigger.style.left = '680px'
+        if (move !== 0) {
+            inShadow.style.left = `${70 + move}px`
+            slotted.style.left = `${70 + move}px`
+        }
+        const authoredKids = kids.map(authorText)
+        const jumps = kids.map((k, i) =>
+            expectJump(
+                `${row} ${nameOf(names, k)}`,
+                k,
+                measured[i]!,
+                move === 0 ? 'zero' : 'visible'
+            )
+        )
         const aTrigger = viewBox(trigger)
         const run2 = report(h.group.flush())
         const sRetarget = kids.map((_, i) =>
@@ -2026,52 +2409,102 @@ async function meas10(mode: ShadowRootMode): Promise<string> {
             })
         )
         const sTrigger = spec(bTrigger, aTrigger, { timing: ease })
+        /** A child's expected box and name `gi` frames after the commit, frame `fi` since flush 1. */
+        const kidNow = (
+            i: number,
+            fi: number,
+            gi: number
+        ): readonly [OBox, string] =>
+            path === 1
+                ? [
+                      kidAt(i, restAt(fi)),
+                      `${nameOf(names, kids[i]!)} (path 1, its own timeline)`,
+                  ]
+                : [
+                      expectedBox(sRetarget[i]!, movingAt(gi)),
+                      `${nameOf(names, kids[i]!)} (path 3) t'=${movingAt(gi).toFixed(3)}`,
+                  ]
+        const jumpText = kids
+            .map((k, i) => `${nameOf(names, k)} ${describeJump(jumps[i]!)}`)
+            .join(', ')
+        /** Checks a frame after the commit; a path 3 failure names a stale panel origin. */
+        const afterCommit = (
+            label: string,
+            fi: number,
+            gi: number,
+            list: readonly (readonly [Element, OBox, string])[]
+        ): number => {
+            try {
+                return expectAll(label, list)
+            } catch (error) {
+                if (path === 3) {
+                    const k = panelAt(restAt(fi)).w / aPanel.w
+                    kids.forEach((kid, i) =>
+                        explainStaleOrigin(
+                            error,
+                            kid,
+                            kidNow(i, fi, gi)[0],
+                            { x: k, y: k },
+                            { x: 0, y: -50 },
+                            'panel',
+                            nameOf(names, kid)
+                        )
+                    )
+                }
+                throw error
+            }
+        }
         worst = Math.max(
             worst,
-            expectAll(
-                `${row} commit write (an outer scroll of 50 px presented since flush 1)`,
+            afterCommit(
+                `${row} commit write (an outer scroll of 50 px presented since flush 1${move === 0 ? '' : `; the commit moved both children ${move} px`}; the panel's live scale ${live.toFixed(3)}; ${jumpText}: path ${path})`,
+                f,
+                0,
                 [
                     [panel, panelAt(tk), 'panel'],
-                    ...kids.map(
-                        (k, i) =>
-                            [
-                                k,
-                                measured[i]!,
-                                `${nameOf(names, k)} (measured B)`,
-                            ] as const
-                    ),
+                    ...kids.flatMap((k, i) => [
+                        [
+                            k,
+                            measured[i]!,
+                            `${nameOf(names, k)} (measured B)`,
+                        ] as const,
+                        [k, ...kidNow(i, f, 0)] as const,
+                    ]),
                     [trigger, bTrigger, 'trigger'],
                 ]
             )
         )
         await settleMicrotasks()
-        if (run1.value?.status !== 'interrupted') {
+        if (path === 1 && run1.value !== null) {
+            throw new Error(
+                `${row} commit: run 1 resolved at the commit (${describeReport(names, run1.value)}); J = 0, so path 1 keeps every track`
+            )
+        }
+        if (path === 3 && run1.value?.status !== 'interrupted') {
             throw new Error(
                 `${row} commit: run 1 is ${run1.value ? describeReport(names, run1.value) : 'still running'}; path 3 replaces the children's tracks, so it resolves 'interrupted'`
             )
         }
         await expectRunning(names, run2, `${row} commit`)
         let g = 0
-        while (run2.value === null && f < 90) {
+        let endedAt: number | null = null
+        while ((run1.value === null || run2.value === null) && f < 90) {
             f++
             g++
             await step(h.mc)
-            const t = movingAt(g)
             worst = Math.max(
                 worst,
-                expectAll(`${row} frame ${f}`, [
+                afterCommit(`${row} frame ${f}`, f, g, [
                     [panel, panelAt(restAt(f)), 'panel'],
-                    ...kids.map(
-                        (k, i) =>
-                            [
-                                k,
-                                expectedBox(sRetarget[i]!, t),
-                                `${nameOf(names, k)} t'=${t.toFixed(3)}`,
-                            ] as const
-                    ),
+                    ...kids.map((k, i) => [k, ...kidNow(i, f, g)] as const),
                     [trigger, expectedBox(sTrigger, restAt(g)), 'trigger'],
                 ])
             )
+            if (endedAt === null && run1.value !== null) endedAt = f
+        }
+        if (path === 1) {
+            expectEndedOnSchedule(endedAt, END_FRAME, `${row} run 1`)
+            expectReport(names, run1.value!, 'ended', [], `${row} run 1`)
         }
         expectReport(names, run2.value!, 'ended', [], `${row} run 2`)
         expectSnapCalls(names, snaps, [], `${row} runs`)
@@ -2089,8 +2522,12 @@ async function meas10(mode: ShadowRootMode): Promise<string> {
             `${row} final panel`,
             0.01
         )
+        expectRestored(panel, authoredPanel, `${row} panel`)
+        kids.forEach((k, i) =>
+            expectRestored(k, authoredKids[i]!, `${row} ${nameOf(names, k)}`)
+        )
         expectEqual(h.mc.clock.size, 0, `${row}: no clock subscription`)
-        return `shadow and slotted children exact under the panel's live scale; ≤ ${worst.toFixed(3)} px`
+        return `path ${path} under the panel's live scale ${live.toFixed(3)}${path === 1 ? `, ended at frame ${endedAt}` : ''}; shadow and slotted children exact ≤ ${worst.toFixed(3)} px`
     } catch (error) {
         // name the flat-tree ancestry the page itself reports, so a failure
         // caused by a parent lookup through `assignedSlot` shows it (§4.6)
@@ -2438,19 +2875,33 @@ async function meas12Removed(): Promise<string> {
         const quiet = silenceWarnings()
         let commit: Holder
         let authored: string[]
+        let aParent: OBox
+        let aChild: OBox
         try {
             h.group.capture()
             parent.style.transform = ''
             parent.style.left = '180px'
             child.style.left = '70px'
             authored = [parent.style.cssText, child.style.cssText]
+            // nothing is driven, so the rects now are A (rest reads)
+            aParent = viewBox(parent)
+            aChild = viewBox(child)
             commit = report(h.group.flush())
         } finally {
             quiet.restore()
         }
         const root = viewBox(h.root)
-        const aParent = { x: root.x + 180, y: root.y + 20, w: 200, h: 60 }
-        const aChild = { x: root.x + 190, y: root.y + 30, w: 60, h: 30 }
+        const derived = [
+            { x: root.x + 180, y: root.y + 20, w: 200, h: 60 },
+            { x: root.x + 250, y: root.y + 30, w: 60, h: 30 },
+        ]
+        ;[aParent, aChild].forEach((a, i) => {
+            if (maxDiff(a, derived[i]!) > 0.01) {
+                throw new Error(
+                    `${row} setup: the rest read ${JSON.stringify(a)} is not the authored layout ${JSON.stringify(derived[i])}`
+                )
+            }
+        })
         let worst = expectAll(
             `${row} commit write (B was presented under rotate(45deg); the commit removed it)`,
             [
@@ -2897,11 +3348,22 @@ export async function L_HAND_2(): Promise<string> {
             leg: string,
             x: ReturnType<typeof handoff>
         ) => {
-            let worst = expectViewAt(
-                x.lead,
-                x.a,
-                `${row} ${leg} flush write ${nameOf(names, x.lead)} (no flight)`
-            )
+            let worst: number
+            try {
+                worst = expectViewAt(
+                    x.lead,
+                    x.a,
+                    `${row} ${leg} flush write ${nameOf(names, x.lead)} (no flight)`
+                )
+            } catch (error) {
+                if (
+                    error instanceof Error &&
+                    maxDiff(viewBox(x.lead), x.b) <= 0.5
+                ) {
+                    error.message += `; it is drawn at the departing node's box ${JSON.stringify(x.b)}: the handoff flew, but §5.8 says 'A handoff, or a reparent of a participant, whose departing node is inside an active container while the new lead is outside it, does not fly: the lead enters as a presence enter (or appears at A when it has no presence), with diagnostic handoff-scroll-active'`
+                }
+                throw error
+            }
             const r = await expectNoRun(
                 x.run,
                 `${row} ${leg}`,
