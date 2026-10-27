@@ -2461,7 +2461,12 @@ export function createLayoutGroup(
                 parent: parent >= 0 ? frameIndex.get(parent)! : -1,
                 geometry: kept
                     ? untouched
-                        ? kept.geometry
+                        ? {
+                              ...kept.geometry,
+                              // the authored corners are this flush's
+                              radius: geometry[i]!.radius,
+                              radiusSource: geometry[i]!.radiusSource,
+                          }
                         : keptGeometry(
                               kept.geometry,
                               geometry[i]!,
