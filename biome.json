@@ -1,3 +1,18 @@
 {
-    "extends": ["@freestylejs/config/biome"]
+    "extends": ["@freestylejs/config/biome"],
+    "files": {
+        "includes": [
+            "**",
+            "!**/dist",
+            "!**/build",
+            "!**/coverage",
+            "!**/node_modules",
+            "!**/__snapshots__",
+            "!**/.*/**",
+            "!**/*.d.ts",
+            "!**/*.config.*",
+            "!bench/layout/results/**",
+            "!bench/layout/iteration-*/**"
+        ]
+    }
 }
