@@ -122,6 +122,45 @@ describe('§4.1/§9.1 maxParticipants', () => {
         group.dispose()
     })
 
+    it('a late mount over the cap is not read; the flush caps with zero reads', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion,
+            maxParticipants: 1,
+        })
+        const a = element(0)
+        const b = element(100)
+        group.add(a)
+        group.capture()
+        group.add(b)
+        const captureAdded = (
+            group as unknown as Record<symbol, (element: HTMLElement) => void>
+        )[Symbol.for('ani-layout.capture-added')]!
+        const rects = group.stats.rects
+        model.reset()
+        captureAdded(b)
+        expect(model.reads.rects).toBe(0)
+        expect(group.stats.rects).toBe(rects)
+
+        const { events, stop } = collect()
+        model.place(a, box(40))
+        model.place(b, box(140))
+        model.reset()
+        const r = await group.flush()
+        expect(r.status).toBe('capped')
+        expect(r.snapped).toEqual([
+            { element: a, reason: 'capped' },
+            { element: b, reason: 'capped' },
+        ])
+        expect(model.reads.rects).toBe(0)
+        expect(group.stats.rects).toBe(rects)
+        const cap = events.find((event) => event.code === 'participant-cap')
+        expect(cap?.metrics.rectReads).toBe(0)
+        stop()
+        group.dispose()
+    })
+
     it('emits participant-cap once, with a stable scope id and a versioned payload', async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({
@@ -212,7 +251,7 @@ describe('§9.1 maxNodes', () => {
         group.dispose()
     })
 
-    it('a capped capture followed by a smaller flush does not cap and uses the capture-less path', async () => {
+    it('a capped capture stays latched: a smaller flush still reads nothing and snaps capped', async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({
             clock: mc.clock,
@@ -230,13 +269,16 @@ describe('§9.1 maxNodes', () => {
         model.reset()
         const { events, stop } = collect()
         const rects = group.stats.rects
+        const styles = group.stats.styles
         const r = await group.flush()
-        expect(r.status).toBe('stale')
-        expect(r.snapped).toEqual([{ element: a, reason: 'stale' }])
-        expect(group.stats.rects).toBe(rects + 1)
-        expect(events.map((e) => e.code)).toEqual(['capture-less-flush'])
-        expect(events[0]!.element).toBe(a)
-        expect(events.some((e) => e.code === 'participant-cap')).toBe(false)
+        expect(r.status).toBe('capped')
+        expect(r.snapped).toEqual([{ element: a, reason: 'capped' }])
+        expect(group.stats.rects).toBe(rects)
+        expect(group.stats.styles).toBe(styles)
+        expect(model.reads.rects).toBe(0)
+        expect(events.map((e) => e.code)).toEqual(['participant-cap'])
+        expect(events[0]!.element).toBeUndefined()
+        expect(events[0]!.metrics.rectReads).toBe(0)
         stop()
         group.dispose()
     })

@@ -850,6 +850,98 @@ export async function L_OPS_2(): Promise<string> {
 
 /* ───────────────────────── caps in a browser ───────────────────────── */
 
+function MaxItem({ id }: { id: string }): ReactNode {
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        className: 'ops-late-item',
+        'data-late': id === 'c' ? 'yes' : undefined,
+        style: {
+            position: 'absolute',
+            left: id === 'a' ? 0 : id === 'b' ? 120 : 240,
+            top: 0,
+            width: 80,
+            height: 80,
+        },
+    })
+}
+
+/** N2: a React late add over `maxParticipants` takes no measurement read. */
+export async function L_OPS_MAXP_LATE(): Promise<string> {
+    const mc = createManualClock()
+    const host = document.createElement('div')
+    host.style.cssText = 'position: relative; width: 500px; height: 300px;'
+    document.body.append(host)
+    const root: Root = createRoot(host)
+    const quiet = silenceWarnings()
+    const events: LayoutDiagnostic[] = []
+    let update!: (fn: () => void) => Promise<LayoutReport>
+    let addLate!: () => void
+    function Controls(): null {
+        update = useLayoutGroup().update
+        return null
+    }
+    function App(): ReactNode {
+        const [ids, setIds] = useState(['a', 'b'])
+        addLate = () => setIds(['a', 'b', 'c'])
+        return h(
+            'div',
+            null,
+            ids.map((id) => h(MaxItem, { key: id, id }))
+        )
+    }
+    try {
+        flushSync(() =>
+            root.render(
+                h(
+                    LayoutGroup,
+                    { clock: mc.clock, maxParticipants: 2 },
+                    h(Controls),
+                    h(App)
+                )
+            )
+        )
+        await microtasks()
+        const stop = layoutRuntime.onDiagnostic((event) => events.push(event))
+        const rect = Element.prototype.getBoundingClientRect
+        let lateReads = 0
+        Element.prototype.getBoundingClientRect = function (this: Element) {
+            if ((this as HTMLElement).dataset.late === 'yes') lateReads += 1
+            return rect.call(this)
+        }
+        let report: LayoutReport
+        try {
+            report = await update(addLate)
+        } finally {
+            Element.prototype.getBoundingClientRect = rect
+            stop()
+        }
+        expectEqual(report.status, 'capped', 'late max: status')
+        expectEqual(lateReads, 0, 'late max: no late-mount rect read')
+        const late = host.querySelector<HTMLElement>('[data-late="yes"]')
+        expectEqual(late !== null, true, 'late max: item mounted')
+        expectEqual(late!.style.translate, '', 'late max: no pose')
+        const cap = events.filter((event) => event.code === 'participant-cap')
+        expectEqual(cap.length, 1, 'late max: one participant-cap')
+        expectEqual(cap[0]!.metrics.rectReads, 0, 'late max: metric rects')
+        expectEqual(
+            events.filter(
+                (event) =>
+                    event.code === 'capture-less-flush' ||
+                    event.code === 'capture-aged'
+            ).length,
+            0,
+            'late max: no stale diagnostic'
+        )
+        return `React late add over maxParticipants: ${report.status}, reads ${lateReads}, metric ${cap[0]!.metrics.rectReads}`
+    } finally {
+        quiet.restore()
+        flushSync(() => root.unmount())
+        await microtasks()
+        host.remove()
+    }
+}
+
 /** OPS-16: the React `maxParticipants` option reaches the adapter's scope. */
 export async function L_OPS_MAXP(): Promise<string> {
     const results: string[] = []
