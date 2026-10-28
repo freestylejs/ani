@@ -2,6 +2,30 @@
 
 ## FINAL GOAL
 
+### Top-level owner scope correction — 2026-10-28
+
+The owner explicitly withdraws the previously inferred whiteboard/diagram-product deliverable.
+The earlier interpretation of "FigJam, draw.io, tldraw etc" as an instruction to build a separate
+board/canvas product was scope drift. Those names describe the **production-quality bar** that ani
+must be credible enough to serve; they are not products that this program must reproduce.
+
+This ruling is authoritative over every earlier plan/brief that says otherwise:
+
+- `app/board` is not an ani deliverable and must not be implemented by this program;
+- the former P6–P8 board phases and H10 board brief are cancelled and removed;
+- no document model, generic canvas/editor framework, connector router, persistence layer,
+  minimap, export system or other whiteboard-product machinery may be added as proof of ani;
+- the final certification surface is the iOS-native-grade interaction set in layout §11.6 plus
+  the P4 drive rows, evaluated by the P5 harness frame by frame and backed by the P1–P4 authority
+  and acceptance evidence;
+- future product applications may consume ani, but they are out of scope unless the owner gives a
+  new explicit top-level instruction.
+
+The program's success claim is therefore **not** "we built a complex app with ani". It is:
+**"ani itself has been objectively proven to deliver iOS-native-grade interaction semantics and
+performance on the specified browser engines, including interruptions, direct manipulation,
+scroll/concurrency, failure degradation and production-scale cost."**
+
 1. **ani-layout v3 shipped as the single authority.** `packages/layout/ARCHITECTURE.md` is rewritten
    to the approved v3 design (`.trace/ani_layout_ios/architecture.md`, reviewers' sign-off
    `3ae7dc7`, owner's decisions 2026-10-27). Code, tests and docs implement exactly that
@@ -11,20 +35,58 @@
 2. **Proof at code level and test level.** Unit (pure modules, property tests), integration
    (jsdom and browser engine rows on the frame oracle) and e2e (Playwright, real pages) prove
    every authority claim in Chromium and WebKit (Firefox where the row exists today).
-3. **iOS-native-grade example set and bench harness.** A set of real iOS interaction scenes runs
+3. **iOS-native-grade interaction proof and bench harness.** A set of browser scenes reproducing
+   native-iOS interaction patterns runs
    under a Playwright harness (Chromium and WebKit) that scores each scene frame by frame:
    oracle error, first-frame continuity, velocity continuity, spring fidelity, settle exactness and
    frame cost. It runs in iterations ("validate → improve") until every scene meets its gate. The
-   performance gates are proven on this harness (owner's decision D5: Safari and Chrome under
+   performance gates are proven on this harness (owner's decision D5: Chromium and WebKit under
    Playwright).
-4. **A production-grade diagram and whiteboard tool** (the class of FigJam, draw.io, tldraw),
-   built on ani-layout v3 and its drive seam, that a user would choose to use. It has its own
-   authority document and unit, integration and e2e tests.
+4. **Release ani only after the native-grade claim is earned.** Documentation, migration notes,
+   versions and the final fresh-clone gate may call the system iOS-native-grade only after the
+   complete P1–P5 evidence body is green, including P3 safety, P4 drive/direct-manipulation and
+   every P5 native-grade scene/gate in the required engines, and every carried tribunal defect is
+   closed.
 
 > Owner's rule: "디테일이 생명" (the details are everything). Every visible motion is judged
 > frame by frame.
 
-## Owner's decisions (2026-10-27)
+## iOS Native Grade proof contract
+
+"iOS Native Grade" is an evidence claim, not a visual adjective. This program may make that claim
+only when all of the following are objectively demonstrated:
+
+1. **Frame correctness.** Each §11.6 scene is scored per participant and per frame against an
+   independent oracle that shares no solver/physics implementation with production code.
+2. **Continuity under interruption.** The first frame starts from what was actually presented;
+   geometry continuity and the specified edge-velocity continuity remain within the §11.6 gates
+   across retargets, reversals and interrupted springs. Other authored channels obey their own
+   authority rows and existing acceptance tests.
+3. **Direct-manipulation seam.** P4 `take`/`move`/`release`/`cancel` and the held read prove the
+   layout-side hand-off from externally supplied gesture offsets and release velocity. S-REORDER
+   and S-SHEET exercise that seam. Pointer capture, `pointerId`, `touch-action`, velocity estimation,
+   keyboard operation and announcements remain responsibilities of a gesture/component layer as
+   specified by the layout authority; this program does not falsely treat the drive seam as proof
+   of a complete pointer subsystem.
+4. **Hostile production conditions.** Concurrent React commits, Suspense, scroll, nested scale,
+   shadow DOM, document boundaries, reparenting, reduced motion and supported WAAPI paths produce
+   the specified frame or the authority-defined outcome: typed degradation/snap,
+   invalidation/disposal or validation error as applicable. No unsupported case may silently
+   produce wrong motion. The invariant remains "snap, never wrong motion".
+5. **Safety and accessibility.** P3 proves transactional failure cleanup, callback isolation,
+   runtime disablement, participant caps, focus/inert behavior, lifecycle fuzz and mutation cases.
+6. **Performance on the pinned instrument.** Chromium and WebKit under the §11.5 Playwright
+   environment meet the authoritative commit, steady-frame, sustained-commit and held-frame gates
+   with exact read counts. A fingerprint mismatch makes the §11.5 cost-gate result advisory; the
+   §11.6 frame-scoring gates remain deciding as specified by the authority.
+7. **Validation → improvement closure.** P5 records every failed metric and root-cause hypothesis,
+   iterates the engine or scene implementation without weakening a tolerance, and repeats until
+   every required scene is green in both required engines.
+
+Passing ordinary examples, subjective visual inspection, or building an unrelated complex product
+is not evidence for this claim.
+
+## Owner's decisions (2026-10-27; amended 2026-10-28)
 
 | # | Decision | Ruling |
 |---|---|---|
@@ -32,8 +94,9 @@
 | D2 | Core additions | Approved: the pure `physics` module (plus the read-only `Clock.inFrame` flag that §3.3-5 of the design needs; additive) |
 | D3 | Visual continuity | Approved |
 | D4 | Clip-aware crossfade | Deferred |
-| D5 | Device gate | Chromium and WebKit under Playwright, on the harness of goal 3 |
+| D5 | Browser-engine benchmark gate | Chromium and WebKit under Playwright, on the harness of goal 3; this is not iOS-device or Mobile Safari certification |
 | D6 | New public surface | Approved: `layoutKey`, `maxParticipants`, `layoutRuntime`, diagnostics, `'failed'`/`'disabled'` |
+| D7 | Program scope | Top-level owner correction: remove the standalone board/canvas product entirely; prove iOS Native Grade from the complete P1–P5 evidence body, with P3 safety, P4 drive/direct manipulation and the P5 §11.5/§11.6 certification harness as the final proof stages |
 
 ## Roles
 
@@ -87,8 +150,5 @@ Each phase ends at a checkpoint:
 | P2 | `p2_measured` | Measured presentation: capture of all participants, aging marker and the rendering-callback bound, view-space planning, pose inversion and the keep test, layout-size support check, capture-less and aged flush, flat-tree ancestry, document affinity, `layoutKey`, the active-scroll handoff rule, retained view boxes. Page boxes and the scroll `'stale'` path are removed | L-MEAS-1..13, L-HAND-1..2, L-KEY-1, L-DOC-1 ×3 engines; every existing row updated to the new authority and green |
 | P3 | `p3_safety` | Transactional flush and frames, callback isolation, the `'failed'`/`'disabled'` statuses and their precedence, `maxParticipants`, `layoutRuntime` and diagnostics, the crossfade `inert` and focus rule, model-based lifecycle fuzz, mutation tests | L-OPS-1..2, L-A11Y-1, fuzz and mutation suite ×3 engines |
 | P4 | `p4_drive` | The drive seam: `take`/`move`/`release`/`cancel`, the state machine, the held read, reduced-motion rules, React `useLayoutDrive` | L-DRIVE-1..6 ×3 engines; React adapter tests |
-| P5 | `p5_bench` | iOS-grade example set and harness (Chromium, WebKit): per-scene frame scoring, perf gates (commit, steady frame, sustained commits, held frame), iterations until every scene passes | Bench report all green in both engines; cost gates met; iteration log |
-| P6 | `p6_board_core` | The board tool's authority document and its core: document model, history, infinite canvas, shapes, selection, keyboard, persistence | Unit and integration tests; e2e smoke in Chromium and WebKit |
-| P7 | `p7_board_motion` | Board interaction and motion: drag through the drive seam with snapping, resize, connectors, frames with auto-layout, the layer panel reorder, align and distribute, undo and redo motion, presence of shapes | e2e flows; frame-level motion rows on the bench harness |
-| P8 | `p8_board_product` | Board product completeness: styles panel, text editing, export (SVG, PNG, JSON), import, context menu, minimap, accessibility, reduced motion, performance at 1,000 shapes | e2e suite; a11y checks; perf gate |
-| P9 | `p9_release` | Docs site, READMEs, migration notes, changesets and versions; the final full gate on a fresh clone; final review and cleanup | Full gate green on a fresh clone; final tribunal PASS on every checkpoint |
+| P5 | `p5_bench` | **iOS Native Grade certification:** the §11.6 interaction set and harness (Chromium, WebKit), including the P4-dependent direct-manipulation scenes; independent per-frame scoring; perf gates (commit, steady frame, sustained commits, held frame); validation → improvement iterations until every required metric passes | Native-grade report all green in both required engines; no weakened tolerance; cost gates met; iteration log records failures and fixes |
+| P6 | `p6_release` | Docs site, READMEs, migration notes, changesets and versions; state the iOS-native-grade claim only from the complete P1–P5 evidence body; final full gate on a fresh clone; final review and cleanup | Full gate green on a fresh clone; P5 certification green; final tribunal PASS on every checkpoint |

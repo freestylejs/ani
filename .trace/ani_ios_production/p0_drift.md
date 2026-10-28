@@ -12,11 +12,11 @@ stale* (an implementation gap that a phase closes). No question to the owner rem
 |---|---|---|---|
 | `.trace/ani_layout_ios/architecture.md` (v3) | Approved design decision | Layout v3 | Highest: signed off and approved |
 | `packages/layout/ARCHITECTURE.md` | Package authority | Layout engine, React adapter | Stale: states the 0.2.0 engine |
-| `packages/layout/README.md` | User docs | Vanilla API | Follows the authority; updated in P9 |
-| `packages/web/content/docs/guides/layout.mdx`, `showcase/layout.mdx` | User docs | Guide, showcase | Follows the authority; updated in P9 |
-| `packages/react/README.md` | User docs | React entry list | Follows; updated in P9 |
+| `packages/layout/README.md` | User docs | Vanilla API | Follows the authority; updated in P6 |
+| `packages/web/content/docs/guides/layout.mdx`, `showcase/layout.mdx` | User docs | Guide, showcase | Follows the authority; updated in P6 |
+| `packages/react/README.md` | User docs | React entry list | Follows; updated in P6 |
 | `packages/core/src/API.md` | Core API docs | Core exports | Gains `physics` and `Clock.inFrame` (P1) |
-| `.changeset/ani-layout.md`, `.changeset/react-layout-adapter.md` | Release notes for 0.2.0 (unreleased) | Release | Rewritten in P9 (hard migration: one changeset for the shipped behaviour) |
+| `.changeset/ani-layout.md`, `.changeset/react-layout-adapter.md` | Release notes for 0.2.0 (unreleased) | Release | Rewritten in P6 (hard migration: one changeset for the shipped behaviour) |
 
 ## Drift List Matrix
 
@@ -25,7 +25,7 @@ stale* (an implementation gap that a phase closes). No question to the owner rem
 | DR-01 | S1 | ARCHITECTURE §3.1 | "All boxes are page boxes" | Each flush plans in its own view space; kept tracks move by their rest displacement | Doc stale + Code stale | Rewrite §3.1; implement | P0, P2 |
 | DR-02 | S1 | ARCHITECTURE §4.1 | "Driven nodes are not read" | Capture measures every participant, driven included; the analytic state gives only velocity | Doc + Code stale | Rewrite §4.1; implement | P0, P2 |
 | DR-03 | S1 | ARCHITECTURE §4.2 | "B at flush: the engine's current drawn box … a frame between capture and flush is compensated exactly" | A capture that crossed a rendering opportunity is aged and never supplies B | Doc + Code stale | Rewrite; implement | P0, P2 |
-| DR-04 | S1 | ARCHITECTURE §4.2, §9; README; guide | "An inner scroll container that moved … snaps `'stale'`" | Scroll is measured; `'stale'` means "no valid before-box" only | Doc + Code + Test stale | Rewrite; implement; update rows | P0, P2, P9 |
+| DR-04 | S1 | ARCHITECTURE §4.2, §9; README; guide | "An inner scroll container that moved … snaps `'stale'`" | Scroll is measured; `'stale'` means "no valid before-box" only | Doc + Code + Test stale | Rewrite; implement; update rows | P0, P2, P6 |
 | DR-05 | S1 | ARCHITECTURE §2 | "Core V2's public API does not change" | D2: core gains the pure `physics` module and `Clock.inFrame` | Doc stale | Rewrite §2 | P0, P1 |
 | DR-06 | S1 | ARCHITECTURE §2 | Out of scope: drag-coupled layout, `layoutScroll`/`layoutRoot` | The drive seam is in scope; scroll containers need no markers | Doc stale | Rewrite §2 | P0 |
 | DR-07 | S1 | ARCHITECTURE §5.1, §7.1 | `LayoutMotion { duration, delay, timing }`; the momentum term is the only velocity device | Discriminated `type: 'timing' \| 'spring'`; physical spring tracks | Doc + Code stale | Rewrite §5.1, §7.1; implement | P0, P1 |
@@ -40,7 +40,7 @@ stale* (an implementation gap that a phase closes). No question to the owner rem
 | DR-16 | S2 | ARCHITECTURE §7.2 | `useLayout`, `LayoutGroup`, `useLayoutGroup` only | `useLayoutDrive()` dispatcher; per-document portal scope | Doc + Code stale | Rewrite; implement | P0, P2, P4 |
 | DR-17 | S1 | ARCHITECTURE §11 | Cost gates measured "somewhere"; three-engine rows only | Two tiers; bench harness in Chromium and WebKit proves the gates (D5) | Doc stale + missing evidence | Rewrite §11; build the harness | P0, P5 |
 | DR-18 | S1 | `tests/browser` `layout:COST` | Gate passes on the earlier host | Fails in this container (commit 6.9 ms, frame p95 3.07 ms on 4 vCPU); the gate machine was never stated | Missing evidence | §11.5 pins the environment (image, CPU, memory, Node, Playwright and browser builds, load) and the measurement and aggregation protocol; a report with a mismatched fingerprint is advisory; P5 meets the gates on it | P0, P5 |
-| DR-19 | S2 | `packages/layout/package.json` | `version 0.1.0`; changeset says 0.2.0; React peers `^0.2.0` | One shipped version, aligned | Code stale | Align in P9 | P9 |
+| DR-19 | S2 | `packages/layout/package.json` | `version 0.1.0`; changeset says 0.2.0; React peers `^0.2.0` | One shipped version, aligned | Code stale | Align in P6 | P6 |
 | DR-20 | S3 | ARCHITECTURE header | "Execution plan and evidence: `.trace/ani_layout_final/`" | This program's trace | Doc stale | Rewrite header | P0 |
 
 ## User Ask Matrix
