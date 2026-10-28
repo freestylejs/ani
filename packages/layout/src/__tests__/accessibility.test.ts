@@ -390,6 +390,64 @@ describe('§6 crossfade follower inert', () => {
         void detail
     })
 
+    it('H12-21: authored inert is preserved through reversal, abort and dispose', async () => {
+        // reversal
+        {
+            const { mc, group } = harness()
+            const card = element(20, 20)
+            card.setAttribute('inert', 'authored')
+            const swipe = presenceLink(false)
+            const detailSwipe = presenceLink(false)
+            stops.push(linkPresence(card, swipe.link))
+            group.add(card, { layoutId: 'shared', radius: false })
+            group.capture()
+            await group.flush()
+            swipe.set(true)
+            group.capture()
+            const detail = element(360, 40, 300, 200)
+            stops.push(linkPresence(detail, detailSwipe.link))
+            group.add(detail, { layoutId: 'shared', radius: false })
+            const first = group.flush()
+            mc.frames(2)
+            swipe.set(false)
+            detailSwipe.set(true)
+            group.capture()
+            const reverse = group.flush()
+            expect(card.getAttribute('inert')).toBe('authored')
+            expect(detail.getAttribute('inert')).toBe('')
+            group.dispose()
+            await Promise.all([first, reverse])
+        }
+        // abort
+        {
+            const { mc, group } = harness()
+            const card = element(20, 20)
+            card.setAttribute('inert', 'authored')
+            const { detail } = crossfade(group, card)
+            const run = group.flush()
+            mc.frame(16)
+            injectLayoutFault('write')
+            mc.frame(16)
+            await run
+            expect(card.getAttribute('inert')).toBe('authored')
+            expect(detail.getAttribute('inert')).toBe(null)
+            group.dispose()
+        }
+        // dispose
+        {
+            const { mc, group } = harness()
+            const card = element(20, 20)
+            card.setAttribute('inert', 'authored')
+            const { detail } = crossfade(group, card)
+            const run = group.flush()
+            mc.frame(16)
+            group.dispose()
+            expect(card.getAttribute('inert')).toBe('authored')
+            expect(detail.getAttribute('inert')).toBe(null)
+            await run
+        }
+    })
+
     it('the author removing inert mid-run cannot make the follower interactive', async () => {
         const { mc, group } = harness()
         const card = element(20, 20)

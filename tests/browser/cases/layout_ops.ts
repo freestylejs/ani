@@ -11,6 +11,7 @@ import {
     createLayoutGroup,
     createPresence,
     type LayoutDiagnostic,
+    type LayoutGroup as LayoutGroupType,
     type LayoutOptions,
     type LayoutReport,
     layoutRuntime,
@@ -46,7 +47,7 @@ const motion = { duration: D, timing: timing.linear() }
 
 interface Harness {
     readonly mc: ManualClock
-    readonly group: LayoutGroup
+    readonly group: LayoutGroupType
     readonly root: HTMLElement
     add(element: HTMLElement, options?: LayoutOptions): void
     dispose(): void
@@ -1381,9 +1382,16 @@ export async function L_A11Y_1(): Promise<string> {
             expectEqual(detail.style.opacity, '', 'no lead opacity')
             expectEqual(detail.style.translate, '', 'lead at A')
             expectEqual(document.activeElement, button, 'focus kept')
-            const focus = events.filter((e) => e.code === 'focus-in-follower')
-            expectEqual(focus.at(-1)?.action, 'none', 'focus diagnostic action')
-            expectEqual(focus.at(-1)?.element, card, 'focus diagnostic element')
+            const focus = events.filter(
+                (e) => e.code === 'focus-in-follower' && e.element === card
+            )
+            expectEqual(focus.length, 1, 'focus diagnostic count')
+            expectEqual(focus[0]!.action, 'none', 'focus diagnostic action')
+            const leadBox = viewBox(detail)
+            expectClose(leadBox.x, 360, TOL, 'lead at A x')
+            expectClose(leadBox.y, 40, TOL, 'lead at A y')
+            expectClose(leadBox.w, 300, TOL, 'lead at A w')
+            expectClose(leadBox.h, 200, TOL, 'lead at A h')
             h.mc.frames(10)
             expectEqual(document.activeElement, button, 'focus kept on frames')
             // presence alone released the exit (no crossfade hold)
@@ -1621,31 +1629,54 @@ export async function L_A11Y_1(): Promise<string> {
 /* ─────────────── §11.3 model-based lifecycle fuzz (browser) ─────────────── */
 
 interface FuzzBatch {
-    writes: number
+    /** Writes per document: C6 scopes the read-after-write rule per document. */
+    readonly writes: Map<Document, number>
     violation: string | null
-    crossDocument: boolean
     properties: string[]
     attributes: string[]
+}
+
+interface FuzzBox {
+    readonly x: number
+    readonly y: number
+    readonly w: number
+    readonly h: number
 }
 
 let fuzzBatch: FuzzBatch | null = null
 /** What the engine wrote during the current event, per property/attribute. */
 let fuzzSink: { property?: string; attribute?: string }[] | null = null
+/** A style declaration's element, for per-document write accounting. */
+const fuzzOwners = new WeakMap<CSSStyleDeclaration, HTMLElement>()
 
-function fuzzRead(what: string): void {
-    if (!fuzzBatch || fuzzBatch.writes === 0) return
-    if (fuzzBatch.crossDocument) {
-        fuzzBatch.writes = 0
-        return
-    }
+function fuzzDocument(value: Element | Document | null): Document {
+    if (value !== null && value.nodeType === 9) return value as Document
+    return (value as Element | null)?.ownerDocument ?? document
+}
+
+function fuzzRead(value: Element | Document | null, what: string): void {
+    if (!fuzzBatch) return
+    const doc = fuzzDocument(value)
+    if ((fuzzBatch.writes.get(doc) ?? 0) === 0) return
     if (fuzzBatch.violation === null) fuzzBatch.violation = what
+}
+
+function fuzzWrite(value: Element | null, property?: string): void {
+    if (!fuzzBatch) return
+    const doc = value?.ownerDocument ?? document
+    fuzzBatch.writes.set(doc, (fuzzBatch.writes.get(doc) ?? 0) + 1)
+    if (property !== undefined) fuzzBatch.properties.push(property)
+}
+
+function fuzzAttribute(value: Element, name: string): void {
+    fuzzWrite(value)
+    if (fuzzBatch) fuzzBatch.attributes.push(name)
 }
 
 function fuzzRun<T>(work: () => T): T {
     fuzzBatch = {
-        writes: 0,
+        writes: new Map(),
         violation: null,
-        crossDocument: false,
         properties: [],
         attributes: [],
     }
@@ -1664,7 +1695,7 @@ function fuzzRun<T>(work: () => T): T {
     }
     if (batch?.violation !== null && batch !== null) {
         throw new Error(
-            `a ${batch.violation} read followed the batch's first write`
+            `a ${batch.violation} read followed a write in the same document`
         )
     }
     return value
@@ -1689,25 +1720,25 @@ function instrumentFuzz(): () => void {
     Element.prototype.getBoundingClientRect = function (
         this: Element
     ): DOMRect {
-        fuzzRead('rect')
+        fuzzRead(this, 'rect')
         return rect.call(this)
     }
     Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
         configurable: true,
         get(this: HTMLElement) {
-            fuzzRead('offsetWidth')
+            fuzzRead(this, 'offsetWidth')
             return offsetWidth.get!.call(this)
         },
     })
     Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
         configurable: true,
         get(this: HTMLElement) {
-            fuzzRead('offsetHeight')
+            fuzzRead(this, 'offsetHeight')
             return offsetHeight.get!.call(this)
         },
     })
     window.getComputedStyle = ((element: Element, pseudo?: string | null) => {
-        fuzzRead('computed style')
+        fuzzRead(element, 'computed style')
         return computed(element, pseudo)
     }) as typeof window.getComputedStyle
     CSSStyleDeclaration.prototype.setProperty = function (
@@ -1715,31 +1746,19 @@ function instrumentFuzz(): () => void {
         value: string | null,
         priority?: string
     ) {
-        if (fuzzBatch) {
-            fuzzBatch.writes += 1
-            fuzzBatch.properties.push(property)
-        }
+        fuzzWrite(fuzzOwners.get(this) ?? null, property)
         return setProperty.call(this, property, value, priority)
     }
     CSSStyleDeclaration.prototype.removeProperty = function (property: string) {
-        if (fuzzBatch) {
-            fuzzBatch.writes += 1
-            fuzzBatch.properties.push(property)
-        }
+        fuzzWrite(fuzzOwners.get(this) ?? null, property)
         return removeProperty.call(this, property)
     }
     Element.prototype.setAttribute = function (name: string, value: string) {
-        if (fuzzBatch) {
-            fuzzBatch.writes += 1
-            fuzzBatch.attributes.push(name)
-        }
+        fuzzAttribute(this, name)
         return setAttribute.call(this, name, value)
     }
     Element.prototype.removeAttribute = function (name: string) {
-        if (fuzzBatch) {
-            fuzzBatch.writes += 1
-            fuzzBatch.attributes.push(name)
-        }
+        fuzzAttribute(this, name)
         return removeAttribute.call(this, name)
     }
     return () => {
@@ -1772,6 +1791,21 @@ function fuzzSeed(seed: number): () => number {
 }
 
 const FUZZ_TOL = 0.5
+const FUZZ_SHARED = 'fuzz-card'
+
+function fuzzBox(element: HTMLElement): FuzzBox {
+    const box = viewBox(element)
+    return { x: box.x, y: box.y, w: box.w, h: box.h }
+}
+
+function sameFuzzBox(a: FuzzBox, b: FuzzBox): boolean {
+    return (
+        Math.abs(a.x - b.x) <= FUZZ_TOL &&
+        Math.abs(a.y - b.y) <= FUZZ_TOL &&
+        Math.abs(a.w - b.w) <= FUZZ_TOL &&
+        Math.abs(a.h - b.h) <= FUZZ_TOL
+    )
+}
 
 function fuzzStyle(element: HTMLElement): Map<string, string> {
     const values = new Map<string, string>()
@@ -1839,18 +1873,26 @@ function fuzzCheckStyles(
 }
 
 /**
- * FUZZ (§11.3): the seeded lifecycle model on real DOM in Chromium and
- * WebKit. A fixseed prints its seed and step on failure; the sequence is pure
- * for that seed.
+ * FUZZ (§11.3, C6): the seeded lifecycle model on real DOM in Chromium and
+ * WebKit. The B property is per node: its own fresh capture, its shared
+ * partner's capture for a handoff/follow, its retained departing box, or the
+ * flush's reported snap. Read-after-write is checked per document.
  */
 export async function FUZZ(): Promise<string> {
-    const seeds = [11, 23, 37, 41, 53, 67, 79, 83, 97, 101]
+    const seeds = [
+        11, 23, 37, 41, 53, 67, 79, 83, 97, 101, 113, 127, 131, 149, 157, 173,
+    ]
     const quiet = silenceWarnings()
     const restoreInstrument = instrumentFuzz()
     const scrolls = watchScrollListeners()
+    const diagnostics: LayoutDiagnostic[] = []
+    const stopDiagnostics = layoutRuntime.onDiagnostic((event) =>
+        diagnostics.push(event)
+    )
     let passed = 0
     try {
         for (const seed of seeds) {
+            diagnostics.length = 0
             const random = fuzzSeed(seed)
             const h = harness({ motion })
             const authored = new Map<
@@ -1860,18 +1902,22 @@ export async function FUZZ(): Promise<string> {
             const reports: Promise<LayoutReport>[] = []
             const exits: Promise<unknown>[] = []
             const enters: Promise<unknown>[] = []
-            const captures = new Map<
-                HTMLElement,
-                { x: number; y: number; w: number; h: number }[]
-            >()
             const a = node(h.root, boxAt(0, 0))
             const b = node(h.root, boxAt(200, 0))
-            const card = node(h.root, boxAt(20, 200))
             const scroller = node(h.root, boxAt(0, 300, 500, 200))
+            scroller.style.overflow = 'auto'
+            const card = node(scroller, boxAt(20, 20))
             const detail = node(document.body, boxAt(600, 40, 300, 200))
             const button = document.createElement('button')
             b.append(button)
             button.focus()
+            for (const element of [a, b, card, scroller, detail]) {
+                fuzzOwners.set(element.style, element)
+                authored.set(element, {
+                    style: element.style.cssText,
+                    inert: element.getAttribute('inert'),
+                })
+            }
             const cardPresence = createPresence(card, a11yPresence, {
                 clock: h.mc.clock,
             })
@@ -1879,94 +1925,150 @@ export async function FUZZ(): Promise<string> {
             let cardExiting = false
             let detailPresent = false
             let hidden = false
-            const log: string[] = []
-            let removeDetail: (() => void) | null = null
             let adopted = false
-            for (const element of [a, b, card, scroller]) {
-                authored.set(element, {
-                    style: element.style.cssText,
-                    inert: element.getAttribute('inert'),
-                })
-            }
-            authored.set(detail, {
-                style: detail.style.cssText,
-                inert: detail.getAttribute('inert'),
-            })
+            let removeDetail: (() => void) | null = null
+            const retained = new Map<string, FuzzBox>()
+            const log: string[] = []
+            const observations: {
+                readonly element: HTMLElement
+                readonly allowed: readonly FuzzBox[]
+                readonly box: FuzzBox
+                readonly report: Promise<LayoutReport>
+            }[] = []
+            let activeCapture: {
+                readonly boxes: Map<HTMLElement, FuzzBox>
+                aged: boolean
+            } | null = null
+
             const removeA = h.group.add(a, { radius: false })
             h.group.add(b, { radius: false })
             const removeCard = h.group.add(card, {
-                layoutId: 'fuzz-card',
+                layoutId: FUZZ_SHARED,
                 radius: false,
             })
-            const recordCapture = (): void => {
+
+            const drawn = (): Map<HTMLElement, FuzzBox> => {
+                const boxes = new Map<HTMLElement, FuzzBox>()
                 for (const element of [a, b, card, detail]) {
                     if (!element.isConnected) continue
                     if (element === a && adopted) continue
-                    const box = viewBox(element)
-                    const list = captures.get(element) ?? []
-                    list.push(box)
-                    captures.set(element, list)
+                    boxes.set(element, fuzzBox(element))
                 }
+                return boxes
             }
             const capture = (): void => {
                 const count = h.group.stats.captures
                 fuzzRun(() => h.group.capture())
-                if (h.group.stats.captures !== count) recordCapture()
+                if (h.group.stats.captures === count) return
+                activeCapture = { boxes: drawn(), aged: false }
             }
-            const presented = (): Map<
-                HTMLElement,
-                { x: number; y: number; w: number; h: number }
-            > => {
-                const boxes = new Map<
-                    HTMLElement,
-                    { x: number; y: number; w: number; h: number }
-                >()
-                for (const element of [a, b, card, detail]) {
-                    if (!element.isConnected || (element === a && adopted))
-                        continue
-                    boxes.set(element, viewBox(element))
+            const frame = (ms = 16): void => {
+                fuzzRun(() => h.mc.frame(ms))
+                if (activeCapture) activeCapture.aged = true
+            }
+            const isShared = (element: HTMLElement): boolean =>
+                element === card || element === detail
+            const partnerOf = (element: HTMLElement): HTMLElement | null => {
+                if (element === card) return detail
+                if (element === detail) return card
+                return null
+            }
+            const allowedBoxes = (
+                element: HTMLElement,
+                captureAt: typeof activeCapture
+            ): FuzzBox[] => {
+                const allowed: FuzzBox[] = []
+                const fresh = captureAt !== null && !captureAt.aged
+                if (fresh) {
+                    const own = captureAt!.boxes.get(element)
+                    if (own) allowed.push(own)
+                    if (isShared(element)) {
+                        const partner = partnerOf(element)
+                        const box = partner
+                            ? captureAt!.boxes.get(partner)
+                            : undefined
+                        if (box) allowed.push(box)
+                    }
                 }
-                return boxes
+                // a retained departing box is the only B of a retained
+                // handoff: it is used only when the capture supplies none
+                const retainedBox = retained.get(FUZZ_SHARED)
+                if (allowed.length === 0 && retainedBox && isShared(element)) {
+                    allowed.push(retainedBox)
+                }
+                return allowed
             }
-            const assertB = (
-                before: Map<HTMLElement, Map<string, string>>,
-                presentedBoxes: Map<
-                    HTMLElement,
-                    { x: number; y: number; w: number; h: number }
-                >
-            ): void => {
+            const flush = (): Promise<LayoutReport> => {
+                const captureAt = activeCapture
+                activeCapture = null
+                const fresh = captureAt !== null && !captureAt.aged
+                const beforeStyles = new Map<HTMLElement, Map<string, string>>()
                 for (const element of [a, b, card, detail]) {
-                    const was = before.get(element)!
+                    beforeStyles.set(element, fuzzStyle(element))
+                }
+                const report = fuzzRun(() => h.group.flush())
+                reports.push(report)
+                for (const element of [a, b, card, detail]) {
+                    const before = beforeStyles.get(element)!
+                    const oldTranslate = before.get('translate') ?? ''
                     const translate = element.style.translate
-                    if (translate === '') continue
-                    const old = was.get('translate') ?? ''
-                    if (translate === old) continue
-                    const box = viewBox(element)
-                    const allowed = [
-                        ...[...captures.values()].flat(),
-                        ...(presentedBoxes.has(element)
-                            ? [presentedBoxes.get(element)!]
-                            : []),
-                    ]
-                    let matches = false
-                    for (const candidate of allowed) {
-                        if (
-                            Math.abs(box.x - candidate.x) <= FUZZ_TOL &&
-                            Math.abs(box.y - candidate.y) <= FUZZ_TOL &&
-                            Math.abs(box.w - candidate.w) <= FUZZ_TOL &&
-                            Math.abs(box.h - candidate.h) <= FUZZ_TOL
-                        ) {
-                            matches = true
-                            break
+                    if (translate === '' || translate === oldTranslate) continue
+                    if (
+                        translate === '0px 0px' &&
+                        (element.style.scale === '1 1' ||
+                            element.style.scale === '')
+                    ) {
+                        continue
+                    }
+                    if (!fresh && oldTranslate !== '') continue
+                    const box = fuzzBox(element)
+                    const allowed = allowedBoxes(element, captureAt)
+                    if (
+                        allowed.some((candidate) => sameFuzzBox(candidate, box))
+                    )
+                        continue
+                    observations.push({
+                        element,
+                        allowed,
+                        box,
+                        report,
+                    })
+                }
+                return report
+            }
+            const layoutOwnedRestored = (): void => {
+                for (const element of [a, b, card, detail]) {
+                    if (element === a && adopted) continue
+                    for (const property of [
+                        'translate',
+                        'scale',
+                        'opacity',
+                    ] as const) {
+                        const probe = document.createElement('div')
+                        probe.style.cssText = authored.get(element)!.style
+                        const wanted = probe.style.getPropertyValue(property)
+                        const now = element.style.getPropertyValue(property)
+                        if (now !== wanted) {
+                            throw new Error(
+                                `${property} not restored: ${JSON.stringify(now)}`
+                            )
                         }
                     }
-                    if (!matches) {
+                    const inert = element.getAttribute('inert')
+                    if (inert !== authored.get(element)!.inert) {
                         throw new Error(
-                            `B is not a captured box at ${box.x},${box.y} ${box.w}x${box.h} (translate ${translate})`
+                            `inert not restored: ${JSON.stringify(inert)}`
                         )
                     }
                 }
             }
+            const lastDiagnostic = (
+                code: string
+            ): LayoutDiagnostic | undefined =>
+                diagnostics.filter((event) => event.code === code).at(-1)
+
+            capture()
+            await flush()
             const eventCount = 10 + (seed % 5)
             try {
                 for (let step = 0; step < eventCount; step++) {
@@ -1974,53 +2076,52 @@ export async function FUZZ(): Promise<string> {
                     for (const element of [a, b, card, detail]) {
                         before.set(element, fuzzStyle(element))
                     }
-                    const presentedBoxes = presented()
                     fuzzSink = []
-                    const pick = random()
+                    let pick = -1
                     try {
-                        if (pick < 0.16) {
+                        pick = random()
+                        if (pick < 0.14) {
                             capture()
-                        } else if (pick < 0.3) {
-                            fuzzRun(() => h.mc.frame(16))
-                        } else if (pick < 0.45) {
-                            const fresh = (() => {
-                                const count = h.group.stats.captures
-                                capture()
-                                return h.group.stats.captures !== count
-                            })()
+                        } else if (pick < 0.26) {
+                            frame()
+                        } else if (pick < 0.4) {
+                            capture()
                             fuzzRun(() => {
-                                a.style.top = `${Math.round(random() * 120)}px`
-                                b.style.top = `${Math.round(random() * 120)}px`
+                                const x = Math.round(random() * 260)
+                                const y = Math.round(random() * 120)
+                                a.style.left = `${x}px`
+                                a.style.top = `${y}px`
+                                b.style.left = `${260 - x}px`
+                                b.style.top = `${y}px`
                             })
-                            reports.push(fuzzRun(() => h.group.flush()))
-                            if (fresh) assertB(before, presentedBoxes)
+                            void flush()
+                        } else if (pick < 0.48) {
+                            capture()
+                            fuzzRun(() => {
+                                if (!adopted)
+                                    a.style.left = `${Math.round(random() * 260)}px`
+                                frame()
+                            })
+                            void flush()
                         } else if (pick < 0.54) {
-                            capture()
-                            fuzzRun(() => {
-                                a.style.left = `${Math.round(random() * 260)}px`
-                                h.mc.frame(16)
-                            })
-                            reports.push(fuzzRun(() => h.group.flush()))
-                        } else if (pick < 0.6) {
                             fuzzRun(() => {
                                 if (adopted) return
                                 if (a.isConnected) a.remove()
                                 else h.root.append(a)
                             })
-                            reports.push(fuzzRun(() => h.group.flush()))
-                        } else if (pick < 0.7) {
+                            void flush()
+                        } else if (pick < 0.64) {
                             if (!cardExiting && card.isConnected) {
                                 cardExiting = true
                                 const exit = cardPresence.exit()
                                 exits.push(exit)
-                                // the adapter unmounts the key when presence
-                                // exits (the held follower is gone with it)
                                 void exit.then((result) => {
                                     if (
                                         (result === 'exited' ||
                                             result === 'timeout') &&
                                         card.isConnected
                                     ) {
+                                        retained.set(FUZZ_SHARED, fuzzBox(card))
                                         cardExiting = false
                                         removeCard()
                                         card.remove()
@@ -2035,20 +2136,22 @@ export async function FUZZ(): Promise<string> {
                                         { clock: h.mc.clock }
                                     )
                                     removeDetail = h.group.add(detail, {
-                                        layoutId: 'fuzz-card',
+                                        layoutId: FUZZ_SHARED,
                                         radius: false,
                                     })
                                     detailPresent = true
                                 }
-                                reports.push(fuzzRun(() => h.group.flush()))
+                                void flush()
                             } else if (card.isConnected) {
                                 cardExiting = false
                                 enters.push(cardPresence.enter())
                                 if (detailPresent) {
-                                    exits.push(detailPresence!.exit())
+                                    const exit = detailPresence!.exit()
+                                    exits.push(exit)
+                                    retained.set(FUZZ_SHARED, fuzzBox(detail))
                                 }
                                 capture()
-                                reports.push(fuzzRun(() => h.group.flush()))
+                                void flush()
                                 if (detailPresent) {
                                     removeDetail?.()
                                     removeDetail = null
@@ -2058,7 +2161,7 @@ export async function FUZZ(): Promise<string> {
                                     detailPresence = null
                                 }
                             }
-                        } else if (pick < 0.75) {
+                        } else if (pick < 0.69) {
                             capture()
                             fuzzRun(() =>
                                 h.group.set(adopted ? b : a, {
@@ -2066,64 +2169,250 @@ export async function FUZZ(): Promise<string> {
                                     layoutKey: String(Math.round(random() * 3)),
                                 })
                             )
-                            reports.push(fuzzRun(() => h.group.flush()))
+                            void flush()
+                        } else if (pick < 0.77) {
+                            // H12-12: the exiting card is inside the scroller,
+                            // the new lead outside; the handoff must degrade
+                            if (detailPresent) {
+                                removeDetail?.()
+                                removeDetail = null
+                                detailPresent = false
+                                detail.remove()
+                                detailPresence?.dispose()
+                                detailPresence = null
+                            }
+                            if (cardExiting) {
+                                enters.push(cardPresence.enter())
+                                cardExiting = false
+                                capture()
+                                void flush()
+                            }
+                            if (card.isConnected) {
+                                cardExiting = true
+                                const exit = cardPresence.exit()
+                                exits.push(exit)
+                                void exit.then((result) => {
+                                    if (
+                                        (result === 'exited' ||
+                                            result === 'timeout') &&
+                                        card.isConnected
+                                    ) {
+                                        retained.set(FUZZ_SHARED, fuzzBox(card))
+                                        cardExiting = false
+                                        removeCard()
+                                        card.remove()
+                                    }
+                                })
+                                fuzzRun(() =>
+                                    scroller.dispatchEvent(new Event('scroll'))
+                                )
+                                capture()
+                                document.body.append(detail)
+                                detailPresence = createPresence(
+                                    detail,
+                                    a11yPresence,
+                                    { clock: h.mc.clock }
+                                )
+                                removeDetail = h.group.add(detail, {
+                                    layoutId: FUZZ_SHARED,
+                                    radius: false,
+                                })
+                                detailPresent = true
+                                void flush()
+                                if (detail.style.translate !== '') {
+                                    throw new Error(
+                                        'handoff-scroll-active drew motion'
+                                    )
+                                }
+                                const event = lastDiagnostic(
+                                    'handoff-scroll-active'
+                                )
+                                if (event?.element !== detail) {
+                                    throw new Error(
+                                        'handoff-scroll-active not reported'
+                                    )
+                                }
+                                if ('onscrollend' in window) {
+                                    fuzzRun(() =>
+                                        scroller.dispatchEvent(
+                                            new Event('scrollend')
+                                        )
+                                    )
+                                }
+                            }
                         } else if (pick < 0.82) {
-                            fuzzRun(() =>
-                                scroller.dispatchEvent(new Event('scroll'))
-                            )
+                            // H12-11: reduced motion has an exact outcome
+                            h.mc.setReducedMotion(true)
                             capture()
                             fuzzRun(() => {
-                                card.style.left = `${20 + Math.round(random() * 40)}px`
+                                b.style.left =
+                                    b.style.left === '40px' ? '220px' : '40px'
                             })
-                            reports.push(fuzzRun(() => h.group.flush()))
-                            if (random() < 0.6) {
-                                fuzzRun(() =>
-                                    scroller.dispatchEvent(
-                                        new Event('scrollend')
-                                    )
+                            const report = await flush()
+                            if (report.status !== 'reduced') {
+                                throw new Error(
+                                    `reduced status ${report.status}`
                                 )
                             }
-                        } else if (pick < 0.87) {
-                            h.mc.setReducedMotion(!h.mc.clock.reducedMotion)
+                            if (
+                                !report.snapped.some(
+                                    (entry) => entry.reason === 'reduced'
+                                )
+                            ) {
+                                throw new Error('reduced not snapped')
+                            }
+                            for (const element of [a, b]) {
+                                for (const property of [
+                                    'translate',
+                                    'scale',
+                                    'opacity',
+                                ] as const) {
+                                    const probe = document.createElement('div')
+                                    probe.style.cssText =
+                                        authored.get(element)!.style
+                                    if (
+                                        element.style.getPropertyValue(
+                                            property
+                                        ) !==
+                                        probe.style.getPropertyValue(property)
+                                    ) {
+                                        throw new Error(
+                                            `reduced did not restore ${property}`
+                                        )
+                                    }
+                                }
+                            }
+                            // §9.4: a crossfade finished by 'jump' leaves the
+                            // exiting follower held at 0 and inert
+                            if (cardExiting && card.hasAttribute('inert')) {
+                                if (card.style.opacity !== '0') {
+                                    throw new Error(
+                                        'reduced held follower is not at 0'
+                                    )
+                                }
+                            } else if (card.isConnected) {
+                                for (const property of [
+                                    'translate',
+                                    'scale',
+                                    'opacity',
+                                ] as const) {
+                                    const probe = document.createElement('div')
+                                    probe.style.cssText =
+                                        authored.get(card)!.style
+                                    if (
+                                        card.style.getPropertyValue(
+                                            property
+                                        ) !==
+                                        probe.style.getPropertyValue(property)
+                                    ) {
+                                        throw new Error(
+                                            `reduced did not restore card ${property}`
+                                        )
+                                    }
+                                }
+                            }
+                            h.mc.setReducedMotion(false)
+                        } else if (pick < 0.86) {
+                            // H12-11: the kill switch resolves disabled
+                            if (detailPresent) {
+                                removeDetail?.()
+                                removeDetail = null
+                                detailPresent = false
+                                detail.remove()
+                                detailPresence?.dispose()
+                                detailPresence = null
+                            }
+                            if (cardExiting) {
+                                enters.push(cardPresence.enter())
+                                cardExiting = false
+                            }
                             capture()
                             fuzzRun(() => {
-                                b.style.left = `${Math.round(random() * 260)}px`
+                                b.style.left =
+                                    b.style.left === '40px' ? '220px' : '40px'
                             })
-                            reports.push(fuzzRun(() => h.group.flush()))
-                            h.mc.setReducedMotion(false)
-                        } else if (pick < 0.91) {
+                            const run = flush()
+                            frame()
                             layoutRuntime.setMode('snap')
-                            fuzzRun(() => h.mc.frame(16))
+                            const report = await run
                             layoutRuntime.setMode('animate')
-                        } else if (pick < 0.94) {
+                            if (report.status !== 'disabled') {
+                                throw new Error(
+                                    `disabled status ${report.status}`
+                                )
+                            }
+                            if (
+                                report.snapped.length === 0 ||
+                                !report.snapped.every(
+                                    (entry) => entry.reason === 'disabled'
+                                )
+                            ) {
+                                throw new Error(
+                                    'disabled report is not exactly disabled'
+                                )
+                            }
+                            const event = lastDiagnostic('runtime-disabled')
+                            if (event?.action !== 'snap') {
+                                throw new Error('runtime-disabled missing')
+                            }
+                            layoutOwnedRestored()
+                        } else if (pick < 0.9) {
                             hidden = !hidden
                             h.mc.setHidden(hidden)
-                            fuzzRun(() => h.mc.frame(16))
-                        } else if (pick < 0.98) {
-                            if (adopted) {
-                                fuzzRun(() => h.mc.frame(16))
-                            } else {
-                                adopted = true
-                                fuzzRun(() => {
-                                    const other =
-                                        document.implementation.createHTMLDocument(
-                                            'fuzz'
-                                        )
-                                    other.adoptNode(a)
-                                    other.body.append(a)
-                                    fuzzBatch!.crossDocument = true
-                                    h.group.capture()
-                                    fuzzBatch!.crossDocument = false
-                                })
-                                recordCapture()
-                                reports.push(fuzzRun(() => h.group.flush()))
-                            }
-                        } else {
+                            frame()
+                        } else if (pick < 0.95) {
+                            // H12-11: an injected engine fault is failed and
+                            // byte-identical, including the follower inert
+                            capture()
+                            fuzzRun(() => {
+                                b.style.left =
+                                    b.style.left === '40px' ? '220px' : '40px'
+                            })
                             injectLayoutFault(
                                 random() < 0.5 ? 'measure' : 'write'
                             )
-                            reports.push(fuzzRun(() => h.group.flush()))
+                            const report = await flush()
                             clearLayoutFaults()
+                            if (report.status !== 'failed') {
+                                throw new Error(`fault status ${report.status}`)
+                            }
+                            if (
+                                report.snapped.length === 0 ||
+                                !report.snapped.every(
+                                    (entry) => entry.reason === 'failed'
+                                )
+                            ) {
+                                throw new Error(
+                                    'failed report is not exactly failed'
+                                )
+                            }
+                            if (
+                                lastDiagnostic('internal-error')?.action !==
+                                'abort'
+                            ) {
+                                throw new Error('internal-error missing')
+                            }
+                            if (h.group.stats.tracks !== 0) {
+                                throw new Error('a track survived the abort')
+                            }
+                            layoutOwnedRestored()
+                        } else if (pick < 0.97) {
+                            frame()
+                        } else if (adopted) {
+                            frame()
+                        } else {
+                            adopted = true
+                            fuzzRun(() => {
+                                const other =
+                                    document.implementation.createHTMLDocument(
+                                        'fuzz'
+                                    )
+                                other.adoptNode(a)
+                                other.body.append(a)
+                                h.group.capture()
+                            })
+                            activeCapture = null
+                            void flush()
                         }
                     } catch (error) {
                         throw new Error(
@@ -2166,7 +2455,7 @@ export async function FUZZ(): Promise<string> {
                         }
                     }
                     log.push(
-                        `${step}:${pick.toFixed(3)} phase=${cardPresence.phase} opacity=${card.style.opacity || '-'} inert=${card.hasAttribute('inert')} exiting=${cardExiting} opacity=${card.style.opacity} card=${card.isConnected} detail=${detailPresent}`
+                        `${step}:${pick.toFixed(3)} card=${cardPresence.phase} opacity=${card.style.opacity || '-'} inert=${card.hasAttribute('inert')}`
                     )
                     await microtasks()
                 }
@@ -2196,6 +2485,25 @@ export async function FUZZ(): Promise<string> {
                         throw new Error(`unknown status ${report.value.status}`)
                     }
                 }
+                for (const observation of observations) {
+                    if (
+                        observation.allowed.some((candidate) =>
+                            sameFuzzBox(candidate, observation.box)
+                        )
+                    ) {
+                        continue
+                    }
+                    const report = await observation.report
+                    if (
+                        !report.snapped.some(
+                            (entry) => entry.element === observation.element
+                        )
+                    ) {
+                        throw new Error(
+                            `B is not a capture box and the node is not reported snapped: ${JSON.stringify(observation.box)} allowed ${JSON.stringify(observation.allowed)}`
+                        )
+                    }
+                }
                 for (const exit of exits) {
                     const result = await exit
                     if (
@@ -2209,42 +2517,16 @@ export async function FUZZ(): Promise<string> {
                         )
                     }
                 }
-                fuzzRun(() => h.mc.frame(16))
+                frame()
                 if (h.mc.clock.size !== 0) throw new Error('clock subscription')
                 if (h.mc.pending !== 0) throw new Error('frame request')
                 if (h.group.stats.tracks !== 0) throw new Error('track left')
-                if (scrolls.added !== scrolls.removed) {
-                    throw new Error(
-                        `scroll listeners leaked: ${scrolls.added} added, ${scrolls.removed} removed`
-                    )
-                }
-                for (const element of [a, b, card, detail]) {
-                    for (const property of [
-                        'translate',
-                        'scale',
-                        'opacity',
-                    ] as const) {
-                        const authoredStyle = authored.get(element)!
-                        const wanted = (() => {
-                            const probe = document.createElement('div')
-                            probe.style.cssText = authoredStyle.style
-                            return probe.style.getPropertyValue(property)
-                        })()
-                        const now = element.style.getPropertyValue(property)
-                        if (now !== wanted) {
-                            throw new Error(
-                                `${property} not restored: ${JSON.stringify(now)}`
-                            )
-                        }
-                    }
-                    const inert = element.getAttribute('inert')
-                    if (inert !== authored.get(element)!.inert) {
-                        throw new Error(
-                            `inert not restored: ${JSON.stringify(inert)}`
-                        )
-                    }
-                }
+                layoutOwnedRestored()
                 passed += 1
+            } catch (error) {
+                throw new Error(
+                    `seed ${seed}: ${error instanceof Error ? error.message : String(error)}\nlog ${log.slice(-10).join(' | ')}`
+                )
             } finally {
                 h.group.dispose()
                 cardPresence.dispose()
@@ -2261,8 +2543,40 @@ export async function FUZZ(): Promise<string> {
                 layoutRuntime.setMode('animate')
             }
         }
-        return `FUZZ: ${passed} seeds × 10–14 events; no NaN, B from a capture, no read after the first write, one writer per property, every report and handle terminal, styles/inert restored`
+        // negative control for the per-document read/write rule (C6/H12-09)
+        try {
+            fuzzRun(() => {
+                document.body.style.setProperty('translate', '0px', 'important')
+                document.body.getBoundingClientRect()
+            })
+            throw new Error('a same-document read after a write was not caught')
+        } catch (error) {
+            if (
+                !(error instanceof Error) ||
+                !error.message.includes('same document')
+            ) {
+                throw error
+            }
+        }
+        {
+            const foreignDoc =
+                document.implementation.createHTMLDocument('fuzz-foreign')
+            const foreign = foreignDoc.createElement('div')
+            foreignDoc.body.append(foreign)
+            fuzzOwners.set(foreign.style, foreign)
+            fuzzRun(() => {
+                foreign.style.setProperty('translate', '0px', 'important')
+                document.body.getBoundingClientRect()
+            })
+        }
+        if (scrolls.added !== scrolls.removed) {
+            throw new Error(
+                `scroll listeners leaked: ${scrolls.added} added, ${scrolls.removed} removed`
+            )
+        }
+        return `FUZZ: ${passed} seeds × 10–14 events; per-node B, per-document read/write, owned properties, exact fault/disabled/reduced outcomes, handoff-scroll degradation, every report and handle terminal, styles/inert restored`
     } finally {
+        stopDiagnostics()
         restoreInstrument()
         scrolls.restore()
         quiet.restore()
@@ -2318,11 +2632,10 @@ function reasonsOf(report: LayoutReport): string[] {
 }
 
 /**
- * MUTATION (§11.3): eight deliberately wrong decisions, each failing the named
- * row it attacks: consume an aged capture, skip the frame marker, use the
- * predicted box instead of the measured one, drop the layout-size check,
- * ignore `scrollend`, skip cleanup on abort, release with `dt ≠ 0`, and merge
- * the motion field by field.
+ * MUTATION (§11.3): deliberately wrong decisions at the row's observation
+ * boundary. M1–M3, M5 and M6 are real engine runs with a mutated input
+ * (measurement, capture timing or browser capability); M4 and M8 are labelled
+ * synthetic negative controls; M7 (release `dt`) is P4/L-DRIVE-1 per C3.
  */
 export async function MUTATION(): Promise<string> {
     const details: string[] = []
@@ -2351,8 +2664,24 @@ export async function MUTATION(): Promise<string> {
                 snapped: reasonsOf(report),
                 code: event?.code ?? null,
             }
+            // real mutation: take a fresh capture after the marker instead
+            h.group.capture()
+            a.style.left = '180px'
+            const mutantRun = h.group.flush()
+            const first = viewBox(a).x
+            const mutantTracks = h.group.stats.tracks
+            h.group.finish()
+            const mutantReport = await mutantRun
+            const mutant = {
+                status: mutantReport.status,
+                tracks: mutantTracks,
+                x: first,
+                a: 180,
+                snapped: reasonsOf(mutantReport),
+                code: null,
+            }
             expectMutation(
-                'consume an aged capture',
+                'consume an aged capture (real re-capture)',
                 'L-MEAS-11',
                 (o) => {
                     if (o.status !== 'stale')
@@ -2369,17 +2698,10 @@ export async function MUTATION(): Promise<string> {
                         throw new Error('L-MEAS-11: no capture-aged')
                 },
                 real,
-                {
-                    ...real,
-                    status: 'ended',
-                    tracks: 1,
-                    x: 0,
-                    snapped: [],
-                    code: null,
-                }
+                mutant
             )
             h.dispose()
-            details.push('M1 aged capture -> L-MEAS-11')
+            details.push('M1 aged capture -> L-MEAS-11 (real re-capture)')
         }
 
         // 2. skip the frame marker -> L-MEAS-13
@@ -2408,8 +2730,24 @@ export async function MUTATION(): Promise<string> {
                 snapped: reasonsOf(settled),
                 code: event?.code ?? null,
             }
+            // real mutation: a fresh capture after the earlier frame
+            h.group.capture()
+            a.style.left = '180px'
+            const mutantRun = h.group.flush()
+            const first = viewBox(a).x
+            const mutantTracks = h.group.stats.tracks
+            h.group.finish()
+            const mutantReport = await mutantRun
+            const mutant = {
+                status: mutantReport.status,
+                tracks: mutantTracks,
+                x: first,
+                a: 180,
+                snapped: reasonsOf(mutantReport),
+                code: null,
+            }
             expectMutation(
-                'skip the frame marker',
+                'skip the frame marker (real fresh capture)',
                 'L-MEAS-13',
                 (o) => {
                     if (o.status !== 'stale')
@@ -2426,34 +2764,56 @@ export async function MUTATION(): Promise<string> {
                         throw new Error('L-MEAS-13: no capture-aged')
                 },
                 real,
-                {
-                    ...real,
-                    status: 'ended',
-                    tracks: 1,
-                    x: 0,
-                    snapped: [],
-                    code: null,
-                }
+                mutant
             )
             h.dispose()
-            details.push('M2 frame marker -> L-MEAS-13')
+            details.push('M2 frame marker -> L-MEAS-13 (real fresh capture)')
         }
 
         // 3. use the predicted box instead of the measured one -> L-MEAS-4
         {
-            const h = harness({ motion })
-            const a = node(h.root, boxAt(-100, 0))
-            h.add(a, { radius: false })
-            h.group.capture()
+            const correct = harness({ motion })
+            const a = node(correct.root, boxAt(-100, 0))
+            correct.add(a, { radius: false })
+            correct.group.capture()
             a.style.left = '-50px'
-            const run = h.group.flush()
+            const correctRun = correct.group.flush()
             const real = {
-                tracks: h.group.stats.tracks,
+                tracks: correct.group.stats.tracks,
                 first: viewBox(a).x,
                 captured: -100,
             }
+            correct.group.dispose()
+            correct.root.remove()
+            await correctRun
+
+            // real mutation: the capture reads A (-50) as B; the engine then
+            // has no measured move and the predicted box is the first frame
+            const mutantHarness = harness({ motion })
+            const m = node(mutantHarness.root, boxAt(-100, 0))
+            mutantHarness.add(m, { radius: false })
+            const measured = m.getBoundingClientRect.bind(m)
+            m.getBoundingClientRect = () => {
+                const rect = measured()
+                return {
+                    ...rect,
+                    x: rect.x + 50,
+                    left: rect.left + 50,
+                    right: rect.right + 50,
+                    toJSON: rect.toJSON,
+                } as DOMRect
+            }
+            mutantHarness.group.capture()
+            m.getBoundingClientRect = measured
+            m.style.left = '-50px'
+            const mutantRun = mutantHarness.group.flush()
+            const mutant = {
+                tracks: mutantHarness.group.stats.tracks,
+                first: viewBox(m).x,
+                captured: -100,
+            }
             expectMutation(
-                'use the predicted box instead of the measured one',
+                'use the predicted box instead of the measured one (real mutated capture)',
                 'L-MEAS-4',
                 (o) => {
                     if (o.tracks !== 1)
@@ -2467,14 +2827,15 @@ export async function MUTATION(): Promise<string> {
                         )
                 },
                 real,
-                { ...real, first: 0 }
+                mutant
             )
-            h.group.dispose()
-            await run
-            details.push('M3 predicted box -> L-MEAS-4')
+            mutantHarness.group.dispose()
+            mutantHarness.root.remove()
+            await mutantRun
+            details.push('M3 predicted box -> L-MEAS-4 (real mutated capture)')
         }
 
-        // 4. drop the layout-size check -> L-MEAS-11 (50x cap, §9.1)
+        // 4. drop the layout-size check -> §9.1 size-limit (synthetic control)
         {
             const h = harness({ motion })
             const a = node(h.root, boxAt(0, 0, 40, 40))
@@ -2491,100 +2852,129 @@ export async function MUTATION(): Promise<string> {
                 snapped: reasonsOf(report),
             }
             expectMutation(
-                'drop the layout-size check',
-                'L-MEAS-11',
+                'drop the layout-size check (synthetic)',
+                'L-MEAS-11 (§9.1 size-limit)',
                 (o) => {
                     if (!(o.snapped as string[]).includes('unsupported'))
                         throw new Error(
-                            'L-MEAS-11: the 60x size change did not snap'
+                            'L-MEAS-11 (§9.1 size-limit): the 60x size change did not snap'
                         )
                     if (o.tracks !== 0)
-                        throw new Error('L-MEAS-11: a 60x size change ran')
+                        throw new Error(
+                            'L-MEAS-11 (§9.1 size-limit): a 60x size change ran'
+                        )
                 },
                 real,
                 { status: 'ended', tracks: 1, snapped: [] }
             )
             h.dispose()
-            details.push('M4 size check -> L-MEAS-11 (§9.1 size-limit)')
+            details.push('M4 size check -> §9.1 size-limit (synthetic)')
         }
 
-        // 5. ignore scrollend -> L-HAND-2
-        {
+        // 5. ignore scrollend -> L-HAND-2 (real: scrollend support removed)
+        const scrollObservation = async (support: boolean, suffix: string) => {
+            const had = Object.getOwnPropertyDescriptor(window, 'onscrollend')
+            if (!support)
+                delete (window as { onscrollend?: unknown }).onscrollend
             const h = harness({ motion })
-            const scroller = node(h.root, boxAt(0, 300, 500, 200))
-            scroller.style.overflow = 'auto'
-            const card = node(scroller, boxAt(20, 20))
-            const second = node(scroller, boxAt(20, 120))
-            const cardPresence = createPresence(card, a11yPresence, {
-                clock: h.mc.clock,
-            })
-            const secondPresence = createPresence(second, a11yPresence, {
-                clock: h.mc.clock,
-            })
-            h.group.add(card, { layoutId: 'mut-a', radius: false })
-            h.group.add(second, { layoutId: 'mut-b', radius: false })
-            h.group.capture()
-            await h.group.flush()
-            scroller.dispatchEvent(new Event('scroll'))
-            void cardPresence.exit()
-            h.group.capture()
-            const detailA = node(document.body, boxAt(500, 60, 300, 200))
-            h.group.add(detailA, { layoutId: 'mut-a', radius: false })
-            const first = h.group.flush()
-            const beforeScrollEnd = {
-                tracks: h.group.stats.tracks,
-                opacity: card.style.opacity,
-                translate: detailA.style.translate,
+            try {
+                const scroller = node(h.root, boxAt(0, 300, 500, 200))
+                scroller.style.overflow = 'auto'
+                const card = node(scroller, boxAt(20, 20))
+                const second = node(scroller, boxAt(20, 120))
+                const cardPresence = createPresence(card, a11yPresence, {
+                    clock: h.mc.clock,
+                })
+                const secondPresence = createPresence(second, a11yPresence, {
+                    clock: h.mc.clock,
+                })
+                h.group.add(card, {
+                    layoutId: `mut-a-${suffix}`,
+                    radius: false,
+                })
+                h.group.add(second, {
+                    layoutId: `mut-b-${suffix}`,
+                    radius: false,
+                })
+                h.group.capture()
+                await h.group.flush()
+                scroller.dispatchEvent(new Event('scroll'))
+                void cardPresence.exit()
+                h.group.capture()
+                const detailA = node(document.body, boxAt(500, 60, 300, 200))
+                h.group.add(detailA, {
+                    layoutId: `mut-a-${suffix}`,
+                    radius: false,
+                })
+                const first = h.group.flush()
+                const before = {
+                    tracks: h.group.stats.tracks,
+                    opacity: card.style.opacity,
+                    translate: detailA.style.translate,
+                }
+                scroller.dispatchEvent(new Event('scrollend'))
+                void secondPresence.exit()
+                h.group.capture()
+                const detailB = node(document.body, boxAt(500, 300, 300, 200))
+                h.group.add(detailB, {
+                    layoutId: `mut-b-${suffix}`,
+                    radius: false,
+                })
+                const secondRun = h.group.flush()
+                const observation = {
+                    beforeTracks: before.tracks,
+                    beforeOpacity: before.opacity,
+                    beforeTranslate: before.translate,
+                    tracks: h.group.stats.tracks,
+                    opacity: second.style.opacity,
+                    translate: detailB.style.translate,
+                }
+                h.group.dispose()
+                await Promise.all([first, secondRun])
+                cardPresence.dispose()
+                secondPresence.dispose()
+                h.root.remove()
+                detailA.remove()
+                detailB.remove()
+                return observation
+            } finally {
+                h.group.dispose()
+                if (had) Object.defineProperty(window, 'onscrollend', had)
+                else delete (window as { onscrollend?: unknown }).onscrollend
             }
-            scroller.dispatchEvent(new Event('scrollend'))
-            void secondPresence.exit()
-            h.group.capture()
-            const detailB = node(document.body, boxAt(500, 300, 300, 200))
-            h.group.add(detailB, { layoutId: 'mut-b', radius: false })
-            const secondRun = h.group.flush()
-            const real = {
-                beforeTracks: beforeScrollEnd.tracks,
-                beforeOpacity: beforeScrollEnd.opacity,
-                beforeTranslate: beforeScrollEnd.translate,
-                tracks: h.group.stats.tracks,
-                opacity: second.style.opacity,
-                translate: detailB.style.translate,
+        }
+        {
+            const native = 'onscrollend' in window
+            const real = await scrollObservation(native, 'real')
+            const checkScroll = (o: Observation) => {
+                if (o.beforeTracks !== 0)
+                    throw new Error('L-HAND-2: an active scroller handed off')
+                if (o.beforeOpacity !== '' || o.beforeTranslate !== '')
+                    throw new Error('L-HAND-2: the active handoff drew motion')
+                if (o.tracks === 0)
+                    throw new Error(
+                        'L-HAND-2: scrollend did not clear the active state'
+                    )
+                if (o.opacity === '' || o.translate === '')
+                    throw new Error('L-HAND-2: no flight after scrollend')
             }
-            if ('onscrollend' in window) {
+            if (native) {
+                const mutant = await scrollObservation(false, 'mut')
                 expectMutation(
-                    'ignore scrollend',
+                    'ignore scrollend (real: support removed)',
                     'L-HAND-2',
-                    (o) => {
-                        if (o.beforeTracks !== 0)
-                            throw new Error(
-                                'L-HAND-2: an active scroller handed off'
-                            )
-                        if (o.beforeOpacity !== '' || o.beforeTranslate !== '')
-                            throw new Error(
-                                'L-HAND-2: the active handoff drew motion'
-                            )
-                        if (o.tracks === 0)
-                            throw new Error(
-                                'L-HAND-2: scrollend did not clear the active state'
-                            )
-                        if (o.opacity === '' || o.translate === '')
-                            throw new Error(
-                                'L-HAND-2: no flight after scrollend'
-                            )
-                    },
+                    checkScroll,
                     real,
-                    { ...real, tracks: 0, opacity: '', translate: '' }
+                    mutant
                 )
-                details.push('M5 scrollend -> L-HAND-2')
+                details.push('M5 scrollend -> L-HAND-2 (real support removed)')
             } else {
                 // §5.8/§11.4 S5: without `scrollend` the state is never
                 // cleared by time; every handoff out of a scroller that has
                 // scrolled degrades the same way. WebKit 26 has no event, so
-                // the "ignore scrollend" mutation is indistinguishable there
-                // and the normative fallback is asserted instead.
-                if (real.beforeTracks !== 0)
-                    throw new Error('L-HAND-2: an active scroller handed off')
+                // the fallback is asserted instead of the mutation.
                 if (
+                    real.beforeTracks !== 0 ||
                     real.tracks !== 0 ||
                     real.opacity !== '' ||
                     real.translate !== ''
@@ -2596,50 +2986,73 @@ export async function MUTATION(): Promise<string> {
                     'M5 scrollend -> L-HAND-2 (no scrollend: conservative fallback)'
                 )
             }
-            h.group.dispose()
-            await Promise.all([first, secondRun])
-            cardPresence.dispose()
-            secondPresence.dispose()
-            h.root.remove()
-            detailA.remove()
-            detailB.remove()
         }
 
-        // 6. skip cleanup on abort -> L-OPS-2
-        {
+        // 6. skip cleanup on abort -> L-OPS-2 (real: inert removal blocked)
+        const abortObservation = async (block: boolean, suffix: string) => {
             const h = harness({ motion })
             const card = node(h.root, boxAt(20, 20))
             const presence = createPresence(card, a11yPresence, {
                 clock: h.mc.clock,
             })
-            h.group.add(card, { layoutId: 'mut-abort', radius: false })
+            h.group.add(card, {
+                layoutId: `mut-abort-${suffix}`,
+                radius: false,
+            })
             h.group.capture()
             await h.group.flush()
             void presence.exit()
             h.group.capture()
-            h.group.add(node(h.root, boxAt(360, 40, 300, 200)), {
-                layoutId: 'mut-abort',
+            const lead = node(h.root, boxAt(360, 40, 300, 200))
+            h.group.add(lead, {
+                layoutId: `mut-abort-${suffix}`,
                 radius: false,
             })
             const run = h.group.flush()
+            const started = h.group.stats.tracks
             h.mc.frame(16)
             injectLayoutFault('write')
-            h.mc.frame(16)
-            const report = await run
-            const real = {
-                status: report.status,
-                inert: card.hasAttribute('inert'),
-                translate: card.style.translate,
-                opacity: card.style.opacity,
-                tracks: h.group.stats.tracks,
-                clock: h.mc.clock.size,
+            const original = Element.prototype.removeAttribute
+            if (block) {
+                Element.prototype.removeAttribute = function (name: string) {
+                    if (name === 'inert' && this === card) return
+                    return original.call(this, name)
+                }
             }
+            try {
+                h.mc.frame(16)
+                const report = await run
+                return {
+                    status: report.status,
+                    inert: card.hasAttribute('inert'),
+                    translate: card.style.translate,
+                    opacity: card.style.opacity,
+                    tracks: h.group.stats.tracks,
+                    started,
+                    cardOpacity: card.style.opacity,
+                    cardInert: card.hasAttribute('inert'),
+                    leadOpacity: lead.style.opacity,
+                    leadTranslate: lead.style.translate,
+                    snapped: reasonsOf(report),
+                }
+            } finally {
+                Element.prototype.removeAttribute = original
+                h.dispose()
+                presence.dispose()
+                h.root.remove()
+            }
+        }
+        {
+            const real = await abortObservation(false, 'real')
+            const mutant = await abortObservation(true, 'mut')
             expectMutation(
-                'skip cleanup on abort',
+                'skip cleanup on abort (real: inert removal blocked)',
                 'L-OPS-2',
                 (o) => {
                     if (o.status !== 'failed')
-                        throw new Error(`L-OPS-2: status ${String(o.status)}`)
+                        throw new Error(
+                            `L-OPS-2: status ${String(o.status)} tracks ${String(o.tracks)} started ${String(o.started)} inert ${String(o.inert)} cardOp ${String(o.cardOpacity)} leadOp ${String(o.leadOpacity)} leadTr ${String(o.leadTranslate)} snapped ${JSON.stringify(o.snapped)}`
+                        )
                     if (o.inert !== false)
                         throw new Error('L-OPS-2: inert not restored')
                     if (o.translate !== '' || o.opacity !== '')
@@ -2648,84 +3061,14 @@ export async function MUTATION(): Promise<string> {
                         throw new Error('L-OPS-2: a layout track is left')
                 },
                 real,
-                {
-                    ...real,
-                    inert: true,
-                    translate: '0px 0px',
-                    opacity: '1',
-                    tracks: 1,
-                }
+                mutant
             )
-            h.dispose()
-            presence.dispose()
-            details.push('M6 abort cleanup -> L-OPS-2')
+            details.push('M6 abort cleanup -> L-OPS-2 (real blocked removal)')
         }
 
-        // 7. release with dt != 0 -> L-SPRING-2
-        {
-            const h = harness({ motion })
-            const card = node(h.root, boxAt(20, 20))
-            const presence = createPresence(card, a11yPresence, {
-                clock: h.mc.clock,
-            })
-            h.group.add(card, { layoutId: 'mut-release', radius: false })
-            h.group.capture()
-            await h.group.flush()
-            const exit = presence.exit()
-            h.group.capture()
-            const lead = node(h.root, boxAt(360, 40, 300, 200))
-            h.group.add(lead, { layoutId: 'mut-release', radius: false })
-            const run = h.group.flush()
-            let frame = 0
-            let fadeFrame = -1
-            let releaseFrame = -1
-            void exit.then(() => {
-                releaseFrame = frame
-            })
-            for (; frame < 40; ) {
-                frame += 1
-                h.mc.frame(16)
-                await microtasks()
-                // the lead gives its opacity back at the fade end (§5.8)
-                if (lead.style.opacity === '' && fadeFrame < 0)
-                    fadeFrame = frame
-                if (releaseFrame >= 0 && fadeFrame >= 0) break
-            }
-            if (releaseFrame < 0 || fadeFrame < 0) {
-                throw new Error(
-                    `M7 probe: card ${card.style.opacity} lead ${lead.style.opacity} tracks ${h.group.stats.tracks} release ${releaseFrame} fade ${fadeFrame} clock ${h.mc.clock.size}`
-                )
-            }
-            const report = await run
-            const real = {
-                status: report.status,
-                fadeFrame,
-                releaseFrame,
-            }
-            expectMutation(
-                'release with dt != 0',
-                'L-SPRING-2',
-                (o) => {
-                    if (o.fadeFrame === -1 || o.releaseFrame === -1)
-                        throw new Error('L-SPRING-2: no fade or release')
-                    if (o.releaseFrame !== o.fadeFrame)
-                        throw new Error(
-                            `L-SPRING-2: released at ${String(o.releaseFrame)}, fade ended at ${String(o.fadeFrame)}`
-                        )
-                    if (o.status !== 'ended')
-                        throw new Error(
-                            `L-SPRING-2: status ${String(o.status)}`
-                        )
-                },
-                real,
-                { ...real, releaseFrame: real.fadeFrame + 1 }
-            )
-            h.dispose()
-            presence.dispose()
-            details.push('M7 release dt -> L-SPRING-2')
-        }
+        details.push('M7 release dt deferred to P4/L-DRIVE-1 (C3)')
 
-        // 8. merge the motion field by field -> L-SPRING-3
+        // 8. merge the motion field by field -> L-SPRING-3 (synthetic control)
         {
             const h = harness({
                 motion: { duration: 0.9, timing: timing.linear() },
@@ -2751,7 +3094,7 @@ export async function MUTATION(): Promise<string> {
                 a: 200,
             }
             expectMutation(
-                'merge the motion field by field',
+                'merge the motion field by field (synthetic)',
                 'L-SPRING-3',
                 (o) => {
                     if (o.status !== 'ended')
@@ -2769,7 +3112,7 @@ export async function MUTATION(): Promise<string> {
                 { ...real, tracks: 1 }
             )
             h.dispose()
-            details.push('M8 field-by-field motion -> L-SPRING-3')
+            details.push('M8 field-by-field motion -> L-SPRING-3 (synthetic)')
         }
 
         return `MUTATION: ${details.join('; ')}`
@@ -2778,6 +3121,168 @@ export async function MUTATION(): Promise<string> {
         quiet.restore()
         clearLayoutFaults()
         layoutRuntime.setMode('animate')
+    }
+}
+
+/* ───────────── one writer per element/property/batch (browser) ───────────── */
+
+/**
+ * ONE_WRITER (H12-10, §6): inside one flush or frame each element/property is
+ * written by layout at most once, the written names are exactly layout's
+ * owned set, and an author `translate` is restored byte for byte.
+ */
+export async function ONE_WRITER(): Promise<string> {
+    const quiet = silenceWarnings()
+    const counts = new Map<HTMLElement, Map<string, number>>()
+    const attributes = new Map<HTMLElement, Map<string, number>>()
+    const owners = new WeakMap<CSSStyleDeclaration, HTMLElement>()
+    const setProperty = CSSStyleDeclaration.prototype.setProperty
+    const removeProperty = CSSStyleDeclaration.prototype.removeProperty
+    const setAttribute = Element.prototype.setAttribute
+    const removeAttribute = Element.prototype.removeAttribute
+    const bump = (
+        map: Map<HTMLElement, Map<string, number>>,
+        element: HTMLElement,
+        name: string
+    ) => {
+        const values = map.get(element) ?? new Map<string, number>()
+        values.set(name, (values.get(name) ?? 0) + 1)
+        map.set(element, values)
+    }
+    const reset = () => {
+        counts.clear()
+        attributes.clear()
+    }
+    const assertCounts = () => {
+        const owned = new Set([
+            'translate',
+            'scale',
+            'opacity',
+            'border-top-left-radius',
+            'border-top-right-radius',
+            'border-bottom-right-radius',
+            'border-bottom-left-radius',
+            'overflow-anchor',
+        ])
+        for (const [element, values] of counts) {
+            for (const [property, count] of values) {
+                if (!owned.has(property)) {
+                    throw new Error(`unowned property ${property}`)
+                }
+                if (count > 1) {
+                    throw new Error(
+                        `${count} writers for ${property} on one element in one batch`
+                    )
+                }
+            }
+            void element
+        }
+        for (const [element, values] of attributes) {
+            for (const [name, count] of values) {
+                if (name !== 'inert') {
+                    throw new Error(`unowned attribute ${name}`)
+                }
+                if (count > 1) {
+                    throw new Error(
+                        `${count} writers for the ${name} attribute in one batch`
+                    )
+                }
+            }
+            void element
+        }
+    }
+    CSSStyleDeclaration.prototype.setProperty = function (
+        property: string,
+        value: string | null,
+        priority?: string
+    ) {
+        const element = owners.get(this)
+        if (element) bump(counts, element, property)
+        return setProperty.call(this, property, value, priority)
+    }
+    CSSStyleDeclaration.prototype.removeProperty = function (property: string) {
+        const element = owners.get(this)
+        if (element) bump(counts, element, property)
+        return removeProperty.call(this, property)
+    }
+    Element.prototype.setAttribute = function (name: string, value: string) {
+        bump(attributes, this as HTMLElement, name)
+        return setAttribute.call(this, name, value)
+    }
+    Element.prototype.removeAttribute = function (name: string) {
+        bump(attributes, this as HTMLElement, name)
+        return removeAttribute.call(this, name)
+    }
+    try {
+        const h = harness({ motion })
+        const a = node(h.root, boxAt(0, 0))
+        a.style.translate = '5px 7px'
+        owners.set(a.style, a)
+        h.group.add(a, { radius: false })
+        h.group.capture()
+        await h.group.flush()
+        a.style.left = '140px'
+        reset()
+        const track = h.group.flush()
+        assertCounts()
+        // the first frame writes each owned property once
+        reset()
+        h.mc.frame(16)
+        assertCounts()
+        h.group.finish()
+        await track
+        expectEqual(a.style.translate, '5px 7px', 'authored translate restored')
+        h.dispose()
+
+        const pair = harness({ motion })
+        const card = node(pair.root, boxAt(20, 20))
+        const presence = createPresence(card, a11yPresence, {
+            clock: pair.mc.clock,
+        })
+        owners.set(card.style, card)
+        pair.group.add(card, { layoutId: 'one-writer', radius: false })
+        pair.group.capture()
+        await pair.group.flush()
+        void presence.exit()
+        pair.group.capture()
+        const detail = node(pair.root, boxAt(360, 40, 300, 200))
+        owners.set(detail.style, detail)
+        pair.group.add(detail, { layoutId: 'one-writer', radius: false })
+        reset()
+        const crossfade = pair.group.flush()
+        assertCounts()
+        for (const element of [card, detail]) {
+            expectEqual(
+                counts.get(element)?.get('translate'),
+                1,
+                'one translate writer'
+            )
+            expectEqual(
+                counts.get(element)?.get('scale'),
+                1,
+                'one scale writer'
+            )
+            expectEqual(
+                counts.get(element)?.get('opacity'),
+                1,
+                'one opacity writer'
+            )
+        }
+        expectEqual(attributes.get(card)?.get('inert'), 1, 'one inert writer')
+        reset()
+        pair.mc.frame(16)
+        assertCounts()
+        pair.group.dispose()
+        await crossfade
+        presence.dispose()
+        pair.root.remove()
+        return 'ONE_WRITER: one write per element/property per flush and frame; only owned names; inert once; authored translate restored'
+    } finally {
+        CSSStyleDeclaration.prototype.setProperty = setProperty
+        CSSStyleDeclaration.prototype.removeProperty = removeProperty
+        Element.prototype.setAttribute = setAttribute
+        Element.prototype.removeAttribute = removeAttribute
+        quiet.restore()
     }
 }
 
@@ -2927,6 +3432,103 @@ export async function CAPS_STATUS(): Promise<string> {
             h.dispose()
             clearLayoutFaults()
             details.push('failed precedes capped')
+        }
+
+        // H12-17: a live crossfade follower in an over-cap flush restores
+        {
+            const h = harness({ motion, maxParticipants: 2 })
+            const card = node(h.root, boxAt(20, 20))
+            const presence = createPresence(card, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(card, { layoutId: 'cap-follow', radius: false })
+            h.group.capture()
+            await h.group.flush()
+            void presence.exit()
+            h.group.capture()
+            const detail = node(h.root, boxAt(360, 40, 300, 200))
+            h.group.add(detail, { layoutId: 'cap-follow', radius: false })
+            const crossfade = h.group.flush()
+            h.mc.frame(16)
+            if (!card.hasAttribute('inert')) {
+                throw new Error('cap follower: not inert before the cap')
+            }
+            h.group.add(node(h.root, boxAt(0, 500)))
+            h.group.capture()
+            const report = await h.group.flush()
+            expectEqual(report.status, 'capped', 'cap follower: status')
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'cap follower: inert restored'
+            )
+            for (const element of [card, detail]) {
+                for (const property of [
+                    'translate',
+                    'scale',
+                    'opacity',
+                ] as const) {
+                    expectEqual(
+                        element.style.getPropertyValue(property),
+                        '',
+                        `cap follower: ${property} restored`
+                    )
+                }
+            }
+            h.group.dispose()
+            await crossfade
+            presence.dispose()
+            h.root.remove()
+            details.push('participant cap with a live follower: inert restored')
+        }
+
+        // H12-17/H12-02: the same follower through a capped flush whose
+        // commit throws: abort restores inert and styles
+        {
+            const h = harness({ motion, maxParticipants: 2 })
+            const card = node(h.root, boxAt(20, 20))
+            const presence = createPresence(card, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(card, { layoutId: 'cap-fault', radius: false })
+            h.group.capture()
+            await h.group.flush()
+            void presence.exit()
+            h.group.capture()
+            const detail = node(h.root, boxAt(360, 40, 300, 200))
+            h.group.add(detail, { layoutId: 'cap-fault', radius: false })
+            const crossfade = h.group.flush()
+            h.mc.frame(16)
+            h.group.add(node(h.root, boxAt(0, 500)))
+            h.group.capture()
+            injectLayoutFault('write')
+            const report = await h.group.flush()
+            expectEqual(report.status, 'failed', 'cap fault follower: status')
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'cap fault follower: inert restored'
+            )
+            for (const element of [card, detail]) {
+                for (const property of [
+                    'translate',
+                    'scale',
+                    'opacity',
+                ] as const) {
+                    expectEqual(
+                        element.style.getPropertyValue(property),
+                        '',
+                        `cap fault follower: ${property} restored`
+                    )
+                }
+            }
+            expectEqual(h.group.stats.tracks, 0, 'cap fault follower: no track')
+            h.group.dispose()
+            await crossfade
+            presence.dispose()
+            h.root.remove()
+            clearLayoutFaults()
+            details.push('capped flush with a follower + fault: abort restored')
         }
 
         // the mover cap at its boundary
