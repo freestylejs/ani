@@ -358,6 +358,74 @@ describe('plan: layoutId', () => {
         expect(result.degraded).toEqual([])
     })
 
+    it('§8 focus inside the follower leaves a non-crossfade pair on its handoff', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        focusInside: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        a: detailBox,
+                        before: null,
+                        crossfade: false,
+                        order: 2,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        // the author opted out: the normal handoff flight remains, and the
+        // focus rule reports nothing
+        expect(result.degraded).toEqual([])
+        expect(result.actions[0]!.kind).toBe('none')
+        const lead = result.actions[1]!
+        if (lead.kind !== 'track') throw new Error('expected a track')
+        expect(lead.fadeLead).toBe(false)
+        expect(lead.handoffFrom).toBe(0)
+    })
+
+    it('§8 focus inside the follower reports nothing when the box did not move', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        focusInside: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        a: cardBox,
+                        before: null,
+                        order: 2,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.degraded).toEqual([])
+        expect(result.actions.map((action) => action.kind)).toEqual([
+            'none',
+            'none',
+        ])
+    })
+
     it('hands off from a retained box when the departing node is gone; no crossfade', () => {
         const ids = new Map<string, IdHistory>([
             ['card', { lead: null, retained: cardBox, retainedVelocity: null }],
