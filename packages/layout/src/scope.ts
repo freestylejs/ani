@@ -2506,21 +2506,6 @@ export function createLayoutGroup(
         }
         const { list, parents, index, flat, tree } = participantTree()
         participants = list.length
-        /**
-         * §8: the focused element's flat-ancestor chain, computed once when a
-         * shared participant exists and before any inert re-assert (H12-04).
-         * Containment by identity keeps a deep participant chain linear.
-         */
-        const doc = list.length > 0 ? list[0]!.element.ownerDocument : null
-        const focusChain =
-            doc !== null && shared > 0 ? focusedChain(doc, tree) : null
-        focusAverted = focusChain
-        // layout owns the exiting follower's `inert` (§6, §8); an author
-        // removal is re-asserted only when focus is not inside it
-        for (const p of registry.values()) {
-            if (!p.drive || p.drive.inert === null) continue
-            assertInert(p.element, p.drive)
-        }
         if (list.length === 0) {
             frame = []
             commitWrites()
@@ -2534,6 +2519,21 @@ export function createLayoutGroup(
         if (cap?.capped || list.length > maxParticipants) {
             if (touched) for (const p of list) touched.add(p)
             return cappedFlush(list)
+        }
+        /**
+         * §8: the focused element's flat-ancestor chain, computed after the
+         * cap gate (N2: no non-measurement DOM reads before a capped flush)
+         * and before any inert re-assert (H12-04). Containment by identity
+         * keeps a deep participant chain linear.
+         */
+        const doc = list[0]!.element.ownerDocument
+        const focusChain = shared > 0 ? focusedChain(doc, tree) : null
+        focusAverted = focusChain
+        // layout owns the exiting follower's `inert` (§6, §8); an author
+        // removal is re-asserted only when focus is not inside it
+        for (const p of registry.values()) {
+            if (!p.drive || p.drive.inert === null) continue
+            assertInert(p.element, p.drive)
         }
         const hasChild = list.map(() => false)
         for (const parent of parents) if (parent >= 0) hasChild[parent] = true
@@ -3855,6 +3855,41 @@ export function createLayoutGroup(
         // A held old follower that is now the lead is settled, not left at
         // opacity 0 and the follower pose (H12-03).
         const focusSettled = new Set<Participant>()
+        const planFocus = new Set<number>()
+        for (const degraded of result.degraded) {
+            if (degraded.reason === 'focus-in-follower')
+                planFocus.add(degraded.index)
+        }
+        /**
+         * H12-04/C5: focus inside a **continuing** live or held follower.
+         * Keeping the follower interactive while its fade runs — or after it
+         * ends, invisible at opacity 0 — creates the duplicate target §8
+         * forbids. End the pair here: restore both opacities, release the
+         * presence hold and the authored `inert`, emit the diagnostic, and
+         * let presence alone draw the follower. The follower's action is
+         * skipped below; the lead's position track may continue to A.
+         */
+        for (const p of list) {
+            const d = p.drive
+            const id = p.options.layoutId
+            if (!d || id === undefined || !focusChain?.has(p.element)) continue
+            if (planFocus.has(index.get(p)!)) continue
+            const leadIndex = result.leads.get(id)
+            if (leadIndex === undefined || !d.lead) continue
+            if (index.get(d.lead) !== leadIndex) continue
+            if (
+                !(d.kind === 'follow' && d.fade?.role === 'follower') &&
+                d.kind !== 'held'
+            ) {
+                continue
+            }
+            const leadDrive = d.lead.drive
+            if (leadDrive?.fade?.role === 'lead') dropCrossfade(d.lead)
+            diagnose('focus-in-follower', 'none', { element: p.element })
+            focusSettled.add(p)
+            settle(p)
+        }
+
         const dropFocus = (p: Participant): void => {
             const d = p.drive
             if (d?.kind === 'held') {
