@@ -438,10 +438,11 @@ not, so no undetected skew or rotation can make it too small.
 The rule is **exhaustive and conservative**: every node that may have jumped by `threshold` or more
 is reported, and a node that only moved with a scroll since its last known box may be reported too
 (there is no measurement to tell them apart). The same rule fills `report.snapped`, the `onSnap`
-calls and the diagnostic's count. The flush emits one diagnostic, `capture-less-flush` or
-`capture-aged`, with the count of reported nodes. `'stale'` has this meaning only: **no valid
-measurement of what was presented**. A flush with a valid capture never produces it, whatever
-scrolled.
+calls and the diagnostics. The flush emits one `capture-less-flush` or `capture-aged` event **per
+reported node**, with that node's `element` and `reason: 'stale'`; when no node is reported it emits
+one element-less event for the condition. The number of per-node events is the count of reported
+nodes. `'stale'` has this meaning only: **no valid measurement of what was presented**. A flush with
+a valid capture never produces it, whatever scrolled.
 
 ### 4.5 Frames
 
@@ -1055,8 +1056,8 @@ const layoutRuntime: LayoutRuntime
 
 | Code | Emitted when | Action |
 |---|---|---|
-| `capture-less-flush` | A flush ran with no capture (§4.4) | `snap` |
-| `capture-aged` | A flush consumed an aged capture, or a capture began inside a clock frame (§4.1, §4.4) | `snap` |
+| `capture-less-flush` | A flush ran with no capture (§4.4); one event per reported node, or one element-less event when none is reported | `snap` |
+| `capture-aged` | A flush consumed an aged capture, or a capture began inside a clock frame (§4.1, §4.4); one event per reported node, or one element-less event when none is reported | `snap` |
 | `measurement-unsupported` | An engine's measurement of a driven participant is invalid (the S1 fallback, §11.4): the subtree degrades as §4.4 | `snap` |
 | `unsupported-geometry` | The support check failed (§4.2) | `snap` |
 | `handoff-scroll-active` | A handoff out of an active scroller (§5.8) | `enter` |
@@ -1335,8 +1336,9 @@ the solver or `physics`. Final rects and no-crash tests count for nothing. Every
 | L-DRIVE-3 scroll while held, under a parent scaling 1 → 2 | Held element under `H` ≤ 0.5 px every frame |
 | L-DRIVE-4 state machine: stale calls, non-finite input, two scopes, ancestor holds, unmount, StrictMode replay, dispose mid-hold | Per §5.10 |
 | L-DRIVE-5 reduced motion on at take, toggled while held, three policies at release | Per §5.10 and §9.4 |
-| L-OPS-1 kill switch mid-run and mid-hold, explicit and implicit scopes | Per §7.2 |
-| L-OPS-2 injected exceptions (measure, write, `animate`, `onSnap`, diagnostic listener) | `'failed'`; styles byte-identical; no listener or subscription left |
+| L-OPS-1 kill switch mid-run and mid-P3-hold (crossfade/presence hold), explicit and implicit scopes | Per §7.2; the drive-hold kill switch is L-DRIVE-4 in P4 |
+| L-OPS-2 injected engine exceptions (measure, write, `animate`) | `'failed'`; styles byte-identical; no listener or subscription left |
+| L-OPS-2b injected user-callback exceptions (`onSnap`, diagnostic listener) | `callback-error`; engine state unchanged; styles byte-identical; asynchronous development rethrow |
 | L-KEY-1 recycled node with a `layoutKey` change under scroll | Fresh baseline, no interpolation |
 | L-DOC-1 cross-document `add`; adoption; React portal into an iframe | Throw; invalidation; per-document scope |
 | L-A11Y-1 reorder and hold with focus inside; crossfade follower | `activeElement` stable; follower `inert`; focus-in-follower rule |
