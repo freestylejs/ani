@@ -14,7 +14,8 @@ import {
     createManualClock,
     type ManualClock,
 } from '@freestylejs/ani-core/testing'
-import type { LayoutDrive } from '@freestylejs/ani-layout'
+import type { LayoutDiagnostic, LayoutDrive } from '@freestylejs/ani-layout'
+import { layoutRuntime } from '@freestylejs/ani-layout'
 import {
     AnimatePresence,
     LayoutGroup,
@@ -3441,6 +3442,7 @@ export async function L_MEAS_5_COALESCE(): Promise<string> {
 const driveBox: { current: LayoutDrive | null } = { current: null }
 const cardRef: { current: ((element: HTMLDivElement | null) => void) | null } =
     { current: null }
+const strictRefCalls = { count: 0 }
 
 function DriveCard(): ReactNode {
     const ref = useLayout<HTMLDivElement>({
@@ -3551,9 +3553,31 @@ export async function RL_DRIVE(): Promise<string> {
             const after = pageBox(element)
             expectClose(after.x - before.x, 30, TOL, 'implicit take offset x')
             expectClose(after.y - before.y, 10, TOL, 'implicit take offset y')
-            handle2.cancel()
-            await sleep(400)
-            expectEqual(element.style.translate, '', 'implicit hold restores')
+            // P4-C5/P4-C4: the kill switch on the implicit scope invalidates
+            // the drive hold and reports runtime-disabled
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            layoutRuntime.setMode('snap')
+            expectEqual(
+                handle2.state,
+                'invalidated',
+                'implicit kill switch invalidates'
+            )
+            expectEqual(
+                element.style.translate,
+                '',
+                'implicit kill switch restores'
+            )
+            expectEqual(
+                events.some(
+                    (e) =>
+                        e.code === 'runtime-disabled' && e.element === element
+                ),
+                true,
+                'implicit kill switch diagnostic'
+            )
+            layoutRuntime.setMode('animate')
+            stop()
         } finally {
             implicitView.dispose()
         }
@@ -3577,6 +3601,10 @@ function StrictDriveCard({
         radius: false,
         motion: { duration: 0.3, timing: timing.linear() },
     })
+    cardRef.current = (element) => {
+        strictRefCalls.count += 1
+        ref(element)
+    }
     return h('div', {
         ref,
         'data-id': id,
@@ -3630,8 +3658,14 @@ export async function RL_DRIVE_STRICT(): Promise<string> {
         // reorder the keyed list in one task: React may replay the refs
         // the replay's exact mechanic: the ref detaches and re-attaches in
         // the same task; the adapter defers the removal to the task's end
+        strictRefCalls.count = 0
         cardRef.current?.(null)
         cardRef.current?.(card as HTMLDivElement)
+        expectEqual(
+            strictRefCalls.count,
+            2,
+            'same-task detach/re-attach reached the ref'
+        )
         flushSync(() => strictOrder!(['c', 'a', 'b']))
         await microtasks()
         expectEqual(handle.state, 'held', 'StrictMode replay keeps the hold')
@@ -3662,6 +3696,120 @@ export async function RL_DRIVE_STRICT(): Promise<string> {
         void before
         return 'StrictMode same-task replay kept the hold and its finger offset; release landed on the new slot'
     } finally {
+        quiet.restore()
+        view.dispose()
+    }
+}
+
+/* ───────────── P4-C2: follower rejection during an exit ───────────── */
+
+function SharedDriveCard({
+    id,
+    clock,
+}: {
+    id: string
+    clock: Clock
+}): ReactNode {
+    const presence = usePresence(
+        {
+            present: { translateY: 0 },
+            exit: ani({
+                to: { translateY: 12 },
+                duration: 0.3,
+                timing: timing.linear(),
+            }),
+        },
+        { clock }
+    )
+    const ref = useLayout<HTMLDivElement>({
+        layoutId: 'drive-shared',
+        radius: false,
+        ref: presence.ref,
+        motion: { duration: 0.3, timing: timing.linear() },
+    })
+    return h('div', {
+        ref,
+        'data-shared': id,
+        style: {
+            position: 'absolute',
+            left: id === 'a' ? '20px' : '200px',
+            top: '20px',
+            width: '80px',
+            height: '80px',
+            background: 'rgb(80, 120, 200)',
+            ...presence.style,
+        },
+    })
+}
+
+function SharedDriveApp({
+    clock,
+    which,
+}: {
+    clock: Clock
+    which: string
+}): ReactNode {
+    const drive = useLayoutDrive()
+    driveBox.current = drive
+    return h(
+        LayoutGroup,
+        { clock, motion: { duration: 0.3, timing: timing.linear() } },
+        h(
+            AnimatePresence,
+            { initial: false },
+            h(SharedDriveCard, { key: which, id: which, clock })
+        )
+    )
+}
+
+/**
+ * P4-C2: taking the exiting crossfade follower is refused with
+ * `ANI_INVALID_OPTIONS` and the typed `drive-rejected` diagnostic; the
+ * follower is inert and is not a drive hold.
+ */
+export async function RL_DRIVE_FOLLOWER(): Promise<string> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    const quiet = silenceWarnings()
+    const events: LayoutDiagnostic[] = []
+    const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+    try {
+        await view.render(h(SharedDriveApp, { clock: mc.clock, which: 'a' }))
+        await view.render(h(SharedDriveApp, { clock: mc.clock, which: 'b' }))
+        await microtasks()
+        // find the two shared nodes by data-shared; the departing one (a)
+        // is inert during the crossfade
+        const nodes = [
+            ...view.host.querySelectorAll<HTMLElement>('[data-shared]'),
+        ]
+        expectEqual(nodes.length, 2, 'two shared nodes during the exit')
+        const departing =
+            view.host.querySelector<HTMLElement>('[data-shared="a"]')!
+        expectEqual(departing.hasAttribute('inert'), true, 'follower is inert')
+        const drive = driveBox.current
+        if (!drive) throw new Error('no dispatcher')
+        let threw = false
+        try {
+            drive.take(departing)
+        } catch (error) {
+            threw = true
+            expectEqual(
+                (error as { code?: string }).code,
+                'ANI_INVALID_OPTIONS',
+                'follower rejection code'
+            )
+        }
+        expectEqual(threw, true, 'follower take throws')
+        expectEqual(
+            events.some(
+                (e) => e.code === 'drive-rejected' && e.element === departing
+            ),
+            true,
+            'drive-rejected diagnostic'
+        )
+        return 'exiting follower rejected with ANI_INVALID_OPTIONS + drive-rejected'
+    } finally {
+        stop()
         quiet.restore()
         view.dispose()
     }

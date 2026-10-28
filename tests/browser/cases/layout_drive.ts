@@ -17,6 +17,10 @@ import {
     type OBox,
     type OTrackSpec,
 } from '../../../packages/layout/src/__tests__/oracle'
+import {
+    clearLayoutFaults,
+    injectLayoutFault,
+} from '../../../packages/layout/src/fault'
 import { expectClose, expectEqual } from './assert'
 import {
     frames,
@@ -188,7 +192,8 @@ export async function L_DRIVE_1(): Promise<string> {
         const v = { x: 600, y: -200, w: 0, h: 0 }
         handle.release({ x: v.x, y: v.y })
         expectEqual(handle.state, 'released', 'release state')
-        expectEqual(h.group.stats.holds, 0, 'no live hold after release')
+        // P4-C3: a released landing is still a live hold until it finishes
+        expectEqual(h.group.stats.holds, 1, 'landing is a live hold')
         const oracle = specOf(heldBox, aBox, v, 0.3)
         let releaseWorst = 0
         let firstFrame = true
@@ -212,6 +217,7 @@ export async function L_DRIVE_1(): Promise<string> {
         )
         expectEqual(a.style.translate, '', 'release restores translate')
         expectEqual(a.style.scale, '', 'release restores scale')
+        expectEqual(h.group.stats.holds, 0, 'landing finished, no live hold')
 
         // snap-back: move and release with no velocity
         const authored = stylesOf(a)
@@ -363,9 +369,15 @@ export async function L_DRIVE_2(): Promise<string> {
             TOL,
             'release starts from the held height'
         )
+        const releaseOrigin = originOf(released)
         handle.release({ x: 200, y: 0 })
         let alongWorst = 0
         await frames(h.mc, 40, (_elapsed, index) => {
+            // H13-15: the first release update is dt = 0 and equals the held
+            // origin (the size continuation advances on its own clock)
+            if (index === 0) {
+                expectOrigin(a, releaseOrigin, 'caught-card release origin')
+            }
             const t = releaseStart + (index + 1) * DT
             const want = expectedBox(spec, t)
             // origin is the release path; the size is still the original
@@ -477,9 +489,20 @@ export async function L_DRIVE_3(): Promise<string> {
             parent.style.height = '320px'
             const run = h.group.flush()
             await frames(h.mc, 2, () => undefined)
+            // P4-C10: the child is driven while the ancestor scale is live
+            h.group.capture()
+            child.style.width = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
             const takeBox = viewBox(child)
             const take = originOf(takeBox)
             const handle = h.group.take(child)
+            expectEqual(handle.state, 'held', 'driven child under live scale')
+            expectEqual(
+                Math.abs(handle.velocity.x) > 0.01,
+                true,
+                'driven child take carries ancestor velocity'
+            )
             handle.move({ x: 50, y: -20 })
             let worst = 0
             await frames(h.mc, 12, (_elapsed, index) => {
@@ -546,6 +569,50 @@ export async function L_DRIVE_3(): Promise<string> {
             }
             expectClose(worst, 0, TOL, 'held under sticky')
             details.push(`sticky H error ≤ ${worst.toFixed(4)} px`)
+            handle.cancel()
+            await frames(h.mc, 30, () => undefined)
+            h.dispose()
+        }
+        // (d) P4-C11: a sticky ancestor, not only the held element itself
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const scroller = document.createElement('div')
+            scroller.style.cssText =
+                'position:absolute;left:0;top:0;width:400px;height:300px;overflow:auto;'
+            const tall = document.createElement('div')
+            tall.style.cssText = 'position:relative;width:400px;height:2000px;'
+            scroller.append(tall)
+            h.root.append(scroller)
+            const sticky = document.createElement('div')
+            sticky.style.cssText =
+                'position:sticky;top:0;width:200px;height:100px;'
+            tall.append(sticky)
+            const a = node(
+                sticky,
+                'position:relative;left:40px;top:20px;width:80px;height:80px'
+            )
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const takeBox = viewBox(a)
+            const take = originOf(takeBox)
+            const handle = h.group.take(a)
+            handle.move({ x: 20, y: 10 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            let worst = 0
+            for (let index = 0; index < 10; index++) {
+                scroller.scrollTop = index * 50
+                h.mc.frame(FRAME)
+                await settleMicrotasks()
+                worst = Math.max(
+                    worst,
+                    Math.abs(originOf(viewBox(a)).x - (take.x + 20)),
+                    Math.abs(originOf(viewBox(a)).y - (take.y + 10))
+                )
+            }
+            expectClose(worst, 0, TOL, 'held under a sticky ancestor')
+            details.push(`sticky ancestor H error ≤ ${worst.toFixed(4)} px`)
             handle.cancel()
             await frames(h.mc, 30, () => undefined)
             h.dispose()
@@ -949,7 +1016,11 @@ export async function L_DRIVE_4(): Promise<string> {
         // the drive-hold kill switch (L-DRIVE-4 per C3): synchronously
         // invalidates, restores the styles and leaves no subscription
         {
-            const h2 = harness({ motion: { duration: 0.2, timing: linear } })
+            const snaps: { element: HTMLElement; reason: string }[] = []
+            const h2 = harness({
+                motion: { duration: 0.2, timing: linear },
+                onSnap: (element, reason) => snaps.push({ element, reason }),
+            })
             const events: LayoutDiagnostic[] = []
             const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
             const x = node(h2.root, 'left:0px;top:0px;width:80px;height:80px')
@@ -971,6 +1042,24 @@ export async function L_DRIVE_4(): Promise<string> {
             )
             expectEqual(h2.group.stats.holds, 0, 'kill switch clears holds')
             expectEqual(h2.mc.clock.size, 0, 'kill switch unsubscribes')
+            expectEqual(
+                events.some(
+                    (e) =>
+                        e.code === 'runtime-disabled' &&
+                        e.element === x &&
+                        e.action === 'snap'
+                ),
+                true,
+                'static hold kill switch reports runtime-disabled'
+            )
+            expectEqual(
+                snaps.some(
+                    (entry) =>
+                        entry.element === x && entry.reason === 'disabled'
+                ),
+                true,
+                'static hold kill switch calls onSnap'
+            )
             expectEqual(
                 events.some((e) => e.code === 'internal-error'),
                 false,
@@ -1010,7 +1099,8 @@ export async function L_DRIVE_4(): Promise<string> {
             xh.move({ x: 10, y: 0 })
             h.mc.frame(FRAME)
             await settleMicrotasks()
-            x.style.width = '100px'
+            // an unsupported map, not a supported layout resize: a rotation
+            x.style.rotate = '45deg'
             h.mc.frame(FRAME)
             await settleMicrotasks()
             expectEqual(xh.state, 'invalidated', 'support failure invalidates')
@@ -1230,6 +1320,178 @@ export async function L_DRIVE_5(): Promise<string> {
             h.dispose()
         }
 
+        // H13-25: a nonzero velocity with no layout change springs back
+        {
+            const h = harness({
+                motion: { type: 'spring', duration: 0.3, bounce: 0 },
+            })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.release({ x: 300, y: 0 })
+            await frames(h.mc, 2, () => undefined)
+            expectEqual(
+                a.style.translate !== '',
+                true,
+                'no-offset release moves'
+            )
+            await frames(h.mc, 45, () => undefined)
+            expectEqual(a.style.translate, '', 'no-offset spring-back restores')
+            expectEqual(a.style.scale, '', 'no-offset spring-back scale')
+            details.push('nonzero no-layout-change release sprang back')
+            h.dispose()
+        }
+        // H13-13: an effective policy change while held applies at release
+        {
+            const h = harness({
+                motion: { duration: 0.3, timing: linear },
+                reducedMotion: 'jump',
+            })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const take = originOf(viewBox(a))
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 10 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.mc.setReducedMotion(true) // jump policy now effective
+            await frames(h.mc, 3, () => {
+                expectOrigin(
+                    a,
+                    { x: take.x + 40, y: take.y + 10 },
+                    'changed policy hold'
+                )
+            })
+            expectEqual(handle.state, 'held', 'effective policy keeps the hold')
+            handle.release({ x: 200, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(
+                handle.state,
+                'released',
+                'changed policy release state'
+            )
+            expectClose(
+                maxDiff(pageBox(a), { x: 0, y: 0, w: 80, h: 80 }),
+                0,
+                TOL,
+                'changed policy release jumps to A'
+            )
+            expectEqual(
+                a.style.translate,
+                '',
+                'changed policy release restores'
+            )
+            details.push('effective jump policy applied at release')
+            h.dispose()
+        }
+
+        // H13-10/P4-C8: a reduced no-fit release is a released jump, not
+        // invalidation; a spring settle refusal emits spring-timeout and snaps
+        {
+            const h = harness({
+                motion: { type: 'spring', duration: 0.5, bounce: 0 },
+                reducedMotion: { maxDuration: 0.001 },
+            })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            h.mc.setReducedMotion(true)
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            handle.release({ x: 200, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'released', 'reduced no-fit is released')
+            expectClose(
+                maxDiff(pageBox(a), { x: 0, y: 0, w: 80, h: 80 }),
+                0,
+                TOL,
+                'reduced no-fit jumps to A'
+            )
+            expectEqual(a.style.translate, '', 'reduced no-fit restores')
+            expectEqual(
+                events.some((e) => e.code === 'spring-timeout'),
+                false,
+                'reduced no-fit is not a spring timeout'
+            )
+            stop()
+            h.dispose()
+            details.push('reduced no-fit mapped to released + jump')
+        }
+        {
+            const h = harness({
+                motion: { type: 'spring', duration: 10, bounce: 0.99 },
+            })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 30, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            handle.release({ x: 200, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'released', 'spring refusal released')
+            expectEqual(
+                events.some((e) => e.code === 'spring-timeout'),
+                true,
+                'spring refusal emits spring-timeout'
+            )
+            expectEqual(a.style.translate, '', 'spring refusal restores')
+            stop()
+            h.dispose()
+            details.push('spring refusal emitted spring-timeout and snapped')
+        }
+
+        // H13-10: a policy change while landing applies at the next flush
+        {
+            const h = harness({
+                motion: { duration: 0.5, timing: linear },
+                reducedMotion: 'jump',
+            })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 50, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.mc.setReducedMotion(false)
+            handle.release({ x: 200, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.mc.setReducedMotion(true) // jump while landing
+            h.group.capture()
+            await h.group.flush()
+            expectEqual(handle.state, 'released', 'landing policy change state')
+            expectClose(
+                maxDiff(pageBox(a), { x: 0, y: 0, w: 80, h: 80 }),
+                0,
+                TOL,
+                'landing policy change lands at A'
+            )
+            expectEqual(a.style.translate, '', 'landing policy change restores')
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(h.mc.pending, 0, 'landing policy change unsubscribes')
+            details.push('landing policy change finished at A')
+            h.dispose()
+        }
         // a release with no layout change springs back without motion
         {
             const h = harness({ motion: { duration: 0.3, timing: linear } })
@@ -1357,14 +1619,13 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             h.add(inside, { radius: false })
             h.group.capture()
             await h.group.flush()
-            let insideHandle: LayoutDriveHandle | null = null
-            try {
-                insideHandle = h.group.take(inside)
-            } catch {
-                // the computed-scale check may refuse it here; either way the
-                // ancestor read path is exercised
-            }
-            insideHandle?.cancel()
+            const insideHandle: LayoutDriveHandle = h.group.take(inside)
+            expectEqual(
+                insideHandle.state,
+                'held',
+                'supported undriven ancestor scale take'
+            )
+            insideHandle.cancel()
             await frames(h.mc, 10, () => undefined)
             // a non-participant scaled ancestor is outside the model: the §4.2
             // support check refuses the take
@@ -1577,7 +1838,7 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             handle.move({ x: 20, y: 0 })
             h.mc.frame(FRAME)
             await settleMicrotasks()
-            a.style.width = '140px'
+            a.style.rotate = '45deg'
             handle.release()
             expectEqual(handle.state, 'invalidated', 'release support failure')
             expectEqual(
@@ -1632,6 +1893,777 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             expectEqual(a.style.translate, '', 'capture-less hold restores')
             h.dispose()
         }
+
+        // H13-16: an injected write fault during a live hold aborts the
+        // transaction, restores byte-identically and leaves nothing running
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const authored = a.style.cssText
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            injectLayoutFault('write', new Error('held write fault'))
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'invalidated', 'write fault invalidates')
+            expectEqual(
+                a.style.cssText,
+                authored,
+                'write fault restores styles'
+            )
+            expectEqual(h.group.stats.holds, 0, 'write fault clears holds')
+            expectEqual(
+                events.some((e) => e.code === 'internal-error'),
+                true,
+                'write fault reports internal-error'
+            )
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(h.mc.pending, 0, 'write fault unsubscribes')
+            stop()
+            h.dispose()
+        }
+        // a measure fault during the flush that owns the held read
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const authored = a.style.cssText
+            const handle = h.group.take(a)
+            handle.move({ x: 20, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            injectLayoutFault('measure', new Error('held measure fault'))
+            h.group.capture()
+            await h.group.flush()
+            expectEqual(
+                handle.state,
+                'invalidated',
+                'measure fault invalidates'
+            )
+            expectEqual(a.style.cssText, authored, 'measure fault restores')
+            expectEqual(h.group.stats.holds, 0, 'measure fault clears holds')
+            expectEqual(
+                events.some((e) => e.code === 'internal-error'),
+                true,
+                'measure fault reports internal-error'
+            )
+            stop()
+            clearLayoutFaults()
+            h.dispose()
+        }
+
+        // H13-11/P4-C7: a running owned CSS animation is refused at take and
+        // invalidates a live hold through the animated-owned probe
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const style = document.createElement('style')
+            style.textContent =
+                '@keyframes held-owned { from { scale: 1 } to { scale: 2 } }'
+            document.head.append(style)
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            const b = node(h.root, 'left:200px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.add(b, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            a.style.animation = 'held-owned 1s linear infinite'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            invalidCall(() => h.group.take(a), 'animated take')
+            const handle = h.group.take(b)
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            b.style.animation = 'held-owned 1s linear infinite'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(
+                handle.state,
+                'invalidated',
+                'animated hold invalidates'
+            )
+            expectEqual(
+                h.group.stats.holds,
+                0,
+                'animated hold is no longer live'
+            )
+            expectEqual(b.style.translate, '', 'animated hold restores')
+            b.style.animation = ''
+            a.style.animation = ''
+            style.remove()
+            h.dispose()
+            details.push('animated-owned take/hold refusal')
+        }
+
+        // coverage/edge: pinned size, no-B landing re-expression, re-take with
+        // a descendant, and the take support error branches
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false, layout: 'position' })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 20, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.group.capture()
+            a.style.width = '140px'
+            await h.group.flush()
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'pinned size keeps the hold')
+            handle.release()
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(h.mc.pending, 0, 'pinned size unsubscribes')
+            h.dispose()
+        }
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            handle.release({ x: 100, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            a.style.left = '160px' // unpresented A origin move
+            await h.group.flush() // no capture: the no-B landing re-expression
+            await frames(h.mc, 40, () => undefined)
+            expectEqual(handle.state, 'released', 'no-B landing state')
+            expectEqual(a.style.translate, '', 'no-B landing restores')
+            expectEqual(h.mc.pending, 0, 'no-B landing unsubscribes')
+            h.dispose()
+        }
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const first = h.group.take(parent)
+            first.move({ x: 40, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            first.release({ x: 100, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const second = h.group.take(parent)
+            expectEqual(first.state, 'invalidated', 're-take with child old')
+            expectEqual(second.state, 'held', 're-take with child new')
+            second.cancel()
+            await frames(h.mc, 30, () => undefined)
+            h.dispose()
+        }
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:0px;top:0px;width:200px;height:200px'
+            )
+            parent.style.rotate = '45deg'
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            invalidCall(() => h.group.take(child), 'rotated ancestor take')
+            parent.style.rotate = ''
+            child.style.scale = '0'
+            invalidCall(() => h.group.take(child), 'zero-scale take')
+            h.dispose()
+        }
+
+        // coverage: the support-check verification readers (inner scale and
+        // exact degenerate size) on take and on the held read
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const wrapper = document.createElement('div')
+            wrapper.style.cssText =
+                'position:absolute;left:0;top:0;width:100px;height:100px;transform:scale(2);transform-origin:0 0;'
+            const hairline = node(
+                wrapper,
+                'position:relative;left:0;top:0;width:1px;height:40px'
+            )
+            h.root.append(wrapper)
+            h.add(hairline, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            invalidCall(() => h.group.take(hairline), 'degenerate scaled take')
+            h.dispose()
+        }
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const wrapper = document.createElement('div')
+            wrapper.style.cssText =
+                'position:absolute;left:0;top:0;width:200px;height:200px;'
+            const a = node(
+                wrapper,
+                'position:relative;left:20px;top:20px;width:80px;height:80px'
+            )
+            h.root.append(wrapper)
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'held before the wrapper scale')
+            wrapper.style.transform = 'scale(2)'
+            wrapper.style.transformOrigin = '0 0'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'invalidated', 'scaled wrapper held read')
+            h.dispose()
+        }
+        return details.join('; ')
+    } finally {
+        quiet.restore()
+    }
+}
+
+/* ─────────────────── H13 fix rows (S1/S2) ─────────────────── */
+
+/**
+ * The corrective P4 rows: cancel keeps descendants riding, one hold size
+ * tolerance, a landing + size flush, landing re-take, a supported
+ * sub-threshold/supported re-layout, the mover cap with holds, and a
+ * cross-scope nested hold.
+ */
+export async function L_DRIVE_FIX(): Promise<string> {
+    const details: string[] = []
+    const quiet = silenceWarnings()
+    try {
+        // H13-01: cancel keeps the shared h until it settles
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(parent)
+            handle.move({ x: 60, y: 30 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const relative = {
+                x: viewBox(child).x - viewBox(parent).x,
+                y: viewBox(child).y - viewBox(parent).y,
+            }
+            handle.cancel()
+            expectEqual(handle.state, 'cancelled', 'cancel terminal')
+            let worst = 0
+            await frames(h.mc, 4, () => {
+                worst = Math.max(
+                    worst,
+                    Math.abs(viewBox(child).x - viewBox(parent).x - relative.x),
+                    Math.abs(viewBox(child).y - viewBox(parent).y - relative.y)
+                )
+            })
+            expectClose(worst, 0, TOL, 'cancel keeps descendants riding h')
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(h.mc.pending, 0, 'cancel settles and unsubscribes')
+            expectEqual(h.group.stats.holds, 0, 'cancel finished')
+            expectEqual(parent.style.translate, '', 'cancel restores parent')
+            details.push(`cancel child offset ≤ ${worst.toFixed(4)} px`)
+            h.dispose()
+        }
+
+        // H13-02: one hold size tolerance for 0.4, 0.5 and 1.5 px
+        for (const delta of [0.4, 0.5, 1.5]) {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            a.style.width = `${80 + delta}px`
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(
+                handle.state,
+                'held',
+                `supported ${delta} px re-layout keeps the hold`
+            )
+            handle.release()
+            await frames(h.mc, 45, () => undefined)
+            expectEqual(
+                handle.state,
+                'released',
+                `delta ${delta}: released, not invalidated`
+            )
+            expectEqual(h.mc.pending, 0, `delta ${delta}: clock unsubscribed`)
+            expectEqual(h.group.stats.holds, 0, `delta ${delta}: hold finished`)
+            expectEqual(
+                a.style.translate,
+                '',
+                `delta ${delta}: translate restored`
+            )
+            expectEqual(a.style.scale, '', `delta ${delta}: scale restored`)
+            h.dispose()
+            details.push(`size ${delta} px tolerated and settled`)
+        }
+
+        // H13-03: a flush during the landing with a size change must not
+        // replay the release origin or hang
+        {
+            const h = harness({ motion: { duration: 0.5, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 60, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const heldBox = pageBox(a)
+            handle.release({ x: 240, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            // H13-15: the first release update is the held box (dt = 0)
+            expectClose(
+                maxDiff(pageBox(a), heldBox),
+                0,
+                0.01,
+                'landing first frame = held box'
+            )
+            const before = pageBox(a)
+            h.group.capture()
+            a.style.width = '84px'
+            await h.group.flush()
+            // the flush's t = 0 write must not replay the release origin
+            const after = pageBox(a)
+            expectClose(after.x, before.x, TOL, 'landing size flush origin x')
+            expectClose(after.y, before.y, TOL, 'landing size flush origin y')
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'released', 'landing size flush state')
+            await frames(h.mc, 45, () => undefined)
+            expectEqual(h.mc.pending, 0, 'landing + size flush unsubscribes')
+            expectEqual(h.group.stats.holds, 0, 'landing + size flush finishes')
+            expectEqual(a.style.translate, '', 'landing + size restores')
+            details.push('landing + size flush kept the origin and finished')
+            h.dispose()
+        }
+
+        // H13-05/P4-C1: re-take a landing at its current drawn box
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const first = h.group.take(a)
+            first.move({ x: 60, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            first.release({ x: 300, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const current = pageBox(a)
+            const second = h.group.take(a)
+            expectEqual(first.state, 'invalidated', 'old landing invalidated')
+            expectEqual(second.state, 'held', 'new hold starts')
+            expectEqual(h.group.stats.holds, 1, 'one live hold after re-take')
+            // the old landing is restored synchronously; the first frame of
+            // the new hold must return to the drawn box seen at the re-take
+            const before = current
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectClose(pageBox(a).x, before.x, TOL, 're-take keeps x')
+            expectClose(pageBox(a).y, before.y, TOL, 're-take keeps y')
+            second.cancel()
+            await frames(h.mc, 40, () => undefined)
+            expectEqual(h.mc.pending, 0, 're-take release unsubscribes')
+            expectEqual(a.style.translate, '', 're-take restores')
+            details.push(
+                `re-take from ${JSON.stringify(current)} at ${JSON.stringify(before)}`
+            )
+            h.dispose()
+        }
+
+        // H13-02: a supported >0.5 px re-layout while held does not invalidate
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 30, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            a.style.width = '86px'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'supported re-layout holds')
+            handle.release()
+            await frames(h.mc, 45, () => undefined)
+            expectEqual(h.mc.pending, 0, 'supported re-layout unsubscribes')
+            expectEqual(a.style.translate, '', 'supported re-layout restores')
+            details.push('supported 6 px held re-layout kept the hold')
+            h.dispose()
+        }
+
+        // H13-23/P4-C4: held nodes and riders count for maxNodes
+        {
+            const h = harness({
+                motion: { duration: 0.2, timing: linear },
+                maxNodes: 2,
+            })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            const sibling = node(
+                h.root,
+                'left:500px;top:100px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.add(sibling, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(parent)
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.group.capture()
+            sibling.style.left = '600px'
+            const report = await h.group.flush()
+            expectEqual(report.status, 'capped', 'cap with holds')
+            expectEqual(handle.state, 'invalidated', 'cap invalidates hold')
+            expectEqual(h.group.stats.holds, 0, 'cap clears holds')
+            // the capture's frame marker is a queued read; one frame clears
+            // it, and with no subscriber the clock does not re-arm
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(h.mc.pending, 0, 'cap unsubscribes')
+            expectEqual(parent.style.translate, '', 'cap restores parent')
+            expectEqual(child.style.translate, '', 'cap restores child')
+            details.push('mover cap counted the hold + rider and snapped')
+            h.dispose()
+        }
+
+        // H13-09: a kept pose timeline child already includes the parent map;
+        // it must not receive h twice
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.3, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            parent.style.width = '320px'
+            child.style.left = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            // a kept-track flush under the live scale creates the child's
+            // pose timeline (§5.7 path 1)
+            h.group.capture()
+            await h.group.flush()
+            const relative0 = viewBox(child).x - viewBox(parent).x
+            const handle = h.group.take(parent)
+            handle.move({ x: 40, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const relative1 = viewBox(child).x - viewBox(parent).x
+            expectClose(
+                relative1,
+                relative0,
+                25,
+                'kept-timeline child gets h once'
+            )
+            handle.cancel()
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(
+                child.style.translate,
+                '',
+                'kept-timeline child restores'
+            )
+            details.push(
+                `kept-timeline child relative ${relative0.toFixed(2)} -> ${relative1.toFixed(2)}`
+            )
+            h.dispose()
+        }
+
+        // P4-C10: a static child under a moving ancestor still carries the
+        // ancestor's drawn velocity into the handle
+        {
+            const h = harness({ motion: { duration: 0.5, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            parent.style.left = '300px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(child)
+            expectClose(
+                handle.velocity.x,
+                400,
+                30,
+                'static child carries ancestor velocity'
+            )
+            handle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            h.dispose()
+            details.push('static child take carried ancestor velocity')
+        }
+        // P4-C9/H13-19: take after an unflushed layout uses take reads
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            a.style.left = '120px' // no capture/flush
+            const take = originOf(viewBox(a))
+            const handle = h.group.take(a)
+            handle.move({ x: 20, y: 10 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectOrigin(
+                a,
+                { x: take.x + 20, y: take.y + 10 },
+                'unflushed take'
+            )
+            handle.release({ x: 0, y: 0 })
+            await frames(h.mc, 30, () => undefined)
+            expectClose(
+                pageBox(a).x,
+                h.root.getBoundingClientRect().left + scrollX + 120,
+                TOL,
+                'unflushed take releases to the take-read A'
+            )
+            expectEqual(a.style.translate, '', 'unflushed take restores')
+            details.push('take before a flush used take reads')
+            h.dispose()
+        }
+        // H13-08: an anchored descendant keeps layoutAnchor in its residual
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                layoutAnchor: { x: 0, y: 0 },
+                motion: { duration: 0.2, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            child.style.left = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(parent)
+            handle.move({ x: 40, y: 20 })
+            let min = Infinity
+            let max = -Infinity
+            await frames(h.mc, 8, () => {
+                const rel = viewBox(child).x - viewBox(parent).x
+                min = Math.min(min, rel)
+                max = Math.max(max, rel)
+            })
+            expectEqual(min >= 19, true, 'anchored child does not jump left')
+            expectEqual(
+                max <= 81,
+                true,
+                'anchored child stays in its offset path'
+            )
+            handle.cancel()
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(child.style.translate, '', 'anchored child restores')
+            details.push(
+                `anchored child relative ${min.toFixed(2)}..${max.toFixed(2)}`
+            )
+            h.dispose()
+        }
+        // H13-12/P4-C10: take a moving parent with a moving child; the child's
+        // residual subtracts the inherited parent velocity exactly once
+        {
+            const h = harness({ motion: { duration: 0.5, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.2, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            parent.style.left = '300px'
+            child.style.left = '80px'
+            h.group.flush()
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const childBefore = viewBox(child).x
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const childV = (viewBox(child).x - childBefore) / DT
+            const handle = h.group.take(parent)
+            expectClose(
+                handle.velocity.x,
+                400,
+                20,
+                'ancestor-carried take velocity'
+            )
+            const rel0 = viewBox(child).x - viewBox(parent).x
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const rel1 = viewBox(child).x - viewBox(parent).x
+            const inherited = (rel1 - rel0) / DT
+            // the child's own residual is its drawn velocity minus the
+            // ancestor flight exactly once, not the raw drawn velocity and
+            // not v − 2 ḣ
+            expectClose(
+                inherited,
+                childV - handle.velocity.x,
+                200,
+                'child residual velocity = v − ḣ'
+            )
+            expectClose(
+                inherited < childV - 200 ? 0 : 1,
+                0,
+                1,
+                'inherited velocity is subtracted once'
+            )
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectClose(
+                viewBox(child).x - viewBox(parent).x,
+                rel1,
+                20,
+                'moving-parent take keeps the child relative geometry'
+            )
+            handle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            expectEqual(
+                parent.style.translate,
+                '',
+                'moving-parent take restores'
+            )
+            expectEqual(
+                child.style.translate,
+                '',
+                'moving-parent child restores'
+            )
+            details.push(
+                `moving-parent take: v ${handle.velocity.x.toFixed(1)} px/s, child residual ${inherited.toFixed(1)} px/s`
+            )
+            h.dispose()
+        }
+        // H13-29/P4-C6: a cross-scope nested hold is allowed (documented
+        // limitation); the DOM child is carried by the parent's pose
+        {
+            const a = harness({ motion: { duration: 0.2, timing: linear } })
+            const b = harness({ motion: { duration: 0.2, timing: linear } })
+            const parent = node(
+                a.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            a.add(parent, { radius: false })
+            b.add(child, { radius: false })
+            a.group.capture()
+            await a.group.flush()
+            b.group.capture()
+            await b.group.flush()
+            const handle = a.group.take(parent)
+            expectEqual(handle.state, 'held', 'cross-scope take allowed')
+            handle.move({ x: 40, y: 20 })
+            await frames(a.mc, 3, () => undefined)
+            expectClose(
+                viewBox(child).x - viewBox(parent).x,
+                20,
+                TOL,
+                'cross-scope child is carried by the parent pose'
+            )
+            handle.cancel()
+            await frames(a.mc, 30, () => undefined)
+            a.dispose()
+            b.dispose()
+            details.push('cross-scope nested hold is an explicit limitation')
+        }
+
         return details.join('; ')
     } finally {
         quiet.restore()
