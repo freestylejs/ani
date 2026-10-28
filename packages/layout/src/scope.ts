@@ -1517,8 +1517,7 @@ export function createLayoutGroup(
             releaseInert(element, d)
             return
         }
-        if (!element.hasAttribute('inert'))
-            queueAttribute(element, 'inert', '')
+        if (!element.hasAttribute('inert')) queueAttribute(element, 'inert', '')
     }
 
     /**

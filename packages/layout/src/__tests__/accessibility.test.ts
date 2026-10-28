@@ -81,6 +81,14 @@ function presenceLink(initial: boolean): {
     }
 }
 
+function hRoot(): HTMLElement {
+    return document.body
+}
+
+function viewBoxX(element: HTMLElement): number {
+    return element.getBoundingClientRect().x
+}
+
 async function microtasks(): Promise<void> {
     for (let i = 0; i < 6; i++) await Promise.resolve()
 }
@@ -97,6 +105,7 @@ function crossfade(
 ): {
     detail: HTMLElement
     removeCard: () => void
+    removeDetail: () => void
     swipe: ReturnType<typeof presenceLink>
 } {
     const removeCard = group.add(card, { layoutId: 'shared', radius: false })
@@ -106,8 +115,11 @@ function crossfade(
     swipe.set(true)
     group.capture()
     const detail = element(360, 40, 300, 200)
-    group.add(detail, { layoutId: 'shared', radius: false })
-    return { detail, removeCard, swipe }
+    const removeDetail = group.add(detail, {
+        layoutId: 'shared',
+        radius: false,
+    })
+    return { detail, removeCard, removeDetail, swipe }
 }
 
 function collect(): { events: LayoutDiagnostic[] } {
@@ -227,6 +239,157 @@ describe('§6 crossfade follower inert', () => {
         await run
     })
 
+    it('H12-01: a pending inert set is replaced by the restore in the same reversal flush', async () => {
+        const { mc, group } = harness()
+        const card = element(20, 20)
+        const swipe = presenceLink(false)
+        const detailSwipe = presenceLink(false)
+        stops.push(linkPresence(card, swipe.link))
+        group.add(card, { layoutId: 'shared', radius: false })
+        group.capture()
+        await group.flush()
+        swipe.set(true)
+        group.capture()
+        const detail = element(360, 40, 300, 200)
+        stops.push(linkPresence(detail, detailSwipe.link))
+        group.add(detail, { layoutId: 'shared', radius: false })
+        const first = group.flush()
+        mc.frames(2)
+        expect(card.getAttribute('inert')).toBe('')
+        // the author removes it; the reversal flush re-asserts it, then
+        // releases it as the card becomes the new lead in the same batch
+        card.removeAttribute('inert')
+        swipe.set(false)
+        detailSwipe.set(true)
+        group.capture()
+        const reverse = group.flush()
+        expect(card.hasAttribute('inert')).toBe(false)
+        expect(card.style.opacity).not.toBe('')
+        group.dispose()
+        await Promise.all([first, reverse])
+    })
+
+    it('H12-01: a pending inert set is replaced by the restore in the same settle flush', async () => {
+        const { mc, group } = harness()
+        const card = element(20, 20)
+        const { detail, removeCard, removeDetail } = crossfade(group, card)
+        const first = group.flush()
+        mc.frames(2)
+        // the lead leaves without presence: the follower settles
+        group.capture()
+        card.removeAttribute('inert')
+        removeDetail()
+        detail.remove()
+        const settle = group.flush()
+        expect(card.hasAttribute('inert')).toBe(false)
+        group.dispose()
+        removeCard()
+        await Promise.all([first, settle])
+    })
+
+    it('H12-02: an abort after a follower drop keeps the queued inert restore', async () => {
+        const { mc, group } = harness()
+        const card = element(20, 20)
+        const swipe = presenceLink(false)
+        const detailSwipe = presenceLink(false)
+        stops.push(linkPresence(card, swipe.link))
+        group.add(card, { layoutId: 'shared', radius: false })
+        group.capture()
+        await group.flush()
+        swipe.set(true)
+        group.capture()
+        const detail = element(360, 40, 300, 200)
+        stops.push(linkPresence(detail, detailSwipe.link))
+        group.add(detail, { layoutId: 'shared', radius: false })
+        const first = group.flush()
+        mc.frames(2)
+        expect(card.getAttribute('inert')).toBe('')
+        // the card becomes the lead in a flush whose commit throws: the queued
+        // inert remove must survive the abort (H12-02)
+        swipe.set(false)
+        detailSwipe.set(true)
+        group.capture()
+        injectLayoutFault('write')
+        const reverse = group.flush()
+        const report = await reverse
+        expect(report.status).toBe('failed')
+        expect(card.hasAttribute('inert')).toBe(false)
+        expect(card.style.opacity).toBe('')
+        expect(card.style.translate).toBe('')
+        group.dispose()
+        await first
+    })
+
+    it('H12-03: a held old follower becoming the focus-skipped new lead is activated at A', async () => {
+        const { mc, group } = harness()
+        const panel = element(0, 0, 700, 500)
+        group.add(panel, { radius: false })
+        const card = document.createElement('div')
+        panel.append(card)
+        model.place(card, box(20, 20))
+        const swipe = presenceLink(false)
+        const detailSwipe = presenceLink(false)
+        stops.push(linkPresence(card, swipe.link))
+        group.add(card, { layoutId: 'shared', radius: false })
+        group.capture()
+        await group.flush()
+        swipe.set(true)
+        group.capture()
+        const detail = document.createElement('div')
+        panel.append(detail)
+        model.place(detail, box(360, 40, 300, 200))
+        const button = document.createElement('button')
+        detail.append(button)
+        stops.push(linkPresence(detail, detailSwipe.link))
+        group.add(detail, { layoutId: 'shared', radius: false })
+        const first = group.flush()
+        mc.frames(26)
+        expect(card.style.opacity).toBe('0')
+        expect(card.getAttribute('inert')).toBe('')
+        // the menu reopens while the card is held; focus is inside the new
+        // follower, and the panel moves so both children are under motion
+        button.focus()
+        swipe.set(false)
+        detailSwipe.set(true)
+        group.capture()
+        model.place(panel, box(200, 0, 700, 500))
+        model.place(card, box(220, 20))
+        model.place(detail, box(560, 40, 300, 200))
+        const reverse = group.flush()
+        expect(card.style.opacity).toBe('')
+        expect(card.hasAttribute('inert')).toBe(false)
+        expect(document.activeElement).toBe(button)
+        // the card is at its own layout position within the panel (the
+        // panel's first frame is still B), not held at the follower pose
+        expect(
+            Math.abs(viewBoxX(card) - viewBoxX(panel) - 20)
+        ).toBeLessThanOrEqual(0.5)
+        mc.frames(30)
+        expect(Math.abs(viewBoxX(card) - 220)).toBeLessThanOrEqual(0.5)
+        group.dispose()
+        await Promise.all([first, reverse])
+    })
+
+    it('H12-04: a continuing follower with focus inside is not re-inerted', async () => {
+        const { mc, group } = harness()
+        const card = element(20, 20)
+        const button = document.createElement('button')
+        card.append(button)
+        const { detail } = crossfade(group, card)
+        const first = group.flush()
+        mc.frames(2)
+        expect(card.getAttribute('inert')).toBe('')
+        card.removeAttribute('inert')
+        button.focus()
+        group.capture()
+        const again = group.flush()
+        expect(card.hasAttribute('inert')).toBe(false)
+        expect(document.activeElement).toBe(button)
+        group.dispose()
+        await Promise.all([first, again])
+        void detail
+    })
+
     it('the author removing inert mid-run cannot make the follower interactive', async () => {
         const { mc, group } = harness()
         const card = element(20, 20)
@@ -284,9 +447,11 @@ describe('§8 focus-in-follower', () => {
         expect(focus[0]!.element).toBe(card)
         expect(focus[0]!.engine).toBe('raf')
         expect(focus[0]!.version).toBe(1)
+        // the new lead was registered after the capture and has no B: it
+        // appears at A and is reported stale by the fixed §4.4 rule
         await expect(run).resolves.toMatchObject({
-            status: 'no-change',
-            snapped: [],
+            status: 'stale',
+            snapped: [{ element: detail, reason: 'stale' }],
         })
         mc.frames(3)
         expect(card.style.opacity).toBe('')
@@ -358,6 +523,46 @@ describe('§8 focus-in-follower', () => {
         })
         group.dispose()
         await first
+    })
+
+    it('H12-05: detects focus through nested closed shadow roots', async () => {
+        const { mc, group } = harness()
+        const outer = document.createElement('div')
+        hRoot().append(outer)
+        const outerRoot = outer.attachShadow({ mode: 'closed' })
+        const innerHost = document.createElement('div')
+        outerRoot.append(innerHost)
+        const innerRoot = innerHost.attachShadow({ mode: 'closed' })
+        const follower = document.createElement('div')
+        innerRoot.append(follower)
+        model.place(follower, box(20, 20))
+        const button = document.createElement('button')
+        follower.append(button)
+        button.focus()
+        expect(document.activeElement).toBe(outer)
+        const { events } = collect()
+        const swipe = presenceLink(false)
+        stops.push(linkPresence(follower, swipe.link))
+        group.add(follower, { layoutId: 'nested', radius: false })
+        group.capture()
+        await group.flush()
+        swipe.set(true)
+        group.capture()
+        group.add(element(360, 40, 300, 200), {
+            layoutId: 'nested',
+            radius: false,
+        })
+        const run = group.flush()
+        const focus = events.filter(
+            (event) => event.code === 'focus-in-follower'
+        )
+        expect(focus).toHaveLength(1)
+        expect(focus[0]!.element).toBe(follower)
+        expect(follower.hasAttribute('inert')).toBe(false)
+        expect(document.activeElement).toBe(outer)
+        mc.frame(16)
+        group.dispose()
+        await run
     })
 
     it('detects focus through an open and a closed shadow root', async () => {

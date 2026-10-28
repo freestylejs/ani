@@ -1444,6 +1444,96 @@ export async function L_A11Y_1(): Promise<string> {
             details.push('focus through a closed shadow root')
         }
 
+        // H12-05: focus through two nested closed shadow roots
+        {
+            const h = harness({ motion })
+            const outer = document.createElement('div')
+            outer.style.cssText =
+                'position: absolute; left: 20px; top: 20px; width: 300px; height: 160px;'
+            h.root.append(outer)
+            const outerRoot = outer.attachShadow({ mode: 'closed' })
+            const innerHost = document.createElement('div')
+            outerRoot.append(innerHost)
+            const innerRoot = innerHost.attachShadow({ mode: 'closed' })
+            const follower = document.createElement('div')
+            follower.style.cssText =
+                'position: absolute; left: 30px; top: 20px; width: 80px; height: 80px; background: #345;'
+            const button = document.createElement('button')
+            follower.append(button)
+            innerRoot.append(follower)
+            button.focus()
+            expectEqual(document.activeElement, outer, 'nested host focused')
+            const presence = createPresence(follower, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(follower, { layoutId: 'a11y-nested', radius: false })
+            h.group.capture()
+            await h.group.flush()
+            void presence.exit()
+            h.group.capture()
+            h.group.add(node(h.root, boxAt(500, 40, 300, 200)), {
+                layoutId: 'a11y-nested',
+                radius: false,
+            })
+            const run = h.group.flush()
+            expectEqual(
+                follower.hasAttribute('inert'),
+                false,
+                'nested no inert'
+            )
+            expectEqual(document.activeElement, outer, 'nested focus kept')
+            const focus = events.filter(
+                (e) => e.code === 'focus-in-follower' && e.element === follower
+            )
+            expectEqual(focus.length, 1, 'nested focus diagnostic')
+            expectEqual(focus[0]!.action, 'none', 'nested focus action')
+            h.mc.frames(3)
+            expectEqual(document.activeElement, outer, 'nested focus on frames')
+            h.group.dispose()
+            await run
+            presence.dispose()
+            h.root.remove()
+            details.push('focus through two nested closed shadow roots')
+        }
+
+        // H12-04: a continuing follower whose author removed inert is not
+        // re-inerted, and a real focused descendant keeps focus
+        {
+            const h = harness({ motion })
+            const card = node(h.root, boxAt(20, 20))
+            const button = document.createElement('button')
+            card.append(button)
+            const presence = createPresence(card, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(card, { layoutId: 'a11y-continuing', radius: false })
+            h.group.capture()
+            await h.group.flush()
+            void presence.exit()
+            h.group.capture()
+            const detail = node(h.root, boxAt(360, 40, 300, 200))
+            h.group.add(detail, { layoutId: 'a11y-continuing', radius: false })
+            const first = h.group.flush()
+            h.mc.frames(2)
+            expectEqual(card.hasAttribute('inert'), true, 'continuing inert')
+            card.removeAttribute('inert')
+            button.focus()
+            expectEqual(document.activeElement, button, 'continuing focus')
+            h.group.capture()
+            const again = h.group.flush()
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'continuing not re-inerted'
+            )
+            expectEqual(document.activeElement, button, 'continuing focus kept')
+            h.group.dispose()
+            await Promise.all([first, again])
+            presence.dispose()
+            h.root.remove()
+            details.push('continuing follower keeps focus after inert removal')
+        }
+
         // keyed reorder + held re-render: activeElement and attributes stable
         {
             const mc = createManualClock()
