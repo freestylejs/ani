@@ -254,11 +254,6 @@ export function springSettle(
         bound *= 2
         if (bound > 1e6) return Number.POSITIVE_INFINITY
     }
-    const scale = Math.max(
-        Math.abs(x0),
-        Math.abs(v0) / w,
-        positionTolerance / Math.max(1e-9, w)
-    )
     // The magnitude of d and v can only change between extrema; sample densely
     // enough to see every one, then refine the last tolerance crossing.
     const steps = Math.max(
@@ -310,8 +305,6 @@ export function springSettle(
         if (excess(mid) > 1) lo = mid
         else hi = mid
     }
-    // Guard against an unreasonably large bound hiding a long plateau.
-    void scale
     return hi
 }
 
@@ -445,17 +438,6 @@ export function zeroBoxVelocity(): Box {
     return { x: 0, y: 0, w: 0, h: 0 }
 }
 
-export function boxVelocityOf(
-    velocities: readonly [number, number, number, number]
-): Box {
-    return {
-        x: velocities[0]!,
-        y: velocities[1]!,
-        w: velocities[2]!,
-        h: velocities[3]!,
-    }
-}
-
 /**
  * The box a track draws at `elapsed`, including the exact-A step at settle.
  * At and after settle the engine sets the channels to A (§5.3).
@@ -529,14 +511,7 @@ export function perceptualTiming(
     return Math.min(1, Math.max(0, bezierAt(easingOf(motion), tau).value))
 }
 
-export function perceptualOf(
-    motion: Motion,
-    elapsed: number,
-    settle: number
-): number {
-    if (elapsed >= settle && motion.type === 'spring') {
-        // p reaches 1 at D, before the physical settle
-    }
+export function perceptualOf(motion: Motion, elapsed: number): number {
     return motion.type === 'spring'
         ? perceptualSpring(motion.duration, elapsed)
         : perceptualTiming(motion, elapsed)
@@ -596,34 +571,4 @@ export function edgeError(drawn: Box, expected: Box): EdgeError {
         }
     }
     return { max, edge, edges }
-}
-
-export function boxEquals(a: Box, b: Box, tolerance = 1e-9): boolean {
-    return (
-        Math.abs(a.x - b.x) <= tolerance &&
-        Math.abs(a.y - b.y) <= tolerance &&
-        Math.abs(a.w - b.w) <= tolerance &&
-        Math.abs(a.h - b.h) <= tolerance
-    )
-}
-
-export function boxAdd(a: Box, b: Box): Box {
-    return { x: a.x + b.x, y: a.y + b.y, w: a.w + b.w, h: a.h + b.h }
-}
-
-export function boxSub(a: Box, b: Box): Box {
-    return { x: a.x - b.x, y: a.y - b.y, w: a.w - b.w, h: a.h - b.h }
-}
-
-export function scaleBox(box: Box, factor: number): Box {
-    return {
-        x: box.x * factor,
-        y: box.y * factor,
-        w: box.w * factor,
-        h: box.h * factor,
-    }
-}
-
-export function cloneBox(box: Box): Box {
-    return { x: box.x, y: box.y, w: box.w, h: box.h }
 }

@@ -139,7 +139,8 @@ export function evaluateFingerprint(fingerprint: Fingerprint): Advisory {
     check('playwright', fingerprint.playwright, PINNED.playwright)
     check('browsers.chromium', fingerprint.browsers.chromium, PINNED.chromium)
     check('browsers.webkit', fingerprint.browsers.webkit, PINNED.webkit)
-    check('browsers.firefox', fingerprint.browsers.firefox, PINNED.firefox)
+    // Firefox is advisory (D9); its build is recorded but never decides a
+    // Chromium/WebKit cost gate (H14-32).
     if (!(fingerprint.load1 < PINNED.maxLoad1)) {
         reasons.push(
             `1-minute load is ${fingerprint.load1.toFixed(2)}, pinned below ${PINNED.maxLoad1}`

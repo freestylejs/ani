@@ -15,12 +15,16 @@ export type LayoutStatus =
 export interface StyleSnapshot {
     /** Inline `translate` value (empty when absent). */
     readonly translate: string
+    readonly translatePriority: string
     /** Inline `scale` value. */
     readonly scale: string
+    readonly scalePriority: string
     /** Inline `border-radius` longhand as serialized by the browser. */
     readonly radius: string
+    readonly radiusPriority: string
     /** Inline `overflow-anchor`. */
     readonly overflowAnchor: string
+    readonly overflowAnchorPriority: string
     /** `inert` attribute value, or null when absent. */
     readonly inert: string | null
     /** The full inline style attribute, for evidence. */
@@ -68,6 +72,17 @@ export interface CommitObservation {
         readonly key: string
         readonly reason: string
     }[]
+    /** A `capture-aged` diagnostic was emitted by this commit. */
+    readonly aged: boolean
+    /** Participants named by the aged diagnostic (empty = element-less). */
+    readonly agedKeys: readonly string[]
+    /** §4.1 radius capture + §4.3 active-node computed reads, and the
+     * optional Typed OM transform-origin read where the browser snaps the
+     * reference box. */
+    readonly stylesMin: number
+    readonly stylesMax: number
+    readonly styleRadiusCapture: number
+    readonly styleActiveFlush: number
 }
 
 export interface ReportObservation {
@@ -132,6 +147,7 @@ export interface RealTrace {
     readonly scene: string
     readonly mode: 'real'
     readonly g: number
+    readonly gSource: 'reads' | 'tick-fallback'
     readonly frameCosts: readonly FrameCost[]
     readonly commits: readonly { readonly label: string; readonly at: number }[]
     readonly diagnostics: readonly string[]
@@ -193,9 +209,25 @@ export interface RestorationCheck {
         | undefined
 }
 
+export interface SceneCompleteness {
+    readonly requiredObservations: number
+    readonly requiredCommits: number
+    readonly requiredReports: number
+    readonly requiredSettleFrames: number
+    readonly requiredKeys: readonly string[]
+    readonly requiredPairs: number
+    readonly requiredStaticRadii: readonly string[]
+    readonly requiredMetrics: readonly string[]
+    readonly requiredShape: readonly string[]
+    readonly requiredOpacityKeys: readonly string[]
+    readonly requiredRadiiKeys: readonly string[]
+    readonly requiredFontKeys: readonly string[]
+}
+
 export interface ScenePlan {
     readonly scene: string
     readonly stepMs: number
+    readonly completeness: SceneCompleteness
     readonly initial: Readonly<Record<string, Box>>
     readonly mounts: Readonly<Record<string, StyleSnapshot>>
     readonly commits: readonly CommitPlan[]
@@ -221,6 +253,7 @@ export interface CostCommitSample {
 export interface CostRun {
     readonly participants: number
     readonly poses: number
+    readonly typedOM: boolean
     readonly engine: readonly number[]
     readonly floor: readonly number[]
     readonly engineSamples: readonly CostCommitSample[]
@@ -235,6 +268,7 @@ export interface CostRun {
         readonly captureOffsets: number
         readonly flushRects: number
         readonly flushOffsets: number
+        readonly styleReads: number
         readonly poseWrites: number
         readonly extraReads: number
     }
@@ -244,16 +278,25 @@ export interface CostRun {
 export interface CostTrace {
     readonly mode: 'cost'
     readonly g: number
+    readonly gSource: 'reads' | 'tick-fallback'
+    readonly typedOM: boolean
     readonly unscrolled: CostRun
     readonly scrolled: CostRun
     readonly steady: {
         readonly costs: readonly number[]
         readonly g: number
+        readonly refreshHz: number
     }
     readonly sustained: {
-        readonly costs: readonly number[]
+        /** One performance.now() pair around each 60 Hz commit. */
+        readonly commitCosts: readonly number[]
+        /** rAF frame costs; diagnostic only when the refresh is below 60 Hz. */
+        readonly frameCosts: readonly number[]
         readonly g: number
         readonly commits: number
+        readonly refreshHz: number
+        readonly durationMs: number
+        readonly commitHz: number
     }
     readonly exactReads: readonly {
         readonly label: string
@@ -270,10 +313,12 @@ export interface CostTrace {
 export interface FloorAuditTrace {
     readonly participants: number
     readonly poses: number
+    readonly typedOM: boolean
     readonly captureRects: number
     readonly captureOffsets: number
     readonly flushRects: number
     readonly flushOffsets: number
+    readonly styleReads: number
     readonly poseWrites: number
     readonly extraReads: number
 }

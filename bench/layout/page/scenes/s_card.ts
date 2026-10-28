@@ -21,7 +21,8 @@ import type { Box } from '../../oracle.ts'
 import type { RealTrace, SceneTrace } from '../../types.ts'
 import {
     installRafSampler,
-    measureGranularity,
+    isWebKitEngine,
+    measureGranularityInfo,
     microtasks,
     nextFrame,
     TraceBuilder,
@@ -414,12 +415,20 @@ class CardRuntime {
             this.builder?.diagnostic(code, action, this.frame, null)
         })
         const card = built.card
+        const probes = probeBoxes()
+        ;(window as unknown as { __scene?: unknown }).__scene = {
+            scene: 's-card',
+            participants: [...KEYS],
+            boxes: probes,
+            motion: { type: 'spring', duration: 0.55, bounce: 0.05 },
+        }
         this.card = card
-        this.mountCard(card)
         for (const key of KEYS) this.elements.set(key, null)
         this.elements.set('card', card.root)
         this.elements.set('card-image', card.image)
         this.elements.set('card-title', card.title)
+        // Snapshot before registration: no engine write may precede the mount
+        // baseline.
         if (this.builder) {
             this.builder.mount('card', card.root)
             this.builder.mount('card-image', card.image)
@@ -427,10 +436,50 @@ class CardRuntime {
             this.builder.initial('card', card.root)
             this.builder.initial('card-image', card.image)
             this.builder.initial('card-title', card.title)
-            const probes = probeBoxes()
             for (const [key, box] of Object.entries(probes))
                 this.builder.aBox(key, box)
         }
+        this.mountCard(card)
+        this.mountSheetAtRest()
+    }
+
+    /**
+     * The sheet content is a participant from the rest state, inside a hidden
+     * non-participant sheet, so the open capture has a valid B for it. The
+     * sheet/image/title join the group at the open commit and hand off from
+     * the card pair.
+     */
+    private mountSheetAtRest(): void {
+        const built = buildSheet()
+        built.sheet.style.visibility = 'hidden'
+        built.sheet.style.opacity = '1'
+        this.stage.append(built.sheet)
+        const layer: SheetLayer = {
+            root: built.sheet,
+            image: built.image,
+            title: built.title,
+            content: built.content,
+            close: built.close,
+            presence: null as unknown as PresenceHandle,
+            imagePresence: null as unknown as PresenceHandle,
+            titlePresence: null as unknown as PresenceHandle,
+            removers: [],
+        }
+        this.sheet = layer
+        if (this.builder) {
+            this.builder.mount('sheet', layer.root)
+            this.builder.mount('sheet-image', layer.image)
+            this.builder.mount('sheet-title', layer.title)
+            this.builder.mount('sheet-content', layer.content)
+            this.builder.initial('sheet-content', layer.content)
+        }
+        layer.removers.push(
+            this.group.add(layer.content, {
+                layout: 'position',
+                radius: false,
+            })
+        )
+        this.elements.set('sheet-content', layer.content)
     }
 
     private mountCard(card: CardLayer): void {
@@ -464,20 +513,12 @@ class CardRuntime {
     }
 
     private mountSheet(): SheetLayer {
-        const built = buildSheet()
-        this.stage.append(built.sheet)
-        const layer: SheetLayer = {
-            root: built.sheet,
-            image: built.image,
-            title: built.title,
-            content: built.content,
-            close: built.close,
-            presence: null as unknown as PresenceHandle,
-            imagePresence: null as unknown as PresenceHandle,
-            titlePresence: null as unknown as PresenceHandle,
-            removers: [],
-        }
+        const layer = this.sheet!
         const motion = presenceMotion()
+        layer.root.style.visibility = 'visible'
+        layer.root.style.opacity = '1'
+        // The content was registered at rest; the surface/image/title join now
+        // with the card pair as their handoff source.
         layer.removers.push(
             this.group.add(layer.root, {
                 layout: true,
@@ -499,11 +540,7 @@ class CardRuntime {
                           layoutId: 'today-title',
                           radius: false,
                       }
-            ),
-            this.group.add(layer.content, {
-                layout: 'position',
-                radius: false,
-            })
+            )
         )
         layer.presence = createPresence(layer.root, motion, {
             ...(this.mc ? { clock: this.mc.clock } : {}),
@@ -514,12 +551,6 @@ class CardRuntime {
         layer.titlePresence = createPresence(layer.title, motion, {
             ...(this.mc ? { clock: this.mc.clock } : {}),
         })
-        if (this.builder) {
-            this.builder.mount('sheet', layer.root)
-            this.builder.mount('sheet-image', layer.image)
-            this.builder.mount('sheet-title', layer.title)
-            this.builder.mount('sheet-content', layer.content)
-        }
         for (const [key, element] of [
             ['sheet', layer.root],
             ['sheet-image', layer.image],
@@ -591,9 +622,13 @@ class CardRuntime {
         mutate: () => void
     ): Promise<LayoutReport> {
         const stats = this.group.stats
+        const diagnosticsBefore = this.builder?.diagnostics.length ?? 0
         const nBefore = [...this.elements.values()].filter(
             (element) => element?.isConnected
         ).length
+        const styleRadiusCapture =
+            (this.elements.get('card')?.isConnected ? 1 : 0) +
+            (this.elements.get('sheet')?.isConnected ? 1 : 0)
         const promise = this.group.update(mutate)
         const after = this.group.stats
         const nAfter = [...this.elements.values()].filter(
@@ -617,6 +652,20 @@ class CardRuntime {
             frameReadsAt,
             diagnostics: [],
             onSnap: [],
+            aged:
+                this.builder?.diagnostics
+                    .slice(diagnosticsBefore)
+                    .some((event) => event.code === 'capture-aged') ?? false,
+            agedKeys:
+                this.builder?.diagnostics
+                    .slice(diagnosticsBefore)
+                    .filter((event) => event.code === 'capture-aged')
+                    .flatMap((event) => (event.key ? [event.key] : [])) ?? [],
+            stylesMin: styleRadiusCapture + nAfter,
+            stylesMax:
+                styleRadiusCapture + nAfter + (isWebKitEngine() ? nAfter : 0),
+            styleRadiusCapture,
+            styleActiveFlush: nAfter,
         })
         return promise
     }
@@ -650,6 +699,9 @@ class CardRuntime {
             if (image)
                 image.style.setProperty('translate', '0.1px 0px', 'important')
         }
+        if (this.control === 'card-focus-follower') {
+            card.root.focus()
+        }
         if (this.builder) this.builder.record('flush', this.frame, 'open')
     }
 
@@ -678,7 +730,6 @@ class CardRuntime {
             card.root.style.zIndex = '11'
             sheet.root.style.zIndex = '10'
             this.card = card
-            this.mountCard(card)
             for (const [key, element] of [
                 ['card', card.root],
                 ['card-image', card.image],
@@ -691,6 +742,7 @@ class CardRuntime {
                 this.builder.mount('card-image', card.image)
                 this.builder.mount('card-title', card.title)
             }
+            this.mountCard(card)
             this.contentMode = 'closing'
             this.contentSince = this.clockNow()
             this.contentFrom = this.contentOpacity
@@ -903,7 +955,8 @@ export class CardScene {
     }
 
     static async runReal(): Promise<RealTrace> {
-        const g = measureGranularity()
+        const granularityInfo = measureGranularityInfo()
+        const g = granularityInfo.value
         const sampler = installRafSampler()
         const runtime = new CardRuntime({
             mc: null,
@@ -962,6 +1015,7 @@ export class CardScene {
                 scene: 's-card',
                 mode: 'real',
                 g,
+                gSource: granularityInfo.source,
                 frameCosts: frames,
                 commits,
                 diagnostics: [...runtime.diagnostics],

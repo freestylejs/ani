@@ -80,12 +80,12 @@ test('incoming velocity is exact at t = 0 on every damping branch', () => {
     }
 })
 
-test('RK4 agrees with the closed form and a 0.01 ms reference', () => {
+test('RK4 agrees with the closed form and a 0.01 ms reference integration', () => {
     for (const bounce of [-0.4, 0, 0.35]) {
         const at = 0.35
         const closed = springDisplacement(0.55, bounce, 240, -180, at)
-        const rk = integrateSpring(0.55, bounce, 240, -180, at, 0.00001)
-        const reference = integrateSpring(0.55, bounce, 240, -180, at, 0.00005)
+        const rk = integrateSpring(0.55, bounce, 240, -180, at, 0.00002)
+        const reference = integrateSpring(0.55, bounce, 240, -180, at, 0.00001)
         close(rk.d, closed.d, 1e-9, `rk d b=${bounce}`)
         close(rk.v, closed.v, 1e-6, `rk v b=${bounce}`)
         close(rk.d, reference.d, 1e-6, `reference d b=${bounce}`)
@@ -161,4 +161,16 @@ test('edge error names the worst edge', () => {
     const error = edgeError(a, b)
     close(error.max, 0.1, 1e-12, 'max')
     assert.equal(error.edge, 'top')
+})
+
+test('high-bounce settles are finite and meet the tolerance', () => {
+    for (const bounce of [0.9, -0.8, -0.5]) {
+        const settle = springSettle(0.55, bounce, 300, 0)
+        assert.ok(Number.isFinite(settle) && settle > 0, `settle b=${bounce}`)
+        for (const t of [settle, settle + 0.01, settle + 0.2]) {
+            const { d, v } = springDisplacement(0.55, bounce, 300, 0, t)
+            assert.ok(Math.abs(d) <= 0.1 + 1e-9, `d b=${bounce} t=${t}`)
+            assert.ok(Math.abs(v) <= 1 + 1e-9, `v b=${bounce} t=${t}`)
+        }
+    }
 })

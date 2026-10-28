@@ -10,6 +10,7 @@ export interface AggregateMetric {
     readonly unit: string
     readonly median: number
     readonly pass: boolean
+    readonly blocked: boolean
     readonly perRun: readonly number[]
     readonly passPerRun: readonly boolean[]
     readonly worst?:
@@ -22,10 +23,18 @@ export interface RunSceneReport {
     readonly run: number
     readonly warmup: boolean
     readonly pass: boolean
+    readonly costProbe: {
+        readonly participants: number
+        readonly movers: number
+        readonly engineMedian: number
+        readonly floorMedian: number
+        readonly ratio: number
+    }
     readonly metrics: readonly MetricFinding[]
     readonly shape: readonly MetricFinding[]
     readonly real: {
         readonly g: number
+        readonly gSource: 'reads' | 'tick-fallback'
         readonly frames: number
         readonly p95: number
         readonly longFrames: number
@@ -68,6 +77,38 @@ export interface SceneReport {
 export interface CostRunReport {
     readonly run: number
     readonly warmup: boolean
+    readonly valid: boolean
+    readonly blockedReasons: readonly string[]
+    readonly engineAudit: {
+        readonly rects: number
+        readonly offsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+    }
+    readonly floorAudit: {
+        readonly captureRects: number
+        readonly captureOffsets: number
+        readonly flushRects: number
+        readonly flushOffsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+        readonly extraReads: number
+    }
+    readonly engineAuditScrolled: {
+        readonly rects: number
+        readonly offsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+    }
+    readonly floorAuditScrolled: {
+        readonly captureRects: number
+        readonly captureOffsets: number
+        readonly flushRects: number
+        readonly flushOffsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+        readonly extraReads: number
+    }
     readonly ratioUnscrolled: number
     readonly ratioScrolled: number
     readonly engineMedianUnscrolled: number
@@ -77,18 +118,22 @@ export interface CostRunReport {
     readonly steadyP95: number
     readonly sustainedP95: number
     readonly sustainedCommits: number
+    readonly sustainedCommitHz: number
     readonly floorAuditPass: boolean
     readonly floorAuditDetail: string
     readonly exactReadsPass: boolean
     readonly exactReadsDetail: string
     readonly g: number
+    readonly gSource: 'reads' | 'tick-fallback'
 }
 
 export interface CostReport {
     readonly scene: 'S-BULK'
-    readonly status: 'pass' | 'fail' | 'pending'
+    readonly status: 'pass' | 'fail' | 'pending' | 'blocked'
     readonly pending: string | null
     readonly pass: boolean
+    readonly valid: boolean
+    readonly blockedReasons: readonly string[]
     readonly metrics: readonly AggregateMetric[]
     readonly runs: readonly CostRunReport[]
     readonly notes: readonly string[]
@@ -110,7 +155,8 @@ export interface NegativeControlResult {
     readonly name: string
     readonly target: string
     readonly expected: 'fail'
-    readonly observed: 'fail' | 'pass' | 'error'
+    readonly observed: 'fail' | 'pass' | 'error' | 'inconclusive'
+    readonly conclusive: boolean
     readonly ok: boolean
     readonly detail: string
 }
@@ -132,6 +178,7 @@ export interface BenchReport {
         readonly scene: string
         readonly reason: string
     }[]
+    readonly certification: CertificationReport
     readonly pass: boolean
 }
 
@@ -203,7 +250,7 @@ export function formatReport(report: BenchReport): string {
                               .filter(Boolean)
                               .join(' ')}`
                 lines.push(
-                    `  ${metric.pass ? 'ok  ' : 'FAIL'} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
+                    `  ${metric.blocked ? 'BLOCK' : metric.pass ? 'ok  ' : 'FAIL'} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
                 )
             }
         }
@@ -218,7 +265,7 @@ export function formatReport(report: BenchReport): string {
                         ? ''
                         : ` worst ${metric.worst.detail}`
                 lines.push(
-                    `  ${metric.pass ? 'ok  ' : 'FAIL'} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
+                    `  ${metric.blocked ? 'BLOCK' : metric.pass ? 'ok  ' : 'FAIL'} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
                 )
             }
             for (const run of cost.runs) {
@@ -232,7 +279,7 @@ export function formatReport(report: BenchReport): string {
     lines.push('negative controls (expected to fail their target gate)')
     for (const control of report.negativeControls) {
         lines.push(
-            `  ${control.ok ? 'ok  ' : 'FAIL'} ${control.name} -> ${control.target}: ${control.observed} (${control.detail})`
+            `  ${control.ok ? 'ok  ' : 'FAIL'} ${control.name} -> ${control.target}: ${control.observed}${control.conclusive ? '' : ' (inconclusive)'} (${control.detail})`
         )
     }
     lines.push(
@@ -244,7 +291,13 @@ export function formatReport(report: BenchReport): string {
         }
     }
     lines.push('')
-    lines.push(report.pass ? 'PASS' : 'FAIL')
+    lines.push(`invocation: ${report.pass ? 'PASS' : 'FAIL'}`)
+    lines.push(
+        `certification: ${report.certification.certified ? 'CERTIFIED' : 'NOT CERTIFIED'}`
+    )
+    for (const reason of report.certification.reasons) {
+        lines.push(`  cert block: ${reason}`)
+    }
     return lines.join('\n')
 }
 
@@ -257,20 +310,53 @@ export function compareReports(
         const before = previous.engines.find(
             (candidate) => candidate.engine === engine.engine
         )
-        if (!before) continue
+        if (!before) {
+            lines.push(
+                `${engine.engine}: new engine (missing in previous report)`
+            )
+            continue
+        }
         for (const scene of engine.scenes) {
             const oldScene = before.scenes.find(
                 (candidate) => candidate.scene === scene.scene
             )
-            if (!oldScene) continue
+            if (!oldScene) {
+                lines.push(`${engine.engine} ${scene.scene}: new scene`)
+                continue
+            }
             for (const metric of [...scene.metrics, ...scene.shape]) {
                 const oldMetric = [...oldScene.metrics, ...oldScene.shape].find(
                     (candidate) => candidate.id === metric.id
                 )
-                if (!oldMetric) continue
+                if (!oldMetric) {
+                    lines.push(
+                        `${engine.engine} ${scene.scene} ${metric.id}: new metric`
+                    )
+                    continue
+                }
                 const delta = metric.median - oldMetric.median
                 lines.push(
                     `${engine.engine} ${scene.scene} ${metric.id}: ${oldMetric.median} -> ${metric.median} (${delta >= 0 ? '+' : ''}${delta})`
+                )
+            }
+            for (const oldMetric of [...oldScene.metrics, ...oldScene.shape]) {
+                if (
+                    ![...scene.metrics, ...scene.shape].some(
+                        (metric) => metric.id === oldMetric.id
+                    )
+                ) {
+                    lines.push(
+                        `${engine.engine} ${scene.scene} ${oldMetric.id}: missing in current report`
+                    )
+                }
+            }
+        }
+        for (const oldScene of before.scenes) {
+            if (
+                !engine.scenes.some((scene) => scene.scene === oldScene.scene)
+            ) {
+                lines.push(
+                    `${engine.engine} ${oldScene.scene}: missing in current report`
                 )
             }
         }
@@ -279,13 +365,41 @@ export function compareReports(
                 const oldMetric = before.cost.metrics.find(
                     (candidate) => candidate.id === metric.id
                 )
-                if (!oldMetric) continue
+                if (!oldMetric) {
+                    lines.push(
+                        `${engine.engine} S-BULK ${metric.id}: new metric`
+                    )
+                    continue
+                }
                 const delta = metric.median - oldMetric.median
                 lines.push(
                     `${engine.engine} S-BULK ${metric.id}: ${oldMetric.median} -> ${metric.median} (${delta >= 0 ? '+' : ''}${delta})`
                 )
             }
+            for (const oldMetric of before.cost.metrics) {
+                if (
+                    !engine.cost.metrics.some(
+                        (metric) => metric.id === oldMetric.id
+                    )
+                ) {
+                    lines.push(
+                        `${engine.engine} S-BULK ${oldMetric.id}: missing in current report`
+                    )
+                }
+            }
+        } else if (engine.cost || before.cost) {
+            lines.push(
+                `${engine.engine} S-BULK: missing in ${engine.cost ? 'previous' : 'current'} report`
+            )
         }
     }
     return lines
+}
+
+export interface CertificationReport {
+    readonly certified: boolean
+    readonly reasons: readonly string[]
+    readonly requiredEngines: readonly string[]
+    readonly requiredRuns: number
+    readonly requiredScenes: readonly string[]
 }
