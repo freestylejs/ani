@@ -1559,6 +1559,54 @@ export async function L_DRIVE_5(): Promise<string> {
             h.dispose()
         }
 
+        // H13-10R/S3: under jump, a capture-less flush has no B/v for the
+        // descendant; the stale residual is still settled at its A
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.2, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            child.style.left = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(parent)
+            handle.move({ x: 40, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.mc.setReducedMotion(true)
+            // no capture: the flush has no fresh B/v for the rider
+            await h.group.flush()
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectClose(
+                viewBox(child).x - viewBox(parent).x,
+                80,
+                1,
+                'capture-less jump settles the residual at A'
+            )
+            handle.release({ x: 100, y: 0 })
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(handle.state, 'released', 'capture-less jump released')
+            expectEqual(h.mc.pending, 0, 'capture-less jump unsubscribes')
+            expectEqual(parent.style.translate, '', 'capture-less jump parent')
+            expectEqual(child.style.translate, '', 'capture-less jump child')
+            details.push('capture-less jump settled the descendant residual')
+            h.dispose()
+        }
+
         // H13-10: a policy change while landing applies at the next flush
         {
             const h = harness({
@@ -2119,6 +2167,55 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             stop()
             clearLayoutFaults()
             h.dispose()
+        }
+
+        // H13-05/S3: a write fault during the re-take's same-task write
+        // aborts cleanly: no throw, byte-exact restore, no live hold
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const authored = a.style.cssText
+            const first = h.group.take(a)
+            first.move({ x: 60, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            first.release({ x: 300, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            injectLayoutFault('write', new Error('retake write fault'))
+            let threw = false
+            let second: LayoutDriveHandle | null = null
+            try {
+                second = h.group.take(a)
+            } catch {
+                threw = true
+            }
+            clearLayoutFaults()
+            expectEqual(threw, false, 'retake fault does not throw')
+            expectEqual(
+                second?.state,
+                'invalidated',
+                'retake fault returns a terminal handle'
+            )
+            expectEqual(h.group.stats.holds, 0, 'retake fault clears holds')
+            expectEqual(a.style.cssText, authored, 'retake fault restores')
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(h.mc.clock.size, 0, 'retake fault clock cleanup')
+            expectEqual(h.mc.pending, 0, 'retake fault marker cleanup')
+            expectEqual(
+                events.some((e) => e.code === 'internal-error'),
+                true,
+                'retake fault reports internal-error'
+            )
+            stop()
+            h.dispose()
+            details.push('retake write fault aborted cleanly')
         }
 
         // H13-16: an abort disarms the scroll listeners and the clock, not
@@ -2780,6 +2877,58 @@ export async function L_DRIVE_FIX(): Promise<string> {
             details.push('parented take-read size re-layout landed on A')
         }
 
+        // H13-02R/S3: a pure position re-layout (no size change, no
+        // capture/flush) is adopted by the held read, not absorbed as a
+        // camera shift; release lands on the new position
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const heldOrigin = originOf(pageBox(a))
+            a.style.left = '60px'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'position re-layout keeps hold')
+            expectClose(
+                Math.abs(originOf(pageBox(a)).x - heldOrigin.x),
+                0,
+                TOL,
+                'position re-layout keeps the held origin'
+            )
+            const released = pageBox(a)
+            handle.release()
+            let early = 0
+            await frames(h.mc, 24, (_elapsed, index) => {
+                if (index === 5) early = pageBox(a).x
+            })
+            const releaseSpec = specOf(
+                released,
+                { x: 60, y: 0, w: 80, h: 80 },
+                { x: 0, y: 0, w: 0, h: 0 },
+                0.3
+            )
+            expectClose(
+                early,
+                expectedBox(releaseSpec, 5 * DT).x,
+                0.5,
+                'position re-layout lands toward the new A'
+            )
+            expectClose(
+                maxDiff(pageBox(a), { x: 60, y: 0, w: 80, h: 80 }),
+                0,
+                TOL,
+                'position re-layout final layout box'
+            )
+            h.dispose()
+            details.push('pure position re-layout landed on the new A')
+        }
+
         // H13-23/P4-C4: held nodes and riders count for maxNodes
         {
             const snaps: { element: HTMLElement; reason: string }[] = []
@@ -2927,9 +3076,70 @@ export async function L_DRIVE_FIX(): Promise<string> {
             h.dispose()
             details.push('static child take carried ancestor velocity')
         }
-        // H13-12R/P4-C10: a static child under a parent width track. The
-        // width change reflows the child's A; the handle carries that
-        // ancestor-induced drawn velocity (independent A delta / duration).
+        // H13-12S/P4-C10: a genuinely trackless static child (fixed left and
+        // width, A unchanged) under a parent width/height pose track must
+        // still carry the ancestor's drawn origin velocity at take
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:400px;height:400px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const childA = pageBox(child)
+            const parentBefore = pageBox(parent)
+            h.group.capture()
+            parent.style.width = '200px'
+            parent.style.height = '200px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            // the child's own A is untouched; it is counter-projected
+            expectClose(
+                maxDiff(pageBox(child), childA),
+                0,
+                TOL,
+                'trackless static child A unchanged'
+            )
+            const parentAfter = { ...parentBefore, w: 200, h: 200 }
+            const parentSpec = specOf(parentBefore, parentAfter, null, 0.4)
+            const parentV = velocityOf(parentSpec, DT)
+            const ancestorOriginV = {
+                x: parentV.x + 0.5 * parentV.w,
+                y: parentV.y + 0.5 * parentV.h,
+            }
+            const handle = h.group.take(child)
+            expectEqual(handle.state, 'held', 'trackless static child held')
+            expectClose(
+                handle.velocity.x,
+                ancestorOriginV.x,
+                2,
+                'trackless child carries ancestor origin vx'
+            )
+            expectClose(
+                handle.velocity.y,
+                ancestorOriginV.y,
+                2,
+                'trackless child carries ancestor origin vy'
+            )
+            handle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            h.dispose()
+            details.push(
+                `trackless static child take: v ${handle.velocity.x.toFixed(1)}, ${handle.velocity.y.toFixed(1)} px/s (ancestor origin ${ancestorOriginV.x.toFixed(1)}, ${ancestorOriginV.y.toFixed(1)})`
+            )
+        }
+        // H13-12R/P4-C10: a reflowing child (left: 50%) under a parent width
+        // track. The width change moves the child's A, so it gets its own
+        // track; the handle carries that ancestor-induced velocity (A delta
+        // over the duration). The trackless static row above covers P4-C10
+        // for a child whose A does not move.
         {
             const h = harness({ motion: { duration: 0.4, timing: linear } })
             const parent = node(
@@ -2956,20 +3166,24 @@ export async function L_DRIVE_FIX(): Promise<string> {
                 'the width reflow moved the child A'
             )
             const handle = h.group.take(child)
-            expectEqual(handle.state, 'held', 'static child under width held')
+            expectEqual(
+                handle.state,
+                'held',
+                'reflowing child under width held'
+            )
             // the child's own layout track is the ancestor width reflow:
             // half of −200 px over 0.4 s
             expectClose(
                 handle.velocity.x,
                 -250,
                 2,
-                'static child ancestor-carried width velocity'
+                'reflowing child ancestor-carried width velocity'
             )
             handle.cancel()
             await frames(h.mc, 40, () => undefined)
             h.dispose()
             details.push(
-                `static child width take: v ${handle.velocity.x.toFixed(1)} px/s (oracle −250)`
+                `reflowing child width take: v ${handle.velocity.x.toFixed(1)} px/s (oracle −250)`
             )
         }
         // H13-14: a driven child under the same ancestor width track; its
@@ -3134,16 +3348,6 @@ export async function L_DRIVE_FIX(): Promise<string> {
             let max = -Infinity
             const sample = (label: string) => {
                 const rel = viewBox(child).x - viewBox(parent).x
-                // biome-ignore lint/suspicious/noConsole: debug
-                console.log(
-                    'anchor',
-                    label,
-                    rel,
-                    'parent',
-                    viewBox(parent),
-                    'child',
-                    viewBox(child)
-                )
                 min = Math.min(min, rel)
                 max = Math.max(max, rel)
                 return label
