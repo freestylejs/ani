@@ -190,9 +190,12 @@ interface LayoutDriveHandle {
   the typed `reduced-no-fit` diagnostic and lands at A with the handle `released`.
 - A `take` before an unflushed layout uses its own rect/computed reads for the new held geometry,
   not the stale last-flush geometry; if the current geometry cannot be supported it throws.
-- The ancestor/descendant hold exclusion is scope-local. A participant registered in another group
-  is outside this group's hold graph; a cross-scope nested hold is not prevented, and a driven
-  cross-scope child does not ride the other group's `h` (a documented one-owner limitation).
+- A trackless participant child that is counter-projected to its own A under an animating
+  participant ancestor still reports the ancestor's drawn origin velocity at `take` (P4-C10), so a
+  caught card does not lose the ancestor's motion. The ancestor/descendant hold exclusion is
+  scope-local. A participant registered in another group is outside this group's hold graph; a
+  cross-scope nested hold is not prevented, and a driven cross-scope child does not ride the other
+  group's `h` (a documented one-owner limitation).
 - The gesture layer owns pointer capture, `pointerId`, `touch-action`, velocity estimation,
   keyboard operation and announcements; it maps `pointercancel` and `lostpointercapture` to
   `cancel()`. Layout owns every style it writes. The drive is not available on the `'waapi'`
@@ -203,7 +206,9 @@ the live `LayoutGroup` (or the implicit root) that owns the registered element, 
 `ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref detach/re-attach preserves a
 live hold. The gesture layer maps `pointercancel` and `lostpointercapture` to `cancel()` so a
 cancelled gesture never becomes an accidental release; a box-preserving 180° rotation/zoom is the
-same documented support residual risk as above.
+same documented support residual risk as above. `dispose()`, abort and the kill switch remove the
+scope's scroll listeners and clock subscription; the gesture layer owns pointer capture and
+listener teardown for the pointer stream itself.
 
 ## Report
 
