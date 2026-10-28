@@ -1396,11 +1396,12 @@ Cost gates, measured by the harness:
 - Commit (capture + flush) ≤ 2× the measured floor of the work this authority requires, at 1,000
   participants, unscrolled and scrolled by 1.5 viewports. The floor is measured on the same
   certification instrument and the same DOM, in the same run, by a minimal loop that performs
-  exactly the reads of §4.1 item 1 and the writes of §4.3 steps 2 and 4, with no planner, solver,
-  track, report or diagnostics work. The harness audits the floor's read and write counts against
-  the authority before it may use the floor; an over-counting floor is a harness failure, not a
-  slower engine. The legacy absolute `layout:COST` 4 ms read row is retired (owner decision D8,
-  2026-10-28); no P1, P2 or P6 gate depends on it.
+  exactly the reads of §4.1 item 1 and §4.3 step 2 (including the computed values §4.3 requires for
+  active nodes) and the writes of §4.3 step 4, with no planner, solver, track, report or
+  diagnostics work. The harness audits the floor's read and write counts against the authority
+  before it may use the floor; an over-counting floor is a harness failure, not a slower engine.
+  The legacy absolute `layout:COST` 4 ms read row is retired (owner decision D8, 2026-10-28); no P1,
+  P2 or P6 gate depends on it.
 - Steady frame p95 ≤ 2 ms at 300 nested movers.
 - Sustained commits: 60 Hz commits with 300 moving participants hold the steady-frame gate.
 - Held frame: ≤ 0.1 ms per held element.
