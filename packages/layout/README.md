@@ -115,6 +115,70 @@ motion is still read from it at each flush); a retarget during main-thread jank 
 box from `currentTime` and can step back by the frames the main thread missed; no inline style
 is written.
 
+## Direct manipulation
+
+A participant can be taken as the user's finger:
+
+```ts
+const item = document.querySelector<HTMLLIElement>('#card')!
+group.add(item, { layout: true })
+
+const drive = group.take(item) // held
+drive.move({ x: 12, y: -4 }) // view-space CSS px, from the take point
+drive.release({ x: 0, y: 900 }) // incoming origin velocity, px/s (default 0)
+// drive.cancel() hands back with zero velocity
+```
+
+`take` returns a `LayoutDriveHandle`:
+
+```ts
+type LayoutDriveState = 'held' | 'released' | 'cancelled' | 'invalidated'
+
+interface LayoutDriveVector {
+    readonly x: number
+    readonly y: number
+}
+
+interface LayoutDriveHandle {
+    readonly state: LayoutDriveState
+    readonly velocity: LayoutDriveVector // drawn origin velocity at take, px/s
+    move(offset: LayoutDriveVector): void // drawn origin = take point + offset
+    release(velocity?: LayoutDriveVector): void
+    cancel(): void
+}
+```
+
+- `take` throws `ANI_INVALID_OPTIONS` before changing any state unless the element is registered in
+  this group, connected, in the same document, on the `'raf'` engine, not held, has no held ancestor
+  or descendant, and has supported geometry. One element belongs to at most one live group. Take
+  under the runtime kill switch returns a handle already `'invalidated'` and emits
+  `runtime-disabled`.
+- The drawn origin stays at the take point plus the offset every frame, under a scroll, a live
+  ancestor scale, sticky positioning and re-layout. The only read added to a frame is one rect per
+  held element, in the clock's read phase before any write; `stats.rects` counts it and
+  `stats.holds` reports live holds.
+- The held node's size keeps its track. Descendants ride one inherited displacement `h(t)` with
+  their own residuals, so their geometry relative to the held element does not depend on how fast
+  the shared displacement decays. The release velocity enters exactly once, through the held
+  node's origin track.
+- `release` and `cancel` are terminal and idempotent. A `move` after a terminal state is a no-op
+  (one development warning per handle). Non-finite offsets and velocities throw synchronously.
+- A release under reduced motion obeys the policy at that moment: `'jump'` lands at A with no
+  motion, `{ maxDuration }` clamps, `'ignore'` plays in full. A policy change while held never
+  interrupts the hold.
+- Removal, `ownerDocument` change, `layoutKey` change, `dispose()`, `finish()`, the kill switch, a
+  failed held read or a `'failed'` abort invalidate the handle; the element follows that event's
+  rule and the held read stops. The authored inline style is restored byte for byte.
+- The gesture layer owns pointer capture, `pointerId`, `touch-action`, velocity estimation,
+  keyboard operation and announcements; it maps `pointercancel` and `lostpointercapture` to
+  `cancel()`. Layout owns every style it writes. The drive is not available on the `'waapi'`
+  engine.
+
+In React, `useLayoutDrive()` returns a dispatcher for the same port; its `take(element)` routes to
+the live `LayoutGroup` (or the implicit root) that owns the registered element, and throws
+`ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref detach/re-attach preserves a
+live hold.
+
 ## Report
 
 `flush()` and `update()` return a promise that never rejects. It resolves once per run with
@@ -166,8 +230,9 @@ only when no track ran.
   under presence alone, and the `focus-in-follower` diagnostic is emitted with action `'none'`.
   Layout does not set `inert` in this case, because that would move focus; the author moves it.
 - Reduced motion only shortens or removes the motion; these rules do not change.
-- The drive seam and its hold state are P4. P3's holds are the crossfade and presence holds
-  described above; a re-render during a track is not a drive hold.
+- The drive seam is the direct-manipulation contract (see [Direct manipulation](#direct-manipulation)).
+  Pointer capture, `pointerId`, `touch-action`, velocity estimation, keyboard operation and
+  announcements belong to the gesture layer; layout owns the styles and the hold state.
 
 ## Runtime and diagnostics
 
@@ -186,10 +251,10 @@ stop()
 
 - `mode` is `'animate'` (default) or `'snap'`.
 - `setMode('snap')` acts synchronously in every explicit and implicit scope: live tracks finish at
-  identity with their styles restored, P3 crossfade/presence holds finish as a completed fade, and
-  pending reports resolve `'disabled'` with reason `'disabled'`. Drive-hold invalidation is the
-  P4 `L-DRIVE-4` path. Later movers snap `'disabled'`. `setMode('animate')` restores normal
-  planning from the next flush. It is distinct from reduced motion.
+  identity with their styles restored, P3 crossfade/presence holds finish as a completed fade,
+  drive holds are invalidated and restored, and pending reports resolve `'disabled'` with reason
+  `'disabled'`. Later movers snap `'disabled'`. `setMode('animate')` restores normal planning from
+  the next flush. It is distinct from reduced motion.
 - `onDiagnostic(listener)` returns an unsubscribe. Payloads are built only when a listener exists;
   the stream works in production. Every listener runs after the engine's state is consistent,
   inside its own `try`. A throwing listener is reported as `callback-error` to the others only
