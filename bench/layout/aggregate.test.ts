@@ -46,3 +46,47 @@ test('missing and non-finite runs fail', () => {
     const nan = aggregateFindings([[finding(Number.NaN)]], [1])
     assert.equal(nan[0]!.pass, false)
 })
+
+test('N2: one finite and four null non-deciding probe runs are NaN/BLOCK', () => {
+    const probe = (value: number): MetricFinding => ({
+        id: 'G9.probe',
+        label: 'probe',
+        gate: 'non-deciding',
+        unit: 'ratio',
+        value,
+        pass: true,
+        measured: Number.isFinite(value),
+        deciding: false,
+    })
+    const metrics = aggregateFindings(
+        [
+            [probe(Number.NaN)],
+            [probe(Number.NaN)],
+            [probe(1)],
+            [probe(Number.NaN)],
+            [probe(Number.NaN)],
+        ],
+        [1, 2, 3, 4, 5]
+    )
+    assert.ok(Number.isNaN(metrics[0]!.median))
+    assert.equal(metrics[0]!.pass, false)
+    assert.equal(metrics[0]!.blocked, true)
+    assert.equal(metrics[0]!.deciding, false)
+    assert.deepEqual(metrics[0]!.perRun, [
+        Number.NaN,
+        Number.NaN,
+        1,
+        Number.NaN,
+        Number.NaN,
+    ])
+})
+
+test('N2: a deciding metric with any non-finite run fails and is NaN', () => {
+    const metrics = aggregateFindings(
+        [[finding(0.1)], [finding(Number.NaN)], [finding(0.1)]],
+        [1, 2, 3]
+    )
+    assert.ok(Number.isNaN(metrics[0]!.median))
+    assert.equal(metrics[0]!.pass, false)
+    assert.equal(metrics[0]!.blocked, true)
+})

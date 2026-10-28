@@ -235,6 +235,13 @@ export function cardPlan(trace: SceneTrace): ScenePlan {
                 declarations: ['inert'],
             },
         ],
+        authorStyleKeys: [
+            'card',
+            'sheet',
+            'sheet-image',
+            'sheet-title',
+            'sheet-content',
+        ],
         pairs: [
             ...cardPairs(openFrame, false, true, 20, 0),
             ...cardPairs(closeFrame, false, false, 0, 20),
@@ -292,6 +299,7 @@ export function segPlan(trace: SceneTrace): ScenePlan {
         commits: segments,
         settleFrames: trace.settleFrames,
         restorationChecks: [],
+        authorStyleKeys: ['pill'],
         pairs: [],
         staticRadii: { pill: 7 },
         expectedDiagnostics: [],

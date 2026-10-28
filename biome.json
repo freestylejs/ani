@@ -11,7 +11,8 @@
             "!**/.*/**",
             "!**/*.d.ts",
             "!**/*.config.*",
-            "!bench/layout/results/**"
+            "!bench/layout/results/**",
+            "!bench/layout/iteration-*/**"
         ]
     }
 }

@@ -661,8 +661,7 @@ class CardRuntime {
                     .slice(diagnosticsBefore)
                     .filter((event) => event.code === 'capture-aged')
                     .flatMap((event) => (event.key ? [event.key] : [])) ?? [],
-            stylesMin: styleRadiusCapture + nAfter,
-            stylesMax:
+            stylesExpected:
                 styleRadiusCapture + nAfter + (isWebKitEngine() ? nAfter : 0),
             styleRadiusCapture,
             styleActiveFlush: nAfter,
@@ -700,6 +699,11 @@ class CardRuntime {
                 image.style.setProperty('translate', '0.1px 0px', 'important')
         }
         if (this.control === 'card-focus-follower') {
+            // The control must prove the metric, not depend on whether the
+            // browser can focus an inert follower: drop the inert attribute
+            // for this control and focus the follower directly.
+            card.root.removeAttribute('inert')
+            card.root.tabIndex = -1
             card.root.focus()
         }
         if (this.builder) this.builder.record('flush', this.frame, 'open')

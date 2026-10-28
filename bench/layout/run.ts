@@ -21,7 +21,12 @@ import {
 } from 'playwright'
 import { aggregateFindings } from './aggregate.ts'
 import { bundlePage, pageHtml } from './bundle.ts'
-import { evaluateCertification } from './certification.ts'
+import { evaluateCertification, evaluateInvocation } from './certification.ts'
+import {
+    costOutcome,
+    costValidity,
+    HELD_PENDING_REASON,
+} from './cost_validity.ts'
 import {
     collectFingerprint,
     evaluateFingerprint,
@@ -497,7 +502,9 @@ function aggregateScene(
     )
     const pass =
         pending === null &&
-        metrics.every((metric) => metric.pass) &&
+        metrics
+            .filter((metric) => metric.deciding)
+            .every((metric) => metric.pass) &&
         shapeMetrics.every((metric) => metric.pass)
     return {
         scene,
@@ -519,7 +526,7 @@ function evaluateCost(
     report: CostRunReport
     problems: string[]
     valid: boolean
-    blockedReasons: string[]
+    blockedReasons: readonly string[]
 } {
     const problems: string[] = [...extraProblems]
     const findings: MetricFinding[] = []
@@ -527,7 +534,12 @@ function evaluateCost(
         median(trace.unscrolled.engine) / median(trace.unscrolled.floor)
     const scrolledRatio =
         median(trace.scrolled.engine) / median(trace.scrolled.floor)
-    const validCost = trace.g <= 0.05 && trace.sustained.commits >= 300
+    const validity = costValidity({
+        g: trace.g,
+        commits: trace.sustained.commits,
+        commitHz: trace.sustained.commitHz,
+    })
+    const validCost = validity.valid
     findings.push({
         id: 'G9-unscrolled',
         label: 'Commit over the required-work floor, unscrolled',
@@ -535,7 +547,7 @@ function evaluateCost(
         unit: 'ratio',
         value: unscrolledRatio,
         pass: unscrolledRatio <= 2,
-        blocked: !validCost,
+        blocked: !validity.timerValid,
         detail: `${median(trace.unscrolled.engine).toFixed(3)} ms / ${median(trace.unscrolled.floor).toFixed(3)} ms`,
     })
     findings.push({
@@ -545,7 +557,7 @@ function evaluateCost(
         unit: 'ratio',
         value: scrolledRatio,
         pass: scrolledRatio <= 2,
-        blocked: !validCost,
+        blocked: !validity.timerValid,
         detail: `${median(trace.scrolled.engine).toFixed(3)} ms / ${median(trace.scrolled.floor).toFixed(3)} ms`,
     })
     for (const [name, run] of [
@@ -598,7 +610,7 @@ function evaluateCost(
         ...steady,
         id: 'G10',
         label: 'Steady frame at 300 nested movers (A-19 150+150)',
-        blocked: !validCost,
+        blocked: !validity.timerValid,
         detail: `${steady.detail ?? ''}; refresh ${trace.steady.refreshHz.toFixed(1)} Hz`,
     })
     findings.push({
@@ -607,8 +619,11 @@ function evaluateCost(
         gate: 'p95 of one performance.now() pair per 60 Hz commit <= 2 ms',
         unit: 'ms',
         value: commitP95,
-        pass: Number.isFinite(commitP95) && commitP95 <= 2,
-        blocked: !validCost,
+        pass:
+            validity.cadenceValid &&
+            Number.isFinite(commitP95) &&
+            commitP95 <= 2,
+        blocked: !validity.timerValid,
         measured: trace.sustained.commitCosts.length > 0,
         detail: `${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms`,
     })
@@ -635,13 +650,17 @@ function evaluateCost(
         exactPass = false
         exactDetail ||= `steady frame reads ${trace.unscrolled.steadyFrameReads}/${trace.scrolled.steadyFrameReads}`
     }
+    if (exactPass) {
+        exactDetail = `every commit ${trace.unscrolled.participants * 2} rect/pair reads, ${requiredStyles} computed reads (${trace.typedOM ? 'incl. Typed OM' : 'Chromium set'}), ${trace.unscrolled.poses} poses; steady frames read zero`
+    }
     findings.push({
         id: 'G13',
         label: 'Exact read counts per commit and zero steady-frame reads',
-        gate: '<= 2N rects and 2N layout-size pairs; steady frames read zero',
+        gate: '<= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero',
         unit: 'excess reads',
         value: exactPass ? 0 : 1,
         pass: exactPass,
+        measured: trace.exactReads.length > 0,
         detail: exactDetail,
     })
     const floorPass = findings
@@ -650,23 +669,14 @@ function evaluateCost(
     return {
         findings,
         valid: validCost,
-        blockedReasons: validCost
-            ? []
-            : [
-                  trace.g > 0.05
-                      ? `timer g ${trace.g.toFixed(4)} ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result`
-                      : `sustained cadence ${trace.sustained.commitHz.toFixed(2)} Hz (${trace.sustained.commits} commits) is not 60 Hz`,
-              ],
+        blockedReasons: validity.reasons,
         problems,
         report: {
             run: 0,
             warmup: false,
             valid: validCost,
-            blockedReasons: validCost
-                ? []
-                : [
-                      `timer g ${trace.g.toFixed(4)} ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result`,
-                  ],
+            heldPending: trace.heldPending,
+            blockedReasons: validity.reasons,
             engineAudit: trace.unscrolled.engineAudit,
             floorAudit: {
                 ...trace.unscrolled.floorAudit,
@@ -718,25 +728,31 @@ function aggregateCost(
     const blockedReasons = [
         ...new Set(measured.flatMap((run) => run.blockedReasons)),
     ]
-    // G12 is pending by authority; a valid cost run is pending even when a
-    // measured metric fails (the metrics still print FAIL).
-    const status = valid ? 'pending' : 'blocked'
+    // A cost report can be pending only while the trace says G12 is pending.
+    const heldPending = measured.some((run) => run.heldPending)
+    const metricsPass = metrics
+        .filter((metric) => metric.deciding)
+        .every((metric) => metric.pass)
+    const outcome = costOutcome({ valid, heldPending, metricsPass })
     return {
         scene: 'S-BULK',
-        status,
-        pending: 'P4 (held shape G12)',
-        // G12 is pending by authority, so even a valid measured run cannot
-        // claim pass (H14-13).
-        pass: false,
+        status: outcome.status,
+        pending: outcome.pending,
+        pass: outcome.pass,
         valid,
         blockedReasons,
         metrics,
         runs,
-        notes: [
-            'G9/G10/G11/G13 are measured; the held shape G12 is P4-only and is not run.',
-            'A valid cost run still cannot pass while G12 is pending (H14-13).',
-            'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
-        ],
+        notes: heldPending
+            ? [
+                  'G9/G10/G11/G13 are measured; the held shape G12 is P4-only and is not run.',
+                  'A valid cost run cannot pass while G12 is pending.',
+                  'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
+              ]
+            : [
+                  'G9/G10/G11/G13 are measured; G12 is no longer pending in this trace.',
+                  'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
+              ],
         measuredRuns: measured.length,
     }
 }
@@ -844,7 +860,7 @@ async function browserControls(
                               finding.worst?.frame === undefined
                                   ? ''
                                   : ` at frame ${finding.worst.frame}`
-                          }${inconclusive ? '; primary S-CARD inert already fails at P3a, so the control cannot isolate a delta' : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
+                          }${inconclusive ? '; focus did not remain in the follower, so the control cannot isolate a delta' : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
                         : 'target metric missing',
                 })
             } catch (error) {
@@ -911,20 +927,27 @@ async function browserControls(
 
 /* ───────────────────────── self-tests ───────────────────────── */
 
+const SELF_TEST_FILES = [
+    'bench/layout/oracle.test.ts',
+    'bench/layout/scoring.test.ts',
+    'bench/layout/stats.test.ts',
+    'bench/layout/frame_sampler.test.ts',
+    'bench/layout/aggregate.test.ts',
+    'bench/layout/certification.test.ts',
+    'bench/layout/cost_validity.test.ts',
+] as const
+
 function selfTests(): {
     pass: boolean
     controls: string[]
+    files: readonly string[]
     detail: string
 } {
-    const result = spawnSync(
-        process.execPath,
-        [
-            '--test',
-            'bench/layout/oracle.test.ts',
-            'bench/layout/scoring.test.ts',
-        ],
-        { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120000 }
-    )
+    const result = spawnSync(process.execPath, ['--test', ...SELF_TEST_FILES], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        timeout: 180000,
+    })
     const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
     const controls = output
         .split('\n')
@@ -938,9 +961,10 @@ function selfTests(): {
     return {
         pass: result.status === 0 && controls.length >= 14,
         controls,
+        files: [...SELF_TEST_FILES],
         detail:
             result.status === 0
-                ? `${controls.length} negative controls failed as required`
+                ? `${controls.length} negative controls failed as required across ${SELF_TEST_FILES.length} test files`
                 : output.split('\n').slice(-20).join(' ').trim() ||
                   `node --test exited ${String(result.status)}`,
     }
@@ -1162,7 +1186,10 @@ async function measureRun(
     return { scenes, cost, costFindings, browserVersion: version }
 }
 
-function pendingEntries(options: Options): { scene: string; reason: string }[] {
+function pendingEntries(
+    options: Options,
+    engines: readonly EngineReport[]
+): { scene: string; reason: string }[] {
     const entries: { scene: string; reason: string }[] = [
         {
             scene: 'S-REORDER',
@@ -1173,10 +1200,13 @@ function pendingEntries(options: Options): { scene: string; reason: string }[] {
             reason: 'P4 (drive seam not in the base tree)',
         },
     ]
-    if (options.scenes.includes('cost')) {
+    const costPending = engines.some(
+        (engine) => engine.cost?.pending !== null && engine.cost !== null
+    )
+    if (options.scenes.includes('cost') && costPending) {
         entries.push({
             scene: 'S-BULK',
-            reason: 'held shape G12 pending P4 (take/move/release not in the base tree)',
+            reason: HELD_PENDING_REASON,
         })
     }
     return entries
@@ -1310,27 +1340,41 @@ async function main(): Promise<number> {
         (engine) => engine.cost === null || engine.cost.status === 'pass'
     )
     const controlsPass =
-        !options.check || controls.every((control) => control.ok)
+        options.check &&
+        controls.length > 0 &&
+        controls.every((control) => control.ok)
     const selfTestPass = tests.pass
-    const pending = pendingEntries(options)
+    const pending = pendingEntries(options, engineReports)
+    const certificationEngines = engineReports.map((engine) => ({
+        engine: engine.engine,
+        launchError: engine.launchError,
+        scenes: engine.scenes.map((scene) => ({
+            scene: scene.scene,
+            status: scene.status,
+        })),
+        cost: engine.cost
+            ? {
+                  status: engine.cost.status,
+                  valid: engine.cost.valid,
+                  failedMetrics: engine.cost.metrics
+                      .filter(
+                          (metric) =>
+                              metric.deciding && !metric.blocked && !metric.pass
+                      )
+                      .map(
+                          (metric) =>
+                              `${metric.id} ${Number.isFinite(metric.median) ? metric.median.toFixed(3) : 'n/a'}`
+                      ),
+              }
+            : null,
+    }))
     const certification = evaluateCertification(
         {
-            engines: engineReports.map((engine) => ({
-                engine: engine.engine,
-                launchError: engine.launchError,
-                scenes: engine.scenes.map((scene) => ({
-                    scene: scene.scene,
-                    status: scene.status,
-                })),
-                cost: engine.cost
-                    ? {
-                          status: engine.cost.status,
-                          valid: engine.cost.valid,
-                      }
-                    : null,
-            })),
+            engines: certificationEngines,
             pending,
             advisory,
+            controlsPass,
+            selfTestPass,
         },
         {
             engines: options.engines,
@@ -1338,14 +1382,17 @@ async function main(): Promise<number> {
             runs: options.runs,
         }
     )
+    const invocation = evaluateInvocation({
+        engines: certificationEngines.filter((engine) =>
+            required.some((entry) => entry.engine === engine.engine)
+        ),
+    })
     const pass =
+        invocation.pass &&
         required.length > 0 &&
         launchErrors.length === 0 &&
         scenePass &&
-        costPass &&
-        controlsPass &&
-        selfTestPass &&
-        pending.length === 0
+        costPass
     const report: BenchReport = {
         schema: 'ani-layout-bench/v1',
         generatedAt: new Date().toISOString(),

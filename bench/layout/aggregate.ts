@@ -29,6 +29,8 @@ export function aggregateFindings(
         let gate = ''
         let unit = ''
         let missing = false
+        let nonFinite = false
+        let deciding = false
         findings.forEach((run, index) => {
             const finding = run.find((candidate) => candidate.id === id)
             if (!finding) {
@@ -37,13 +39,15 @@ export function aggregateFindings(
                 passPerRun.push(false)
                 return
             }
-            const deciding = finding.deciding !== false
+            const runDeciding = finding.deciding !== false
+            if (runDeciding) deciding = true
             label = finding.label
             gate = finding.gate
             unit = finding.unit
             perRun.push(finding.value)
-            passPerRun.push(deciding ? finding.pass : true)
-            if (deciding && !Number.isFinite(finding.value)) missing = true
+            passPerRun.push(runDeciding ? finding.pass : true)
+            if (!Number.isFinite(finding.value)) nonFinite = true
+            if (runDeciding && !Number.isFinite(finding.value)) missing = true
             if (finding.value > worstValue) {
                 worstValue = finding.value
                 worst = {
@@ -58,18 +62,24 @@ export function aggregateFindings(
             label,
             gate,
             unit,
-            median: finite.length === 0 ? Number.NaN : median(finite),
-            blocked: findings
-                .flatMap(
-                    (run) => run.find((candidate) => candidate.id === id) ?? []
-                )
-                .some((finding) => finding.blocked === true),
+            median:
+                nonFinite || finite.length === 0 ? Number.NaN : median(finite),
+            blocked:
+                nonFinite ||
+                findings
+                    .flatMap(
+                        (run) =>
+                            run.find((candidate) => candidate.id === id) ?? []
+                    )
+                    .some((finding) => finding.blocked === true),
+            deciding,
             // The authority's five-run gate is the median per-run statistic.
             // Using the per-run gate outcomes (not a recomputed threshold)
             // means at least three of five measured runs must pass; a missing
             // or non-finite run still fails the aggregate.
             pass:
                 !missing &&
+                !nonFinite &&
                 perRun.length === runNumbers.length &&
                 passPerRun.length > 0 &&
                 passPerRun.filter(Boolean).length >=
