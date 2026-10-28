@@ -131,6 +131,11 @@ export interface PlanNode {
      */
     readonly measured: boolean
     /**
+     * Registered after the fresh capture (§4.4, OPS-10). It may still take a
+     * `layoutId` handoff from the departing lead; without one it has no B.
+     */
+    readonly lateRegistered: boolean
+    /**
      * It would fly from a box measured inside an actively scrolling container
      * that it is outside of now (§5.8): a handoff out of that container, or a
      * reparent out of it. It does not fly: it appears at A (a presence enter
@@ -454,11 +459,13 @@ export function plan(input: PlanInput): Plan {
     const fadeLead = new Set<number>()
     const handoffFrom = new Map<number, number>()
     const newFollower = new Map<number, number>()
+    /** A late-registered lead becomes measured by the handoff it takes. */
+    const measuredForPlan = nodes.map((node) => node.measured)
     for (const lead of leadList) {
         const node = nodes[lead.index]!
         if (
             lead.handoff === null ||
-            !node.measured ||
+            (!node.measured && !node.lateRegistered) ||
             // out of an actively scrolling container: nothing is handed over
             node.scrollActive ||
             (lead.follower >= 0 && !nodes[lead.follower]!.measured)
@@ -466,6 +473,7 @@ export function plan(input: PlanInput): Plan {
             continue
         }
         before[lead.index] = lead.handoff
+        measuredForPlan[lead.index] = true
         carried[lead.index] = lead.handoffVelocity
         handoffFrom.set(lead.index, lead.follower)
         if (lead.follower < 0) continue
@@ -559,7 +567,7 @@ export function plan(input: PlanInput): Plan {
             if (b === null) return own
         } else if (
             // without a valid measurement nothing starts: the node appears at A
-            node.measured &&
+            measuredForPlan[i] &&
             (node.moving ||
                 (b !== null && movedFrom(b) >= threshold) ||
                 parentMoves ||
