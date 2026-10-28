@@ -209,6 +209,11 @@ export interface Plan {
     readonly degraded: readonly Degraded[]
     /** The lead of every `layoutId` that has one. */
     readonly leads: ReadonlyMap<string, number>
+    /**
+     * Accepted handoffs: node index -> departing live index, or -1 for a
+     * retained box. A late lead here has a valid B even when it needs no track.
+     */
+    readonly handoffs: ReadonlyMap<number, number>
     readonly warnings: readonly PlanWarning[]
 }
 
@@ -659,8 +664,17 @@ export function plan(input: PlanInput): Plan {
             // the whole flush snaps 'capped': nothing degrades on its own
             degraded: [],
             leads,
+            handoffs: handoffFrom,
             warnings,
         }
     }
-    return { status: 'run', actions, snapped, degraded, leads, warnings }
+    return {
+        status: 'run',
+        actions,
+        snapped,
+        degraded,
+        leads,
+        handoffs: handoffFrom,
+        warnings,
+    }
 }
