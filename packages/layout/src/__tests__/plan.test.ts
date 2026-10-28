@@ -483,6 +483,7 @@ describe('plan: layoutId', () => {
                     node({
                         layoutId: 'card',
                         exiting: true,
+                        focusInside: true,
                         a: cardBox,
                         before: cardBox,
                         order: 1,
@@ -501,6 +502,8 @@ describe('plan: layoutId', () => {
         expect(result.warnings).toEqual([
             { kind: 'presence-opacity', index: 0 },
         ])
+        // presence opacity owns the fade, so focus is not the blocker
+        expect(result.degraded).toEqual([])
         const lead = result.actions[1]!
         expect(lead.kind === 'track' && !lead.fadeLead).toBe(true)
     })
