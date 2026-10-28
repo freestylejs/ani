@@ -3937,6 +3937,8 @@ export async function OPTIONS(): Promise<string> {
         ['threshold Infinity', { threshold: Number.POSITIVE_INFINITY }],
         ['maxNodes fraction', { maxNodes: 1.5 }],
         ['maxNodes < 0', { maxNodes: -1 }],
+        ['maxParticipants fraction', { maxParticipants: 1.5 }],
+        ['maxParticipants < 0', { maxParticipants: -1 }],
         ['retain < 0', { retain: -0.1 }],
         ['retain NaN', { retain: Number.NaN }],
         ['onSnap', { onSnap: 'log' }],
@@ -3953,6 +3955,7 @@ export async function OPTIONS(): Promise<string> {
     }
     // the boundaries are valid
     createLayoutGroup({ threshold: 0, maxNodes: 0, retain: 0 }).dispose()
+    createLayoutGroup({ maxParticipants: 0 }).dispose()
     createLayoutGroup({ retain: Number.POSITIVE_INFINITY }).dispose()
 
     // re-adding replaces the options of the same participant; either remove

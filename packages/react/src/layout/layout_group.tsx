@@ -56,6 +56,7 @@ const SCOPE_OPTIONS = [
     'reducedMotion',
     'threshold',
     'maxNodes',
+    'maxParticipants',
     'retain',
     'onSnap',
     'engine',
@@ -86,6 +87,7 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
         props.reducedMotion,
         props.threshold,
         props.maxNodes,
+        props.maxParticipants,
         props.retain,
         props.engine,
     ]
@@ -97,6 +99,9 @@ export function LayoutGroup(props: LayoutGroupProps): ReactNode {
         }),
         ...(props.threshold !== undefined && { threshold: props.threshold }),
         ...(props.maxNodes !== undefined && { maxNodes: props.maxNodes }),
+        ...(props.maxParticipants !== undefined && {
+            maxParticipants: props.maxParticipants,
+        }),
         ...(props.retain !== undefined && { retain: props.retain }),
         ...(props.engine !== undefined && { engine: props.engine }),
         onSnap: (element, reason) => onSnap.current?.(element, reason),

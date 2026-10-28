@@ -901,7 +901,13 @@ describe('plan: spring refusals (§5.3, §9.4)', () => {
         )
         expect(result.actions[0]!.kind).toBe('none')
         expect(result.snapped).toEqual([{ index: 0, reason: 'unsupported' }])
-        expect(result.warnings).toEqual([{ kind: 'spring-timeout', index: 0 }])
+        expect(result.warnings).toEqual([
+            {
+                kind: 'spring-timeout',
+                index: 0,
+                settleMs: expect.any(Number),
+            },
+        ])
     })
 
     it('reduced motion with no fitting factor jumps (reduced)', () => {

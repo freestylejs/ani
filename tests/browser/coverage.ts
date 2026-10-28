@@ -19,6 +19,7 @@ const INLINE_MAP =
 const ENGINE_FILES = [
     'packages/layout/src/scope.ts',
     'packages/layout/src/dom.ts',
+    'packages/layout/src/runtime.ts',
     'packages/layout/src/realize/raf.ts',
     'packages/layout/src/realize/waapi.ts',
 ]

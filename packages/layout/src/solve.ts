@@ -199,6 +199,15 @@ const REDUCED_GRID = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1] as const
 export type TrackRefusal = 'reduced' | 'spring-timeout'
 
 /**
+ * An optional report of a refused spring's settle time, for the
+ * `spring-timeout` diagnostic's `springSettleMs` metric: seconds, or `null`
+ * when it was not computed.
+ */
+export interface TrackRefusalDetail {
+    settle: number | null
+}
+
+/**
  * A track from visual box `b` to visual box `a`, interpolating the point at
  * fractions `(fx, fy)` of the box (its transform origin) and the size. A node
  * at rest (`velocity === null`) starts at rest; a moving node carries its
@@ -213,7 +222,8 @@ export function createTrack(
     fy: number,
     mode: LayoutMode,
     motion: Motion,
-    anchor: AnchorPath | null
+    anchor: AnchorPath | null,
+    refusal?: TrackRefusalDetail
 ): Track | TrackRefusal {
     const from = channelsOf(b, fx, fy)
     const to = channelsOf(a, fx, fy)
@@ -321,7 +331,10 @@ export function createTrack(
             bounce: motion.bounce,
         })
         const settle = settleOf(s, true)
-        if (!(settle <= SPRING_SETTLE_CAP)) return 'spring-timeout'
+        if (!(settle <= SPRING_SETTLE_CAP)) {
+            if (refusal) refusal.settle = settle
+            return 'spring-timeout'
+        }
         return build(motion.duration, motion.delay, true, settle, s)
     }
     // reduced motion: no overshoot, then the largest grid factor that fits,
@@ -333,7 +346,10 @@ export function createTrack(
             const s = physics.spring({ duration, bounce })
             const settle = settleOf(s, carry)
             if (motion.delay * f + settle <= max) {
-                if (!(settle <= SPRING_SETTLE_CAP)) return 'spring-timeout'
+                if (!(settle <= SPRING_SETTLE_CAP)) {
+                    if (refusal) refusal.settle = settle
+                    return 'spring-timeout'
+                }
                 return build(duration, motion.delay * f, carry, settle, s)
             }
         }
