@@ -542,12 +542,6 @@ export function saveInert(element: Element): SavedInert {
     return { present: value !== null, value }
 }
 
-/** Whether the element's `inert` attribute is byte-identical to `saved` now. */
-export function inertMatches(element: Element, saved: SavedInert): boolean {
-    const value = element.getAttribute('inert')
-    return saved.present ? value === saved.value : value === null
-}
-
 export function save(
     element: HTMLElement,
     properties: readonly string[]
