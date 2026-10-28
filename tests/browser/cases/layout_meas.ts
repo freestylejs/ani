@@ -15,7 +15,9 @@ import type { ManualClock } from '@freestylejs/ani-core/testing'
 import {
     createLayoutGroup,
     createPresence,
+    type LayoutDiagnostic,
     type LayoutReport,
+    layoutRuntime,
     type SnapReason,
 } from '@freestylejs/ani-layout'
 import {
@@ -2786,6 +2788,10 @@ async function meas11(mode: 'capture-less' | 'aged'): Promise<string> {
         const delta = shift * q0
 
         const quiet = silenceWarnings()
+        const diagnostics: LayoutDiagnostic[] = []
+        const stopDiagnostics = layoutRuntime.onDiagnostic((event) =>
+            diagnostics.push(event)
+        )
         let newcomer: HTMLElement
         let flushed: Holder
         try {
@@ -2803,6 +2809,7 @@ async function meas11(mode: 'capture-less' | 'aged'): Promise<string> {
             flushed = report(h.group.flush())
         } finally {
             quiet.restore()
+            stopDiagnostics()
         }
         dAbove = 40
         dBelow = 0.4
@@ -2826,6 +2833,23 @@ async function meas11(mode: 'capture-less' | 'aged'): Promise<string> {
         ].map((element) => ({ element, reason: 'stale' as const }))
         expectReport(names, r, 'stale', stale, `${row} §4.4 flush`)
         expectSnapCalls(names, snaps, stale, `${row} §4.4 flush`)
+        // §4.4, §7.2: the diagnostic count agrees exactly with the reported
+        // nodes; one event per reported node, with the element and reason
+        const code = mode === 'aged' ? 'capture-aged' : 'capture-less-flush'
+        const events = diagnostics.filter(
+            (event) => event.code === code && event.reason === 'stale'
+        )
+        expectEqual(events.length, stale.length, `${row} §4.4 diagnostic count`)
+        expectEqual(
+            events.map((event) => nameOf(names, event.element!)).sort(),
+            stale.map((snap) => nameOf(names, snap.element)).sort(),
+            `${row} §4.4 diagnostic elements`
+        )
+        expectEqual(
+            events.every((event) => event.action === 'snap'),
+            true,
+            `${row} §4.4 diagnostic action`
+        )
         for (const element of [undrivenMoved, undrivenUnmoved, newcomer]) {
             expectEqual(
                 `${element.style.translate}|${element.style.scale}`,
