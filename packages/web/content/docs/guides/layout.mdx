@@ -557,6 +557,9 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
     `reduced-no-fit` diagnostic and lands at A. Under `'jump'`, a flush while held or landing
     settles every descendant residual at its own A. A release with no layout change springs back to
     the slot.
+-   **Ancestor motion.** A trackless participant child that is counter-projected to its own A under
+    an animating participant ancestor still reports the ancestor's drawn origin velocity at `take`
+    (P4-C10). A reflowing child whose A moves carries that layout delta through its own track.
 -   **Admission and limits.** An exiting crossfade follower is rejected with a `drive-rejected`
     diagnostic. An element belongs to at most one live group; adding it to a second throws. The
     ancestor/descendant hold exclusion is scope-local: a cross-scope nested hold is allowed, and a
@@ -572,7 +575,9 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
 throws `ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref detach and re-attach
 preserves a live hold, just as it preserves registration. The gesture layer maps `pointercancel`
 and `lostpointercapture` to `cancel()`, so a cancelled gesture never becomes a release; a
-box-preserving 180° rotation/zoom shares the documented support residual risk above.
+box-preserving 180° rotation/zoom shares the documented support residual risk above. `dispose()`,
+abort and the kill switch remove the scope's scroll listeners and clock subscription; pointer
+capture and the pointer listeners belong to the gesture layer.
 
 ### Reduced motion
 
