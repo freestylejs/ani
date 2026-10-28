@@ -11,6 +11,7 @@ import {
     channelsOf,
     createTrack,
     type Track,
+    type TrackRefusalDetail,
 } from './solve'
 
 export type SnapReason =
@@ -19,6 +20,53 @@ export type SnapReason =
     | 'unsupported'
     | 'stale'
     | 'reduced'
+    | 'disabled'
+    | 'failed'
+
+/** A run's lifecycle status, in the precedence order of §9.3. */
+export type LayoutStatus =
+    | 'failed'
+    | 'disposed'
+    | 'disabled'
+    | 'capped'
+    | 'interrupted'
+    | 'ended'
+    | 'reduced'
+    | 'stale'
+    | 'no-change'
+
+/** §9.3, earliest first. */
+const STATUS_PRECEDENCE: readonly LayoutStatus[] = [
+    'failed',
+    'disposed',
+    'disabled',
+    'capped',
+    'interrupted',
+    'ended',
+    'reduced',
+    'stale',
+    'no-change',
+]
+
+/**
+ * The first status that applies (§9.3): `'failed'`, `'disposed'`,
+ * `'disabled'`, `'capped'`, `'interrupted'`, `'ended'`, `'reduced'`,
+ * `'stale'`, `'no-change'`. `null` when none applies.
+ */
+export function resolveLayoutStatus(
+    statuses: Iterable<LayoutStatus>
+): LayoutStatus | null {
+    let first: LayoutStatus | null = null
+    let rank = Number.POSITIVE_INFINITY
+    for (const status of statuses) {
+        const at = STATUS_PRECEDENCE.indexOf(status)
+        if (at >= 0 && at < rank) {
+            rank = at
+            first = status
+        }
+    }
+    return first
+}
 
 export interface PlanNode {
     /** Index of the nearest participant ancestor, or -1. Parents come first. */
@@ -130,7 +178,12 @@ export type Action =
 export type PlanWarning =
     | { readonly kind: 'duplicate-id'; readonly id: string }
     | { readonly kind: 'presence-opacity'; readonly index: number }
-    | { readonly kind: 'spring-timeout'; readonly index: number }
+    | {
+          readonly kind: 'spring-timeout'
+          readonly index: number
+          /** The refused spring's settle, ms; `null` when it could not be computed. */
+          readonly settleMs: number | null
+      }
 
 /**
  * A defined degradation that is not a snap (`report.snapped` does not list
@@ -516,6 +569,7 @@ export function plan(input: PlanInput): Plan {
             const velocity = carried[i]!
             // a moving node starts at once so its velocity is never dropped
             const motion = velocity ? { ...node.motion, delay: 0 } : node.motion
+            const refusal: TrackRefusalDetail = { settle: null }
             const path = parentNode
                 ? anchorPath(
                       node.anchor!,
@@ -535,7 +589,8 @@ export function plan(input: PlanInput): Plan {
                 node.fy,
                 node.mode,
                 motion,
-                path
+                path,
+                refusal
             )
             if (typeof track === 'string') {
                 // reduced motion found no fit, or the spring would run too long
@@ -544,7 +599,14 @@ export function plan(input: PlanInput): Plan {
                     reason: track === 'reduced' ? 'reduced' : 'unsupported',
                 })
                 if (track === 'spring-timeout')
-                    warnings.push({ kind: 'spring-timeout', index: i })
+                    warnings.push({
+                        kind: 'spring-timeout',
+                        index: i,
+                        settleMs:
+                            refusal.settle === null
+                                ? null
+                                : refusal.settle * 1000,
+                    })
                 return underMotion ? STATIC : NONE
             }
             own = {

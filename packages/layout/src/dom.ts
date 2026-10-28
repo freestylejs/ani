@@ -2,6 +2,8 @@
  * Every DOM read of the layout engine, every owned-style write and the
  * byte-exact restore (§4, §6). No decisions: callers interpret the values.
  */
+
+import { layoutFault } from './fault'
 import type { Box } from './geometry'
 
 /** A CSS length as `px + pct · basis`. */
@@ -364,6 +366,7 @@ export function measure(
     style: CSSStyleDeclaration = getComputedStyle(element),
     transform: Transform | string = readTransform(style)
 ): Measured {
+    layoutFault('measure')
     const origin = style.transformOrigin.split(' ').map(px)
     const display = style.display
     let unsupported: string | null = null
