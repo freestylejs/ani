@@ -1,0 +1,10 @@
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.2 /Users/june/Documents/project/freestylejs/ani-h13/packages
+
+
+ Test Files  153 passed (153)
+      Tests  1892 passed (1892)
+   Start at  05:59:28
+   Duration  10.04s (transform 7.08s, setup 0ms, import 20.30s, tests 23.41s, environment 25.00s)
+
