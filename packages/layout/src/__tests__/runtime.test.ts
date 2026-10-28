@@ -4,7 +4,9 @@
 import { isAniError, timing } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../core/src/testing/index'
+import { injectLayoutFault } from '../fault'
 import {
+    diagnosticPayloadsBuilt,
     hasDiagnosticListeners,
     type LayoutDiagnosticListener,
     layoutRuntime,
@@ -243,6 +245,215 @@ describe('§7.2 layoutRuntime', () => {
         group.dispose()
     })
 
+    it('OPS-14: kill-switch and document-mismatch diagnostics carry the current connected count', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(0)
+        const b = element(80)
+        group.add(a)
+        group.add(b)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(a, box(120))
+        const run = group.flush()
+        mc.frame(16)
+        b.remove()
+        const { events, stop } = collect()
+        layoutRuntime.setMode('snap')
+        await run
+        const disabled = events.filter((e) => e.code === 'runtime-disabled')
+        expect(disabled).toHaveLength(1)
+        expect(disabled[0]!.metrics.participants).toBe(1)
+        layoutRuntime.setMode('animate')
+        stop()
+        group.dispose()
+
+        const mc2 = createManualClock()
+        const group2 = createLayoutGroup({ clock: mc2.clock, motion })
+        const c = element(0)
+        const d = element(80)
+        group2.add(c)
+        group2.add(d)
+        group2.capture()
+        await group2.flush()
+        const { events: events2, stop: stop2 } = collect()
+        const other = document.implementation.createHTMLDocument('other')
+        other.body.append(d)
+        group2.capture()
+        const mismatch = events2.filter((e) => e.code === 'document-mismatch')
+        expect(mismatch).toHaveLength(1)
+        expect(mismatch[0]!.metrics.participants).toBe(1)
+        stop2()
+        group2.dispose()
+    })
+
+    it('OPS-18: onSnap may re-enter flush(), dispose() and setMode() without corrupting the engine', async () => {
+        // flush()
+        {
+            let calls = 0
+            const mc = createManualClock()
+            const group = createLayoutGroup({
+                clock: mc.clock,
+                motion,
+                onSnap: () => {
+                    calls += 1
+                    if (calls === 1) void group.flush()
+                },
+            })
+            const a = element(0)
+            a.style.rotate = '10deg'
+            group.add(a)
+            group.capture()
+            model.place(a, box(80))
+            await expect(group.flush()).resolves.toMatchObject({
+                status: 'no-change',
+            })
+            expect(calls).toBe(1)
+            expect(group.stats.tracks).toBe(0)
+            group.dispose()
+        }
+        // dispose()
+        {
+            let calls = 0
+            const mc = createManualClock()
+            const group = createLayoutGroup({
+                clock: mc.clock,
+                motion,
+                onSnap: () => {
+                    calls += 1
+                    if (calls === 1) group.dispose()
+                },
+            })
+            const a = element(0)
+            a.style.rotate = '10deg'
+            group.add(a)
+            group.capture()
+            model.place(a, box(80))
+            await expect(group.flush()).resolves.toMatchObject({
+                status: 'no-change',
+            })
+            expect(calls).toBe(1)
+            expect(mc.clock.size).toBe(0)
+            await expect(group.flush()).resolves.toEqual({
+                status: 'disposed',
+                snapped: [],
+            })
+        }
+        // setMode()
+        {
+            let calls = 0
+            const mc = createManualClock()
+            const group = createLayoutGroup({
+                clock: mc.clock,
+                motion,
+                onSnap: () => {
+                    calls += 1
+                    if (calls === 1) layoutRuntime.setMode('snap')
+                },
+            })
+            const a = element(0)
+            a.style.rotate = '10deg'
+            group.add(a)
+            group.capture()
+            model.place(a, box(80))
+            await group.flush()
+            expect(calls).toBe(1)
+            expect(layoutRuntime.mode).toBe('snap')
+            expect(mc.clock.size).toBe(0)
+            layoutRuntime.setMode('animate')
+            group.dispose()
+        }
+    })
+
+    it('OPS-16: no diagnostic payload is built while no listener exists', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(0)
+        a.style.rotate = '10deg'
+        group.add(a)
+        group.capture()
+        model.place(a, box(80))
+        const before = diagnosticPayloadsBuilt()
+        await group.flush()
+        expect(diagnosticPayloadsBuilt()).toBe(before)
+        const { stop } = collect()
+        model.place(a, box(120))
+        await group.flush()
+        expect(diagnosticPayloadsBuilt()).toBeGreaterThan(before)
+        stop()
+        group.dispose()
+    })
+
+    it('OPS-20: subscribing the same listener twice is reference-counted and delivers one event', async () => {
+        let count = 0
+        const listener = (): void => {
+            count += 1
+        }
+        const once = layoutRuntime.onDiagnostic(listener)
+        const twice = layoutRuntime.onDiagnostic(listener)
+        stops.push(once, twice)
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(0)
+        a.style.rotate = '10deg'
+        group.add(a)
+        group.capture()
+        model.place(a, box(80))
+        await group.flush()
+        expect(count).toBe(1)
+        once()
+        model.place(a, box(120))
+        await group.flush()
+        expect(count).toBe(2)
+        twice()
+        model.place(a, box(160))
+        await group.flush()
+        expect(count).toBe(2)
+        group.dispose()
+    })
+
+    it('OPS-18: onSnap may re-enter during an abort without corrupting cleanup', async () => {
+        for (const action of ['flush', 'dispose', 'setMode'] as const) {
+            const mc = createManualClock()
+            let calls = 0
+            const group = createLayoutGroup({
+                clock: mc.clock,
+                motion,
+                onSnap: () => {
+                    calls += 1
+                    if (calls !== 1) return
+                    if (action === 'flush') void group.flush()
+                    else if (action === 'dispose') group.dispose()
+                    else layoutRuntime.setMode('snap')
+                },
+            })
+            const a = element(0)
+            const authored = a.style.cssText
+            group.add(a)
+            group.capture()
+            model.place(a, box(120))
+            const run = group.flush()
+            mc.frame(16)
+            injectLayoutFault('write')
+            mc.frame(16)
+            await expect(run).resolves.toMatchObject({ status: 'failed' })
+            expect(a.style.cssText).toBe(authored)
+            expect(mc.clock.size).toBe(0)
+            expect(calls).toBe(1)
+            if (action === 'dispose') {
+                await expect(group.flush()).resolves.toEqual({
+                    status: 'disposed',
+                    snapped: [],
+                })
+            } else {
+                expect(group.stats.tracks).toBe(0)
+                group.dispose()
+            }
+            layoutRuntime.setMode('animate')
+        }
+    })
+
     it('a listener that throws on callback-error is only rethrown asynchronously, never recursively', async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({ clock: mc.clock, motion })
@@ -300,7 +511,11 @@ describe('§7.2 layoutRuntime', () => {
         expect(calls).toBe(2)
         expect(a.style.translate).toBe('')
         expect(b.style.translate).toBe('')
-        expect(events.map((e) => e.code)).toContain('callback-error')
+        expect(events.map((e) => e.code)).toEqual([
+            'unsupported-geometry',
+            'unsupported-geometry',
+            'callback-error',
+        ])
         expect(events.find((e) => e.code === 'callback-error')).toMatchObject({
             element: a,
             error,
