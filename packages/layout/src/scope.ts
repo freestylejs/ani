@@ -2020,7 +2020,7 @@ export function createLayoutGroup(
     }
 
     function interrupt(run: Run | null): void {
-        if (!run || run.done || run.resolved) return
+        if (!run || run.resolved) return
         for (const p of run.nodes) if (p.drive?.run === run) p.drive.run = null
         run.nodes.clear()
         resolveRun(run, 'interrupted', run.snapped)
@@ -4119,9 +4119,7 @@ export function createLayoutGroup(
             }
         } else {
             // the cap displaces running tracks: their reports are interrupted
-            for (const p of registry.values()) {
-                if (p.drive?.run) interrupt(p.drive.run)
-            }
+            for (const run of [...liveRuns]) interrupt(run)
         }
         for (const p of registry.values()) {
             const d = p.drive
@@ -4173,13 +4171,9 @@ export function createLayoutGroup(
         const nested = deferDepth > 0
         if (!nested) deferDepth += 1
         try {
-            // every run reports the cause before its nodes settle, but the
-            // report is not observable until the writes below succeed
-            const affectedRuns = new Set<Run>()
-            for (const node of frame) {
-                if (node.p.drive?.run) affectedRuns.add(node.p.drive.run)
-            }
-            for (const run of affectedRuns) {
+            // every unresolved run reports the cause before its nodes settle,
+            // but the report is not observable until the writes below succeed
+            for (const run of [...liveRuns]) {
                 if (run.resolved) continue
                 const merged = new Map(
                     run.snapped.map((entry) => [entry.element, entry.reason])
