@@ -154,9 +154,13 @@ only when no track ran.
 
 - Layout never changes DOM order, never moves focus, and never owns `tabindex`, roles or ARIA. A
   keyed reorder and a re-render while an element moves keep the same element and `document.activeElement`.
-- An exiting crossfade follower is `inert` from the first frame, so the pair never exposes a
-  duplicate interactive or accessible target. The authored `inert` value (present or absent, and
-  its value) is restored byte for byte on reversal, unmount, abort and dispose.
+- An exiting crossfade follower is `inert` from the first frame, so the pair does not expose a
+  duplicate interactive or accessible target while it crossfades. If focus is inside a live
+  follower (for example after its `inert` was removed), the pair is ended at once: both opacities
+  return, the presence hold releases, the follower exits under presence alone, and
+  `focus-in-follower` is emitted; a held follower is settled the same way. The authored `inert`
+  value (present or absent, and its value) is restored byte for byte on reversal, unmount, abort
+  and dispose.
 - If focus is inside the exiting follower (in the flat tree, through open and closed shadow
   roots), the pair does not crossfade: the lead appears at its final layout, the follower exits
   under presence alone, and the `focus-in-follower` diagnostic is emitted with action `'none'`.
