@@ -1389,28 +1389,47 @@ every scene passes; the iteration log is evidence.
 
 Cost gates, measured by the harness:
 
-- Commit (capture + flush) ≤ 4 ms at 1,000 participants, unscrolled and scrolled.
+- Commit (capture + flush) ≤ 2× the measured floor of the work this authority requires, at 1,000
+  participants, unscrolled and scrolled by 1.5 viewports. The floor is measured on the same
+  certification instrument and the same DOM, in the same run, by a minimal loop that performs
+  exactly the reads of §4.1 item 1 and the writes of §4.3 steps 2 and 4, with no planner, solver,
+  track, report or diagnostics work. The harness audits the floor's read and write counts against
+  the authority before it may use the floor; an over-counting floor is a harness failure, not a
+  slower engine. The legacy absolute `layout:COST` 4 ms read row is retired (owner decision D8,
+  2026-10-28); no P1, P2 or P6 gate depends on it.
 - Steady frame p95 ≤ 2 ms at 300 nested movers.
 - Sustained commits: 60 Hz commits with 300 moving participants hold the steady-frame gate.
 - Held frame: ≤ 0.1 ms per held element.
 - Read counts are exact: a commit reads ≤ 2N rects and 2N layout-size pairs, plus the computed
   values of §4.1 and §4.3; steady frames read zero; `stats` counts every read.
 
-**Reference environment.** The cost gates are decided on one pinned environment, and every bench
-report records its fingerprint:
+**Certification instrument (D9, 2026-10-28).** The cost gates are decided on one pinned
+environment, and every bench report records its fingerprint. The original P0/P1 instrument
+(Ubuntu 24.04.5, Xeon @ 2.80 GHz, 4 vCPU) is no longer reachable from the execution environment;
+its cost reports are historical and advisory. The P5 instrument is:
 
 | Item | Pinned value |
 |---|---|
-| Image | Ubuntu 24.04.5 LTS, x86-64, kernel 6.18.44 (the project's Claude Code cloud container image) |
-| CPU and memory | 4 vCPU, `model name` "Intel(R) Xeon(R) Processor @ 2.80GHz", 16 GB, no CPU quota below 4 |
-| Runtime | Node 22.22.0, Playwright 1.55.0 |
-| Browsers | `chromium_headless_shell-1187` (Chromium), `webkit-2203` (WebKit), headless |
+| Host | MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores: 6 performance, 4 efficiency), 32 GB |
+| OS | macOS 27.0.1 (Darwin 27.0.0), arm64 |
+| Runtime | Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0 |
+| Browsers | `chromium_headless_shell-1187` (Chromium), `webkit-2203` (WebKit), `firefox-1490` (advisory), headless |
 | Load | 1-minute load average below 1.0 at start; no other browser or build running |
 
-The fingerprint is the `/etc/os-release` `PRETTY_NAME`, `uname -r`, the CPU `model name` and count
-from `/proc/cpuinfo`, `MemTotal`, `node --version`, the Playwright version and the browser build
-directories. A report whose fingerprint differs anywhere is **advisory** for the cost gates (its
-frame-scoring gates still decide); only a matching report decides a cost gate.
+The fingerprint is `sw_vers -productVersion`, `uname -r`, `sysctl -n machdep.cpu.brand_string`,
+`hw.ncpu`, `hw.memsize`, `node --version`, `pnpm --version`, the Playwright version and the browser
+build directories. A report whose fingerprint differs anywhere is **advisory** for the cost gates
+(its frame-scoring gates still decide); only a matching report decides a cost gate.
+
+**Required-work floor.** For each measured run, the harness builds the same participant DOM twice:
+the engine fixture and the floor fixture. The floor fixture performs exactly the reads and writes
+the authority requires, in the same order and count, with plain DOM calls and no engine state. It is
+measured immediately before or after the engine fixture in the same process, with the same warm-up,
+discard and sample count. The run's statistic is
+`median(engine commit) / median(floor commit)`. The gate's value is the median of the 5 per-run
+ratios; it passes only when that value is ≤ 2 in Chromium and WebKit. The harness fails if the
+floor's audited read/write counts differ from §4.1/§4.3, or if the engine and floor fixtures differ
+in participant count or written properties.
 
 **Measurement.** The bench page is served cross-origin isolated (COOP `same-origin`, COEP
 `require-corp`) and measures script cost with `performance.now()` around the engine's own work: a
@@ -1421,14 +1440,15 @@ mean of 20 consecutive frames timed as one interval. Percentiles are nearest-ran
 
 | Gate | Per-run statistic |
 |---|---|
-| Commit ≤ 4 ms (1,000 participants; unscrolled, and scrolled by 1.5 viewports) | median of 30 commits, after 5 commits discarded |
+| Commit ≤ 2× floor (1,000 participants; unscrolled, and scrolled by 1.5 viewports) | median of 30 commits after 5 discarded, for the engine and the floor separately; the run's ratio; median of the 5 per-run ratios |
 | Steady frame p95 ≤ 2 ms (300 nested movers) | p95 of 600 frame samples |
 | Sustained commits (60 Hz commits, 300 moving participants, 5 s) | p95 of every frame sample in the window ≤ 2 ms |
 | Held frame ≤ 0.1 ms per held element (1 and 10 held) | p95 of 600 frame samples, divided by the held count |
 
 **Aggregation.** Per engine, one warm-up run is discarded, then 5 runs are measured, each in a fresh
-browser process. A gate's value is the median of the 5 per-run statistics, and it passes only when
-that value meets the gate in both engines. The report lists every per-run statistic, the medians,
+browser process. A gate's value is the median of the 5 per-run statistics (for the commit gate, the
+per-run ratio of the engine and floor medians), and it passes only when that value meets the gate in
+both required engines. The report lists every per-run statistic, the medians,
 `g` and the fingerprint, so an independent runner on the pinned environment reaches the same
 pass/fail with no parameter left to choose.
 
