@@ -180,3 +180,22 @@ container, each in its own git worktree.
     ancestor moved into a fixed sheet is now a §12 risk (7910ca2).
 - **Commit messages** were rewritten to the repository's conventional style, with the session
   trailers. The code is byte-identical to the helper's branch. Gates: `logs/p2-h6b/`.
+
+## Scope correction — top-level owner directive (2026-10-28)
+
+The owner explicitly corrected an earlier orchestration mistake: the references to FigJam,
+draw.io and tldraw were a production-quality bar for ani, not an instruction to build a separate
+whiteboard/canvas product. The former board work was therefore scope drift.
+
+- H10 is **cancelled before implementation**. Its brief and `app/board/ARCHITECTURE.md` are removed
+  from the current tree; the historical commits remain only as Git audit history.
+- Former P6–P8 board phases are removed from `00_plan.md`. No board model, editor, persistence,
+  connector, export, minimap or generic canvas framework belongs to this program.
+- H9/P5 remains in scope because it is the independent iOS Native Grade proof instrument, not an
+  application product.
+- The execution order after P2 is P3 safety → P4 drive/direct manipulation → P5 native-grade
+  certification → P6 release.
+- The owner-level success criterion is now explicit: ani must earn the iOS-native-grade claim from
+  the complete P1–P5 evidence body: frame-level correctness, continuity, the P4 layout drive seam,
+  authority-defined degradation/safety and pinned performance evidence. Building an unrelated
+  complex application is not substitute evidence.

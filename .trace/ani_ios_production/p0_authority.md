@@ -21,7 +21,7 @@ the core API note for `physics` and `Clock.inFrame`.
 | DR-01 page boxes | §3.2 view space; §5.7 re-expression by δ | P2 |
 | DR-02 driven nodes not read | §4.1 reads every participant | P2 |
 | DR-03 analytic B at flush | §4.1 aging; §4.2 "an analytic box never substitutes"; §4.4 | P2 |
-| DR-04 inner-scroll `'stale'` | §4.4 (the only meaning of `'stale'`); §9.1 | P2, P9 docs |
+| DR-04 inner-scroll `'stale'` | §4.4 (the only meaning of `'stale'`); §9.1 | P2, P6 docs |
 | DR-05 core API frozen | §2.1 (D2: `physics`, `Clock.inFrame`) | P1 |
 | DR-06 out-of-scope list | §2.1 (drive in scope; markers unnecessary) | — |
 | DR-07 motion type | §5.1 union; §5.3 spring | P1 |
@@ -36,7 +36,7 @@ the core API note for `physics` and `Clock.inFrame`.
 | DR-16 React drive dispatcher, portal scope | §7.3, §4.6 | P2, P4 |
 | DR-17 cost gates without an instrument | §11.5 bench harness (D5) | P5 |
 | DR-18 reference machine | §11.5 states it | P5 meets the gates |
-| DR-19 versions | — (release work) | P9 |
+| DR-19 versions | — (release work) | P6 |
 | DR-20 trace pointer | header | — |
 
 ## Refinements of the signed-off design (implementation-grade details, none changes a decision)
