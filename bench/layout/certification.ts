@@ -52,7 +52,18 @@ export interface InvocationResult {
 }
 
 const REQUIRED_ENGINES = ['chromium', 'webkit'] as const
-const REQUIRED_SCENES = ['s-card', 's-seg', 'cost'] as const
+const REQUIRED_SCENES = [
+    's-card',
+    's-seg',
+    's-photo',
+    's-stack',
+    's-island',
+    's-acc',
+    's-insert',
+    's-delete',
+    'cost',
+] as const
+const REQUIRED_SCENE_ROWS = REQUIRED_SCENES.filter((scene) => scene !== 'cost')
 const REQUIRED_RUNS = 5
 
 /**
@@ -125,7 +136,7 @@ export function evaluateCertification(
         if (engine.launchError !== null) {
             reasons.push(`${engineName} launch error: ${engine.launchError}`)
         }
-        for (const scene of ['s-card', 's-seg']) {
+        for (const scene of REQUIRED_SCENE_ROWS) {
             const result = engine.scenes.find((entry) => entry.scene === scene)
             if (!result) reasons.push(`${engineName} scene ${scene} missing`)
             else if (result.status !== 'pass')

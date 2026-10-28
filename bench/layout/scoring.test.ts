@@ -11,7 +11,7 @@ import {
     sustainedGate,
 } from './gates.ts'
 import { type Box, settleOfBox, trackState, zeroBoxVelocity } from './oracle.ts'
-import { scoreScene } from './scoring.ts'
+import { removedWithFollower, scoreScene } from './scoring.ts'
 import type {
     Observation,
     ScenePlan,
@@ -170,6 +170,7 @@ function makeTrace(plan: ScenePlan): SceneTrace {
             radii: { pill: null },
             style: { pill: EMPTY_STYLE },
             font: {},
+            samples: {},
             activeElementKey: null,
         })
     }
@@ -704,4 +705,35 @@ test('N5: declared opacity, radii and font data are required', () => {
     assert.match(detail, /required opacity/)
     assert.match(detail, /required radii/)
     assert.match(detail, /required font/)
+})
+
+test('H15-07: a descendant removed with a crossfade follower is exempt', () => {
+    const plan = {
+        ...basePlan(),
+        pairs: [
+            {
+                id: 'pair',
+                startFrame: 0,
+                lead: 'pill',
+                follower: 'card',
+            },
+        ],
+        removedWith: { content: 'card' },
+    }
+    assert.equal(removedWithFollower(plan, 'content', 5), true)
+    assert.equal(removedWithFollower(plan, 'content', 0), true)
+    assert.equal(removedWithFollower(plan, 'other', 5), false)
+    const later = {
+        ...plan,
+        pairs: [
+            ...plan.pairs,
+            {
+                id: 'pair',
+                startFrame: 4,
+                lead: 'card',
+                follower: 'pill',
+            },
+        ],
+    }
+    assert.equal(removedWithFollower(later, 'content', 5), false)
 })

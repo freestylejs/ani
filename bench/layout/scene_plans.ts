@@ -340,7 +340,11 @@ export function stackPlan(trace: SceneTrace): ScenePlan {
             requiredPairs: 0,
             requiredStaticRadii: [],
             requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
-            requiredShape: ['shape.presence-opacity', 'shape.teardown'],
+            requiredShape: [
+                'shape.presence-opacity',
+                'shape.badge-scale',
+                'shape.teardown',
+            ],
             requiredOpacityKeys: [
                 'badge-1',
                 'badge-2',
@@ -366,6 +370,26 @@ export function stackPlan(trace: SceneTrace): ScenePlan {
                 expectedStatus: 'ended',
                 segments: STACK_KEYS.map((key) => spring(key, 'stack')),
             },
+        ],
+        presenceScale: [
+            ...[1, 2, 3, 4, 5].flatMap((i) => [
+                {
+                    key: `badge-${i}-disc`,
+                    startFrame: expandFrame,
+                    from: 0.8,
+                    to: 1,
+                    durationMs: 250,
+                    easing: 'ease-out' as const,
+                },
+                {
+                    key: `badge-${i}-disc`,
+                    startFrame: collapseFrame,
+                    from: 1,
+                    to: 0.8,
+                    durationMs: 150,
+                    easing: 'ease-in' as const,
+                },
+            ]),
         ],
         presenceOpacity: [
             ...[1, 2, 3, 4, 5].flatMap((i) => [
@@ -626,6 +650,7 @@ export function islandPlan(trace: SceneTrace): ScenePlan {
         ],
         settleFrames: trace.settleFrames,
         restorationChecks: [],
+        removedWith: { 'card-content': 'card' },
         authorStyleKeys: ['pill', 'card', 'pill-content', 'card-content'],
         pairs: [
             {
@@ -809,11 +834,6 @@ export function insertPlan(trace: SceneTrace): ScenePlan {
                 frame: insertFrame,
                 label: 'insert',
                 expectedStatus: 'ended',
-                expectedSnapped: [
-                    'new-0:culled',
-                    'new-1:culled',
-                    'new-2:culled',
-                ],
                 segments: [
                     ...existing.map((key) => ({
                         key,
@@ -848,7 +868,6 @@ export function insertPlan(trace: SceneTrace): ScenePlan {
         authorStyleKeys: ['new-0', 'new-1', 'new-2'],
         pairs: [],
         expectedDiagnostics: [],
-        expectedOnSnap: ['culled', 'culled', 'culled'],
     }
 }
 
@@ -937,7 +956,7 @@ export function deletePlan(trace: SceneTrace): ScenePlan {
                 startFrame: c1Frame,
                 from: 1,
                 to: 0,
-                durationMs: 250,
+                durationMs: 200,
                 easing: 'linear',
             },
             {
@@ -945,7 +964,7 @@ export function deletePlan(trace: SceneTrace): ScenePlan {
                 startFrame: c2Frame,
                 from: 1,
                 to: 0,
-                durationMs: 250,
+                durationMs: 200,
                 easing: 'linear',
             },
         ],

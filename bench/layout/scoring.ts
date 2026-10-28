@@ -655,6 +655,29 @@ function latestSegment(
     return found
 }
 
+/**
+ * Whether `key` is removed with a crossfade follower: its declared DOM parent
+ * is the follower of the latest pair at the removal frame. Such a descendant
+ * has no settled state of its own; the follower's removal/inert proof covers it.
+ */
+export function removedWithFollower(
+    plan: ScenePlan,
+    key: string,
+    frame: number
+): boolean {
+    const parent = plan.removedWith?.[key]
+    if (parent === undefined) return false
+    let latestStart = -1
+    for (const pair of plan.pairs) {
+        if (pair.startFrame <= frame && pair.startFrame > latestStart)
+            latestStart = pair.startFrame
+    }
+    if (latestStart < 0) return false
+    return plan.pairs.some(
+        (pair) => pair.startFrame === latestStart && pair.follower === parent
+    )
+}
+
 function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     const req = plan.completeness
     let worstKey: string | undefined
@@ -728,6 +751,7 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         const last = trace.observations[lastIndex]!
         const removed = !final?.connected.includes(key)
         if (!removed) continue
+        if (removedWithFollower(plan, key, last.frame)) continue
         const pair = plan.pairs.find((candidate) => candidate.follower === key)
         const followerAtRemoval =
             pair !== undefined &&
@@ -843,22 +867,27 @@ function scoreReads(trace: SceneTrace): MetricFinding {
     let excess = 0
     let worstLabel: string | undefined
     let detail: string | undefined
+    let exact = true
     for (const commit of trace.commits) {
         const required = commit.nBefore + commit.nAfter
-        const styleExcess = Math.abs(commit.styles - commit.stylesExpected)
+        const rectError = Math.abs(commit.rects - required)
+        const offsetError = Math.abs(commit.offsets - required)
+        const styleError = Math.abs(commit.styles - commit.stylesExpected)
         const commitExcess =
-            Math.max(0, commit.rects - required) +
-            Math.max(0, commit.offsets - required) +
+            rectError +
+            offsetError +
             Math.max(0, commit.frameReads) +
-            styleExcess
-        if (commitExcess > excess) {
+            styleError
+        if (commitExcess > 0) exact = false
+        if (commitExcess >= excess) {
             excess = commitExcess
             worstLabel = commit.label
-            detail = `${commit.label}: ${commit.rects} rects, ${commit.offsets} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; required ${required}/${required}/0 (probes ${commit.probes}, parents ${commit.parents})`
+            detail = `${commit.label}: ${commit.rects}/${required} rects, ${commit.offsets}/${required} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; probes ${commit.probes}, parents ${commit.parents}${(commit.presenceRects ?? 0) > 0 || (commit.presenceStyles ?? 0) > 0 ? `; audited non-layout presence reads excluded: ${commit.presenceRects ?? 0} rects, ${commit.presenceStyles ?? 0} styles` : ''}`
         }
     }
     if (trace.steadyFrameReads > 0) {
         excess += trace.steadyFrameReads
+        exact = false
         detail ??= `steady frame ${trace.steadyFrameReadsAt}: ${trace.steadyFrameReads} reads`
     }
     const exactSummary = trace.commits
@@ -873,7 +902,7 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         gate: '<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero',
         unit: 'excess reads',
         value: excess,
-        pass: excess === 0,
+        pass: exact && excess === 0,
         measured: true,
         worst: {
             label: worstLabel ?? trace.commits[0]?.label,
@@ -982,10 +1011,74 @@ function scorePresenceOpacity(
     }
 }
 
+function scaleOf(transform: string): number {
+    if (!transform || transform === 'none') return 1
+    const matrix = transform.match(/matrix\(([^)]+)\)/)
+    if (matrix) {
+        const parts = matrix[1]!.split(',').map((part) => Number(part))
+        const a = parts[0] ?? 1
+        const b = parts[1] ?? 0
+        return Math.hypot(a, b)
+    }
+    const scale = transform.match(/scale(?:X)?\(([-0-9.]+)/)
+    return scale ? Number(scale[1]) : 1
+}
+
+/** Inner presence-scale discs (S-STACK) declared by the scene. */
+function scorePresenceScale(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    const tracks = plan.presenceScale ?? []
+    let worst = 0
+    let worstFrame: number | undefined
+    let worstKey: string | undefined
+    let compared = 0
+    const keys = new Set(tracks.map((track) => track.key))
+    for (const observation of trace.observations) {
+        for (const key of keys) {
+            const got = observation.samples?.[key]
+            if (got === undefined) continue
+            const applicable = tracks
+                .filter((track) => track.key === key)
+                .filter((track) =>
+                    observation.kind === 'flush'
+                        ? track.startFrame <= observation.frame
+                        : track.startFrame < observation.frame
+                )
+                .sort((a, b) => a.startFrame - b.startFrame)
+            const track = applicable[applicable.length - 1]
+            if (!track) continue
+            const elapsed =
+                ((observation.frame - track.startFrame) * plan.stepMs) / 1000
+            const p =
+                track.durationMs <= 0 ? 1 : elapsed / (track.durationMs / 1000)
+            const want =
+                track.from + (track.to - track.from) * curveAt(track.easing, p)
+            compared += 1
+            const error = Math.abs(scaleOf(got) - want)
+            if (error > worst) {
+                worst = error
+                worstFrame = observation.frame
+                worstKey = key
+            }
+        }
+    }
+    return {
+        id: 'shape.badge-scale',
+        label: 'Inner presence-scale disc timeline',
+        gate: '<= 1e-4 against the declared scale curve',
+        unit: 'scale',
+        value: worst,
+        pass: worst <= 1e-4,
+        measured: compared > 0,
+        worst: { frame: worstFrame, participant: worstKey },
+        detail: compared === 0 ? 'n/a: no declared inner scale' : undefined,
+    }
+}
+
 function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
     return [
         scoreCrossfadeOpacity(plan, trace),
         scorePresenceOpacity(plan, trace),
+        scorePresenceScale(plan, trace),
         scoreCoverage(plan, trace),
         scoreRadius(plan, trace),
         scoreStaticRadius(plan, trace),

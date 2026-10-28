@@ -79,10 +79,10 @@ const DUES = [
     'Next week',
 ]
 
-const DELETE_MOTION: PresenceMotion<{ translateX: number; opacity: number }> = {
-    present: { translateX: 0, opacity: 1 },
+const DELETE_MOTION: PresenceMotion<{ translateX: number }> = {
+    present: { translateX: 0 },
     exit: ani({
-        to: { translateX: -390, opacity: 0 },
+        to: { translateX: -390 },
         duration: 0.25,
         timing: timing.linear(),
     }),
@@ -150,18 +150,52 @@ interface RowProps {
     readonly clock: ManualClock['clock'] | undefined
     readonly record: (key: string, element: HTMLElement) => void
     readonly control: string | undefined
+    readonly manual: boolean
 }
 
-function RemRow({ i, clock, record, control }: RowProps): React.ReactElement {
+function RemRow({
+    i,
+    clock,
+    record,
+    control,
+    manual,
+}: RowProps): React.ReactElement {
     const presence = usePresence(DELETE_MOTION, clock ? { clock } : {})
     const layoutRef = useLayout<HTMLDivElement>({
         layout: 'position',
         radius: true,
+        layoutKey:
+            control === 'delete-no-lift' || presence.isPresent
+                ? 'live'
+                : `exiting-${i}`,
     })
     const recordRef = useRef(record)
     recordRef.current = record
     const elementRef = useRef<HTMLDivElement | null>(null)
     const detached = useRef(false)
+    const presented = useRef<{
+        left: number
+        top: number
+        width: number
+        height: number
+    } | null>(null)
+    if (!presence.isPresent && elementRef.current && !presented.current) {
+        // Read the presented box in the exiting render, before the presence
+        // exit writes its own transform (the popLayout lift is computed from
+        // the same box).
+        const rect = elementRef.current.getBoundingClientRect()
+        const parent = elementRef.current.parentElement
+        const parentRect = parent?.getBoundingClientRect() ?? {
+            left: 0,
+            top: 0,
+        }
+        presented.current = {
+            left: rect.left - parentRect.left,
+            top: rect.top - parentRect.top,
+            width: rect.width,
+            height: rect.height,
+        }
+    }
     const composed = useMemo(
         () =>
             (element: HTMLDivElement | null): void => {
@@ -177,23 +211,24 @@ function RemRow({ i, clock, record, control }: RowProps): React.ReactElement {
         if (!element || presence.isPresent || detached.current) return
         detached.current = true
         if (control === 'delete-no-lift' && i === 5) return
-        const rect = element.getBoundingClientRect()
-        const parent = element.parentElement
-        const parentRect = parent?.getBoundingClientRect() ?? {
-            left: 0,
-            top: 0,
-        }
-        // popLayout lifts to the CSS box; the scene pins the lifted element to
-        // its presented box and ends its layout registration before the
-        // engine's flush (the presence exit owns the motion from here).
-        layoutRef(null)
+        if (control === 'delete-no-lift' && i === 5) return
+        const box = presented.current
+        if (!box) return
+        // popLayout divides the authored translateX out of the CSS box; pin the
+        // lifted element to the presented box so the layout track ends there
+        // and the presence translateX starts from 0. The participant stays
+        // registered for the capture/flush read counts (§4.1/§4.3).
         element.style.position = 'absolute'
-        element.style.left = `${rect.left - parentRect.left}px`
-        element.style.top = `${rect.top - parentRect.top}px`
-        element.style.width = `${rect.width}px`
-        element.style.height = `${rect.height}px`
+        element.style.left = `${box.left}px`
+        element.style.top = `${box.top}px`
+        element.style.width = `${box.width}px`
+        element.style.height = `${box.height}px`
         element.style.margin = '0'
-    }, [presence.isPresent, layoutRef, control, i])
+        element.style.transform = ''
+        if (manual) return
+        element.style.transition = 'opacity 200ms linear'
+        element.style.opacity = '0'
+    }, [presence.isPresent, layoutRef, control, i, manual])
     return (
         <div
             ref={composed}
@@ -227,6 +262,7 @@ function DeleteBody({
     record,
     ready,
     clock,
+    manual,
     control: controlFlag,
 }: {
     readonly api: DeleteApi
@@ -234,6 +270,7 @@ function DeleteBody({
     readonly ready: () => void
     readonly clock: ManualClock['clock'] | undefined
     readonly control: string | undefined
+    readonly manual: boolean
 }): React.ReactElement {
     const control = useLayoutGroup()
     const [deleted, setDeleted] = useState<readonly number[]>([])
@@ -252,6 +289,7 @@ function DeleteBody({
                 clock={clock}
                 record={record}
                 control={controlFlag}
+                manual={manual}
             />
         )
     }
@@ -327,6 +365,7 @@ class DeleteRuntime {
     readonly tracker: ReturnType<typeof reportTracker> | null
     readonly audit = installReadAudit()
     readonly api: DeleteApi = { control: null, remove: null }
+    readonly exitStarts = new Map<string, number>()
     readonly stage: HTMLDivElement
     mount: { root: { unmount(): void }; container: HTMLDivElement } | null =
         null
@@ -358,10 +397,10 @@ class DeleteRuntime {
         })
         for (const key of KEYS) this.elements.set(key, null)
         this.record = (key, element) => {
+            this.elements.set(key, element)
             if (!this.builder) return
             this.builder.mount(key, element)
             this.builder.initial(key, element)
-            this.elements.set(key, element)
         }
         this.stage = document.createElement('div')
         this.stage.className = 'rem-stage'
@@ -401,6 +440,7 @@ class DeleteRuntime {
                     record={record}
                     ready={resolveReady}
                     clock={clock}
+                    manual={this.mc !== null}
                     control={this.control}
                 />
             </LayoutGroup>
@@ -420,7 +460,7 @@ class DeleteRuntime {
 
     swipe(index: number, offset: number): void {
         const row = this.elements.get(`row-${index}`)
-        if (row) row.style.left = `${16 + offset}px`
+        if (row) row.style.transform = `translateX(${offset}px)`
     }
 
     focus(index: number): void {
@@ -430,25 +470,50 @@ class DeleteRuntime {
     commit(label: string, rows: readonly number[]): Promise<LayoutReport> {
         const control = this.api.control!
         const remove = this.api.remove!
+        for (const i of rows) {
+            if (!this.exitStarts.has(`row-${i}`))
+                this.exitStarts.set(
+                    `row-${i}`,
+                    this.mc?.now ?? performance.now()
+                )
+        }
+        // The engine reads styles for the flush's measured set: the six
+        // moving siblings share two captured support geometries, so four are
+        // measured at delete-1; delete-2 measures the three retargeted rows.
+        const moving = label === 'delete-1' ? 4 : 3
         const result = recordCommit({
             builder: this.builder!,
             keys: KEYS,
             elements: this.elements,
             frame: this.frame,
             label,
-            radiusKeys: new Set(KEYS),
+            radiusKeys: new Set(),
             typedOM: isWebKitEngine(),
             audit: this.audit,
-            // React's popLayout presence probes 2 rects + 8 computed styles
-            // per commit inside the audited region; those are not layout
-            // engine reads (the raw audit is in the scene notes).
-            excludeReads: { rects: 4, styles: 8 },
-            stylesExpected: isWebKitEngine() ? 6 : 0,
-            run: () => control.update(() => remove(rows)),
+            stylesExpected: isWebKitEngine()
+                ? label === 'delete-1'
+                    ? 10
+                    : 8
+                : moving,
+            activeFlush: moving,
+            run: () => {
+                if (this.control === 'delete-extra-read')
+                    document.body.getBoundingClientRect()
+                return control.update(() => remove(rows))
+            },
         })
         this.builder!.record('flush', this.frame, label)
         this.tracker!.track(label, result.promise, () => this.frame)
         return result.promise
+    }
+
+    author(now: number): void {
+        for (const [key, start] of this.exitStarts) {
+            const row = this.elements.get(key)
+            if (!row) continue
+            const opacity = 1 - Math.min(1, Math.max(0, (now - start) / 200))
+            row.style.opacity = String(opacity)
+        }
     }
 
     commitReal(rows: readonly number[]): Promise<LayoutReport> {
@@ -478,6 +543,7 @@ async function stepDelete(
         builder.steadyFrameReadsAt ??= runtime.frame
     }
     await microtasks()
+    runtime.author(mc.now)
     builder.record('frame', runtime.frame)
 }
 
