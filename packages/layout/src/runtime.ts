@@ -21,6 +21,8 @@ export type LayoutDiagnosticListener = (event: LayoutDiagnostic) => void
 export interface RuntimeScope {
     /** §7.2: live tracks finish at identity, holds invalidate, reports resolve `'disabled'`. */
     snap(): void
+    /** Re-arms the scroll listeners after the kill switch returns to animate. */
+    resume?(): void
 }
 
 const listeners = new Map<LayoutDiagnosticListener, number>()
@@ -190,7 +192,17 @@ export const layoutRuntime: LayoutRuntime = {
         }
         if (next === mode) return
         mode = next
-        if (next !== 'snap') return
+        if (next !== 'snap') {
+            for (const scope of [...scopes]) {
+                try {
+                    scope.resume?.()
+                } catch (error) {
+                    // one scope's failure never stops the others (§7.2)
+                    rethrowAsync(error)
+                }
+            }
+            return
+        }
         for (const scope of [...scopes]) {
             try {
                 scope.snap()

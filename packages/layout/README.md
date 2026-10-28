@@ -171,6 +171,9 @@ interface LayoutDriveHandle {
   through the held node's origin track.
 - `release` and `cancel` are terminal and idempotent. A `move` after a terminal state is a no-op
   (one development warning per handle). Non-finite offsets and velocities throw synchronously.
+  A released/cancelled landing is still a live hold: the kill switch, abort, cap, removal, support
+  failure and dispose invalidate it (`invalidated` before the hold clears); only normal landing
+  completion keeps the terminal `released`/`cancelled` state.
 - A release under reduced motion obeys the policy at that moment: `'jump'` lands at A with no
   motion, `{ maxDuration }` clamps, `'ignore'` plays in full. A release that finds no fitting
   reduced-motion path becomes `released` and lands at A (a reduced jump), never `invalidated`; a
@@ -207,7 +210,8 @@ the live `LayoutGroup` (or the implicit root) that owns the registered element, 
 live hold. The gesture layer maps `pointercancel` and `lostpointercapture` to `cancel()` so a
 cancelled gesture never becomes an accidental release; a box-preserving 180° rotation/zoom is the
 same documented support residual risk as above. `dispose()`, abort and the kill switch remove the
-scope's scroll listeners and clock subscription; the gesture layer owns pointer capture and
+scope's scroll listeners and clock subscription; `setMode('animate')` re-arms the scroll listeners
+so a later handoff still sees an active scroll. The gesture layer owns pointer capture and
 listener teardown for the pointer stream itself.
 
 ## Report
