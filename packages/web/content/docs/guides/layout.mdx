@@ -139,7 +139,7 @@ export function Row({ label }: { label: string }) {
 Elements with the same `layoutId` are one element to the user. On the default `'raf'` engine (the only engine that accepts `layoutId`), when the element that carries an id leaves and another one with the id is rendered, the new one starts from the box and speed of the one that left.
 
 -   **Lead.** Per id, the newest mounted element that is not exiting leads. Two mounted, non-exiting elements with one id print a development warning; the newest leads and the other animates on its own.
--   **Handoff.** The new lead starts from the drawn box of the element it replaces: the live box of an element exiting under presence, or the box of a removed element, kept for `retain` seconds (default 1).
+-   **Handoff.** The new lead starts from the drawn box of the element it replaces: the live box of an element exiting under presence, or the box of a removed element, kept for `retain` seconds (default 1). A handoff out of an actively scrolling container is a presence enter instead; where the browser has no `scrollend` event (WebKit 26), that active state is never cleared by time, so such handoffs stay presence enters.
 -   **Crossfade.** When the previous element is exiting under [presence](#presence) and the box moved, both draw at the lead's box while the lead fades in and the exiting element fades out, on the lead's curve. The lead fades in over the first half and the exiting element fades out only after it, so the pair never shows what is behind it. The exiting element stays invisible until presence removes it, and presence waits for the crossfade to end. `layoutCrossfade: false` on either element turns it off.
 -   **Inert follower.** The exiting follower is `inert` from the crossfade's first frame, so there is one interactive and accessible target while the pair shares a box. Your own `inert` value, or its absence, is restored byte for byte when the element re-enters (a reversal), unmounts, or the run aborts or is disposed.
 -   **Corners.** Unless either element sets `radius: false`, the corners blend from the radius the old element showed to the new element's own, on the same curve, so the shape changes with the box.
@@ -594,6 +594,7 @@ Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a
 ### Limits
 
 -   The default `'raf'` layout engine runs on the main thread, on Ani's clock, so it does not advance on screen while the main thread is blocked. The optional [WAAPI engine](#compositor-engine) is the gated compositor-smooth exception.
+-   The drive seam and its hold state are P4. P3's holds are the crossfade and presence holds described here; a keyed reorder or a re-render during a track is not a drive hold.
 -   Capture reads the DOM during render. These are reads only, but when styles changed since the last layout they force one.
 -   A change that renders no participant, `LayoutGroup` or `AnimatePresence` does not animate (see [When a change animates](#when-a-change-animates)).
 -   Text inside an element that scales is re-rasterized and can look soft until the animation ends. Use `layout: 'position'` on text.

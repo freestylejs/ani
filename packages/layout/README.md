@@ -153,7 +153,7 @@ only when no track ran.
 ## Accessibility
 
 - Layout never changes DOM order, never moves focus, and never owns `tabindex`, roles or ARIA. A
-  keyed reorder and a held re-render keep the same element and `document.activeElement`.
+  keyed reorder and a re-render while an element moves keep the same element and `document.activeElement`.
 - An exiting crossfade follower is `inert` from the first frame, so the pair never exposes a
   duplicate interactive or accessible target. The authored `inert` value (present or absent, and
   its value) is restored byte for byte on reversal, unmount, abort and dispose.
@@ -162,6 +162,8 @@ only when no track ran.
   under presence alone, and the `focus-in-follower` diagnostic is emitted with action `'none'`.
   Layout does not set `inert` in this case, because that would move focus; the author moves it.
 - Reduced motion only shortens or removes the motion; these rules do not change.
+- The drive seam and its hold state are P4. P3's holds are the crossfade and presence holds
+  described above; a re-render during a track is not a drive hold.
 
 ## Runtime and diagnostics
 
