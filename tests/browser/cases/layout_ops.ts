@@ -2914,9 +2914,10 @@ function reasonsOf(report: LayoutReport): string[] {
 
 /**
  * MUTATION (§11.3): deliberately wrong decisions at the row's observation
- * boundary. M1–M3, M5 and M6 are real engine runs with a mutated input
- * (measurement, capture timing or browser capability); M4 and M8 are labelled
- * synthetic negative controls; M7 (release `dt`) is P4/L-DRIVE-1 per C3.
+ * boundary. M2/M3/M5/M6 are real engine runs with a mutated clock, capture or
+ * capability input; M1 is an explicit checker control that feeds the aged B;
+ * M4/M8 are labelled synthetic negative controls; M7 (release `dt`) is
+ * P4/L-DRIVE-1 per C3.
  */
 export async function MUTATION(): Promise<string> {
     const details: string[] = []
