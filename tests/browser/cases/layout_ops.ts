@@ -1504,8 +1504,8 @@ export async function L_A11Y_1(): Promise<string> {
             details.push('focus through two nested closed shadow roots')
         }
 
-        // H12-04: a continuing follower whose author removed inert is not
-        // re-inerted, and a real focused descendant keeps focus
+        // H12-04: focus inside a continuing live follower ends the pair; the
+        // follower exits under presence alone and no live fade stays
         {
             const h = harness({ motion })
             const card = node(h.root, boxAt(20, 20))
@@ -1535,11 +1535,259 @@ export async function L_A11Y_1(): Promise<string> {
                 'continuing not re-inerted'
             )
             expectEqual(document.activeElement, button, 'continuing focus kept')
+            expectEqual(card.style.opacity, '', 'continuing follower opacity')
+            expectEqual(detail.style.opacity, '', 'continuing lead opacity')
+            expectEqual(card.style.translate, '', 'continuing follower pose')
+            const focus = events.filter(
+                (e) => e.code === 'focus-in-follower' && e.element === card
+            )
+            expectEqual(focus.length, 1, 'continuing focus diagnostic')
+            expectEqual(focus[0]!.action, 'none', 'continuing focus action')
+            h.mc.frames(30)
+            expectEqual(
+                document.activeElement,
+                button,
+                'continuing focus settled'
+            )
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'continuing settled inert'
+            )
+            expectEqual(detail.style.opacity, '', 'continuing settled opacity')
+            const leadBox = viewBox(detail)
+            expectClose(leadBox.x, 360, TOL, 'continuing lead A x')
+            expectClose(leadBox.y, 40, TOL, 'continuing lead A y')
+            expectEqual(h.group.stats.tracks, 0, 'continuing no live track')
             h.group.dispose()
             await Promise.all([first, again])
             presence.dispose()
             h.root.remove()
-            details.push('continuing follower keeps focus after inert removal')
+            details.push('continuing follower focus: pair ended, focus kept')
+        }
+
+        // H12-04: a held invisible follower with focus inside is settled too
+        {
+            const h = harness({ motion })
+            const card = node(h.root, boxAt(20, 20))
+            const button = document.createElement('button')
+            card.append(button)
+            const presence = createPresence(card, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(card, { layoutId: 'a11y-held', radius: false })
+            h.group.capture()
+            await h.group.flush()
+            void presence.exit()
+            h.group.capture()
+            const detail = node(h.root, boxAt(360, 40, 300, 200))
+            h.group.add(detail, { layoutId: 'a11y-held', radius: false })
+            const first = h.group.flush()
+            h.mc.frames(26)
+            expectEqual(card.style.opacity, '0', 'held follower invisible')
+            expectEqual(card.hasAttribute('inert'), true, 'held follower inert')
+            card.removeAttribute('inert')
+            button.focus()
+            expectEqual(document.activeElement, button, 'held focus')
+            h.group.capture()
+            const again = h.group.flush()
+            expectEqual(
+                card.style.opacity,
+                '',
+                'held follower opacity restored'
+            )
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'held follower inert gone'
+            )
+            expectEqual(document.activeElement, button, 'held focus kept')
+            const focus = events.filter(
+                (e) => e.code === 'focus-in-follower' && e.element === card
+            )
+            expectEqual(focus.length, 1, 'held focus diagnostic')
+            h.mc.frames(2)
+            expectClose(viewBox(detail).x, 360, TOL, 'held lead A')
+            h.group.dispose()
+            await Promise.all([first, again])
+            presence.dispose()
+            h.root.remove()
+            details.push('held invisible follower focus: settled, focus kept')
+        }
+
+        // H12-03: a held old follower becomes the focus-skipped new lead
+        // under an animating participant ancestor
+        {
+            const h = harness({ motion })
+            const panel = node(h.root, boxAt(0, 0, 700, 500))
+            h.group.add(panel, { radius: false })
+            const card = node(panel, boxAt(20, 20))
+            const cardPresence = createPresence(card, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(card, { layoutId: 'a11y-held-lead', radius: false })
+            h.group.capture()
+            await h.group.flush()
+            void cardPresence.exit()
+            h.group.capture()
+            const detail = node(panel, boxAt(360, 40, 300, 200))
+            const detailPresence = createPresence(detail, a11yPresence, {
+                clock: h.mc.clock,
+            })
+            h.group.add(detail, { layoutId: 'a11y-held-lead', radius: false })
+            const first = h.group.flush()
+            h.mc.frames(26)
+            expectEqual(card.style.opacity, '0', 'held-lead: held invisible')
+            expectEqual(card.hasAttribute('inert'), true, 'held-lead: inert')
+            const button = document.createElement('button')
+            detail.append(button)
+            button.focus()
+            void cardPresence.enter()
+            void detailPresence.exit()
+            h.group.capture()
+            panel.style.left = '200px'
+            const reverse = h.group.flush()
+            expectEqual(card.style.opacity, '', 'held-lead: opacity restored')
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'held-lead: no inert'
+            )
+            expectEqual(document.activeElement, button, 'held-lead: focus kept')
+            const focus = events.filter(
+                (e) => e.code === 'focus-in-follower' && e.element === detail
+            )
+            expectEqual(focus.length, 1, 'held-lead: focus diagnostic')
+            expectEqual(focus[0]!.action, 'none', 'held-lead: action none')
+            h.mc.frames(30)
+            expectClose(viewBox(card).x, 220, TOL, 'held-lead: card at A')
+            expectClose(viewBox(detail).x, 560, TOL, 'held-lead: detail at A')
+            expectEqual(
+                document.activeElement,
+                button,
+                'held-lead: focus settled'
+            )
+            h.group.dispose()
+            await Promise.all([first, reverse])
+            cardPresence.dispose()
+            detailPresence.dispose()
+            h.root.remove()
+            details.push(
+                'held follower -> focus-skipped lead under a moving ancestor'
+            )
+        }
+
+        // H12-21: authored inert present/absent through reversal, abort and
+        // dispose (unmount is covered by the #6 blocks above)
+        {
+            for (const authored of [null, 'authored'] as const) {
+                for (const action of [
+                    'reversal',
+                    'abort',
+                    'dispose',
+                ] as const) {
+                    const h = harness({ motion })
+                    const id = `a11y-matrix-${authored ?? 'absent'}-${action}`
+                    const card = node(h.root, boxAt(20, 20))
+                    if (authored !== null) card.setAttribute('inert', authored)
+                    const cardPresence = createPresence(card, a11yPresence, {
+                        clock: h.mc.clock,
+                    })
+                    h.group.add(card, { layoutId: id, radius: false })
+                    h.group.capture()
+                    await h.group.flush()
+                    void cardPresence.exit()
+                    h.group.capture()
+                    const detail = node(h.root, boxAt(360, 40, 300, 200))
+                    const detailPresence = createPresence(
+                        detail,
+                        a11yPresence,
+                        {
+                            clock: h.mc.clock,
+                        }
+                    )
+                    const removeDetail = h.group.add(detail, {
+                        layoutId: id,
+                        radius: false,
+                    })
+                    const first = h.group.flush()
+                    h.mc.frames(2)
+                    if (action === 'reversal') {
+                        void cardPresence.enter()
+                        void detailPresence.exit()
+                        h.group.capture()
+                        const second = h.group.flush()
+                        expectEqual(
+                            card.getAttribute('inert'),
+                            authored,
+                            `matrix ${authored ?? 'absent'} reversal card`
+                        )
+                        expectEqual(
+                            detail.getAttribute('inert'),
+                            '',
+                            `matrix ${authored ?? 'absent'} reversal detail`
+                        )
+                        h.group.dispose()
+                        await Promise.all([first, second])
+                    } else if (action === 'abort') {
+                        h.mc.frame(16)
+                        injectLayoutFault('write')
+                        h.mc.frame(16)
+                        const report = await first
+                        expectEqual(
+                            report.status,
+                            'failed',
+                            'matrix abort status'
+                        )
+                        expectEqual(
+                            card.getAttribute('inert'),
+                            authored,
+                            `matrix ${authored ?? 'absent'} abort card`
+                        )
+                        expectEqual(
+                            detail.getAttribute('inert'),
+                            null,
+                            `matrix ${authored ?? 'absent'} abort detail`
+                        )
+                        for (const element of [card, detail]) {
+                            for (const property of [
+                                'translate',
+                                'scale',
+                                'opacity',
+                            ] as const) {
+                                expectEqual(
+                                    element.style.getPropertyValue(property),
+                                    '',
+                                    `matrix abort ${property}`
+                                )
+                            }
+                        }
+                        h.group.dispose()
+                    } else {
+                        h.mc.frame(16)
+                        h.group.dispose()
+                        expectEqual(
+                            card.getAttribute('inert'),
+                            authored,
+                            `matrix ${authored ?? 'absent'} dispose card`
+                        )
+                        expectEqual(
+                            detail.getAttribute('inert'),
+                            null,
+                            `matrix ${authored ?? 'absent'} dispose detail`
+                        )
+                        await first
+                    }
+                    removeDetail()
+                    detail.remove()
+                    cardPresence.dispose()
+                    detailPresence.dispose()
+                    h.root.remove()
+                }
+            }
+            details.push(
+                'authored inert present/absent through reversal, abort, dispose'
+            )
         }
 
         // keyed reorder + held re-render: activeElement and attributes stable
@@ -1876,7 +2124,9 @@ function fuzzCheckStyles(
  * FUZZ (§11.3, C6): the seeded lifecycle model on real DOM in Chromium and
  * WebKit. The B property is per node: its own fresh capture, its shared
  * partner's capture for a handoff/follow, its retained departing box, or the
- * flush's reported snap. Read-after-write is checked per document.
+ * flush's reported snap. Read-after-write is checked per document. This browser
+ * suite is the model fuzz; the old unit fuzz was removed because its
+ * any-history B predicate was vacuous.
  */
 export async function FUZZ(): Promise<string> {
     const seeds = [
@@ -1979,10 +2229,15 @@ export async function FUZZ(): Promise<string> {
             ): FuzzBox[] => {
                 const allowed: FuzzBox[] = []
                 const fresh = captureAt !== null && !captureAt.aged
+                const retainedBox = retained.get(FUZZ_SHARED)
                 if (fresh) {
                     const own = captureAt!.boxes.get(element)
                     if (own) allowed.push(own)
                     if (isShared(element)) {
+                        // Both pair boxes are valid in different roles: a
+                        // continuing follower draws at the lead's capture; a
+                        // new handoff draws at the departing follower's
+                        // capture. Anything outside the pair is not a B.
                         const partner = partnerOf(element)
                         const box = partner
                             ? captureAt!.boxes.get(partner)
@@ -1991,8 +2246,7 @@ export async function FUZZ(): Promise<string> {
                     }
                 }
                 // a retained departing box is the only B of a retained
-                // handoff: it is used only when the capture supplies none
-                const retainedBox = retained.get(FUZZ_SHARED)
+                // handoff when the capture supplies none
                 if (allowed.length === 0 && retainedBox && isShared(element)) {
                     allowed.push(retainedBox)
                 }
@@ -2043,6 +2297,11 @@ export async function FUZZ(): Promise<string> {
                         'translate',
                         'scale',
                         'opacity',
+                        'border-top-left-radius',
+                        'border-top-right-radius',
+                        'border-bottom-right-radius',
+                        'border-bottom-left-radius',
+                        'overflow-anchor',
                     ] as const) {
                         const probe = document.createElement('div')
                         probe.style.cssText = authored.get(element)!.style
@@ -2580,6 +2839,17 @@ export async function FUZZ(): Promise<string> {
                 document.body.getBoundingClientRect()
             })
         }
+        // direct B-predicate control: a predicted A box is not the captured B
+        {
+            const captured = { x: 0, y: 0, w: 80, h: 80 }
+            const predicted = { x: 120, y: 0, w: 80, h: 80 }
+            if (
+                !sameFuzzBox(captured, captured) ||
+                sameFuzzBox(captured, predicted)
+            ) {
+                throw new Error('B predicate accepted a predicted box')
+            }
+        }
         if (scrolls.added !== scrolls.removed) {
             throw new Error(
                 `scroll listeners leaked: ${scrolls.added} added, ${scrolls.removed} removed`
@@ -2675,9 +2945,11 @@ export async function MUTATION(): Promise<string> {
                 snapped: reasonsOf(report),
                 code: event?.code ?? null,
             }
-            // real mutation: take a fresh capture after the marker instead
+            // checker control for the wrong decision: reuse the aged B (0)
+            // by taking a fresh capture at that position, then moving to A
+            a.style.left = '0px'
             h.group.capture()
-            a.style.left = '180px'
+            a.style.left = '120px'
             const mutantRun = h.group.flush()
             const first = viewBox(a).x
             const mutantTracks = h.group.stats.tracks
@@ -2687,12 +2959,12 @@ export async function MUTATION(): Promise<string> {
                 status: mutantReport.status,
                 tracks: mutantTracks,
                 x: first,
-                a: 180,
+                a: 120,
                 snapped: reasonsOf(mutantReport),
                 code: null,
             }
             expectMutation(
-                'consume an aged capture (real re-capture)',
+                'consume an aged capture (checker control: aged B reused)',
                 'L-MEAS-11',
                 (o) => {
                     if (o.status !== 'stale')
@@ -2712,7 +2984,9 @@ export async function MUTATION(): Promise<string> {
                 mutant
             )
             h.dispose()
-            details.push('M1 aged capture -> L-MEAS-11 (real re-capture)')
+            details.push(
+                'M1 aged capture -> L-MEAS-11 (checker: aged B reused)'
+            )
         }
 
         // 2. skip the frame marker -> L-MEAS-13
@@ -2741,24 +3015,47 @@ export async function MUTATION(): Promise<string> {
                 snapped: reasonsOf(settled),
                 code: event?.code ?? null,
             }
-            // real mutation: a fresh capture after the earlier frame
-            h.group.capture()
-            a.style.left = '180px'
-            const mutantRun = h.group.flush()
-            const first = viewBox(a).x
-            const mutantTracks = h.group.stats.tracks
-            h.group.finish()
+            // real decision mutation: a clock whose read phase drops the
+            // frame marker. The capture never ages, so the engine consumes a
+            // B from before the frame (the wrong first frame).
+            const mutantClock = createManualClock()
+            const proxy = new Proxy(mutantClock.clock, {
+                get(target, property) {
+                    if (property === 'read') return () => undefined
+                    const value = Reflect.get(target, property, target)
+                    return typeof value === 'function'
+                        ? value.bind(target)
+                        : value
+                },
+            })
+            const mutantRoot = document.createElement('div')
+            mutantRoot.style.cssText =
+                'position: relative; width: 900px; height: 700px;'
+            document.body.append(mutantRoot)
+            const mutantGroup = createLayoutGroup({
+                clock: proxy,
+                motion,
+            })
+            const mutantA = node(mutantRoot, boxAt(0, 0))
+            mutantGroup.add(mutantA, { radius: false })
+            mutantGroup.capture()
+            mutantClock.advance(16)
+            mutantA.style.left = '120px'
+            const mutantRun = mutantGroup.flush()
+            const first = viewBox(mutantA).x
+            const mutantTracks = mutantGroup.stats.tracks
+            mutantGroup.finish()
             const mutantReport = await mutantRun
             const mutant = {
                 status: mutantReport.status,
                 tracks: mutantTracks,
                 x: first,
-                a: 180,
+                a: 120,
                 snapped: reasonsOf(mutantReport),
                 code: null,
             }
             expectMutation(
-                'skip the frame marker (real fresh capture)',
+                'skip the frame marker (real clock mutation)',
                 'L-MEAS-13',
                 (o) => {
                     if (o.status !== 'stale')
@@ -2778,7 +3075,9 @@ export async function MUTATION(): Promise<string> {
                 mutant
             )
             h.dispose()
-            details.push('M2 frame marker -> L-MEAS-13 (real fresh capture)')
+            mutantGroup.dispose()
+            mutantRoot.remove()
+            details.push('M2 frame marker -> L-MEAS-13 (real clock mutation)')
         }
 
         // 3. use the predicted box instead of the measured one -> L-MEAS-4
