@@ -39,7 +39,8 @@ The P5 harness decides the commit gate on the **certification instrument** of §
 The floor is not a theoretical estimate and not a reused production path:
 
 1. The harness builds the same participant DOM twice: the engine fixture and the floor fixture.
-2. The floor fixture performs exactly the reads of §4.1 item 1 and the writes of §4.3 steps 2 and 4,
+2. The floor fixture performs exactly the reads of §4.1 item 1 and §4.3 step 2 (including the
+   computed values §4.3 requires for active nodes) and the writes of §4.3 step 4,
    in the same order and count, with plain DOM calls and no engine state.
 3. The harness audits the floor's read/write counts against the authority and fails if they differ;
    an over-counting floor is a harness failure, not a slower engine.
