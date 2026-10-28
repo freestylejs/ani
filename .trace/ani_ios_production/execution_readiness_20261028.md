@@ -1,5 +1,11 @@
 # Execution readiness — 2026-10-28
 
+> **Status update (2026-10-28 22:55 KST).** The combined P0/P1/P2 tribunal returned
+> **TRIBUNAL PASS** at anchor `6a99da2` with 53/53 authority rows and no open defects
+> (`.trace/ani_ios_production/p2_measured_trial_result.md`). P0, P1 and P2 are now formally closed.
+> P3a (H11b) is running in `ani-h11b`; P3b/P4/P5a briefs are prepared. The section below is the
+> pre-tribunal snapshot and remains as the dispatch record.
+
 Status snapshot and dispatch record for the iOS Native Grade program. This file is a status record,
 not an authority: `00_plan.md`, `packages/layout/ARCHITECTURE.md` and the owner decisions in
 `00_plan.md` decide. It exists so no future agent has to reconstruct the position from chat.

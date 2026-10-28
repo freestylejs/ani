@@ -217,3 +217,11 @@ whiteboard/canvas product. The former board work was therefore scope drift.
   together after P2's gates are green.
 - The P5 instrument is re-pinned to the recorded macOS host (D9); the old Ubuntu/Xeon cost reports
   are historical and advisory.
+
+## Combined P0/P1/P2 tribunal — PASS (2026-10-28)
+
+The Chief Justice returned **TRIBUNAL PASS** at anchor `6a99da2`: 53/53 authority rows, no open
+defects, all carried P0/P1 findings re-judged. Report:
+`p2_measured_trial_result.md`. This certifies P0–P2 only; P3 safety, P4 drive, P5 native-grade
+certification and P6 release remain future gates. P3a (H11b) is dispatched from the P2 closure
+head.
