@@ -117,6 +117,7 @@ import {
     reportCallbackError,
 } from './runtime'
 import {
+    type AnchorPath,
     type BoxVelocity,
     createTrack,
     drawnBoxes,
@@ -161,6 +162,10 @@ const MAX_SCALE = 50
 const UNOWNED_MAP =
     'a map the engine does not own (a scaled, rotated or skewed ancestor that is not a participant, 3D, or CSS zoom)'
 const IDENTITY_POSE: Pose = { tx: 0, ty: 0, sx: 1, sy: 1 }
+/** One hold-specific size tolerance, in view-space px (§5.10, P4 corrective). */
+const HOLD_SIZE_TOL = 0.5
+/** The origin channels' landing/settle tolerance, in px. */
+const HOLD_ORIGIN_TOL = 0.01
 /** The live scope that owns each registered element (§5.10 concurrency). */
 const elementScopes = new WeakMap<Element, object>()
 
@@ -340,6 +345,13 @@ interface DriveHold {
     sizeTargetH: number
     /** The release origin path; its size channels are unused (the size continuation is). */
     releaseTrack: Track | null
+    /** The release origin's own clock, independent of the drive and the size. */
+    releaseElapsed: number
+    releaseStarted: boolean
+    /** The A the release origin is aimed at (may move on a flush). */
+    releaseTarget: Box | null
+    /** The reduced-motion mode the release origin was planned under. */
+    releaseMode: string
     /** `h` at the last flush, to re-express residual tracks in a new view space. */
     lastHX: number
     lastHY: number
@@ -349,6 +361,25 @@ interface DriveHold {
     invalidReason: 'unsupported' | null
     /** A development warning was printed for a `move` after a terminal state. */
     warnedMove: boolean
+}
+
+/** A released/cancelled landing caught again by `take` (P4-C1). */
+interface RetakeState {
+    readonly takeX: number
+    readonly takeY: number
+    readonly velocity: LayoutDriveVector
+    readonly sizeTrack: Track | null
+    readonly sizeElapsed: number
+    readonly sizeStarted: boolean
+    readonly sizeW: number
+    readonly sizeH: number
+    readonly sizeVW: number
+    readonly sizeVH: number
+    readonly sizeTargetW: number
+    readonly sizeTargetH: number
+    readonly drawn: ReadonlyMap<Participant, Box>
+    readonly rates: ReadonlyMap<Participant, BoxVelocity>
+    readonly tracked: ReadonlySet<Participant>
 }
 
 /** A hold whose direct manipulation or landing is still live (§5.10). */
@@ -1450,7 +1481,6 @@ export function createLayoutGroup(
         if (!g) return null
         const fx = g.fx
         const fy = g.fy
-        const d = p.drive
         let x: number
         let y: number
         let vx = 0
@@ -1464,7 +1494,7 @@ export function createLayoutGroup(
             (hold.state === 'released' || hold.state === 'cancelled') &&
             hold.releaseTrack
         ) {
-            const origin = trackOrigin(hold.releaseTrack, d?.elapsed ?? 0)
+            const origin = trackOrigin(hold.releaseTrack, hold.releaseElapsed)
             x = origin.x
             y = origin.y
             vx = origin.vx
@@ -1544,11 +1574,7 @@ export function createLayoutGroup(
                 })(),
                 layers: layers[i] ?? null,
                 override: held ? heldOverride(hold, node.p) : null,
-                ride:
-                    ride !== null &&
-                    (ride.state === 'held' || ride.state === 'released')
-                        ? (index.get(ride.owner) ?? -1)
-                        : -1,
+                ride: isLiveHold(ride) ? (index.get(ride.owner) ?? -1) : -1,
             }
         })
     }
@@ -1836,9 +1862,81 @@ export function createLayoutGroup(
         hold.rides.clear()
     }
 
+    /**
+     * The held read's support check for a presented rect: a supported layout
+     * resize passes (and is taken into the hold); a map the engine does not
+     * own, an owned CSS animation, or a mismatched scale fails (P4-C7).
+     */
+    function heldRectSupported(p: Participant, rect: Box): boolean {
+        const offset: readonly [number, number] = [
+            p.element.offsetWidth,
+            p.element.offsetHeight,
+        ]
+        stats.offsets += 1
+        const style = getComputedStyle(p.element)
+        stats.styles += 1
+        const measured = measure(
+            p.element,
+            false,
+            () => animatedOwned(p.element.ownerDocument),
+            snapsReferenceBox(p.element.ownerDocument),
+            style,
+            readTransform(style)
+        )
+        if (measured.unsupported !== null) return false
+        const engine = engineState()
+        let expectedX = 1
+        let expectedY = 1
+        for (const a of chainOf(p)) {
+            const apose = engine.poses.get(a) ?? IDENTITY_POSE
+            const ag = a.geometry
+            if (ag) {
+                expectedX *= apose.sx * ag.inner.x.k
+                expectedY *= apose.sy * ag.inner.y.k
+                continue
+            }
+            const astyle = getComputedStyle(a.element)
+            stats.styles += 1
+            const at = readTransform(astyle)
+            if (typeof at === 'string') return false
+            expectedX *= apose.sx * at.scale[0] * at.matrix.a
+            expectedY *= apose.sy * at.scale[1] * at.matrix.d
+        }
+        const pose = engine.poses.get(p) ?? writtenPose(p.drive)
+        const ownX = (measured.scale[0] * measured.matrix.a) / (pose.sx || 1)
+        const ownY = (measured.scale[1] * measured.matrix.d) / (pose.sy || 1)
+        if (!(ownX > 0) || !(ownY > 0)) return false
+        const check = supportCheck(
+            [
+                {
+                    parent: -1,
+                    rect,
+                    offset,
+                    pose: {
+                        sx: expectedX * pose.sx,
+                        sy: expectedY * pose.sy,
+                    },
+                },
+            ],
+            () => ({ sx: ownX, sy: ownY }),
+            () => {
+                const exact = borderSize(style)
+                return exact
+                    ? { w: exact[0], h: exact[1] }
+                    : { w: Number.NaN, h: Number.NaN }
+            }
+        )
+        return check.supported[0] === true
+    }
+
     /** The capture read phase's rect read for one held element (§5.10, §4.5). */
     function readHolds(): void {
         if (disposed || !hasDOM()) return
+        let animated: ReadonlySet<Element> | null = null
+        const animatedNow = (): ReadonlySet<Element> => {
+            animated ??= animatedOwned((scopeDocument ?? document) as Document)
+            return animated
+        }
         for (const p of registry.values()) {
             const hold = p.hold
             if (!hold || hold.state !== 'held') continue
@@ -1853,6 +1951,20 @@ export function createLayoutGroup(
                 hold.releaseTrack = null
                 continue
             }
+            // P4-C7: the animated-owned probe applies to the held element and
+            // its participant ancestors; an owned CSS animation/transition is
+            // a map the engine does not own
+            const animations = animatedNow()
+            let animatedOwnedNow = animations.has(p.element)
+            for (let a = p.parent; a && !animatedOwnedNow; a = a.parent) {
+                animatedOwnedNow = animations.has(a.element)
+            }
+            if (animatedOwnedNow) {
+                hold.state = 'invalidated'
+                hold.invalidReason = 'unsupported'
+                hold.releaseTrack = null
+                continue
+            }
             const rect = viewRect(p.element)
             stats.rects += 1
             const last = hold.lastDrawn
@@ -1862,18 +1974,35 @@ export function createLayoutGroup(
                 hold.shiftY = 0
                 continue
             }
-            // the map above changed by more than a pure translation: a
-            // rotation, skew, zoom or a box resize presentation (a failed
-            // support check of the held read)
             const sizeError = Math.max(
-                Math.abs(rect.w - last.w),
-                Math.abs(rect.h - last.h)
+                Math.abs(rect.w - hold.sizeW),
+                Math.abs(rect.h - hold.sizeH)
             )
-            if (!(sizeError <= 0.5)) {
-                hold.state = 'invalidated'
-                hold.invalidReason = 'unsupported'
-                hold.releaseTrack = null
-                continue
+            if (sizeError > HOLD_SIZE_TOL) {
+                if (!heldRectSupported(p, rect)) {
+                    hold.state = 'invalidated'
+                    hold.invalidReason = 'unsupported'
+                    hold.releaseTrack = null
+                    continue
+                }
+                hold.sizeTrack = null
+                hold.sizeElapsed = 0
+                hold.sizeStarted = false
+                hold.sizeW = rect.w
+                hold.sizeH = rect.h
+                hold.sizeVW = 0
+                hold.sizeVH = 0
+                hold.sizeTargetW = rect.w
+                hold.sizeTargetH = rect.h
+            } else if (!hold.sizeTrack) {
+                // one hold size tolerance: a sub-threshold presented size is
+                // snapped into the state so release can finish
+                hold.sizeW = rect.w
+                hold.sizeH = rect.h
+                hold.sizeVW = 0
+                hold.sizeVH = 0
+                hold.sizeTargetW = rect.w
+                hold.sizeTargetH = rect.h
             }
             hold.shiftX = rect.x - last.x
             hold.shiftY = rect.y - last.y
@@ -1967,7 +2096,9 @@ export function createLayoutGroup(
         velocity: BoxVelocity | null,
         h: { x: number; y: number },
         dh: { x: number; y: number },
-        reduced: 'jump' | 'clamp' | 'none'
+        reduced: 'jump' | 'clamp' | 'none',
+        anchorParent: Participant | null = null,
+        parentVelocity: BoxVelocity | null = null
     ): void {
         const d = p.drive
         const g = p.geometry
@@ -1993,6 +2124,51 @@ export function createLayoutGroup(
             Math.abs(residual.w) > 1e-6 ||
             Math.abs(residual.h) > 1e-6
         const motion = motionOf(p, reduced)
+        // H13-08/P4-C10: preserve an anchored child's layoutAnchor in the
+        // residual frame; the solve then rides the parent's drawn anchor
+        const anchor = p.options.layoutAnchor
+        const pg = anchor && anchorParent ? anchorParent.geometry : null
+        let path: AnchorPath | null = null
+        if (anchor && pg) {
+            const parentResidualV = parentVelocity
+                ? {
+                      x: parentVelocity.x - dh.x,
+                      y: parentVelocity.y - dh.y,
+                      w: parentVelocity.w,
+                      h: parentVelocity.h,
+                  }
+                : ZERO_VELOCITY
+            const point = (box: Box) => ({
+                x: box.x + anchor.x * box.w,
+                y: box.y + anchor.y * box.h,
+            })
+            const from = point(before)
+            const to = point(a)
+            const parentPoint = point(pg.a)
+            path = {
+                u: anchor.x,
+                v: anchor.y,
+                fromX: from.x - parentPoint.x,
+                fromY: from.y - parentPoint.y,
+                toX: to.x - parentPoint.x,
+                toY: to.y - parentPoint.y,
+                velocity: moving
+                    ? {
+                          x:
+                              residual.x +
+                              anchor.x * residual.w -
+                              (parentResidualV.x +
+                                  anchor.x * parentResidualV.w),
+                          y:
+                              residual.y +
+                              anchor.y * residual.h -
+                              (parentResidualV.y +
+                                  anchor.y * parentResidualV.h),
+                      }
+                    : null,
+            }
+        }
+        const refusal: { settle: number | null } = { settle: null }
         const track = createTrack(
             before,
             a,
@@ -2001,9 +2177,35 @@ export function createLayoutGroup(
             g.fy,
             p.options.layout ?? true,
             moving ? { ...motion, delay: 0 } : motion,
-            null
+            path,
+            refusal
         )
-        if (typeof track === 'string') return
+        if (typeof track === 'string') {
+            // H13-30: a refused residual is not silently ignored. Keep the
+            // child riding h at its own A (a residual jump) and report the
+            // typed refusal; the hold itself continues.
+            if (track === 'spring-timeout') {
+                diagnose('spring-timeout', 'snap', {
+                    element: p.element,
+                    reason: 'unsupported',
+                    springSettleMs:
+                        refusal.settle === null ? null : refusal.settle * 1000,
+                })
+            } else {
+                warn(
+                    'reduced',
+                    'reduced motion found no residual path that fits maxDuration; the descendant residual jumps to its layout.'
+                )
+            }
+            d.track = null
+            d.timeline = null
+            d.target = a
+            d.kind = 'static'
+            d.elapsed = 0
+            d.started = false
+            d.mode = reduced
+            return
+        }
         const continues = d.started
         if (d.run) {
             const old = d.run
@@ -2061,12 +2263,6 @@ export function createLayoutGroup(
 
     /** A held element's take: validates, reads, freezes the origin channels and starts frames. */
     function takeDrive(element: HTMLElement): LayoutDriveHandle {
-        if (waapi) {
-            throw invalidOptions(
-                'type',
-                "the 'waapi' engine cannot take a drive hold; use engine: 'raf'."
-            )
-        }
         const p = registry.get(element)
         if (!p || p.removed) {
             throw invalidOptions(
@@ -2081,13 +2277,83 @@ export function createLayoutGroup(
         if (disposed) {
             throw invalidOptions('type', 'take: the layout group is disposed.')
         }
-        if (p.hold !== null) {
-            throw invalidOptions(
-                'type',
-                'take: the element is already held or landing.'
-            )
+        let retake: RetakeState | null = null
+        const existingHold = p.hold
+        if (existingHold !== null) {
+            if (
+                existingHold.state !== 'released' &&
+                existingHold.state !== 'cancelled'
+            ) {
+                throw invalidOptions(
+                    'type',
+                    'take: the element is already held or landing.'
+                )
+            }
+            // P4-C1: re-taking a landing settles the old landing at its
+            // current drawn box (old handle invalidated) and starts a new hold
+            const rect0 = viewRect(element)
+            stats.rects += 1
+            const g0 = p.geometry
+            if (!g0) {
+                throw invalidOptions(
+                    'type',
+                    'take: the landing has no measured geometry.'
+                )
+            }
+            const nodes0 = frame.length > 0 ? solveNodes(frame) : []
+            const solved0 = frame.length > 0 ? solve(nodes0) : []
+            const rates0 = frame.length > 0 ? drawnRates(nodes0).velocities : []
+            const drawn0 = new Map<Participant, Box>()
+            const rate0 = new Map<Participant, BoxVelocity>()
+            const tracked0 = new Set<Participant>()
+            frame.forEach((node, i) => {
+                drawn0.set(node.p, solved0[i]!.drawn)
+                rate0.set(node.p, rates0[i]!)
+                if (
+                    node.p !== p &&
+                    node.p.drive?.kind === 'track' &&
+                    runs(node.p.drive)
+                ) {
+                    tracked0.add(node.p)
+                }
+            })
+            const pRate = rate0.get(p) ?? ZERO_VELOCITY
+            retake = {
+                takeX: rect0.x + g0.fx * rect0.w,
+                takeY: rect0.y + g0.fy * rect0.h,
+                velocity: {
+                    x: pRate.x + g0.fx * pRate.w,
+                    y: pRate.y + g0.fy * pRate.h,
+                },
+                sizeTrack: existingHold.sizeTrack,
+                sizeElapsed: existingHold.sizeElapsed,
+                sizeStarted: existingHold.sizeStarted,
+                sizeW: existingHold.sizeW,
+                sizeH: existingHold.sizeH,
+                sizeVW: existingHold.sizeVW,
+                sizeVH: existingHold.sizeVH,
+                sizeTargetW: existingHold.sizeTargetW,
+                sizeTargetH: existingHold.sizeTargetH,
+                drawn: drawn0,
+                rates: rate0,
+                tracked: tracked0,
+            }
+            existingHold.state = 'invalidated'
+            existingHold.releaseTrack = null
+            invalidateHold(p)
+            if (p.drive) settle(p)
+            frame = frame.filter((node) => node.p.drive !== null)
+            if (deferDepth === 0) commitWrites()
+            p.geometry = null
         }
         if (p.drive?.kind === 'follow' || p.drive?.kind === 'held') {
+            // P4-C2: an exiting follower is inert and being removed; the
+            // internal follower hold is not a drive hold
+            warn(
+                'drive-follower',
+                'take refused an exiting crossfade follower: it is inert and being removed.'
+            )
+            diagnose('drive-rejected', 'none', { element })
             throw invalidOptions(
                 'type',
                 'take: an exiting crossfade follower is inert and cannot be taken.'
@@ -2115,6 +2381,12 @@ export function createLayoutGroup(
             })
             return terminalHandle()
         }
+        if (waapi) {
+            throw invalidOptions(
+                'type',
+                "the 'waapi' engine cannot take a drive hold; use engine: 'raf'."
+            )
+        }
         const doc = element.ownerDocument
         const snappedReference = snapsReferenceBox(doc)
         // the support check on the presented box (§4.2): one rect, one
@@ -2131,7 +2403,7 @@ export function createLayoutGroup(
         const measured = measure(
             element,
             ownsRadius(p.options),
-            () => new Set<Element>(),
+            () => animatedOwned(doc),
             snappedReference,
             style,
             readTransform(style)
@@ -2231,19 +2503,55 @@ export function createLayoutGroup(
             parentRest = parent.geometry?.rest ?? IDENTITY_MAP
         }
         const dpr = doc.defaultView?.devicePixelRatio ?? 1
-        const g =
-            p.geometry ??
-            resolveGeometry(p, rect, measured, parentFull, parentRest, dpr)
-                .geometry
+        // P4-C9: take reads, not the stale last-flush geometry. A driven
+        // node's rect is under its last written pose; divide parent and pose
+        // out before resolving the CSS box. A rest node's rect is its box.
+        let takeRect = rect
+        let takeMeasured = measured
+        if (p.drive && p.geometry) {
+            const pose = writtenPose(p.drive)
+            const was = p.geometry
+            if (pose.sx > 0 && pose.sy > 0) {
+                const local = mapBox(invert(parentFull), rect)
+                const unposed = {
+                    x: was.ox + (local.x - was.ox - pose.tx) / pose.sx,
+                    y: was.oy + (local.y - was.oy - pose.ty) / pose.sy,
+                    w: local.w / pose.sx,
+                    h: local.h / pose.sy,
+                }
+                takeRect = mapBox(parentFull, unposed)
+                // the measured computed translate/scale include the pose as
+                // well: give resolveGeometry the authored map only
+                const authored = p.drive.authored
+                takeMeasured = {
+                    ...measured,
+                    translate: [
+                        { px: authored.tx, pct: 0 },
+                        { px: authored.ty, pct: 0 },
+                    ],
+                    scale: [authored.sx, authored.sy],
+                }
+            }
+        }
+        const g = resolveGeometry(
+            p,
+            takeRect,
+            takeMeasured,
+            parentFull,
+            parentRest,
+            dpr
+        ).geometry
         p.geometry = g
         const analytic = drawnMap.get(p) ?? g.a
-        const takeX = rect.x + g.fx * rect.w
-        const takeY = rect.y + g.fy * rect.h
+        const takeX = retake ? retake.takeX : rect.x + g.fx * rect.w
+        const takeY = retake ? retake.takeY : rect.y + g.fy * rect.h
         const drawnVelocity = engine.rates.get(p) ?? ZERO_VELOCITY
-        const velocity: LayoutDriveVector = {
-            x: drawnVelocity.x + g.fx * drawnVelocity.w,
-            y: drawnVelocity.y + g.fy * drawnVelocity.h,
-        }
+        const velocity: LayoutDriveVector = retake
+            ? retake.velocity
+            : {
+                  x: drawnVelocity.x + g.fx * drawnVelocity.w,
+                  y: drawnVelocity.y + g.fy * drawnVelocity.h,
+              }
         // a kept pose timeline has no single size channel to continue: freeze
         // the presented size instead (continuous at the take)
         const running =
@@ -2251,10 +2559,21 @@ export function createLayoutGroup(
             p.drive.track !== null &&
             p.drive.timeline === null &&
             !trackEnded(p.drive.track, p.drive.elapsed)
-        const sizeTrack = running ? p.drive!.track : null
-        const size = sizeTrack
-            ? trackSize(sizeTrack, p.drive!.elapsed)
-            : { w: rect.w, h: rect.h, vw: 0, vh: 0 }
+        const sizeTrack = retake
+            ? retake.sizeTrack
+            : running
+              ? p.drive!.track
+              : null
+        const size = retake
+            ? {
+                  w: retake.sizeW,
+                  h: retake.sizeH,
+                  vw: retake.sizeVW,
+                  vh: retake.sizeVH,
+              }
+            : sizeTrack
+              ? trackSize(sizeTrack, p.drive!.elapsed)
+              : { w: rect.w, h: rect.h, vw: 0, vh: 0 }
         if (!p.drive) {
             ensureDrive(
                 p,
@@ -2274,12 +2593,14 @@ export function createLayoutGroup(
             takeX,
             takeY,
             velocity,
-            shiftX: rect.x - analytic.x,
-            shiftY: rect.y - analytic.y,
-            lastDrawn: analytic,
+            shiftX: retake ? 0 : rect.x - analytic.x,
+            shiftY: retake ? 0 : rect.y - analytic.y,
+            lastDrawn: retake ? g.a : analytic,
             sizeTrack,
-            sizeElapsed: p.drive?.elapsed ?? 0,
-            sizeStarted: p.drive?.started ?? false,
+            sizeElapsed: retake ? retake.sizeElapsed : (p.drive?.elapsed ?? 0),
+            sizeStarted: retake
+                ? retake.sizeStarted
+                : (p.drive?.started ?? false),
             sizeW: size.w,
             sizeH: size.h,
             sizeVW: size.vw,
@@ -2287,6 +2608,10 @@ export function createLayoutGroup(
             sizeTargetW: g.a.w,
             sizeTargetH: g.a.h,
             releaseTrack: null,
+            releaseElapsed: 0,
+            releaseStarted: false,
+            releaseTarget: null,
+            releaseMode: reducedMode(),
             lastHX: 0,
             lastHY: 0,
             rides: new Set(),
@@ -2318,10 +2643,38 @@ export function createLayoutGroup(
             q.ride = hold
             hold.rides.add(q)
             ensureFrameFor(q)
-            if (q.drive?.kind === 'track' && runs(q.drive)) {
+            if (retake) {
+                const b = retake.drawn.get(q) ?? null
+                const v = retake.rates.get(q) ?? null
+                if (retake.tracked.has(q) && b && v) {
+                    planResidual(
+                        q,
+                        b,
+                        v,
+                        h,
+                        velocity,
+                        reducedMode(),
+                        q.parent,
+                        q.parent
+                            ? (retake.rates.get(q.parent) ?? ZERO_VELOCITY)
+                            : null
+                    )
+                }
+            } else if (q.drive?.kind === 'track' && runs(q.drive)) {
                 const b = drawnMap.get(q) ?? qg.a
                 const v = engine.rates.get(q) ?? ZERO_VELOCITY
-                planResidual(q, b, v, h, velocity, reducedMode())
+                planResidual(
+                    q,
+                    b,
+                    v,
+                    h,
+                    velocity,
+                    reducedMode(),
+                    q.parent,
+                    q.parent
+                        ? (engine.rates.get(q.parent) ?? ZERO_VELOCITY)
+                        : null
+                )
             }
         }
         hold.lastHX = h.x
@@ -2430,24 +2783,37 @@ export function createLayoutGroup(
             const rect = viewRect(p.element)
             stats.rects += 1
             const last = hold.lastDrawn
-            if (
-                last &&
-                Math.max(Math.abs(rect.w - last.w), Math.abs(rect.h - last.h)) >
-                    0.5
-            ) {
-                hold.state = 'invalidated'
-                hold.invalidReason = 'unsupported'
-                hold.releaseTrack = null
-                warn(
-                    'unsupported',
-                    'a held element cannot be drawn exactly any more; the hold ends and the element snaps to its layout.'
-                )
-                diagnose('unsupported-geometry', 'snap', {
-                    element: p.element,
-                    reason: 'unsupported',
-                })
-                finishHold(hold)
-                return
+            const sizeDelta = last
+                ? Math.max(
+                      Math.abs(rect.w - hold.sizeW),
+                      Math.abs(rect.h - hold.sizeH)
+                  )
+                : 0
+            if (sizeDelta > HOLD_SIZE_TOL) {
+                if (!heldRectSupported(p, rect)) {
+                    hold.state = 'invalidated'
+                    hold.invalidReason = 'unsupported'
+                    hold.releaseTrack = null
+                    warn(
+                        'unsupported',
+                        'a held element cannot be drawn exactly any more; the hold ends and the element snaps to its layout.'
+                    )
+                    diagnose('unsupported-geometry', 'snap', {
+                        element: p.element,
+                        reason: 'unsupported',
+                    })
+                    finishHold(hold)
+                    return
+                }
+                hold.sizeTrack = null
+                hold.sizeElapsed = 0
+                hold.sizeStarted = false
+                hold.sizeW = rect.w
+                hold.sizeH = rect.h
+                hold.sizeVW = 0
+                hold.sizeVH = 0
+                hold.sizeTargetW = rect.w
+                hold.sizeTargetH = rect.h
             }
             if (last) {
                 hold.shiftX = rect.x - last.x
@@ -2456,28 +2822,83 @@ export function createLayoutGroup(
         }
         hold.state = state
         const reduced = reducedMode()
+        const target = g.a
+        const originX = hold.hx - hold.shiftX
+        const originY = hold.hy - hold.shiftY
         if (reduced === 'jump') {
+            // jump: land at A with no motion; the size snaps too
+            hold.sizeTrack = null
+            hold.sizeW = target.w
+            hold.sizeH = target.h
+            hold.sizeVW = 0
+            hold.sizeVH = 0
+            hold.sizeTargetW = target.w
+            hold.sizeTargetH = target.h
+            hold.releaseTrack = null
+            hold.releaseTarget = target
             finishHold(hold)
             return
         }
+        // the size continuation is independent of the release origin: plan it
+        // now if the presented size differs from A beyond the hold tolerance
+        if (
+            !hold.sizeTrack &&
+            (Math.abs(hold.sizeW - target.w) > HOLD_SIZE_TOL ||
+                Math.abs(hold.sizeH - target.h) > HOLD_SIZE_TOL)
+        ) {
+            const motion = motionOf(p, reduced)
+            const sizeTrack = createTrack(
+                { x: target.x, y: target.y, w: hold.sizeW, h: hold.sizeH },
+                target,
+                null,
+                g.fx,
+                g.fy,
+                true,
+                motion,
+                null
+            )
+            if (typeof sizeTrack !== 'string') {
+                hold.sizeTrack = sizeTrack
+                hold.sizeElapsed = 0
+                hold.sizeStarted = false
+                hold.sizeTargetW = target.w
+                hold.sizeTargetH = target.h
+            }
+        } else if (
+            Math.abs(hold.sizeW - target.w) <= HOLD_SIZE_TOL &&
+            Math.abs(hold.sizeH - target.h) <= HOLD_SIZE_TOL
+        ) {
+            hold.sizeTrack = null
+            hold.sizeW = target.w
+            hold.sizeH = target.h
+            hold.sizeVW = 0
+            hold.sizeVH = 0
+            hold.sizeTargetW = target.w
+            hold.sizeTargetH = target.h
+        }
         const size = { w: hold.sizeW, h: hold.sizeH }
-        const ox = hold.hx - hold.shiftX
-        const oy = hold.hy - hold.shiftY
         const before: Box = {
-            x: ox - g.fx * size.w,
-            y: oy - g.fy * size.h,
+            x: originX - g.fx * size.w,
+            y: originY - g.fy * size.h,
             w: size.w,
             h: size.h,
         }
-        const target = g.a
         const distance = Math.max(
             Math.abs(before.x + g.fx * before.w - (target.x + g.fx * target.w)),
-            Math.abs(before.y + g.fy * before.h - (target.y + g.fy * target.h)),
+            Math.abs(before.y + g.fy * before.h - (target.y + g.fy * target.h))
+        )
+        const sizeDistance = Math.max(
             Math.abs(before.w - target.w),
             Math.abs(before.h - target.h)
         )
         const speed = Math.hypot(velocity.x, velocity.y)
-        if (speed < 1e-9 && distance < 0.01) {
+        if (
+            speed < 1e-9 &&
+            distance <= HOLD_ORIGIN_TOL &&
+            sizeDistance <= HOLD_SIZE_TOL
+        ) {
+            hold.releaseTrack = null
+            hold.releaseTarget = target
             finishHold(hold)
             return
         }
@@ -2486,28 +2907,56 @@ export function createLayoutGroup(
             Math.abs(hold.sizeVW) > 1e-6 ||
             Math.abs(hold.sizeVH) > 1e-6
         const motion = motionOf(p, reduced)
+        const refusal: { settle: number | null } = { settle: null }
         const track = createTrack(
             before,
             target,
             {
                 x: velocity.x,
                 y: velocity.y,
-                w: hold.sizeVW,
-                h: hold.sizeVH,
+                w: 0,
+                h: 0,
             },
             g.fx,
             g.fy,
             true,
             moving ? { ...motion, delay: 0 } : motion,
-            null
+            null,
+            refusal
         )
         if (typeof track === 'string') {
-            hold.state = 'invalidated'
+            // P4-C8: a reduced no-fit is a released jump, not invalidation;
+            // a spring refusal is a typed snap
+            if (track === 'spring-timeout') {
+                diagnose('spring-timeout', 'snap', {
+                    element: p.element,
+                    reason: 'unsupported',
+                    springSettleMs:
+                        refusal.settle === null ? null : refusal.settle * 1000,
+                })
+            } else {
+                warn(
+                    'reduced',
+                    'reduced motion found no release path that fits maxDuration; the element lands at its layout.'
+                )
+            }
             hold.releaseTrack = null
+            hold.releaseTarget = target
+            hold.sizeTrack = null
+            hold.sizeW = target.w
+            hold.sizeH = target.h
+            hold.sizeVW = 0
+            hold.sizeVH = 0
+            hold.sizeTargetW = target.w
+            hold.sizeTargetH = target.h
             finishHold(hold)
             return
         }
         hold.releaseTrack = track
+        hold.releaseElapsed = 0
+        hold.releaseStarted = false
+        hold.releaseTarget = target
+        hold.releaseMode = reduced
         d.kind = 'track'
         d.track = track
         d.timeline = null
@@ -2639,9 +3088,15 @@ export function createLayoutGroup(
             // release replaces the drive's origin track while the size goes on
             for (const node of frame) {
                 const hold = node.p.hold
-                if (!hold?.sizeTrack) continue
-                if (hold.sizeStarted) hold.sizeElapsed += dt
-                else hold.sizeStarted = true
+                if (!hold) continue
+                if (hold.sizeTrack) {
+                    if (hold.sizeStarted) hold.sizeElapsed += dt
+                    else hold.sizeStarted = true
+                }
+                if (hold.releaseTrack) {
+                    if (hold.releaseStarted) hold.releaseElapsed += dt
+                    else hold.releaseStarted = true
+                }
             }
             // every ghost a kept pose timeline reads runs on the same clock,
             // each node by its own rule, as its frame would have
@@ -2727,6 +3182,22 @@ export function createLayoutGroup(
                 // direct manipulation owns the origin; it never settles from
                 // the frame's own track because its size keeps going
                 if (hold.state === 'held') {
+                    // normalize a sub-threshold size so release can finish
+                    const target = node.geometry.a
+                    if (
+                        Math.abs(hold.sizeW - target.w) <= HOLD_SIZE_TOL &&
+                        Math.abs(hold.sizeH - target.h) <= HOLD_SIZE_TOL
+                    ) {
+                        hold.sizeTrack = null
+                        hold.sizeElapsed = 0
+                        hold.sizeStarted = false
+                        hold.sizeW = target.w
+                        hold.sizeH = target.h
+                        hold.sizeVW = 0
+                        hold.sizeVH = 0
+                        hold.sizeTargetW = target.w
+                        hold.sizeTargetH = target.h
+                    }
                     queuePose(node, solved[i]!)
                     running = true
                     return
@@ -2734,13 +3205,29 @@ export function createLayoutGroup(
                 // released: h and the residuals have to settle, and no
                 // ancestor may still animate (the pose is counter-projected)
                 const g = node.geometry
+                const target = g.a
                 const releaseEnded =
                     !hold.releaseTrack ||
-                    trackEnded(hold.releaseTrack, d.elapsed)
+                    trackEnded(hold.releaseTrack, hold.releaseElapsed)
+                // one hold size tolerance: snap a sub-threshold difference and
+                // let the same value decide the finish, so the clock can stop
+                const sizeClose =
+                    Math.abs(hold.sizeW - target.w) <= HOLD_SIZE_TOL &&
+                    Math.abs(hold.sizeH - target.h) <= HOLD_SIZE_TOL
+                if (sizeClose) {
+                    hold.sizeTrack = null
+                    hold.sizeElapsed = 0
+                    hold.sizeStarted = false
+                    hold.sizeW = target.w
+                    hold.sizeH = target.h
+                    hold.sizeVW = 0
+                    hold.sizeVH = 0
+                    hold.sizeTargetW = target.w
+                    hold.sizeTargetH = target.h
+                }
                 const sizeEnded =
                     !hold.sizeTrack ||
                     trackEnded(hold.sizeTrack, hold.sizeElapsed)
-                const target = g.a
                 const hx =
                     solved[i]!.drawn.x +
                     g.fx * solved[i]!.drawn.w -
@@ -2753,10 +3240,10 @@ export function createLayoutGroup(
                 if (
                     releaseEnded &&
                     sizeEnded &&
-                    Math.abs(hx) <= 0.01 &&
-                    Math.abs(hy) <= 0.01 &&
-                    Math.abs(solved[i]!.drawn.w - target.w) <= 0.01 &&
-                    Math.abs(solved[i]!.drawn.h - target.h) <= 0.01 &&
+                    Math.abs(hx) <= HOLD_ORIGIN_TOL &&
+                    Math.abs(hy) <= HOLD_ORIGIN_TOL &&
+                    Math.abs(hold.sizeW - target.w) <= HOLD_ORIGIN_TOL &&
+                    Math.abs(hold.sizeH - target.h) <= HOLD_ORIGIN_TOL &&
                     !ancestor
                 ) {
                     finishHold(hold)
@@ -3366,7 +3853,7 @@ export function createLayoutGroup(
         const measured = measure(
             element,
             ownsRadius(p.options),
-            () => new Set<Element>(),
+            () => animatedOwned(doc),
             snapsReferenceBox(doc),
             style,
             readTransform(style)
@@ -4471,6 +4958,61 @@ export function createLayoutGroup(
         // §5.8 degradations are not snaps: `report.snapped` does not list
         // them; their diagnostic names the degradation (emitted at outcome)
 
+        /**
+         * P4-C4: a held node and its riding descendants are visible movers.
+         * The plan does not count them (their origin is outside the track
+         * plan), so fold them into the mover cap here; exceeding it caps the
+         * whole flush and invalidates every hold.
+         */
+        const holdMoverIndices = new Set<number>()
+        for (let i = 0; i < list.length; i++) {
+            const held = isLiveHold(list[i]!.hold)
+            if (!held) continue
+            holdMoverIndices.add(i)
+            for (const q of descendantsOf(list[i]!.element)) {
+                const qi = index.get(q)
+                if (qi !== undefined) holdMoverIndices.add(qi)
+            }
+        }
+        const actionMovers = result.actions.filter(
+            (action) =>
+                action.kind === 'track' ||
+                action.kind === 'keep' ||
+                action.kind === 'follow'
+        ).length
+        if (
+            result.status !== 'capped' &&
+            holdMoverIndices.size > 0 &&
+            actionMovers + holdMoverIndices.size > maxNodes
+        ) {
+            const cappedSnaps = [...result.snapped]
+            const seen = new Set(cappedSnaps.map((entry) => entry.index))
+            for (let i = 0; i < result.actions.length; i++) {
+                const kind = result.actions[i]!.kind
+                if (
+                    (kind === 'track' ||
+                        kind === 'keep' ||
+                        kind === 'follow') &&
+                    !seen.has(i)
+                ) {
+                    seen.add(i)
+                    cappedSnaps.push({ index: i, reason: 'capped' })
+                }
+            }
+            for (const i of holdMoverIndices) {
+                if (seen.has(i)) continue
+                seen.add(i)
+                cappedSnaps.push({ index: i, reason: 'capped' })
+            }
+            result = {
+                ...result,
+                status: 'capped',
+                actions: list.map(() => ({ kind: 'none' as const })),
+                snapped: cappedSnaps,
+                degraded: [],
+            }
+        }
+
         // 3. outcome
         const snapped: { element: HTMLElement; reason: SnapReason }[] =
             result.snapped.map(({ index: i, reason }) => ({
@@ -4520,6 +5062,20 @@ export function createLayoutGroup(
             // interrupted, not ended (§9.3, OPS-19)
             for (const p of registry.values()) {
                 if (p.drive?.run) interrupt(p.drive.run)
+            }
+            // P4-C4: a capped flush invalidates every live hold and stops its
+            // read; the held node/riders are reported as capped
+            for (const p of list) {
+                const hold = p.hold
+                if (!isLiveHold(hold)) continue
+                hold.state = 'invalidated'
+                invalidateHold(p)
+                if (p.drive) settle(p)
+            }
+            for (const p of list) {
+                if (!p.ride) continue
+                p.ride = null
+                if (p.drive) settle(p)
             }
         } else if (disabled) {
             // a flush that meets the kill switch reports its movers disabled
@@ -5001,13 +5557,15 @@ export function createLayoutGroup(
                 Math.max(
                     Math.abs(g.a.w - hold.sizeTargetW),
                     Math.abs(g.a.h - hold.sizeTargetH)
-                ) >= threshold
+                ) > HOLD_SIZE_TOL
             if (sizeChanged || planNode.optionsChanged) {
                 const pinned =
                     (p.options.layout ?? true) === 'position' ||
                     reducedNow === 'jump'
                 if (pinned) {
                     hold.sizeTrack = null
+                    hold.sizeElapsed = 0
+                    hold.sizeStarted = false
                     hold.sizeW = g.a.w
                     hold.sizeH = g.a.h
                     hold.sizeVW = 0
@@ -5017,6 +5575,11 @@ export function createLayoutGroup(
                     const moving =
                         Math.abs(hold.sizeVW) > 1e-6 ||
                         Math.abs(hold.sizeVH) > 1e-6
+                    const continues =
+                        hold.sizeStarted && hold.sizeTrack !== null
+                    const refusal: { settle: number | null } = {
+                        settle: null,
+                    }
                     const track = createTrack(
                         { x: g.a.x, y: g.a.y, w: hold.sizeW, h: hold.sizeH },
                         g.a,
@@ -5032,80 +5595,122 @@ export function createLayoutGroup(
                         g.fy,
                         true,
                         moving ? { ...motion, delay: 0 } : motion,
-                        null
+                        null,
+                        refusal
                     )
                     if (typeof track === 'string') {
                         if (track === 'spring-timeout') {
                             diagnose('spring-timeout', 'snap', {
                                 element: p.element,
                                 reason: 'unsupported',
+                                springSettleMs:
+                                    refusal.settle === null
+                                        ? null
+                                        : refusal.settle * 1000,
                             })
                         }
-                        invalidateHold(p)
-                        settle(p)
-                        continue
-                    }
-                    hold.sizeTrack = track
-                    hold.sizeElapsed = 0
-                    hold.sizeStarted = p.drive?.started ?? false
-                    const d = p.drive
-                    if (d) {
-                        d.kind = 'track'
-                        d.track = track
-                        d.target = g.a
-                        d.elapsed = 0
-                        d.started = hold.sizeStarted
-                        d.mode = reducedNow
+                        // a size refusal snaps the size channel to A; the
+                        // hold itself continues (the policy never ends it)
+                        hold.sizeTrack = null
+                        hold.sizeElapsed = 0
+                        hold.sizeStarted = false
+                        hold.sizeW = g.a.w
+                        hold.sizeH = g.a.h
+                        hold.sizeVW = 0
+                        hold.sizeVH = 0
+                    } else {
+                        hold.sizeTrack = track
+                        hold.sizeElapsed = 0
+                        hold.sizeStarted = continues
                     }
                 }
                 hold.sizeTargetW = g.a.w
                 hold.sizeTargetH = g.a.h
+            } else if (
+                Math.abs(hold.sizeW - g.a.w) <= HOLD_SIZE_TOL &&
+                Math.abs(hold.sizeH - g.a.h) <= HOLD_SIZE_TOL &&
+                (hold.sizeTrack !== null ||
+                    Math.abs(hold.sizeW - g.a.w) > 0 ||
+                    Math.abs(hold.sizeH - g.a.h) > 0)
+            ) {
+                // one size tolerance: normalize a sub-threshold difference so
+                // release can reach its finish and the clock can stop
+                hold.sizeW = g.a.w
+                hold.sizeH = g.a.h
+                hold.sizeVW = 0
+                hold.sizeVH = 0
+                hold.sizeTargetW = g.a.w
+                hold.sizeTargetH = g.a.h
             }
             if (hold.state === 'released') {
-                const d = p.drive
-                if (d && hold.releaseTrack && d.target) {
-                    const delta = Math.max(
-                        Math.abs(g.a.x - d.target.x),
-                        Math.abs(g.a.y - d.target.y),
-                        Math.abs(g.a.w - d.target.w),
-                        Math.abs(g.a.h - d.target.h)
-                    )
-                    if (delta >= threshold || planNode.optionsChanged) {
-                        const b = fresh?.rects.get(p) ?? null
-                        const v = velocity.get(p) ?? null
-                        if (b && v) {
-                            const motion = motionOf(p, reducedNow)
-                            const speed = Math.hypot(v.x, v.y)
-                            const track = createTrack(
-                                b,
-                                g.a,
-                                v,
-                                g.fx,
-                                g.fy,
-                                true,
-                                speed > 1e-9 ? { ...motion, delay: 0 } : motion,
-                                null
-                            )
-                            if (typeof track === 'string') {
-                                invalidateHold(p)
-                                settle(p)
-                                continue
-                            }
+                const target = hold.releaseTarget
+                const targetOrigin = target
+                    ? {
+                          x: target.x + g.fx * target.w,
+                          y: target.y + g.fy * target.h,
+                      }
+                    : null
+                const nowOrigin = {
+                    x: g.a.x + g.fx * g.a.w,
+                    y: g.a.y + g.fy * g.a.h,
+                }
+                const originDelta = targetOrigin
+                    ? Math.max(
+                          Math.abs(nowOrigin.x - targetOrigin.x),
+                          Math.abs(nowOrigin.y - targetOrigin.y)
+                      )
+                    : Number.POSITIVE_INFINITY
+                const modeChanged = hold.releaseMode !== reducedNow
+                if (
+                    hold.releaseTrack &&
+                    (originDelta >= HOLD_ORIGIN_TOL ||
+                        planNode.optionsChanged ||
+                        modeChanged)
+                ) {
+                    const b = fresh?.rects.get(p) ?? null
+                    const v = velocity.get(p) ?? null
+                    const continues = hold.releaseStarted
+                    if (b && v) {
+                        const motion = motionOf(p, reducedNow)
+                        const speed = Math.hypot(v.x, v.y)
+                        const track = createTrack(
+                            b,
+                            g.a,
+                            v,
+                            g.fx,
+                            g.fy,
+                            true,
+                            speed > 1e-9 ? { ...motion, delay: 0 } : motion,
+                            null
+                        )
+                        if (typeof track !== 'string') {
                             hold.releaseTrack = track
-                            d.track = track
-                            d.target = g.a
-                            d.elapsed = 0
-                            // `started` is left as it was: a landing no
-                            // frame has drawn yet is still at rest (§4.3)
-                            d.mode = reducedNow
-                        } else {
-                            hold.releaseTrack = translated(
-                                hold.releaseTrack,
-                                g.a.x - d.target.x,
-                                g.a.y - d.target.y
-                            )
+                            hold.releaseElapsed = 0
+                            hold.releaseStarted = continues
+                            hold.releaseTarget = g.a
+                            hold.releaseMode = reducedNow
+                            const d = p.drive
+                            if (d) {
+                                d.track = track
+                                d.target = g.a
+                                d.elapsed = 0
+                                d.started = continues
+                                d.mode = reducedNow
+                            }
+                        }
+                    } else {
+                        hold.releaseTrack = translated(
+                            hold.releaseTrack,
+                            g.a.x - (target?.x ?? g.a.x),
+                            g.a.y - (target?.y ?? g.a.y)
+                        )
+                        hold.releaseTarget = g.a
+                        hold.releaseMode = reducedNow
+                        const d = p.drive
+                        if (d) {
                             d.track = hold.releaseTrack
                             d.target = g.a
+                            d.mode = reducedNow
                         }
                     }
                 }
@@ -5230,7 +5835,16 @@ export function createLayoutGroup(
                 continue
             }
             if (running || distance >= threshold || nodes[i]!.optionsChanged) {
-                planResidual(p, b, v, presentedH, dh, reduced)
+                planResidual(
+                    p,
+                    b,
+                    v,
+                    presentedH,
+                    dh,
+                    reduced,
+                    p.parent,
+                    p.parent ? (velocity.get(p.parent) ?? null) : null
+                )
             }
         }
 
@@ -5895,7 +6509,13 @@ export function createLayoutGroup(
             if (!d || d.kind === 'held') continue
             const run = d.run
             if (run && !run.done) affected ??= run.id
-            if (d.kind === 'track' || d.kind === 'follow') {
+            // a live drive hold is a mover too, even when its drive is static
+            // (a hold taken at rest) or it is landing (P4-C3/P4-C4)
+            if (
+                d.kind === 'track' ||
+                d.kind === 'follow' ||
+                isLiveHold(node.p.hold)
+            ) {
                 movers.push({ participant: node.p, run: run?.id ?? null })
             }
             finished.push({ element: node.p.element, reason: 'disabled' })
@@ -6262,9 +6882,8 @@ export function createLayoutGroup(
                 probes: stats.probes,
                 parents: stats.parents,
                 tracks: stats.tracks,
-                holds: [...registry.values()].filter(
-                    (p) => p.hold?.state === 'held'
-                ).length,
+                holds: [...registry.values()].filter((p) => isLiveHold(p.hold))
+                    .length,
             }
         },
     }

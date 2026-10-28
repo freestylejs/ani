@@ -153,6 +153,7 @@ export type LayoutDiagnosticCode =
     | 'document-mismatch'
     | 'runtime-disabled'
     | 'focus-in-follower'
+    | 'drive-rejected'
     | 'callback-error'
     | 'internal-error'
     // codes may be added; existing meanings are stable
