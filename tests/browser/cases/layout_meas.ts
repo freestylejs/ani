@@ -2648,6 +2648,56 @@ async function meas10(mode: ShadowRootMode, move: number): Promise<string> {
 /* ───────────────────────── L-MEAS-11 ───────────────────────── */
 
 /**
+ * OPS-10: a participant registered after the fresh capture has no B; it is
+ * reported `'stale'` with `capture-less-flush` and takes no track.
+ */
+export async function L_MEAS_11_LATE(): Promise<string> {
+    const row = 'L_MEAS_11 fresh-late'
+    const { h, snaps, names } = harnessWithSnaps(timing.linear())
+    const quiet = silenceWarnings()
+    try {
+        const existing = node(
+            h.root,
+            'left: 0; top: 0; width: 80px; height: 30px; transform-origin: 0 0;'
+        )
+        addNamed(h, names, { existing })
+        await baseline(h, row)
+        h.group.capture()
+        const late = node(
+            h.root,
+            'left: 200px; top: 40px; width: 80px; height: 30px; transform-origin: 0 0;'
+        )
+        names.set(late, 'late')
+        h.add(late)
+        const diagnostics: LayoutDiagnostic[] = []
+        const stop = layoutRuntime.onDiagnostic((event) =>
+            diagnostics.push(event)
+        )
+        const r = await expectNoRun(
+            report(h.group.flush()),
+            row,
+            'a node without B starts no track'
+        )
+        stop()
+        const stale = [{ element: late, reason: 'stale' as const }]
+        expectReport(names, r, 'stale', stale, row)
+        expectSnapCalls(names, snaps, stale, row)
+        expectEqual(late.style.translate, '', `${row}: no pose`)
+        const events = diagnostics.filter(
+            (event) =>
+                event.code === 'capture-less-flush' && event.element === late
+        )
+        expectEqual(events.length, 1, `${row}: one capture-less event`)
+        expectEqual(events[0]!.reason, 'stale', `${row}: reason`)
+        expectEqual(events[0]!.action, 'snap', `${row}: action`)
+        return `fresh capture + late participant: ${describeReport(names, r)}`
+    } finally {
+        quiet.restore()
+        h.dispose()
+    }
+}
+
+/**
  * L-MEAS-11: the §4.4 table, for a capture-less flush and for an aged
  * capture (an asynchronous gap that lets a rendering opportunity pass, the
  * window `requestAnimationFrame` half of the frame marker). Nodes: undriven

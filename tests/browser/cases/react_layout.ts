@@ -605,11 +605,17 @@ function rl3Aged(
     before: readonly string[],
     snaps: readonly { id: string; reason: string }[]
 ): string {
+    const beforeItems = before.filter((id) =>
+        (RL3_ITEMS as readonly string[]).includes(id)
+    )
     const after = listIds(host).filter(
         (id) =>
-            before.includes(id) && (RL3_ITEMS as readonly string[]).includes(id)
+            beforeItems.includes(id) &&
+            (RL3_ITEMS as readonly string[]).includes(id)
     )
-    const moved = after.filter((id) => before.indexOf(id) !== after.indexOf(id))
+    const moved = after.filter(
+        (id) => beforeItems.indexOf(id) !== after.indexOf(id)
+    )
     if (moved.length === 0) {
         throw new Error(
             'an aged RL3 commit reported a reorder that did not happen'
@@ -627,7 +633,7 @@ function rl3Aged(
     const missing = moved.filter((id) => !stale.has(id))
     if (missing.length > 0) {
         throw new Error(
-            `an aged RL3 commit left moved participants unreported: ${missing.join(', ')}`
+            `an aged RL3 commit left moved participants unreported: ${missing.join(', ')} (snaps: ${snaps.map((s) => `${s.id}:${s.reason}`).join(', ')})`
         )
     }
     for (const id of after) {

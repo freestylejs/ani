@@ -2,7 +2,7 @@
 
 // §7.2 the diagnostics stream: one payload per table row, versioned, with
 // the scope, run, engine, action, element, reason and metrics.
-import { timing } from '@freestylejs/ani-core'
+import { physics, timing } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../core/src/testing/index'
 import { layoutRuntime } from '../runtime'
@@ -119,22 +119,61 @@ describe('§7.2 diagnostics payloads', () => {
         group.dispose()
     })
 
-    it('a capture that begins inside a clock frame is aged with capture-aged at once', () => {
+    it('a capture begun inside a clock frame emits one capture-aged per reported node at the flush, not a second capture-time event (OPS-13)', async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({ clock: mc.clock, motion })
         const a = element(0)
         group.add(a)
+        group.capture()
+        await group.flush()
         const { events, stop } = collect()
         mc.clock.read(() => group.capture())
         mc.frame()
-        const event = events.find((e) => e.code === 'capture-aged')
-        expect(event).toBeDefined()
-        expect(event).toMatchObject({
+        // the capture-time trigger is the §4.1 development warning only
+        expect(events.filter((e) => e.code === 'capture-aged')).toEqual([])
+        model.place(a, box(120))
+        const report = await group.flush()
+        expect(report.status).toBe('stale')
+        const aged = events.filter((e) => e.code === 'capture-aged')
+        expect(aged).toHaveLength(1)
+        expect(aged[0]).toMatchObject({
             action: 'snap',
-            run: null,
+            element: a,
+            reason: 'stale',
             engine: 'raf',
         })
-        expect(event!.element).toBeUndefined()
+        expect(typeof aged[0]!.run).toBe('number')
+        stop()
+        group.dispose()
+    })
+
+    it('OPS-10: a participant registered after the fresh capture has no B, is reported stale and emits capture-less-flush', async () => {
+        const mc = createManualClock()
+        const snaps: string[] = []
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion,
+            onSnap: (_element, reason) => snaps.push(reason),
+        })
+        const a = element(0)
+        group.add(a)
+        group.capture()
+        await group.flush()
+        group.capture()
+        const late = element(200)
+        group.add(late)
+        const { events, stop } = collect()
+        const report = await group.flush()
+        expect(report.status).toBe('stale')
+        expect(report.snapped).toEqual([{ element: late, reason: 'stale' }])
+        expect(snaps).toEqual(['stale'])
+        expect(late.style.translate).toBe('')
+        const event = events.find((e) => e.code === 'capture-less-flush')
+        expect(event).toMatchObject({
+            action: 'snap',
+            element: late,
+            reason: 'stale',
+        })
         stop()
         group.dispose()
     })
@@ -143,7 +182,7 @@ describe('§7.2 diagnostics payloads', () => {
         const mc = createManualClock()
         const group = createLayoutGroup({
             clock: mc.clock,
-            motion: { type: 'spring', duration: 1000, bounce: 0.999 },
+            motion: { type: 'spring', duration: 0.55, bounce: 0.95 },
         })
         const a = element(0)
         group.add(a)
@@ -161,7 +200,11 @@ describe('§7.2 diagnostics payloads', () => {
             element: a,
             reason: 'unsupported',
         })
-        expect(event!.metrics.springSettleMs).toBeGreaterThan(10_000)
+        const expected =
+            physics
+                .spring({ duration: 0.55, bounce: 0.95 })
+                .settleTime(120, 0) * 1000
+        expect(event!.metrics.springSettleMs).toBeCloseTo(expected, 9)
         stop()
         group.dispose()
     })

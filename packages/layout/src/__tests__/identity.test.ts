@@ -583,7 +583,10 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         place(c, { x: 300, y: 200, w: 100, h: 40 })
         mainGroup.add(c, { layoutId: 'hero' })
         const mainReport = await mainGroup.flush()
-        expect(mainReport.status).toBe('no-change')
+        // c is registered after the capture and nothing hands it a box: it
+        // has no valid B and is reported stale (OPS-10, §4.4)
+        expect(mainReport.status).toBe('stale')
+        expect(mainReport.snapped).toEqual([{ element: c, reason: 'stale' }])
         expect(mainGroup.stats.tracks).toBe(0)
 
         mainGroup.dispose()
