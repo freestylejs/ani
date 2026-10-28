@@ -528,25 +528,37 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
 `lostpointercapture` to `cancel()`.
 
 -   **The hold.** The drawn origin is the take point plus the offset every frame, under a scroll, a
-    live ancestor scale, sticky positioning and a re-layout. The only read a frame adds is one rect
-    per held element, in the clock's read phase before any write; `stats.holds` reports live holds
-    and the rect is counted in `stats.rects`.
--   **Size and descendants.** The held element's size keeps its track. Its participant descendants
-    ride one inherited displacement `h(t)` with their own residuals, so their geometry relative to
-    the held element does not depend on how fast `h` decays. The release velocity enters exactly
-    once, through the held node's origin track.
+    live ancestor scale, sticky positioning (the element or an ancestor) and a re-layout. The only
+    read a frame adds is one rect per held element, in the clock's read phase before any write; a
+    size change also verifies support and the animated-owned probe (a running CSS animation or
+    transition on `translate`/`scale` invalidates). `stats.rects` counts the reads; `stats.holds`
+    counts every live hold (`held`, `released` and `cancelled` until it finishes or is invalidated).
+-   **Size and descendants.** The held element's size keeps its track under one hold-specific
+    tolerance (0.5 px): a supported re-layout is taken into the hold, a sub-threshold difference is
+    snapped, and release always reaches its finish. Its participant descendants ride one inherited
+    displacement `h(t)` with their own residuals, so their geometry relative to the held element
+    does not depend on how fast `h` decays. The release velocity enters exactly once, through the
+    held node's origin track.
 -   **States.** `held`, `released`, `cancelled`, `invalidated`. `release`/`cancel` are terminal and
     idempotent; a `move` after a terminal state is a no-op with one development warning per handle.
     Non-finite offsets and velocities throw `ANI_INVALID_OPTIONS` before any state change. A hold
     invalidated by removal, `ownerDocument` change, `layoutKey`, `dispose()`, `finish()`, the kill
     switch, a failed held read or an internal abort follows that event's rule and stops reading.
-    The authored inline style is restored byte for byte.
+    The authored inline style is restored byte for byte. A `take` during a landing settles the old
+    landing at its current drawn box, invalidates the old handle and starts a new hold from it.
 -   **Reduced motion.** The held phase is direct manipulation: `move` stays 1:1 and a policy change
     while held never ends the hold. The policy at `release`/`cancel` decides the landing: `'jump'`
-    lands at A with no motion, `{ maxDuration }` clamps, `'ignore'` plays in full. A release with no
-    layout change springs back to the slot.
--   **One owner.** An element belongs to at most one live group; adding it to a second throws. The
-    `'waapi'` engine cannot take a hold.
+    lands at A with no motion, `{ maxDuration }` clamps, `'ignore'` plays in full. A release that
+    finds no reduced-motion fit becomes `released` and lands at A (a reduced jump); a refused spring
+    emits `spring-timeout` and snaps. A release with no layout change springs back to the slot.
+-   **Admission and limits.** An exiting crossfade follower is rejected with a `drive-rejected`
+    diagnostic. An element belongs to at most one live group; adding it to a second throws. The
+    ancestor/descendant hold exclusion is scope-local: a cross-scope nested hold is allowed, and a
+    driven cross-scope child does not ride the other group's `h`. Held nodes and their riders count
+    as visible movers for `maxNodes`; exceeding it invalidates the holds and reports `'capped'`.
+    The kill switch wins over the `'waapi'` precondition: `take` returns an invalidated handle under
+    the switch, and otherwise the `'waapi'` engine cannot take a hold. A `take` before an unflushed
+    layout uses its own rect/computed reads; unsupported current geometry throws.
 
 `useLayoutDrive()` returns a dispatcher for the same port. Its `take(element)` routes to the live
 `LayoutGroup` that owns the registered element, otherwise to the implicit root of its document, and
@@ -644,6 +656,7 @@ interface LayoutDiagnostic {
         | 'document-mismatch'
         | 'runtime-disabled'
         | 'focus-in-follower'
+        | 'drive-rejected'
         | 'callback-error'
         | 'internal-error'
     readonly scope: number // stable per group for the page's lifetime
