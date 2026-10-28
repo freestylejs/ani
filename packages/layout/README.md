@@ -8,6 +8,8 @@ only `translate` and `scale` (plus `opacity` for a shared-element crossfade and
 `border-radius` when radius correction is on). It reads the DOM once before a change and
 once after it; animation frames do no reads.
 Anything it cannot animate exactly jumps to its final layout and is reported with a reason.
+A kill switch and a versioned diagnostics stream let an app turn layout motion off remotely and
+observe every degradation in production.
 
 ```sh
 pnpm add @freestylejs/ani-core @freestylejs/ani-layout
@@ -68,12 +70,16 @@ const run = await group.flush() // read the boxes after it and start the run
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
 | `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps instead of animating. |
 | `radius` | `true` with a `layoutId`, else `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId`, the corners blend from one radius to the other unless either sets `radius: false`. |
-| `motion` | — | `{ duration, delay, timing }`, merged field by field over the group's `motion`. |
+| `motion` | — | `{ duration, delay, timing }`, merged by kind over the group's `motion` (see below). |
 
 `LayoutMotion`: `duration` in seconds (default `0.35`); `delay` in seconds (default `0`, applies
-to an element at rest when the change happens); `timing` (default `timing.easeOut()`). The
-timing must be stateless and start with a finite slope: `timing.dynamicSpring` and a bezier
-with `x1 = 0` and `y1 ≠ 0` throw.
+to an element at rest when the change happens); `timing` (default `timing.easeOut()`), or
+`{ type: 'spring', bounce }` for the physical spring. The timing must be stateless and start with
+a finite slope: `timing.dynamicSpring` and a bezier with `x1 = 0` and `y1 ≠ 0` throw.
+
+Layers merge by kind, outermost first: a layer that names `type: 'spring'`, `timing` or
+`type: 'timing'` selects the kind; a kind switch keeps only `delay`; `duration`, `timing` and
+`bounce` override within the chosen kind.
 
 `LayoutGroupOptions`, for `createLayoutGroup(options?)`:
 
@@ -83,9 +89,10 @@ with `x1 = 0` and `y1 ≠ 0` throw.
 | `motion` | — | Defaults for every participant's `motion`. |
 | `reducedMotion` | `'jump'` | `'jump'`, `'ignore'` or `{ maxDuration }` in seconds. |
 | `threshold` | `1` | Pixels a box must move to animate. |
-| `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
+| `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps (`'capped'`). |
+| `maxParticipants` | `2000` | Connected participants. Above it, `capture()` and `flush()` read nothing and the whole change jumps (`'capped'`). |
 | `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
-| `onSnap` | — | `(element, reason) => void`, called for every element that jumped. |
+| `onSnap` | — | `(element, reason) => void`, called for every element that jumped. Each call is isolated: a throwing callback never changes the engine's state. |
 | `engine` | `'raf'` | `'waapi'` runs flat position moves as compositor animations, smooth while the main thread is blocked. Requirements below. |
 
 Invalid options throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS`, from
@@ -115,25 +122,72 @@ is written.
 
 | `status` | When |
 | :--- | :--- |
-| `'ended'` | Every element of the run settled, or `finish()` was called. |
-| `'interrupted'` | A later flush retargeted one of its elements. Its other elements keep running. |
-| `'no-change'` | Nothing moved. |
-| `'reduced'` | Reduced motion with the `'jump'` policy: everything jumped. |
-| `'capped'` | More than `maxNodes` visible elements moved: everything jumped. |
-| `'stale'` | The flush had no valid capture (none was taken, or it aged past a frame) and nothing animated. |
+| `'failed'` | An internal exception aborted a flush or frame. Every owned style is restored and every affected element is listed as `'failed'`; nothing is left running. |
 | `'disposed'` | The group was disposed, or every element of the run was removed. |
+| `'disabled'` | The layout runtime's kill switch was on: every mover jumped. |
+| `'capped'` | More than `maxNodes` visible elements moved, or more than `maxParticipants` are connected: everything jumped. |
+| `'interrupted'` | A later flush retargeted one of its elements. Its other elements keep running. |
+| `'ended'` | Every element of the run settled, or `finish()` was called. |
+| `'reduced'` | Reduced motion with the `'jump'` policy: everything jumped. |
+| `'stale'` | The flush had no valid capture (none was taken, or it aged past a frame) and nothing animated. |
+| `'no-change'` | Nothing moved. |
+
+Statuses resolve in that precedence order (§9.3): `failed`, `disposed`, `disabled`, `capped`,
+`interrupted`, `ended`, `reduced`, `stale`, `no-change`. `reduced`, `stale` and `no-change` apply
+only when no track ran.
 
 `snapped` lists `{ element, reason }` for every element that jumped:
 
 | Reason | Cause |
 | :--- | :--- |
 | `'culled'` | Both boxes are outside the viewport (plus 10 %). Silent. |
-| `'capped'` | The change moved more than `maxNodes` visible elements. |
-| `'unsupported'` | `rotate`, skew, a non-translation transform on a non-participant ancestor, a CSS transition or animation on `translate`, `scale` or `all`, zero size, `display: contents` or `inline`, or a size change beyond 50×. |
+| `'capped'` | The change moved more than `maxNodes` visible elements, or more than `maxParticipants` are connected. |
+| `'unsupported'` | `rotate`, skew, a non-translation transform on a non-participant ancestor, a CSS transition or animation on `translate`, `scale` or `all`, zero size, `display: contents` or `inline`, a size change beyond 50×, or a spring settling after 10 s. |
 | `'stale'` | No valid measurement of what was presented: no capture, or an aged one. The element may have jumped by `threshold` or more; running animations keep going. |
 | `'reduced'` | Reduced motion with the `'jump'` policy. Silent. |
+| `'disabled'` | The runtime's kill switch was on. |
+| `'failed'` | The transaction aborted on an internal exception; every owned style is restored. |
 
 `'unsupported'`, `'capped'` and `'stale'` also print one development warning per group.
+
+## Runtime and diagnostics
+
+`layoutRuntime` is a module singleton for the installed package copy:
+
+```ts
+import { layoutRuntime } from '@freestylejs/ani-layout'
+
+const stop = layoutRuntime.onDiagnostic((event) => {
+    console.warn(event.code, event.element, event.metrics)
+})
+layoutRuntime.setMode('snap') // the kill switch
+layoutRuntime.setMode('animate')
+stop()
+```
+
+- `mode` is `'animate'` (default) or `'snap'`.
+- `setMode('snap')` acts synchronously in every explicit and implicit scope: live tracks finish at
+  identity with their styles restored, holds invalidate, pending reports resolve `'disabled'`
+  with reason `'disabled'`, and later movers snap `'disabled'`. `setMode('animate')` restores
+  normal planning from the next flush. It is distinct from reduced motion.
+- `onDiagnostic(listener)` returns an unsubscribe. Payloads are built only when a listener exists;
+  the stream works in production. Every listener runs after the engine's state is consistent,
+  inside its own `try`. A throwing listener is reported as `callback-error` to the others only
+  and rethrown asynchronously in development; it cannot change the engine's state.
+- Each event is version 1 and carries `code`, a stable `scope` id, `run`, `engine`, `action`,
+  `element` and `reason` where they apply, and `metrics` (`participants`, `rectReads`,
+  `styleReads`, `springSettleMs`).
+
+Codes: `capture-less-flush`, `capture-aged`, `unsupported-geometry`, `handoff-scroll-active`,
+`spring-timeout`, `participant-cap`, `mover-cap`, `document-mismatch`, `runtime-disabled`,
+`callback-error`, `internal-error`. `measurement-unsupported` and `focus-in-follower` are
+reserved for the engine's measurement fallback and the accessibility rule.
+
+A flush and every frame callback run inside one transactional boundary: on an internal exception
+the engine restores every owned declaration byte-identically, cancels WAAPI animations, clears
+pending writes, invalidates holds, releases presence holds, disarms markers and listeners, stops
+the clock subscription, resolves every affected report `'failed'` and emits `internal-error`.
+`flush()` never rejects.
 
 ## Reduced motion
 

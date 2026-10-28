@@ -106,10 +106,11 @@ export function Panel({ open, children }: { open: boolean; children: ReactNode }
 | `duration` | `0.35` | Seconds. |
 | `delay` | `0` | Seconds. Applies to an element at rest when the change happens. A moving RAF element starts at once and keeps its speed; a WAAPI retarget follows the compositor rule below and carries no speed. |
 | `timing` | `timing.easeOut()` | A core timing function. |
+| `type` + `bounce` | — | `{ type: 'spring', bounce }` selects the physical spring; `duration` is perceptual and `bounce` lies strictly inside (−1, 1). A layer with `timing` selects the timing kind. |
 
 The timing must be stateless and must start with a finite slope. The default `'raf'` engine needs that slope to carry a moving element's velocity into the curve; WAAPI uses the same validated timing but retargets at rest. `timing.linear()`, `timing.bezier(...)`, the CSS presets and `timing.spring(...)` work. `timing.dynamicSpring(...)` and a bezier with `x1 = 0` and `y1 ≠ 0` throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` as soon as you pass them. Like everywhere in Ani, `timing.spring` is fitted to `duration` (see [timing](/en/docs/core-api/timing)).
 
-A participant's `motion` is merged field by field over the `motion` of its groups, outermost first:
+A participant's `motion` is merged by kind over the `motion` of its groups, outermost first: a layer that names `type: 'spring'`, `timing` or `type: 'timing'` selects the kind, a kind switch keeps only `delay`, and `duration`, `timing` and `bounce` override within the chosen kind.
 
 ```tsx
 import { timing } from '@freestylejs/ani-core'
@@ -281,12 +282,13 @@ A participant with no `LayoutGroup` above it joins an implicit root group, one p
 | `clock` | `defaultClock` | Drives the default `'raf'` engine and supplies reduced motion to both engines. |
 | `reducedMotion` | `'jump'` | See [Reduced motion](#reduced-motion). |
 | `threshold` | `1` | Pixels a box must move to animate. |
-| `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps. |
+| `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps (`'capped'`). |
+| `maxParticipants` | `2000` | Connected participants. Above it, capture and flush read nothing and the whole change jumps (`'capped'`). |
 | `retain` | `1` | Seconds a removed `layoutId` element's box stays available for a handoff. |
-| `onSnap` | — | `(element, reason) => void` for every element that jumped. The latest prop is always called. |
+| `onSnap` | — | `(element, reason) => void` for every element that jumped. The latest prop is always called; each call is isolated. |
 | `engine` | `'raf'` | `'waapi'` runs flat position moves as compositor animations, smooth while the main thread is blocked. See [Compositor engine](#compositor-engine) for what it requires. |
 
-A change of `clock`, `reducedMotion`, `threshold`, `maxNodes`, `retain` or `engine` creates a new group, and running animations jump to their end. Define these values once, outside the component, and pass the same objects on every render.
+A change of `clock`, `reducedMotion`, `threshold`, `maxNodes`, `maxParticipants`, `retain` or `engine` creates a new group, and running animations jump to their end. Define these values once, outside the component, and pass the same objects on every render.
 
 ### Compositor engine
 
@@ -493,21 +495,85 @@ Anything the engine cannot animate exactly jumps to its final layout. Each chang
 | Condition | Effect | Reason |
 | :--- | :--- | :--- |
 | Both boxes are outside the viewport (plus 10 %) | That element jumps, and does not count toward `maxNodes` | `'culled'` |
-| More than `maxNodes` visible elements move | The whole change jumps | `'capped'` |
-| `rotate` or skew; a non-participant ancestor that rotates, skews or scales; a CSS transition or animation on `translate`/`scale`; zero size; `display: contents` or `inline`; a size change beyond 50× | That element and its participants jump | `'unsupported'` |
+| More than `maxNodes` visible elements move, or more than `maxParticipants` are connected | The whole change jumps | `'capped'` |
+| `rotate` or skew; a non-participant ancestor that rotates, skews or scales; a CSS transition or animation on `translate`/`scale`; zero size; `display: contents` or `inline`; a size change beyond 50×; a spring settling after 10 s | That element and its participants jump | `'unsupported'` |
 | No valid capture: none was taken, or it aged past a frame (taken in an earlier task's frame, or inside an animation frame) | Elements appear at their final layout; running animations keep going, moved with their layout. Elements that may have jumped by `threshold` or more are listed | `'stale'` |
 | Reduced motion with `'jump'` | Everything jumps | `'reduced'` |
+| The layout runtime's kill switch is on | Every mover jumps, at the next flush and synchronously while running | `'disabled'` |
+| An internal exception aborts a flush or frame | Everything the transaction owned is restored byte-identically; every affected element is listed | `'failed'` |
 
-`'unsupported'`, `'capped'` and `'stale'` print one development warning per group, naming the cause. `'culled'` and `'reduced'` are normal operation and stay silent.
+`'unsupported'`, `'capped'` and `'stale'` print one development warning per group, naming the cause. `'culled'`, `'reduced'`, `'disabled'` and `'failed'` stay silent, and `'failed'` is reported through `internal-error`.
 
 | `status` | When |
 | :--- | :--- |
-| `'ended'` | Every element of the change settled, or `finish()` was called. |
-| `'interrupted'` | A later change retargeted one of its elements. Its other elements keep running. |
-| `'no-change'` | Nothing moved. |
-| `'reduced'`, `'capped'` | Everything jumped, for that reason. |
-| `'stale'` | The change had no valid capture and nothing animated; the elements that may have jumped are listed. |
+| `'failed'` | An internal exception aborted the run; styles are restored and every affected element is listed as `'failed'`. |
 | `'disposed'` | The group was disposed or unmounted, or every element of the change was removed. Inline styles are restored. |
+| `'disabled'` | The runtime's kill switch was on. |
+| `'capped'` | More than `maxNodes` visible elements moved, or more than `maxParticipants` are connected: everything jumped. |
+| `'interrupted'` | A later change retargeted one of its elements. Its other elements keep running. |
+| `'ended'` | Every element of the change settled, or `finish()` was called. |
+| `'reduced'`, `'stale'` | Everything jumped (reduced motion), or the change had no valid capture and nothing animated. |
+| `'no-change'` | Nothing moved. |
+
+Statuses resolve in exactly that order (§9.3); `'reduced'`, `'stale'` and `'no-change'` apply only when no track ran.
+
+### Runtime and diagnostics
+
+`layoutRuntime` is a module singleton from `@freestylejs/ani-layout`:
+
+```ts
+import { layoutRuntime } from '@freestylejs/ani-layout'
+
+const stop = layoutRuntime.onDiagnostic((event) => console.log(event))
+
+// remote config: stop every layout motion on the page now
+layoutRuntime.setMode('snap')
+
+// later: plan normally from the next flush
+layoutRuntime.setMode('animate')
+stop()
+```
+
+The kill switch is synchronous in every explicit and implicit group: live tracks finish at identity with their styles restored, holds invalidate, pending reports resolve `'disabled'` with reason `'disabled'`, and later movers snap `'disabled'`. It is distinct from reduced motion.
+
+`onDiagnostic` returns an unsubscribe. Payloads are built only when a listener exists, so the stream costs nothing when unused; it also works in production builds. Every listener runs after the engine's state is consistent, each inside its own `try`. A throwing listener is reported as `callback-error` to the other listeners only, never back to itself and never recursively, and is rethrown asynchronously in development. `onSnap` is isolated the same way.
+
+```ts
+import type { SnapReason } from '@freestylejs/ani-layout'
+
+interface LayoutDiagnostic {
+    readonly version: 1
+    readonly code:
+        | 'capture-less-flush'
+        | 'capture-aged'
+        | 'measurement-unsupported'
+        | 'unsupported-geometry'
+        | 'handoff-scroll-active'
+        | 'spring-timeout'
+        | 'participant-cap'
+        | 'mover-cap'
+        | 'document-mismatch'
+        | 'runtime-disabled'
+        | 'focus-in-follower'
+        | 'callback-error'
+        | 'internal-error'
+    readonly scope: number // stable per group for the page's lifetime
+    readonly run: number | null
+    readonly engine: 'raf' | 'waapi'
+    readonly action: 'none' | 'snap' | 'enter' | 'finish' | 'abort'
+    readonly element?: HTMLElement
+    readonly reason?: SnapReason
+    readonly metrics: {
+        readonly participants: number
+        readonly rectReads: number
+        readonly styleReads: number
+        readonly springSettleMs: number | null
+    }
+    readonly error?: unknown
+}
+```
+
+A flush and every frame callback run inside one transactional boundary. On an internal exception the engine restores every owned declaration byte-identically, cancels browser animations, clears pending writes, invalidates holds, releases presence holds, disarms the frame marker and listeners, stops the clock subscription, resolves every affected report `'failed'` and emits `internal-error` with action `'abort'`. `flush()` never rejects.
 
 Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a stateful timing) throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` when they are passed, never inside a frame.
 
@@ -562,6 +628,8 @@ group.dispose()
 | `stats` | `{ captures, reads, rects, offsets, styles, probes, parents, tracks, holds }`: `reads` is `rects + offsets + styles` (rects, layout-size pairs and computed styles); `probes` counts the one-time scroll-anchoring probe, `parents` the `offsetParent` reads of the viewport-fixed test. |
 
 `createLayoutGroup(options?)` takes the group options of the table in [Groups](#groups) plus `motion`. `createPresence(element, motion, options?)` is the presence handle behind `usePresence`: `enter()`, `exit()` and `dispose()`. A participant inside an exiting presence element takes part in a `layoutId` crossfade.
+
+`layoutRuntime` and its `LayoutDiagnostic` payload are exported from `@freestylejs/ani-layout`; see [Runtime and diagnostics](#runtime-and-diagnostics).
 
 ### View Transitions
 

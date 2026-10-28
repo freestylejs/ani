@@ -6,7 +6,9 @@ import { createManualClock } from '../../../core/src/testing/index'
 import type { Box } from '../geometry'
 import { createPresence } from '../presence'
 import { linkPresence } from '../presence_link'
+import { layoutRuntime } from '../runtime'
 import { createLayoutGroup } from '../scope'
+import type { LayoutDiagnostic } from '../types'
 
 /**
  * The actively scrolling source rule (§5.8): a handoff, or a reparent, out of
@@ -45,6 +47,8 @@ const ITEM: Box = { x: 10, y: 100, w: 160, h: 44 }
 const DETAIL: Box = { x: 360, y: 40, w: 240, h: 140 }
 
 let warnings: string[] = []
+let diagnostics: LayoutDiagnostic[] = []
+let stopDiagnostics: (() => void) | null = null
 
 /** Whether the browser has `scrollend`: the scope feature-tests `onscrollend` when it arms. */
 function scrollEnd(supported: boolean): void {
@@ -61,6 +65,10 @@ function scrollEnd(supported: boolean): void {
 
 beforeEach(() => {
     warnings = []
+    diagnostics = []
+    stopDiagnostics = layoutRuntime.onDiagnostic((event) =>
+        diagnostics.push(event)
+    )
     vi.spyOn(console, 'warn').mockImplementation((message: string) => {
         warnings.push(message)
     })
@@ -86,10 +94,16 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+    stopDiagnostics?.()
+    stopDiagnostics = null
     vi.restoreAllMocks()
     Reflect.deleteProperty(window, 'onscrollend')
     document.body.innerHTML = ''
 })
+
+function handoffs(): LayoutDiagnostic[] {
+    return diagnostics.filter((event) => event.code === 'handoff-scroll-active')
+}
 
 /** A scroller with one shared item in it, a scope, and a baseline flush. */
 async function setup(options: { scrollEnd: boolean }) {
@@ -230,8 +244,12 @@ describe('§5.8 the degraded handoff', () => {
         const first = handoff(group, item, removeItem, document.body)
         expect(first.lead.style.cssText).toBe(first.authored)
         expect(await first.run).toEqual(NO_FLIGHT)
-        expect(warnings).toHaveLength(1)
-        expect(warnings[0]).toContain('still scrolling')
+        expect(handoffs()).toHaveLength(1)
+        expect(handoffs()[0]).toMatchObject({
+            action: 'enter',
+            element: first.lead,
+        })
+        expect(warnings).toEqual([])
 
         // still active: time never clears it
         clock.frames(600)
@@ -254,8 +272,9 @@ describe('§5.8 the degraded handoff', () => {
         )
         expect(second.lead.style.cssText).toBe(second.authored)
         expect(await second.run).toEqual(NO_FLIGHT)
-        // once per scope
-        expect(warnings).toHaveLength(1)
+        // one diagnostic per degraded handoff, never a development warning
+        expect(handoffs()).toHaveLength(2)
+        expect(warnings).toEqual([])
         group.dispose()
     })
 
@@ -270,7 +289,7 @@ describe('§5.8 the degraded handoff', () => {
         expect(lead.style.translate).toBe('-350px 60px')
         clock.frames(30)
         expect(await run).toEqual({ status: 'ended', snapped: [] })
-        expect(warnings).toEqual([])
+        expect(handoffs()).toEqual([])
         group.dispose()
     })
 
@@ -289,7 +308,8 @@ describe('§5.8 the degraded handoff', () => {
         )
         expect(lead.style.cssText).toBe(authored)
         expect(await run).toEqual(NO_FLIGHT)
-        expect(warnings[0]).toContain('no scrollend')
+        expect(handoffs()).toHaveLength(1)
+        expect(warnings).toEqual([])
         group.dispose()
     })
 
@@ -457,7 +477,7 @@ describe('§5.8 a reparent out of an active container', () => {
         expect(card.style.cssText).toBe('')
         expect((await run1).status).toBe('ended')
         expect(await run2).toEqual(NO_FLIGHT)
-        expect(warnings).toHaveLength(1)
+        expect(handoffs()).toHaveLength(1)
         // the item never left: it is not degraded
         expect(item.style.cssText).toBe('')
         group.dispose()
@@ -481,7 +501,7 @@ describe('§5.8 a reparent out of an active container', () => {
         expect(card.style.translate).toBe('-50px 0px')
         clock.frames(30)
         expect(await run).toEqual({ status: 'ended', snapped: [] })
-        expect(warnings).toEqual([])
+        expect(handoffs()).toEqual([])
         group.dispose()
     })
 })
@@ -514,14 +534,14 @@ describe('§5.8 listeners on every shadow root of the flat-ancestor chain', () =
         )
         expect(lead.style.cssText).toBe(authored)
         expect(await run).toEqual(NO_FLIGHT)
-        expect(warnings).toHaveLength(1)
+        expect(handoffs()).toHaveLength(1)
         group.dispose()
     })
 
     it('a scroller in an outer root around the root that holds the shared item: the handoff out of it does not fly', async () => {
         for (const mode of ['open', 'closed'] as const) {
             scrollEnd(true)
-            warnings = []
+            diagnostics = []
             const clock = createManualClock()
             const group = createLayoutGroup({ clock: clock.clock, motion })
             const outer = document.createElement('div')
@@ -637,7 +657,7 @@ describe('§5.8 the viewport-fixed test covers reparents', () => {
         const run = group.flush()
         expect(card.style.cssText).toBe('')
         expect(await run).toEqual(NO_FLIGHT)
-        expect(warnings).toHaveLength(1)
+        expect(handoffs()).toHaveLength(1)
         // card → sheet → null: two reads, and the computed style of the sheet
         expect(group.stats.parents - before.parents).toBe(2)
         group.dispose()
@@ -709,7 +729,7 @@ describe('§5.8 a degraded lead with a presence', () => {
         const entered = presence.enter()
         const run = group.flush()
         expect(await run).toEqual(NO_FLIGHT)
-        expect(warnings).toHaveLength(1)
+        expect(handoffs()).toHaveLength(1)
         const seen: string[] = []
         for (let f = 0; f < 12; f++) {
             clock.frames(1)

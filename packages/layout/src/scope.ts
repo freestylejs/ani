@@ -32,6 +32,7 @@ import {
     viewportFixed,
     viewRect,
 } from './dom'
+import { layoutFault } from './fault'
 import {
     hasDOM,
     knownTransformAnchoring,
@@ -92,15 +93,26 @@ import {
 import {
     type Action,
     type IdHistory,
+    type LayoutStatus,
     leadChanges,
     moved,
     type PlanNode,
     plan,
+    resolveLayoutStatus,
     type SnapReason,
 } from './plan'
 import { exitingPresence, type PresenceLink, presenceOf } from './presence_link'
 import { createRaf } from './realize/raf'
 import { elapsedOf, play } from './realize/waapi'
+import {
+    emitDiagnostic,
+    hasDiagnosticListeners,
+    layoutRuntime,
+    nextLayoutRunId,
+    nextLayoutScopeId,
+    registerRuntimeScope,
+    reportCallbackError,
+} from './runtime'
 import {
     type BoxVelocity,
     drawnBoxes,
@@ -122,14 +134,17 @@ import {
     ZERO_VELOCITY,
 } from './solve'
 import type {
+    LayoutDiagnostic,
+    LayoutDiagnosticAction,
+    LayoutDiagnosticCode,
     LayoutGroup,
     LayoutGroupOptions,
     LayoutReport,
-    LayoutStatus,
 } from './types'
 
 const DEFAULT_THRESHOLD = 1
 const DEFAULT_MAX_NODES = 300
+const DEFAULT_MAX_PARTICIPANTS = 2000
 const DEFAULT_RETAIN = 1
 const MIN_SCALE = 1 / 50
 const MAX_SCALE = 50
@@ -276,6 +291,7 @@ interface Participant {
 }
 
 interface Run {
+    readonly id: number
     readonly nodes: Set<Participant>
     readonly snapped: LayoutReport['snapped']
     readonly resolve: (report: LayoutReport) => void
@@ -300,6 +316,8 @@ interface Capture {
     live: boolean
     /** A rendering opportunity passed (or it began in a frame): it supplies no B. */
     aged: boolean
+    /** Connected participants exceeded `maxParticipants`: it holds no reads (§9.1). */
+    readonly capped: boolean
     /** Releases the frame marker, if it has not fired. */
     disarm: () => void
     /** B per connected participant: the raw rect, nothing divided out. */
@@ -608,6 +626,7 @@ const GROUP_KEYS = [
     'reducedMotion',
     'threshold',
     'maxNodes',
+    'maxParticipants',
     'retain',
     'onSnap',
     'engine',
@@ -668,6 +687,18 @@ function validateGroupOptions(options: unknown): void {
         throw invalidOptions(
             'range',
             `maxNodes must be an integer >= 0, received ${String(maxNodes)}.`
+        )
+    }
+    const maxParticipants = value.maxParticipants
+    if (
+        maxParticipants !== undefined &&
+        (typeof maxParticipants !== 'number' ||
+            !Number.isInteger(maxParticipants) ||
+            maxParticipants < 0)
+    ) {
+        throw invalidOptions(
+            'range',
+            `maxParticipants must be an integer >= 0, received ${String(maxParticipants)}.`
         )
     }
     const retain = value.retain
@@ -756,6 +787,7 @@ export function createLayoutGroup(
     const policy = validateReducedMotion(options.reducedMotion)
     const threshold = options.threshold ?? DEFAULT_THRESHOLD
     const maxNodes = options.maxNodes ?? DEFAULT_MAX_NODES
+    const maxParticipants = options.maxParticipants ?? DEFAULT_MAX_PARTICIPANTS
     const retain = options.retain ?? DEFAULT_RETAIN
     const groupMotion: LayoutMotion | undefined = options.motion
     const waapi = options.engine === 'waapi'
@@ -796,6 +828,116 @@ export function createLayoutGroup(
         parents: 0,
         tracks: 0,
     }
+
+    /* ─────────────────── diagnostics (§7.2, §9.2) ─────────────────── */
+
+    const scopeId = nextLayoutScopeId()
+    /** The connected participants of the last pass. */
+    let participants = 0
+    /** Reads at the start of the current capture, flush or frame. */
+    let readsAt = { rects: 0, styles: 0 }
+    /** The id of the flush or frame being executed, for its diagnostics. */
+    let runId: number | null = null
+    /** Flush events wait here until the engine's state is consistent. */
+    let buffered: LayoutDiagnostic[] | null = null
+    let inTransaction = false
+    let aborting = false
+
+    function metricsNow(springSettleMs: number | null = null) {
+        return {
+            participants,
+            rectReads: stats.rects - readsAt.rects,
+            styleReads: stats.styles - readsAt.styles,
+            springSettleMs,
+        }
+    }
+
+    /**
+     * Emits one diagnostic, when anyone listens (§7.2 Cost). During a flush
+     * it is buffered, so no user callback runs while the engine mutates; the
+     * buffer is delivered once the state is consistent.
+     */
+    function diagnose(
+        code: LayoutDiagnosticCode,
+        action: LayoutDiagnosticAction,
+        detail: {
+            readonly element?: HTMLElement
+            readonly reason?: SnapReason
+            readonly error?: unknown
+            readonly springSettleMs?: number | null
+        } = {}
+    ): void {
+        if (!hasDiagnosticListeners()) return
+        const event: LayoutDiagnostic = {
+            version: 1,
+            code,
+            scope: scopeId,
+            run: runId,
+            engine: waapi ? 'waapi' : 'raf',
+            action,
+            ...(detail.element !== undefined && { element: detail.element }),
+            ...(detail.reason !== undefined && { reason: detail.reason }),
+            metrics: metricsNow(detail.springSettleMs ?? null),
+            ...('error' in detail && { error: detail.error }),
+        }
+        if (inTransaction) {
+            ;(buffered ??= []).push(event)
+            return
+        }
+        emitDiagnostic(event)
+    }
+
+    /** Delivers a flush's buffered diagnostics after its state is consistent. */
+    function dispatchDiagnostics(): void {
+        const events = buffered
+        buffered = null
+        inTransaction = false
+        if (!events) return
+        for (const event of events) emitDiagnostic(event)
+    }
+
+    /** A user callback's throw: `callback-error` to the listeners, async rethrow in dev. */
+    function userCallbackError(error: unknown, element?: HTMLElement): void {
+        reportCallbackError(error, {
+            scope: scopeId,
+            run: runId,
+            engine: waapi ? 'waapi' : 'raf',
+            metrics: metricsNow(),
+            ...(element !== undefined && { element }),
+        })
+    }
+
+    /**
+     * `onSnap` calls, each isolated after the engine's state is consistent
+     * (§7.2, §9.2): one throwing callback cannot change the engine and does
+     * not stop the other calls.
+     */
+    function notifySnaps(
+        snapped: readonly {
+            readonly element: HTMLElement
+            readonly reason: SnapReason
+        }[]
+    ): void {
+        const seen = new Set<HTMLElement>()
+        for (const { element, reason } of snapped) {
+            if (seen.has(element)) continue
+            seen.add(element)
+            try {
+                layoutFault('onSnap')
+                options.onSnap?.(element, reason)
+            } catch (error) {
+                userCallbackError(error, element)
+            }
+        }
+    }
+
+    const runtimeScope = {
+        snap(): void {
+            if (disposed) return
+            snapToDisabled()
+        },
+    }
+    const unregisterRuntimeScope = registerRuntimeScope(runtimeScope)
 
     function warn(kind: string, message: string): void {
         if (!DEV || warned.has(kind)) return
@@ -1352,17 +1494,15 @@ export function createLayoutGroup(
         return running
     }
 
-    function commitWrites(): void {
-        const writes = pending
-        pending = []
-        for (const w of writes) put(w.element, w.property, w.value, w.priority)
-    }
-
     const realizer = createRaf(clock, {
         update(dt) {
-            return step(dt)
+            return frameBoundary(() => step(dt), false)
         },
-        commit: commitWrites,
+        commit: () => {
+            frameBoundary(() => {
+                commitWrites()
+            }, undefined)
+        },
     })
 
     /* ───────────────────────── capture ───────────────────────── */
@@ -1602,6 +1742,7 @@ export function createLayoutGroup(
 
     function takeCapture(): void {
         if (disposed || !hasDOM()) return
+        readsAt = { rects: stats.rects, styles: stats.styles }
         evictAdopted()
         if (capture?.live) return
         capture?.disarm()
@@ -1609,6 +1750,35 @@ export function createLayoutGroup(
         // an unpresented change of the same frame: it is aged at once (§4.1)
         const inFrame = clock.inFrame
         const { list, parents, flat, tree } = participantTree()
+        participants = list.length
+        // §4.1, §9.1: count connected participants before any read; over the
+        // cap the capture reads nothing and the flush snaps the whole scope
+        if (list.length > maxParticipants) {
+            const capped: Capture = {
+                live: true,
+                aged: false,
+                capped: true,
+                disarm: noop,
+                rects: new Map(),
+                registered: new Set(registry.values()),
+                unsupported: new Map(),
+                radius: new Map(),
+                engine: {
+                    poses: new Map(),
+                    rates: new Map(),
+                    poseRates: new Map(),
+                    moving: new Set(),
+                },
+                scrolling: new Map(),
+                flat: NO_FLAT,
+            }
+            capture = capped
+            stats.captures += 1
+            microtask(() => {
+                capped.live = false
+            })
+            return
+        }
         const engine = engineState()
         // 1. one rect and one layout size per connected participant
         const rects: Box[] = []
@@ -1672,6 +1842,7 @@ export function createLayoutGroup(
         const current: Capture = {
             live: true,
             aged: inFrame,
+            capped: false,
             disarm: noop,
             rects: presentedRects,
             registered: new Set(registry.values()),
@@ -1699,6 +1870,7 @@ export function createLayoutGroup(
         }
         capture = current
         stats.captures += 1
+        if (inFrame) diagnose('capture-aged', 'snap')
         microtask(() => {
             current.live = false
         })
@@ -1934,7 +2106,34 @@ export function createLayoutGroup(
         })
     }
 
+    /**
+     * §9.2: one idempotent boundary around the whole flush. It never
+     * rejects; an internal fault restores every owned declaration, ends
+     * every listener and subscription, resolves every affected report
+     * `'failed'` and reports `internal-error`.
+     */
     function flush(): Promise<LayoutReport> {
+        if (disposed) return resolved('disposed')
+        const id = nextLayoutRunId()
+        runId = id
+        readsAt = { rects: stats.rects, styles: stats.styles }
+        inTransaction = true
+        buffered = []
+        try {
+            const report = flushBody(id)
+            dispatchDiagnostics()
+            return report
+        } catch (error) {
+            buffered = null
+            inTransaction = false
+            abort(error, id)
+            return resolved('failed', failedSnaps())
+        } finally {
+            runId = null
+        }
+    }
+
+    function flushBody(id: number): Promise<LayoutReport> {
         if (disposed) return resolved('disposed')
         evictAdopted()
         const cap = capture
@@ -1946,7 +2145,7 @@ export function createLayoutGroup(
          * (§4.1); without one the flush degrades as §4.4 states, and an aged
          * capture is a node's last known box.
          */
-        const fresh = cap !== null && !cap.aged ? cap : null
+        const fresh = cap !== null && !cap.aged && !cap.capped ? cap : null
         const measured = fresh !== null
         /**
          * The frame as it is drawn at t_k, before any drive changes: a nested
@@ -1976,12 +2175,18 @@ export function createLayoutGroup(
             else settle(p, true)
         }
         const { list, parents, index, flat, tree } = participantTree()
+        participants = list.length
         if (list.length === 0) {
             frame = []
             commitWrites()
             realizer.stop()
             stats.tracks = 0
             return resolved('no-change')
+        }
+        // §4.3 gate 1, §9.1: over the participant cap, read nothing and snap
+        // the whole scope; a capped capture holds no measurement either
+        if (cap?.capped || list.length > maxParticipants) {
+            return cappedFlush(list)
         }
         const hasChild = list.map(() => false)
         for (const parent of parents) if (parent >= 0) hasChild[parent] = true
@@ -2812,14 +3017,8 @@ export function createLayoutGroup(
         }
         // §5.8 degradations are not snaps: `report.snapped` does not list
         // them; their reason names the diagnostic
-        for (const { reason } of result.degraded) {
-            warn(
-                reason,
-                scrollEnds
-                    ? 'a shared handoff (or a participant moved) out of a container that is still scrolling does not fly: the new lead appears at its layout, with its presence enter if it has one. It flies once the container has fired scrollend.'
-                    : 'a shared handoff (or a participant moved) out of a container that has scrolled does not fly in this browser, which has no scrollend: the new lead appears at its layout, with its presence enter if it has one.'
-            )
-        }
+        // §5.8 degradations are not snaps: `report.snapped` does not list
+        // them; their diagnostic names the degradation (emitted at outcome)
 
         // 3. outcome
         const snapped: { element: HTMLElement; reason: SnapReason }[] =
@@ -2828,13 +3027,46 @@ export function createLayoutGroup(
                 reason,
             }))
         let actions: readonly Action[] = result.actions
-        let status: LayoutStatus | null = null
-        if (result.status === 'capped') {
-            status = 'capped'
-        } else if (reduced === 'jump') {
-            const moves = actions.some(
-                (a) => a.kind === 'track' || a.kind === 'follow'
-            )
+        /** §4.3 gate 1: mode `'snap'` disables every mover of this flush. */
+        const disabledMovers: number[] = []
+        if (layoutRuntime.mode === 'snap') {
+            if (result.status === 'capped') {
+                // the plan capped movers; `'disabled'` precedes `'capped'` (§9.3)
+                for (const entry of result.snapped) {
+                    if (entry.reason === 'capped')
+                        disabledMovers.push(entry.index)
+                }
+            } else {
+                result.actions.forEach((action, i) => {
+                    if (
+                        action.kind === 'track' ||
+                        action.kind === 'keep' ||
+                        action.kind === 'follow'
+                    ) {
+                        disabledMovers.push(i)
+                    }
+                })
+            }
+            if (disabledMovers.length > 0) {
+                actions = result.actions.map(() => ({ kind: 'none' }) as const)
+                for (const i of disabledMovers) {
+                    const element = list[i]!.element
+                    // the earlier status replaces the plan's `capped` entry
+                    const was = snapped.findIndex(
+                        (entry) =>
+                            entry.element === element &&
+                            entry.reason === 'capped'
+                    )
+                    if (was >= 0) snapped.splice(was, 1)
+                    snapped.push({ element, reason: 'disabled' })
+                }
+            }
+        }
+        const disabled = disabledMovers.length > 0
+        const capped = result.status === 'capped' && !disabled
+        /** §4.4: the nodes reported `'stale'`, with the flush's diagnostic code. */
+        const staleReportedAt: number[] = []
+        if (!capped && reduced === 'jump' && !disabled) {
             actions.forEach((action, i) => {
                 if (
                     action.kind === 'track' ||
@@ -2848,7 +3080,6 @@ export function createLayoutGroup(
                 }
             })
             actions = actions.map(() => ({ kind: 'none' }) as const)
-            status = moves ? 'reduced' : null
         }
         if (unmeasured.some(Boolean)) {
             // §4.4: every node without a valid B that may have jumped is
@@ -2906,8 +3137,9 @@ export function createLayoutGroup(
                 }
             })
             list.forEach((p, i) => {
-                if (reported[i])
-                    snapped.push({ element: p.element, reason: 'stale' })
+                if (!reported[i]) return
+                staleReportedAt.push(i)
+                snapped.push({ element: p.element, reason: 'stale' })
             })
         }
         for (const { element, reason } of snapped) {
@@ -2930,12 +3162,75 @@ export function createLayoutGroup(
             }
         }
 
+        // diagnostics: the same degradations, typed and versioned (§7.2)
+        const springTimeouts = new Set<number>()
+        for (const warning of result.warnings) {
+            if (warning.kind !== 'spring-timeout') continue
+            springTimeouts.add(warning.index)
+            diagnose('spring-timeout', 'snap', {
+                element: list[warning.index]!.element,
+                reason: 'unsupported',
+                springSettleMs: warning.settleMs,
+            })
+        }
+        for (const { element, reason } of snapped) {
+            if (reason !== 'unsupported') continue
+            const i = index.get(registry.get(element)!)!
+            if (springTimeouts.has(i)) continue
+            diagnose('unsupported-geometry', 'snap', {
+                element,
+                reason,
+            })
+        }
+        if (capped && result.status === 'capped') {
+            diagnose('mover-cap', 'snap')
+        }
+        for (const i of disabledMovers) {
+            diagnose('runtime-disabled', 'snap', {
+                element: list[i]!.element,
+                reason: 'disabled',
+            })
+        }
+        for (const { index: i } of result.degraded) {
+            if (disabled) continue
+            diagnose('handoff-scroll-active', 'enter', {
+                element: list[i]!.element,
+            })
+        }
+        if (staleReportedAt.length > 0) {
+            const code: LayoutDiagnosticCode | null =
+                cap === null
+                    ? 'capture-less-flush'
+                    : cap.aged
+                      ? 'capture-aged'
+                      : null
+            if (code) {
+                for (const i of staleReportedAt) {
+                    diagnose(code, 'snap', {
+                        element: list[i]!.element,
+                        reason: 'stale',
+                    })
+                }
+            }
+        } else if (cap === null || cap.aged) {
+            diagnose(
+                cap === null ? 'capture-less-flush' : 'capture-aged',
+                'snap'
+            )
+        }
+
         // 4. apply: every write happens after every read
         let run: Run | null = null
         let promise: Promise<LayoutReport> | null = null
         if (actions.some((a) => a.kind === 'track')) {
             promise = new Promise<LayoutReport>((resolve) => {
-                run = { nodes: new Set(), snapped, resolve, done: false }
+                run = {
+                    id,
+                    nodes: new Set(),
+                    snapped,
+                    resolve,
+                    done: false,
+                }
             })
         }
         const startDrive = (
@@ -3378,8 +3673,7 @@ export function createLayoutGroup(
             else realizer.stop()
         }
 
-        for (const { element, reason } of snapped)
-            options.onSnap?.(element, reason)
+        notifySnaps(snapped)
 
         const started = run as Run | null
         if (promise && started) {
@@ -3389,16 +3683,183 @@ export function createLayoutGroup(
             }
             return promise
         }
-        // no track ran (§9.3): 'reduced', then 'stale', then 'no-change'
+        // no track ran (§9.3): the first status that applies, in order
         return resolved(
-            status ??
-                (snapped.some((s) => s.reason === 'reduced')
-                    ? 'reduced'
-                    : snapped.some((s) => s.reason === 'stale')
-                      ? 'stale'
-                      : 'no-change'),
+            resolveLayoutStatus([
+                ...(disabled ? (['disabled'] as const) : []),
+                ...(capped ? (['capped'] as const) : []),
+                ...(snapped.some((s) => s.reason === 'reduced')
+                    ? (['reduced'] as const)
+                    : []),
+                ...(snapped.some((s) => s.reason === 'stale')
+                    ? (['stale'] as const)
+                    : []),
+            ]) ?? 'no-change',
             snapped
         )
+    }
+
+    /* ─────────────────── transactional boundary (§9.2) ─────────────────── */
+
+    /** Applies the queued writes; the fault seam's `write` point throws before any. */
+    function commitWrites(): void {
+        layoutFault('write')
+        drainWrites()
+    }
+
+    function drainWrites(): void {
+        const writes = pending
+        pending = []
+        for (const w of writes) put(w.element, w.property, w.value, w.priority)
+    }
+
+    /** Every affected node as `'failed'` (§9.2 step 4). */
+    function failedSnaps(
+        affected?: readonly Participant[]
+    ): LayoutReport['snapped'] {
+        const at =
+            affected ??
+            [...registry.values()].filter((p) => p.element.isConnected)
+        return at.map((p) => ({
+            element: p.element,
+            reason: 'failed' as const,
+        }))
+    }
+
+    /**
+     * §9.2, once: restore every owned declaration byte-identically, cancel
+     * WAAPI animations, clear pending writes, invalidate holds, release
+     * presence holds, disarm the marker and listeners, stop the realizer,
+     * resolve every affected report `'failed'`, report `internal-error`.
+     * Never throws.
+     */
+    function abort(
+        error: unknown,
+        id: number | null,
+        affected?: readonly Participant[]
+    ): void {
+        if (aborting) return
+        aborting = true
+        try {
+            const runs = new Set<Run>()
+            for (const p of registry.values()) {
+                if (p.drive?.run && !p.drive.run.done) runs.add(p.drive.run)
+            }
+            capture?.disarm()
+            capture = null
+            markerTarget = null
+            pending = []
+            for (const p of registry.values()) {
+                const d = p.drive
+                if (!d) continue
+                stopAnimation(p)
+                d.release?.()
+                d.release = null
+                invalidateHold(p)
+                p.drive = null
+                if (p.geometry) p.lastBox = p.geometry.a
+                queueRestore(p.element, d)
+            }
+            // no fault point here: the boundary must finish its restores
+            drainWrites()
+            frame = []
+            stats.tracks = 0
+            disarm()
+            realizer.stop()
+            // every affected report resolves `'failed'`, every affected node
+            // in `snapped` as `'failed'`
+            const report = failedSnaps(affected)
+            const byElement = new Map(
+                report.map((entry) => [entry.element, entry.reason])
+            )
+            for (const run of runs) {
+                if (run.done) continue
+                run.done = true
+                const merged = new Map(
+                    run.snapped.map((entry) => [entry.element, entry.reason])
+                )
+                for (const p of run.nodes) merged.set(p.element, 'failed')
+                for (const [element, reason] of byElement) {
+                    if (!merged.has(element)) merged.set(element, reason)
+                }
+                const snapped = [...merged].map(([element, reason]) => ({
+                    element,
+                    reason,
+                }))
+                run.nodes.clear()
+                run.resolve({ status: 'failed', snapped })
+            }
+            participants = [...registry.values()].filter(
+                (p) => p.element.isConnected
+            ).length
+            const previous = runId
+            runId = id
+            diagnose('internal-error', 'abort', { error })
+            notifySnaps(report)
+            runId = previous
+        } catch {
+            // the boundary itself never throws: no further state exists to fix
+        } finally {
+            aborting = false
+        }
+    }
+
+    /** `flush()` and every frame callback: one idempotent boundary (§9.2). */
+    function frameBoundary<T>(work: () => T, fallback: T): T {
+        readsAt = { rects: stats.rects, styles: stats.styles }
+        const previous = runId
+        let active: number | null = null
+        for (const node of frame) {
+            const run = node.p.drive?.run
+            if (run && !run.done) {
+                active ??= run.id
+            }
+        }
+        runId = active
+        try {
+            return work()
+        } catch (error) {
+            abort(
+                error,
+                active,
+                frame.map((node) => node.p)
+            )
+            return fallback
+        } finally {
+            runId = previous
+        }
+    }
+
+    /**
+     * A flush over `maxParticipants` (§4.1, §9.1): no reads, the whole scope
+     * snaps. Restoring the owned declarations is exactly the snap to A.
+     */
+    function cappedFlush(list: readonly Participant[]): Promise<LayoutReport> {
+        const disabled = layoutRuntime.mode === 'snap'
+        const reason: SnapReason = disabled ? 'disabled' : 'capped'
+        warn(
+            'capped',
+            `more than ${maxParticipants} connected participants; the change snaps without a read. Raise maxParticipants or narrow the scope.`
+        )
+        const snapped = list.map((p) => ({
+            element: p.element,
+            reason,
+        }))
+        for (const p of registry.values()) {
+            const d = p.drive
+            if (!d || d.kind === 'held') continue
+            settle(p)
+        }
+        commitWrites()
+        frame = frame.filter((node) => node.p.drive !== null)
+        realizer.stop()
+        stats.tracks = 0
+        diagnose('participant-cap', 'snap')
+        if (disabled) {
+            diagnose('runtime-disabled', 'snap', { reason: 'disabled' })
+        }
+        notifySnaps(snapped)
+        return resolved(disabled ? 'disabled' : 'capped', snapped)
     }
 
     /* ───────────────────────── lifecycle ───────────────────────── */
@@ -3429,7 +3890,7 @@ export function createLayoutGroup(
         })
     }
 
-    function finishAll(status: 'ended' | 'disposed'): void {
+    function finishAll(status: 'ended' | 'disposed' | 'disabled'): void {
         // every run reports the cause before its nodes settle
         const runs = new Set<Run>()
         for (const node of frame)
@@ -3437,7 +3898,24 @@ export function createLayoutGroup(
         for (const r of runs) {
             if (r.done) continue
             r.done = true
-            r.resolve({ status, snapped: r.snapped })
+            if (status === 'disabled') {
+                const merged = new Map(
+                    r.snapped.map((entry) => [entry.element, entry.reason])
+                )
+                for (const p of r.nodes) merged.set(p.element, 'disabled')
+                r.resolve({
+                    status,
+                    snapped: [...merged].map(([element, reason]) => ({
+                        element,
+                        reason,
+                    })),
+                })
+            } else {
+                r.resolve({ status, snapped: r.snapped })
+            }
+        }
+        if (status === 'disabled') {
+            for (const node of frame) invalidateHold(node.p)
         }
         // every track jumps to A
         for (const node of frame) {
@@ -3451,6 +3929,14 @@ export function createLayoutGroup(
             step(null)
             commitWrites()
         }
+        if (status === 'disabled') {
+            // a crossfade ends as a completed fade: the lead gets its opacity
+            // back, the exiting follower is held at 0 until presence removes it
+            for (const node of frame) {
+                const d = node.p.drive
+                if (d?.fade) endFade(node.p)
+            }
+        }
         for (const node of frame) {
             const d = node.p.drive
             if (!d) continue
@@ -3460,6 +3946,39 @@ export function createLayoutGroup(
         frame = frame.filter((node) => node.p.drive !== null)
         realizer.stop()
         stats.tracks = 0
+    }
+
+    /**
+     * `setMode('snap')` in this scope (§7.2): every live track finishes at
+     * identity with styles restored, holds invalidate, pending reports
+     * resolve `'disabled'`. Synchronous; never throws.
+     */
+    function snapToDisabled(): void {
+        readsAt = { rects: stats.rects, styles: stats.styles }
+        const previous = runId
+        let affected: number | null = null
+        let moving = false
+        const finished: { element: HTMLElement; reason: SnapReason }[] = []
+        for (const node of frame) {
+            const d = node.p.drive
+            if (!d || d.kind === 'held') continue
+            const run = d.run
+            if (run && !run.done) affected ??= run.id
+            if (d.kind === 'track' || d.kind === 'follow') moving = true
+            finished.push({ element: node.p.element, reason: 'disabled' })
+        }
+        runId = affected
+        try {
+            finishAll('disabled')
+            if (moving) {
+                diagnose('runtime-disabled', 'snap', { reason: 'disabled' })
+                notifySnaps(finished)
+            }
+        } catch (error) {
+            abort(error, affected)
+        } finally {
+            runId = previous
+        }
     }
 
     function invalidateHold(_p: Participant): void {
@@ -3501,10 +4020,7 @@ export function createLayoutGroup(
         }
         forgetCaptured(p)
         stopParticipantDrive(p, true)
-        warn(
-            'document-mismatch',
-            'a participant was adopted into another document; its track was ended and it was unregistered.'
-        )
+        diagnose('document-mismatch', 'finish', { element: p.element })
     }
 
     function evictAdopted(): void {
@@ -3710,6 +4226,7 @@ export function createLayoutGroup(
             if (disposed) return
             finishAll('disposed')
             disposed = true
+            unregisterRuntimeScope()
             capture?.disarm()
             capture = null
             for (const p of registry.values()) {
