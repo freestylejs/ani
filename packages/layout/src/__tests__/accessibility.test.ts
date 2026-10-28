@@ -63,9 +63,13 @@ function presenceLink(initial: boolean): {
     }
     set(exiting: boolean): void
     readonly hold: ReturnType<typeof vi.fn>
+    readonly holds: Promise<void>[]
 } {
     let exiting = initial
-    const hold = vi.fn()
+    const holds: Promise<void>[] = []
+    const hold = vi.fn((until: Promise<void>) => {
+        holds.push(until)
+    })
     return {
         link: {
             get exiting() {
@@ -78,6 +82,7 @@ function presenceLink(initial: boolean): {
             exiting = value
         },
         hold,
+        holds,
     }
 }
 
@@ -370,12 +375,14 @@ describe('§6 crossfade follower inert', () => {
         await Promise.all([first, reverse])
     })
 
-    it('H12-04: a continuing follower with focus inside is not re-inerted', async () => {
+    it('H12-04: focus inside a continuing follower ends the pair instead of keeping a live duplicate', async () => {
         const { mc, group } = harness()
         const card = element(20, 20)
         const button = document.createElement('button')
         card.append(button)
-        const { detail } = crossfade(group, card)
+        const swipe = presenceLink(false)
+        const { detail } = crossfade(group, card, swipe)
+        const { events } = collect()
         const first = group.flush()
         mc.frames(2)
         expect(card.getAttribute('inert')).toBe('')
@@ -385,9 +392,83 @@ describe('§6 crossfade follower inert', () => {
         const again = group.flush()
         expect(card.hasAttribute('inert')).toBe(false)
         expect(document.activeElement).toBe(button)
+        // H12-04: the live fade was dropped, not merely made interactive:
+        // both opacities return and the presence hold is released
+        expect(card.style.opacity).toBe('')
+        expect(detail.style.opacity).toBe('')
+        expect(card.style.translate).toBe('')
+        expect(swipe.holds.length).toBeGreaterThan(0)
+        await expect(swipe.holds.at(-1)).resolves.toBeUndefined()
+        const focus = events.filter(
+            (event) => event.code === 'focus-in-follower'
+        )
+        expect(focus).toHaveLength(1)
+        expect(focus[0]!.action).toBe('none')
+        expect(focus[0]!.element).toBe(card)
+        expect(swipe.link.exiting).toBe(true)
+        mc.frames(30)
+        expect(document.activeElement).toBe(button)
+        expect(card.hasAttribute('inert')).toBe(false)
+        // the lead's position track lands at its own A
+        expect(Math.abs(viewBoxX(detail) - 360)).toBeLessThanOrEqual(0.5)
+        expect(group.stats.tracks).toBe(0)
         group.dispose()
         await Promise.all([first, again])
-        void detail
+    })
+
+    it('H12-04: focus inside a held follower drops the invisible target too', async () => {
+        const { mc, group } = harness()
+        const card = element(20, 20)
+        const button = document.createElement('button')
+        card.append(button)
+        const swipe = presenceLink(false)
+        const { detail } = crossfade(group, card, swipe)
+        const { events } = collect()
+        const first = group.flush()
+        mc.frames(26)
+        expect(card.style.opacity).toBe('0')
+        expect(card.getAttribute('inert')).toBe('')
+        card.removeAttribute('inert')
+        button.focus()
+        group.capture()
+        const again = group.flush()
+        expect(card.hasAttribute('inert')).toBe(false)
+        expect(card.style.opacity).toBe('')
+        expect(document.activeElement).toBe(button)
+        const focus = events.filter(
+            (event) => event.code === 'focus-in-follower'
+        )
+        expect(focus).toHaveLength(1)
+        expect(focus[0]!.element).toBe(card)
+        mc.frames(2)
+        expect(Math.abs(viewBoxX(detail) - 360)).toBeLessThanOrEqual(0.5)
+        group.dispose()
+        await Promise.all([first, again])
+    })
+
+    it('H12-02: an abort after a focus-driven follower drop restores inert and styles', async () => {
+        const { mc, group } = harness()
+        const card = element(20, 20)
+        const button = document.createElement('button')
+        card.append(button)
+        const swipe = presenceLink(false)
+        const { detail } = crossfade(group, card, swipe)
+        const first = group.flush()
+        mc.frames(2)
+        card.removeAttribute('inert')
+        button.focus()
+        group.capture()
+        injectLayoutFault('write')
+        const drop = group.flush()
+        const report = await drop
+        expect(report.status).toBe('failed')
+        expect(card.hasAttribute('inert')).toBe(false)
+        expect(card.style.opacity).toBe('')
+        expect(card.style.translate).toBe('')
+        expect(document.activeElement).toBe(button)
+        expect(detail.style.opacity).toBe('')
+        group.dispose()
+        await first
     })
 
     it('H12-21: authored inert is preserved through reversal, abort and dispose', async () => {
@@ -581,6 +662,43 @@ describe('§8 focus-in-follower', () => {
         })
         group.dispose()
         await first
+    })
+
+    it('H12-19: detects focus in a follower inside a closed root, not only the host', async () => {
+        const { mc, group } = harness()
+        const host = document.createElement('div')
+        hRoot().append(host)
+        const root = host.attachShadow({ mode: 'closed' })
+        const follower = document.createElement('div')
+        root.append(follower)
+        model.place(follower, box(20, 20))
+        const button = document.createElement('button')
+        follower.append(button)
+        button.focus()
+        expect(document.activeElement).toBe(host)
+        const { events } = collect()
+        const swipe = presenceLink(false)
+        stops.push(linkPresence(follower, swipe.link))
+        group.add(follower, { layoutId: 'closed-inside', radius: false })
+        group.capture()
+        await group.flush()
+        swipe.set(true)
+        group.capture()
+        group.add(element(360, 40, 300, 200), {
+            layoutId: 'closed-inside',
+            radius: false,
+        })
+        const run = group.flush()
+        const focus = events.filter(
+            (event) => event.code === 'focus-in-follower'
+        )
+        expect(focus).toHaveLength(1)
+        expect(focus[0]!.element).toBe(follower)
+        expect(follower.hasAttribute('inert')).toBe(false)
+        expect(document.activeElement).toBe(host)
+        mc.frame(16)
+        group.dispose()
+        await run
     })
 
     it('H12-05: detects focus through nested closed shadow roots', async () => {
