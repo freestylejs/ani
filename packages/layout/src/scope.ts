@@ -5180,7 +5180,9 @@ export function createLayoutGroup(
             if (p.drive?.kind === 'follow' || p.drive?.kind === 'held') continue
             p.ride = hold
             hold.rides.add(p)
-            const { presented, dh } = holdDisplacements.get(hold) ?? {
+            const { presented: presentedH, dh } = holdDisplacements.get(
+                hold
+            ) ?? {
                 presented: { x: 0, y: 0 },
                 dh: { x: 0, y: 0 },
             }
@@ -5188,8 +5190,8 @@ export function createLayoutGroup(
             const v = velocity.get(p) ?? null
             if (!b || !v) continue
             const residualBefore = {
-                x: b.x - presented.x,
-                y: b.y - presented.y,
+                x: b.x - presentedH.x,
+                y: b.y - presentedH.y,
                 w: b.w,
                 h: b.h,
             }
@@ -5200,8 +5202,35 @@ export function createLayoutGroup(
                 fy: g.fy,
             })
             const running = p.drive?.kind === 'track' && runs(p.drive)
+            // §5.7 on the residual: its own A is unchanged and options are
+            // equal, so keep the residual's remaining time; the new h still
+            // carries the child with the parent's t = 0 write
+            const lk = nodes[i]!.presented
+            const residualKeeps =
+                running &&
+                !nodes[i]!.optionsChanged &&
+                (lk === null ||
+                    moved(lk, g.a, {
+                        mode: p.options.layout ?? true,
+                        anchor: null,
+                        fx: g.fx,
+                        fy: g.fy,
+                    }) < threshold)
+            if (residualKeeps) {
+                // §5.7 path 2: a presented layout move translates the residual
+                const target = p.drive!.target
+                if (target && p.drive!.track) {
+                    const dx = g.a.x - target.x
+                    const dy = g.a.y - target.y
+                    if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
+                        p.drive!.track = translated(p.drive!.track, dx, dy)
+                        p.drive!.target = g.a
+                    }
+                }
+                continue
+            }
             if (running || distance >= threshold || nodes[i]!.optionsChanged) {
-                planResidual(p, b, v, presented, dh, reduced)
+                planResidual(p, b, v, presentedH, dh, reduced)
             }
         }
 

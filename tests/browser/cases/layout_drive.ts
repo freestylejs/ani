@@ -1518,6 +1518,54 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             h.dispose()
         }
 
+        // (i) a flush while held keeps a descendant residual's remaining
+        // time when its own target did not move (§5.7 on the residual)
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.1, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            child.style.left = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(parent)
+            handle.move({ x: 40, y: 20 })
+            await frames(h.mc, 3, () => undefined)
+            // a presented flush with no layout change: the residual is kept,
+            // not restarted, so it still lands at its own 0.1 s
+            h.group.capture()
+            await h.group.flush()
+            await frames(h.mc, 4, () => undefined)
+            expectClose(
+                viewBox(child).x - viewBox(parent).x,
+                80,
+                TOL,
+                'kept residual lands at its own time'
+            )
+            expectClose(
+                viewBox(child).y - viewBox(parent).y,
+                20,
+                TOL,
+                'kept residual lands at its own time (y)'
+            )
+            handle.cancel()
+            await frames(h.mc, 30, () => undefined)
+            h.dispose()
+        }
+
         // (f) a release whose held read discovers a box change
         {
             const h = harness({ motion: { duration: 0.3, timing: linear } })
