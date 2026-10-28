@@ -11,6 +11,7 @@ export interface AggregateMetric {
     readonly median: number
     readonly pass: boolean
     readonly blocked: boolean
+    readonly deciding: boolean
     readonly perRun: readonly number[]
     readonly passPerRun: readonly boolean[]
     readonly worst?:
@@ -78,6 +79,7 @@ export interface CostRunReport {
     readonly run: number
     readonly warmup: boolean
     readonly valid: boolean
+    readonly heldPending: boolean
     readonly blockedReasons: readonly string[]
     readonly engineAudit: {
         readonly rects: number
@@ -172,6 +174,7 @@ export interface BenchReport {
     readonly selfTests: {
         readonly pass: boolean
         readonly controls: readonly string[]
+        readonly files?: readonly string[]
         readonly detail: string
     }
     readonly pending: readonly {
@@ -250,7 +253,7 @@ export function formatReport(report: BenchReport): string {
                               .filter(Boolean)
                               .join(' ')}`
                 lines.push(
-                    `  ${metric.blocked ? 'BLOCK' : metric.pass ? 'ok  ' : 'FAIL'} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
+                    `  ${metric.blocked ? 'BLOCK' : metric.deciding ? (metric.pass ? 'ok  ' : 'FAIL') : 'n/a  '} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
                 )
             }
         }
@@ -265,7 +268,7 @@ export function formatReport(report: BenchReport): string {
                         ? ''
                         : ` worst ${metric.worst.detail}`
                 lines.push(
-                    `  ${metric.blocked ? 'BLOCK' : metric.pass ? 'ok  ' : 'FAIL'} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
+                    `  ${metric.blocked ? 'BLOCK' : metric.deciding ? (metric.pass ? 'ok  ' : 'FAIL') : 'n/a  '} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
                 )
             }
             for (const run of cost.runs) {
@@ -283,7 +286,7 @@ export function formatReport(report: BenchReport): string {
         )
     }
     lines.push(
-        `self-tests ${report.selfTests.pass ? 'ok' : 'FAIL'}: ${report.selfTests.controls.length} controls`
+        `self-tests ${report.selfTests.pass ? 'ok' : 'FAIL'}: ${report.selfTests.controls.length} controls across ${report.selfTests.files?.length ?? '?'} files`
     )
     if (report.pending.length > 0) {
         for (const pending of report.pending) {

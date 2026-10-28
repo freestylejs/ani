@@ -580,6 +580,7 @@ function latestSegment(
 }
 
 function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    const req = plan.completeness
     let worstKey: string | undefined
     let worstDeclarations: string | undefined
     let firstKey: string | undefined
@@ -594,13 +595,25 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         if (!observation) return
         const mount = plan.mounts[key]
         const style = observation.style[key]
-        if (!mount || !style) return
+        if (!mount || !style) {
+            count += 1
+            worstKey ??= key
+            worstDeclarations ??= `${label}: no mount snapshot or style for ${key}`
+            return
+        }
         firstKey ??= key
         if (style.inline !== mount.inline) inlineDifferences += 1
         const mismatches = sameStyle(style, mount).filter(
             (declaration) =>
                 declarations === undefined || declarations.includes(declaration)
         )
+        if (
+            declarations === undefined &&
+            style.inline !== mount.inline &&
+            !(plan.authorStyleKeys ?? []).includes(key)
+        ) {
+            mismatches.push('inline cssText')
+        }
         if (mismatches.length > 0) {
             count += 1
             if (!worstKey) {
@@ -665,13 +678,17 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         }
         check(last, key, `last connected frame ${last.frame}`)
     }
+    const mountComplete = req.requiredKeys.every(
+        (key) => plan.mounts[key] !== undefined
+    )
     return {
         id: 'G6',
         label: 'Restoration of every owned inline declaration',
         gate: 'byte for byte the authored one',
         unit: 'declarations',
         value: count,
-        pass: count === 0,
+        pass: count === 0 && mountComplete,
+        measured: mountComplete,
         worst: {
             participant: worstKey ?? firstKey,
             detail:
@@ -737,6 +754,7 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'mismatches',
         value: problems,
         pass: problems === 0,
+        measured: true,
         worst: {
             label: firstLabel,
             detail: detail ?? 'all reports match',
@@ -751,12 +769,7 @@ function scoreReads(trace: SceneTrace): MetricFinding {
     let detail: string | undefined
     for (const commit of trace.commits) {
         const required = commit.nBefore + commit.nAfter
-        const styleExcess =
-            commit.styles < commit.stylesMin
-                ? commit.stylesMin - commit.styles
-                : commit.styles > commit.stylesMax
-                  ? commit.styles - commit.stylesMax
-                  : 0
+        const styleExcess = Math.abs(commit.styles - commit.stylesExpected)
         const commitExcess =
             Math.max(0, commit.rects - required) +
             Math.max(0, commit.offsets - required) +
@@ -765,13 +778,19 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         if (commitExcess > excess) {
             excess = commitExcess
             worstLabel = commit.label
-            detail = `${commit.label}: ${commit.rects} rects, ${commit.offsets} pairs, ${commit.styles} computed reads (${commit.stylesMin}..${commit.stylesMax}: ${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus optional Typed OM), ${commit.frameReads} frame reads; required ${required}/${required}/0 (probes ${commit.probes}, parents ${commit.parents})`
+            detail = `${commit.label}: ${commit.rects} rects, ${commit.offsets} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; required ${required}/${required}/0 (probes ${commit.probes}, parents ${commit.parents})`
         }
     }
     if (trace.steadyFrameReads > 0) {
         excess += trace.steadyFrameReads
         detail ??= `steady frame ${trace.steadyFrameReadsAt}: ${trace.steadyFrameReads} reads`
     }
+    const exactSummary = trace.commits
+        .map(
+            (commit) =>
+                `${commit.label} ${commit.styles}/${commit.stylesExpected}`
+        )
+        .join(', ')
     return {
         id: 'G13',
         label: 'Exact read counts per commit and zero steady-frame reads',
@@ -779,11 +798,14 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         unit: 'excess reads',
         value: excess,
         pass: excess === 0,
+        measured: true,
         worst: {
             label: worstLabel ?? trace.commits[0]?.label,
-            detail: detail ?? 'all commits exact; steady frames read zero',
+            detail: detail ?? `${exactSummary}; steady frames read zero`,
         },
-        detail,
+        detail:
+            detail ??
+            `exact computed reads ${exactSummary}; steady frames read zero`,
     }
 }
 
@@ -1367,6 +1389,35 @@ function scoreCompleteness(
     }
     for (const key of req.requiredKeys) {
         if (!seen.has(key)) note(`participant "${key}" is never connected`)
+        if (!plan.mounts[key])
+            note(`participant "${key}" has no mount snapshot`)
+    }
+    for (const key of req.requiredOpacityKeys) {
+        if (
+            !trace.observations.some(
+                (observation) => observation.opacity[key] !== undefined
+            )
+        ) {
+            note(`required opacity for "${key}" is missing`)
+        }
+    }
+    for (const key of req.requiredRadiiKeys) {
+        if (
+            !trace.observations.some((observation) =>
+                Boolean(observation.radii[key])
+            )
+        ) {
+            note(`required radii for "${key}" are missing`)
+        }
+    }
+    for (const key of req.requiredFontKeys) {
+        if (
+            !trace.observations.some(
+                (observation) => observation.font[key] !== undefined
+            )
+        ) {
+            note(`required font for "${key}" is missing`)
+        }
     }
     let pairObservations = 0
     for (const pair of plan.pairs) {

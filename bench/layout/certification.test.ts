@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { evaluateCertification } from './certification.ts'
+import { evaluateCertification, evaluateInvocation } from './certification.ts'
 
 const cleanEngine = (engine: string) => ({
     engine,
@@ -16,6 +16,8 @@ const clean = {
     engines: [cleanEngine('chromium'), cleanEngine('webkit')],
     pending: [],
     advisory: { cost: false },
+    controlsPass: true,
+    selfTestPass: true,
 }
 const full = {
     engines: ['chromium', 'webkit'],
@@ -62,6 +64,53 @@ test('advisory cost, even when passing, does not certify', () => {
     assert.match(result.reasons.join(';'), /advisory/)
 })
 
+test('N1: a conclusive control failure does not certify', () => {
+    const result = evaluateCertification(
+        { ...clean, controlsPass: false },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /negative controls/)
+})
+
+test('N1/N8: a self-test failure does not certify', () => {
+    const result = evaluateCertification(
+        { ...clean, selfTestPass: false },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /self-tests/)
+})
+
+test('N4: measured Chromium G9/G11 failures are certification reasons', () => {
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                {
+                    ...cleanEngine('chromium'),
+                    cost: {
+                        status: 'pending',
+                        valid: true,
+                        failedMetrics: [
+                            'G9-unscrolled 3.272',
+                            'G9-scrolled 3.256',
+                            'G11 11.705',
+                        ],
+                    },
+                },
+                cleanEngine('webkit'),
+            ],
+            pending: [{ scene: 'S-BULK', reason: 'P4' }],
+        },
+        full
+    )
+    const text = result.reasons.join(';')
+    assert.equal(result.certified, false)
+    assert.match(text, /chromium S-BULK G9-unscrolled 3.272 failed/)
+    assert.match(text, /chromium S-BULK G11 11.705 failed/)
+})
+
 test('pending, launch error, or invalid cost blocks certification', () => {
     const result = evaluateCertification(
         {
@@ -83,4 +132,49 @@ test('pending, launch error, or invalid cost blocks certification', () => {
     assert.match(text, /pending S-BULK/)
     assert.match(text, /launch error/)
     assert.match(text, /not valid/)
+})
+
+test('N7: invocation pass is scoped to the selected invocation', () => {
+    const cleanInvocation = evaluateInvocation({ engines: clean.engines })
+    assert.equal(cleanInvocation.pass, true)
+    assert.deepEqual(cleanInvocation.reasons, [])
+
+    const failedCost = evaluateInvocation({
+        engines: [
+            {
+                ...cleanEngine('chromium'),
+                cost: { status: 'pending', valid: true },
+            },
+        ],
+    })
+    assert.equal(failedCost.pass, false)
+    assert.match(failedCost.reasons.join(';'), /S-BULK pending/)
+
+    const failedScene = evaluateInvocation({
+        engines: [
+            {
+                ...cleanEngine('chromium'),
+                scenes: [{ scene: 's-card', status: 'fail' }],
+            },
+        ],
+    })
+    assert.equal(failedScene.pass, false)
+    assert.match(failedScene.reasons.join(';'), /s-card fail/)
+
+    const launchError = evaluateInvocation({
+        engines: [{ ...cleanEngine('chromium'), launchError: 'boom' }],
+    })
+    assert.equal(launchError.pass, false)
+    assert.match(launchError.reasons.join(';'), /launch error/)
+})
+
+test('N7: global P4 pending does not fail the invocation, only certification', () => {
+    const invocation = evaluateInvocation({ engines: clean.engines })
+    assert.equal(invocation.pass, true)
+    const certification = evaluateCertification(
+        { ...clean, pending: [{ scene: 'S-REORDER', reason: 'P4' }] },
+        full
+    )
+    assert.equal(certification.certified, false)
+    assert.match(certification.reasons.join(';'), /pending S-REORDER/)
 })

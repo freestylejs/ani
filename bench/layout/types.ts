@@ -76,11 +76,9 @@ export interface CommitObservation {
     readonly aged: boolean
     /** Participants named by the aged diagnostic (empty = element-less). */
     readonly agedKeys: readonly string[]
-    /** §4.1 radius capture + §4.3 active-node computed reads, and the
-     * optional Typed OM transform-origin read where the browser snaps the
-     * reference box. */
-    readonly stylesMin: number
-    readonly stylesMax: number
+    /** Exact §4.1 radius capture + §4.3 active-node computed reads, plus the
+     * Typed OM transform-origin read where the engine's probe requires it. */
+    readonly stylesExpected: number
     readonly styleRadiusCapture: number
     readonly styleActiveFlush: number
 }
@@ -224,6 +222,10 @@ export interface SceneCompleteness {
     readonly requiredFontKeys: readonly string[]
 }
 
+export interface AuthorStyleKeys {
+    readonly keys: readonly string[]
+}
+
 export interface ScenePlan {
     readonly scene: string
     readonly stepMs: number
@@ -235,6 +237,8 @@ export interface ScenePlan {
     readonly restorationChecks: readonly RestorationCheck[]
     readonly pairs: readonly PairPlan[]
     readonly staticRadii?: Readonly<Record<string, number>> | undefined
+    /** Participants whose author-owned inline style changes during the run. */
+    readonly authorStyleKeys?: readonly string[] | undefined
     readonly expectedDiagnostics?: readonly string[] | undefined
     readonly expectedOnSnap?: readonly string[] | undefined
 }
@@ -254,6 +258,7 @@ export interface CostRun {
     readonly participants: number
     readonly poses: number
     readonly typedOM: boolean
+    readonly heldPending: boolean
     readonly engine: readonly number[]
     readonly floor: readonly number[]
     readonly engineSamples: readonly CostCommitSample[]
@@ -280,6 +285,7 @@ export interface CostTrace {
     readonly g: number
     readonly gSource: 'reads' | 'tick-fallback'
     readonly typedOM: boolean
+    readonly heldPending: boolean
     readonly unscrolled: CostRun
     readonly scrolled: CostRun
     readonly steady: {

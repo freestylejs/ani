@@ -257,8 +257,7 @@ export class SegScene {
                     .slice(diagnosticsBefore)
                     .filter((event) => event.code === 'capture-aged')
                     .flatMap((event) => (event.key ? [event.key] : [])),
-                stylesMin: 2,
-                stylesMax: isWebKitEngine() ? 3 : 2,
+                stylesExpected: isWebKitEngine() ? 3 : 2,
                 styleRadiusCapture: 1,
                 styleActiveFlush: 1,
             })

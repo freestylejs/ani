@@ -204,8 +204,7 @@ function makeTrace(plan: ScenePlan): SceneTrace {
                 onSnap: [],
                 aged: false,
                 agedKeys: [],
-                stylesMin: 2,
-                stylesMax: 2,
+                stylesExpected: 2,
                 styleRadiusCapture: 1,
                 styleActiveFlush: 1,
             },
@@ -225,8 +224,7 @@ function makeTrace(plan: ScenePlan): SceneTrace {
                 onSnap: [],
                 aged: false,
                 agedKeys: [],
-                stylesMin: 2,
-                stylesMax: 2,
+                stylesExpected: 2,
                 styleRadiusCapture: 1,
                 styleActiveFlush: 1,
             },
@@ -645,4 +643,65 @@ test('H14-07: a trace-level retarget restart is visible in the observed FD and f
     const score = scoreScene(plan, trace)
     assert.equal(metric(score, 'G1').pass, false)
     assert.match(metric(score, 'G3').worst?.detail ?? '', /observed FD/)
+})
+
+test('N5: a missing mount snapshot fails C1 and G6', () => {
+    const plan = basePlan()
+    const trace = makeTrace(plan)
+    ;(plan as unknown as { mounts: Record<string, StyleSnapshot> }).mounts = {}
+    const score = scoreScene(plan, trace)
+    assert.equal(metric(score, 'C1').pass, false)
+    assert.equal(metric(score, 'G6').pass, false)
+    assert.equal(metric(score, 'G6').measured, false)
+    assert.match(metric(score, 'C1').detail ?? '', /has no mount snapshot/)
+})
+
+test('N5: an unowned inline cssText difference fails G6', () => {
+    const plan = basePlan()
+    const trace = copy(makeTrace(plan))
+    const final = trace.observations[trace.observations.length - 1]!
+    ;(final.style as Record<string, StyleSnapshot>).pill = {
+        ...EMPTY_STYLE,
+        inline: 'color: red',
+    }
+    const score = scoreScene(plan, trace)
+    assert.equal(metric(score, 'G6').pass, false)
+    assert.match(metric(score, 'G6').worst?.detail ?? '', /inline cssText/)
+})
+
+test('N5: declared opacity, radii and font data are required', () => {
+    const plan = basePlan()
+    ;(
+        plan as unknown as {
+            completeness: {
+                requiredOpacityKeys: string[]
+                requiredRadiiKeys: string[]
+                requiredFontKeys: string[]
+            }
+        }
+    ).completeness.requiredOpacityKeys = ['ghost']
+    ;(
+        plan as unknown as {
+            completeness: {
+                requiredOpacityKeys: string[]
+                requiredRadiiKeys: string[]
+                requiredFontKeys: string[]
+            }
+        }
+    ).completeness.requiredRadiiKeys = ['pill']
+    ;(
+        plan as unknown as {
+            completeness: {
+                requiredOpacityKeys: string[]
+                requiredRadiiKeys: string[]
+                requiredFontKeys: string[]
+            }
+        }
+    ).completeness.requiredFontKeys = ['pill']
+    const score = scoreScene(plan, makeTrace(plan))
+    assert.equal(metric(score, 'C1').pass, false)
+    const detail = metric(score, 'C1').detail ?? ''
+    assert.match(detail, /required opacity/)
+    assert.match(detail, /required radii/)
+    assert.match(detail, /required font/)
 })
