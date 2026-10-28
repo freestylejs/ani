@@ -1104,6 +1104,115 @@ export async function L_DRIVE_4(): Promise<string> {
             details.push('drive-hold kill switch invalidated synchronously')
         }
 
+        // J-001 control: normal landing completion keeps the terminal
+        // `released`/`cancelled` state (no double invalidation)
+        for (const landing of ['released', 'cancelled'] as const) {
+            const h4 = harness({ motion: { duration: 0.2, timing: linear } })
+            const x = node(h4.root, 'left:0px;top:0px;width:80px;height:80px')
+            h4.add(x, { radius: false })
+            h4.group.capture()
+            await h4.group.flush()
+            const authored = x.style.cssText
+            const handle = h4.group.take(x)
+            handle.move({ x: 40, y: 20 })
+            h4.mc.frame(FRAME)
+            await settleMicrotasks()
+            if (landing === 'released') handle.release()
+            else handle.cancel()
+            await frames(h4.mc, 30, () => undefined)
+            expectEqual(handle.state, landing, `${landing} normal completion`)
+            expectEqual(h4.group.stats.holds, 0, `${landing} completion holds`)
+            expectEqual(
+                x.style.cssText,
+                authored,
+                `${landing} completion styles`
+            )
+            h4.dispose()
+        }
+
+        // J-001: a released/cancelled landing is a live hold under P4-C3.
+        // The kill switch invalidates it, not only a `held` one.
+        for (const landing of ['released', 'cancelled'] as const) {
+            const h3 = harness({ motion: { duration: 0.3, timing: linear } })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const x = node(h3.root, 'left:0px;top:0px;width:80px;height:80px')
+            h3.add(x, { radius: false, layoutId: `j001-kill-${landing}` })
+            h3.group.capture()
+            await h3.group.flush()
+            const authored = x.style.cssText
+            const handle = h3.group.take(x)
+            handle.move({ x: 40, y: 20 })
+            h3.mc.frame(FRAME)
+            await settleMicrotasks()
+            if (landing === 'released') handle.release()
+            else handle.cancel()
+            h3.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, landing, `${landing} landing is live`)
+            expectEqual(h3.group.stats.holds, 1, `${landing} landing counts`)
+            const originalRemove = document.removeEventListener
+            let removed = 0
+            document.removeEventListener = function (
+                this: Document,
+                ...args: Parameters<Document['removeEventListener']>
+            ) {
+                removed += 1
+                return originalRemove.apply(this, args)
+            }
+            try {
+                layoutRuntime.setMode('snap')
+            } finally {
+                document.removeEventListener = originalRemove
+            }
+            expectEqual(
+                handle.state,
+                'invalidated',
+                `${landing} landing kill switch invalidates`
+            )
+            expectEqual(
+                x.style.cssText,
+                authored,
+                `${landing} landing kill switch restores`
+            )
+            expectEqual(
+                h3.group.stats.holds,
+                0,
+                `${landing} landing kill switch clears holds`
+            )
+            expectEqual(
+                h3.mc.clock.size,
+                0,
+                `${landing} landing kill switch unsubscribes`
+            )
+            expectEqual(
+                events.some(
+                    (e) =>
+                        e.code === 'runtime-disabled' &&
+                        e.element === x &&
+                        e.action === 'snap'
+                ),
+                true,
+                `${landing} landing kill switch diagnostic`
+            )
+            expectEqual(
+                removed > 0,
+                true,
+                `${landing} landing kill switch disarms listeners`
+            )
+            h3.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(
+                h3.mc.pending,
+                0,
+                `${landing} landing kill switch marker cleanup`
+            )
+            layoutRuntime.setMode('animate')
+            stop()
+            h3.dispose()
+            details.push(`${landing} landing kill switch invalidated`)
+        }
+
         // layoutKey change mid-hold: fresh baseline, invalidated
         {
             const x = node(h.root, 'left:0px;top:400px;width:60px;height:60px')
@@ -2167,6 +2276,67 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             stop()
             clearLayoutFaults()
             h.dispose()
+        }
+
+        // J-001: a transactional abort while releasing/cancelling is a
+        // normative invalidation too; the public handle must become
+        // `invalidated` before the hold is cleared
+        for (const landing of ['released', 'cancelled'] as const) {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false, layoutId: `j001-abort-${landing}` })
+            h.group.capture()
+            await h.group.flush()
+            const authored = a.style.cssText
+            const handle = h.group.take(a)
+            handle.move({ x: 30, y: 10 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            if (landing === 'released') handle.release({ x: 100, y: 0 })
+            else handle.cancel()
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, landing, `${landing} abort starts live`)
+            expectEqual(h.group.stats.holds, 1, `${landing} abort counts`)
+            const originalRemove = document.removeEventListener
+            let removed = 0
+            document.removeEventListener = function (
+                this: Document,
+                ...args: Parameters<Document['removeEventListener']>
+            ) {
+                removed += 1
+                return originalRemove.apply(this, args)
+            }
+            try {
+                injectLayoutFault('write', new Error(`${landing} abort`))
+                h.mc.frame(FRAME)
+                await settleMicrotasks()
+            } finally {
+                document.removeEventListener = originalRemove
+                clearLayoutFaults()
+            }
+            expectEqual(
+                handle.state,
+                'invalidated',
+                `${landing} abort invalidates the handle`
+            )
+            expectEqual(a.style.cssText, authored, `${landing} abort restores`)
+            expectEqual(h.group.stats.holds, 0, `${landing} abort clears holds`)
+            expectEqual(h.mc.clock.size, 0, `${landing} abort clock cleanup`)
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(h.mc.pending, 0, `${landing} abort marker cleanup`)
+            expectEqual(
+                events.some((e) => e.code === 'internal-error'),
+                true,
+                `${landing} abort reports internal-error`
+            )
+            expectEqual(removed > 0, true, `${landing} abort disarms listeners`)
+            stop()
+            h.dispose()
+            details.push(`${landing} abort invalidated the handle`)
         }
 
         // H13-05/S3: a write fault during the re-take's same-task write

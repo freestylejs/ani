@@ -1,0 +1,420 @@
+SKIP core:C1 (CDP: Chromium only)
+SKIP core:C2 (CDP: Chromium only)
+PASS react:B1 (628 ms)
+PASS react:B2 (671 ms)
+PASS react:B3 (526 ms)
+PASS react:B4 (530 ms)
+PASS react:B5 (993 ms)
+PASS react:B6 (529 ms)
+PASS react:B7 (500 ms)
+PASS vue:B1 (625 ms)
+PASS vue:B2 (630 ms)
+PASS vue:B3 (493 ms)
+PASS vue:B4 (532 ms)
+PASS vue:B5 (967 ms)
+PASS vue:B6 (556 ms)
+PASS vue:B7 (482 ms)
+PASS solid:B1 (588 ms)
+PASS solid:B2 (592 ms)
+PASS solid:B3 (491 ms)
+PASS solid:B4 (492 ms)
+PASS solid:B5 (961 ms)
+PASS solid:B6 (531 ms)
+PASS svelte:B1 (590 ms)
+PASS svelte:B2 (602 ms)
+PASS svelte:B3 (501 ms)
+PASS svelte:B4 (505 ms)
+PASS svelte:B5 (957 ms)
+PASS svelte:B6 (568 ms)
+PASS layout:CAUSES (320 ms)
+    8 causes snap 'unsupported' and name themselves in the warning; 4 look-alikes animate
+PASS layout:J16 (291 ms)
+    23 flushes with equivalent options (defaults, inherited fields, spring key order; inside the delay too); on the oracle, max error 0.0000 px; omitted ↔ explicit ease-out 16× on the oracle within 0.0000 px, ended; easeIn interrupts
+PASS layout:J17 (292 ms)
+    retarget at 0.48 s: asymmetric opacity within 0.000000, coverage within 0.000000; pair on the oracle within 0.0002 px; release and lead opacity at 1.008 s
+PASS layout:J18 (292 ms)
+    flush 3 reads before 3 writes; 14 frame writes all in commit (2 settle removals)
+PASS layout:J19 (292 ms)
+    toggle at 0.19 s: the active and the delayed track re-planned clamped, on the oracle every frame within 0.0000 px, end within 8 frames (≤ 0.1 s); restored, unsubscribed
+PASS layout:J20 (359 ms)
+    handoff at x = 38.4 with 200 px/s on the oracle every frame; captured before a parent layer change (0.8 → 1) at x = 130.72, w = 41.216 with 160 / 48 px/s, max error 0.0000 px; none after retain
+PASS layout:J21 (291 ms)
+    radius turned on mid-run: on the oracle every frame within 0.0001 px, drawn corners 8 px within 0.0000 px; restored after settle, finish, dispose
+PASS layout:J22 (292 ms)
+    inline translate 4px → 20px and scale 1 → 1.5 mid-run: the run keeps its frozen composition, on the oracle every frame within 0.0000 px; applied after settle, finish, dispose
+PASS layout:J23 (291 ms)
+    sole removal: 'disposed', restored at once, unsubscribed before the next frame; partial removal: the rest on the oracle (0.0000 px), 'ended' once; disconnected: 'disposed'
+PASS layout:J25 (291 ms)
+    after scale 0.8 → 1: B = (138.4, w 40); continuous, on the oracle within 0.0000 px; own scale 0.8 → 1 under a parent moving 200 px/s: B = (38.4, w 40) with vx 200, 63 frames on the oracle within 0.0000 px, identity settle
+PASS layout:J32 (292 ms)
+    child retargeted under a kept parent after scaleX 0.8 → 1: B = (40.0, w 40) with vx 200; layer back to 0.8 mid-run and a no-op flush (both kept); 63 frames: child on its track with the layers since its flush within 0.0000 px, parent within 0.0000 px; identity settle
+PASS layout:J32B (292 ms)
+    parent retargeted after scaleX 0.8 → 1 moves the child's CSS box: the measured jump retargets the child from (60.0, w 40) at 300 px/s; 63 frames: child within 0.0000 px, parent within 0.0000 px; no-op flush kept both; identity settle
+PASS layout:J35 (292 ms)
+    parent layer 0.8 → 1, centred child 40 → 60 wide: B = (120.0, w 40); 63 frames centred on the parent's visual centre within 0.4266 px; no-op flush kept every track; identity settle
+PASS layout:J35B (291 ms)
+    grandparent layer 0.8 → 1, centred child 40 → 60 wide: B = (120.0, w 40); 63 frames centred on the parent's visual centre within 0.4266 px; no-op flush kept every track; identity settle
+PASS layout:J37 (283 ms)
+    noop: pair at (140.0, w 52.0) after the layer change and the no-op flush; 50 frames on x = 100 + 200τ, w = 40 + 60τ within 0.0000 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J37Control (283 ms)
+    control: pair at (140.0, w 52.0) after the layer change; 50 frames on x = 100 + 200τ, w = 40 + 60τ within 0.0000 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J37Moving (293 ms)
+    moving: pair at (160.0, w 52.0) after the layer change and the no-op flush; 50 frames on x = 100 + 300τ, w = 40 + 60τ within 0.0000 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J37Retarget (291 ms)
+    retarget: pair at (140.0, w 52.0) after the layer change and the lead retarget; 63 frames on the retargeted lead track (vx 200, vw 60 → 350, w 100) within 0.0001 px; opacities within 0.0000; release at τ 1.000; zero subscribers
+PASS layout:J38 (283 ms)
+    external: pair at B (120, w 40) at the handoff; 63 frames on the track from B at vx 100 to (400, w 100) within 0.0001 px; opacities within 0.0000; release at τ 1.008; zero subscribers
+PASS layout:J38Shared (292 ms)
+    shared: pair at B (120, w 40) at the handoff; 63 frames on the track from B at vx 100 to (400, w 100) within 0.0001 px; opacities within 0.0000; release at τ 1.008; zero subscribers
+PASS layout:J38Unchanged (291 ms)
+    unchanged: pair at B (120, w 32) at the handoff; 63 frames on the track from B at vx 100 to (400, w 100) within 0.0001 px; opacities within 0.0000; release at τ 1.008; zero subscribers
+PASS layout:JOIN (317 ms)
+    handoff 10 ms into a frame: the next frame advances 3.28 px (a full frame), the run on the oracle within 0.0000 px; a lone removal unsubscribes before the next frame
+PASS layout:OPTIONS (283 ms)
+    17 invalid group options throw ANI_INVALID_OPTIONS; boundaries accepted; re-add replaces options, either remove removes once
+PASS layout:ORIGINPCT (284 ms)
+    7 origins: percentages read from the Typed OM
+PASS layout:P2RadiusCaptureAccuracy (290 ms)
+    style-only resting radius captured for retained and live handoffs within 0.0000 px
+PASS layout:P2RadiusCrossfade (285 ms)
+    live shared radius 20×12 → 8×24 on both layers within 0.0000 px
+PASS layout:P2RadiusOptOut (283 ms)
+    radius: false on one side does not blend; lead stays 8×24 within 0.0000 px
+PASS layout:P2RadiusReadDiscipline (283 ms)
+    capture 5 rects then 3 styles; no-op flush 5 rects/0 styles; unrelated flush 5 rects/1 style; frames 0 reads
+PASS layout:P2RadiusRetained (283 ms)
+    retained %/elliptical radius 40×10 → 20×50 within 0.0000 px
+PASS layout:P2RadiusRetarget (292 ms)
+    34 frames across retarget, shared radius continuous and lead settles byte-identically within 0.0000 px
+PASS layout:P2ReducedMidCrossfade (283 ms)
+    reduced mid-crossfade holds follower at 0, releases presence, restores byte-identically on unmount
+PASS layout:PRESENCE_LAYER (291 ms)
+    a no-op flush while the presence animates: trajectory identical to the run without it (scaleX 0.0000 px, scaleX + translateY 0.0000 px); the track is kept
+PASS layout:RADIUS_AUTHOR_CHANGE (283 ms)
+    33 frames, new authored corner from next flush; radius within 0.0000 px
+PASS layout:RADIUS_CROSSFADE_REVERSAL (292 ms)
+    34 frames across reversal, shared radius continuous and lead settles byte-identically within 0.0000 px
+PASS layout:RADIUS_NOOP_FLUSH (292 ms)
+    noop: 33 frames, radius within 0.0000 px
+PASS layout:RADIUS_RETARGET_FLUSH (291 ms)
+    retarget: 41 frames, radius within 0.0000 px
+PASS layout:RADIUS_SIBLING_FLUSH (282 ms)
+    sibling: 42 frames, radius within 0.0000 px
+PASS layout:RADIUS_VALUE_KINDS (318 ms)
+    33 frames × 4 value kinds within 0.0000 px; calc 33 frames within 0.0000 px
+PASS layout:REFBOX (283 ms)
+    14 frames × 5 fractional boxes, max error 0.0002 px
+PASS layout:RadiusSharedDefault (291 ms)
+    omitted radius on both sides blends 20×12 → 8×24 within 0.0000 px
+PASS layout:SCALE (1350 ms)
+    50 (50 moving): commit 2.00 ms, frame p50 0.100 / p95 0.200 ms; 300 (300 moving): commit 5.00 ms, frame p50 0.400 / p95 0.500 ms; 1000 (1000 moving): commit 16.00 ms, frame p50 1.300 / p95 1.400 ms
+PASS layout:T1 (292 ms)
+    14 frames, max error 0.0001 px
+PASS layout:T10 (291 ms)
+    culled, capped, unsupported (rotate, scaled ancestor, transition), stale; 5 development warnings
+PASS layout:T11 (283 ms)
+    jump: 0 writes, 0 subscribers; maxDuration 0.1 s: 8 frames; ignore: 14 frames; toggle: the active run finished at the next flush
+PASS layout:T12 (283 ms)
+    finish: ended + restored; dispose: disposed + restored; update rethrows
+PASS layout:T13 (283 ms)
+    26 frames with a re-render every 3rd; max error 0.0000 px
+PASS layout:T2 (283 ms)
+    23 frames × 3 nodes, max error 0.0002 px
+PASS layout:T3 (283 ms)
+    centre error ≤ 0.0000 px; size starts at 0.816 s
+PASS layout:T4 (283 ms)
+    retarget at 108.0 px; first step 574 px/s; max error 0.0000 px
+PASS layout:T5 (283 ms)
+    crossfade opacity within 0.000000, coverage within 0.000000; max error 0.0001 px; release at 0.304 s
+PASS layout:T6 (291 ms)
+    child x at the parent-halfway frame 40.000 px; max error 0.0000 px
+PASS layout:T7 (283 ms)
+    20 frames under a changing presence scale; max error 0.0000 px
+PASS layout:T8 (284 ms)
+    capture 10 rects + 10 sizes + 0 styles; flush 10 rects + 10 sizes + 3 styles + 3 Typed OM before 3 writes; 0 reads in 5 steady frames
+PASS layout:T9 (284 ms)
+    max error 0.0000 px; radius within 0.0000 px
+PASS layout:VT1 (559 ms)
+    view transition: finished
+PASS layout_spring:L_SPRING_1 (386 ms)
+    60Hz b=-0.8: 380 frames ≤ 0.100 px; 60Hz b=-0.3: 97 frames ≤ 0.098 px; 60Hz b=0: 52 frames ≤ 0.080 px; 60Hz b=0.2: 48 frames ≤ 0.050 px; 60Hz b=0.4: 69 frames ≤ 0.018 px; 60Hz b=0.9: 388 frames ≤ 0.038 px; 120Hz b=-0.8: 759 frames ≤ 0.100 px; 120Hz b=-0.3: 193 frames ≤ 0.098 px; 120Hz b=0: 103 frames ≤ 0.080 px; 120Hz b=0.2: 95 frames ≤ 0.050 px; 120Hz b=0.4: 136 frames ≤ 0.025 px; 120Hz b=0.9: 775 frames ≤ 0.038 px; retarget ≤ 0.045 px (23.2 px from a rest restart)
+PASS layout_spring:L_SPRING_2 (292 ms)
+    max 0.066 px; opacity 4.7e-7; radius 0.0000; release 0.304 s; settle 0.480 s
+PASS layout_spring:L_SPRING_3 (291 ms)
+    waapi rejects springs; validation before any state change; duration keeps the spring kind; settle cap snaps unsupported
+PASS layout_spring:L_SPRING_4 (292 ms)
+    b=0.5 max 0.4: factor 0.2, 0.384 s, ≤ 0.000 px; b=0 max 0.25: factor 0.1, 0.208 s, ≤ 0.000 px; b=-0.3 max 0.6: factor 0.1, 0.368 s, ≤ 0.000 px; max 0.02: jump
+PASS layout_meas:L_DOC_1 (292 ms)
+    foreign add/set throw; adoption ends the run 'disposed' with styles restored; re-added card animates ≤ 0.000 px
+PASS layout_meas:L_HAND_1 (350 ms)
+    forward 21 and back 21 frames; pair ≤ 0.000 px, coverage within 0.0e+0
+PASS layout_meas:L_HAND_2 (527 ms)
+    an inner scroller: active: no flight; no scrollend in this browser: the second handoff degrades too; ≤ 0.000 px; the document, a viewport-fixed lead: active: no flight; no scrollend in this browser: the second handoff degrades too; ≤ 0.000 px; a scroller in an open root that holds no participant, around a slot: active: no flight; no scrollend in this browser: the second handoff degrades too; ≤ 0.000 px; a scroller in an outer root, around the root that holds the items: active: no flight; no scrollend in this browser: the second handoff degrades too; ≤ 0.000 px; an inner scroller, the new lead with a presence: active: no flight; no scrollend in this browser: the second handoff degrades too; ≤ 0.000 px; a reparent into a viewport-fixed sheet while the document scrolls: active: no flight; no scrollend in this browser: the second reparent degrades too; ≤ 0.000 px
+PASS layout_meas:L_KEY_1 (298 ms)
+    fresh baselines at rest and mid-run, no interpolation; ≤ 0.000 px
+PASS layout_meas:L_MEAS_1 (417 ms)
+    panel scroller: 11 messages held ≤ 0.000 px for 25 frames (app anchoring); page scroller: 11 messages held ≤ 0.000 px for 25 frames (app anchoring)
+PASS layout_meas:L_MEAS_10 (291 ms)
+    open root (i), path 1: path 1 under the panel's live scale 1.429, ended at frame 21; shadow and slotted children exact ≤ 0.000 px; open root (ii), path 3: path 3 under the panel's live scale 1.429; shadow and slotted children exact ≤ 0.000 px; closed root (i), path 1: path 1 under the panel's live scale 1.429, ended at frame 21; shadow and slotted children exact ≤ 0.000 px; closed root (ii), path 3: path 3 under the panel's live scale 1.429; shadow and slotted children exact ≤ 0.000 px; (b) moved from the document into a closed root: 21 frames, panel and slotted child on the oracle ≤ 0.000 px; (b) moved from one closed root into another: 21 frames, panel and slotted child on the oracle ≤ 0.000 px
+PASS layout_meas:L_MEAS_11 (283 ms)
+    capture-less flush: ρ = 332.0, |δ| = 0.005000000000000001 px → |δ|·ρ = 1.66 px reported; snapped exactly [amplified: stale, driven above: stale, newly registered: stale, undriven moved: stale]; aged capture: ρ = 332.0, |δ| = 0.005000000000000001 px → |δ|·ρ = 1.66 px reported; snapped exactly [amplified: stale, driven above: stale, newly registered: stale, undriven moved: stale]
+PASS layout_meas:L_MEAS_11_LATE (284 ms)
+    fresh capture + late participant: status 'stale', snapped [late: stale]
+PASS layout_meas:L_MEAS_11_LATE_HANDOFF (292 ms)
+    late retained handoff: 0px → no-change, 0.5px → no-change
+PASS layout_meas:L_MEAS_12 (292 ms)
+    (a) added mid-run: subtree snapped unsupported at A (run 1 ended); ≤ 0.000 px before; (b) present at capture, removed by the commit: subtree snapped unsupported at A ≤ 0.000 px; (c) 180° removed by the commit: box moves exactly, 21 frames ≤ 0.000 px
+PASS layout_meas:L_MEAS_13 (423 ms)
+    aged at once; card at A (200), never at the intermediate 80
+PASS layout_meas:L_MEAS_14 (518 ms)
+    (a) a commit that also scrolls: 7 cards, 24 frames ≤ 0.000 px, scroll offsets held at 0, 120; (a) overflow: hidden cards: 7 cards, 24 frames ≤ 0.000 px, scroll offsets held at 0, 120; (a) the WAAPI engine: 7 cards, 24 frames ≤ 0.017 px, scroll offsets held at 0, 120; (b) a banner grows, non-driven content visible: 6 cards ≤ 0.000 px; the 40 px shift presented uncompensated, cards followed content (scroll held at 150); (b) a banner grows, only driven cards visible: 8 cards ≤ 0.000 px; the 40 px shift presented uncompensated, cards followed content (scroll held at 170); (c) a deletion above, non-driven content visible: 6 cards ≤ 0.000 px; the -50 px shift presented uncompensated, cards followed content (scroll held at 150); (c) a deletion above, only driven cards visible: 8 cards ≤ 0.000 px; the -50 px shift presented uncompensated, cards followed content (scroll held at 170)
+PASS layout_meas:L_MEAS_14_CLASSIC (283 ms)
+    7 cards, 24 frames ≤ 0.000 px, scroll offsets held at 0, 120
+PASS layout_meas:L_MEAS_2 (283 ms)
+    7 cards from their presented boxes, 21 frames ≤ 0.000 px
+PASS layout_meas:L_MEAS_3 (283 ms)
+    scrollY 550; participants glide from their presented boxes, 21 frames ≤ 0.000 px
+PASS layout_meas:L_MEAS_4 (283 ms)
+    (i) parent at rest, path 1: path 1 (inner J = (0.0000, 0.0000, 0.0000, 0.0000)): kept on the original timeline, ended at frame 21; ≤ 0.000 px; (i) live parent scale 0.5, path 1: path 1 (J = (0.0000, 0.0000, 0.0000, 0.0000)) under the parent's live scale 0.785: kept on the original timeline, ended at frame 21; ≤ 0.000 px; (i) live parent scale 2, path 1: path 1 (J = (0.0000, 0.0000, 0.0000, 0.0000)) under the parent's live scale 1.429: kept on the original timeline, ended at frame 21; ≤ 0.000 px; (ii) parent at rest, path 2: path 2 (inner J = (5.0000, 0.0000, 0.0000, 0.0000)): kept on the original timeline, ended at frame 21; ≤ 0.000 px; (ii) live parent scale 0.5, path 3: path 3 (J = (3.9272, 0.0000, 0.0000, 0.0000)) under the parent's live scale 0.785: retarget from (B, v) ≤ 0.000 px (a dropped velocity would be 4.1 px off); (ii) live parent scale 2, path 3: path 3 (J = (7.1456, 0.0000, 0.0000, 0.0000)) under the parent's live scale 1.429: retarget from (B, v) ≤ 0.000 px (a dropped velocity would be 4.1 px off); (iii) amplified ρ ≈ 300, path 3: ρ = 332.0 (pose 16.60 × inner 20), |δ| = 0.005000000000000001 px, measured |J| = 1.660 px; path 3 ≤ 0.001 px (path 1 would be 120 px off)
+PASS layout_meas:L_MEAS_6 (284 ms)
+    (a) no later commit: sticky offset -68.00 px; ended at frame 21; ≤ 0.000 px; (b) a later commit: sticky offset -68.00 px; ended at frame 21; ≤ 0.000 px
+PASS layout_meas:L_MEAS_7 (291 ms)
+    flat, presented: path 1: path 1 (J = (0.0000, 0.0000, 0.0000, 0.0000)): kept on the original timeline, ended at frame 21; ≤ 0.000 px; flat, in the commit's task: from (B, v): from (B, v) (J = (0.0000, 60.0000, 0.0000, 0.0000)) ≤ 0.000 px (a dropped velocity would be 15.2 px off); nested under a live scale, presented: path 1: path 1 under the parent's live scale 1.429 (child J = (0.0000, 0.0000, 0.0000, 0.0000)): kept on the original timeline, ended at frame 21; ≤ 0.000 px; nested under a live scale, in the commit's task: from (B, v): parent and child from (B, v) under the parent's live scale 1.429 ≤ 0.000 px (a dropped velocity would be 12.7 px off)
+PASS layout_meas:L_MEAS_8 (283 ms)
+    page scrolls 100 → 380 → 620 → 900 → 150 → 400 move nothing; 21 frames ≤ 0.000 px
+PASS layout_meas:L_MEAS_9 (283 ms)
+    (a) fresh capture: both from (B, v), 20 frames ≤ 0.000 px; (b) aged capture: aged: both kept and reported, no rewind; ended at frame 21; ≤ 0.000 px
+PASS layout_ops:CAPS (352 ms)
+    participant cap and mover cap: no reads over the cap, typed diagnostics
+PASS layout_ops:CAPS_STATUS (357 ms)
+    CAPS_STATUS: participant cap at 2: animates; participant cap over 2: capped, zero reads; disabled precedes capped; failed precedes capped; participant cap with a live follower: inert restored; capped flush with a follower + fault: abort restored; mover cap at 1: animates; mover cap over 1: capped
+PASS layout_ops:FUZZ (485 ms)
+    FUZZ: 16 seeds × 10–14 events; per-node B, per-document read/write, owned properties, exact fault/disabled/reduced outcomes, handoff-scroll degradation, every report and handle terminal, styles/inert restored
+PASS layout_ops:L_A11Y_1 (392 ms)
+    L-A11Y-1: absent inert: first frame, held, unmount restored; authored inert preserved; reversal swaps inert ownership; focus in follower: no crossfade, no inert, focus kept; focus through a closed shadow root; focus through two nested closed shadow roots; continuing follower focus: pair ended, focus kept; held invisible follower focus: settled, focus kept; held follower -> focus-skipped lead under a moving ancestor; authored inert present/absent through reversal, abort, dispose; keyed reorder and held re-render keep activeElement and attributes
+PASS layout_ops:L_OPS_1 (358 ms)
+    L-OPS-1: explicit mid-run: restored, disabled, no subscription; implicit root: restored, disabled, re-enabled; mid-crossfade: follower held at 0, lead restored; P3 crossfade/presence hold: stays invisible, no false event
+PASS layout_ops:L_OPS_2 (358 ms)
+    L-OPS-2: measure: failed, restored; write mid-flush: failed, restored; write mid-frame: failed, restored; animate: failed, no animation left; OPS-03: throwing cancel still cleans up; onSnap: callback-error, state unchanged; diagnostic listener: callback-error to the others only
+PASS layout_ops:L_OPS_MAXP (342 ms)
+    React maxParticipants: 1 → capped, 0 → capped
+PASS layout_ops:L_OPS_MAXP_LATE (359 ms)
+    React late add over maxParticipants: capped, reads 0, metric 0
+PASS layout_ops:MUTATION (358 ms)
+    MUTATION: M1 aged capture -> L-MEAS-11 (checker: aged B reused); M2 frame marker -> L-MEAS-13 (real clock mutation); M3 predicted box -> L-MEAS-4 (real mutated capture); M4 size check -> §9.1 size-limit (synthetic); M5 scrollend -> L-HAND-2 (no scrollend: conservative fallback); M6 abort cleanup -> L-OPS-2 (real blocked removal); M7 release first update dt = 0 -> L-DRIVE-1 (wrong first frame control); M8 field-by-field motion -> L-SPRING-3 (synthetic)
+PASS layout_ops:ONE_WRITER (358 ms)
+    ONE_WRITER: one write per element/property per flush and frame; only owned names; inert once; authored translate restored
+PASS layout_drive:L_DRIVE_1 (294 ms)
+    held origin exact, worst 0.0000 px; reorder keeps the offset, worst 0.0000 px; release path on the oracle, worst 0.0000 px; snap-back from {"x":140,"y":150,"w":80,"h":80}; release velocity 1000 on the oracle, worst 0.0000 px
+PASS layout_drive:L_DRIVE_2 (292 ms)
+    caught at 0.016s: v = 566.7 px/s (oracle 566.7); size kept its track while held, worst 0.0001 px; release kept the size continuation, worst 0.0001 px
+PASS layout_drive:L_DRIVE_3 (283 ms)
+    scroll H error ≤ 0.0000 px; scale 1→2 H error ≤ 0.0000 px; sticky H error ≤ 0.0000 px; sticky ancestor H error ≤ 0.0000 px
+PASS layout_drive:L_DRIVE_4 (283 ms)
+    unmount invalidated and stopped the read; drive-hold kill switch invalidated synchronously; released landing kill switch invalidated; cancelled landing kill switch invalidated
+PASS layout_drive:L_DRIVE_5 (283 ms)
+    jump: held {"x":70,"y":20,"w":80,"h":80} then landed at once; policy toggled while held; hold stayed at {"x":40,"y":10,"w":80,"h":80}; maxDuration 0.1 s landed on the clamped oracle, worst 0.0000 px; ignore played the full 0.6 s, worst 0.0000 px; nonzero no-layout-change release sprang back; effective jump policy applied at release; reduced no-fit mapped to released + jump; spring refusal emitted spring-timeout and snapped; jump flush settled the descendant residual at A; capture-less jump settled the descendant residual; landing policy change finished at A
+PASS layout_drive:L_DRIVE_6 (283 ms)
+    held residuals ride h, worst 0.0000 px; release residuals ride h, worst 0.0001 px; velocity residual+ḣ, worst 0.00 px/s
+PASS layout_drive:L_DRIVE_EDGES (292 ms)
+    take preconditions and non-finite input; descendant animated-owned probe; released abort invalidated the handle; cancelled abort invalidated the handle; retake write fault aborted cleanly; fault-related listener cleanup; refused size track snapped and kept the hold; animated-owned take/hold refusal
+PASS layout_drive:L_DRIVE_FIX (292 ms)
+    cancel child offset ≤ 0.0000 px; size 0.4 px tolerated and settled; size 0.5 px tolerated and settled; size 1.5 px tolerated and settled; landing + size flush kept the origin and finished; re-take from {"x":60,"y":20,"w":80,"h":80} at {"x":60,"y":20,"w":80,"h":80}; failed re-takes leave the old landing intact; supported 6 px held re-layout kept the hold; take-read size re-layout landed on A; parented take-read size re-layout landed on A; pure position re-layout landed on the new A; mover cap counted the hold + rider and snapped; kept-timeline child relative 23.20 -> 26.31; static child take carried ancestor velocity; trackless static child take: v -250.0, -250.0 px/s (ancestor origin -250.0, -250.0); reflowing child width take: v -250.0 px/s (oracle −250); driven width take: v -500.0, 300.0 px/s; refused residual re-plan jumped to A; take before a flush used take reads; anchored child relative 29.54..80.00; moving-parent take: v 400.0 px/s, residual position 0.0000 px, velocity 0.0 px/s; cross-scope nested hold is an explicit limitation
+PASS react_layout:E5 (1447 ms)
+    5 adds 80 ms apart: every enter (spring, 0.4 s, centre-bottom) and every layout track (6 interrupted with their velocity) on the expectation every frame, max error 0.0000 px; exit (y 10, scaleX 0.9, 0.2 s spring) on the expectation every frame, bottom edge within 0.0000 px, released at 0.208 s; siblings final at t = 0 and on their tracks, max error 0.0000 px
+PASS react_layout:J16 (396 ms)
+    {} → {"duration":1}: x 40.000/44.000/48.000 (error 0.0000 px); {} → {"delay":0}: x 40.000/44.000/48.000 (error 0.0000 px); spring {m,k,c} → {c,k,m}: x 141.264/154.129/165.416 (error 0.0000 px); every frame on the first track; {} → {"duration":0.5} retargets
+PASS react_layout:J26 (358 ms)
+    equal { maxDuration: 0.1 }: x 40.000/44.000/48.000 at 0.2/0.22/0.24 s, every frame on the first track (error 0.0000 px), one subscriber; { maxDuration: 0.2 } re-creates: x 200.000, 0 subscribers
+PASS react_layout:J27 (392 ms)
+    mid-enter exit: lifted to 50px/80px 100px × 50px, drawn (50, 94, 80, 40) until the release at 0.208 s (error 0.0000 px); mid-layout exit: lifted to top 30px, on its track through 0.680 s (error 0.0000 px)
+PASS react_layout:J28 (1195 ms)
+    mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error 0.0000); mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at 1.000 s (max error 0.0000); nothing subscribed after the settle
+PASS react_layout:J29 (1033 ms)
+    main document y 50 (translate 0px 50px), iframe y 50 (translate 0px 50px) at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left
+PASS react_layout:L_MEAS_5_COALESCE (932 ms)
+    two commits and a scroll in one task, one flush: first frame = last presented, then on the oracle to the last commit's layout (max error 0.0000 px)
+PASS react_layout:L_MEAS_5_SUSPENSE (2556 ms)
+    late fallback measured: first frame = last presented, then on the oracle (max error 0.0000 px); late reveal measured: first frame = last presented, then on the oracle (max error 0.0000 px); quick fallback measured: first frame = last presented, then on the oracle (max error 0.0000 px); quick reveal measured: first frame = last presented, then on the oracle (max error 0.0000 px)
+PASS react_layout:L_MEAS_5_URGENT (1228 ms)
+    the urgent update committed inside the transition: first frame = last presented, then on the oracle (max error 0.0000 px); the transition measured: first frame = last presented, then on the oracle (max error 0.0000 px)
+PASS react_layout:L_MEAS_5a (1101 ms)
+    slices over 4 frames, scrolled 30 px between chunks: first frame = last presented, then on the oracle (max error 0.0000 px); restored
+PASS react_layout:L_MEAS_5b (940 ms)
+    aged after 3 frames: every participant at its layout box; 'stale' exactly zyacdebf (the moved ones and the scrolled list)
+PASS react_layout:RL1 (530 ms)
+    reorder: 4 items on the oracle every frame, max error 0.0000 px; styles restored
+PASS react_layout:RL2 (683 ms)
+    StrictMode: two reorders on the oracle, max error 0.0000 px
+PASS react_layout:RL3 (1058 ms)
+    97 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout:RL3_AGED (759 ms)
+    advanced aged commit: 'stale' cdeb
+PASS react_layout:RL4 (1150 ms)
+    89 checks over 1 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout:RL5 (1117 ms)
+    99 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailacdebf)
+PASS react_layout:RL6 (3091 ms)
+    memoized subtree: snapped with one warning; update(fn) on the oracle, max error 0.0000 px; rendered class: animated, 0 warnings, memoized class: b (0, 50) → (40, 0) with 1 warning, rendered style: animated, 0 warnings, memoized style: b (0, 50) → (40, 0) with 1 warning
+PASS react_layout:RL7 (625 ms)
+    30 frames, a re-render every 3rd: trajectories differ by 0.0000 px
+PASS react_layout:RL8 (967 ms)
+    implicit root: mid-run at 18.9 between 4 and 42; settled and restored
+PASS react_layout:RL9 (358 ms)
+    reorder from the old box as one WAAPI animation per item; no inline style; released at the end (4 → 38)
+PASS react_layout:RL_DRIVE (525 ms)
+    dispatcher routes to the explicit group and the implicit root; no-owner take throws
+PASS react_layout:RL_DRIVE_FOLLOWER (350 ms)
+    exiting follower rejected with ANI_INVALID_OPTIONS + drive-rejected
+PASS react_layout:RL_DRIVE_STRICT (450 ms)
+    StrictMode same-task replay kept the hold and its finger offset; release landed on the new slot
+PASS acceptance:E1Anchor (717 ms)
+    parent on the oracle (0.0002 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance:E2Create (691 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0002 px)
+PASS acceptance:E3Folder (1250 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0002 px, no foreign occluder, radius bounds within 0.0000 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance:E4Card (892 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance:E5Toasts (758 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance:Gallery (1550 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0000 px
+PASS acceptance:Honest (823 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+PASS showcase:Accordion (1117 ms)
+    accordion: 3 runs, 27 element tracks over 99 frames on the oracle (worst 0.0001 px at accordion-0-body); 3 mid-flight changes: 7 element chains over 46 frames on the oracle, velocity carried (worst 0.0001 px at accordion-2, 0 tracks kept)
+PASS showcase:Dialog (1425 ms)
+    family dialog: 3 runs, 9 element tracks over 99 frames on the oracle (worst 0.0078 px at dialog-label); 3 mid-flight changes: 3 element chains over 44 frames on the oracle, velocity carried (worst 0.0669 px at dialog-action, 0 tracks kept); next-step sheet/button radii over 33 frames within 0.0000 px
+PASS showcase:DragReorder (892 ms)
+    drag to reorder: 2 runs, 7 element tracks over 66 frames on the oracle (worst 0.0000 px at drag-0); 1 mid-flight changes: 1 element chains over 33 frames on the oracle, velocity carried (worst 0.0000 px at drag-2, 0 tracks kept)
+PASS showcase:Folder (1124 ms)
+    iOS folder: 3 runs, 15 element tracks over 99 frames on the oracle (worst 0.0002 px at folder-surface); 3 mid-flight changes: 5 element chains over 43 frames on the oracle, velocity carried (worst 0.0002 px at folder-surface, 0 tracks kept)
+PASS showcase:Gallery (1325 ms)
+    gallery: 4 runs, 64 element tracks over 132 frames on the oracle (worst 0.0002 px at gallery-3); 4 mid-flight changes: 16 element chains over 46 frames on the oracle, velocity carried (worst 0.0003 px at gallery-5, 30 tracks kept)
+PASS showcase:Nav (958 ms)
+    smooth tabs: 2 runs, 2 element tracks over 66 frames on the oracle (worst 0.0000 px at nav-highlight); 7 mid-flight changes: 1 element chains over 50 frames on the oracle, velocity carried (worst 0.0001 px at nav-highlight, 0 tracks kept)
+PASS showcase:Shuffle (925 ms)
+    shuffle: 2 runs, 24 element tracks over 66 frames on the oracle (worst 0.0000 px at shuffle-6); 3 mid-flight changes: 12 element chains over 46 frames on the oracle, velocity carried (worst 0.0000 px at shuffle-11, 1 tracks kept)
+PASS showcase:Stack (1425 ms)
+    stacked notifications: 5 runs, 38 element tracks over 165 frames on the oracle (worst 0.0002 px at stack-3-text); 3 mid-flight changes: 6 element chains over 43 frames on the oracle, velocity carried (worst 0.0003 px at stack-4, 0 tracks kept)
+PASS showcase:Switch (827 ms)
+    switch: 2 runs, 6 element tracks over 60 frames on the oracle (worst 0.0000 px at switch-0); 3 mid-flight changes: 1 element chains over 38 frames on the oracle, velocity carried (worst 0.0000 px at switch-0, 0 tracks kept)
+PASS showcase:Tabs (889 ms)
+    tabs: 2 runs, 2 element tracks over 66 frames on the oracle (worst 0.0000 px at tab-underline); 3 mid-flight changes: 1 element chains over 43 frames on the oracle, velocity carried (worst 0.0000 px at tab-underline, 0 tracks kept)
+PASS showcase:TodoList (992 ms)
+    to-do list: 3 runs, 10 element tracks over 99 frames on the oracle (worst 0.0000 px at todo-c); 3 mid-flight changes: 2 element chains over 33 frames on the oracle, velocity carried (worst 0.0000 px at todo-a, 4 tracks kept)
+PASS regressions:Crossfade (689 ms)
+    33 frames (33 crossfading) re-rendered from above every third frame: boxes within 0.0004 px, opacities within 0.0e+0; opacity 1 and unowned after
+PASS regressions:Fuzz (599 ms)
+    24 seeds × 60 steps (3609 engine operations): no read after a write, finite values, translate/scale only !important, transform never written; byte-identical styles and no subscription at the end; the §4.4 warning only, once in 24 of 24 scopes
+PASS regressions:Jank (325 ms)
+    after janky frames: 104.1 px/s, 20.7 px/s → 103.8, 20.8 across the retarget (0.435 %)
+PASS regressions:LateStart (1250 ms)
+    first painted frame after a 120 ms block at 0.00 % (then 10.25 %)
+PASS regressions:Unrelated (725 ms)
+    16 tiles over 33 frames, re-rendered from above every third frame: identical within 0.0000 px
+PASS waapi:W1 (352 ms)
+    RAF vs WAAPI every frame: max 0.0322 px (linear 0.0000, linear +delay 0.0000, ease-out 0.0193, ease-out +delay 0.0170, spring 0.0143, spring +delay 0.0322); no inline style written
+PASS waapi:W2 (325 ms)
+    retarget from (243.45, 20) at 0.16 s: on the oracle within 0.0076 px; ended, nothing left
+PASS waapi:W3 (1059 ms)
+    first painted frame after a 120 ms block at 0.00 %
+PASS waapi:W4 (324 ms)
+    7 add and 6 set invalid shapes throw ANI_INVALID_OPTIONS; radius false is allowed; later nesting and missing CSS linear() snap unsupported
+PASS waapi:W5 (316 ms)
+    finish, removal, reduced motion and dispose cancel their animations with exact reports; no inline style written
+PASS waapi:W6 (451 ms)
+    clock timeScale 0; document timeline advanced to x = 75.00 px; reduced motion is covered by W5
+PASS react_layout_r18:E5 (1410 ms)
+    5 adds 80 ms apart: every enter (spring, 0.4 s, centre-bottom) and every layout track (6 interrupted with their velocity) on the expectation every frame, max error 0.0000 px; exit (y 10, scaleX 0.9, 0.2 s spring) on the expectation every frame, bottom edge within 0.0000 px, released at 0.208 s; siblings final at t = 0 and on their tracks, max error 0.0000 px
+PASS react_layout_r18:J16 (358 ms)
+    {} → {"duration":1}: x 40.000/44.000/48.000 (error 0.0000 px); {} → {"delay":0}: x 40.000/44.000/48.000 (error 0.0000 px); spring {m,k,c} → {c,k,m}: x 141.264/154.129/165.416 (error 0.0000 px); every frame on the first track; {} → {"duration":0.5} retargets
+PASS react_layout_r18:J26 (358 ms)
+    equal { maxDuration: 0.1 }: x 40.000/44.000/48.000 at 0.2/0.22/0.24 s, every frame on the first track (error 0.0000 px), one subscriber; { maxDuration: 0.2 } re-creates: x 200.000, 0 subscribers
+PASS react_layout_r18:J27 (350 ms)
+    mid-enter exit: lifted to 50px/80px 100px × 50px, drawn (50, 94, 80, 40) until the release at 0.208 s (error 0.0000 px); mid-layout exit: lifted to top 30px, on its track through 0.680 s (error 0.0000 px)
+PASS react_layout_r18:J28 (1125 ms)
+    mid-enter reorder: opacity/scaleX/width 0.20/0.84/84.00 kept, then on the enter every frame (max error 0.0000); mid-exit reorder: b kept opacity 0.8, on its exit every frame, released once at 1.000 s (max error 0.0000); nothing subscribed after the settle
+PASS react_layout_r18:J29 (991 ms)
+    main document y 50 (translate 0px 50px), iframe y 50 (translate 0px 50px) at t = 0 with the default clock paused; both settled at y 0; the main root animates after the iframe root left
+PASS react_layout_r18:L_MEAS_5_COALESCE (883 ms)
+    two commits and a scroll in one task, one flush: first frame = last presented, then on the oracle to the last commit's layout (max error 0.0000 px)
+PASS react_layout_r18:L_MEAS_5_SUSPENSE (2625 ms)
+    late fallback committed 3 frames after its render: aged, 'stale' exactly abcdef; late reveal measured: first frame = last presented, then on the oracle (max error 0.0000 px); quick fallback committed 4 frames after its render: aged, 'stale' exactly abcdef; quick reveal measured: first frame = last presented, then on the oracle (max error 0.0000 px)
+PASS react_layout_r18:L_MEAS_5_URGENT (1158 ms)
+    the urgent update committed inside the transition: first frame = last presented, then on the oracle (max error 0.0000 px); the transition measured: first frame = last presented, then on the oracle (max error 0.0000 px)
+PASS react_layout_r18:L_MEAS_5a (1025 ms)
+    slices over 4 frames, scrolled 30 px between chunks: first frame = last presented, then on the oracle (max error 0.0000 px); restored
+PASS react_layout_r18:L_MEAS_5b (858 ms)
+    aged after 3 frames: every participant at its layout box; 'stale' exactly zyacdebf (the moved ones and the scrolled list)
+PASS react_layout_r18:RL1 (491 ms)
+    reorder: 4 items on the oracle every frame, max error 0.0000 px; styles restored
+PASS react_layout_r18:RL2 (685 ms)
+    StrictMode: two reorders on the oracle, max error 0.0000 px
+PASS react_layout_r18:RL3 (1058 ms)
+    98 checks over 4 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL3_AGED (758 ms)
+    advanced aged commit: 'stale' cdeb
+PASS react_layout_r18:RL4 (1159 ms)
+    91 checks over 1 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL5 (1124 ms)
+    95 checks over 1 DOM mutations, picture unmoved; 4 nodes animated and settled (detailacdebf)
+PASS react_layout_r18:RL6 (3083 ms)
+    memoized subtree: snapped with one warning; update(fn) on the oracle, max error 0.0000 px; rendered class: animated, 0 warnings, memoized class: b (0, 50) → (40, 0) with 1 warning, rendered style: animated, 0 warnings, memoized style: b (0, 50) → (40, 0) with 1 warning
+PASS react_layout_r18:RL7 (591 ms)
+    30 frames, a re-render every 3rd: trajectories differ by 0.0000 px
+PASS react_layout_r18:RL8 (950 ms)
+    implicit root: mid-run at 20.6 between 4 and 42; settled and restored
+PASS react_layout_r18:RL9 (375 ms)
+    reorder from the old box as one WAAPI animation per item; no inline style; released at the end (4 → 38)
+PASS react_layout_r18:RL_DRIVE (525 ms)
+    dispatcher routes to the explicit group and the implicit root; no-owner take throws
+PASS react_layout_r18:RL_DRIVE_FOLLOWER (358 ms)
+    exiting follower rejected with ANI_INVALID_OPTIONS + drive-rejected
+PASS react_layout_r18:RL_DRIVE_STRICT (449 ms)
+    StrictMode same-task replay kept the hold and its finger offset; release landed on the new slot
+PASS acceptance_r18:E1Anchor (690 ms)
+    parent on the oracle (0.0002 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance_r18:E2Create (658 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0002 px)
+PASS acceptance_r18:E3Folder (1250 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0002 px, no foreign occluder, radius bounds within 0.0000 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance_r18:E4Card (883 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance_r18:E5Toasts (756 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance_r18:Gallery (1551 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0000 px
+PASS acceptance_r18:Honest (818 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+PASS acceptance_rc:E1Anchor (723 ms)
+    parent on the oracle (0.0002 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance_rc:E2Create (692 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0002 px)
+PASS acceptance_rc:E3Folder (1258 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0002 px, no foreign occluder, radius bounds within 0.0000 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance_rc:E4Card (892 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance_rc:E5Toasts (758 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance_rc:Gallery (1550 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0000 px
+PASS acceptance_rc:Honest (825 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+PASS acceptance_r18c:E1Anchor (724 ms)
+    parent on the oracle (0.0002 px); child and crosshair centred within 0.0000 px; child size starts at 0.816 s
+PASS acceptance_r18c:E2Create (696 ms)
+    crossfade coverage within 0.000000; glyph height within 0.000 px; reversal commit opacity jump 0.000000; no geometry jump at a toggle (0.0002 px)
+PASS acceptance_r18c:E3Folder (1262 ms)
+    tiles: first frame within 0.0000 px, on the oracle every frame (max 0.0001 px), final within 0.0000 px; surface on the oracle within 0.0002 px, no foreign occluder, radius bounds within 0.0000 px, descendant aspect ratio within 0.000000; items: first frame at scale 0.2 on the folder origin within 0.0001 px, on their enter paths every frame (max 0.0001 px), starts open 0.016/0.048/0.096/0.128/0.176; reopen after close 0.016/0.048/0.096/0.128/0.176; reopen 0.016/0.048/0.096/0.128/0.176 s, stagger within 0.008 s; open and reopen settle; close/reopen without a jump (0.0003 px)
+PASS acceptance_r18c:E4Card (891 ms)
+    nested ids from their own boxes; title 48.328 px wide in the grid, 48.328 px in the detail, same text styles; image coverage within 0.0001 px; nested opacity coverage within 0.000000; title size pinned within 0.0001 px; close/reopen without a jump (0.0000 px)
+PASS acceptance_r18c:E5Toasts (723 ms)
+    5 adds 80 ms apart: enter first frames exact, no jump (0.0000 px); bottom edge within 0.000 px under scaleX; exit released at 0.208 s; siblings on the oracle within 0.0000 px; settled toasts disjoint
+PASS acceptance_r18c:Gallery (1552 ms)
+    16 tiles grid ↔ list on the oracle every frame (max 0.0002 px); detail from tile 5 and back on the oracle every frame (max 0.0001 px); grid/list detail radius bounds within 0.0000 px
+PASS acceptance_r18c:Honest (825 ms)
+    E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail
+
+221 passed, 0 failed, 0 known failures, 2 skipped (144.2 s)
