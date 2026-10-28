@@ -335,6 +335,17 @@ Browser controls are run by `--check`, once per engine, through the real page:
   fails.
 - S-DELETE: skip the presented-box lift/pin for the second deleted row; the
   engine keeps moving it after the lift; G1 fails.
+- S-PHOTO: leftover pose on `cell-0` (G6), extra rect read (G13).
+- S-ACC: leftover pose on `row-0` (G6), extra rect read in the commit (G13).
+- S-INSERT: leftover pose on `row-9` (G6), extra rect read (G13).
+- S-STACK: extra read (G13), leftover pose on `card-0` (G6), disabled badge
+  scale (shape.badge-scale).
+- S-ISLAND: extra read (G13).
+- S-DELETE: extra read in the second commit (G13).
+- The earlier `photo-no-counter-scale` and `acc-separator-1px` controls target
+  G1, which the primary scenes already fail; they are reported **inconclusive**
+  because a control cannot prove a metric the primary does not pass. The
+  isolated G6/G13 controls above are conclusive.
 - S-BULK: run the floor with an extra `getBoundingClientRect()`.
 
 Each conclusive control must fail its target; a control that unexpectedly
@@ -353,8 +364,14 @@ than browser controls; the mapping is one control per deciding metric.
 - `S-REORDER`, `S-SHEET` and the S-BULK held shape G12 are **pending P4**.
   They are reported as pending; `pass` is invocation-scoped and
   `certification` is `NOT CERTIFIED`.
-- The base is P3 final `7ed9974` (P3 final + H14 harness). The Firefox
-  advisory exception (D9) is unchanged.
+- The base is P3 final `7ed9974` (P3 final + H14 harness); the H15 fix round
+  is iteration 4. The Firefox advisory exception (D9) is unchanged.
+- Iteration 4: S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass in
+  Chromium and WebKit; S-PHOTO and S-ACC fail honestly on the two H18 engine
+  defects (late nested handoff; nested counter-projection). Certification is
+  **NOT CERTIFIED**: S-PHOTO/S-ACC, pending P4 and the unchanged S-BULK cost
+  block are the reasons. The full per-metric table and the H15 fix ledger are
+  in `ITERATIONS.md`.
 
 ### Scene table (P5b)
 
@@ -400,17 +417,21 @@ same public engine surface.
   visible driven rows then present the §12 uncompensated 234 px shift; the
   scroll offset is asserted unchanged. The engine's §6 anchor ownership is
   untouched.
-- **S-DELETE swipe** is an authored `left` offset (`16 − 10k`) rather than a
-  transform, so the `popLayout` lift starts at the presented box without
-  dividing out an own transform that the presence exit then overwrites. The
-  exiting rows are detached from layout and pinned to their presented box
-  before the engine's flush (the presence transform owns the exit); their
-  presence opacity is linear 0.25 s (the spec says 0.2 s for opacity).
+- **S-DELETE swipe** is an authored `translateX` inner map (`0 → −80 px` over
+  eight frames), as the spec requires. The exiting row keeps its layout
+  registration (capture + flush are 9/9) and changes `layoutKey` on exit, so
+  its layout track ends at the presented box. The `popLayout` `popBox` divides
+  the own `translateX` out (J-027); the scene pins the lifted element to the
+  presented box measured in the exiting render, clears the authored transform,
+  and starts the presence `translateX(0 → −390)` from there. Opacity is an
+  author timeline `1 → 0` over 0.2 s linear (the presence exit itself only
+  translates over 0.25 s).
 - **S-DELETE G13** counts the layout engine's reads (capture + flush) from the
-  DOM audit. The React `popLayout` `popBox` probes (2 rects and 8 computed
-  styles per exiting row) are not layout reads; they are excluded from the gate
-  and recorded here. The raw audit is 22 rects/8 styles per commit; the engine
-  set is 18/18 rects and 0 computed reads (Chromium) or 6 (WebKit Typed OM).
+  DOM audit. Reads whose stack is React's `popBox`/`containsAbsolute`/`ownMap`
+  presence probe are classified as non-layout and recorded per commit
+  (`presenceRects`/`presenceStyles`) instead of being subtracted by a constant;
+  the gate uses the layout subset. The exact set is 18/18 rects, 4/4 or 3/3
+  computed reads (Chromium) and 6/6 (WebKit, including Typed OM).
 - **S-STACK badge presence** is on the badge's inner count disc: the badge
   participant is a 22×22 wrapper (so the position track is exact), its
   opacity enters/exits under presence, and the red disc scales 0.8→1 about its
@@ -421,9 +442,14 @@ same public engine surface.
 - **S-ISLAND reverse** sets the exiting card to the pill's P0 layout so its
   nested content settles with an identity pose; the card content shrinks with
   the card on a 0.28 s critically damped spring and is removed with the card.
+  This is a deliberate departure from the spec's `layout: 'position'` for the
+  **exiting** card content: a position wrapper leaves a counter-projected pose
+  on the subtree when it is removed with the follower. The pill content remains
+  a position wrapper; both wrappers are counter-projected during the expand.
   The content fade start is quantized to the first frame whose lead perceptual
-  progress is ≥ 0.5. The pill/card content wrappers are position participants
-  and are counter-projected.
+  progress is ≥ 0.5. The harness exempts a descendant removed with a crossfade
+  follower (H15-07) from the last-frame owned-declaration check, because the
+  follower's removal restores the subtree.
 - **S-CARD** keeps the sheet content registered in a hidden non-participant
   sheet from rest (valid B), separates lead/follower z-order, and starts the
   close one settled frame after the open report. The content layer is an author
@@ -432,10 +458,12 @@ same public engine surface.
   evidence and includes one frame of acceleration.
 - **G13 exact counts** (capture radius + flush computed reads, per engine,
   Chromium/WebKit) are: S-CARD open 8/15, close 8/15, reverse 9/16; S-SEG 2/3
-  per tap; S-PHOTO open 2/2 (Chromium) and 0/4 (WebKit), back 2/2 and 0/4;
-  S-STACK expand 21/33, collapse 12/24; S-ACC 47/82 per commit; S-INSERT 16/29;
-  S-ISLAND expand 5/9, reverse 6/10; S-DELETE 0/6 (layout reads after the
-  documented popLayout exclusion).
+  per tap; S-PHOTO open 2/4, back 2/4; S-STACK expand 21/33, collapse 12/24;
+  S-ACC 47/82 per commit; S-INSERT 16/29; S-ISLAND expand 5/9, reverse 6/10;
+  S-DELETE 4/3 Chromium and 10/8 WebKit (layout reads after the audited
+  `popBox` classification; the presence reads are 2/2 per commit). The
+  rect/pair gate is exact `2N`, not an upper bound; the S-DELETE `delete-2`
+  count is 18, not 16.
 - The per-scene G9 probe is a generic engine/floor probe at the scene's N and
   is explicitly non-deciding; the named gate is S-BULK at 1,000.
 
@@ -455,7 +483,23 @@ same public engine surface.
 - React scenes use a DOM read audit because the public React adapter exposes
   no `group.stats`; the audit counts `getBoundingClientRect`,
   `offsetWidth`/`offsetHeight`, `getComputedStyle` and `computedStyleMap`
-  during the commit/frame only.
+  during the commit/frame only. Reads made by React's `popBox` presence probe
+  are classified by call stack and reported separately; they never enter the
+  layout read gate.
+- `aggregateSceneReport` fails a scene when **any** measured run fails,
+  including a run whose individual metrics pass but whose problems, real-twin
+  diagnostics or teardown do not; the `RUN` metric names the failing metric,
+  participant/frame and problem. Certification requires every P5b scene.
+- The real twin's `record` populates the participant map in both modes; its
+  final connected count and `realTwinProblems` (diagnostics, tracks, holds,
+  connected) are part of the per-run pass.
+- S-PHOTO registers the selected cell/image (the only layoutIds in the grid)
+  **after** the initial scroll, so the scroll event never meets the engine's
+  active-scroller listeners. WebKit 2203 has no `scrollend`; the scene uses the
+  scroll event plus two animation frames as the settle proof and rejects a
+  scroll that does not settle, instead of silently continuing. The real twin
+  reports the same engine stale path as the manual run (H15-11); the extra
+  capture-less count is the H18 nested-image defect.
 
 ### Known limitations / evidence
 
@@ -463,23 +507,23 @@ same public engine surface.
   frame takes its handoff from the departing cell, but the new detail image
   (nested under the new frame) is skipped by the engine's late-handoff guard
   (`lateWithHandoff` requires the parent to be measured in the same plan), so it
-  snaps to its target. G1/G2/G4 are 306.25 px; WebKit additionally reports
-  `stale` for the same snapped image while Chromium reports `ended`. This is
-  recorded as an engine defect, not worked around.
+  snaps to its target. G1/G2/G4 are 306.25 px; both engines report
+  `snapped [detail-image:stale]` (G7 4) and the engine's stale diagnostic. The
+  real twin reports the same path plus one extra frame diagnostic (3 vs 2);
+  this is the H18 nested-image defect, recorded rather than suppressed. Engine
+  defect, not worked around.
 - **S-ACC** fails on `body-6` at the mid-flight row 6 expansion: the position-
   pinned body is drawn as its layout box under the row's new height pose
   (h = 120·48/168), not the 120 px rest box, at the retarget flush. G1/G4 are
   120 px and G2 55.67 px; the rest of the 43 participants are exact.
-- **S-INSERT** fails G7 only: the three new rows are above the viewport but the
-  engine reports no `culled` entries (a mounting presence row never gets a
-  track, so the cull branch is not reached). The spec (A-14) expects exactly
-  three `culled`; G1/G2/G4/G13/presence are exact.
-- **S-ISLAND** fails G6 only: the nested card content is removed with the
-  exiting surface at the crossfade end; its last connected frame carries the
-  counter-projection, and the removal restores the styles. The harness's
-  removed-participant rule has no exemption for a descendant of a removed
-  follower (the follower itself is exempt). This is a harness/scene edge, not a
-  geometry miss; G1–G5/G7/G13/shape are exact.
+- **S-INSERT** is exact after the reclassification: a mounting row has no B,
+  and §9.1 requires both B and A outside the viewport, so `snapped []` is the
+  correct expectation (H15-08). The earlier three-`culled` expectation was a
+  scene/oracle overreach, not an engine defect. S-INSERT passes.
+- **S-ISLAND** passes after the H15-07 harness rule: a descendant removed with
+  a crossfade follower is exempt from the last-frame owned-declaration check
+  (the follower's removal and inert proof cover it). The earlier G6 failure was
+  a harness false positive, not an engine or geometry defect.
 - DPR 1/3 and the reduced-motion variants are not part of the H15 scene runs;
   they remain P5c evidence. The DPR 2 primary run is the certification run.
 - Firefox 1490 is advisory and times out on launch on this macOS 27
