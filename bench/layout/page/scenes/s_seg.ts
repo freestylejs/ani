@@ -14,7 +14,8 @@ import type { Box } from '../../oracle.ts'
 import type { RealTrace, SceneTrace } from '../../types.ts'
 import {
     installRafSampler,
-    measureGranularity,
+    isWebKitEngine,
+    measureGranularityInfo,
     microtasks,
     nextFrame,
     TraceBuilder,
@@ -190,6 +191,12 @@ export class SegScene {
         builder.initial('pill', layer.pill)
         const probes = probePillBoxes()
         probes.forEach((box, index) => builder.aBox(`pill-${index}`, box))
+        ;(window as unknown as { __scene?: unknown }).__scene = {
+            scene: 's-seg',
+            participants: ['pill'],
+            boxes: { pill: probes },
+            motion: { type: 'spring', duration: 0.35, bounce: 0.12 },
+        }
         const diagnostics: string[] = []
         const group = createLayoutGroup({
             clock: mc.clock,
@@ -223,6 +230,7 @@ export class SegScene {
         }
         const commit = (label: string, segment: number) => {
             const stats = group.stats
+            const diagnosticsBefore = builder.diagnostics.length
             const promise = group.update(() => {
                 layer.pill.style.left = `${3 + segment * STEP}px`
                 setSelected(layer, segment)
@@ -242,6 +250,17 @@ export class SegScene {
                 frameReadsAt: pendingReadsAt,
                 diagnostics: [],
                 onSnap: [],
+                aged: builder.diagnostics
+                    .slice(diagnosticsBefore)
+                    .some((event) => event.code === 'capture-aged'),
+                agedKeys: builder.diagnostics
+                    .slice(diagnosticsBefore)
+                    .filter((event) => event.code === 'capture-aged')
+                    .flatMap((event) => (event.key ? [event.key] : [])),
+                stylesMin: 2,
+                stylesMax: isWebKitEngine() ? 3 : 2,
+                styleRadiusCapture: 1,
+                styleActiveFlush: 1,
             })
             pendingReads = 0
             pendingReadsAt = null
@@ -333,10 +352,17 @@ export class SegScene {
     }
 
     static async runReal(): Promise<RealTrace> {
-        const g = measureGranularity()
+        const granularityInfo = measureGranularityInfo()
+        const g = granularityInfo.value
         const sampler = installRafSampler()
         const layer = mount()
         await document.fonts.ready
+        ;(window as unknown as { __scene?: unknown }).__scene = {
+            scene: 's-seg',
+            participants: ['pill'],
+            boxes: { pill: probePillBoxes() },
+            motion: { type: 'spring', duration: 0.35, bounce: 0.12 },
+        }
         const group = createLayoutGroup({
             motion: { type: 'spring', duration: 0.35, bounce: 0.12 },
             reducedMotion: 'ignore',
@@ -387,6 +413,7 @@ export class SegScene {
                 scene: 's-seg',
                 mode: 'real',
                 g,
+                gSource: granularityInfo.source,
                 frameCosts: frames,
                 commits: commitTimes,
                 diagnostics,

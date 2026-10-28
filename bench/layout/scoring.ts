@@ -30,6 +30,12 @@ export interface MetricFinding {
     readonly unit: string
     readonly value: number
     readonly pass: boolean
+    /** False when the scene declared the metric but the trace has no data. */
+    readonly measured?: boolean
+    /** The metric cannot be decided on this engine/timer; not a failure. */
+    readonly blocked?: boolean
+    /** False for reporting-only evidence; it never decides a scene gate. */
+    readonly deciding?: boolean
     readonly worst?:
         | {
               readonly frame?: number | undefined
@@ -134,10 +140,17 @@ function activeAt(state: SegmentState, frame: number, stepMs: number): boolean {
 function sameStyle(a: StyleSnapshot, b: StyleSnapshot): string[] {
     const mismatches: string[] = []
     if (a.translate !== b.translate) mismatches.push('translate')
+    if (a.translatePriority !== b.translatePriority)
+        mismatches.push('translate priority')
     if (a.scale !== b.scale) mismatches.push('scale')
+    if (a.scalePriority !== b.scalePriority) mismatches.push('scale priority')
     if (a.radius !== b.radius) mismatches.push('border-radius')
+    if (a.radiusPriority !== b.radiusPriority)
+        mismatches.push('border-radius priority')
     if (a.overflowAnchor !== b.overflowAnchor)
         mismatches.push('overflow-anchor')
+    if (a.overflowAnchorPriority !== b.overflowAnchorPriority)
+        mismatches.push('overflow-anchor priority')
     if (a.inert !== b.inert) mismatches.push('inert')
     return mismatches
 }
@@ -200,10 +213,16 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
             for (const segment of commitPlan.segments) {
                 const source = segment.handoffFrom ?? segment.key
                 const sourceState = states.get(source)
-                const from = sourceState
-                    ? valueAt(sourceState, observation.frame, stepMs)
-                    : (plan.initial[source] ??
-                      (segment.kind === 'none' ? segment.to : undefined))
+                // B is the last presented observation, not the oracle ideal
+                // (H14-15). The oracle only supplies A and the incoming
+                // analytic velocity.
+                const observedFrom = previousObservation?.boxes[source] ?? null
+                const from =
+                    observedFrom ??
+                    (sourceState
+                        ? valueAt(sourceState, observation.frame, stepMs)
+                        : (plan.initial[source] ??
+                          (segment.kind === 'none' ? segment.to : undefined)))
                 if (!from) {
                     throw new Error(
                         `commit ${commitPlan.label}: no B for "${segment.key}" (source "${source}")`
@@ -344,6 +363,7 @@ function scoreOracle(
         unit: 'px',
         value: worst,
         pass: worst <= 0.05,
+        measured: counted > 0,
         worst: {
             frame: worstFrame,
             participant: worstKey,
@@ -355,43 +375,87 @@ function scoreOracle(
 }
 
 function scoreContinuity(trace: SceneTrace, expected: Expected): MetricFinding {
-    const aged = trace.diagnostics.some(
-        (diagnostic) => diagnostic.code === 'capture-aged'
-    )
-    const gate = aged ? 0.5 : 0.05
     let worst = 0
     let worstFrame: number | undefined
     let worstKey: string | undefined
     let worstLabel: string | undefined
+    let worstDetail: string | undefined
     let count = 0
+    let failures = 0
     for (const commit of expected.commits) {
+        const observedCommit = trace.commits.find(
+            (entry) => entry.label === commit.plan.label
+        )
         for (const pair of commit.g2) {
             count += 1
+            const aged =
+                observedCommit?.aged === true &&
+                (observedCommit.agedKeys.length === 0 ||
+                    observedCommit.agedKeys.includes(pair.key))
+            const gate = aged ? 0.5 : 0.05
+            if (pair.error > gate) failures += 1
             if (pair.error > worst) {
                 worst = pair.error
                 worstFrame = pair.frame
                 worstKey = pair.key
                 worstLabel = commit.plan.label
+                worstDetail = aged
+                    ? 'aged capture, allowance 0.5 px'
+                    : 'fresh capture, gate 0.05 px'
             }
         }
     }
     return {
         id: 'G2',
         label: 'First-frame continuity against the last presented frame',
-        gate: aged ? '<= 0.5 px (aged capture)' : '<= 0.05 px',
+        gate: '<= 0.05 px; <= 0.5 px only for the aged participant of that commit',
         unit: 'px',
         value: worst,
-        pass: worst <= gate,
+        pass: failures === 0,
+        measured: count > 0,
         worst: {
             frame: worstFrame,
             participant: worstKey,
             label: worstLabel,
+            detail: worstDetail,
         },
         detail:
             count === 0
                 ? 'n/a: no measured commit handoff'
-                : `${count} commit layers`,
+                : `${count} commit layers; ${failures} over their per-commit gate`,
     }
+}
+
+/** Supporting evidence only (A-11): presented-rect finite difference. */
+function observedVelocityDetail(
+    trace: SceneTrace,
+    key: string,
+    frame: number,
+    label: string
+): string {
+    const flushIndex = trace.observations.findIndex(
+        (observation) =>
+            observation.kind === 'flush' &&
+            observation.frame === frame &&
+            observation.commitLabel === label
+    )
+    if (flushIndex < 0) return 'observed FD n/a (no flush)'
+    const before = trace.observations[flushIndex - 1]?.boxes[key] ?? null
+    const at = trace.observations[flushIndex]?.boxes[key] ?? null
+    const next = trace.observations[flushIndex + 1]?.boxes[key] ?? null
+    if (!before || !at || !next) return 'observed FD n/a (missing frame)'
+    const dt = trace.stepMs / 1000
+    const vBefore = Math.max(
+        Math.abs((at.x - before.x) / dt),
+        Math.abs((at.y - before.y) / dt)
+    )
+    const vAfter = Math.max(
+        Math.abs((next.x - at.x) / dt),
+        Math.abs((next.y - at.y) / dt)
+    )
+    const error = Math.abs(vAfter - vBefore)
+    const allowed = 0.01 * Math.max(vBefore, vAfter) + 1
+    return `observed FD before ${vBefore.toFixed(1)} px/s after ${vAfter.toFixed(1)} px/s, error ${error.toFixed(1)} (allowed ${allowed.toFixed(1)}; supporting only, acceleration included)`
 }
 
 function scoreVelocity(trace: SceneTrace, expected: Expected): MetricFinding {
@@ -419,7 +483,7 @@ function scoreVelocity(trace: SceneTrace, expected: Expected): MetricFinding {
                 worstFrame = pair.frame
                 worstKey = pair.key
                 worstLabel = pair.label
-                worstDetail = `before ${JSON.stringify(pair.before)} after ${JSON.stringify(pair.after)}`
+                worstDetail = `analytic before ${JSON.stringify(pair.before)} after ${JSON.stringify(pair.after)}; ${observedVelocityDetail(trace, pair.key, pair.frame, pair.label)}`
             }
         }
     }
@@ -430,6 +494,7 @@ function scoreVelocity(trace: SceneTrace, expected: Expected): MetricFinding {
         unit: 'ratio',
         value: worstRatio,
         pass: worstRatio <= 1,
+        measured: count > 0,
         worst: {
             frame: worstFrame,
             participant: worstKey,
@@ -486,6 +551,7 @@ function scoreSettle(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'px',
         value: worst,
         pass: worst <= 0.01 && poseProblem === undefined,
+        measured: checked > 0,
         worst: {
             frame: worstFrame ?? firstFrame,
             participant: worstKey ?? firstKey,
@@ -518,6 +584,7 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     let worstDeclarations: string | undefined
     let firstKey: string | undefined
     let count = 0
+    let inlineDifferences = 0
     const check = (
         observation: Observation | undefined,
         key: string,
@@ -529,6 +596,7 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         const style = observation.style[key]
         if (!mount || !style) return
         firstKey ??= key
+        if (style.inline !== mount.inline) inlineDifferences += 1
         const mismatches = sameStyle(style, mount).filter(
             (declaration) =>
                 declarations === undefined || declarations.includes(declaration)
@@ -559,6 +627,44 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     if (final) {
         for (const key of final.connected) check(final, key, 'final')
     }
+    // Every participant that leaves the trace is checked at its last
+    // connected frame. A crossfade follower is expected to be inert there
+    // (P3b); a settled removal is compared with its mount snapshot.
+    for (const key of plan.completeness.requiredKeys) {
+        let lastIndex = -1
+        trace.observations.forEach((observation, index) => {
+            if (observation.connected.includes(key)) lastIndex = index
+        })
+        if (lastIndex < 0) continue
+        const last = trace.observations[lastIndex]!
+        const removed = !final?.connected.includes(key)
+        if (!removed) continue
+        const pair = plan.pairs.find((candidate) => candidate.follower === key)
+        const followerAtRemoval =
+            pair !== undefined &&
+            last.frame >= pair.startFrame &&
+            plan.pairs.find(
+                (candidate) =>
+                    candidate.startFrame ===
+                        Math.max(
+                            ...plan.pairs
+                                .filter(
+                                    (entry) => entry.startFrame <= last.frame
+                                )
+                                .map((entry) => entry.startFrame)
+                        ) && candidate.follower === key
+            ) !== undefined
+        if (followerAtRemoval) {
+            const style = last.style[key]
+            if (style?.inert === null) {
+                count += 1
+                worstKey ??= key
+                worstDeclarations ??= `removed follower ${key} at frame ${last.frame}: inert absent`
+            }
+            continue
+        }
+        check(last, key, `last connected frame ${last.frame}`)
+    }
     return {
         id: 'G6',
         label: 'Restoration of every owned inline declaration',
@@ -569,7 +675,10 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         worst: {
             participant: worstKey ?? firstKey,
             detail:
-                worstDeclarations ?? (count === 0 ? '0 mismatches' : undefined),
+                worstDeclarations ??
+                (count === 0
+                    ? `0 mismatches; ${inlineDifferences} inline cssText difference(s) recorded as evidence`
+                    : undefined),
         },
     }
 }
@@ -642,14 +751,21 @@ function scoreReads(trace: SceneTrace): MetricFinding {
     let detail: string | undefined
     for (const commit of trace.commits) {
         const required = commit.nBefore + commit.nAfter
+        const styleExcess =
+            commit.styles < commit.stylesMin
+                ? commit.stylesMin - commit.styles
+                : commit.styles > commit.stylesMax
+                  ? commit.styles - commit.stylesMax
+                  : 0
         const commitExcess =
             Math.max(0, commit.rects - required) +
             Math.max(0, commit.offsets - required) +
-            Math.max(0, commit.frameReads)
+            Math.max(0, commit.frameReads) +
+            styleExcess
         if (commitExcess > excess) {
             excess = commitExcess
             worstLabel = commit.label
-            detail = `${commit.label}: ${commit.rects} rects, ${commit.offsets} pairs, ${commit.frameReads} frame reads; required ${required}/${required}/0 (styles ${commit.styles}, probes ${commit.probes}, parents ${commit.parents})`
+            detail = `${commit.label}: ${commit.rects} rects, ${commit.offsets} pairs, ${commit.styles} computed reads (${commit.stylesMin}..${commit.stylesMax}: ${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus optional Typed OM), ${commit.frameReads} frame reads; required ${required}/${required}/0 (probes ${commit.probes}, parents ${commit.parents})`
         }
     }
     if (trace.steadyFrameReads > 0) {
@@ -659,7 +775,7 @@ function scoreReads(trace: SceneTrace): MetricFinding {
     return {
         id: 'G13',
         label: 'Exact read counts per commit and zero steady-frame reads',
-        gate: '<= 2N rects and 2N layout-size pairs; steady frames read zero',
+        gate: '<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero',
         unit: 'excess reads',
         value: excess,
         pass: excess === 0,
@@ -671,6 +787,38 @@ function scoreReads(trace: SceneTrace): MetricFinding {
     }
 }
 
+function scoreFocus(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    let problems = 0
+    let compared = 0
+    let worstFrame: number | undefined
+    let worstKey: string | undefined
+    for (const observation of trace.observations) {
+        const activePairs = activePairsAt(
+            plan,
+            observation.frame,
+            observation.kind === 'flush'
+        )
+        for (const active of activePairs) {
+            compared += 1
+            if (observation.activeElementKey === active.pair.follower) {
+                problems += 1
+                worstFrame ??= observation.frame
+                worstKey ??= active.pair.follower
+            }
+        }
+    }
+    return {
+        id: 'shape.focus',
+        label: 'Focus is not inside a crossfade follower',
+        gate: 'activeElement is never the follower participant',
+        unit: 'violations',
+        value: problems,
+        pass: problems === 0,
+        measured: compared > 0,
+        worst: { frame: worstFrame, participant: worstKey },
+    }
+}
+
 function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
     return [
         scoreCrossfadeOpacity(plan, trace),
@@ -678,6 +826,7 @@ function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
         scoreRadius(plan, trace),
         scoreStaticRadius(plan, trace),
         scoreInert(plan, trace),
+        scoreFocus(plan, trace),
         scoreFont(plan, trace),
         scoreTeardown(trace),
     ]
@@ -720,11 +869,7 @@ function pairProgress(
         }
     }
     if (!active || active.kind === 'none') return 0
-    return perceptualOf(
-        active.motion!,
-        elapsedAt(active, frame, plan.stepMs),
-        active.settle
-    )
+    return perceptualOf(active.motion!, elapsedAt(active, frame, plan.stepMs))
 }
 
 function pairOpacities(
@@ -807,18 +952,22 @@ function stateHistory(
     const commitByLabel = new Map(
         plan.commits.map((commit) => [commit.label, commit])
     )
-    for (const observation of trace.observations) {
-        if (observation.kind !== 'flush' || !observation.commitLabel) continue
+    trace.observations.forEach((observation, observationIndex) => {
+        if (observation.kind !== 'flush' || !observation.commitLabel) return
         const commit = commitByLabel.get(observation.commitLabel)
-        if (!commit) continue
+        if (!commit) return
+        const previousObservation = trace.observations[observationIndex - 1]
         const pending: { key: string; state: SegmentState }[] = []
         for (const segment of commit.segments) {
             const source = segment.handoffFrom ?? segment.key
             const sourceState = states.get(source)
-            const from = sourceState
-                ? valueAt(sourceState, observation.frame, plan.stepMs)
-                : (plan.initial[source] ??
-                  (segment.kind === 'none' ? segment.to : undefined))
+            const observedFrom = previousObservation?.boxes[source] ?? null
+            const from =
+                observedFrom ??
+                (sourceState
+                    ? valueAt(sourceState, observation.frame, plan.stepMs)
+                    : (plan.initial[source] ??
+                      (segment.kind === 'none' ? segment.to : undefined)))
             if (!from) continue
             const active = sourceState
                 ? activeAt(sourceState, observation.frame, plan.stepMs)
@@ -867,7 +1016,7 @@ function stateHistory(
             list.push(entry.state)
             history.set(entry.key, list)
         }
-    }
+    })
     return history
 }
 
@@ -916,6 +1065,7 @@ function scoreCrossfadeOpacity(
         unit: 'opacity',
         value: worst,
         pass: worst <= 1e-5,
+        measured: compared > 0,
         worst: { frame: worstFrame, participant: worstKey },
         detail: compared === 0 ? 'n/a: no crossfade pair' : undefined,
     }
@@ -950,6 +1100,7 @@ function scoreCoverage(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'coverage',
         value: worst,
         pass: worst <= 1e-5,
+        measured: compared > 0,
         worst: { frame: worstFrame },
         detail: compared === 0 ? 'n/a: no crossfade pair' : undefined,
     }
@@ -997,6 +1148,7 @@ function scoreRadius(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'px',
         value: worst,
         pass: worst <= 0.03,
+        measured: compared > 0,
         worst: { frame: worstFrame, participant: worstKey },
         detail: compared === 0 ? 'n/a: no radius-blended pair' : undefined,
     }
@@ -1030,6 +1182,7 @@ function scoreStaticRadius(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'px',
         value: worst,
         pass: worst <= 0.01,
+        measured: compared > 0,
         worst: { frame: worstFrame, participant: worstKey },
         detail:
             compared === 0 ? 'n/a: no constant-radius participant' : undefined,
@@ -1038,6 +1191,7 @@ function scoreStaticRadius(plan: ScenePlan, trace: SceneTrace): MetricFinding {
 
 function scoreInert(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     let problems = 0
+    let compared = 0
     let worstFrame: number | undefined
     let worstKey: string | undefined
     for (const observation of trace.observations) {
@@ -1049,6 +1203,7 @@ function scoreInert(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         for (const active of activePairs) {
             const follower = observation.style[active.pair.follower]
             const lead = observation.style[active.pair.lead]
+            if (follower || lead) compared += 1
             if (follower && follower.inert === null) {
                 problems += 1
                 worstFrame ??= observation.frame
@@ -1068,12 +1223,14 @@ function scoreInert(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'violations',
         value: problems,
         pass: problems === 0,
+        measured: compared > 0,
         worst: { frame: worstFrame, participant: worstKey },
     }
 }
 
 function scoreFont(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     let problems = 0
+    let compared = 0
     let worstFrame: number | undefined
     let fonts: string | undefined
     for (const observation of trace.observations) {
@@ -1087,6 +1244,7 @@ function scoreFont(plan: ScenePlan, trace: SceneTrace): MetricFinding {
             const a = observation.font[active.pair.lead]
             const b = observation.font[active.pair.follower]
             if (a === undefined || b === undefined) continue
+            compared += 1
             if (a !== b) {
                 problems += 1
                 worstFrame ??= observation.frame
@@ -1101,6 +1259,7 @@ function scoreFont(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         unit: 'violations',
         value: problems,
         pass: problems === 0,
+        measured: compared > 0,
         worst: { frame: worstFrame, detail: fonts },
     }
 }
@@ -1126,10 +1285,178 @@ function scoreTeardown(trace: SceneTrace): MetricFinding {
     }
 }
 
+function scoreCompleteness(
+    plan: ScenePlan,
+    trace: SceneTrace,
+    metrics: readonly MetricFinding[],
+    shape: readonly MetricFinding[]
+): MetricFinding {
+    const req = plan.completeness
+    const problems: string[] = []
+    const note = (message: string) => {
+        if (problems.length < 20) problems.push(message)
+    }
+    if (trace.observations.length < req.requiredObservations) {
+        note(
+            `observations ${trace.observations.length} < required ${req.requiredObservations}`
+        )
+    }
+    if (trace.commits.length !== req.requiredCommits) {
+        note(
+            `commits ${trace.commits.length} != required ${req.requiredCommits}`
+        )
+    }
+    const expectedCommitLabels = plan.commits.map((commit) => commit.label)
+    const actualCommitLabels = trace.commits.map((commit) => commit.label)
+    if (
+        actualCommitLabels.length !== expectedCommitLabels.length ||
+        actualCommitLabels.some(
+            (label, index) => label !== expectedCommitLabels[index]
+        )
+    ) {
+        note(
+            `commit labels [${actualCommitLabels.join(',')}] != [${expectedCommitLabels.join(',')}]`
+        )
+    }
+    if (trace.reports.length !== req.requiredReports) {
+        note(
+            `reports ${trace.reports.length} != required ${req.requiredReports}`
+        )
+    }
+    for (const label of expectedCommitLabels) {
+        const reports = trace.reports.filter((report) => report.label === label)
+        if (reports.length !== 1) {
+            note(`report "${label}" count ${reports.length} != 1`)
+        }
+        const flushes = trace.observations.filter(
+            (observation) =>
+                observation.kind === 'flush' &&
+                observation.commitLabel === label
+        )
+        if (flushes.length !== 1) {
+            note(`flush observation "${label}" count ${flushes.length} != 1`)
+        }
+    }
+    if (trace.settleFrames.length < req.requiredSettleFrames) {
+        note(
+            `settle frames ${trace.settleFrames.length} < required ${req.requiredSettleFrames}`
+        )
+    }
+    for (const frame of plan.settleFrames) {
+        const observed = trace.observations.some(
+            (observation) =>
+                observation.frame === frame && observation.kind === 'frame'
+        )
+        if (!observed) note(`no frame observation at settle frame ${frame}`)
+    }
+    const seen = new Set<string>()
+    for (const observation of trace.observations) {
+        for (const key of observation.connected) {
+            if (!req.requiredKeys.includes(key)) {
+                note(
+                    `unknown data-p key "${key}" at frame ${observation.frame}`
+                )
+            }
+            seen.add(key)
+            if (!observation.boxes[key]) {
+                note(
+                    `connected "${key}" has no box at frame ${observation.frame}`
+                )
+            }
+        }
+    }
+    for (const key of req.requiredKeys) {
+        if (!seen.has(key)) note(`participant "${key}" is never connected`)
+    }
+    let pairObservations = 0
+    for (const pair of plan.pairs) {
+        const found = trace.observations.find(
+            (observation) =>
+                observation.connected.includes(pair.lead) &&
+                observation.connected.includes(pair.follower) &&
+                observation.opacity[pair.lead] !== undefined &&
+                observation.opacity[pair.follower] !== undefined
+        )
+        if (!found) {
+            note(
+                `pair "${pair.id}" has no observation with both layers and opacities`
+            )
+            continue
+        }
+        pairObservations += 1
+        if (pair.radiusFrom !== undefined && pair.radiusTo !== undefined) {
+            for (const key of [pair.lead, pair.follower]) {
+                const anyRadii = trace.observations.some((observation) =>
+                    Boolean(observation.radii[key])
+                )
+                if (!anyRadii)
+                    note(`pair "${pair.id}" has no radii for "${key}"`)
+            }
+        }
+        if (pair.id === 'today-title') {
+            const anyFont = trace.observations.some(
+                (observation) =>
+                    observation.font[pair.lead] !== undefined &&
+                    observation.font[pair.follower] !== undefined
+            )
+            if (!anyFont) note(`pair "${pair.id}" has no font strings`)
+        }
+    }
+    if (pairObservations !== req.requiredPairs) {
+        note(
+            `pair observations ${pairObservations} != required ${req.requiredPairs}`
+        )
+    }
+    for (const key of req.requiredStaticRadii) {
+        if (!trace.observations.some((observation) => observation.radii[key])) {
+            note(`no radii observation for "${key}"`)
+        }
+    }
+    for (const id of req.requiredMetrics) {
+        const finding = metrics.find((entry) => entry.id === id)
+        if (!finding) {
+            note(`required metric ${id} is missing`)
+            continue
+        }
+        if (finding.measured === false) note(`required metric ${id} is n/a`)
+        if (!Number.isFinite(finding.value))
+            note(`required metric ${id} is not finite`)
+        if (finding.detail?.startsWith('n/a'))
+            note(`required metric ${id} is n/a`)
+    }
+    for (const id of req.requiredShape) {
+        const finding = shape.find((entry) => entry.id === id)
+        if (!finding) {
+            note(`required shape metric ${id} is missing`)
+            continue
+        }
+        if (finding.measured === false)
+            note(`required shape metric ${id} is n/a`)
+        if (!Number.isFinite(finding.value))
+            note(`required shape metric ${id} is not finite`)
+        if (finding.detail?.startsWith('n/a'))
+            note(`required shape metric ${id} is n/a`)
+    }
+    if (trace.final.connected.length === 0) {
+        note('no connected participants in the final state')
+    }
+    return {
+        id: 'C1',
+        label: 'Trace completeness against the scene contract',
+        gate: 'required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric',
+        unit: 'contract failures',
+        value: problems.length,
+        pass: problems.length === 0,
+        measured: true,
+        worst: { detail: problems.slice(0, 5).join('; ') },
+        detail: problems.length === 0 ? 'complete' : problems.join('; '),
+    }
+}
+
 /** Scores every §11.6 metric and the scene-specific shape assertions. */
 export function scoreScene(plan: ScenePlan, trace: SceneTrace): SceneScore {
     const expected = buildExpected(plan, trace)
-    const metrics: MetricFinding[] = [
+    const base: MetricFinding[] = [
         scoreOracle('G1', trace, expected, false),
         scoreContinuity(trace, expected),
         scoreVelocity(trace, expected),
@@ -1140,6 +1467,8 @@ export function scoreScene(plan: ScenePlan, trace: SceneTrace): SceneScore {
         scoreReads(trace),
     ]
     const shape = scoreShape(plan, trace)
+    const completeness = scoreCompleteness(plan, trace, base, shape)
+    const metrics = [completeness, ...base]
     return {
         scene: plan.scene,
         metrics,

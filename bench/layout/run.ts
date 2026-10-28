@@ -19,7 +19,9 @@ import {
     type Route,
     webkit,
 } from 'playwright'
+import { aggregateFindings } from './aggregate.ts'
 import { bundlePage, pageHtml } from './bundle.ts'
+import { evaluateCertification } from './certification.ts'
 import {
     collectFingerprint,
     evaluateFingerprint,
@@ -30,7 +32,6 @@ import {
     floorAuditGate,
     realClockGate,
     steadyFrameGate,
-    sustainedGate,
 } from './gates.ts'
 import {
     type AggregateMetric,
@@ -48,7 +49,7 @@ import {
 } from './report.ts'
 import { cardPlan, segPlan } from './scene_plans.ts'
 import { type MetricFinding, scoreScene } from './scoring.ts'
-import { median } from './stats.ts'
+import { median, percentile } from './stats.ts'
 import type {
     CostTrace,
     FloorAuditTrace,
@@ -372,6 +373,43 @@ async function runReal(
     }
 }
 
+interface SceneCostProbeResult {
+    readonly scene: string
+    readonly participants: number
+    readonly movers: number
+    readonly engine: readonly number[]
+    readonly floor: readonly number[]
+    readonly ratio: number
+}
+
+async function runSceneCostProbe(
+    browser: Browser,
+    bundle: string,
+    scene: string
+): Promise<SceneCostProbeResult> {
+    const opened = await openPage(
+        browser,
+        bundle,
+        IOS_VIEWPORT,
+        2,
+        engineFor(browser)
+    )
+    try {
+        return (await opened.page.evaluate(async (scene) => {
+            const bench = (
+                window as unknown as {
+                    __bench: {
+                        runSceneCostProbe(scene: string): Promise<unknown>
+                    }
+                }
+            ).__bench
+            return bench.runSceneCostProbe(scene)
+        }, scene)) as SceneCostProbeResult
+    } finally {
+        await opened.context.close()
+    }
+}
+
 async function runCost(
     browser: Browser,
     bundle: string
@@ -428,94 +466,14 @@ async function runFloorAudit(
 
 /* ───────────────────────── aggregation ───────────────────────── */
 
-const THRESHOLDS: Record<string, number> = {
-    G1: 0.05,
-    G2: 0.05,
-    G3: 1,
-    G4: 0.05,
-    G5: 0.01,
-    G6: 0,
-    G7: 0,
-    G8: 2,
-    G13: 0,
-    'shape.opacity': 1e-5,
-    'shape.coverage': 1e-5,
-    'shape.radius': 0.03,
-    'shape.pill-radius': 0.01,
-    'shape.inert': 0,
-    'shape.font': 0,
-    'shape.teardown': 0,
-    'G9-unscrolled': 2,
-    'G9-scrolled': 2,
-    'G9.floor-unscrolled': 0,
-    'G9.floor-scrolled': 0,
-    G10: 2,
-    G11: 2,
-}
-
 function aggregate(
     findings: readonly (readonly MetricFinding[])[],
     runNumbers?: readonly number[]
 ): AggregateMetric[] {
-    const ids: string[] = []
-    for (const run of findings) {
-        for (const finding of run) {
-            if (!ids.includes(finding.id)) ids.push(finding.id)
-        }
-    }
-    return ids.map((id) => {
-        const perRun: number[] = []
-        const passPerRun: boolean[] = []
-        let worst: AggregateMetric['worst']
-        let worstValue = Number.NEGATIVE_INFINITY
-        let label = id
-        let gate = ''
-        let unit = ''
-        let missing = false
-        findings.forEach((run, index) => {
-            const finding = run.find((candidate) => candidate.id === id)
-            if (!finding) {
-                missing = true
-                perRun.push(Number.NaN)
-                passPerRun.push(false)
-                return
-            }
-            label = finding.label
-            gate = finding.gate
-            unit = finding.unit
-            perRun.push(finding.value)
-            passPerRun.push(finding.pass)
-            if (finding.value > worstValue) {
-                worstValue = finding.value
-                worst = {
-                    ...finding.worst,
-                    run: runNumbers?.[index] ?? index,
-                }
-            }
-        })
-        const finite = perRun.filter((value) => Number.isFinite(value))
-        const value = finite.length === 0 ? Number.NaN : median(finite)
-        const limit = THRESHOLDS[id]
-        let pass =
-            Number.isFinite(value) && limit !== undefined
-                ? value <= limit
-                : false
-        if (id === 'G5' || id === 'G8') {
-            pass = pass && passPerRun.every(Boolean)
-        }
-        pass = pass && !missing
-        return {
-            id,
-            label,
-            gate,
-            unit,
-            median: value,
-            pass,
-            perRun,
-            passPerRun,
-            worst,
-        }
-    })
+    return aggregateFindings(
+        findings,
+        runNumbers ?? findings.map((_, index) => index)
+    )
 }
 
 function aggregateScene(
@@ -556,13 +514,20 @@ function aggregateScene(
 function evaluateCost(
     trace: CostTrace,
     extraProblems: readonly string[]
-): { findings: MetricFinding[]; report: CostRunReport; problems: string[] } {
+): {
+    findings: MetricFinding[]
+    report: CostRunReport
+    problems: string[]
+    valid: boolean
+    blockedReasons: string[]
+} {
     const problems: string[] = [...extraProblems]
     const findings: MetricFinding[] = []
     const unscrolledRatio =
         median(trace.unscrolled.engine) / median(trace.unscrolled.floor)
     const scrolledRatio =
         median(trace.scrolled.engine) / median(trace.scrolled.floor)
+    const validCost = trace.g <= 0.05 && trace.sustained.commits >= 300
     findings.push({
         id: 'G9-unscrolled',
         label: 'Commit over the required-work floor, unscrolled',
@@ -570,6 +535,7 @@ function evaluateCost(
         unit: 'ratio',
         value: unscrolledRatio,
         pass: unscrolledRatio <= 2,
+        blocked: !validCost,
         detail: `${median(trace.unscrolled.engine).toFixed(3)} ms / ${median(trace.unscrolled.floor).toFixed(3)} ms`,
     })
     findings.push({
@@ -579,6 +545,7 @@ function evaluateCost(
         unit: 'ratio',
         value: scrolledRatio,
         pass: scrolledRatio <= 2,
+        blocked: !validCost,
         detail: `${median(trace.scrolled.engine).toFixed(3)} ms / ${median(trace.scrolled.floor).toFixed(3)} ms`,
     })
     for (const [name, run] of [
@@ -588,10 +555,12 @@ function evaluateCost(
         const audit = auditFloor({
             participants: run.participants,
             poses: run.poses,
+            typedOM: run.typedOM,
             captureRects: run.floorAudit.captureRects,
             captureOffsets: run.floorAudit.captureOffsets,
             flushRects: run.floorAudit.flushRects,
             flushOffsets: run.floorAudit.flushOffsets,
+            styleReads: run.floorAudit.styleReads,
             poseWrites: run.floorAudit.poseWrites,
             extraReads: run.floorAudit.extraReads,
         })
@@ -604,13 +573,15 @@ function evaluateCost(
             detail: audit.summary,
         })
         const required = run.participants * 2
+        const requiredStyles = run.poses * (run.typedOM ? 2 : 1)
         if (
             run.engineAudit.rects !== required ||
             run.engineAudit.offsets !== required ||
+            run.engineAudit.styleReads !== requiredStyles ||
             run.engineAudit.poseWrites !== run.poses
         ) {
             problems.push(
-                `${name}: engine audit ${run.engineAudit.rects} rects / ${run.engineAudit.offsets} pairs / ${run.engineAudit.poseWrites} poses, required ${required}/${required}/${run.poses}`
+                `${name}: engine audit ${run.engineAudit.rects} rects / ${run.engineAudit.offsets} pairs / ${run.engineAudit.styleReads} styles / ${run.engineAudit.poseWrites} poses, required ${required}/${required}/${requiredStyles}/${run.poses}`
             )
         }
         if (run.steadyFrameReads !== 0) {
@@ -620,26 +591,40 @@ function evaluateCost(
         }
     }
     const steady = steadyFrameGate(trace.steady.costs, trace.steady.g)
-    const sustained = sustainedGate(trace.sustained.costs, trace.sustained.g)
+    const commitP95 = percentile(trace.sustained.commitCosts, 0.95)
     const steadyP95 = steady.value
-    const sustainedP95 = sustained.value
-    findings.push({ ...steady, id: 'G10' })
+    const sustainedP95 = commitP95
     findings.push({
-        ...sustained,
+        ...steady,
+        id: 'G10',
+        label: 'Steady frame at 300 nested movers (A-19 150+150)',
+        blocked: !validCost,
+        detail: `${steady.detail ?? ''}; refresh ${trace.steady.refreshHz.toFixed(1)} Hz`,
+    })
+    findings.push({
         id: 'G11',
-        detail: `${trace.sustained.commits} commits; ${sustained.detail ?? ''}`,
+        label: 'Sustained 60 Hz commit script cost, 300 moving participants',
+        gate: 'p95 of one performance.now() pair per 60 Hz commit <= 2 ms',
+        unit: 'ms',
+        value: commitP95,
+        pass: Number.isFinite(commitP95) && commitP95 <= 2,
+        blocked: !validCost,
+        measured: trace.sustained.commitCosts.length > 0,
+        detail: `${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms`,
     })
     let exactPass = true
     let exactDetail = ''
+    const requiredStyles = trace.unscrolled.poses * (trace.typedOM ? 2 : 1)
     for (const entry of trace.exactReads) {
         const required = entry.nBefore + entry.nAfter
         if (
             entry.rects !== required ||
             entry.offsets !== required ||
+            entry.styles !== requiredStyles ||
             entry.frameReads !== 0
         ) {
             exactPass = false
-            exactDetail = `${entry.label}: ${entry.rects}/${entry.offsets}/${entry.frameReads}, required ${required}/${required}/0`
+            exactDetail = `${entry.label}: ${entry.rects}/${entry.offsets} rects/pairs, ${entry.styles}/${requiredStyles} computed reads, ${entry.frameReads} frame reads; required ${required}/${required}/${requiredStyles}/0`
             break
         }
     }
@@ -664,9 +649,32 @@ function evaluateCost(
         .every((finding) => finding.pass)
     return {
         findings,
+        valid: validCost,
+        blockedReasons: validCost
+            ? []
+            : [
+                  trace.g > 0.05
+                      ? `timer g ${trace.g.toFixed(4)} ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result`
+                      : `sustained cadence ${trace.sustained.commitHz.toFixed(2)} Hz (${trace.sustained.commits} commits) is not 60 Hz`,
+              ],
+        problems,
         report: {
             run: 0,
             warmup: false,
+            valid: validCost,
+            blockedReasons: validCost
+                ? []
+                : [
+                      `timer g ${trace.g.toFixed(4)} ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result`,
+                  ],
+            engineAudit: trace.unscrolled.engineAudit,
+            floorAudit: {
+                ...trace.unscrolled.floorAudit,
+            },
+            engineAuditScrolled: trace.scrolled.engineAudit,
+            floorAuditScrolled: {
+                ...trace.scrolled.floorAudit,
+            },
             ratioUnscrolled: unscrolledRatio,
             ratioScrolled: scrolledRatio,
             engineMedianUnscrolled: median(trace.unscrolled.engine),
@@ -676,6 +684,7 @@ function evaluateCost(
             steadyP95,
             sustainedP95,
             sustainedCommits: trace.sustained.commits,
+            sustainedCommitHz: trace.sustained.commitHz,
             floorAuditPass: floorPass && problems.length === 0,
             floorAuditDetail: [
                 ...findings
@@ -688,14 +697,15 @@ function evaluateCost(
             exactReadsPass: exactPass,
             exactReadsDetail: exactDetail,
             g: trace.g,
+            gSource: trace.gSource,
         },
-        problems,
     }
 }
 
 function aggregateCost(
     runs: readonly CostRunReport[],
-    findings: readonly (readonly MetricFinding[])[]
+    findings: readonly (readonly MetricFinding[])[],
+    expectedRuns: number
 ): CostReport {
     const measured = runs.filter((run) => !run.warmup)
     const measuredFindings = findings.filter((_, index) => !runs[index]!.warmup)
@@ -703,23 +713,33 @@ function aggregateCost(
         measuredFindings,
         measured.map((run) => run.run)
     )
-    const pass = metrics.every((metric) => metric.pass)
+    const valid =
+        measured.length === expectedRuns && measured.every((run) => run.valid)
+    const blockedReasons = [
+        ...new Set(measured.flatMap((run) => run.blockedReasons)),
+    ]
+    // G12 is pending by authority; a valid cost run is pending even when a
+    // measured metric fails (the metrics still print FAIL).
+    const status = valid ? 'pending' : 'blocked'
     return {
         scene: 'S-BULK',
-        status: pass ? 'pass' : 'fail',
+        status,
         pending: 'P4 (held shape G12)',
-        pass,
+        // G12 is pending by authority, so even a valid measured run cannot
+        // claim pass (H14-13).
+        pass: false,
+        valid,
+        blockedReasons,
         metrics,
         runs,
         notes: [
             'G9/G10/G11/G13 are measured; the held shape G12 is P4-only and is not run.',
+            'A valid cost run still cannot pass while G12 is pending (H14-13).',
             'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
         ],
         measuredRuns: measured.length,
     }
 }
-
-/* ───────────────────────── browser controls ───────────────────────── */
 
 const SCENE_CONTROLS: readonly {
     readonly name: string
@@ -744,6 +764,12 @@ const SCENE_CONTROLS: readonly {
         scene: 's-card',
         control: 'card-image-offset',
         target: 'G1',
+    },
+    {
+        name: 'card-focus-follower',
+        scene: 's-card',
+        control: 'card-focus-follower',
+        target: 'shape.focus',
     },
     {
         name: 'seg-rest-retarget',
@@ -774,9 +800,13 @@ async function browserControls(
     let browser: Browser | null = null
     try {
         browser = await launch(engine)
-        for (const control of SCENE_CONTROLS.filter((entry) =>
-            scenes.includes(entry.scene)
-        )) {
+        let primaryCardInert: boolean | null = null
+        const primary = await runManual(browser, bundle, 's-card')
+        const primaryScore = scoreScene(cardPlan(primary.trace), primary.trace)
+        primaryCardInert =
+            primaryScore.shape.find((entry) => entry.id === 'shape.inert')
+                ?.pass ?? false
+        for (const control of SCENE_CONTROLS) {
             try {
                 const run = await runManual(
                     browser,
@@ -797,18 +827,24 @@ async function browserControls(
                         ? 'pass'
                         : 'fail'
                     : 'error'
+                const inconclusive =
+                    (control.name === 'card-no-inert' &&
+                        primaryCardInert === false) ||
+                    (control.name === 'card-focus-follower' &&
+                        observed === 'pass')
                 results.push({
                     name: control.name,
                     target: control.target,
                     expected: 'fail',
-                    observed,
-                    ok: observed === 'fail',
+                    observed: inconclusive ? 'inconclusive' : observed,
+                    conclusive: !inconclusive,
+                    ok: inconclusive ? true : observed === 'fail',
                     detail: finding
                         ? `${control.target} = ${finding.value}${
                               finding.worst?.frame === undefined
                                   ? ''
                                   : ` at frame ${finding.worst.frame}`
-                          }${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
+                          }${inconclusive ? '; primary S-CARD inert already fails at P3a, so the control cannot isolate a delta' : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
                         : 'target metric missing',
                 })
             } catch (error) {
@@ -817,6 +853,7 @@ async function browserControls(
                     target: control.target,
                     expected: 'fail',
                     observed: 'error',
+                    conclusive: true,
                     ok: false,
                     detail: describeError(error),
                 })
@@ -827,10 +864,12 @@ async function browserControls(
             const audit = auditFloor({
                 participants: auditTrace.participants,
                 poses: auditTrace.poses,
+                typedOM: auditTrace.typedOM,
                 captureRects: auditTrace.captureRects,
                 captureOffsets: auditTrace.captureOffsets,
                 flushRects: auditTrace.flushRects,
                 flushOffsets: auditTrace.flushOffsets,
+                styleReads: auditTrace.styleReads,
                 poseWrites: auditTrace.poseWrites,
                 extraReads: auditTrace.extraReads,
             })
@@ -839,6 +878,7 @@ async function browserControls(
                 target: 'G9.floor',
                 expected: 'fail',
                 observed: audit.pass ? 'pass' : 'fail',
+                conclusive: true,
                 ok: !audit.pass,
                 detail: audit.mismatches.join('; ') || audit.summary,
             })
@@ -848,6 +888,7 @@ async function browserControls(
                 target: 'G9.floor',
                 expected: 'fail',
                 observed: 'error',
+                conclusive: true,
                 ok: false,
                 detail: describeError(error),
             })
@@ -858,6 +899,7 @@ async function browserControls(
             target: 'all',
             expected: 'fail',
             observed: 'error',
+            conclusive: true,
             ok: false,
             detail: describeError(error),
         })
@@ -917,10 +959,23 @@ function sceneOutcome(
     warmup: boolean,
     manual: SceneTrace,
     real: RealTrace,
+    probe: SceneCostProbeResult | null,
     problems: readonly string[]
 ): RunSceneOutcome {
     const plan = manual.scene === 's-card' ? cardPlan(manual) : segPlan(manual)
     const score = scoreScene(plan, manual)
+    const allProblems = [...problems]
+    for (const code of real.diagnostics) {
+        allProblems.push(`real twin diagnostic: ${code}`)
+    }
+    if (real.final.tracks !== 0 || real.final.holds !== 0) {
+        allProblems.push(
+            `real twin final tracks ${real.final.tracks}, holds ${real.final.holds}`
+        )
+    }
+    if (real.final.connected <= 0) {
+        allProblems.push('real twin has no connected participants at the end')
+    }
     const g8 = realClockGate(real.frameCosts, real.g)
     const longFrames = real.frameCosts.filter(
         (frame) => !frame.commit && frame.ms > 8
@@ -928,22 +983,63 @@ function sceneOutcome(
     const pass =
         score.pass &&
         g8.pass &&
-        problems.length === 0 &&
+        allProblems.length === 0 &&
         manual.final.tracks === 0 &&
         manual.final.holds === 0 &&
         manual.final.clockPending === 0 &&
         manual.final.clockSize === 0
-    const metrics = [...score.metrics, g8]
+    const metrics: MetricFinding[] = [...score.metrics, g8]
+    if (probe) {
+        metrics.push({
+            id: 'G9.probe',
+            label: `Engine/floor commit ratio at scene N=${probe.participants} (non-deciding)`,
+            gate: 'non-deciding; the named G9 gate is S-BULK at 1,000 participants',
+            unit: 'ratio',
+            value: probe.ratio,
+            pass: true,
+            measured: true,
+            deciding: false,
+            detail: `${probe.participants} participants, ${probe.movers} movers; engine ${median(probe.engine).toFixed(3)} ms / floor ${median(probe.floor).toFixed(3)} ms`,
+        })
+    } else {
+        metrics.push({
+            id: 'G9.probe',
+            label: `Engine/floor commit ratio at scene N (non-deciding)`,
+            gate: 'non-deciding; probe must be reported',
+            unit: 'ratio',
+            value: Number.NaN,
+            pass: false,
+            measured: false,
+            deciding: false,
+            detail: 'scene cost probe missing',
+        })
+    }
     return {
         report: {
             scene: manual.scene,
             run,
             warmup,
             pass,
+            costProbe: probe
+                ? {
+                      participants: probe.participants,
+                      movers: probe.movers,
+                      engineMedian: median(probe.engine),
+                      floorMedian: median(probe.floor),
+                      ratio: probe.ratio,
+                  }
+                : {
+                      participants: 0,
+                      movers: 0,
+                      engineMedian: Number.NaN,
+                      floorMedian: Number.NaN,
+                      ratio: Number.NaN,
+                  },
             metrics,
             shape: score.shape,
             real: {
                 g: real.g,
+                gSource: real.gSource,
                 frames: real.frameCosts.length,
                 p95: g8.value,
                 longFrames,
@@ -969,7 +1065,7 @@ function sceneOutcome(
                 steadyFrameReads: manual.steadyFrameReads,
                 final: manual.final,
             },
-            problems,
+            problems: allProblems,
         },
         findings: metrics,
         shape: score.shape,
@@ -999,6 +1095,7 @@ async function measureRun(
         trace: SceneTrace
         problems: string[]
     }[] = []
+    const probes = new Map<string, SceneCostProbeResult>()
     try {
         for (const scene of options.scenes) {
             if (scene === 'cost') continue
@@ -1008,6 +1105,12 @@ async function measureRun(
                 trace: manual.trace,
                 problems: [...manual.problems],
             })
+        }
+        for (const manual of manualTraces) {
+            probes.set(
+                manual.scene,
+                await runSceneCostProbe(manualBrowser, bundle, manual.scene)
+            )
         }
     } finally {
         await manualBrowser.close()
@@ -1027,10 +1130,14 @@ async function measureRun(
     }
     const scenes = manualTraces.map((manual) => {
         const real = realTraces.get(manual.scene)!
-        return sceneOutcome(run, warmup, manual.trace, real.trace, [
-            ...manual.problems,
-            ...real.problems,
-        ])
+        return sceneOutcome(
+            run,
+            warmup,
+            manual.trace,
+            real.trace,
+            probes.get(manual.scene) ?? null,
+            [...manual.problems, ...real.problems]
+        )
     })
     let cost: CostRunReport | null = null
     let costFindings: MetricFinding[] | null = null
@@ -1152,7 +1259,7 @@ async function main(): Promise<number> {
         const measuredCostRuns = costRuns.filter((run) => !run.warmup).length
         let cost =
             options.scenes.includes('cost') && costRuns.length > 0
-                ? aggregateCost(costRuns, costFindings)
+                ? aggregateCost(costRuns, costFindings, options.runs)
                 : null
         if (
             cost !== null &&
@@ -1200,18 +1307,45 @@ async function main(): Promise<number> {
         engine.scenes.every((scene) => scene.status !== 'fail')
     )
     const costPass = required.every(
-        (engine) => engine.cost === null || engine.cost.status !== 'fail'
+        (engine) => engine.cost === null || engine.cost.status === 'pass'
     )
     const controlsPass =
         !options.check || controls.every((control) => control.ok)
     const selfTestPass = tests.pass
+    const pending = pendingEntries(options)
+    const certification = evaluateCertification(
+        {
+            engines: engineReports.map((engine) => ({
+                engine: engine.engine,
+                launchError: engine.launchError,
+                scenes: engine.scenes.map((scene) => ({
+                    scene: scene.scene,
+                    status: scene.status,
+                })),
+                cost: engine.cost
+                    ? {
+                          status: engine.cost.status,
+                          valid: engine.cost.valid,
+                      }
+                    : null,
+            })),
+            pending,
+            advisory,
+        },
+        {
+            engines: options.engines,
+            scenes: options.scenes,
+            runs: options.runs,
+        }
+    )
     const pass =
         required.length > 0 &&
         launchErrors.length === 0 &&
         scenePass &&
         costPass &&
         controlsPass &&
-        selfTestPass
+        selfTestPass &&
+        pending.length === 0
     const report: BenchReport = {
         schema: 'ani-layout-bench/v1',
         generatedAt: new Date().toISOString(),
@@ -1221,7 +1355,8 @@ async function main(): Promise<number> {
         engines: engineReports,
         negativeControls: controls,
         selfTests: tests,
-        pending: pendingEntries(options),
+        pending,
+        certification,
         pass,
     }
     mkdirSync(dirname(options.out), { recursive: true })

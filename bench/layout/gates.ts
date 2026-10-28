@@ -2,7 +2,7 @@
  * Cost gates of §11.5 and their negative-control seams. Every value is copied
  * from the authority; nothing here may be tuned by a scene.
  */
-import { median, percentile, sampleFrames } from './stats.ts'
+import { frameSamples, median, percentile } from './stats.ts'
 import type { FrameCost } from './types.ts'
 
 export interface GateResult {
@@ -61,10 +61,12 @@ export function floorAuditGate(audit: FloorAudit): GateResult {
 export interface FloorAuditInput {
     readonly participants: number
     readonly poses: number
+    readonly typedOM: boolean
     readonly captureRects: number
     readonly captureOffsets: number
     readonly flushRects: number
     readonly flushOffsets: number
+    readonly styleReads: number
     readonly poseWrites: number
     readonly extraReads: number
 }
@@ -75,6 +77,7 @@ export interface FloorAudit {
         readonly captureOffsets: number
         readonly flushRects: number
         readonly flushOffsets: number
+        readonly styleReads: number
         readonly poseWrites: number
     }
     readonly actual: FloorAuditInput
@@ -95,6 +98,9 @@ export function auditFloor(input: FloorAuditInput): FloorAudit {
         captureOffsets: input.participants,
         flushRects: input.participants,
         flushOffsets: input.participants,
+        // §4.3 step 2 computed values for the active nodes; WebKit also reads
+        // the Typed OM transform-origin where it snaps the reference box.
+        styleReads: input.poses * (input.typedOM ? 2 : 1),
         poseWrites: input.poses,
     }
     const mismatches: string[] = []
@@ -109,6 +115,7 @@ export function auditFloor(input: FloorAuditInput): FloorAudit {
     )
     compare('flush rects', input.flushRects, expected.flushRects)
     compare('flush offset pairs', input.flushOffsets, expected.flushOffsets)
+    compare('computed-style reads', input.styleReads, expected.styleReads)
     compare('pose writes', input.poseWrites, expected.poseWrites)
     if (input.extraReads !== 0) {
         mismatches.push(`extra reads ${input.extraReads}`)
@@ -118,7 +125,7 @@ export function auditFloor(input: FloorAuditInput): FloorAudit {
         actual: input,
         mismatches,
         pass: mismatches.length === 0,
-        summary: `${input.participants} participants, ${input.poses} poses; capture ${input.captureRects}/${input.captureOffsets}, flush ${input.flushRects}/${input.flushOffsets}, writes ${input.poseWrites}, extra ${input.extraReads}`,
+        summary: `${input.participants} participants, ${input.poses} active poses; capture ${input.captureRects}/${input.captureOffsets}, flush ${input.flushRects}/${input.flushOffsets}, computed ${input.styleReads}, writes ${input.poseWrites}, extra ${input.extraReads}`,
     }
 }
 
@@ -139,10 +146,11 @@ export function realClockGate(
             detail: 'no frame samples',
         }
     }
-    const samples = sampleFrames(
+    const sampleSet = frameSamples(
         costs.map((cost) => cost.ms),
         g
     )
+    const samples = sampleSet.samples
     const p95 = percentile(samples, 0.95)
     const longFrames = costs.filter(
         (cost) => !cost.commit && cost.ms > longFrameMs
@@ -155,10 +163,11 @@ export function realClockGate(
         value: p95,
         pass: p95 <= gateMs && longFrames.length === 0,
         worst: {
-            detail:
+            detail: `${sampleSet.detail}; ${samples.length} samples, ${costs.length} frames${
                 longFrames.length === 0
-                    ? `${samples.length} samples, ${costs.length} frames`
-                    : `${longFrames.length} long frames after a commit; worst ${Math.max(...longFrames.map((cost) => cost.ms)).toFixed(3)} ms`,
+                    ? ''
+                    : `; ${longFrames.length} long frames after a commit; worst ${Math.max(...longFrames.map((cost) => cost.ms)).toFixed(3)} ms`
+            }`,
         },
     }
 }
@@ -179,7 +188,8 @@ export function steadyFrameGate(
             detail: 'no frame samples',
         }
     }
-    const samples = sampleFrames(costs, g)
+    const sampleSet = frameSamples(costs, g)
+    const samples = sampleSet.samples
     const p95 = percentile(samples, 0.95)
     return {
         id: 'G10',
@@ -188,7 +198,7 @@ export function steadyFrameGate(
         unit: 'ms',
         value: p95,
         pass: p95 <= 2,
-        detail: `${samples.length} samples`,
+        detail: `${sampleSet.detail}; ${samples.length} samples`,
     }
 }
 
@@ -208,7 +218,8 @@ export function sustainedGate(
             detail: 'no frame samples',
         }
     }
-    const samples = sampleFrames(costs, g)
+    const sampleSet = frameSamples(costs, g)
+    const samples = sampleSet.samples
     const p95 = percentile(samples, 0.95)
     return {
         id: 'G11',
@@ -217,7 +228,7 @@ export function sustainedGate(
         unit: 'ms',
         value: p95,
         pass: p95 <= gateMs,
-        detail: `${samples.length} samples`,
+        detail: `${sampleSet.detail}; ${samples.length} samples`,
     }
 }
 
@@ -238,7 +249,8 @@ export function heldGate(
             detail: 'no frame samples',
         }
     }
-    const samples = sampleFrames(costs, g)
+    const sampleSet = frameSamples(costs, g)
+    const samples = sampleSet.samples
     const perHeld = percentile(samples, 0.95) / held
     return {
         id: 'G12',
@@ -247,6 +259,6 @@ export function heldGate(
         unit: 'ms/held',
         value: perHeld,
         pass: perHeld <= 0.1,
-        detail: `${samples.length} samples`,
+        detail: `${sampleSet.detail}; ${samples.length} samples`,
     }
 }

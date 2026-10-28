@@ -22,9 +22,13 @@ import type {
 
 const EMPTY_STYLE: StyleSnapshot = {
     translate: '',
+    translatePriority: '',
     scale: '',
+    scalePriority: '',
     radius: '',
+    radiusPriority: '',
     overflowAnchor: '',
+    overflowAnchorPriority: '',
     inert: null,
     inline: '',
 }
@@ -42,6 +46,20 @@ function basePlan(): ScenePlan {
     return {
         scene: 'unit',
         stepMs: 16,
+        completeness: {
+            requiredObservations: 3,
+            requiredCommits: 2,
+            requiredReports: 2,
+            requiredSettleFrames: 1,
+            requiredKeys: ['pill'],
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: ['shape.teardown'],
+            requiredOpacityKeys: [],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
         initial: { pill: START },
         mounts: { pill: EMPTY_STYLE },
         commits: [
@@ -177,13 +195,19 @@ function makeTrace(plan: ScenePlan): SceneTrace {
                 nAfter: 1,
                 rects: 2,
                 offsets: 2,
-                styles: 0,
+                styles: 2,
                 probes: 0,
                 parents: 0,
                 frameReads: 0,
                 frameReadsAt: null,
                 diagnostics: [],
                 onSnap: [],
+                aged: false,
+                agedKeys: [],
+                stylesMin: 2,
+                stylesMax: 2,
+                styleRadiusCapture: 1,
+                styleActiveFlush: 1,
             },
             {
                 label: 'b',
@@ -192,13 +216,19 @@ function makeTrace(plan: ScenePlan): SceneTrace {
                 nAfter: 1,
                 rects: 2,
                 offsets: 2,
-                styles: 0,
+                styles: 2,
                 probes: 0,
                 parents: 0,
                 frameReads: 0,
                 frameReadsAt: null,
                 diagnostics: [],
                 onSnap: [],
+                aged: false,
+                agedKeys: [],
+                stylesMin: 2,
+                stylesMax: 2,
+                styleRadiusCapture: 1,
+                styleActiveFlush: 1,
             },
         ],
         reports: [
@@ -372,10 +402,12 @@ test('negative control G9: a floor with an extra read fails its audit', () => {
     const input = {
         participants: 1000,
         poses: 300,
+        typedOM: false,
         captureRects: 1000,
         captureOffsets: 1000,
         flushRects: 1000,
         flushOffsets: 1000,
+        styleReads: 300,
         poseWrites: 300,
         extraReads: 1,
     }
@@ -480,4 +512,137 @@ test('shape negative controls: opacity, coverage, radius, inert and font fail', 
     assert.equal(shape(score, 'shape.radius').pass, false)
     assert.equal(shape(score, 'shape.inert').pass, false)
     assert.equal(shape(score, 'shape.font').pass, false)
+})
+
+test('H14-19: focus inside the follower fails shape.focus', () => {
+    const plan = basePlan()
+    ;(plan as unknown as { pairs: unknown[] }).pairs = [
+        {
+            id: 'today-title',
+            startFrame: 0,
+            lead: 'pill',
+            follower: 'pill2',
+            radiusFrom: 20,
+            radiusTo: 0,
+        },
+    ]
+    ;(plan as unknown as { initial: Record<string, Box> }).initial.pill2 = START
+    ;(
+        plan as unknown as { mounts: Record<string, StyleSnapshot> }
+    ).mounts.pill2 = EMPTY_STYLE
+    ;(plan.commits[0] as unknown as { segments: SegmentPlan[] }).segments = [
+        segment('pill', MID),
+        { ...segment('pill2', MID), handoffFrom: 'pill' },
+    ]
+    const trace = copy(makeTrace(plan))
+    for (const observation of trace.observations) {
+        if (!observation.connected.includes('pill')) continue
+        ;(observation.connected as string[]).push('pill2')
+        ;(observation.boxes as Record<string, Box>).pill2 =
+            observation.boxes.pill!
+        ;(observation.opacity as Record<string, number>).pill2 = 0.5
+        ;(observation.activeElementKey as string | null) = 'pill2'
+    }
+    const score = scoreScene(plan, trace)
+    assert.equal(shape(score, 'shape.focus').pass, false)
+})
+
+test('H14-01: a blank trace fails completeness and cannot pass', () => {
+    const plan = basePlan()
+    const trace = makeTrace(plan)
+    const blank = {
+        ...trace,
+        observations: [],
+        commits: [],
+        reports: [],
+        settleFrames: [],
+        final: {
+            ...trace.final,
+            connected: [],
+        },
+    }
+    const score = scoreScene(plan, blank)
+    const completeness = score.metrics.find((entry) => entry.id === 'C1')!
+    assert.equal(completeness.pass, false)
+    assert.equal(score.pass, false)
+})
+
+test('H14-01: a partial trace (commits but no observations) fails', () => {
+    const plan = basePlan()
+    const trace = makeTrace(plan)
+    const partial = { ...trace, observations: [] }
+    const score = scoreScene(plan, partial)
+    assert.equal(score.metrics.find((entry) => entry.id === 'C1')!.pass, false)
+    assert.equal(score.pass, false)
+})
+
+test('H14-08: a priority change fails restoration', () => {
+    const plan = basePlan()
+    const trace = copy(makeTrace(plan))
+    const final = trace.observations[trace.observations.length - 1]!
+    ;(final.style as Record<string, StyleSnapshot>).pill = {
+        ...EMPTY_STYLE,
+        translatePriority: 'important',
+    }
+    assert.equal(metric(scoreScene(plan, trace), 'G6').pass, false)
+})
+
+test('H14-09: an extra computed-style read fails G13', () => {
+    const plan = basePlan()
+    const trace = copy(makeTrace(plan))
+    ;(trace.commits as unknown as { styles: number }[])[0]!.styles = 3
+    assert.equal(metric(scoreScene(plan, trace), 'G13').pass, false)
+})
+
+test('H14-11: aged G2 gets 0.5 px only for the aged commit', () => {
+    const plan = basePlan()
+    const trace = copy(makeTrace(plan))
+    const flush = trace.observations.find(
+        (entry) => entry.kind === 'flush' && entry.frame === 5
+    )!
+    ;(flush.boxes as Record<string, Box>).pill = {
+        ...flush.boxes.pill!,
+        x: flush.boxes.pill!.x + 0.1,
+    }
+    const aged = copy(trace)
+    ;(aged.commits as unknown as { aged: boolean }[])[1]!.aged = true
+    assert.equal(metric(scoreScene(plan, aged), 'G2').pass, true)
+    assert.equal(metric(scoreScene(plan, trace), 'G2').pass, false)
+})
+
+test('H14-20: teardown and pill-radius controls', () => {
+    const plan = basePlan()
+    const trace = copy(makeTrace(plan))
+    ;(trace.final as unknown as { tracks: number }).tracks = 1
+    assert.equal(shape(scoreScene(plan, trace), 'shape.teardown').pass, false)
+
+    const radiusPlan = copy(plan)
+    ;(
+        radiusPlan as unknown as { staticRadii: Record<string, number> }
+    ).staticRadii = { pill: 7 }
+    const radiusTrace = copy(makeTrace(plan))
+    for (const observation of radiusTrace.observations) {
+        ;(observation.radii as Record<string, number[] | null>).pill = [
+            8, 8, 8, 8, 8, 8, 8, 8,
+        ]
+    }
+    assert.equal(
+        shape(scoreScene(radiusPlan, radiusTrace), 'shape.pill-radius').pass,
+        false
+    )
+})
+
+test('H14-07: a trace-level retarget restart is visible in the observed FD and fails G1', () => {
+    const plan = basePlan()
+    const trace = copy(makeTrace(plan))
+    const flush = trace.observations.find(
+        (entry) => entry.kind === 'flush' && entry.frame === 5
+    )!
+    const first = trace.observations.find(
+        (entry) => entry.kind === 'frame' && entry.frame === 6
+    )!
+    ;(first.boxes as Record<string, Box>).pill = { ...flush.boxes.pill! }
+    const score = scoreScene(plan, trace)
+    assert.equal(metric(score, 'G1').pass, false)
+    assert.match(metric(score, 'G3').worst?.detail ?? '', /observed FD/)
 })

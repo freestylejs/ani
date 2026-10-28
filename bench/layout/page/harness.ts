@@ -1,5 +1,6 @@
 /** Page-side recording and timing helpers for the P5 layout bench. */
 
+import { FrameSampler } from '../frame_sampler.ts'
 import type { Box } from '../oracle.ts'
 import { granularity } from '../stats.ts'
 import type {
@@ -8,6 +9,10 @@ import type {
     SceneTrace,
     StyleSnapshot,
 } from '../types.ts'
+
+export function isWebKitEngine(): boolean {
+    return navigator.vendor === 'Apple Computer, Inc.'
+}
 
 export async function microtasks(turns = 5): Promise<void> {
     for (let i = 0; i < turns; i++) await Promise.resolve()
@@ -24,16 +29,26 @@ export function viewBox(element: Element): Box {
 }
 
 export function styleSnapshot(element: HTMLElement): StyleSnapshot {
+    const radiusProperties = [
+        'border-top-left-radius',
+        'border-top-right-radius',
+        'border-bottom-right-radius',
+        'border-bottom-left-radius',
+    ] as const
     return {
         translate: element.style.getPropertyValue('translate'),
+        translatePriority: element.style.getPropertyPriority('translate'),
         scale: element.style.getPropertyValue('scale'),
-        radius: [
-            element.style.getPropertyValue('border-top-left-radius'),
-            element.style.getPropertyValue('border-top-right-radius'),
-            element.style.getPropertyValue('border-bottom-right-radius'),
-            element.style.getPropertyValue('border-bottom-left-radius'),
-        ].join(' '),
+        scalePriority: element.style.getPropertyPriority('scale'),
+        radius: radiusProperties
+            .map((property) => element.style.getPropertyValue(property))
+            .join(' '),
+        radiusPriority: radiusProperties
+            .map((property) => element.style.getPropertyPriority(property))
+            .join(' '),
         overflowAnchor: element.style.getPropertyValue('overflow-anchor'),
+        overflowAnchorPriority:
+            element.style.getPropertyPriority('overflow-anchor'),
         inert: element.hasAttribute('inert')
             ? (element.getAttribute('inert') ?? '')
             : null,
@@ -131,24 +146,48 @@ export function activeKey(
     return null
 }
 
-/** §11.5 `g`: the smallest non-zero difference over 1,000 consecutive reads. */
-export function measureGranularity(): number {
+export interface GranularityInfo {
+    readonly value: number
+    readonly source: 'reads' | 'tick-fallback'
+    readonly reads: number
+    readonly detail: string
+}
+
+/** §11.5 `g`, with the raw source recorded (H14-28). */
+export function measureGranularityInfo(): GranularityInfo {
     const readings: number[] = []
     for (let i = 0; i < 1000; i++) readings.push(performance.now())
     const measured = granularity(readings)
-    if (measured > 0) return measured
+    if (measured > 0) {
+        return {
+            value: measured,
+            source: 'reads',
+            reads: readings.length,
+            detail: `smallest non-zero delta over ${readings.length} reads`,
+        }
+    }
     // WebKit's performance.now ticks at 1 ms and 1,000 reads can finish inside
     // one tick. Observe the next tick directly; the §11.5 sampler must see the
     // real resolution, not an optimistic zero.
     const start = performance.now()
     let now = start
     while (now === start) now = performance.now()
-    return Math.max(now - start, 0.001)
+    return {
+        value: Math.max(now - start, 0.001),
+        source: 'tick-fallback',
+        reads: readings.length,
+        detail: `no non-zero delta in ${readings.length} reads; observed next tick`,
+    }
+}
+
+export function measureGranularity(): number {
+    return measureGranularityInfo().value
 }
 
 export interface RafSampler {
-    readonly frames: FrameCost[]
+    readonly frames: readonly FrameCost[]
     markCommit(): void
+    markCommitInFrame(): void
     /** Script work done between frames is charged to the next frame sample. */
     addScript(ms: number): void
     stop(): void
@@ -161,54 +200,27 @@ export interface RafSampler {
  */
 export function installRafSampler(): RafSampler {
     const original = window.requestAnimationFrame.bind(window)
-    const frames: FrameCost[] = []
-    let batchTimestamp: number | null = null
-    let batchMs = 0
-    let batchCommit = false
-    let pendingCommit = false
-    let pendingScript = 0
+    const sampler = new FrameSampler()
     let stopped = false
-
-    const flushBatch = () => {
-        if (batchTimestamp === null) return
-        frames.push({
-            at: batchTimestamp,
-            ms: batchMs + pendingScript,
-            commit: batchCommit || pendingCommit,
-        })
-        pendingCommit = false
-        pendingScript = 0
-        batchTimestamp = null
-        batchMs = 0
-        batchCommit = false
-    }
-
     const wrapped = (callback: FrameRequestCallback): number =>
         original((timestamp) => {
             if (stopped) return
-            if (batchTimestamp !== null && timestamp !== batchTimestamp)
-                flushBatch()
-            batchTimestamp = timestamp
-            const start = performance.now()
-            try {
-                callback(timestamp)
-            } finally {
-                batchMs += performance.now() - start
-            }
+            sampler.frame(timestamp, () => callback(timestamp))
         })
-
     window.requestAnimationFrame = wrapped
     return {
-        frames,
+        frames: sampler.frames,
         markCommit() {
-            batchCommit = true
-            pendingCommit = true
+            sampler.markCommit()
+        },
+        markCommitInFrame() {
+            sampler.markCommitInFrame()
         },
         addScript(ms: number) {
-            pendingScript += ms
+            sampler.addScript(ms)
         },
         stop() {
-            flushBatch()
+            sampler.stop()
             stopped = true
             window.requestAnimationFrame = original
         },

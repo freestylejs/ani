@@ -1,4 +1,4 @@
-import { runCostShapes, runFloorAudit } from './cost.ts'
+import { runCostShapes, runFloorAudit, runSceneCostProbe } from './cost.ts'
 import { CardScene } from './scenes/s_card.ts'
 import { SegScene } from './scenes/s_seg.ts'
 
@@ -14,6 +14,7 @@ interface BenchPage {
     demo(name: string): Promise<void>
     runCost(): Promise<unknown>
     runFloorAudit(extraRead?: boolean): Promise<unknown>
+    runSceneCostProbe(scene: string): Promise<unknown>
 }
 
 declare global {
@@ -37,4 +38,21 @@ window.__bench = {
     },
     runCost: runCostShapes,
     runFloorAudit,
+    async runSceneCostProbe(scene: string) {
+        if (scene === 's-card') {
+            return runSceneCostProbe('s-card', 7, 6, {
+                type: 'spring',
+                duration: 0.55,
+                bounce: 0.05,
+            })
+        }
+        if (scene === 's-seg') {
+            return runSceneCostProbe('s-seg', 1, 1, {
+                type: 'spring',
+                duration: 0.35,
+                bounce: 0.12,
+            })
+        }
+        throw new Error(`no scene cost probe for "${scene}"`)
+    },
 }

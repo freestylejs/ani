@@ -61,23 +61,54 @@ export function granularity(readings: readonly number[]): number {
     return Number.isFinite(smallest) ? smallest : 0
 }
 
+export interface FrameSampleSet {
+    readonly samples: readonly number[]
+    /** `frame` when one sample is one frame; `quantized` when g is too coarse. */
+    readonly mode: 'frame' | 'quantized'
+    readonly g: number
+    /** Half a timer tick: the worst per-frame quantization error. */
+    readonly errorBound: number
+    readonly detail: string
+}
+
 /**
- * §11.5 sampling: one sample per frame when `g <= 0.05 ms`, otherwise the mean
- * of 20 consecutive frames timed as one interval.
+ * §11.5 sampling. When `g <= 0.05 ms`, one sample is one frame. When the timer
+ * is coarser, this harness does **not** average already-quantized per-frame
+ * costs and call the result a 20-frame interval (H14-12): it reports the raw
+ * frame costs with the quantization bound, marks the samples `quantized`, and
+ * the cost certification treats them as non-deciding. The authority's
+ * 20-frame interval can only be timed with one `performance.now()` pair around
+ * an unquantized interval; averaging quantized deltas is not that measurement.
  */
+export function frameSamples(
+    frameCosts: readonly number[],
+    g: number
+): FrameSampleSet {
+    const errorBound = g / 2
+    if (g <= 0.05) {
+        return {
+            samples: [...frameCosts],
+            mode: 'frame',
+            g,
+            errorBound,
+            detail: `one sample per frame; g ${g.toFixed(4)} ms`,
+        }
+    }
+    return {
+        samples: [...frameCosts],
+        mode: 'quantized',
+        g,
+        errorBound,
+        detail: `timer g ${g.toFixed(4)} ms: raw frame samples, +/-${errorBound.toFixed(4)} ms quantization; 20-frame mean not claimed`,
+    }
+}
+
+/** Compatibility wrapper; the detailed form is used by the gates. */
 export function sampleFrames(
     frameCosts: readonly number[],
     g: number
 ): number[] {
-    if (g <= 0.05) return [...frameCosts]
-    const samples: number[] = []
-    for (let i = 0; i < frameCosts.length; i += 20) {
-        const chunk = frameCosts.slice(i, i + 20)
-        samples.push(
-            chunk.reduce((sum, value) => sum + value, 0) / chunk.length
-        )
-    }
-    return samples
+    return [...frameSamples(frameCosts, g).samples]
 }
 
 /** The median of a set of per-run statistics (§11.5 aggregation). */

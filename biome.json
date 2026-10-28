@@ -13,17 +13,5 @@
             "!**/*.config.*",
             "!bench/layout/results/**"
         ]
-    },
-    "overrides": [
-        {
-            "includes": ["bench/layout/**/*.ts"],
-            "linter": {
-                "rules": {
-                    "style": {
-                        "noMagicNumbers": "off"
-                    }
-                }
-            }
-        }
-    ]
+    }
 }
