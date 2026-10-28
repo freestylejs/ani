@@ -476,6 +476,109 @@ With the default `'raf'` engine, a change while elements are moving does not wai
 
 For `'raf'`, the carried velocity bends the start of the new curve and fades out by its end. It keeps the motion continuous; it is not spring physics.
 
+### Direct manipulation
+
+A participant can be taken as the user's finger. `take` returns a handle whose `move` places the
+element's drawn origin at the take point plus an offset, and whose `release` hands it back with an
+incoming velocity:
+
+```ts
+import { createLayoutGroup } from '@freestylejs/ani-layout'
+
+const group = createLayoutGroup()
+const card = document.querySelector<HTMLElement>('#card')!
+group.add(card, { layout: true })
+
+const take = group.take(card) // held; throws unless the element can be driven
+take.move({ x: 12, y: -4 }) // view-space CSS px from the take point
+take.release({ x: 0, y: 900 }) // px/s; default 0
+// take.cancel(): back to the slot with zero velocity
+```
+
+```tsx
+import { useLayout, useLayoutDrive } from '@freestylejs/ani-react/layout'
+
+function Card() {
+    const ref = useLayout<HTMLDivElement>()
+    const drive = useLayoutDrive()
+    return (
+        <div
+            ref={ref}
+            onPointerDown={(event) => {
+                const element = event.currentTarget
+                const handle = drive.take(element)
+                const origin = { x: event.clientX, y: event.clientY }
+                const move = (e: PointerEvent) =>
+                    handle.move({ x: e.clientX - origin.x, y: e.clientY - origin.y })
+                const end = () => {
+                    window.removeEventListener('pointermove', move)
+                    window.removeEventListener('pointerup', end)
+                    handle.release()
+                }
+                window.addEventListener('pointermove', move)
+                window.addEventListener('pointerup', end)
+            }}
+        />
+    )
+}
+```
+
+The example is only the wiring: pointer capture, `pointerId`, `touch-action`, velocity estimation,
+keyboard operation and announcements belong to your gesture layer. Map `pointercancel` and
+`lostpointercapture` to `cancel()`.
+
+-   **The hold.** The drawn origin is the take point plus the offset every frame, under a scroll, a
+    live ancestor scale, sticky positioning (the element or an ancestor) and a re-layout. The only
+    read a frame adds is one rect per held element, in the clock's read phase before any write; a
+    size change also verifies support and the animated-owned probe: a running CSS animation or
+    transition on `translate`/`scale` on the held element, a participant ancestor, or any element in
+    the held subtree invalidates with `unsupported-geometry`. A box-preserving 180° rotation/zoom
+    that the support check cannot classify is a residual risk: the check may invalidate the hold.
+    `stats.rects` counts the reads; `stats.holds` counts every live hold (`held`, `released` and
+    `cancelled` until it finishes or is invalidated).
+-   **Size and descendants.** The held element's size keeps its track under one hold-specific
+    tolerance (0.5 px): a supported re-layout is taken into the hold, a sub-threshold difference is
+    snapped, and release always reaches its finish. Its participant descendants ride one inherited
+    displacement `h(t)` with their own residuals, so their geometry relative to the held element
+    does not depend on how fast `h` decays. The release velocity enters exactly once, through the
+    held node's origin track.
+-   **States.** `held`, `released`, `cancelled`, `invalidated`. `release`/`cancel` are terminal and
+    idempotent; a `move` after a terminal state is a no-op with one development warning per handle.
+    Non-finite offsets and velocities throw `ANI_INVALID_OPTIONS` before any state change. A hold
+    invalidated by removal, `ownerDocument` change, `layoutKey`, `dispose()`, `finish()`, the kill
+    switch, a failed held read or an internal abort follows that event's rule and stops reading.
+    The authored inline style is restored byte for byte. A `take` during a landing settles the old
+    landing at its current drawn box, invalidates the old handle and starts a new hold from it.
+-   **Reduced motion.** The held phase is direct manipulation: `move` stays 1:1 and a policy change
+    while held never ends the hold. The policy at `release`/`cancel` decides the landing: `'jump'`
+    lands at A with no motion, `{ maxDuration }` clamps, `'ignore'` plays in full. A release that
+    finds no reduced-motion fit becomes `released` and lands at A (a reduced jump); a refused spring
+    emits `spring-timeout` and snaps. A release that finds no fitting path emits the typed
+    `reduced-no-fit` diagnostic and lands at A. Under `'jump'`, a flush while held or landing
+    settles every descendant residual at its own A. A release with no layout change springs back to
+    the slot.
+-   **Ancestor motion.** A trackless participant child that is counter-projected to its own A under
+    an animating participant ancestor still reports the ancestor's drawn origin velocity at `take`
+    (P4-C10). A reflowing child whose A moves carries that layout delta through its own track.
+-   **Admission and limits.** An exiting crossfade follower is rejected with a `drive-rejected`
+    diagnostic. An element belongs to at most one live group; adding it to a second throws. The
+    ancestor/descendant hold exclusion is scope-local: a cross-scope nested hold is allowed, and a
+    driven cross-scope child does not ride the other group's `h`. Held nodes and their riders count
+    as visible movers for `maxNodes`; exceeding it invalidates the holds and reports `'capped'`.
+    The kill switch wins over the `'waapi'` precondition: `take` returns an invalidated handle under
+    the switch, and otherwise the `'waapi'` engine cannot take a hold. A `take` before an unflushed
+    layout uses its own rect/computed reads; unsupported current geometry throws. `onSnap` lists
+    each held node and rider with reason `'capped'`.
+
+`useLayoutDrive()` returns a dispatcher for the same port. Its `take(element)` routes to the live
+`LayoutGroup` that owns the registered element, otherwise to the implicit root of its document, and
+throws `ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref detach and re-attach
+preserves a live hold, just as it preserves registration. The gesture layer maps `pointercancel`
+and `lostpointercapture` to `cancel()`, so a cancelled gesture never becomes a release; a
+box-preserving 180° rotation/zoom shares the documented support residual risk above. `dispose()`,
+abort and the kill switch remove the scope's scroll listeners and clock subscription; pointer
+capture and the pointer listeners belong to the gesture layer.
+
 ### Reduced motion
 
 The preference comes from the group's clock (by default `matchMedia('(prefers-reduced-motion: reduce)')`) and is read at every flush, so a change applies at the next commit, also to elements that are still moving.
@@ -546,7 +649,7 @@ layoutRuntime.setMode('animate')
 stop()
 ```
 
-The kill switch is synchronous in every explicit and implicit group: live tracks finish at identity with their styles restored, P3 crossfade/presence holds finish as a completed fade, and pending reports resolve `'disabled'` with reason `'disabled'`. Drive-hold invalidation is the P4 `L-DRIVE-4` path. Later movers snap `'disabled'`. It is distinct from reduced motion.
+The kill switch is synchronous in every explicit and implicit group: live tracks finish at identity with their styles restored, P3 crossfade/presence holds finish as a completed fade, drive holds are invalidated and restored, and pending reports resolve `'disabled'` with reason `'disabled'`. Later movers snap `'disabled'`. It is distinct from reduced motion.
 
 `onDiagnostic` returns an unsubscribe. Payloads are built only when a listener exists, so the stream costs nothing when unused; it also works in production builds. Every listener runs after the engine's state is consistent, each inside its own `try`. A throwing listener is reported as `callback-error` to the other listeners only, never back to itself and never recursively, and is rethrown asynchronously in development. `onSnap` runs after the flush's diagnostics and is isolated the same way. A capture begun inside a clock frame prints the §4.1 development warning at capture; the flush that consumes the aged capture emits one `capture-aged` event per reported node (or one element-less event when none is reported).
 
@@ -567,6 +670,8 @@ interface LayoutDiagnostic {
         | 'document-mismatch'
         | 'runtime-disabled'
         | 'focus-in-follower'
+        | 'drive-rejected'
+        | 'reduced-no-fit'
         | 'callback-error'
         | 'internal-error'
     readonly scope: number // stable per group for the page's lifetime
@@ -594,14 +699,16 @@ Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a
 ### Limits
 
 -   The default `'raf'` layout engine runs on the main thread, on Ani's clock, so it does not advance on screen while the main thread is blocked. The optional [WAAPI engine](#compositor-engine) is the gated compositor-smooth exception.
--   The drive seam and its hold state are P4. P3's holds are the crossfade and presence holds described here; a keyed reorder or a re-render during a track is not a drive hold.
+-   The drive seam ([Direct manipulation](#direct-manipulation)) is layout's side only: pointer
+    capture, `pointerId`, `touch-action`, velocity estimation, keyboard operation and announcements
+    belong to your gesture layer. A re-render during a track is not a drive hold.
 -   Capture reads the DOM during render. These are reads only, but when styles changed since the last layout they force one.
 -   A change that renders no participant, `LayoutGroup` or `AnimatePresence` does not animate (see [When a change animates](#when-a-change-animates)).
 -   Text inside an element that scales is re-rasterized and can look soft until the animation ends. Use `layout: 'position'` on text.
 -   A change of your own `translate` or `scale` during a run applies when the run ends, as one jump.
 -   A presence `transform` that animates during a layout run moves the element and its participants on top of their layout motion.
 -   A box never shrinks below one pixel; a fast element headed there loses that part of its speed.
--   Not supported: 3D transforms, rotation and skew, SVG and inline elements, drag-driven or scroll-linked layout, shadow correction and curved paths.
+-   Not supported: 3D transforms, rotation and skew, SVG and inline elements, pointer capture and velocity estimation (the gesture layer owns those; layout provides the drive seam), scroll-linked layout without a scroll driver, shadow correction and curved paths.
 
 ### Vanilla API
 

@@ -3377,7 +3377,62 @@ export async function MUTATION(): Promise<string> {
             details.push('M6 abort cleanup -> L-OPS-2 (real blocked removal)')
         }
 
-        details.push('M7 release dt deferred to P4/L-DRIVE-1 (C3)')
+        // 7. release with dt ≠ 0 -> L-DRIVE-1 (§11.3; C3 moves M7 to P4)
+        {
+            const h = harness({ motion })
+            const a = node(h.root, boxAt(0, 0))
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 60, y: 20 })
+            h.mc.frame(FRAME_MS)
+            await microtasks()
+            const held = viewBox(a)
+            handle.release({ x: 500, y: 0 })
+            h.mc.frame(FRAME_MS)
+            await microtasks()
+            const first = viewBox(a)
+            h.mc.frame(FRAME_MS)
+            await microtasks()
+            const second = viewBox(a)
+            const diff = (a0: typeof first, b0: typeof first) =>
+                Math.max(
+                    Math.abs(a0.x - b0.x),
+                    Math.abs(a0.y - b0.y),
+                    Math.abs(a0.w - b0.w),
+                    Math.abs(a0.h - b0.h)
+                )
+            const real = {
+                firstError: diff(first, held),
+                secondDx: Math.abs(second.x - first.x),
+            }
+            // the wrong decision: the release's first update advances by dt,
+            // so its first painted frame is the real second frame
+            const mutant = {
+                firstError: diff(second, held),
+                secondDx: 0,
+            }
+            expectMutation(
+                'release with dt ≠ 0 (real second frame as the wrong first)',
+                'L-DRIVE-1',
+                (o) => {
+                    if ((o.firstError as number) > TOL)
+                        throw new Error(
+                            `L-DRIVE-1: first release frame is ${String(o.firstError)} px from the held box`
+                        )
+                    if (!((o.secondDx as number) > TOL))
+                        throw new Error('L-DRIVE-1: the release never advanced')
+                },
+                real,
+                mutant
+            )
+            details.push(
+                'M7 release first update dt = 0 -> L-DRIVE-1 (wrong first frame control)'
+            )
+            handle.cancel()
+            h.dispose()
+        }
 
         // 8. merge the motion field by field -> L-SPRING-3 (synthetic control)
         {

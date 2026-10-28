@@ -136,6 +136,9 @@ export interface SolveNode {
     /** Transform origin point in the local frame. */
     readonly ox: number
     readonly oy: number
+    /** Transform origin as fractions of the box (the track's origin channels). */
+    readonly fx?: number
+    readonly fy?: number
     /** The node's own inner map (authored translate/scale, presence transform) about its origin, local frame, frozen at the flush. */
     readonly inner: Map2
     readonly track: Track | null
@@ -161,6 +164,23 @@ export interface SolveNode {
      * does; `track` is ignored.
      */
     readonly posed?: MovingMap | null
+    /**
+     * A held or landing node's exact drawn box and analytic velocity in view
+     * space (§5.10): the origin channels come from the hold or its release
+     * path, the size channels from the node's own size continuation. It
+     * replaces the track's box.
+     */
+    readonly override?: {
+        readonly box: Box
+        readonly velocity: BoxVelocity
+    } | null
+    /**
+     * Index of the held ancestor whose inherited displacement `h(t)` this
+     * node adds to its own residual box (§5.10), or -1. Every descendant
+     * participant rides one common `h`; an anchored own track already rides
+     * its parent's drawn box and does not add it again.
+     */
+    readonly ride?: number
 }
 
 /**
@@ -464,6 +484,38 @@ function channelVelocity(track: Track, i: number, t: number): number {
     return pathVelocity(track, b, a, track.seed[i]!, t)
 }
 
+/**
+ * A track's origin point and its velocity at `elapsed` (§5.10): the origin
+ * channels a held node's release path rides, irrespective of the track's
+ * size channels.
+ */
+export function trackOrigin(
+    track: Track,
+    elapsed: number
+): { x: number; y: number; vx: number; vy: number } {
+    const t = localTime(track, elapsed)
+    return {
+        x: channelAt(track, 0, t),
+        y: channelAt(track, 1, t),
+        vx: channelVelocity(track, 0, t),
+        vy: channelVelocity(track, 1, t),
+    }
+}
+
+/** A track's size channels and their velocities at `elapsed` (§5.10). */
+export function trackSize(
+    track: Track,
+    elapsed: number
+): { w: number; h: number; vw: number; vh: number } {
+    const t = localTime(track, elapsed)
+    return {
+        w: channelAt(track, 2, t),
+        h: channelAt(track, 3, t),
+        vw: channelVelocity(track, 2, t),
+        vh: channelVelocity(track, 3, t),
+    }
+}
+
 function isHolding(track: Track, elapsed: number): boolean {
     return elapsed - track.delay < 0
 }
@@ -710,19 +762,52 @@ function drawnMotion(
         maps ??= epochs(nodes, full, MOVING)
         return maps.parent(i)
     }
+    /**
+     * The inherited displacement `h` of a node riding a held ancestor
+     * (§5.10): the held node's drawn origin minus the origin of its current
+     * A, both in view space.
+     */
+    const rideOffset = (i: number): { x: number; y: number } => {
+        const held = nodes[i]!.ride!
+        const node = nodes[held]!
+        const drawn = boxAt(held)
+        const rest = node.a
+        const fx = node.fx ?? 0.5
+        const fy = node.fy ?? 0.5
+        return {
+            x: drawn.x + fx * drawn.w - (rest.x + fx * rest.w),
+            y: drawn.y + fy * drawn.h - (rest.y + fy * rest.h),
+        }
+    }
+    /** `ḣ` of the same offset: the held node's analytic origin velocity. */
+    const rideVelocity = (i: number): { x: number; y: number } => {
+        const held = nodes[i]!.ride!
+        const node = nodes[held]!
+        const drawn = velocityAt(held)
+        const fx = node.fx ?? 0.5
+        const fy = node.fy ?? 0.5
+        return {
+            x: drawn.x + fx * drawn.w,
+            y: drawn.y + fy * drawn.h,
+        }
+    }
     const boxAt = (i: number): Box => {
         const known = boxes[i]
         if (known) return known
         const node = nodes[i]!
         const track = node.track
         let box: Box
-        if (node.follow >= 0) {
+        let anchored = false
+        if (node.override) {
+            box = node.override.box
+        } else if (node.follow >= 0) {
             box = seenFrom(i, node.follow).box
         } else if (node.posed) {
             box = mapBox(compose(parentOf(i).map, node.posed.map), node.box)
         } else if (track) {
             box = ownBox(track, node.elapsed)
             if (track.anchor && node.parent >= 0) {
+                anchored = true
                 const parent = seenFrom(i, node.parent).box
                 const off = anchorOffset(track.anchor, track, node.elapsed)
                 const { u, v } = track.anchor
@@ -736,6 +821,25 @@ function drawnMotion(
         } else {
             box = node.a
         }
+        // A descendant of a held node rides one common displacement. An
+        // anchored own track already rides the parent's drawn anchor point; a
+        // kept pose and a follower whose lead is inside the same hold already
+        // include h through the parent/lead map (H13-09).
+        if (node.ride !== undefined && node.ride >= 0 && !anchored) {
+            const lead = node.follow >= 0 ? nodes[node.follow]! : null
+            const includesH =
+                node.posed !== undefined && node.posed !== null
+                    ? true
+                    : lead === null
+                      ? false
+                      : lead.override !== undefined && lead.override !== null
+                        ? true
+                        : lead.ride === node.ride
+            if (!includesH) {
+                const h = rideOffset(i)
+                box = { ...box, x: box.x + h.x, y: box.y + h.y }
+            }
+        }
         boxes[i] = box
         return box
     }
@@ -745,7 +849,9 @@ function drawnMotion(
         const node = nodes[i]!
         const track = node.track
         let v: BoxVelocity
-        if (node.follow >= 0) {
+        if (node.override) {
+            v = node.override.velocity
+        } else if (node.follow >= 0) {
             v = seenFrom(i, node.follow).velocity
         } else if (node.posed) {
             v = carry(
@@ -773,6 +879,9 @@ function drawnMotion(
                     w,
                     h,
                 }
+                // an anchored track rides its parent's drawn anchor point
+                velocities[i] = v
+                return v
             } else if (holding) {
                 v = ZERO_VELOCITY
             } else {
@@ -785,6 +894,21 @@ function drawnMotion(
             }
         } else {
             v = ZERO_VELOCITY
+        }
+        if (node.ride !== undefined && node.ride >= 0) {
+            const lead = node.follow >= 0 ? nodes[node.follow]! : null
+            const includesH =
+                node.posed !== undefined && node.posed !== null
+                    ? true
+                    : lead === null
+                      ? false
+                      : lead.override !== undefined && lead.override !== null
+                        ? true
+                        : lead.ride === node.ride
+            if (!includesH) {
+                const hv = rideVelocity(i)
+                v = { ...v, x: v.x + hv.x, y: v.y + hv.y }
+            }
         }
         velocities[i] = v
         return v

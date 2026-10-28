@@ -7,7 +7,14 @@ import type {
     LayoutOptions,
     LayoutReport,
 } from '@freestylejs/ani-layout'
-import { createRef, memo, type RefObject, StrictMode, useState } from 'react'
+import {
+    createRef,
+    memo,
+    type ReactNode,
+    type RefObject,
+    StrictMode,
+    useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,6 +24,7 @@ import {
     AnimatePresence,
     LayoutGroup,
     useLayout,
+    useLayoutDrive,
     useLayoutGroup,
     usePresence,
 } from '..'
@@ -78,6 +86,29 @@ vi.mock('@freestylejs/ani-layout', async (original) => {
                 },
                 finish() {
                     fake.calls.push('finish')
+                },
+                take(element) {
+                    fake.calls.push('take')
+                    if (!fake.members.has(element)) {
+                        const error = new TypeError('[ANI_INVALID_OPTIONS]')
+                        Object.defineProperty(error, 'code', {
+                            value: 'ANI_INVALID_OPTIONS',
+                        })
+                        throw error
+                    }
+                    return {
+                        state: 'invalidated',
+                        velocity: { x: 0, y: 0 },
+                        move() {
+                            return
+                        },
+                        release() {
+                            return
+                        },
+                        cancel() {
+                            return
+                        },
+                    }
                 },
                 dispose() {
                     fake.calls.push('dispose')
@@ -1061,5 +1092,82 @@ describe('react layout adapter', () => {
         } finally {
             await view.unmount()
         }
+    })
+})
+
+describe('P4: useLayoutDrive dispatcher (§5.10, §7.3)', () => {
+    it('routes take to the live explicit owner and is stable across renders', async () => {
+        const captured: { drive: ReturnType<typeof useLayoutDrive> | null } = {
+            drive: null,
+        }
+        function Item(): ReactNode {
+            const drive = useLayoutDrive()
+            captured.drive = drive
+            const ref = useLayout<HTMLLIElement>({})
+            return <li ref={ref} data-drive="item" />
+        }
+        const view = await mount(
+            <LayoutGroup>
+                <Item />
+            </LayoutGroup>
+        )
+        await settle()
+        const item = view.container.querySelector<HTMLLIElement>(
+            '[data-drive="item"]'
+        )!
+        const first = captured.drive
+        expect(first).not.toBeNull()
+        act(() => {
+            const handle = first!.take(item)
+            handle.move({ x: 10, y: 10 })
+            handle.release()
+        })
+        const fake = live()[0]!
+        expect(fake.calls.filter((call) => call === 'take')).toHaveLength(1)
+        // a render keeps the same dispatcher object
+        await view.rerender(
+            <LayoutGroup>
+                <Item />
+            </LayoutGroup>
+        )
+        await settle()
+        expect(captured.drive).toBe(first)
+        act(() => {
+            first!.take(item)
+        })
+        expect(fake.calls.filter((call) => call === 'take')).toHaveLength(2)
+        await view.unmount()
+    })
+
+    it('routes to the implicit root and throws for an element no scope owns', async () => {
+        const captured: { drive: ReturnType<typeof useLayoutDrive> | null } = {
+            drive: null,
+        }
+        function Item(): ReactNode {
+            const drive = useLayoutDrive()
+            captured.drive = drive
+            const ref = useLayout<HTMLDivElement>({})
+            return <div ref={ref} data-drive="implicit" />
+        }
+        const view = await mount(<Item />)
+        await settle()
+        const element = view.container.querySelector<HTMLDivElement>(
+            '[data-drive="implicit"]'
+        )!
+        const root = rootScope(undefined, document)
+        const fake = recorder.fakes.find(
+            (candidate) => !candidate.disposed && candidate.members.has(element)
+        )!
+        expect(fake).toBeDefined()
+        act(() => {
+            captured.drive!.take(element)
+        })
+        expect(fake.calls).toContain('take')
+        const outside = document.createElement('div')
+        document.body.append(outside)
+        expect(() => captured.drive!.take(outside)).toThrow()
+        outside.remove()
+        void root
+        await view.unmount()
     })
 })

@@ -5,6 +5,8 @@
 import type { Animatable, AnimationClockInterface } from '@freestylejs/ani-core'
 
 export interface FrameDriver {
+    /** Read phase: the per-frame held rects. Must not write the DOM. */
+    read?(): void
     /** Advance by `dt` seconds and solve; returns whether anything still runs. */
     update(dt: number): boolean
     commit(): void
@@ -22,6 +24,10 @@ export function createRaf(
     let running = false
     let finished = false
     const animatable: Animatable = {
+        // the clock's read phase: one rect per held element, before any write
+        read() {
+            driver.read?.()
+        },
         update(dt) {
             finished = !driver.update(dt)
         },
