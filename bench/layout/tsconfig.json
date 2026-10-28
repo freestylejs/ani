@@ -3,6 +3,7 @@
     "compilerOptions": {
         "noEmit": true,
         "allowImportingTsExtensions": true,
+        "jsx": "react-jsx",
         "exactOptionalPropertyTypes": true,
         "baseUrl": "../..",
         "paths": {
@@ -11,10 +12,13 @@
                 "packages/core/src/testing/index.ts"
             ],
             "@freestylejs/ani-layout": ["packages/layout/src/index.ts"],
+            "@freestylejs/ani-react/layout": [
+                "packages/react/src/layout/index.ts"
+            ],
             "~/*": ["packages/core/src/*"]
         },
         "types": ["node"]
     },
-    "include": ["./**/*.ts"],
+    "include": ["./**/*.ts", "./**/*.tsx"],
     "exclude": ["./dev.ts"]
 }

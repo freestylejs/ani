@@ -52,7 +52,16 @@ import {
     type SceneReport,
     stringifyReport,
 } from './report.ts'
-import { cardPlan, segPlan } from './scene_plans.ts'
+import {
+    accPlan,
+    cardPlan,
+    deletePlan,
+    insertPlan,
+    islandPlan,
+    photoPlan,
+    segPlan,
+    stackPlan,
+} from './scene_plans.ts'
 import { type MetricFinding, scoreScene } from './scoring.ts'
 import { median, percentile } from './stats.ts'
 import type {
@@ -68,7 +77,16 @@ const PAGE_URL = `${ORIGIN}/`
 const ROUTE = `${ORIGIN}/**`
 const DEFAULT_OUT = join(REPO_ROOT, 'bench/layout/results/latest.json')
 const PAGES_DIR = join(REPO_ROOT, 'bench/layout/results/pages')
-const SCENES = ['s-card', 's-seg'] as const
+const SCENES = [
+    's-card',
+    's-seg',
+    's-photo',
+    's-stack',
+    's-island',
+    's-acc',
+    's-insert',
+    's-delete',
+] as const
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
@@ -805,6 +823,42 @@ const SCENE_CONTROLS: readonly {
         control: 'leftover-pose',
         target: 'G6',
     },
+    {
+        name: 'photo-no-counter-scale',
+        scene: 's-photo',
+        control: 'photo-no-counter-scale',
+        target: 'G1',
+    },
+    {
+        name: 'acc-separator-1px',
+        scene: 's-acc',
+        control: 'acc-separator-1px',
+        target: 'G1',
+    },
+    {
+        name: 'stack-badge-nonparticipant',
+        scene: 's-stack',
+        control: 'stack-badge-nonparticipant',
+        target: 'G1',
+    },
+    {
+        name: 'island-snap-reverse',
+        scene: 's-island',
+        control: 'island-snap-reverse',
+        target: 'G2',
+    },
+    {
+        name: 'insert-no-presence',
+        scene: 's-insert',
+        control: 'insert-no-presence',
+        target: 'shape.presence-opacity',
+    },
+    {
+        name: 'delete-no-lift',
+        scene: 's-delete',
+        control: 'delete-no-lift',
+        target: 'G1',
+    },
 ]
 
 async function browserControls(
@@ -830,10 +884,7 @@ async function browserControls(
                     control.scene,
                     control.control
                 )
-                const plan =
-                    run.trace.scene === 's-card'
-                        ? cardPlan(run.trace)
-                        : segPlan(run.trace)
+                const plan = planFor(run.trace.scene, run.trace)
                 const score = scoreScene(plan, run.trace)
                 const finding = [...score.metrics, ...score.shape].find(
                     (entry) => entry.id === control.target
@@ -978,6 +1029,21 @@ interface RunSceneOutcome {
     readonly shape: readonly MetricFinding[]
 }
 
+function planFor(
+    scene: string,
+    trace: SceneTrace
+): ReturnType<typeof cardPlan> {
+    if (scene === 's-card') return cardPlan(trace)
+    if (scene === 's-seg') return segPlan(trace)
+    if (scene === 's-acc') return accPlan(trace)
+    if (scene === 's-insert') return insertPlan(trace)
+    if (scene === 's-delete') return deletePlan(trace)
+    if (scene === 's-island') return islandPlan(trace)
+    if (scene === 's-photo') return photoPlan(trace)
+    if (scene === 's-stack') return stackPlan(trace)
+    throw new Error(`no scene plan for "${scene}"`)
+}
+
 function sceneOutcome(
     run: number,
     warmup: boolean,
@@ -986,7 +1052,7 @@ function sceneOutcome(
     probe: SceneCostProbeResult | null,
     problems: readonly string[]
 ): RunSceneOutcome {
-    const plan = manual.scene === 's-card' ? cardPlan(manual) : segPlan(manual)
+    const plan = planFor(manual.scene, manual)
     const score = scoreScene(plan, manual)
     const allProblems = [...problems]
     for (const code of real.diagnostics) {
