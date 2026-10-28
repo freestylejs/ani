@@ -207,6 +207,25 @@ describe('D1: public drive surface and take preconditions (§5.10)', () => {
         h.dispose()
     })
 
+    it('P4-C5: take under runtime snap on a WAAPI group returns an invalidated handle', async () => {
+        const h = harness({ motion: linear, engine: 'waapi' })
+        const events: LayoutDiagnostic[] = []
+        const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+        const a = node(h.root, { x: 0, y: 0, w: 80, h: 80 })
+        h.add(a, { layout: 'position' })
+        h.group.capture()
+        await h.group.flush()
+        layoutRuntime.setMode('snap')
+        const handle = h.group.take(a)
+        expect(handle.state).toBe('invalidated')
+        expect(
+            events.some((e) => e.code === 'runtime-disabled' && e.element === a)
+        ).toBe(true)
+        layoutRuntime.setMode('animate')
+        stop()
+        h.dispose()
+    })
+
     it('take under runtime snap returns an invalidated handle and emits runtime-disabled', async () => {
         const h = harness({ motion: linear })
         const events: LayoutDiagnostic[] = []
@@ -352,6 +371,7 @@ describe('D2: take point, velocity and the first release frame (§5.10, §4.5)',
         await h.group.flush()
         h.group.capture()
         place(a, { x: 200, y: 0, w: 80, h: 80 })
+        a.style.left = '200px'
         const run = h.group.flush()
         h.mc.frame(16)
         h.mc.frame(16)
