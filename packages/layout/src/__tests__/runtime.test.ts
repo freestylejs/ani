@@ -306,11 +306,18 @@ describe('§7.2 layoutRuntime', () => {
             group.add(a)
             group.capture()
             model.place(a, box(80))
+            const { events, stop } = collect()
             await expect(group.flush()).resolves.toMatchObject({
                 status: 'no-change',
             })
+            // the outer degradation is still delivered although onSnap
+            // re-entered flush()
+            expect(
+                events.some((event) => event.code === 'unsupported-geometry')
+            ).toBe(true)
             expect(calls).toBe(1)
             expect(group.stats.tracks).toBe(0)
+            stop()
             group.dispose()
         }
         // dispose()
