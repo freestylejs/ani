@@ -110,6 +110,7 @@ import {
     layoutRuntime,
     nextLayoutRunId,
     nextLayoutScopeId,
+    noteDiagnosticBuilt,
     registerRuntimeScope,
     reportCallbackError,
 } from './runtime'
@@ -292,10 +293,19 @@ interface Participant {
 
 interface Run {
     readonly id: number
+    /** Nodes still animating in the run. */
     readonly nodes: Set<Participant>
+    /** Every node that ever joined it (for a failed report). */
+    readonly all: Set<Participant>
     readonly snapped: LayoutReport['snapped']
     readonly resolve: (report: LayoutReport) => void
     done: boolean
+    resolved: boolean
+    /** A terminal status waiting for the transaction's commit. */
+    pending: {
+        readonly status: LayoutStatus
+        readonly snapped: LayoutReport['snapped']
+    } | null
 }
 
 /** The engine's own state at an instant: what its last writes describe (§4.1). */
@@ -323,7 +333,7 @@ interface Capture {
     /** B per connected participant: the raw rect, nothing divided out. */
     readonly rects: Map<Participant, Box>
     /** Every participant registered at capture, connected or not. */
-    readonly registered: ReadonlySet<Participant>
+    readonly registered: Set<Participant>
     /** Participants that failed the support check, with their subtrees. */
     readonly unsupported: Map<Participant, string>
     /** Shared `radius` participants' on-screen corner radii at B. */
@@ -842,6 +852,18 @@ export function createLayoutGroup(
     let buffered: LayoutDiagnostic[] | null = null
     let inTransaction = false
     let aborting = false
+    /** A report waits for the enclosing transaction's writes. */
+    let deferDepth = 0
+    /** Every unresolved run, including one whose terminal status is pending. */
+    const liveRuns = new Set<Run>()
+    /** Participants this flush/frame touched, for a narrowed failed report. */
+    let touched: Set<Participant> | null = null
+    /** The snaps of the flush, delivered after its diagnostics (§9.2). */
+    let flushSnaps: LayoutReport['snapped'] = []
+    /** Saved declarations of drives settled inside an uncommitted transaction. */
+    const resting = new Map<HTMLElement, Saved>()
+    /** The run of the current frame's update, carried into its commit. */
+    let frameRunId: number | null = null
 
     function metricsNow(springSettleMs: number | null = null) {
         return {
@@ -868,6 +890,7 @@ export function createLayoutGroup(
         } = {}
     ): void {
         if (!hasDiagnosticListeners()) return
+        noteDiagnosticBuilt()
         const event: LayoutDiagnostic = {
             version: 1,
             code,
@@ -907,6 +930,81 @@ export function createLayoutGroup(
         })
     }
 
+    /** Records a participant the current transaction has read, written or ended. */
+    function touch(p: Participant): void {
+        touched?.add(p)
+    }
+
+    function connectedParticipants(): Participant[] {
+        return [...registry.values()].filter((p) => p.element.isConnected)
+    }
+
+    /** Resolves a run now (no transaction is open). */
+    function resolveNow(
+        run: Run,
+        status: LayoutStatus,
+        snapped: LayoutReport['snapped']
+    ): void {
+        if (run.resolved) return
+        run.resolved = true
+        run.done = true
+        run.pending = null
+        liveRuns.delete(run)
+        run.resolve({ status, snapped })
+    }
+
+    /**
+     * A terminal report waits for the transaction's writes to succeed (§9.2,
+     * OPS-02): until then a later fault can still turn it into `'failed'`.
+     */
+    function resolveRun(
+        run: Run,
+        status: LayoutStatus,
+        snapped: LayoutReport['snapped']
+    ): void {
+        if (run.resolved) return
+        if (run.pending) {
+            const first = resolveLayoutStatus([run.pending.status, status])
+            if (first === run.pending.status) return
+            run.pending = { status, snapped }
+            return
+        }
+        run.done = true
+        if (deferDepth > 0) {
+            run.pending = { status, snapped }
+            return
+        }
+        resolveNow(run, status, snapped)
+    }
+
+    /** The transaction committed: its reports become observable. */
+    function flushDeferred(): void {
+        for (const run of [...liveRuns]) {
+            const pending = run.pending
+            if (!pending) continue
+            resolveNow(run, pending.status, pending.snapped)
+        }
+    }
+
+    /** The run an element belongs to now, or the newest unresolved run. */
+    function activeRunId(): number | null {
+        for (const node of frame) {
+            const run = node.p.drive?.run
+            if (run && !run.resolved) return run.id
+        }
+        for (const run of liveRuns) {
+            if (!run.resolved) return run.id
+        }
+        return null
+    }
+
+    /** Queues a settled drive's saved declarations for an exact restore. */
+    function queueSaved(element: HTMLElement, saved: Saved): void {
+        for (const [property, [value, priority]] of saved) {
+            pending.push({ element, property, value, priority })
+        }
+    }
+
     /**
      * `onSnap` calls, each isolated after the engine's state is consistent
      * (§7.2, §9.2): one throwing callback cannot change the engine and does
@@ -920,6 +1018,7 @@ export function createLayoutGroup(
     ): void {
         const seen = new Set<HTMLElement>()
         for (const { element, reason } of snapped) {
+            if (disposed) return
             if (seen.has(element)) continue
             seen.add(element)
             try {
@@ -1299,9 +1398,8 @@ export function createLayoutGroup(
         const run = p.drive?.run
         if (!run) return
         run.nodes.delete(p)
-        if (run.nodes.size === 0 && !run.done) {
-            run.done = true
-            run.resolve({ status: 'ended', snapped: run.snapped })
+        if (run.nodes.size === 0) {
+            resolveRun(run, 'ended', run.snapped)
         }
     }
 
@@ -1311,9 +1409,8 @@ export function createLayoutGroup(
         if (!run) return
         run.nodes.delete(p)
         p.drive!.run = null
-        if (run.nodes.size === 0 && !run.done) {
-            run.done = true
-            run.resolve({ status: 'disposed', snapped: run.snapped })
+        if (run.nodes.size === 0) {
+            resolveRun(run, 'disposed', run.snapped)
         }
     }
 
@@ -1321,12 +1418,15 @@ export function createLayoutGroup(
     function settle(p: Participant, cancelled = false): void {
         const d = p.drive
         if (!d) return
+        touch(p)
         stopAnimation(p)
         if (cancelled) cancelRunNode(p)
         else finishRunNode(p)
         d.release?.()
         p.drive = null
         if (p.geometry) p.lastBox = p.geometry.a
+        // the transaction must restore this even if its commit later throws
+        resting.set(p.element, d.saved)
         queueRestore(p.element, d)
     }
 
@@ -1496,12 +1596,26 @@ export function createLayoutGroup(
 
     const realizer = createRaf(clock, {
         update(dt) {
-            return frameBoundary(() => step(dt), false)
+            deferDepth += 1
+            const active = activeRunId()
+            frameRunId = active
+            return frameBoundary(() => step(dt), false, active)
         },
         commit: () => {
-            frameBoundary(() => {
-                commitWrites()
-            }, undefined)
+            try {
+                frameBoundary(
+                    () => {
+                        commitWrites()
+                        flushDeferred()
+                    },
+                    undefined,
+                    frameRunId
+                )
+            } finally {
+                frameRunId = null
+                deferDepth -= 1
+                if (deferDepth === 0) flushDeferred()
+            }
         },
     })
 
@@ -1740,6 +1854,30 @@ export function createLayoutGroup(
         }
     }
 
+    /**
+     * Internal adapter hand-off: a participant registered after the render's
+     * capture (a React mount) is given B = its current box, so it appears at
+     * its layout without a false `'stale'`. The capture is still open and in
+     * the same task. Used through the package-internal symbol below; not a
+     * public export.
+     */
+    function captureAdded(element: HTMLElement): void {
+        if (!capture?.live || capture.aged || capture.capped) return
+        const p = registry.get(element)
+        if (!p || !element.isConnected) return
+        // an existing participant at the capture is never re-read here; a
+        // presence enter owns the mount's first frame, and an author-replaced
+        // declaration keeps its §4.4 path
+        if (capture.registered.has(p) || presenceOf(element) !== undefined)
+            return
+        // §9.1: count connected participants before any read; over the cap the
+        // mount takes no B and the flush snaps the whole scope (N2)
+        if (connectedParticipants().length > maxParticipants) return
+        capture.rects.set(p, viewRect(element))
+        stats.rects += 1
+        capture.registered.add(p)
+    }
+
     function takeCapture(): void {
         if (disposed || !hasDOM()) return
         readsAt = { rects: stats.rects, styles: stats.styles }
@@ -1870,7 +2008,6 @@ export function createLayoutGroup(
         }
         capture = current
         stats.captures += 1
-        if (inFrame) diagnose('capture-aged', 'snap')
         microtask(() => {
             current.live = false
         })
@@ -1886,11 +2023,10 @@ export function createLayoutGroup(
     }
 
     function interrupt(run: Run | null): void {
-        if (!run || run.done) return
-        run.done = true
+        if (!run || run.resolved) return
         for (const p of run.nodes) if (p.drive?.run === run) p.drive.run = null
         run.nodes.clear()
-        run.resolve({ status: 'interrupted', snapped: run.snapped })
+        resolveRun(run, 'interrupted', run.snapped)
     }
 
     /**
@@ -2119,16 +2255,33 @@ export function createLayoutGroup(
         readsAt = { rects: stats.rects, styles: stats.styles }
         inTransaction = true
         buffered = []
+        deferDepth += 1
+        touched = new Set()
+        for (const p of registry.values()) {
+            if (p.drive) touched.add(p)
+        }
+        flushSnaps = []
         try {
             const report = flushBody(id)
+            flushDeferred()
+            const snaps = flushSnaps
+            flushSnaps = []
             dispatchDiagnostics()
+            // no user callback runs while the transaction is open (§9.2);
+            // a reentrant flush/dispose/setMode here sees consistent state
+            if (!disposed) notifySnaps(snaps)
             return report
         } catch (error) {
+            const affected = [...(touched ?? [])]
             buffered = null
             inTransaction = false
-            abort(error, id)
-            return resolved('failed', failedSnaps())
+            abort(error, id, affected)
+            return resolved('failed', failedSnaps(affected))
         } finally {
+            deferDepth -= 1
+            if (deferDepth === 0) flushDeferred()
+            touched = null
+            inTransaction = false
             runId = null
         }
     }
@@ -2183,9 +2336,11 @@ export function createLayoutGroup(
             stats.tracks = 0
             return resolved('no-change')
         }
-        // §4.3 gate 1, §9.1: over the participant cap, read nothing and snap
-        // the whole scope; a capped capture holds no measurement either
+        // §4.3 gate 1, §9.1: a capture that counted over the participant cap
+        // latches, even if the scope shrank before the flush; read nothing
+        // and snap the whole scope (N3)
         if (cap?.capped || list.length > maxParticipants) {
+            if (touched) for (const p of list) touched.add(p)
             return cappedFlush(list)
         }
         const hasChild = list.map(() => false)
@@ -2200,12 +2355,21 @@ export function createLayoutGroup(
         const unmeasured: boolean[] = []
         list.forEach((p, i) => {
             const parent = parents[i]!
+            // a participant that mounts under a presence enter is animated by
+            // that enter; layout has no B and must not add a stale report
+            const newPresence =
+                fresh !== null &&
+                !fresh.registered.has(p) &&
+                presenceOf(p.element) !== undefined
             unmeasured.push(
                 !fresh ||
                     (parent >= 0 && unmeasured[parent]!) ||
-                    (!p.keyChanged &&
-                        fresh.registered.has(p) &&
-                        !fresh.rects.has(p))
+                    (!newPresence &&
+                        (!fresh ||
+                            !fresh.registered.has(p) ||
+                            (!p.keyChanged &&
+                                fresh.registered.has(p) &&
+                                !fresh.rects.has(p))))
             )
         })
         /** Each node's A at its previous flush, before this one replaces it. */
@@ -2272,6 +2436,7 @@ export function createLayoutGroup(
             for (let i = 0; i < list.length; i++) {
                 if (!wanted[i] || geometry[i]) continue
                 const p = list[i]!
+                touch(p)
                 let m = measure(
                     p.element,
                     ownsRadius(p.options),
@@ -2841,6 +3006,11 @@ export function createLayoutGroup(
                             ? (index.get(d.lead) ?? -1)
                             : -1,
                     measured: !unmeasured[i],
+                    lateRegistered:
+                        fresh !== null &&
+                        !p.keyChanged &&
+                        !fresh.registered.has(p) &&
+                        !(parents[i]! >= 0 && unmeasured[parents[i]!]!),
                     scrollActive: scrollActive[i]!,
                 }
             })
@@ -2901,8 +3071,16 @@ export function createLayoutGroup(
                 idsOf()
             )
             for (const { id, index: i, from } of changes) {
-                // without a valid B on either side nothing is handed over
-                if (from === null || unmeasured[i]) continue
+                // without a valid B on either side nothing is handed over; a
+                // node registered after the capture may still take the
+                // departing lead's box (OPS-10)
+                const lateWithHandoff =
+                    fresh !== null &&
+                    !fresh.registered.has(list[i]!) &&
+                    !(parents[i]! >= 0 && unmeasured[parents[i]!])
+                if (from === null || (unmeasured[i] && !lateWithHandoff)) {
+                    continue
+                }
                 if (from !== 'retained' && unmeasured[from]) continue
                 const departing =
                     from === 'retained'
@@ -3064,6 +3242,36 @@ export function createLayoutGroup(
         }
         const disabled = disabledMovers.length > 0
         const capped = result.status === 'capped' && !disabled
+        if (capped) {
+            // the cap displaces the running tracks: their reports are
+            // interrupted, not ended (§9.3, OPS-19)
+            for (const p of registry.values()) {
+                if (p.drive?.run) interrupt(p.drive.run)
+            }
+        } else if (disabled) {
+            // a flush that meets the kill switch reports its movers disabled
+            for (const run of [...liveRuns]) {
+                if (run.resolved) continue
+                const nodes = [...run.nodes]
+                resolveRun(
+                    run,
+                    'disabled',
+                    nodes.map((p) => ({
+                        element: p.element,
+                        reason: 'disabled' as const,
+                    }))
+                )
+            }
+        }
+        // a late-registered lead that took a handoff has a valid B (the
+        // departing box), whether or not it needs a track: it is measured
+        // for the §4.4 report too (N1)
+        if (fresh) {
+            for (const i of result.handoffs.keys()) unmeasured[i] = false
+            // a scroll-degraded handoff appears at A/its enter, reported
+            // handoff-scroll-active, never stale
+            for (const { index } of result.degraded) unmeasured[index] = false
+        }
         /** §4.4: the nodes reported `'stale'`, with the flush's diagnostic code. */
         const staleReportedAt: number[] = []
         if (!capped && reduced === 'jump' && !disabled) {
@@ -3199,22 +3407,22 @@ export function createLayoutGroup(
         }
         if (staleReportedAt.length > 0) {
             const code: LayoutDiagnosticCode | null =
-                cap === null
+                cap === null || cap.capped
                     ? 'capture-less-flush'
                     : cap.aged
                       ? 'capture-aged'
-                      : null
-            if (code) {
-                for (const i of staleReportedAt) {
-                    diagnose(code, 'snap', {
-                        element: list[i]!.element,
-                        reason: 'stale',
-                    })
-                }
+                      : 'capture-less-flush'
+            for (const i of staleReportedAt) {
+                diagnose(code, 'snap', {
+                    element: list[i]!.element,
+                    reason: 'stale',
+                })
             }
-        } else if (cap === null || cap.aged) {
+        } else if (cap === null || cap.capped || cap.aged) {
             diagnose(
-                cap === null ? 'capture-less-flush' : 'capture-aged',
+                cap === null || cap.capped
+                    ? 'capture-less-flush'
+                    : 'capture-aged',
                 'snap'
             )
         }
@@ -3224,13 +3432,18 @@ export function createLayoutGroup(
         let promise: Promise<LayoutReport> | null = null
         if (actions.some((a) => a.kind === 'track')) {
             promise = new Promise<LayoutReport>((resolve) => {
-                run = {
+                const created: Run = {
                     id,
                     nodes: new Set(),
+                    all: new Set(),
                     snapped,
                     resolve,
                     done: false,
+                    resolved: false,
+                    pending: null,
                 }
+                liveRuns.add(created)
+                run = created
             })
         }
         const startDrive = (
@@ -3440,6 +3653,7 @@ export function createLayoutGroup(
             const p = list[i]!
             const g = geometry[i]
             const d = p.drive
+            if (action.kind !== 'none' || d) touch(p)
             switch (action.kind) {
                 case 'none':
                     if (reduced === 'jump' && d?.fade) endFade(p)
@@ -3551,7 +3765,10 @@ export function createLayoutGroup(
                           }
                         : keptFade
                     drive.run = run
-                    ;(run as Run | null)?.nodes.add(p)
+                    const startedRun = run as Run | null
+                    startedRun?.nodes.add(p)
+                    startedRun?.all.add(p)
+                    touch(p)
                     return
                 }
                 case 'follow': {
@@ -3673,13 +3890,12 @@ export function createLayoutGroup(
             else realizer.stop()
         }
 
-        notifySnaps(snapped)
+        flushSnaps = snapped
 
         const started = run as Run | null
         if (promise && started) {
             if (started.nodes.size === 0 && !started.done) {
-                started.done = true
-                started.resolve({ status: 'ended', snapped })
+                resolveRun(started, 'ended', snapped)
             }
             return promise
         }
@@ -3705,6 +3921,8 @@ export function createLayoutGroup(
     function commitWrites(): void {
         layoutFault('write')
         drainWrites()
+        // the restores of drives settled in this transaction were applied
+        resting.clear()
     }
 
     function drainWrites(): void {
@@ -3714,12 +3932,7 @@ export function createLayoutGroup(
     }
 
     /** Every affected node as `'failed'` (§9.2 step 4). */
-    function failedSnaps(
-        affected?: readonly Participant[]
-    ): LayoutReport['snapped'] {
-        const at =
-            affected ??
-            [...registry.values()].filter((p) => p.element.isConnected)
+    function failedSnaps(at: readonly Participant[]): LayoutReport['snapped'] {
         return at.map((p) => ({
             element: p.element,
             reason: 'failed' as const,
@@ -3727,11 +3940,12 @@ export function createLayoutGroup(
     }
 
     /**
-     * §9.2, once: restore every owned declaration byte-identically, cancel
-     * WAAPI animations, clear pending writes, invalidate holds, release
-     * presence holds, disarm the marker and listeners, stop the realizer,
-     * resolve every affected report `'failed'`, report `internal-error`.
-     * Never throws.
+     * §9.2, once: restore every owned declaration byte-identically (a drive
+     * settled earlier in this transaction included), cancel WAAPI animations,
+     * clear pending writes, invalidate holds, release presence holds, disarm
+     * the marker and listeners, stop the realizer, resolve every affected
+     * report `'failed'`, report `internal-error`. Every step is guarded: a
+     * secondary cleanup failure never skips the remaining steps. Never throws.
      */
     function abort(
         error: unknown,
@@ -3740,88 +3954,131 @@ export function createLayoutGroup(
     ): void {
         if (aborting) return
         aborting = true
+        const affectedSet = new Set(
+            affected ?? touched ?? connectedParticipants()
+        )
+        const runReport = failedSnaps([...affectedSet])
+        let callbacks = false
         try {
-            const runs = new Set<Run>()
-            for (const p of registry.values()) {
-                if (p.drive?.run && !p.drive.run.done) runs.add(p.drive.run)
+            try {
+                capture?.disarm()
+            } catch {
+                // a marker failure must not stop the boundary
             }
-            capture?.disarm()
             capture = null
             markerTarget = null
+            // clear writes, then restore every owned declaration below
             pending = []
             for (const p of registry.values()) {
                 const d = p.drive
                 if (!d) continue
-                stopAnimation(p)
-                d.release?.()
+                try {
+                    stopAnimation(p)
+                } catch {
+                    // a browser animation that cannot cancel must not stop us
+                }
+                try {
+                    d.release?.()
+                } catch {
+                    // presence's hold is already resolved at worst
+                }
                 d.release = null
                 invalidateHold(p)
                 p.drive = null
                 if (p.geometry) p.lastBox = p.geometry.a
-                queueRestore(p.element, d)
+                try {
+                    resting.set(p.element, d.saved)
+                    queueRestore(p.element, d)
+                } catch {
+                    // the direct saved write below still runs
+                }
             }
-            // no fault point here: the boundary must finish its restores
-            drainWrites()
+            // every drive that settled earlier in this transaction
+            for (const [element, saved] of resting) {
+                try {
+                    queueSaved(element, saved)
+                } catch {
+                    // a failing element must not hide the others
+                }
+            }
+            // best effort: one failing put still leaves the rest written and
+            // every cleanup step below runs
+            const writes = pending
+            pending = []
+            for (const w of writes) {
+                try {
+                    put(w.element, w.property, w.value, w.priority)
+                } catch {
+                    // handled as a cleanup failure; the first error is reported
+                }
+            }
             frame = []
             stats.tracks = 0
-            disarm()
-            realizer.stop()
-            // every affected report resolves `'failed'`, every affected node
-            // in `snapped` as `'failed'`
-            const report = failedSnaps(affected)
-            const byElement = new Map(
-                report.map((entry) => [entry.element, entry.reason])
-            )
-            for (const run of runs) {
-                if (run.done) continue
-                run.done = true
-                const merged = new Map(
-                    run.snapped.map((entry) => [entry.element, entry.reason])
-                )
-                for (const p of run.nodes) merged.set(p.element, 'failed')
-                for (const [element, reason] of byElement) {
-                    if (!merged.has(element)) merged.set(element, reason)
-                }
-                const snapped = [...merged].map(([element, reason]) => ({
-                    element,
-                    reason,
-                }))
-                run.nodes.clear()
-                run.resolve({ status: 'failed', snapped })
+            try {
+                disarm()
+            } catch {
+                // listeners are best effort too
             }
-            participants = [...registry.values()].filter(
-                (p) => p.element.isConnected
-            ).length
+            try {
+                realizer.stop()
+            } catch {
+                // no clock subscription can survive a failed stop anyway
+            }
+            // every affected report resolves `'failed'`; report only its
+            // affected run nodes, never every connected participant (§9.2)
+            const report = runReport
+            for (const run of [...liveRuns]) {
+                if (run.resolved) continue
+                const nodes = [...run.all].filter((p) => affectedSet.has(p))
+                const at = nodes.length > 0 ? nodes : [...run.all]
+                resolveNow(run, 'failed', failedSnaps(at))
+            }
+            participants = connectedParticipants().length
+            // state is consistent and this transaction's state is closed
+            // before any user callback can re-enter the engine
+            touched = null
+            resting.clear()
+            aborting = false
+            callbacks = true
             const previous = runId
             runId = id
-            diagnose('internal-error', 'abort', { error })
-            notifySnaps(report)
+            try {
+                diagnose('internal-error', 'abort', { error })
+            } catch {
+                // a listener failure is isolated by the stream
+            }
+            try {
+                notifySnaps(report)
+            } catch {
+                // onSnap is isolated; this is only a last-resort guard
+            }
             runId = previous
-        } catch {
-            // the boundary itself never throws: no further state exists to fix
         } finally {
-            aborting = false
+            if (!callbacks) {
+                touched = null
+                resting.clear()
+                aborting = false
+            }
         }
     }
 
     /** `flush()` and every frame callback: one idempotent boundary (§9.2). */
-    function frameBoundary<T>(work: () => T, fallback: T): T {
+    function frameBoundary<T>(
+        work: () => T,
+        fallback: T,
+        hint?: number | null
+    ): T {
         readsAt = { rects: stats.rects, styles: stats.styles }
         const previous = runId
-        let active: number | null = null
-        for (const node of frame) {
-            const run = node.p.drive?.run
-            if (run && !run.done) {
-                active ??= run.id
-            }
-        }
+        const active = hint === undefined ? activeRunId() : hint
+        if (hint === undefined) frameRunId = active
         runId = active
         try {
             return work()
         } catch (error) {
             abort(
                 error,
-                active,
+                active ?? frameRunId,
                 frame.map((node) => node.p)
             )
             return fallback
@@ -3837,14 +4094,35 @@ export function createLayoutGroup(
     function cappedFlush(list: readonly Participant[]): Promise<LayoutReport> {
         const disabled = layoutRuntime.mode === 'snap'
         const reason: SnapReason = disabled ? 'disabled' : 'capped'
-        warn(
-            'capped',
-            `more than ${maxParticipants} connected participants; the change snaps without a read. Raise maxParticipants or narrow the scope.`
-        )
+        if (!disabled) {
+            warn(
+                'capped',
+                `more than ${maxParticipants} connected participants; the change snaps without a read. Raise maxParticipants or narrow the scope.`
+            )
+        }
         const snapped = list.map((p) => ({
             element: p.element,
             reason,
         }))
+        if (disabled) {
+            // the winning condition is the kill switch: a pending report is
+            // disabled, never a cap event for a superseded condition
+            for (const run of [...liveRuns]) {
+                if (run.resolved) continue
+                const nodes = [...run.nodes]
+                resolveRun(
+                    run,
+                    'disabled',
+                    nodes.map((p) => ({
+                        element: p.element,
+                        reason: 'disabled' as const,
+                    }))
+                )
+            }
+        } else {
+            // the cap displaces running tracks: their reports are interrupted
+            for (const run of [...liveRuns]) interrupt(run)
+        }
         for (const p of registry.values()) {
             const d = p.drive
             if (!d || d.kind === 'held') continue
@@ -3854,11 +4132,12 @@ export function createLayoutGroup(
         frame = frame.filter((node) => node.p.drive !== null)
         realizer.stop()
         stats.tracks = 0
-        diagnose('participant-cap', 'snap')
         if (disabled) {
             diagnose('runtime-disabled', 'snap', { reason: 'disabled' })
+        } else {
+            diagnose('participant-cap', 'snap')
         }
-        notifySnaps(snapped)
+        flushSnaps = snapped
         return resolved(disabled ? 'disabled' : 'capped', snapped)
     }
 
@@ -3891,61 +4170,67 @@ export function createLayoutGroup(
     }
 
     function finishAll(status: 'ended' | 'disposed' | 'disabled'): void {
-        // every run reports the cause before its nodes settle
-        const runs = new Set<Run>()
-        for (const node of frame)
-            if (node.p.drive?.run) runs.add(node.p.drive.run)
-        for (const r of runs) {
-            if (r.done) continue
-            r.done = true
-            if (status === 'disabled') {
+        const nested = deferDepth > 0
+        if (!nested) deferDepth += 1
+        try {
+            // every unresolved run reports the cause before its nodes settle,
+            // but the report is not observable until the writes below succeed
+            for (const run of [...liveRuns]) {
+                if (run.resolved) continue
                 const merged = new Map(
-                    r.snapped.map((entry) => [entry.element, entry.reason])
+                    run.snapped.map((entry) => [entry.element, entry.reason])
                 )
-                for (const p of r.nodes) merged.set(p.element, 'disabled')
-                r.resolve({
+                if (status === 'disabled') {
+                    for (const p of run.nodes) {
+                        merged.set(p.element, 'disabled')
+                    }
+                }
+                resolveRun(
+                    run,
                     status,
-                    snapped: [...merged].map(([element, reason]) => ({
+                    [...merged].map(([element, reason]) => ({
                         element,
                         reason,
-                    })),
-                })
-            } else {
-                r.resolve({ status, snapped: r.snapped })
+                    }))
+                )
             }
-        }
-        if (status === 'disabled') {
-            for (const node of frame) invalidateHold(node.p)
-        }
-        // every track jumps to A
-        for (const node of frame) {
-            const d = node.p.drive
-            if (!d || d.kind === 'held') continue
-            if (d.timeline) d.timeline.done = true
-            if (d.track) d.elapsed = trackEndTime(d.track)
-            if (d.fade) d.fade.elapsed = d.fade.law.duration
-        }
-        if (status === 'ended' && !waapi) {
-            step(null)
-            commitWrites()
-        }
-        if (status === 'disabled') {
-            // a crossfade ends as a completed fade: the lead gets its opacity
-            // back, the exiting follower is held at 0 until presence removes it
+            if (status === 'disabled') {
+                for (const node of frame) invalidateHold(node.p)
+            }
+            // every track jumps to A
             for (const node of frame) {
                 const d = node.p.drive
-                if (d?.fade) endFade(node.p)
+                if (!d || d.kind === 'held') continue
+                if (d.timeline) d.timeline.done = true
+                if (d.track) d.elapsed = trackEndTime(d.track)
+                if (d.fade) d.fade.elapsed = d.fade.law.duration
             }
+            if (status === 'ended' && !waapi) {
+                step(null)
+                commitWrites()
+            }
+            if (status === 'disabled') {
+                // a crossfade ends as a completed fade: the lead gets its
+                // opacity back, the exiting follower is held at 0 until
+                // presence removes it
+                for (const node of frame) {
+                    const d = node.p.drive
+                    if (d?.fade) endFade(node.p)
+                }
+            }
+            for (const node of frame) {
+                const d = node.p.drive
+                if (!d) continue
+                if (status === 'disposed' || d.kind !== 'held') settle(node.p)
+            }
+            commitWrites()
+            frame = frame.filter((node) => node.p.drive !== null)
+            realizer.stop()
+            stats.tracks = 0
+            if (!nested) flushDeferred()
+        } finally {
+            if (!nested) deferDepth -= 1
         }
-        for (const node of frame) {
-            const d = node.p.drive
-            if (!d) continue
-            if (status === 'disposed' || d.kind !== 'held') settle(node.p)
-        }
-        commitWrites()
-        frame = frame.filter((node) => node.p.drive !== null)
-        realizer.stop()
-        stats.tracks = 0
     }
 
     /**
@@ -3955,27 +4240,43 @@ export function createLayoutGroup(
      */
     function snapToDisabled(): void {
         readsAt = { rects: stats.rects, styles: stats.styles }
+        participants = connectedParticipants().length
         const previous = runId
         let affected: number | null = null
-        let moving = false
+        const movers: {
+            readonly participant: Participant
+            readonly run: number | null
+        }[] = []
         const finished: { element: HTMLElement; reason: SnapReason }[] = []
         for (const node of frame) {
             const d = node.p.drive
             if (!d || d.kind === 'held') continue
             const run = d.run
             if (run && !run.done) affected ??= run.id
-            if (d.kind === 'track' || d.kind === 'follow') moving = true
+            if (d.kind === 'track' || d.kind === 'follow') {
+                movers.push({ participant: node.p, run: run?.id ?? null })
+            }
             finished.push({ element: node.p.element, reason: 'disabled' })
         }
         runId = affected
         try {
             finishAll('disabled')
-            if (moving) {
-                diagnose('runtime-disabled', 'snap', { reason: 'disabled' })
-                notifySnaps(finished)
+            for (const mover of movers) {
+                const current = runId
+                runId = mover.run ?? affected
+                diagnose('runtime-disabled', 'snap', {
+                    element: mover.participant.element,
+                    reason: 'disabled',
+                })
+                runId = current
             }
+            if (movers.length > 0) notifySnaps(finished)
         } catch (error) {
-            abort(error, affected)
+            abort(
+                error,
+                affected,
+                frame.map((node) => node.p)
+            )
         } finally {
             runId = previous
         }
@@ -3985,21 +4286,46 @@ export function createLayoutGroup(
         // P4 drive seam: invalidate any live hold on `_p`
     }
 
+    /**
+     * A lifecycle write path outside a flush/frame (§9.2, OPS-04): it either
+     * commits its restores or aborts without throwing. Inside a transaction it
+     * lets the enclosing boundary own the failure.
+     */
+    function writeLifecycle(
+        work: () => void,
+        affected: readonly Participant[]
+    ): void {
+        const nested = deferDepth > 0
+        if (!nested) deferDepth += 1
+        try {
+            work()
+            if (!nested) flushDeferred()
+        } catch (error) {
+            if (nested) throw error
+            abort(error, activeRunId(), affected)
+        } finally {
+            if (!nested) deferDepth -= 1
+        }
+    }
+
     function stopParticipantDrive(p: Participant, cancelled: boolean): void {
         const d = p.drive
         if (!d) return
-        pending = pending.filter((w) => w.element !== p.element)
-        settle(p, cancelled)
-        commitWrites()
-        rebuildFrame()
-        stats.tracks = countTracks()
-        if (
-            !frame.some(
-                (node) => node.p.drive !== null && node.p.drive.kind !== 'held'
-            )
-        ) {
-            realizer.stop()
-        }
+        writeLifecycle(() => {
+            pending = pending.filter((w) => w.element !== p.element)
+            settle(p, cancelled)
+            commitWrites()
+            rebuildFrame()
+            stats.tracks = countTracks()
+            if (
+                !frame.some(
+                    (node) =>
+                        node.p.drive !== null && node.p.drive.kind !== 'held'
+                )
+            ) {
+                realizer.stop()
+            }
+        }, [p])
     }
 
     /**
@@ -4020,6 +4346,7 @@ export function createLayoutGroup(
         }
         forgetCaptured(p)
         stopParticipantDrive(p, true)
+        participants = connectedParticipants().length
         diagnose('document-mismatch', 'finish', { element: p.element })
     }
 
@@ -4151,31 +4478,26 @@ export function createLayoutGroup(
                 if (d) {
                     // unmount cancels its track (§9): the run reports
                     // 'disposed' if nothing else of it is left
-                    cancelRunNode(self)
-                    stopAnimation(self)
-                    d.release?.()
-                    self.drive = null
-                    pending = pending.filter((w) => w.element !== element)
-                    queueRestore(element, d)
-                    commitWrites()
-                    rebuildFrame()
-                    stats.tracks = countTracks()
-                    // unsubscribe once this task's microtasks have run, unless
-                    // a flush among them (a handoff) started a run: stopping
-                    // now would make that flush re-subscribe, and the clock
-                    // gives a joining subscriber only the time since it
-                    // joined, a held or short first frame (§4.3)
-                    queueMicrotask(() => {
-                        if (
-                            !frame.some(
-                                (node) =>
-                                    node.p.drive !== null &&
-                                    node.p.drive.kind !== 'held'
-                            )
-                        ) {
-                            realizer.stop()
-                        }
-                    })
+                    writeLifecycle(() => {
+                        pending = pending.filter((w) => w.element !== element)
+                        settle(self, true)
+                        commitWrites()
+                        rebuildFrame()
+                        stats.tracks = countTracks()
+                        // unsubscribe once this task's microtasks have run,
+                        // unless a flush among them (a handoff) started a run
+                        queueMicrotask(() => {
+                            if (
+                                !frame.some(
+                                    (node) =>
+                                        node.p.drive !== null &&
+                                        node.p.drive.kind !== 'held'
+                                )
+                            ) {
+                                realizer.stop()
+                            }
+                        })
+                    }, [self])
                 }
             }
         },
@@ -4219,27 +4541,50 @@ export function createLayoutGroup(
 
         finish() {
             if (disposed) return
-            finishAll('ended')
+            const affected = frame.map((node) => node.p)
+            try {
+                finishAll('ended')
+            } catch (error) {
+                abort(error, activeRunId(), affected)
+            }
         },
 
         dispose() {
             if (disposed) return
-            finishAll('disposed')
-            disposed = true
-            unregisterRuntimeScope()
-            capture?.disarm()
-            capture = null
-            for (const p of registry.values()) {
-                p.removed = true
-                dropRoot(p)
+            const affected = frame.map((node) => node.p)
+            try {
+                finishAll('disposed')
+            } catch (error) {
+                abort(error, activeRunId(), affected)
+            } finally {
+                disposed = true
+                unregisterRuntimeScope()
+                try {
+                    capture?.disarm()
+                } catch {
+                    // disposal still completes
+                }
+                capture = null
+                markerTarget = null
+                for (const p of registry.values()) {
+                    p.removed = true
+                    dropRoot(p)
+                }
+                registry.clear()
+                shared = 0
+                chainRoots = new Set()
+                try {
+                    disarm()
+                } catch {
+                    // disposal still completes
+                }
+                frame = []
+                leads.clear()
+                retained.clear()
+                resting.clear()
+                touched = null
+                stats.tracks = 0
             }
-            registry.clear()
-            shared = 0
-            chainRoots = new Set()
-            disarm()
-            frame = []
-            leads.clear()
-            retained.clear()
         },
 
         get stats() {
@@ -4257,5 +4602,10 @@ export function createLayoutGroup(
             }
         },
     }
+    // the React adapter's package-internal mount hand-off: no public export
+    Object.defineProperty(group, Symbol.for('ani-layout.capture-added'), {
+        value: captureAdded,
+        enumerable: false,
+    })
     return group
 }

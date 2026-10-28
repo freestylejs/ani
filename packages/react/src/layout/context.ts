@@ -16,6 +16,9 @@ import { flushSync } from 'react-dom'
 
 const NO_CHANGE: LayoutReport = { status: 'no-change', snapped: [] }
 
+/** Package-internal mount hand-off; not part of the public layout API. */
+const CAPTURE_ADDED = Symbol.for('ani-layout.capture-added')
+
 export const hasDOM = (): boolean => typeof document !== 'undefined'
 
 /**
@@ -33,6 +36,8 @@ export interface LayoutScope {
     commit(): void
     add(element: HTMLElement, options: LayoutOptions): () => void
     set(element: HTMLElement, options: LayoutOptions): void
+    /** Package-internal: a post-render mount takes its current box as B. */
+    captureAdded(element: HTMLElement): void
     update(fn: () => void): Promise<LayoutReport>
     finish(): void
     /** Re-creates the core group with new options. */
@@ -173,8 +178,12 @@ export function createLayoutScope(
     let group: LayoutGroup | null = null
     const members = new Map<HTMLElement, Member>()
     let queued = false
+    /** A run queued for a scope that has since been re-created is ignored. */
+    let generation = 0
     /** A render touched after the commit's last layout effect (K14). */
     let touched = false
+    /** The first commit captures the whole mount once every ref is attached. */
+    let initialCapture = false
 
     // development: the trigger contract (§7.2)
     let observer: MutationObserver | null = null
@@ -186,8 +195,8 @@ export function createLayoutScope(
         return group
     }
 
-    const run = (): void => {
-        if (!queued) return
+    const run = (at: number): void => {
+        if (at !== generation || !queued) return
         queued = false
         const current = group
         if (!current) return
@@ -249,6 +258,9 @@ export function createLayoutScope(
             if (!hasDOM()) return
             touched = true
             capturedSinceCheck = true
+            // a first render that knows no participant must not create the
+            // scope's empty capture; the first ref's commit captures B = A
+            if (members.size === 0 && group === null) return
             // a render after the commit's layout effects, before its flush:
             // the open capture holds that commit's before-boxes. Capturing
             // now would refresh it (a time-sliced render took it in an
@@ -259,10 +271,19 @@ export function createLayoutScope(
         },
 
         commit() {
+            if (initialCapture) {
+                // the first commit's refs are attached by now; capture in a
+                // microtask before the flush microtask, after the whole mount
+                initialCapture = false
+                queueMicrotask(() => {
+                    group?.capture()
+                })
+            }
             touched = false
             if (queued) return
             queued = true
-            queueMicrotask(run)
+            const at = generation
+            queueMicrotask(() => run(at))
         },
 
         add(element, participant) {
@@ -276,19 +297,17 @@ export function createLayoutScope(
                     group?.set(element, participant)
                 }
             } else {
-                // a group this registration creates has presented no
-                // participant: its capture is the empty one a render of an
-                // existing scope would have taken, so the commit's flush is
-                // measured and the new participants appear at their layout
-                // box (§4.1, §4.4)
+                // a group this registration creates captures once, in the
+                // commit's first layout effect, after every ref of the mount is
+                // attached: its first flush has B = A for every participant
                 const created = group === null
                 const current = live()
-                if (created) current.capture()
                 member = {
                     options: participant,
                     remove: current.add(element, participant),
                     leaving: false,
                 }
+                if (created) initialCapture = true
                 members.set(element, member)
                 watch(element)
             }
@@ -312,13 +331,27 @@ export function createLayoutScope(
             group?.set(element, participant)
         },
 
+        captureAdded(element) {
+            const current = group
+            if (!current) return
+            const capture = (current as unknown as Record<symbol, unknown>)[
+                CAPTURE_ADDED
+            ]
+            if (typeof capture === 'function') {
+                ;(capture as (mount: HTMLElement) => void).call(
+                    current,
+                    element
+                )
+            }
+        },
+
         update(fn) {
             if (!hasDOM()) {
                 fn()
                 return Promise.resolve(NO_CHANGE)
             }
             // an earlier commit's pending flush keeps its own capture
-            run()
+            run(generation)
             capturedSinceCheck = true
             const report = live().update(() => flushSync(fn))
             // the commit inside `fn` was flushed by `update` itself
@@ -334,6 +367,11 @@ export function createLayoutScope(
         recreate(next) {
             options = next
             if (!group) return
+            // a flush queued for the old scope is ignored; the new scope's
+            // first commit queues its own flush
+            generation += 1
+            queued = false
+            touched = false
             group.dispose()
             group = createLayoutGroup(options)
             for (const [element, member] of members) {
@@ -342,6 +380,7 @@ export function createLayoutScope(
         },
 
         dispose() {
+            generation += 1
             queued = false
             touched = false
             group?.dispose()

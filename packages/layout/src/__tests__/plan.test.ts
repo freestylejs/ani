@@ -46,6 +46,7 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         optionsChanged: false,
         following: -1,
         measured: true,
+        lateRegistered: false,
         scrollActive: false,
         ...overrides,
     }

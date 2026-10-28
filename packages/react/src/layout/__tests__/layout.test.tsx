@@ -167,7 +167,7 @@ describe('react layout adapter', () => {
         }
     })
 
-    it('a registration that creates its scope captures the empty scope first, so the mount flush is measured (§4.1, §4.4)', async () => {
+    it('a registration that creates its scope captures it in the first commit, after every ref is attached (§4.1, §4.4, OPS-10)', async () => {
         const view = await mount(
             <ul>
                 <Item id="a" />
@@ -179,9 +179,9 @@ describe('react layout adapter', () => {
             const [fake] = live()
             expect(live()).toHaveLength(1)
             expect(fake!.members.size).toBe(2)
-            // the group the first registration created: captured before any
-            // add, then flushed once for the commit
-            expect(fake!.calls.slice(0, 3)).toEqual(['capture', 'add', 'add'])
+            // the refs add both participants, then the first layout effect
+            // captures the whole mount, then one flush
+            expect(fake!.calls.slice(0, 3)).toEqual(['add', 'add', 'capture'])
             expect(flushes(fake!)).toBe(1)
         } finally {
             await view.unmount()
@@ -675,7 +675,7 @@ describe('react layout adapter', () => {
 
         scope.commit()
         await Promise.resolve()
-        expect(fake!.calls).toEqual(['flush'])
+        expect(fake!.calls).toEqual(['capture', 'flush'])
 
         fake!.calls.length = 0
         scope.commit()

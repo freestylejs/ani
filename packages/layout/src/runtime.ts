@@ -23,11 +23,22 @@ export interface RuntimeScope {
     snap(): void
 }
 
-const listeners = new Set<LayoutDiagnosticListener>()
+const listeners = new Map<LayoutDiagnosticListener, number>()
 const scopes = new Set<RuntimeScope>()
 let mode: 'animate' | 'snap' = 'animate'
 let scopeCounter = 0
 let runCounter = 0
+let payloadsBuilt = 0
+
+/** Counts a payload the scope built because a listener existed (OPS-16). */
+export function noteDiagnosticBuilt(): void {
+    payloadsBuilt += 1
+}
+
+/** Internal test observation: how many payloads were built. */
+export function diagnosticPayloadsBuilt(): number {
+    return payloadsBuilt
+}
 
 /** The next stable scope id of this page (§7.2). */
 export function nextLayoutScopeId(): number {
@@ -76,7 +87,7 @@ function rethrowAsync(error: unknown): void {
  */
 export function emitDiagnostic(event: LayoutDiagnostic): void {
     if (listeners.size === 0) return
-    const recipients = [...listeners]
+    const recipients = [...listeners.keys()]
     const failures: { error: unknown; source: LayoutDiagnosticListener }[] = []
     for (const listener of recipients) {
         if (!listeners.has(listener)) continue
@@ -155,7 +166,7 @@ export function reportCallbackError(
         return
     }
     const event = callbackErrorEvent(error, base)
-    for (const listener of [...listeners]) {
+    for (const listener of [...listeners.keys()]) {
         if (!listeners.has(listener)) continue
         try {
             listener(event)
@@ -193,13 +204,16 @@ export const layoutRuntime: LayoutRuntime = {
         if (typeof listener !== 'function') {
             throw invalidOptions('type', 'onDiagnostic expects a function.')
         }
-        // one subscription per function: a second call returns another remove
-        listeners.add(listener)
+        // one call per distinct listener; subscribing the same function twice
+        // is reference-counted and still delivers one event (OPS-20)
+        listeners.set(listener, (listeners.get(listener) ?? 0) + 1)
         let active = true
         return () => {
             if (!active) return
             active = false
-            listeners.delete(listener)
+            const count = (listeners.get(listener) ?? 1) - 1
+            if (count <= 0) listeners.delete(listener)
+            else listeners.set(listener, count)
         }
     },
 }

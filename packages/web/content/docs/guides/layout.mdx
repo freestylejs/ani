@@ -534,9 +534,9 @@ layoutRuntime.setMode('animate')
 stop()
 ```
 
-The kill switch is synchronous in every explicit and implicit group: live tracks finish at identity with their styles restored, holds invalidate, pending reports resolve `'disabled'` with reason `'disabled'`, and later movers snap `'disabled'`. It is distinct from reduced motion.
+The kill switch is synchronous in every explicit and implicit group: live tracks finish at identity with their styles restored, P3 crossfade/presence holds finish as a completed fade, and pending reports resolve `'disabled'` with reason `'disabled'`. Drive-hold invalidation is the P4 `L-DRIVE-4` path. Later movers snap `'disabled'`. It is distinct from reduced motion.
 
-`onDiagnostic` returns an unsubscribe. Payloads are built only when a listener exists, so the stream costs nothing when unused; it also works in production builds. Every listener runs after the engine's state is consistent, each inside its own `try`. A throwing listener is reported as `callback-error` to the other listeners only, never back to itself and never recursively, and is rethrown asynchronously in development. `onSnap` is isolated the same way.
+`onDiagnostic` returns an unsubscribe. Payloads are built only when a listener exists, so the stream costs nothing when unused; it also works in production builds. Every listener runs after the engine's state is consistent, each inside its own `try`. A throwing listener is reported as `callback-error` to the other listeners only, never back to itself and never recursively, and is rethrown asynchronously in development. `onSnap` runs after the flush's diagnostics and is isolated the same way. A capture begun inside a clock frame prints the §4.1 development warning at capture; the flush that consumes the aged capture emits one `capture-aged` event per reported node (or one element-less event when none is reported).
 
 ```ts
 import type { SnapReason } from '@freestylejs/ani-layout'
@@ -573,7 +573,7 @@ interface LayoutDiagnostic {
 }
 ```
 
-A flush and every frame callback run inside one transactional boundary. On an internal exception the engine restores every owned declaration byte-identically, cancels browser animations, clears pending writes, invalidates holds, releases presence holds, disarms the frame marker and listeners, stops the clock subscription, resolves every affected report `'failed'` and emits `internal-error` with action `'abort'`. `flush()` never rejects.
+A flush and every frame callback run inside one transactional boundary. On an internal exception the engine restores every owned declaration byte-identically, cancels browser animations, clears pending writes, invalidates holds, releases presence holds, disarms the frame marker and listeners, stops the clock subscription, resolves every affected report `'failed'` and emits `internal-error` with action `'abort'`. A failed report lists only the participants the transaction touched and the affected run nodes; the style restore remains conservative for the whole scope. `flush()` never rejects.
 
 Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a stateful timing) throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` when they are passed, never inside a frame.
 
