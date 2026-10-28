@@ -122,7 +122,7 @@ is written.
 
 | `status` | When |
 | :--- | :--- |
-| `'failed'` | An internal exception aborted a flush or frame. Every owned style is restored and every affected element is listed as `'failed'`; nothing is left running. |
+| `'failed'` | An internal exception aborted a flush or frame. Every owned style and the crossfade follower's `inert` are restored byte-identically and every affected element is listed as `'failed'`; nothing is left running. |
 | `'disposed'` | The group was disposed, or every element of the run was removed. |
 | `'disabled'` | The layout runtime's kill switch was on: every mover jumped. |
 | `'capped'` | More than `maxNodes` visible elements moved, or more than `maxParticipants` are connected: everything jumped. |
@@ -149,6 +149,25 @@ only when no track ran.
 | `'failed'` | The transaction aborted on an internal exception; every owned style is restored. |
 
 `'unsupported'`, `'capped'` and `'stale'` also print one development warning per group.
+
+## Accessibility
+
+- Layout never changes DOM order, never moves focus, and never owns `tabindex`, roles or ARIA. A
+  keyed reorder and a re-render while an element moves keep the same element and `document.activeElement`.
+- An exiting crossfade follower is `inert` from the first frame, so the pair does not expose a
+  duplicate interactive or accessible target while it crossfades. If focus is inside a live
+  follower (for example after its `inert` was removed), the pair is ended at once: both opacities
+  return, the presence hold releases, the follower exits under presence alone, and
+  `focus-in-follower` is emitted; a held follower is settled the same way. The authored `inert`
+  value (present or absent, and its value) is restored byte for byte on reversal, unmount, abort
+  and dispose.
+- If focus is inside the exiting follower (in the flat tree, through open and closed shadow
+  roots), the pair does not crossfade: the lead appears at its final layout, the follower exits
+  under presence alone, and the `focus-in-follower` diagnostic is emitted with action `'none'`.
+  Layout does not set `inert` in this case, because that would move focus; the author moves it.
+- Reduced motion only shortens or removes the motion; these rules do not change.
+- The drive seam and its hold state are P4. P3's holds are the crossfade and presence holds
+  described above; a re-render during a track is not a drive hold.
 
 ## Runtime and diagnostics
 
@@ -183,15 +202,17 @@ stop()
 
 Codes: `capture-less-flush`, `capture-aged`, `unsupported-geometry`, `handoff-scroll-active`,
 `spring-timeout`, `participant-cap`, `mover-cap`, `document-mismatch`, `runtime-disabled`,
-`callback-error`, `internal-error`. `measurement-unsupported` and `focus-in-follower` are
-reserved for the engine's measurement fallback and the accessibility rule.
+`focus-in-follower`, `callback-error`, `internal-error`. `measurement-unsupported` is reserved
+for the engine's measurement fallback; `focus-in-follower` is emitted by the accessibility rule
+with action `'none'` and is never a snap.
 
 A flush and every frame callback run inside one transactional boundary: on an internal exception
-the engine restores every owned declaration byte-identically, cancels WAAPI animations, clears
-pending writes, invalidates holds, releases presence holds, disarms markers and listeners, stops
-the clock subscription, resolves every affected report `'failed'` and emits `internal-error`.
-A failed report lists only the participants the transaction touched and the affected run nodes;
-the style restore remains conservative for the whole scope. `flush()` never rejects.
+the engine restores every owned declaration and the crossfade follower's `inert` byte-identically,
+cancels WAAPI animations, clears pending writes, invalidates holds, releases presence holds,
+disarms markers and listeners, stops the clock subscription, resolves every affected report
+`'failed'` and emits `internal-error`. A failed report lists only the participants the transaction
+touched and the affected run nodes; the style and `inert` restore remains conservative for the
+whole scope. `flush()` never rejects.
 
 ## Reduced motion
 

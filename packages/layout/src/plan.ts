@@ -116,6 +116,12 @@ export interface PlanNode {
     readonly exiting: boolean
     /** Presence animates `opacity` on this element. */
     readonly presenceOpacity: boolean
+    /**
+     * Focus is inside this element in the flat tree (§8): if it is the
+     * exiting follower of a handoff, the pair does not crossfade and neither
+     * node animates; the lead appears at A and presence alone draws the exit.
+     */
+    readonly focusInside: boolean
     readonly unsupported: boolean
     /** `layoutDependency` unchanged since the previous flush. */
     readonly skip: boolean
@@ -196,7 +202,7 @@ export type PlanWarning =
  */
 export interface Degraded {
     readonly index: number
-    readonly reason: 'handoff-scroll-active'
+    readonly reason: 'handoff-scroll-active' | 'focus-in-follower'
 }
 
 export interface Plan {
@@ -466,6 +472,12 @@ export function plan(input: PlanInput): Plan {
     const newFollower = new Map<number, number>()
     /** A late-registered lead becomes measured by the handoff it takes. */
     const measuredForPlan = nodes.map((node) => node.measured)
+    /**
+     * §8: focus inside a handoff's exiting follower. When the pair would
+     * otherwise crossfade, it is not coupled at all: no handoff box, no
+     * crossfade; the lead appears at A and presence alone draws the exit.
+     */
+    const noMotion = new Set<number>()
     for (const lead of leadList) {
         const node = nodes[lead.index]!
         if (
@@ -477,29 +489,44 @@ export function plan(input: PlanInput): Plan {
         ) {
             continue
         }
-        before[lead.index] = lead.handoff
-        measuredForPlan[lead.index] = true
-        carried[lead.index] = lead.handoffVelocity
-        handoffFrom.set(lead.index, lead.follower)
-        if (lead.follower < 0) continue
-        const follower = nodes[lead.follower]!
-        // a pair that reverses mid-crossfade keeps fading, however little
-        // it moves: its opacities must not pop (§5.6)
-        const reversing = node.following === lead.follower
-        if (
-            (!reversing && moved(lead.handoff, node.a, node) < threshold) ||
-            !node.crossfade ||
-            !follower.crossfade
-        ) {
-            continue
-        }
-        if (node.presenceOpacity || follower.presenceOpacity) {
+        const follower = lead.follower >= 0 ? nodes[lead.follower]! : null
+        // a pair that reverses mid-crossfade keeps fading, however little it
+        // moves: its opacities must not pop (§5.6)
+        const reversing = follower !== null && node.following === lead.follower
+        const crosses =
+            follower !== null &&
+            (reversing || moved(lead.handoff, node.a, node) >= threshold) &&
+            node.crossfade &&
+            follower.crossfade
+        // a presence opacity owns the fade: the pair hands off without a
+        // crossfade and warns, focus or not (§5.8, C5)
+        if (crosses && (node.presenceOpacity || follower.presenceOpacity)) {
             warnings.push({
                 kind: 'presence-opacity',
                 index: node.presenceOpacity ? lead.index : lead.follower,
             })
+            before[lead.index] = lead.handoff
+            measuredForPlan[lead.index] = true
+            carried[lead.index] = lead.handoffVelocity
+            handoffFrom.set(lead.index, lead.follower)
             continue
         }
+        if (crosses && follower.focusInside) {
+            // §8, C5: focus inside the exiting follower skips the crossfade
+            // and the handoff; the pair is not made inert
+            degraded.push({
+                index: lead.follower,
+                reason: 'focus-in-follower',
+            })
+            noMotion.add(lead.index)
+            noMotion.add(lead.follower)
+            continue
+        }
+        before[lead.index] = lead.handoff
+        measuredForPlan[lead.index] = true
+        carried[lead.index] = lead.handoffVelocity
+        handoffFrom.set(lead.index, lead.follower)
+        if (follower === null || !crosses) continue
         fadeLead.add(lead.index)
         newFollower.set(lead.follower, lead.index)
     }
@@ -543,6 +570,11 @@ export function plan(input: PlanInput): Plan {
             // §5.8: it does not fly from where the scrolling container drew
             // it; it appears at A, reported as a degradation, not a snap
             degraded.push({ index: i, reason: 'handoff-scroll-active' })
+            return underMotion ? STATIC : NONE
+        }
+        if (noMotion.has(i)) {
+            // §8: focus is inside the exiting follower; the pair does not
+            // crossfade and neither node animates (reported, not a snap)
             return underMotion ? STATIC : NONE
         }
         const lead = newFollower.get(i)

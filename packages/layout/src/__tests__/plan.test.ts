@@ -41,6 +41,7 @@ function node(overrides: Partial<PlanNode> = {}): PlanNode {
         crossfade: true,
         exiting: false,
         presenceOpacity: false,
+        focusInside: false,
         unsupported: false,
         skip: false,
         optionsChanged: false,
@@ -287,6 +288,144 @@ describe('plan: layoutId', () => {
         expect(first.w).toBeCloseTo(cardBox.w, 12)
     })
 
+    it('§8 focus inside the exiting follower skips the pair’s handoff and crossfade, reported as a degradation', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        focusInside: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        a: detailBox,
+                        before: null,
+                        order: 2,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        // neither the lead nor the follower animates: the lead appears at A
+        // and presence alone draws the exit
+        expect(result.actions.map((action) => action.kind)).toEqual([
+            'none',
+            'none',
+        ])
+        expect(result.degraded).toEqual([
+            { index: 0, reason: 'focus-in-follower' },
+        ])
+        expect(result.snapped).toEqual([])
+        expect(result.leads.get('card')).toBe(1)
+    })
+
+    it('§8 focus inside the lead leaves the crossfade on', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        focusInside: true,
+                        a: detailBox,
+                        before: null,
+                        order: 2,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.actions[0]!.kind).toBe('follow')
+        const lead = result.actions[1]!
+        if (lead.kind !== 'track') throw new Error('expected a track')
+        expect(lead.fadeLead).toBe(true)
+        expect(result.degraded).toEqual([])
+    })
+
+    it('§8 focus inside the follower leaves a non-crossfade pair on its handoff', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        focusInside: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        a: detailBox,
+                        before: null,
+                        crossfade: false,
+                        order: 2,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        // the author opted out: the normal handoff flight remains, and the
+        // focus rule reports nothing
+        expect(result.degraded).toEqual([])
+        expect(result.actions[0]!.kind).toBe('none')
+        const lead = result.actions[1]!
+        if (lead.kind !== 'track') throw new Error('expected a track')
+        expect(lead.fadeLead).toBe(false)
+        expect(lead.handoffFrom).toBe(0)
+    })
+
+    it('§8 focus inside the follower reports nothing when the box did not move', () => {
+        const ids = new Map<string, IdHistory>([
+            ['card', { lead: 0, retained: null, retainedVelocity: null }],
+        ])
+        const result = plan(
+            input(
+                [
+                    node({
+                        layoutId: 'card',
+                        exiting: true,
+                        focusInside: true,
+                        a: cardBox,
+                        before: cardBox,
+                        order: 1,
+                    }),
+                    node({
+                        layoutId: 'card',
+                        a: cardBox,
+                        before: null,
+                        order: 2,
+                    }),
+                ],
+                { ids }
+            )
+        )
+        expect(result.degraded).toEqual([])
+        expect(result.actions.map((action) => action.kind)).toEqual([
+            'none',
+            'none',
+        ])
+    })
+
     it('hands off from a retained box when the departing node is gone; no crossfade', () => {
         const ids = new Map<string, IdHistory>([
             ['card', { lead: null, retained: cardBox, retainedVelocity: null }],
@@ -344,6 +483,7 @@ describe('plan: layoutId', () => {
                     node({
                         layoutId: 'card',
                         exiting: true,
+                        focusInside: true,
                         a: cardBox,
                         before: cardBox,
                         order: 1,
@@ -362,6 +502,8 @@ describe('plan: layoutId', () => {
         expect(result.warnings).toEqual([
             { kind: 'presence-opacity', index: 0 },
         ])
+        // presence opacity owns the fade, so focus is not the blocker
+        expect(result.degraded).toEqual([])
         const lead = result.actions[1]!
         expect(lead.kind === 'track' && !lead.fadeLead).toBe(true)
     })
