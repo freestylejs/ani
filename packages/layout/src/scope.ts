@@ -118,6 +118,7 @@ import {
 } from './runtime'
 import {
     type BoxVelocity,
+    createTrack,
     drawnBoxes,
     drawnRates,
     type Fade,
@@ -134,12 +135,17 @@ import {
     type TrackLaw,
     trackEnded,
     trackEndTime,
+    trackOrigin,
+    trackSize,
     ZERO_VELOCITY,
 } from './solve'
 import type {
     LayoutDiagnostic,
     LayoutDiagnosticAction,
     LayoutDiagnosticCode,
+    LayoutDriveHandle,
+    LayoutDriveState,
+    LayoutDriveVector,
     LayoutGroup,
     LayoutGroupOptions,
     LayoutReport,
@@ -155,6 +161,8 @@ const MAX_SCALE = 50
 const UNOWNED_MAP =
     'a map the engine does not own (a scaled, rotated or skewed ancestor that is not a participant, 3D, or CSS zoom)'
 const IDENTITY_POSE: Pose = { tx: 0, ty: 0, sx: 1, sy: 1 }
+/** The live scope that owns each registered element (§5.10 concurrency). */
+const elementScopes = new WeakMap<Element, object>()
 
 interface Authored {
     readonly tx: number
@@ -281,6 +289,10 @@ interface Participant {
     /** Visual box at rest at the previous flush. */
     lastBox: Box | null
     drive: Drive | null
+    /** A live direct-manipulation hold on this element (§5.10). */
+    hold: DriveHold | null
+    /** The held ancestor whose inherited displacement this participant rides (§5.10). */
+    ride: DriveHold | null
     /** Geometry from the last flush that measured it. */
     geometry: Geometry | null
     /** Nearest participant ancestor at the last flush. */
@@ -290,6 +302,64 @@ interface Participant {
     motion: { readonly mode: string; readonly value: Motion } | null
     /** Every shadow root containing it, innermost first (§4.6, §8). */
     roots: ShadowRoot[]
+}
+
+/**
+ * One drive hold (§5.10). It is an orthogonal field on the node, not a new
+ * motion kind: the drive keeps owning `translate`/`scale`; the hold replaces
+ * the held node's origin channels while its size channels keep their track.
+ */
+interface DriveHold {
+    handle: LayoutDriveHandle
+    readonly owner: Participant
+    state: LayoutDriveState
+    /** H = take point + offset, view-space CSS px (§5.10). */
+    hx: number
+    hy: number
+    /** The take point, view-space CSS px. */
+    readonly takeX: number
+    readonly takeY: number
+    /** The drawn origin velocity at take (px/s), also `handle.velocity`. */
+    readonly velocity: LayoutDriveVector
+    /** The last measured screen shift (scroll, sticky, toolbars) for the held read. */
+    shiftX: number
+    shiftY: number
+    /** The last solved drawn box, view space (the frame the shift is measured against). */
+    lastDrawn: Box | null
+    /** The held node's size continuation: its own track, or `null` for a constant size. */
+    sizeTrack: Track | null
+    sizeElapsed: number
+    sizeStarted: boolean
+    /** Current size channels and their velocities, in view space. */
+    sizeW: number
+    sizeH: number
+    sizeVW: number
+    sizeVH: number
+    /** A flush updated A's size while the node was held. */
+    sizeTargetW: number
+    sizeTargetH: number
+    /** The release origin path; its size channels are unused (the size continuation is). */
+    releaseTrack: Track | null
+    /** `h` at the last flush, to re-express residual tracks in a new view space. */
+    lastHX: number
+    lastHY: number
+    /** Every descendant participant riding this hold's h. */
+    readonly rides: Set<Participant>
+    /** Why a held read failed, when it did: a diagnostic, then invalidation. */
+    invalidReason: 'unsupported' | null
+    /** A development warning was printed for a `move` after a terminal state. */
+    warnedMove: boolean
+}
+
+/** A hold whose direct manipulation or landing is still live (§5.10). */
+function isLiveHold(hold: DriveHold | null | undefined): hold is DriveHold {
+    return (
+        hold !== null &&
+        hold !== undefined &&
+        (hold.state === 'held' ||
+            hold.state === 'released' ||
+            hold.state === 'cancelled')
+    )
 }
 
 interface Run {
@@ -817,6 +887,8 @@ export function createLayoutGroup(
     >()
 
     const registry = new Map<HTMLElement, Participant>()
+    /** This scope's identity in `elementScopes`, so a second live scope refuses it. */
+    const scopeToken = {}
     /**
      * The shadow roots that hold a participant, open or closed, by host,
      * with how many participants each holds: every flat-tree walk finds a
@@ -1364,6 +1436,58 @@ export function createLayoutGroup(
         return epochs.layers
     }
 
+    /**
+     * A held node's exact drawn box and velocity (§5.10): its origin channels
+     * are the held point while held and its release origin path afterwards;
+     * its size channels are the size continuation. The measured screen shift
+     * is removed, so the box lives in the frame's pre-camera view space.
+     */
+    function heldOverride(
+        hold: DriveHold,
+        p: Participant
+    ): { readonly box: Box; readonly velocity: BoxVelocity } | null {
+        const g = p.geometry
+        if (!g) return null
+        const fx = g.fx
+        const fy = g.fy
+        const d = p.drive
+        let x: number
+        let y: number
+        let vx = 0
+        let vy = 0
+        if (hold.state === 'held') {
+            x = hold.hx - hold.shiftX
+            y = hold.hy - hold.shiftY
+            vx = 0
+            vy = 0
+        } else if (
+            (hold.state === 'released' || hold.state === 'cancelled') &&
+            hold.releaseTrack
+        ) {
+            const origin = trackOrigin(hold.releaseTrack, d?.elapsed ?? 0)
+            x = origin.x
+            y = origin.y
+            vx = origin.vx
+            vy = origin.vy
+        } else {
+            return null
+        }
+        return {
+            box: {
+                x: x - fx * hold.sizeW,
+                y: y - fy * hold.sizeH,
+                w: hold.sizeW,
+                h: hold.sizeH,
+            },
+            velocity: {
+                x: vx - fx * hold.sizeVW,
+                y: vy - fy * hold.sizeVH,
+                w: hold.sizeVW,
+                h: hold.sizeVH,
+            },
+        }
+    }
+
     function solveNodes(at: FrameNode[]): SolveNode[] {
         const index = new Map<Participant, number>()
         at.forEach((node, i) => index.set(node.p, i))
@@ -1372,6 +1496,9 @@ export function createLayoutGroup(
             const d = node.p.drive
             const g = node.geometry
             const live = d !== null && d.kind !== 'held'
+            const hold = node.p.hold
+            const held = isLiveHold(hold)
+            const ride = node.p.ride
             const fade: Fade | null =
                 live && d.fade
                     ? {
@@ -1387,6 +1514,8 @@ export function createLayoutGroup(
                 box: g.box,
                 ox: g.ox,
                 oy: g.oy,
+                fx: g.fx,
+                fy: g.fy,
                 inner: g.inner,
                 track:
                     live && d.kind === 'track' && !d.timeline ? d.track : null,
@@ -1414,6 +1543,12 @@ export function createLayoutGroup(
                     }
                 })(),
                 layers: layers[i] ?? null,
+                override: held ? heldOverride(hold, node.p) : null,
+                ride:
+                    ride !== null &&
+                    (ride.state === 'held' || ride.state === 'released')
+                        ? (index.get(ride.owner) ?? -1)
+                        : -1,
             }
         })
     }
@@ -1591,6 +1726,11 @@ export function createLayoutGroup(
 
     /** Queues the restore of every owned declaration of `p` and drops its drive. */
     function settle(p: Participant, cancelled = false): void {
+        if (p.ride) {
+            p.ride.rides.delete(p)
+            p.ride = null
+        }
+        if (p.hold) invalidateHold(p)
         const d = p.drive
         if (!d) return
         touch(p)
@@ -1604,6 +1744,779 @@ export function createLayoutGroup(
         resting.set(p.element, d.saved)
         queueRestore(p.element, d)
         releaseInert(p.element, d)
+    }
+
+    /**
+     * Starts or continues a drive (§4.3, §5.10). A held node needs a drive
+     * even when it has no track; take creates one through this same path, so
+     * its ownership and the byte-exact restore are identical.
+     */
+    function ensureDrive(
+        p: Participant,
+        kind: Drive['kind'],
+        g: Geometry,
+        properties: readonly string[],
+        reduced: 'jump' | 'clamp' | 'none',
+        anchor: boolean
+    ): Drive {
+        const existing = p.drive
+        if (existing) {
+            // an owned property it did not save yet (opacity for a new
+            // crossfade, corners when `radius` was turned on mid-run)
+            const wanted = [...properties]
+            if (ownsRadius(p.options) && g.radius)
+                wanted.push(...RADIUS_PROPERTIES)
+            if (anchor) wanted.push(ANCHOR_PROPERTY)
+            const missing = wanted.filter((prop) => !existing.saved.has(prop))
+            for (const [k, v] of save(p.element, missing))
+                existing.saved.set(k, v)
+            // corners it no longer owns go back now
+            if (
+                !ownsRadius(p.options) &&
+                existing.saved.has(RADIUS_PROPERTIES[0])
+            ) {
+                queueRestore(p.element, existing, RADIUS_PROPERTIES)
+                for (const prop of RADIUS_PROPERTIES) {
+                    existing.saved.delete(prop)
+                    existing.written.delete(prop)
+                }
+                existing.radius = null
+            } else if (ownsRadius(p.options)) {
+                existing.radius = g.radiusSource
+            }
+            existing.kind = kind
+            return existing
+        }
+        // the WAAPI engine writes no inline style
+        const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
+        if (!waapi && ownsRadius(p.options) && g.radius)
+            all.push(...RADIUS_PROPERTIES)
+        if (anchor) all.push(ANCHOR_PROPERTY)
+        const d: Drive = {
+            kind,
+            track: null,
+            timeline: null,
+            target: null,
+            elapsed: 0,
+            started: false,
+            fade: null,
+            radiusBlend: null,
+            lead: null,
+            inert: null,
+            saved: save(p.element, all),
+            authored: g.authored,
+            radius: g.radiusSource,
+            mode: reduced,
+            run: null,
+            release: null,
+            written: new Map(),
+        }
+        p.drive = d
+        return d
+    }
+
+    /* ─────────────────────── drive (§5.10) ─────────────────────── */
+
+    /**
+     * Ends a live hold for a lifecycle event: the handle becomes
+     * `invalidated` (a terminal state), reads stop, its riding descendants
+     * stop riding, and the node follows the caller's event rule. A handle
+     * that already reached a terminal state is left as it is.
+     */
+    function invalidateHold(p: Participant): void {
+        const hold = p.hold
+        if (!hold) return
+        if (hold.state === 'held') hold.state = 'invalidated'
+        p.hold = null
+        hold.releaseTrack = null
+        for (const rider of hold.rides) {
+            if (rider.ride === hold) rider.ride = null
+            if (rider.drive) settle(rider)
+        }
+        hold.rides.clear()
+    }
+
+    /** The capture read phase's rect read for one held element (§5.10, §4.5). */
+    function readHolds(): void {
+        if (disposed || !hasDOM()) return
+        for (const p of registry.values()) {
+            const hold = p.hold
+            if (!hold || hold.state !== 'held') continue
+            // removal, adoption or an invalid handle stops the read
+            if (!p.element.isConnected) {
+                hold.state = 'invalidated'
+                hold.releaseTrack = null
+                continue
+            }
+            if (scopeDocument && p.element.ownerDocument !== scopeDocument) {
+                hold.state = 'invalidated'
+                hold.releaseTrack = null
+                continue
+            }
+            const rect = viewRect(p.element)
+            stats.rects += 1
+            const last = hold.lastDrawn
+            if (!last) {
+                hold.lastDrawn = rect
+                hold.shiftX = 0
+                hold.shiftY = 0
+                continue
+            }
+            // the map above changed by more than a pure translation: a
+            // rotation, skew, zoom or a box resize presentation (a failed
+            // support check of the held read)
+            const sizeError = Math.max(
+                Math.abs(rect.w - last.w),
+                Math.abs(rect.h - last.h)
+            )
+            if (!(sizeError <= 0.5)) {
+                hold.state = 'invalidated'
+                hold.invalidReason = 'unsupported'
+                hold.releaseTrack = null
+                continue
+            }
+            hold.shiftX = rect.x - last.x
+            hold.shiftY = rect.y - last.y
+        }
+    }
+
+    /** The participant ancestors of `p` at the last flush, root first. */
+    function chainOf(p: Participant): Participant[] {
+        const chain: Participant[] = []
+        for (let q = p.parent; q; q = q.parent) chain.unshift(q)
+        return chain
+    }
+
+    /**
+     * Adds `p` and its participant ancestors to the frame, so a hold can be
+     * solved every frame even when nothing has a track. Existing nodes keep
+     * the geometry they were planned with.
+     */
+    function ensureFrameFor(p: Participant): void {
+        if (p.drive === null || p.geometry === null) return
+        if (frame.some((node) => node.p === p)) return
+        const wanted = new Set<Participant>([...frame.map((n) => n.p)])
+        for (const q of [p, ...chainOf(p)]) {
+            if (q.geometry !== null && !q.removed) wanted.add(q)
+        }
+        const depth = new Map<Participant, number>()
+        const depthOf = (q: Participant): number => {
+            const known = depth.get(q)
+            if (known !== undefined) return known
+            const value =
+                q.parent && wanted.has(q.parent) ? depthOf(q.parent) + 1 : 0
+            depth.set(q, value)
+            return value
+        }
+        const nodes = [...wanted].map((q) => ({ q, depth: depthOf(q) }))
+        nodes.sort((a, b) => a.depth - b.depth || a.q.order - b.q.order)
+        const index = new Map<Participant, number>()
+        nodes.forEach(({ q }, i) => index.set(q, i))
+        const kept = new Map(frame.map((node) => [node.p, node]))
+        frame = nodes.map(({ q }) => {
+            const was = kept.get(q)
+            if (was) {
+                return {
+                    p: q,
+                    parent:
+                        q.parent && index.has(q.parent)
+                            ? index.get(q.parent)!
+                            : -1,
+                    geometry: was.geometry,
+                    ancestry: was.ancestry,
+                }
+            }
+            const ancestry = new Map<Participant, Matrix>()
+            for (const a of chainOf(q)) {
+                const g = a.geometry
+                if (g) ancestry.set(a, g.matrix)
+            }
+            return {
+                p: q,
+                parent:
+                    q.parent && index.has(q.parent) ? index.get(q.parent)! : -1,
+                geometry: q.geometry!,
+                ancestry: ancestry.size > 0 ? ancestry : NO_ANCESTRY,
+            }
+        })
+    }
+
+    /** A held node's current size channels, from its continuation or A. */
+    function sizeOfHold(hold: DriveHold): void {
+        if (!hold.sizeTrack) {
+            hold.sizeVW = 0
+            hold.sizeVH = 0
+            return
+        }
+        const size = trackSize(hold.sizeTrack, hold.sizeElapsed)
+        hold.sizeW = size.w
+        hold.sizeH = size.h
+        hold.sizeVW = size.vw
+        hold.sizeVH = size.vh
+    }
+
+    /**
+     * Re-plans one descendant's residual from its presented `(B − h, v − ḣ)`
+     * toward its A (§5.10). `drawn` and `velocity` are the descendant's
+     * absolute presented state; `h` and `dh` the held node's displacement
+     * and its rate.
+     */
+    function planResidual(
+        p: Participant,
+        drawn: Box | null,
+        velocity: BoxVelocity | null,
+        h: { x: number; y: number },
+        dh: { x: number; y: number },
+        reduced: 'jump' | 'clamp' | 'none'
+    ): void {
+        const d = p.drive
+        const g = p.geometry
+        if (!d || !g) return
+        const a = g.a
+        if (!drawn || !velocity) return
+        const before: Box = {
+            x: drawn.x - h.x,
+            y: drawn.y - h.y,
+            w: drawn.w,
+            h: drawn.h,
+        }
+        if (reduced === 'jump') return
+        const residual: BoxVelocity = {
+            x: velocity.x - dh.x,
+            y: velocity.y - dh.y,
+            w: velocity.w,
+            h: velocity.h,
+        }
+        const moving =
+            Math.abs(residual.x) > 1e-6 ||
+            Math.abs(residual.y) > 1e-6 ||
+            Math.abs(residual.w) > 1e-6 ||
+            Math.abs(residual.h) > 1e-6
+        const motion = motionOf(p, reduced)
+        const track = createTrack(
+            before,
+            a,
+            moving ? residual : null,
+            g.fx,
+            g.fy,
+            p.options.layout ?? true,
+            moving ? { ...motion, delay: 0 } : motion,
+            null
+        )
+        if (typeof track === 'string') return
+        const continues = d.started
+        if (d.run) {
+            const old = d.run
+            old.nodes.delete(p)
+            d.run = null
+            interrupt(old)
+        }
+        d.kind = 'track'
+        d.track = track
+        d.timeline = null
+        d.target = a
+        d.elapsed = 0
+        d.started = continues && moving
+        d.mode = reduced
+        d.lead = null
+        d.fade = null
+        d.radiusBlend = null
+    }
+
+    /** Every registered participant under `element` in the flat tree. */
+    function descendantsOf(element: HTMLElement): Participant[] {
+        const found: Participant[] = []
+        for (const q of registry.values()) {
+            if (q.removed || !q.element.isConnected || q.element === element)
+                continue
+            if (containsFlat(element, q.element)) found.push(q)
+        }
+        return found
+    }
+
+    /** Ends a hold at its end state: every handle terminal, every drive settled. */
+    function finishHold(hold: DriveHold): void {
+        const p = hold.owner
+        if (p.hold === hold) p.hold = null
+        hold.releaseTrack = null
+        for (const rider of hold.rides) {
+            if (rider.ride === hold) rider.ride = null
+            if (rider.drive) settle(rider)
+        }
+        hold.rides.clear()
+        if (p.drive) settle(p)
+        frame = frame.filter((node) => node.p.drive !== null)
+        stats.tracks = countTracks()
+        if (
+            !frame.some(
+                (node) => node.p.drive !== null && node.p.drive.kind !== 'held'
+            )
+        ) {
+            realizer.stop()
+        }
+        // a release that lands at once happens outside a flush/frame: its
+        // byte-exact restores must reach the DOM now, not in a later commit
+        if (deferDepth === 0) commitWrites()
+    }
+
+    /** A held element's take: validates, reads, freezes the origin channels and starts frames. */
+    function takeDrive(element: HTMLElement): LayoutDriveHandle {
+        if (waapi) {
+            throw invalidOptions(
+                'type',
+                "the 'waapi' engine cannot take a drive hold; use engine: 'raf'."
+            )
+        }
+        const p = registry.get(element)
+        if (!p || p.removed) {
+            throw invalidOptions(
+                'type',
+                'take: the element is not registered in this layout group.'
+            )
+        }
+        if (!element.isConnected) {
+            throw invalidOptions('type', 'take: the element is not connected.')
+        }
+        assertDocument(element)
+        if (disposed) {
+            throw invalidOptions('type', 'take: the layout group is disposed.')
+        }
+        if (p.hold !== null) {
+            throw invalidOptions(
+                'type',
+                'take: the element is already held or landing.'
+            )
+        }
+        if (p.drive?.kind === 'follow' || p.drive?.kind === 'held') {
+            throw invalidOptions(
+                'type',
+                'take: an exiting crossfade follower is inert and cannot be taken.'
+            )
+        }
+        // no held ancestor or descendant
+        for (const q of registry.values()) {
+            const other = q.hold
+            if (!other || q === p) continue
+            if (!isLiveHold(other)) continue
+            if (
+                containsFlat(q.element, element) ||
+                containsFlat(element, q.element)
+            ) {
+                throw invalidOptions(
+                    'type',
+                    'take: a held element cannot have a held ancestor or descendant.'
+                )
+            }
+        }
+        if (layoutRuntime.mode === 'snap') {
+            diagnose('runtime-disabled', 'snap', {
+                element,
+                reason: 'disabled',
+            })
+            return terminalHandle()
+        }
+        const doc = element.ownerDocument
+        const snappedReference = snapsReferenceBox(doc)
+        // the support check on the presented box (§4.2): one rect, one
+        // layout-size pair and one computed style, all before any write
+        const rect = viewRect(element)
+        stats.rects += 1
+        const offset: readonly [number, number] = [
+            element.offsetWidth,
+            element.offsetHeight,
+        ]
+        stats.offsets += 1
+        const style = getComputedStyle(element)
+        stats.styles += 1
+        const measured = measure(
+            element,
+            ownsRadius(p.options),
+            () => new Set<Element>(),
+            snappedReference,
+            style,
+            readTransform(style)
+        )
+        if (measured.unsupported) {
+            throw invalidOptions(
+                'type',
+                `take: the element cannot be driven (${measured.unsupported}).`
+            )
+        }
+        if (!(rect.w > 0) || !(rect.h > 0)) {
+            throw invalidOptions('type', 'take: the element is zero-sized.')
+        }
+        // E = E_π · p · q: fold the participant ancestors' exact scales into
+        // this node's pose and run the §4.2 comparison once for this element
+        const engine = engineState()
+        let expectedX = 1
+        let expectedY = 1
+        for (const a of chainOf(p)) {
+            const apose = engine.poses.get(a) ?? writtenPose(a.drive)
+            const ag = a.geometry
+            if (ag) {
+                expectedX *= apose.sx * ag.inner.x.k
+                expectedY *= apose.sy * ag.inner.y.k
+                continue
+            }
+            // an undriven participant ancestor has no geometry: its computed
+            // scale is its inner map (the §4.2 check would read it too)
+            const astyle = getComputedStyle(a.element)
+            stats.styles += 1
+            const at = readTransform(astyle)
+            if (typeof at === 'string') {
+                throw invalidOptions(
+                    'type',
+                    `take: a participant ancestor cannot be measured (${at}).`
+                )
+            }
+            expectedX *= apose.sx * at.scale[0] * at.matrix.a
+            expectedY *= apose.sy * at.scale[1] * at.matrix.d
+        }
+        const pose = engine.poses.get(p) ?? writtenPose(p.drive)
+        // the computed scale holds the pose the engine wrote: q is divided out
+        const ownX = (measured.scale[0] * measured.matrix.a) / (pose.sx || 1)
+        const ownY = (measured.scale[1] * measured.matrix.d) / (pose.sy || 1)
+        if (!(ownX > 0) || !(ownY > 0)) {
+            throw invalidOptions(
+                'type',
+                'take: the element has a zero or negative scale.'
+            )
+        }
+        const support = supportCheck(
+            [
+                {
+                    parent: -1,
+                    rect,
+                    offset,
+                    pose: {
+                        sx: expectedX * pose.sx,
+                        sy: expectedY * pose.sy,
+                    },
+                },
+            ],
+            () => ({ sx: ownX, sy: ownY }),
+            () => {
+                const exact = borderSize(style)
+                return exact
+                    ? { w: exact[0], h: exact[1] }
+                    : { w: Number.NaN, h: Number.NaN }
+            }
+        )
+        if (!support.supported[0]) {
+            throw invalidOptions(
+                'type',
+                'take: the element geometry is not supported.'
+            )
+        }
+        const frameSolved = frame.length > 0 ? solve(solveNodes(frame)) : []
+        const frameMaps = new Map<Participant, Map2>()
+        const drawnMap = new Map<Participant, Box>()
+        frame.forEach((node, i) => {
+            frameMaps.set(node.p, frameSolved[i]!.map)
+            drawnMap.set(node.p, frameSolved[i]!.drawn)
+        })
+        // a rest participant has no measured geometry; take measures it now,
+        // through the same resolveGeometry the flush uses, so its A and
+        // frame maps are exact without adding a read to any frame
+        let parentFull: Map2 = IDENTITY_MAP
+        let parentRest: Map2 = IDENTITY_MAP
+        let parentSolved: Map2 | null = null
+        if (p.parent) {
+            const parent = p.parent
+            parentSolved =
+                frame.findIndex((node) => node.p === parent) >= 0
+                    ? (frameMaps.get(parent) ?? null)
+                    : null
+            parentFull = parentSolved ?? parent.geometry?.rest ?? IDENTITY_MAP
+            parentRest = parent.geometry?.rest ?? IDENTITY_MAP
+        }
+        const dpr = doc.defaultView?.devicePixelRatio ?? 1
+        const g =
+            p.geometry ??
+            resolveGeometry(p, rect, measured, parentFull, parentRest, dpr)
+                .geometry
+        p.geometry = g
+        const analytic = drawnMap.get(p) ?? g.a
+        const takeX = rect.x + g.fx * rect.w
+        const takeY = rect.y + g.fy * rect.h
+        const drawnVelocity = engine.rates.get(p) ?? ZERO_VELOCITY
+        const velocity: LayoutDriveVector = {
+            x: drawnVelocity.x + g.fx * drawnVelocity.w,
+            y: drawnVelocity.y + g.fy * drawnVelocity.h,
+        }
+        // a kept pose timeline has no single size channel to continue: freeze
+        // the presented size instead (continuous at the take)
+        const running =
+            p.drive?.kind === 'track' &&
+            p.drive.track !== null &&
+            p.drive.timeline === null &&
+            !trackEnded(p.drive.track, p.drive.elapsed)
+        const sizeTrack = running ? p.drive!.track : null
+        const size = sizeTrack
+            ? trackSize(sizeTrack, p.drive!.elapsed)
+            : { w: rect.w, h: rect.h, vw: 0, vh: 0 }
+        if (!p.drive) {
+            ensureDrive(
+                p,
+                'static',
+                g,
+                [],
+                reducedMode(),
+                knownTransformAnchoring(doc) === true && !waapi
+            )
+        }
+        const hold: DriveHold = {
+            handle: undefined as unknown as LayoutDriveHandle,
+            owner: p,
+            state: 'held',
+            hx: takeX,
+            hy: takeY,
+            takeX,
+            takeY,
+            velocity,
+            shiftX: rect.x - analytic.x,
+            shiftY: rect.y - analytic.y,
+            lastDrawn: analytic,
+            sizeTrack,
+            sizeElapsed: p.drive?.elapsed ?? 0,
+            sizeStarted: p.drive?.started ?? false,
+            sizeW: size.w,
+            sizeH: size.h,
+            sizeVW: size.vw,
+            sizeVH: size.vh,
+            sizeTargetW: g.a.w,
+            sizeTargetH: g.a.h,
+            releaseTrack: null,
+            lastHX: 0,
+            lastHY: 0,
+            rides: new Set(),
+            invalidReason: null,
+            warnedMove: false,
+        }
+        const handle = makeHandle(hold)
+        hold.handle = handle
+        p.hold = hold
+        ensureFrameFor(p)
+        // descendants ride one common displacement from the take (§5.10)
+        const h = {
+            x: takeX - (g.a.x + g.fx * g.a.w),
+            y: takeY - (g.a.y + g.fy * g.a.h),
+        }
+        for (const q of descendantsOf(element)) {
+            const qg = measureGeometry(q, frameMaps)
+            if (!qg) continue
+            if (!q.drive) {
+                ensureDrive(
+                    q,
+                    'static',
+                    qg,
+                    [],
+                    reducedMode(),
+                    knownTransformAnchoring(doc) === true && !waapi
+                )
+            }
+            q.ride = hold
+            hold.rides.add(q)
+            ensureFrameFor(q)
+            if (q.drive?.kind === 'track' && runs(q.drive)) {
+                const b = drawnMap.get(q) ?? qg.a
+                const v = engine.rates.get(q) ?? ZERO_VELOCITY
+                planResidual(q, b, v, h, velocity, reducedMode())
+            }
+        }
+        hold.lastHX = h.x
+        hold.lastHY = h.y
+        realizer.start()
+        return handle
+    }
+
+    /** The handle object shared by the live hold and the terminal snap result. */
+    function makeHandle(hold: DriveHold): LayoutDriveHandle {
+        return {
+            get state() {
+                return hold.state
+            },
+            velocity: hold.velocity,
+            move(offset) {
+                if (hold.state !== 'held') {
+                    if (!hold.warnedMove && DEV) {
+                        hold.warnedMove = true
+                        // biome-ignore lint/suspicious/noConsole: development warning
+                        console.warn(
+                            '[ani-layout] move() on a terminal drive handle is a no-op.'
+                        )
+                    }
+                    return
+                }
+                validateVector(offset, 'move offset')
+                hold.hx = hold.takeX + offset.x
+                hold.hy = hold.takeY + offset.y
+            },
+            release(velocity = { x: 0, y: 0 }) {
+                if (hold.state !== 'held') return
+                validateVector(velocity, 'release velocity')
+                releaseHold(hold, velocity, 'released')
+            },
+            cancel() {
+                if (hold.state !== 'held') return
+                releaseHold(hold, { x: 0, y: 0 }, 'cancelled')
+            },
+        }
+    }
+
+    function terminalHandle(): LayoutDriveHandle {
+        let warned = false
+        return {
+            state: 'invalidated',
+            velocity: { x: 0, y: 0 },
+            move() {
+                if (warned || !DEV) return
+                warned = true
+                // biome-ignore lint/suspicious/noConsole: development warning
+                console.warn(
+                    '[ani-layout] move() on an invalidated drive handle is a no-op.'
+                )
+            },
+            release() {
+                return
+            },
+            cancel() {
+                return
+            },
+        }
+    }
+
+    function validateVector(
+        value: LayoutDriveVector | undefined,
+        label: string
+    ): void {
+        if (
+            !value ||
+            typeof value !== 'object' ||
+            typeof value.x !== 'number' ||
+            typeof value.y !== 'number' ||
+            !Number.isFinite(value.x) ||
+            !Number.isFinite(value.y)
+        ) {
+            throw invalidOptions(
+                'range',
+                `${label} must be a finite { x, y } vector.`
+            )
+        }
+    }
+
+    /**
+     * Release or cancel (§5.10): the held origin starts its own track toward
+     * the current A with the supplied velocity exactly once; the release
+     * velocity never enters a descendant's residual. `'jump'` lands at A with
+     * no motion.
+     */
+    function releaseHold(
+        hold: DriveHold,
+        velocity: LayoutDriveVector,
+        state: 'released' | 'cancelled'
+    ): void {
+        const p = hold.owner
+        const d = p.drive
+        const g = p.geometry
+        if (!d || !g) {
+            hold.state = 'invalidated'
+            hold.releaseTrack = null
+            return
+        }
+        // one last read before the release: the current screen shift and a
+        // final support check (outside a frame, so no write precedes it)
+        if (p.element.isConnected) {
+            const rect = viewRect(p.element)
+            stats.rects += 1
+            const last = hold.lastDrawn
+            if (
+                last &&
+                Math.max(Math.abs(rect.w - last.w), Math.abs(rect.h - last.h)) >
+                    0.5
+            ) {
+                hold.state = 'invalidated'
+                hold.invalidReason = 'unsupported'
+                hold.releaseTrack = null
+                warn(
+                    'unsupported',
+                    'a held element cannot be drawn exactly any more; the hold ends and the element snaps to its layout.'
+                )
+                diagnose('unsupported-geometry', 'snap', {
+                    element: p.element,
+                    reason: 'unsupported',
+                })
+                finishHold(hold)
+                return
+            }
+            if (last) {
+                hold.shiftX = rect.x - last.x
+                hold.shiftY = rect.y - last.y
+            }
+        }
+        hold.state = state
+        const reduced = reducedMode()
+        if (reduced === 'jump') {
+            finishHold(hold)
+            return
+        }
+        const size = { w: hold.sizeW, h: hold.sizeH }
+        const ox = hold.hx - hold.shiftX
+        const oy = hold.hy - hold.shiftY
+        const before: Box = {
+            x: ox - g.fx * size.w,
+            y: oy - g.fy * size.h,
+            w: size.w,
+            h: size.h,
+        }
+        const target = g.a
+        const distance = Math.max(
+            Math.abs(before.x + g.fx * before.w - (target.x + g.fx * target.w)),
+            Math.abs(before.y + g.fy * before.h - (target.y + g.fy * target.h)),
+            Math.abs(before.w - target.w),
+            Math.abs(before.h - target.h)
+        )
+        const speed = Math.hypot(velocity.x, velocity.y)
+        if (speed < 1e-9 && distance < 0.01) {
+            finishHold(hold)
+            return
+        }
+        const moving =
+            speed > 1e-9 ||
+            Math.abs(hold.sizeVW) > 1e-6 ||
+            Math.abs(hold.sizeVH) > 1e-6
+        const motion = motionOf(p, reduced)
+        const track = createTrack(
+            before,
+            target,
+            {
+                x: velocity.x,
+                y: velocity.y,
+                w: hold.sizeVW,
+                h: hold.sizeVH,
+            },
+            g.fx,
+            g.fy,
+            true,
+            moving ? { ...motion, delay: 0 } : motion,
+            null
+        )
+        if (typeof track === 'string') {
+            hold.state = 'invalidated'
+            hold.releaseTrack = null
+            finishHold(hold)
+            return
+        }
+        hold.releaseTrack = track
+        d.kind = 'track'
+        d.track = track
+        d.timeline = null
+        d.target = target
+        d.elapsed = 0
+        // §4.5: a release starts from rest timing-wise with its velocity
+        d.started = false
+        d.mode = reduced
+        realizer.start()
     }
 
     /* ───────────────────────── WAAPI (§10) ───────────────────────── */
@@ -1692,6 +2605,24 @@ export function createLayoutGroup(
      * advancing (the flush's t = 0 pose). Returns whether anything animates.
      */
     function step(dt: number | null): boolean {
+        // a held read (or a lifecycle event) invalidated a hold: its event
+        // rule runs now, after every read of this frame
+        for (const p of registry.values()) {
+            const hold = p.hold
+            if (!hold || hold.state !== 'invalidated') continue
+            if (hold.invalidReason === 'unsupported') {
+                warn(
+                    'unsupported',
+                    'a held element cannot be drawn exactly any more (a map the engine does not own or a box resize); the hold ends and the element snaps to its layout.'
+                )
+                diagnose('unsupported-geometry', 'snap', {
+                    element: p.element,
+                    reason: 'unsupported',
+                })
+            }
+            invalidateHold(p)
+            if (p.drive) settle(p)
+        }
         if (dt !== null) {
             for (const node of frame) {
                 const d = node.p.drive
@@ -1703,6 +2634,14 @@ export function createLayoutGroup(
                     if (d.fade.started) d.fade.elapsed += dt
                     else d.fade.started = true
                 }
+            }
+            // a held node's size continuation has its own clock, because the
+            // release replaces the drive's origin track while the size goes on
+            for (const node of frame) {
+                const hold = node.p.hold
+                if (!hold?.sizeTrack) continue
+                if (hold.sizeStarted) hold.sizeElapsed += dt
+                else hold.sizeStarted = true
             }
             // every ghost a kept pose timeline reads runs on the same clock,
             // each node by its own rule, as its frame would have
@@ -1719,6 +2658,10 @@ export function createLayoutGroup(
             }
             tick += 1
         }
+        for (const node of frame) {
+            const hold = node.p.hold
+            if (hold) sizeOfHold(hold)
+        }
         // a follower whose lead left the frame stays where it is
         for (const node of frame) {
             const d = node.p.drive
@@ -1729,18 +2672,38 @@ export function createLayoutGroup(
             }
         }
         const solved = solve(solveNodes(frame))
+        // the held read compares its next rect with the box this solve wrote
+        frame.forEach((node, i) => {
+            const hold = node.p.hold
+            const g = node.geometry
+            if (!hold || !g) return
+            if (!isLiveHold(hold)) return
+            hold.lastDrawn = solved[i]!.drawn
+            hold.lastHX =
+                solved[i]!.drawn.x +
+                g.fx * solved[i]!.drawn.w -
+                (g.a.x + g.fx * g.a.w)
+            hold.lastHY =
+                solved[i]!.drawn.y +
+                g.fy * solved[i]!.drawn.h -
+                (g.a.y + g.fy * g.a.h)
+        })
         const animating: boolean[] = []
         let running = false
-        let tracks = 0
         for (const node of frame) {
             const d = node.p.drive
             const live = d !== null && d.kind !== 'held'
             const ownTrack = live && runs(d)
             const ownFade = live && d.fade !== null && !fadeEnded(d.fade)
-            if (ownTrack) tracks += 1
+            const hold = node.p.hold
+            const held = isLiveHold(hold)
+            const ride = node.p.ride
+            const riding = isLiveHold(ride)
             animating.push(
                 ownTrack ||
                     ownFade ||
+                    held ||
+                    riding ||
                     (node.parent >= 0 && animating[node.parent]!)
             )
         }
@@ -1759,6 +2722,63 @@ export function createLayoutGroup(
             }
             const d = p.drive
             if (d.kind === 'held') return
+            const hold = p.hold
+            if (hold) {
+                // direct manipulation owns the origin; it never settles from
+                // the frame's own track because its size keeps going
+                if (hold.state === 'held') {
+                    queuePose(node, solved[i]!)
+                    running = true
+                    return
+                }
+                // released: h and the residuals have to settle, and no
+                // ancestor may still animate (the pose is counter-projected)
+                const g = node.geometry
+                const releaseEnded =
+                    !hold.releaseTrack ||
+                    trackEnded(hold.releaseTrack, d.elapsed)
+                const sizeEnded =
+                    !hold.sizeTrack ||
+                    trackEnded(hold.sizeTrack, hold.sizeElapsed)
+                const target = g.a
+                const hx =
+                    solved[i]!.drawn.x +
+                    g.fx * solved[i]!.drawn.w -
+                    (target.x + g.fx * target.w)
+                const hy =
+                    solved[i]!.drawn.y +
+                    g.fy * solved[i]!.drawn.h -
+                    (target.y + g.fy * target.h)
+                const ancestor = node.parent >= 0 && animating[node.parent]!
+                if (
+                    releaseEnded &&
+                    sizeEnded &&
+                    Math.abs(hx) <= 0.01 &&
+                    Math.abs(hy) <= 0.01 &&
+                    Math.abs(solved[i]!.drawn.w - target.w) <= 0.01 &&
+                    Math.abs(solved[i]!.drawn.h - target.h) <= 0.01 &&
+                    !ancestor
+                ) {
+                    finishHold(hold)
+                    return
+                }
+                queuePose(node, solved[i]!)
+                running = true
+                return
+            }
+            const ride = p.ride
+            if (isLiveHold(ride)) {
+                // a residual that ended first stays at A + h until h settles
+                if (d.track && trackEnded(d.track, d.elapsed)) {
+                    d.track = null
+                    d.timeline = null
+                    d.target = null
+                    d.kind = 'static'
+                }
+                queuePose(node, solved[i]!)
+                running = true
+                return
+            }
             if (!animating[i]) {
                 settle(p)
                 return
@@ -1766,11 +2786,14 @@ export function createLayoutGroup(
             queuePose(node, solved[i]!)
             running = true
         })
-        stats.tracks = tracks
+        stats.tracks = countTracks()
         return running
     }
 
     const realizer = createRaf(clock, {
+        read() {
+            frameBoundary(readHolds, undefined, activeRunId())
+        },
         update(dt) {
             deferDepth += 1
             const active = activeRunId()
@@ -2311,6 +3334,55 @@ export function createLayoutGroup(
             },
             full,
         }
+    }
+
+    /**
+     * A participant's geometry from one take read, through the same
+     * `resolveGeometry` a flush uses (§5.10). A rest descendant has no
+     * geometry of its own; the hold needs one to draw it at `A + h`.
+     */
+    function measureGeometry(
+        p: Participant,
+        frameMaps?: ReadonlyMap<Participant, Map2>
+    ): Geometry | null {
+        if (p.geometry) return p.geometry
+        const element = p.element
+        const doc = element.ownerDocument
+        const parent = p.parent
+        let parentFull: Map2 = IDENTITY_MAP
+        let parentRest: Map2 = IDENTITY_MAP
+        if (parent) {
+            const pg = measureGeometry(parent, frameMaps)
+            const current = frameMaps?.get(parent)
+            if (pg) {
+                parentFull = current ?? pg.rest
+                parentRest = pg.rest
+            }
+        }
+        const rect = viewRect(element)
+        stats.rects += 1
+        const style = getComputedStyle(element)
+        stats.styles += 1
+        const measured = measure(
+            element,
+            ownsRadius(p.options),
+            () => new Set<Element>(),
+            snapsReferenceBox(doc),
+            style,
+            readTransform(style)
+        )
+        if (measured.unsupported || !(rect.w > 0) || !(rect.h > 0)) return null
+        const dpr = doc.defaultView?.devicePixelRatio ?? 1
+        const g = resolveGeometry(
+            p,
+            rect,
+            measured,
+            parentFull,
+            parentRest,
+            dpr
+        ).geometry
+        p.geometry = g
+        return g
     }
 
     function reducedMode(): 'jump' | 'clamp' | 'none' {
@@ -3152,6 +4224,11 @@ export function createLayoutGroup(
                 }
                 const hasDependency = 'layoutDependency' in options
                 const presence = presenceOf(p.element)
+                let underHold = p.hold !== null
+                for (let a = p.parent; a && !underHold; a = a.parent) {
+                    const h = a.hold
+                    underHold = h !== null && isLiveHold(h)
+                }
                 why[i] = unsupported
                 return {
                     parent: parents[i]!,
@@ -3186,6 +4263,8 @@ export function createLayoutGroup(
                     unsupported: unsupported !== null,
                     skip:
                         p.keyChanged ||
+                        p.hold !== null ||
+                        underHold ||
                         (hasDependency &&
                             p.dependency !== null &&
                             Object.is(
@@ -3651,67 +4730,15 @@ export function createLayoutGroup(
             kind: Drive['kind'],
             g: Geometry,
             properties: readonly string[]
-        ): Drive => {
-            const existing = p.drive
-            // §11.4 S2: a driven node is never the scroll anchor; the WAAPI
-            // engine carries the declaration in its keyframes instead (§6)
-            const anchor = anchorFallback && !waapi
-            if (existing) {
-                // an owned property it did not save yet (opacity for a new
-                // crossfade, corners when `radius` was turned on mid-run)
-                const wanted = [...properties]
-                if (ownsRadius(p.options) && g.radius)
-                    wanted.push(...RADIUS_PROPERTIES)
-                if (anchor) wanted.push(ANCHOR_PROPERTY)
-                const missing = wanted.filter(
-                    (prop) => !existing.saved.has(prop)
-                )
-                for (const [k, v] of save(p.element, missing))
-                    existing.saved.set(k, v)
-                // corners it no longer owns go back now
-                if (
-                    !ownsRadius(p.options) &&
-                    existing.saved.has(RADIUS_PROPERTIES[0])
-                ) {
-                    queueRestore(p.element, existing, RADIUS_PROPERTIES)
-                    for (const prop of RADIUS_PROPERTIES) {
-                        existing.saved.delete(prop)
-                        existing.written.delete(prop)
-                    }
-                    existing.radius = null
-                } else if (ownsRadius(p.options)) {
-                    existing.radius = g.radiusSource
-                }
-                existing.kind = kind
-                return existing
-            }
-            // the WAAPI engine writes no inline style
-            const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
-            if (!waapi && ownsRadius(p.options) && g.radius)
-                all.push(...RADIUS_PROPERTIES)
-            if (anchor) all.push(ANCHOR_PROPERTY)
-            const d: Drive = {
+        ): Drive =>
+            ensureDrive(
+                p,
                 kind,
-                track: null,
-                timeline: null,
-                target: null,
-                elapsed: 0,
-                started: false,
-                fade: null,
-                radiusBlend: null,
-                lead: null,
-                inert: null,
-                saved: save(p.element, all),
-                authored: g.authored,
-                radius: g.radiusSource,
-                mode: reduced,
-                run: null,
-                release: null,
-                written: new Map(),
-            }
-            p.drive = d
-            return d
-        }
+                g,
+                properties,
+                reduced,
+                anchorFallback && !waapi
+            )
 
         // Radius handoff state comes from B's radii, measured by the fresh
         // capture, or from a retained removed lead (§4.1, §5.8, §5.9).
@@ -3909,10 +4936,289 @@ export function createLayoutGroup(
                 dropFocus(list[lead]!)
         }
 
+        /**
+         * §5.10: a held node and every descendant participant riding its
+         * inherited displacement stay outside the normal plan. Their origin
+         * channels are the hold's (or its release path); a flush updates A,
+         * the size target and the options, never the held point.
+         */
+        const holdAncestor = (p: Participant): DriveHold | null => {
+            for (let a = p.parent; a; a = a.parent) {
+                const h = a.hold
+                if (h !== null && isLiveHold(h)) {
+                    return h
+                }
+            }
+            return null
+        }
+        const liveHoldOf = (p: Participant): DriveHold | null => {
+            const h = p.hold
+            return isLiveHold(h) ? h : null
+        }
+        if (layoutRuntime.mode === 'snap') {
+            for (const p of list) {
+                if (!liveHoldOf(p)) continue
+                diagnose('runtime-disabled', 'snap', {
+                    element: p.element,
+                    reason: 'disabled',
+                })
+                invalidateHold(p)
+                if (p.drive) settle(p)
+            }
+        }
+        // a new view space: the held point is screen space again, and a
+        // released path is re-expressed by the fresh capture below
+        for (const p of list) {
+            const hold = liveHoldOf(p)
+            if (!hold) continue
+            hold.shiftX = 0
+            hold.shiftY = 0
+            hold.rides.clear()
+            const g = geometry[index.get(p)!]
+            if (!g || unowned[index.get(p)!] || g.unsupported) {
+                // the node follows the failed support check's rule; its
+                // diagnostic comes from the plan's snapped list, once
+                if (!snapped.some((entry) => entry.element === p.element)) {
+                    snapped.push({
+                        element: p.element,
+                        reason: 'unsupported',
+                    })
+                }
+                invalidateHold(p)
+                settle(p)
+                continue
+            }
+            const i = index.get(p)!
+            const reducedNow = reducedMode()
+            // a released landing follows a policy change at the next flush;
+            // a held phase never does (§5.10, §9.4)
+            if (hold.state === 'released' && reducedNow === 'jump') {
+                finishHold(hold)
+                continue
+            }
+            const planNode = nodes[i]!
+            const sizeChanged =
+                Math.max(
+                    Math.abs(g.a.w - hold.sizeTargetW),
+                    Math.abs(g.a.h - hold.sizeTargetH)
+                ) >= threshold
+            if (sizeChanged || planNode.optionsChanged) {
+                const pinned =
+                    (p.options.layout ?? true) === 'position' ||
+                    reducedNow === 'jump'
+                if (pinned) {
+                    hold.sizeTrack = null
+                    hold.sizeW = g.a.w
+                    hold.sizeH = g.a.h
+                    hold.sizeVW = 0
+                    hold.sizeVH = 0
+                } else {
+                    const motion = motionOf(p, reducedNow)
+                    const moving =
+                        Math.abs(hold.sizeVW) > 1e-6 ||
+                        Math.abs(hold.sizeVH) > 1e-6
+                    const track = createTrack(
+                        { x: g.a.x, y: g.a.y, w: hold.sizeW, h: hold.sizeH },
+                        g.a,
+                        moving
+                            ? {
+                                  x: 0,
+                                  y: 0,
+                                  w: hold.sizeVW,
+                                  h: hold.sizeVH,
+                              }
+                            : null,
+                        g.fx,
+                        g.fy,
+                        true,
+                        moving ? { ...motion, delay: 0 } : motion,
+                        null
+                    )
+                    if (typeof track === 'string') {
+                        if (track === 'spring-timeout') {
+                            diagnose('spring-timeout', 'snap', {
+                                element: p.element,
+                                reason: 'unsupported',
+                            })
+                        }
+                        invalidateHold(p)
+                        settle(p)
+                        continue
+                    }
+                    hold.sizeTrack = track
+                    hold.sizeElapsed = 0
+                    hold.sizeStarted = p.drive?.started ?? false
+                    const d = p.drive
+                    if (d) {
+                        d.kind = 'track'
+                        d.track = track
+                        d.target = g.a
+                        d.elapsed = 0
+                        d.started = hold.sizeStarted
+                        d.mode = reducedNow
+                    }
+                }
+                hold.sizeTargetW = g.a.w
+                hold.sizeTargetH = g.a.h
+            }
+            if (hold.state === 'released') {
+                const d = p.drive
+                if (d && hold.releaseTrack && d.target) {
+                    const delta = Math.max(
+                        Math.abs(g.a.x - d.target.x),
+                        Math.abs(g.a.y - d.target.y),
+                        Math.abs(g.a.w - d.target.w),
+                        Math.abs(g.a.h - d.target.h)
+                    )
+                    if (delta >= threshold || planNode.optionsChanged) {
+                        const b = fresh?.rects.get(p) ?? null
+                        const v = velocity.get(p) ?? null
+                        if (b && v) {
+                            const motion = motionOf(p, reducedNow)
+                            const speed = Math.hypot(v.x, v.y)
+                            const track = createTrack(
+                                b,
+                                g.a,
+                                v,
+                                g.fx,
+                                g.fy,
+                                true,
+                                speed > 1e-9 ? { ...motion, delay: 0 } : motion,
+                                null
+                            )
+                            if (typeof track === 'string') {
+                                invalidateHold(p)
+                                settle(p)
+                                continue
+                            }
+                            hold.releaseTrack = track
+                            d.track = track
+                            d.target = g.a
+                            d.elapsed = 0
+                            // `started` is left as it was: a landing no
+                            // frame has drawn yet is still at rest (§4.3)
+                            d.mode = reducedNow
+                        } else {
+                            hold.releaseTrack = translated(
+                                hold.releaseTrack,
+                                g.a.x - d.target.x,
+                                g.a.y - d.target.y
+                            )
+                            d.track = hold.releaseTrack
+                            d.target = g.a
+                        }
+                    }
+                }
+            }
+        }
+        /**
+         * `h`/`ḣ` of every live hold in this flush's view space. While held,
+         * the *displayed* h reaches the finger target H, but a descendant's
+         * residual is planned from the *presented* h measured by the capture:
+         * an unpresented move then carries the descendants with the parent's
+         * t = 0 write instead of being absorbed into their residuals.
+         */
+        const holdDisplacements = new Map<
+            DriveHold,
+            {
+                readonly presented: {
+                    readonly x: number
+                    readonly y: number
+                }
+                readonly dh: { readonly x: number; readonly y: number }
+            }
+        >()
+        for (const p of list) {
+            const hold = liveHoldOf(p)
+            const g = geometry[index.get(p)!]
+            if (!hold || !g) continue
+            const originX = g.a.x + g.fx * g.a.w
+            const originY = g.a.y + g.fy * g.a.h
+            const drawn = fresh?.rects.get(p) ?? null
+            const measured = drawn
+                ? {
+                      x: drawn.x + g.fx * drawn.w - originX,
+                      y: drawn.y + g.fy * drawn.h - originY,
+                  }
+                : { x: hold.lastHX, y: hold.lastHY }
+            const v = velocity.get(p) ?? ZERO_VELOCITY
+            const dh =
+                hold.state === 'held'
+                    ? { x: 0, y: 0 }
+                    : { x: v.x + g.fx * v.w, y: v.y + g.fy * v.h }
+            const display =
+                hold.state === 'held'
+                    ? { x: hold.hx - originX, y: hold.hy - originY }
+                    : measured
+            holdDisplacements.set(hold, { presented: measured, dh })
+            hold.lastHX = display.x
+            hold.lastHY = display.y
+        }
+        for (const p of list) {
+            const i = index.get(p)!
+            const g = geometry[i]
+            const hold = p.hold === null ? holdAncestor(p) : null
+            if (!hold) {
+                if (p.ride) {
+                    p.ride = null
+                    if (p.drive) settle(p)
+                }
+                continue
+            }
+            if (!g) continue
+            if (!p.drive) {
+                ensureDrive(
+                    p,
+                    'static',
+                    g,
+                    [],
+                    reducedMode(),
+                    knownTransformAnchoring(p.element.ownerDocument) === true &&
+                        !waapi
+                )
+            }
+            if (p.drive?.kind === 'follow' || p.drive?.kind === 'held') continue
+            p.ride = hold
+            hold.rides.add(p)
+            const { presented, dh } = holdDisplacements.get(hold) ?? {
+                presented: { x: 0, y: 0 },
+                dh: { x: 0, y: 0 },
+            }
+            const b = fresh?.rects.get(p) ?? null
+            const v = velocity.get(p) ?? null
+            if (!b || !v) continue
+            const residualBefore = {
+                x: b.x - presented.x,
+                y: b.y - presented.y,
+                w: b.w,
+                h: b.h,
+            }
+            const distance = moved(residualBefore, g.a, {
+                mode: p.options.layout ?? true,
+                anchor: null,
+                fx: g.fx,
+                fy: g.fy,
+            })
+            const running = p.drive?.kind === 'track' && runs(p.drive)
+            if (running || distance >= threshold || nodes[i]!.optionsChanged) {
+                planResidual(p, b, v, presented, dh, reduced)
+            }
+        }
+
         actions.forEach((action, i) => {
             const p = list[i]!
             const g = geometry[i]
             const d = p.drive
+            if (p.hold !== null) {
+                // the hold owns this node's origin; its event rule already ran
+                touch(p)
+                return
+            }
+            if (p.ride !== null) {
+                // a residual is drawn at its own box plus h; no normal action
+                touch(p)
+                return
+            }
             if (focusSettled.has(p)) return
             if (action.kind !== 'none' || d) touch(p)
             switch (action.kind) {
@@ -4589,10 +5895,6 @@ export function createLayoutGroup(
         }
     }
 
-    function invalidateHold(_p: Participant): void {
-        // P4 drive seam: invalidate any live hold on `_p`
-    }
-
     /**
      * A lifecycle write path outside a flush/frame (§9.2, OPS-04): it either
      * commits its restores or aborts without throwing. Inside a transaction it
@@ -4645,6 +5947,9 @@ export function createLayoutGroup(
     function documentMismatch(p: Participant): void {
         p.removed = true
         registry.delete(p.element)
+        if (elementScopes.get(p.element) === scopeToken) {
+            elementScopes.delete(p.element)
+        }
         dropRoot(p)
         share(p.options, -1)
         syncListeners()
@@ -4713,6 +6018,13 @@ export function createLayoutGroup(
                 validateWaapiNesting(element)
             }
             if (disposed) return noop
+            const owner = elementScopes.get(element)
+            if (owner !== undefined && owner !== scopeToken) {
+                throw invalidOptions(
+                    'type',
+                    'the element is already registered in another layout group; one element belongs to at most one live scope.'
+                )
+            }
             scopeDocument ??= element.ownerDocument
             const nextOptions = layoutOptions ?? {}
             let p = registry.get(element)
@@ -4739,6 +6051,8 @@ export function createLayoutGroup(
                     dependency: null,
                     lastBox: null,
                     drive: null,
+                    hold: null,
+                    ride: null,
                     geometry: null,
                     parent: null,
                     removed: false,
@@ -4746,6 +6060,7 @@ export function createLayoutGroup(
                     roots: [],
                 }
                 registry.set(element, p)
+                elementScopes.set(element, scopeToken)
                 trackRoot(p)
                 share(nextOptions, 1)
             }
@@ -4755,6 +6070,9 @@ export function createLayoutGroup(
                 if (self.removed || registry.get(element) !== self) return
                 self.removed = true
                 registry.delete(element)
+                if (elementScopes.get(element) === scopeToken) {
+                    elementScopes.delete(element)
+                }
                 dropRoot(self)
                 share(self.options, -1)
                 syncListeners()
@@ -4840,6 +6158,8 @@ export function createLayoutGroup(
 
         flush,
 
+        take: takeDrive,
+
         update(mutate) {
             takeCapture()
             try {
@@ -4881,6 +6201,9 @@ export function createLayoutGroup(
                 markerTarget = null
                 for (const p of registry.values()) {
                     p.removed = true
+                    if (elementScopes.get(p.element) === scopeToken) {
+                        elementScopes.delete(p.element)
+                    }
                     dropRoot(p)
                 }
                 registry.clear()
@@ -4910,8 +6233,9 @@ export function createLayoutGroup(
                 probes: stats.probes,
                 parents: stats.parents,
                 tracks: stats.tracks,
-                // live holds: the drive seam has none yet (§5.10)
-                holds: 0,
+                holds: [...registry.values()].filter(
+                    (p) => p.hold?.state === 'held'
+                ).length,
             }
         },
     }
