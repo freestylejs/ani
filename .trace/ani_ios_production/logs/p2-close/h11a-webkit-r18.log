@@ -1,0 +1,42 @@
+# H11a RL3 under load
+commit: 993e9a6bca3fb52090ca3617b7f6d45b4af151bb
+date: 2026-10-28T13:39:38Z
+host: Darwin MacBook-Pro-9.local 27.0.0 Darwin Kernel Version 27.0.0: Tue Aug 11 21:20:40 PDT 2026; root:xnu-13432.1.9~1/RELEASE_ARM64_T6020 arm64
+load-method: 20 x yes(1) workers
+
+## run 1
+
+> @freestylejs/ani-monorepo@1.0.0 test:browser /Users/june/Documents/project/freestylejs/ani-ios-scope-correction
+> node tests/browser/run.ts --browser webkit --case react_layout_r18:RL3 --case react_layout_r18:RL3_AGED
+
+PASS react_layout_r18:RL3 (1104 ms)
+    120 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL3_AGED (731 ms)
+    advanced aged commit: 'stale' acdebf
+
+2 passed, 0 failed, 0 known failures, 0 skipped (2.7 s)
+exit: 0
+## run 2
+
+> @freestylejs/ani-monorepo@1.0.0 test:browser /Users/june/Documents/project/freestylejs/ani-ios-scope-correction
+> node tests/browser/run.ts --browser webkit --case react_layout_r18:RL3 --case react_layout_r18:RL3_AGED
+
+PASS react_layout_r18:RL3 (1034 ms)
+    120 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL3_AGED (717 ms)
+    advanced aged commit: 'stale' acdebf
+
+2 passed, 0 failed, 0 known failures, 0 skipped (2.3 s)
+exit: 0
+## run 3
+
+> @freestylejs/ani-monorepo@1.0.0 test:browser /Users/june/Documents/project/freestylejs/ani-ios-scope-correction
+> node tests/browser/run.ts --browser webkit --case react_layout_r18:RL3 --case react_layout_r18:RL3_AGED
+
+PASS react_layout_r18:RL3 (1025 ms)
+    114 checks over 4 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout_r18:RL3_AGED (692 ms)
+    advanced aged commit: 'stale' acdebf
+
+2 passed, 0 failed, 0 known failures, 0 skipped (2.2 s)
+exit: 0

@@ -1,0 +1,293 @@
+# P2 biome
+commit: 993e9a6bca3fb52090ca3617b7f6d45b4af151bb
+
+
+> @freestylejs/ani-monorepo@1.0.0 check /Users/june/Documents/project/freestylejs/ani-ios-scope-correction
+> biome check
+
+bench/browser/budget.test.ts:56:34 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    54 │     })
+    55 │     const budget = parseBudget(json)
+  > 56 │     assert.strictEqual(budget.n, 5000)
+       │                                  ^^^^
+    57 │     assert.strictEqual(budget.maxRafReadStyleRecalcsPerFrame, 1.05)
+    58 │     assert.strictEqual(
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/budget.test.ts:57:63 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    55 │     const budget = parseBudget(json)
+    56 │     assert.strictEqual(budget.n, 5000)
+  > 57 │     assert.strictEqual(budget.maxRafReadStyleRecalcsPerFrame, 1.05)
+       │                                                               ^^^^
+    58 │     assert.strictEqual(
+    59 │         stringifyBudget(budget),
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/budget.test.ts:77:34 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    75 │ test('createBudget initializes maxRafReadStyleRecalcsPerFrame to 1.05', () => {
+    76 │     const rows: ResultRow[] = [
+  > 77 │         mockRow('raf-timelines', 5000, { tickP95: 16 }),
+       │                                  ^^^^
+    78 │         mockRow('raf-group', 5000, { tickP95: 7 }),
+    79 │         mockRow('raf-read', 5000, { styleRecalcsPerFrame: 1.0 }),
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/budget.ts:92:50 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    90 │ /** Rounds up to 0.1, ignoring floating point noise below 1e-6. */
+    91 │ function ceilTenth(value: number): number {
+  > 92 │     return Math.ceil(Number((value * 10).toFixed(6))) / 10
+       │                                                  ^
+    93 │ }
+    94 │ 
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/budget.ts:155:36 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    153 │ ): BudgetCheck {
+    154 │     const ok = kind === 'max' ? value <= bound : value >= bound
+  > 155 │     const shown = `${value.toFixed(3)}${unit}`
+        │                                    ^
+    156 │     const relation = kind === 'max' ? '<=' : '>='
+    157 │     return {
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/scenarios.ts:110:41 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    108 │             element.style.height = '10px'
+    109 │             element.style.left = '0'
+  > 110 │             element.style.top = `${(i % 64) * 12}px`
+        │                                         ^^
+    111 │             fragment.appendChild(element)
+    112 │             elements.push(element)
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/scenarios.ts:110:47 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    108 │             element.style.height = '10px'
+    109 │             element.style.left = '0'
+  > 110 │             element.style.top = `${(i % 64) * 12}px`
+        │                                               ^^
+    111 │             fragment.appendChild(element)
+    112 │             elements.push(element)
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/scenarios.ts:189:34 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    187 │             a.ani({
+    188 │                 to: {
+  > 189 │                     translateX: (200 * i) / segmentCount,
+        │                                  ^^^
+    190 │                     opacity: 0.2 + (0.8 * i) / segmentCount,
+    191 │                 },
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/scenarios.ts:190:30 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    188 │                 to: {
+    189 │                     translateX: (200 * i) / segmentCount,
+  > 190 │                     opacity: 0.2 + (0.8 * i) / segmentCount,
+        │                              ^^^
+    191 │                 },
+    192 │                 duration: 2 / segmentCount,
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/scenarios.ts:190:37 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    188 │                 to: {
+    189 │                     translateX: (200 * i) / segmentCount,
+  > 190 │                     opacity: 0.2 + (0.8 * i) / segmentCount,
+        │                                     ^^^
+    191 │                 },
+    192 │                 duration: 2 / segmentCount,
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:60:31 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    58 │ /** Median of the values (nearest-rank), `NaN` for an empty sample. */
+    59 │ export function median(values: readonly number[]): number {
+  > 60 │     return percentile(values, 0.5)
+       │                               ^^^
+    61 │ }
+    62 │ 
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:98:43 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+     96 │     const intervals = frameIntervals(sample.frames)
+     97 │     return {
+   > 98 │         tickP50: percentile(sample.ticks, 0.5),
+        │                                           ^^^
+     99 │         tickP95: percentile(sample.ticks, 0.95),
+    100 │         tickMax:
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:99:43 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+     97 │     return {
+     98 │         tickP50: percentile(sample.ticks, 0.5),
+   > 99 │         tickP95: percentile(sample.ticks, 0.95),
+        │                                           ^^^^
+    100 │         tickMax:
+    101 │             sample.ticks.length === 0 ? Number.NaN : Math.max(...sample.ticks),
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:102:44 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    100 │         tickMax:
+    101 │             sample.ticks.length === 0 ? Number.NaN : Math.max(...sample.ticks),
+  > 102 │         intervalP50: percentile(intervals, 0.5),
+        │                                            ^^^
+    103 │         intervalP95: percentile(intervals, 0.95),
+    104 │         longFramesPerSecond: longFramesPerSecond(intervals, measureSeconds),
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:103:44 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    101 │             sample.ticks.length === 0 ? Number.NaN : Math.max(...sample.ticks),
+    102 │         intervalP50: percentile(intervals, 0.5),
+  > 103 │         intervalP95: percentile(intervals, 0.95),
+        │                                            ^^^^
+    104 │         longFramesPerSecond: longFramesPerSecond(intervals, measureSeconds),
+    105 │         layoutsPerFrame: perFrame(perf.layoutCount, frames),
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:107:58 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    105 │         layoutsPerFrame: perFrame(perf.layoutCount, frames),
+    106 │         styleRecalcsPerFrame: perFrame(perf.recalcStyleCount, frames),
+  > 107 │         scriptMsPerFrame: perFrame(perf.scriptDuration * 1000, frames),
+        │                                                          ^^^^
+    108 │         layoutMsPerFrame: perFrame(perf.layoutDuration * 1000, frames),
+    109 │         styleMsPerFrame: perFrame(perf.recalcStyleDuration * 1000, frames),
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:108:58 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    106 │         styleRecalcsPerFrame: perFrame(perf.recalcStyleCount, frames),
+    107 │         scriptMsPerFrame: perFrame(perf.scriptDuration * 1000, frames),
+  > 108 │         layoutMsPerFrame: perFrame(perf.layoutDuration * 1000, frames),
+        │                                                          ^^^^
+    109 │         styleMsPerFrame: perFrame(perf.recalcStyleDuration * 1000, frames),
+    110 │         setupMs,
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+bench/browser/stats.ts:109:62 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    107 │         scriptMsPerFrame: perFrame(perf.scriptDuration * 1000, frames),
+    108 │         layoutMsPerFrame: perFrame(perf.layoutDuration * 1000, frames),
+  > 109 │         styleMsPerFrame: perFrame(perf.recalcStyleDuration * 1000, frames),
+        │                                                              ^^^^
+    110 │         setupMs,
+    111 │     }
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+tests/browser/waapi_trace_page.ts:30:56 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    28 │     await frame()
+    29 │     await frame()
+  > 30 │     await new Promise((resolve) => setTimeout(resolve, 100))
+       │                                                        ^^^
+    31 │     const state =
+    32 │         engine === 'waapi'
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+tests/browser/waapi_trace_page.ts:38:40 lint/style/noMagicNumbers ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  i Magic number detected. Extract it to a constant with a meaningful name.
+  
+    36 │               : 'running'
+    37 │     const start = performance.now()
+  > 38 │     while (performance.now() < start + 120) {
+       │                                        ^^^
+    39 │         // the main thread is blocked
+    40 │     }
+  
+  i Code is more readable and refactoring easier when special numbers are declared as constants as it makes their meaning explicit.
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 6572.
+Checked 437 files in 396ms. No fixes applied.
+Found 10 warnings.
+Found 6582 infos.
+exit: 0
