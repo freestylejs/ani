@@ -167,16 +167,19 @@ stop()
 
 - `mode` is `'animate'` (default) or `'snap'`.
 - `setMode('snap')` acts synchronously in every explicit and implicit scope: live tracks finish at
-  identity with their styles restored, holds invalidate, pending reports resolve `'disabled'`
-  with reason `'disabled'`, and later movers snap `'disabled'`. `setMode('animate')` restores
-  normal planning from the next flush. It is distinct from reduced motion.
+  identity with their styles restored, P3 crossfade/presence holds finish as a completed fade, and
+  pending reports resolve `'disabled'` with reason `'disabled'`. Drive-hold invalidation is the
+  P4 `L-DRIVE-4` path. Later movers snap `'disabled'`. `setMode('animate')` restores normal
+  planning from the next flush. It is distinct from reduced motion.
 - `onDiagnostic(listener)` returns an unsubscribe. Payloads are built only when a listener exists;
   the stream works in production. Every listener runs after the engine's state is consistent,
   inside its own `try`. A throwing listener is reported as `callback-error` to the others only
   and rethrown asynchronously in development; it cannot change the engine's state.
 - Each event is version 1 and carries `code`, a stable `scope` id, `run`, `engine`, `action`,
   `element` and `reason` where they apply, and `metrics` (`participants`, `rectReads`,
-  `styleReads`, `springSettleMs`).
+  `styleReads`, `springSettleMs`). A capture begun inside a clock frame prints the §4.1
+  development warning at capture; the flush that consumes the aged capture emits one
+  `capture-aged` event per reported node (or one element-less event when none is reported).
 
 Codes: `capture-less-flush`, `capture-aged`, `unsupported-geometry`, `handoff-scroll-active`,
 `spring-timeout`, `participant-cap`, `mover-cap`, `document-mismatch`, `runtime-disabled`,
@@ -187,7 +190,8 @@ A flush and every frame callback run inside one transactional boundary: on an in
 the engine restores every owned declaration byte-identically, cancels WAAPI animations, clears
 pending writes, invalidates holds, releases presence holds, disarms markers and listeners, stops
 the clock subscription, resolves every affected report `'failed'` and emits `internal-error`.
-`flush()` never rejects.
+A failed report lists only the participants the transaction touched and the affected run nodes;
+the style restore remains conservative for the whole scope. `flush()` never rejects.
 
 ## Reduced motion
 

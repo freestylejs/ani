@@ -122,6 +122,45 @@ describe('§4.1/§9.1 maxParticipants', () => {
         group.dispose()
     })
 
+    it('a late mount over the cap is not read; the flush caps with zero reads', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion,
+            maxParticipants: 1,
+        })
+        const a = element(0)
+        const b = element(100)
+        group.add(a)
+        group.capture()
+        group.add(b)
+        const captureAdded = (
+            group as unknown as Record<symbol, (element: HTMLElement) => void>
+        )[Symbol.for('ani-layout.capture-added')]!
+        const rects = group.stats.rects
+        model.reset()
+        captureAdded(b)
+        expect(model.reads.rects).toBe(0)
+        expect(group.stats.rects).toBe(rects)
+
+        const { events, stop } = collect()
+        model.place(a, box(40))
+        model.place(b, box(140))
+        model.reset()
+        const r = await group.flush()
+        expect(r.status).toBe('capped')
+        expect(r.snapped).toEqual([
+            { element: a, reason: 'capped' },
+            { element: b, reason: 'capped' },
+        ])
+        expect(model.reads.rects).toBe(0)
+        expect(group.stats.rects).toBe(rects)
+        const cap = events.find((event) => event.code === 'participant-cap')
+        expect(cap?.metrics.rectReads).toBe(0)
+        stop()
+        group.dispose()
+    })
+
     it('emits participant-cap once, with a stable scope id and a versioned payload', async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({
@@ -178,10 +217,7 @@ describe('§4.1/§9.1 maxParticipants', () => {
         expect(r.snapped.map((s) => s.reason)).toEqual(['disabled', 'disabled'])
         expect(model.reads.rects).toBe(0)
         expect(model.reads.styles).toBe(0)
-        expect(events.map((e) => e.code)).toEqual([
-            'participant-cap',
-            'runtime-disabled',
-        ])
+        expect(events.map((e) => e.code)).toEqual(['runtime-disabled'])
         expect(resolveLayoutStatus(['capped', 'disabled'])).toBe('disabled')
         stop()
         group.dispose()
@@ -189,6 +225,64 @@ describe('§4.1/§9.1 maxParticipants', () => {
 })
 
 describe('§9.1 maxNodes', () => {
+    it('the kill switch wins over the mover cap: only runtime-disabled', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion,
+            maxNodes: 0,
+        })
+        const a = element(0)
+        group.add(a)
+        group.capture()
+        model.place(a, box(40))
+        const { events, stop } = collect()
+        layoutRuntime.setMode('snap')
+        const r = await group.flush()
+        expect(r.status).toBe('disabled')
+        expect(r.snapped.map((s) => s.reason)).toEqual(['disabled'])
+        expect(events.map((e) => e.code)).toEqual(['runtime-disabled'])
+        expect(events[0]).toMatchObject({
+            action: 'snap',
+            element: a,
+            reason: 'disabled',
+        })
+        stop()
+        group.dispose()
+    })
+
+    it('a capped capture stays latched: a smaller flush still reads nothing and snaps capped', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({
+            clock: mc.clock,
+            motion,
+            maxParticipants: 1,
+        })
+        const a = element(0)
+        const b = element(100)
+        group.add(a)
+        group.add(b)
+        group.capture()
+        expect(model.reads.rects).toBe(0)
+        b.remove()
+        model.place(a, box(120))
+        model.reset()
+        const { events, stop } = collect()
+        const rects = group.stats.rects
+        const styles = group.stats.styles
+        const r = await group.flush()
+        expect(r.status).toBe('capped')
+        expect(r.snapped).toEqual([{ element: a, reason: 'capped' }])
+        expect(group.stats.rects).toBe(rects)
+        expect(group.stats.styles).toBe(styles)
+        expect(model.reads.rects).toBe(0)
+        expect(events.map((e) => e.code)).toEqual(['participant-cap'])
+        expect(events[0]!.element).toBeUndefined()
+        expect(events[0]!.metrics.rectReads).toBe(0)
+        stop()
+        group.dispose()
+    })
+
     it('emits mover-cap when visible movers exceed maxNodes', async () => {
         const mc = createManualClock()
         const group = createLayoutGroup({

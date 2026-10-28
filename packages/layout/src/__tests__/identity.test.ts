@@ -583,11 +583,67 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         place(c, { x: 300, y: 200, w: 100, h: 40 })
         mainGroup.add(c, { layoutId: 'hero' })
         const mainReport = await mainGroup.flush()
-        expect(mainReport.status).toBe('no-change')
+        // c is registered after the capture and nothing hands it a box: it
+        // has no valid B and is reported stale (OPS-10, §4.4)
+        expect(mainReport.status).toBe('stale')
+        expect(mainReport.snapped).toEqual([{ element: c, reason: 'stale' }])
         expect(mainGroup.stats.tracks).toBe(0)
 
         mainGroup.dispose()
         otherGroup.dispose()
+    })
+})
+
+describe('I-9: late retained handoff (§4.4, OPS-10)', () => {
+    it('a late lead that takes an accepted handoff with no motion is not stale, including below threshold', async () => {
+        for (const offset of [0, 0.5]) {
+            const clock = createManualClock()
+            const snaps: string[] = []
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((event) =>
+                events.push(event)
+            )
+            const group = createLayoutGroup({
+                clock: clock.clock,
+                motion: linearMotion,
+                onSnap: (_element, reason) => snaps.push(reason),
+            })
+            const old = document.createElement('div')
+            document.body.append(old)
+            place(old, { x: 0, y: 0, w: 100, h: 40 })
+            const removeOld = group.add(old, { layoutId: 'hero' })
+            group.capture()
+            expect(await group.flush()).toEqual({
+                status: 'no-change',
+                snapped: [],
+            })
+
+            group.capture()
+            const late = document.createElement('div')
+            document.body.append(late)
+            place(late, { x: offset, y: 0, w: 100, h: 40 })
+            group.add(late, { layoutId: 'hero' })
+            removeOld()
+
+            const report = await group.flush()
+            expect(report, `offset ${offset}`).toEqual({
+                status: 'no-change',
+                snapped: [],
+            })
+            expect(snaps, `offset ${offset}`).toEqual([])
+            expect(
+                events.filter(
+                    (event) =>
+                        event.code === 'capture-less-flush' ||
+                        event.code === 'capture-aged'
+                ),
+                `offset ${offset}`
+            ).toEqual([])
+            expect(late.style.translate).toBe('')
+            expect(group.stats.tracks).toBe(0)
+            stop()
+            group.dispose()
+        }
     })
 })
 

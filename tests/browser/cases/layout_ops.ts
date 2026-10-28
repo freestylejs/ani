@@ -11,12 +11,15 @@ import {
     createLayoutGroup,
     createPresence,
     type LayoutDiagnostic,
-    type LayoutGroup,
     type LayoutOptions,
     type LayoutReport,
     layoutRuntime,
 } from '@freestylejs/ani-layout'
-import { useLayout } from '@freestylejs/ani-react/layout'
+import {
+    LayoutGroup,
+    useLayout,
+    useLayoutGroup,
+} from '@freestylejs/ani-react/layout'
 import { createElement as h, type ReactNode, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -160,6 +163,67 @@ function expectAuthored(
     }
 }
 
+/** OPS-06: the exact `internal-error` payload of an engine fault. */
+function expectInternalError(
+    event: LayoutDiagnostic | undefined,
+    error: unknown,
+    engine: 'raf' | 'waapi' = 'raf'
+): void {
+    if (!event) throw new Error('internal-error was not emitted')
+    expectEqual(event.version, 1, 'internal-error: version')
+    expectEqual(event.code, 'internal-error', 'internal-error: code')
+    expectEqual(event.action, 'abort', 'internal-error: action')
+    expectEqual(event.engine, engine, 'internal-error: engine')
+    expectEqual(event.error, error, 'internal-error: error')
+    expectEqual(event.element, undefined, 'internal-error: element')
+    expectEqual(event.reason, undefined, 'internal-error: reason')
+    expectEqual(typeof event.scope, 'number', 'internal-error: scope')
+    expectEqual(typeof event.run, 'number', 'internal-error: run')
+    expectEqual(
+        typeof event.metrics.participants,
+        'number',
+        'internal-error: participants'
+    )
+    expectEqual(
+        typeof event.metrics.rectReads,
+        'number',
+        'internal-error: rects'
+    )
+    expectEqual(
+        typeof event.metrics.styleReads,
+        'number',
+        'internal-error: styles'
+    )
+    expectEqual(event.metrics.springSettleMs, null, 'internal-error: settle')
+}
+
+/** OPS-06: the exact `callback-error` payload of a user callback. */
+function expectCallbackError(
+    event: LayoutDiagnostic | undefined,
+    element: HTMLElement,
+    error: unknown
+): void {
+    if (!event) throw new Error('callback-error was not emitted')
+    expectEqual(event.version, 1, 'callback-error: version')
+    expectEqual(event.code, 'callback-error', 'callback-error: code')
+    expectEqual(event.action, 'none', 'callback-error: action')
+    expectEqual(event.engine, 'raf', 'callback-error: engine')
+    expectEqual(event.element, element, 'callback-error: element')
+    expectEqual(event.error, error, 'callback-error: error')
+    expectEqual(event.reason, undefined, 'callback-error: reason')
+    expectEqual(typeof event.scope, 'number', 'callback-error: scope')
+    expectEqual(
+        typeof event.run === 'number' || event.run === null,
+        true,
+        'callback-error: run'
+    )
+    expectEqual(
+        typeof event.metrics.participants,
+        'number',
+        'callback-error: participants'
+    )
+}
+
 /* ───────────────────────────── L-OPS-1 ───────────────────────────── */
 
 /**
@@ -172,6 +236,7 @@ export async function L_OPS_1(): Promise<string> {
     const details: string[] = []
     const events: LayoutDiagnostic[] = []
     const stop = layoutRuntime.onDiagnostic((event) => events.push(event))
+    const quiet = silenceWarnings()
     const runScopes: number[] = []
     try {
         // explicit scope, mid-run
@@ -210,6 +275,7 @@ export async function L_OPS_1(): Promise<string> {
             expectEqual(disabled[0]!.reason, 'disabled', 'explicit: reason')
             expectEqual(disabled[0]!.engine, 'raf', 'explicit: engine')
             expectEqual(disabled[0]!.version, 1, 'explicit: version')
+            expectEqual(disabled[0]!.element, a, 'explicit: element')
             runScopes.push(disabled[0]!.scope)
             expectEqual(typeof disabled[0]!.run, 'number', 'explicit: run id')
             // the scope plans again from the next flush
@@ -275,6 +341,7 @@ export async function L_OPS_1(): Promise<string> {
             }
             expectEqual(implicit.action, 'snap', 'implicit: action')
             expectEqual(implicit.reason, 'disabled', 'implicit: reason')
+            expectEqual(implicit.element, item, 'implicit: element')
             // still plans after setMode('animate')
             layoutRuntime.setMode('animate')
             flushSync(() => setLeft(300))
@@ -316,10 +383,33 @@ export async function L_OPS_1(): Promise<string> {
             void h.group.flush()
             h.mc.frames(2)
             expectEqual(card.style.opacity, '1', 'mid-fade: follower drawn')
+            const before = events.length
             layoutRuntime.setMode('snap')
             expectEqual(card.style.opacity, '0', 'mid-fade: held at 0')
             expectEqual(detail.style.translate, '', 'mid-fade: lead restored')
             expectEqual(h.group.stats.tracks, 0, 'mid-fade: no track')
+            const paused = events
+                .slice(before)
+                .filter((e) => e.code === 'runtime-disabled')
+            expectEqual(paused.length, 2, 'mid-fade: one per mover')
+            expectEqual(
+                paused
+                    .map((e) => (e.element === card ? 'card' : 'detail'))
+                    .sort(),
+                ['card', 'detail'],
+                'mid-fade: elements'
+            )
+            expectEqual(
+                paused.every((e) => e.action === 'snap'),
+                true,
+                'mid-fade: action'
+            )
+            expectEqual(
+                paused.every((e) => typeof e.run === 'number'),
+                true,
+                'mid-fade: run'
+            )
+            expectEqual(paused[0]!.scope, paused[1]!.scope, 'mid-fade: scope')
             // presence's own exit still runs on the same clock; it ends and
             // unsubscribes on its own, the layout realizer is already gone
             h.mc.frames(10)
@@ -329,8 +419,8 @@ export async function L_OPS_1(): Promise<string> {
             details.push('mid-crossfade: follower held at 0, lead restored')
         }
 
-        // mid-hold: the one hold state that exists before the drive seam — an
-        // invisible crossfade follower held at opacity 0 (§5.8)
+        // P3 crossfade/presence hold: the follower is already held invisible;
+        // no live track exists, so the kill switch emits no false event (C3)
         {
             layoutRuntime.setMode('animate')
             const h = harness({ motion })
@@ -361,6 +451,7 @@ export async function L_OPS_1(): Promise<string> {
                 await microtasks()
             }
             expectEqual(card.style.opacity, '0', 'mid-hold: follower invisible')
+            const before = events.length
             layoutRuntime.setMode('snap')
             expectEqual(
                 card.style.opacity,
@@ -370,19 +461,24 @@ export async function L_OPS_1(): Promise<string> {
             expectEqual(detail.style.translate, '', 'mid-hold: lead restored')
             expectEqual(h.mc.clock.size, 0, 'mid-hold: no subscription')
             expectEqual(h.group.stats.tracks, 0, 'mid-hold: no track')
-            const held = events
-                .filter((e) => e.code === 'runtime-disabled')
-                .at(-1)
-            expectEqual(held?.action, 'snap', 'mid-hold: diagnostic')
+            expectEqual(
+                events
+                    .slice(before)
+                    .filter((e) => e.code === 'runtime-disabled').length,
+                0,
+                'mid-hold: no live mover, no false event'
+            )
             layoutRuntime.setMode('animate')
             h.dispose()
             details.push(
-                'mid-hold (invisible crossfade follower): stays invisible'
+                'P3 crossfade/presence hold: stays invisible, no false event'
             )
         }
+        expectEqual(quiet.messages.length, 0, 'L-OPS-1: no development warning')
         return `L-OPS-1: ${details.join('; ')}`
     } finally {
         stop()
+        quiet.restore()
         layoutRuntime.setMode('animate')
         clearLayoutFaults()
     }
@@ -428,6 +524,10 @@ export async function L_OPS_2(): Promise<string> {
             const h = harness({ motion })
             const t = measurable(h)
             h.group.capture()
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((event) =>
+                events.push(event)
+            )
             const error = new Error('ops measure')
             injectLayoutFault('measure', error)
             const first = t.run(120)
@@ -442,9 +542,13 @@ export async function L_OPS_2(): Promise<string> {
             expectEqual(h.mc.clock.size, 0, 'measure: no subscription')
             expectEqual(h.group.stats.tracks, 0, 'measure: no track')
             expectEqual(
-                listeners.added,
-                listeners.removed,
-                'measure: no scroll listener'
+                document.getAnimations().length,
+                0,
+                'measure: no animation'
+            )
+            expectInternalError(
+                events.find((e) => e.code === 'internal-error'),
+                error
             )
             // every affected report resolves, and the engine is usable again
             h.group.capture()
@@ -455,7 +559,13 @@ export async function L_OPS_2(): Promise<string> {
             const second = await again.report
             expectEqual(second.status, 'ended', 'measure: next flush animates')
             expectAuthored(t.element, again.authored, 'measure: final restore')
+            stop()
             h.dispose()
+            expectEqual(
+                listeners.added,
+                listeners.removed,
+                'measure: no scroll listener'
+            )
             details.push('measure: failed, restored')
         }
 
@@ -463,27 +573,67 @@ export async function L_OPS_2(): Promise<string> {
         {
             const h = harness({ motion })
             const t = measurable(h)
-            injectLayoutFault('write')
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((event) =>
+                events.push(event)
+            )
+            const error = new Error('write flush')
+            injectLayoutFault('write', error)
             const first = t.run(120)
             const report = await first.report
             expectEqual(report.status, 'failed', 'write flush: status')
             expectAuthored(t.element, first.authored, 'write flush')
             expectEqual(h.mc.clock.size, 0, 'write flush: no subscription')
+            expectEqual(
+                document.getAnimations().length,
+                0,
+                'write flush: no animation'
+            )
+            expectInternalError(
+                events.find((e) => e.code === 'internal-error'),
+                error
+            )
+            stop()
             h.dispose()
+            expectEqual(
+                listeners.added,
+                listeners.removed,
+                'write flush: no scroll listener'
+            )
             details.push('write mid-flush: failed, restored')
         }
         {
             const h = harness({ motion })
             const t = measurable(h)
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((event) =>
+                events.push(event)
+            )
             const running = t.run(120)
             h.mc.frame(FRAME_MS)
-            injectLayoutFault('write')
+            const error = new Error('write frame')
+            injectLayoutFault('write', error)
             h.mc.frame(FRAME_MS)
             const report = await running.report
             expectEqual(report.status, 'failed', 'write frame: status')
             expectAuthored(t.element, running.authored, 'write frame')
             expectEqual(h.mc.clock.size, 0, 'write frame: no subscription')
+            expectEqual(
+                document.getAnimations().length,
+                0,
+                'write frame: no animation'
+            )
+            expectInternalError(
+                events.find((e) => e.code === 'internal-error'),
+                error
+            )
+            stop()
             h.dispose()
+            expectEqual(
+                listeners.added,
+                listeners.removed,
+                'write frame: no scroll listener'
+            )
             details.push('write mid-frame: failed, restored')
         }
 
@@ -495,7 +645,12 @@ export async function L_OPS_2(): Promise<string> {
             h.group.capture()
             element.style.left = '180px'
             const authored = element.style.cssText
-            injectLayoutFault('animate')
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((event) =>
+                events.push(event)
+            )
+            const error = new Error('animate')
+            injectLayoutFault('animate', error)
             const report = await h.group.flush()
             expectEqual(report.status, 'failed', 'animate: status')
             expectAuthored(element, authored, 'animate')
@@ -505,8 +660,62 @@ export async function L_OPS_2(): Promise<string> {
                 'animate: no animation'
             )
             expectEqual(h.mc.clock.size, 0, 'animate: no subscription')
+            expectInternalError(
+                events.find((e) => e.code === 'internal-error'),
+                error,
+                'waapi'
+            )
+            stop()
             h.dispose()
+            expectEqual(
+                listeners.added,
+                listeners.removed,
+                'animate: no scroll listener'
+            )
             details.push('animate: failed, no animation left')
+        }
+
+        // OPS-03: a throwing browser-animation cancel must not skip the rest
+        // of the cleanup: the realizer stops and internal-error is emitted.
+        {
+            const h = harness({ motion, engine: 'waapi' })
+            const element = node(h.root, boxAt(0, 0))
+            h.add(element, { layout: 'position' })
+            h.group.capture()
+            element.style.left = '160px'
+            const running = report(h.group.flush())
+            h.mc.frame(FRAME_MS)
+            const animation = document.getAnimations()[0]
+            if (!animation) throw new Error('OPS-03: no WAAPI animation')
+            Object.defineProperty(animation, 'cancel', {
+                configurable: true,
+                value: () => {
+                    throw new Error('cancel boom')
+                },
+            })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((event) =>
+                events.push(event)
+            )
+            const error = new Error('cleanup trigger')
+            injectLayoutFault('write', error)
+            const reportAfter = await h.group.flush()
+            expectEqual(reportAfter.status, 'failed', 'OPS-03: status')
+            expectEqual(h.mc.clock.size, 0, 'OPS-03: no subscription')
+            expectInternalError(
+                events.find((e) => e.code === 'internal-error'),
+                error,
+                'waapi'
+            )
+            await microtasks()
+            expectEqual(
+                running.value?.status,
+                'failed',
+                'OPS-03: running report failed'
+            )
+            stop()
+            h.dispose()
+            details.push('OPS-03: throwing cancel still cleans up')
         }
 
         // onSnap: a user callback, isolated
@@ -542,9 +751,25 @@ export async function L_OPS_2(): Promise<string> {
             }
             const callback = events.filter((e) => e.code === 'callback-error')
             expectEqual(callback.length, 1, 'onSnap: callback-error')
-            expectEqual(callback[0]!.error, error, 'onSnap: error payload')
+            expectEqual(
+                events.map((e) => e.code),
+                ['unsupported-geometry', 'callback-error'],
+                'onSnap: order'
+            )
+            expectCallbackError(callback[0], element, error)
+            expectEqual(h.mc.clock.size, 0, 'onSnap: no subscription')
+            expectEqual(
+                document.getAnimations().length,
+                0,
+                'onSnap: no animation'
+            )
             listener()
             h.dispose()
+            expectEqual(
+                listeners.added,
+                listeners.removed,
+                'onSnap: no scroll listener'
+            )
             details.push('onSnap: callback-error, state unchanged')
         }
 
@@ -585,6 +810,7 @@ export async function L_OPS_2(): Promise<string> {
                 'listener: order'
             )
             expectEqual(seen[1]!.error, error, 'listener: error payload')
+            expectCallbackError(seen[1], element, error)
             expectEqual(
                 firstEvents.map((event) => event.code),
                 [],
@@ -595,9 +821,20 @@ export async function L_OPS_2(): Promise<string> {
                     'listener: the dev rethrow is not the listener error'
                 )
             }
+            expectEqual(h.mc.clock.size, 0, 'listener: no subscription')
+            expectEqual(
+                document.getAnimations().length,
+                0,
+                'listener: no animation'
+            )
             first()
             second()
             h.dispose()
+            expectEqual(
+                listeners.added,
+                listeners.removed,
+                'listener: no scroll listener'
+            )
             details.push(
                 'diagnostic listener: callback-error to the others only'
             )
@@ -612,6 +849,195 @@ export async function L_OPS_2(): Promise<string> {
 }
 
 /* ───────────────────────── caps in a browser ───────────────────────── */
+
+function MaxItem({ id }: { id: string }): ReactNode {
+    const ref = useLayout<HTMLDivElement>()
+    return h('div', {
+        ref,
+        className: 'ops-late-item',
+        'data-late': id === 'c' ? 'yes' : undefined,
+        style: {
+            position: 'absolute',
+            left: id === 'a' ? 0 : id === 'b' ? 120 : 240,
+            top: 0,
+            width: 80,
+            height: 80,
+        },
+    })
+}
+
+/** N2: a React late add over `maxParticipants` takes no measurement read. */
+export async function L_OPS_MAXP_LATE(): Promise<string> {
+    const mc = createManualClock()
+    const host = document.createElement('div')
+    host.style.cssText = 'position: relative; width: 500px; height: 300px;'
+    document.body.append(host)
+    const root: Root = createRoot(host)
+    const quiet = silenceWarnings()
+    const events: LayoutDiagnostic[] = []
+    let update!: (fn: () => void) => Promise<LayoutReport>
+    let addLate!: () => void
+    function Controls(): null {
+        update = useLayoutGroup().update
+        return null
+    }
+    function App(): ReactNode {
+        const [ids, setIds] = useState(['a', 'b'])
+        addLate = () => setIds(['a', 'b', 'c'])
+        return h(
+            'div',
+            null,
+            ids.map((id) => h(MaxItem, { key: id, id }))
+        )
+    }
+    try {
+        flushSync(() =>
+            root.render(
+                h(
+                    LayoutGroup,
+                    { clock: mc.clock, maxParticipants: 2 },
+                    h(Controls),
+                    h(App)
+                )
+            )
+        )
+        await microtasks()
+        const stop = layoutRuntime.onDiagnostic((event) => events.push(event))
+        const rect = Element.prototype.getBoundingClientRect
+        let lateReads = 0
+        Element.prototype.getBoundingClientRect = function (this: Element) {
+            if ((this as HTMLElement).dataset.late === 'yes') lateReads += 1
+            return rect.call(this)
+        }
+        let report: LayoutReport
+        try {
+            report = await update(addLate)
+        } finally {
+            Element.prototype.getBoundingClientRect = rect
+            stop()
+        }
+        expectEqual(report.status, 'capped', 'late max: status')
+        expectEqual(lateReads, 0, 'late max: no late-mount rect read')
+        const late = host.querySelector<HTMLElement>('[data-late="yes"]')
+        expectEqual(late !== null, true, 'late max: item mounted')
+        expectEqual(late!.style.translate, '', 'late max: no pose')
+        const cap = events.filter((event) => event.code === 'participant-cap')
+        expectEqual(cap.length, 1, 'late max: one participant-cap')
+        expectEqual(cap[0]!.metrics.rectReads, 0, 'late max: metric rects')
+        expectEqual(
+            events.filter(
+                (event) =>
+                    event.code === 'capture-less-flush' ||
+                    event.code === 'capture-aged'
+            ).length,
+            0,
+            'late max: no stale diagnostic'
+        )
+        return `React late add over maxParticipants: ${report.status}, reads ${lateReads}, metric ${cap[0]!.metrics.rectReads}`
+    } finally {
+        quiet.restore()
+        flushSync(() => root.unmount())
+        await microtasks()
+        host.remove()
+    }
+}
+
+/** OPS-16: the React `maxParticipants` option reaches the adapter's scope. */
+export async function L_OPS_MAXP(): Promise<string> {
+    const results: string[] = []
+    const quiet = silenceWarnings()
+    try {
+        for (const maxParticipants of [1, 0] as const) {
+            const mc = createManualClock()
+            const host = document.createElement('div')
+            host.style.cssText =
+                'position: relative; width: 500px; height: 300px;'
+            document.body.append(host)
+            const root: Root = createRoot(host)
+            let update!: (fn: () => void) => Promise<LayoutReport>
+            let swap!: () => void
+            function Controls(): null {
+                const controls = useLayoutGroup()
+                update = controls.update
+                return null
+            }
+            function App(): ReactNode {
+                const [first, setFirst] = useState(true)
+                swap = () => setFirst((value) => !value)
+                const a = useLayout<HTMLDivElement>()
+                const b = useLayout<HTMLDivElement>()
+                return h(
+                    'div',
+                    null,
+                    h('div', {
+                        ref: a,
+                        className: 'ops-item',
+                        style: {
+                            position: 'absolute',
+                            left: first ? 0 : 200,
+                            top: 0,
+                            width: 80,
+                            height: 80,
+                        },
+                    }),
+                    h('div', {
+                        ref: b,
+                        className: 'ops-item',
+                        style: {
+                            position: 'absolute',
+                            left: first ? 200 : 0,
+                            top: 0,
+                            width: 80,
+                            height: 80,
+                        },
+                    })
+                )
+            }
+            try {
+                flushSync(() =>
+                    root.render(
+                        h(
+                            LayoutGroup,
+                            { clock: mc.clock, maxParticipants },
+                            h(Controls),
+                            h(App)
+                        )
+                    )
+                )
+                await microtasks()
+                const report = await update(swap)
+                expectEqual(
+                    report.status,
+                    'capped',
+                    `react max ${maxParticipants}`
+                )
+                const items = [
+                    ...host.querySelectorAll<HTMLElement>('.ops-item'),
+                ]
+                expectEqual(
+                    items.length,
+                    2,
+                    `react max ${maxParticipants}: items`
+                )
+                for (const item of items) {
+                    expectEqual(
+                        item.style.translate,
+                        '',
+                        `react max ${maxParticipants}: no pose`
+                    )
+                }
+                results.push(`${maxParticipants === 0 ? '0' : '1'} → capped`)
+            } finally {
+                flushSync(() => root.unmount())
+                await microtasks()
+                host.remove()
+            }
+        }
+    } finally {
+        quiet.restore()
+    }
+    return `React maxParticipants: ${results.join(', ')}`
+}
 
 /** §4.1/§9.1: the participant and mover caps, proved with `stats`. */
 export async function CAPS(): Promise<string> {

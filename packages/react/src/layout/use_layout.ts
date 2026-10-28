@@ -95,6 +95,7 @@ export function useLayout<E extends HTMLElement = HTMLElement>(
                 current.options = latestResolved.current
                 current.scope.set(element.current, current.options)
             }
+            current.scope.captureAdded(element.current)
         }
         current?.scope.commit()
         for (const scope of touchedRef.current) scope.commit()

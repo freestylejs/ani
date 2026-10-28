@@ -72,6 +72,40 @@ beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation((message: string) => {
         warnings.push(message)
     })
+    const transformMatrix = (value: string): string => {
+        if (!value || value === 'none') return 'none'
+        if (value.trim().startsWith('matrix')) return value
+        if (/rotate|skew|perspective|matrix3d/.test(value)) return value
+        let tx = 0
+        let ty = 0
+        let sx = 1
+        let sy = 1
+        let found = false
+        const pattern =
+            /(translateX|translateY|translate|scaleX|scaleY|scale)\(([^)]+)\)/g
+        for (const match of value.matchAll(pattern)) {
+            found = true
+            const fn = match[1]
+            const args = match[2]!.trim().split(/\s*,\s*|\s+/)
+            const num = (arg: string | undefined): number => {
+                if (!arg) return 0
+                const n = Number.parseFloat(arg)
+                return arg.endsWith('%') ? n / 100 : n
+            }
+            if (fn === 'translateX') tx += num(args[0])
+            else if (fn === 'translateY') ty += num(args[0])
+            else if (fn === 'translate') {
+                tx += num(args[0])
+                ty += num(args[1] ?? args[0])
+            } else if (fn === 'scaleX') sx *= num(args[0])
+            else if (fn === 'scaleY') sy *= num(args[0])
+            else {
+                sx *= num(args[0])
+                sy *= num(args[1] ?? args[0])
+            }
+        }
+        return found ? `matrix(${sx}, 0, 0, ${sy}, ${tx}, ${ty})` : value
+    }
     const realGetComputedStyle = window.getComputedStyle.bind(window)
     vi.spyOn(window, 'getComputedStyle').mockImplementation((elt: Element) => {
         const raw = realGetComputedStyle(elt)
@@ -81,7 +115,8 @@ beforeEach(() => {
                 if (prop === 'translate') return html.style.translate || 'none'
                 if (prop === 'scale') return html.style.scale || 'none'
                 if (prop === 'rotate') return html.style.rotate || 'none'
-                if (prop === 'transform') return html.style.transform || 'none'
+                if (prop === 'transform')
+                    return transformMatrix(html.style.transform)
                 if (prop === 'transformOrigin') return '0px 0px'
                 if (prop === 'transitionDuration') return '0s'
                 if (prop === 'transitionDelay') return '0s'
