@@ -1,0 +1,16 @@
+# H11a webkit react_layout
+commit: 993e9a6bca3fb52090ca3617b7f6d45b4af151bb
+date: 2026-10-28T13:40:40Z
+load-method: 20 x yes(1) workers
+
+
+> @freestylejs/ani-monorepo@1.0.0 test:browser /Users/june/Documents/project/freestylejs/ani-ios-scope-correction
+> node tests/browser/run.ts --browser webkit --case react_layout:RL3 --case react_layout:RL3_AGED
+
+PASS react_layout:RL3 (1024 ms)
+    119 checks over 3 DOM mutations, picture unmoved; 6 nodes animated and settled (detailefbcad)
+PASS react_layout:RL3_AGED (705 ms)
+    advanced aged commit: 'stale' acdebf
+
+2 passed, 0 failed, 0 known failures, 0 skipped (2.3 s)
+exit: 0
