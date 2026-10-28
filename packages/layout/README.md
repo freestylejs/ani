@@ -178,9 +178,16 @@ interface LayoutDriveHandle {
   hold; a change while landing applies at the next flush.
 - Removal, `ownerDocument` change, `layoutKey` change, `dispose()`, `finish()`, the kill switch, a
   failed held read or a `'failed'` abort invalidate the handle; the element follows that event's
-  rule and the held read stops. The authored inline style is restored byte for byte. A held node
-  and its riding descendants are visible movers: a flush that would exceed `maxNodes` invalidates
-  the holds, snaps the scope and reports `'capped'`.
+  rule and the held read stops. A running CSS animation or transition on `translate`/`scale` on the
+  held element, a participant ancestor, or any element in the held subtree invalidates with
+  `unsupported-geometry` (P4-C7). A box-preserving 180° rotation/zoom that the support check cannot
+  classify is a documented residual risk: the check may invalidate the hold rather than accept it.
+  The authored inline style is restored byte for byte. A held node and its riding descendants are
+  visible movers: a flush that would exceed `maxNodes` invalidates the holds, snaps the scope and
+  reports `'capped'`; `onSnap` lists each held node and rider with reason `'capped'`.
+- Under `'jump'`, a flush while held or landing settles every descendant residual at its own A (the
+  descendant still rides `h` while held). A release that finds no fitting reduced-motion path emits
+  the typed `reduced-no-fit` diagnostic and lands at A with the handle `released`.
 - A `take` before an unflushed layout uses its own rect/computed reads for the new held geometry,
   not the stale last-flush geometry; if the current geometry cannot be supported it throws.
 - The ancestor/descendant hold exclusion is scope-local. A participant registered in another group
@@ -194,7 +201,9 @@ interface LayoutDriveHandle {
 In React, `useLayoutDrive()` returns a dispatcher for the same port; its `take(element)` routes to
 the live `LayoutGroup` (or the implicit root) that owns the registered element, and throws
 `ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref detach/re-attach preserves a
-live hold.
+live hold. The gesture layer maps `pointercancel` and `lostpointercapture` to `cancel()` so a
+cancelled gesture never becomes an accidental release; a box-preserving 180° rotation/zoom is the
+same documented support residual risk as above.
 
 ## Report
 
@@ -284,7 +293,7 @@ stop()
 
 Codes: `capture-less-flush`, `capture-aged`, `unsupported-geometry`, `handoff-scroll-active`,
 `spring-timeout`, `participant-cap`, `mover-cap`, `document-mismatch`, `runtime-disabled`,
-`focus-in-follower`, `drive-rejected`, `callback-error`, `internal-error`. `measurement-unsupported` is reserved
+`focus-in-follower`, `drive-rejected`, `reduced-no-fit`, `callback-error`, `internal-error`. `measurement-unsupported` is reserved
 for the engine's measurement fallback; `focus-in-follower` is emitted by the accessibility rule
 with action `'none'` and is never a snap.
 
