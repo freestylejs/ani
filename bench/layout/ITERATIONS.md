@@ -661,3 +661,97 @@ cannot decide a ratio, and no quantized ratio is presented as a failure.
 - The React G13 audit is a DOM read count because the public adapter exposes
   no `group.stats`; it is exact after the documented S-DELETE exclusion.
 - The S-ISLAND G6 edge needs a gate-scope decision, not a scene workaround.
+
+## Iteration 4 — H15 fix round: trustworthy P5b evidence
+
+- Worktree: `ani-h15`, branch `helper/h15`, base `ad060d4` (review-blocked
+  P5b evidence); no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-4/report.json`
+- Report: `bench/layout/iteration-4/report.json`; log:
+  `bench/layout/iteration-4/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **4.85**, cost **advisory**; frame gates decide.
+- Self-tests: **14 controls across 7 files pass** (75/75 tests on the
+  standalone `pnpm test:bench-layout`).
+- Browser controls: **25 per engine / 50 total, all ok; 46 conclusive, 4
+  inconclusive** (`photo-no-counter-scale` and `acc-separator-1px` on each
+  engine, because the primary S-PHOTO/S-ACC G1 already fails; they are not
+  counted as evidence).
+
+### H15 fix ledger
+
+| ID | Fix | Test / result |
+|---|---|---|
+| H15-01 | `aggregateSceneReport` adds a deciding `RUN` metric and fails the scene if **any** measured run fails (problems, real twin, teardown, G8 or a metric); the `RUN` detail names the failing metric/participant/frame and problems. | `aggregate.test` H15-01 metric-clean/problem-carrying test; S-DELETE per-run now passes; `RUN=0` for every passing scene; `RUN=5` for S-PHOTO/S-ACC; the full report is fail, not a false pass. |
+| H15-02 | `REQUIRED_SCENES` includes every P5b scene plus cost; certification reasons name every non-pass required scene. | `certification.test` P5b-failure case; report `requiredScenes` lists all nine; reasons include `chromium/webkit scene s-photo fail` and `s-acc fail`. |
+| H15-03 | React `record` populates `elements` before the builder check; `realTwinProblems` checks diagnostics, connected, tracks and holds; a unit test covers the teardown. | S-ACC real connected 43, S-INSERT 16, S-DELETE 7, S-PHOTO 301; `aggregate.test` H15-03 real-twin teardown test; no run carries the old `real twin has no connected participants`. |
+| H15-04 | S-DELETE swipe is authored `translateX(0→−80)`; the exiting row keeps its registration, changes `layoutKey` to end the layout track, is pinned to its presented box (measured in the exiting render), the own transform is divided out by `popLayout` (J-027), and the presence translateX starts at 0. Opacity is an author `1→0` 0.2 s linear timeline. | S-DELETE G2 0.0095 px at `delete-2`; G1 0.0095; `delete-2` rects 18/18; ITERATIONS records the 0.2 s opacity (not 0.25). |
+| H15-05 | G13 asserts exact `2N` rects and pairs (not `<=`), exact computed reads, zero frame reads; S-DELETE `delete-2` is 18/18 (not 16); the blanket `{rects:4, styles:8}` exclusion is removed. React `popBox`/`containsAbsolute`/`ownMap` reads are classified by call stack and recorded as `presenceRects`/`presenceStyles`; the gate uses the layout subset. | S-DELETE Chromium 18/18 rects, 4/4 and 3/3 computed; WebKit 10/8; the G13 extra-read controls fail; the report shows the excluded presence reads (2/2 per commit). |
+| H15-06 | Controls are conclusive only when the primary passes the target (the contaminated photo/acc G1 controls are reported inconclusive); isolated G6, G13 and badge-scale controls were added for every new scene. | 50 controls, 46 conclusive, all conclusive fail their target; `photo-leftover-pose`, `photo-extra-read`, `acc-leftover-pose`, `acc-extra-read`, `insert-leftover-pose`, `insert-extra-read`, `stack-extra-read`, `stack-leftover-pose`, `stack-no-badge-scale`, `island-extra-read`, `delete-extra-read` all fail. |
+| H15-07 | `ScenePlan.removedWith` and `removedWithFollower` exempt a descendant removed with a crossfade follower; S-ISLAND declares `card-content → card`. | `scoring.test` H15-07 descendant-exemption test; S-ISLAND G6 0 and the scene passes in both engines (was the only failure). |
+| H15-08 | S-INSERT expects `snapped []` / `onSnap []`: a mounting row has no B and §9.1 requires both B and A outside the viewport. The earlier three-`culled` expectation was scene/oracle overreach, not an engine defect. | S-INSERT G7 0; the scene passes both engines; G1/G2/G4/G13 unchanged. |
+| H15-09 | S-STACK disc scale is checked by `shape.badge-scale` (computed transform sampled per frame, declared 0.8→1 / 1→0.8 timeline); the control disables it. | `shape.badge-scale` 4.9e-7; `stack-no-badge-scale` fails at 0.2; S-STACK passes. |
+| H15-10 | S-ISLAND's exiting card content keeps the 0.28 s spring (spec `position` departure) and is documented/tested as the H15-10 contribution; the pill content remains a position wrapper. | README scene contributions and this ledger; S-ISLAND G1–G5/G7/G13 pass; the H15-07 rule covers the removal. |
+| H15-11 | S-PHOTO registers the selected cell/image (the only layoutIds) after the initial scroll, so the scroll event never meets the engine's active-scroller listeners; WebKit 2203 has no `scrollend`, so the settle proof is the scroll event plus two frames, and an unsettled scroll rejects instead of silently continuing. The real twin reuses the same open/back unregister/add path. | S-PHOTO runs in WebKit; the manual/real diagnostics are the H18 nested-image stale path (2/3), not a missing capture; no `handoff-scroll-active`; G13 2/4 and 4/4 exact. |
+| S3 | Inline SVG icons with `currentColor` in S-ACC/S-PHOTO/S-ISLAND; S-ACC spacer arithmetic now uses a relative group top (scroller content 773); README/report G13 and popBox claims corrected; 6 biome warnings removed. | `pnpm exec biome check bench/layout` 0 errors, 0 warnings; S-ACC spacer geometry unchanged for participants; icons are non-participants. |
+
+### Scene and metric table (5 measured runs; median and worst)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-CARD | C1/G1–G8/G13/shape | **pass**; G1 0.0013 (frame 102 card-title left), G2 0.0012, G4 0.0013, G13 8/15, 8/15, 9/16, G8 0.320 ms | **pass**; G1 0.0004 (frame 73 sheet-content bottom), G13 15/15, 16/16, G8 1.000 ms |
+| S-SEG | C1/G1–G8/G13/shape | **pass**; G1 0.0001 (frame 17 pill right), G13 2/2, G8 0.280 ms | **pass**; G1 0.0000, G13 3/3, G8 1.000 ms |
+| S-PHOTO | C1/G1–G8/G13/shape | **FAIL** RUN 5, G1 306.2501, G2 306.2501, G4 306.2501 (frame 81 cell-37-image top), G7 4 (open `snapped [detail-image:stale]`); G13 2/2; G8 0.255 ms | **FAIL** RUN 5, G1/G2/G4 306.2501 (frame 81 cell-37-image top), G7 4; G13 4/4; G8 1.000 ms |
+| S-STACK | C1/G1–G8/G13/shape | **pass**; G1 0.0003 (frame 73 badge-1 top), G13 21/33 and 12/24, badge-scale 0, G8 0.415 ms | **pass**; G1 0.0002, G13 33/33 and 24/24, G8 1.000 ms |
+| S-ISLAND | C1/G1–G8/G13/shape | **pass**; G1 0.0006 (frame 17 card-content right), G2 0.0006, G13 5/9 and 6/10, G8 0.420 ms | **pass**; G1 0.0003, G2 0.0001, G13 9/9 and 10/10, G8 1.000 ms |
+| S-ACC | C1/G1–G8/G13/shape | **FAIL** RUN 5, G1 120.0000, G4 120.0000 (frame 12 body-6 bottom), G2 55.6732 (frame 18 body-6 c3); G13 47/47; G8 0.525 ms | **FAIL** RUN 5, G1/G4 120.0001, G2 55.6732; G13 82/82; G8 1.000–2.000 ms |
+| S-INSERT | C1/G1–G8/G13/shape | **pass**; G1 0.0001 (frame 14 row-10 bottom), G2 0, G4 0.0001, G7 0, G13 16/16, G8 0.600 ms | **pass**; G1 0.0001 (frame 14 row-21 bottom), G13 29/29, G8 2.000 ms median (per-run 1/2/2/2/1) |
+| S-DELETE | C1/G1–G8/G13/shape | **pass**; G1 0.0095 (frame 18 row-5 top), G2 0.0095, G3 0, G6 0, G7 0, G13 18/18 with 4/4 and 3/3, G8 0.465 ms | **pass**; G1 0.0095, G2 0.0095, G13 18/18 with 10/8, G8 1.000 ms |
+
+### Four failures — final classification
+
+- **S-PHOTO 306.25 px**: genuine engine late nested handoff defect (H18
+  evidence). The detail frame hands off; the nested detail image is skipped by
+  the late-handoff guard and snaps to A. Keep failing; do not fix in H15.
+- **S-ACC 120/55.67 px**: genuine engine counter-projection defect (H18
+  evidence). `body-6` is drawn as its layout box under the row's new height
+  pose at the mid-flight row 6 expansion. Keep failing; do not fix in H15.
+- **S-INSERT `snapped []`**: scene/oracle overreach, not engine. Fixed to the
+  correct `[]`; S-INSERT passes.
+- **S-ISLAND G6**: harness false positive. Fixed by the H15-07 descendant
+  exemption; S-ISLAND passes.
+
+### Certification and controls (iteration 4)
+
+- `certified: false`; reasons: advisory cost, pending S-REORDER/S-SHEET/
+  S-BULK G12 (P4), Chromium/WebKit S-PHOTO fail, Chromium/WebKit S-ACC fail,
+  Chromium S-BULK G9 3.321/3.353 and G11 11.665, WebKit S-BULK blocked/invalid.
+- `requiredScenes` now includes every P5b scene and `cost`.
+- 50 controls (25 per engine), all `ok`; 46 conclusive and all fail; 4
+  inconclusive are the contaminated photo/acc G1 controls. The full control
+  output is in the report.
+- Cost unchanged: Chromium G9 3.321/3.353×, G11 11.665 ms, G10 1.080 ms,
+  floor audit pass; WebKit blocked by the 1 ms timer. Load 4.85 → advisory.
+
+### Residual risks / next
+
+- S-PHOTO and S-ACC are the two H18 engine defects; H15 does not edit the
+  engine.
+- WebKit 2203 has no `scrollend`; S-PHOTO's settle proof is the scroll event
+  plus two frames with the selected layoutIds registered only after the
+  scroll. The engine's active-scroller rule is not exercised on WebKit's
+  missing event; the scene does not hide a scroll-active handoff (an unsettled
+  scroll rejects).
+- The S-PHOTO real twin emits three `capture-less-flush` stale diagnostics
+  versus the manual run's two, all on the same H18 nested image/frame path;
+  the extra one is recorded, not suppressed. The S-PHOTO scene fails honestly.
+- The exact G13 read sets are pinned per scene/commit from the audited
+  §4.1/§4.3 set; the React presence probe reads are classified per commit, not
+  subtracted by a constant. The style totals remain scene/engine constants
+  because the engine's measured-node set (support/cache/Typed OM) is
+  implementation-specific; the rect/pair counts are exact `2N`.
+- DPR 1/3 and reduced-motion variants remain P5c; P4 remains pending.
