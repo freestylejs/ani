@@ -1,6 +1,7 @@
-import { type Clock, DEV } from '@freestylejs/ani-core'
+import { type Clock, createAniError, DEV } from '@freestylejs/ani-core'
 import {
     createLayoutGroup,
+    type LayoutDriveHandle,
     type LayoutGroup,
     type LayoutGroupOptions,
     type LayoutMotion,
@@ -15,6 +16,18 @@ import { createContext, type Ref, type RefCallback } from 'react'
 import { flushSync } from 'react-dom'
 
 const NO_CHANGE: LayoutReport = { status: 'no-change', snapped: [] }
+
+/**
+ * The live scope that owns each registered participant (§7.3). It is the
+ * dispatcher's routing table: an explicit group or an implicit root owns an
+ * element from its `add` to its removal, including a StrictMode re-attach.
+ */
+const owners = new WeakMap<Element, LayoutScope>()
+
+/** The live scope that owns `element`, or `undefined`. */
+export function ownerOf(element: Element): LayoutScope | undefined {
+    return owners.get(element)
+}
 
 /** Package-internal mount hand-off; not part of the public layout API. */
 const CAPTURE_ADDED = Symbol.for('ani-layout.capture-added')
@@ -40,6 +53,8 @@ export interface LayoutScope {
     captureAdded(element: HTMLElement): void
     update(fn: () => void): Promise<LayoutReport>
     finish(): void
+    /** Package-internal: takes a participant on this scope (§5.10). */
+    take(element: HTMLElement): LayoutDriveHandle
     /** Re-creates the core group with new options. */
     recreate(options: LayoutGroupOptions): void
     dispose(): void
@@ -309,6 +324,7 @@ export function createLayoutScope(
                 }
                 if (created) initialCapture = true
                 members.set(element, member)
+                owners.set(element, scope)
                 watch(element)
             }
             const self = member
@@ -318,6 +334,7 @@ export function createLayoutScope(
                 queueMicrotask(() => {
                     if (!self.leaving || members.get(element) !== self) return
                     members.delete(element)
+                    if (owners.get(element) === scope) owners.delete(element)
                     self.remove()
                     if (members.size === 0) emptied()
                 })
@@ -364,6 +381,20 @@ export function createLayoutScope(
             group?.finish()
         },
 
+        take(element) {
+            const current = group
+            if (!current) {
+                throw createAniError(
+                    TypeError,
+                    'ANI_INVALID_OPTIONS',
+                    DEV
+                        ? '[ani-react/layout] take: no layout scope owns the element.'
+                        : ''
+                )
+            }
+            return current.take(element)
+        },
+
         recreate(next) {
             options = next
             if (!group) return
@@ -385,6 +416,9 @@ export function createLayoutScope(
             touched = false
             group?.dispose()
             group = null
+            for (const element of members.keys()) {
+                if (owners.get(element) === scope) owners.delete(element)
+            }
             members.clear()
             observer?.disconnect()
             observer = null

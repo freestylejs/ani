@@ -63,7 +63,7 @@ function Item({ label }: { label: string }) {
 }
 ```
 
-It also exports `LayoutGroup`, `useLayoutGroup`, `AnimatePresence`, `usePresence` and `usePresenceControl`. See the [Layout guide](https://freestyle-ani.vercel.app/en/docs/guides/layout).
+It also exports `LayoutGroup`, `useLayoutGroup`, `useLayoutDrive`, `AnimatePresence`, `usePresence` and `usePresenceControl`. See the [Layout guide](https://freestyle-ani.vercel.app/en/docs/guides/layout).
 
 ## Documentation
 
