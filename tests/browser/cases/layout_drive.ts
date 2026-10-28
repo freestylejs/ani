@@ -370,13 +370,45 @@ export async function L_DRIVE_2(): Promise<string> {
             'release starts from the held height'
         )
         const releaseOrigin = originOf(released)
+        const releaseTarget = { x: 300, y: 120, w: 160, h: 80 }
+        const releaseSpec = specOf(
+            released,
+            releaseTarget,
+            { x: 200, y: 0, w: 0, h: 0 },
+            0.6
+        )
+        const releaseOracle = (t: number) =>
+            originOf(expectedBox(releaseSpec, t))
         handle.release({ x: 200, y: 0 })
         let alongWorst = 0
+        let originWorst = 0
+        let firstV = 0
+        let previous = releaseOrigin
         await frames(h.mc, 40, (_elapsed, index) => {
-            // H13-15: the first release update is dt = 0 and equals the held
-            // origin (the size continuation advances on its own clock)
+            // H13-15R: the release origin follows its own independent oracle
+            // for several frames; the caught take velocity (≈566 px/s) is not
+            // added to the supplied 200 px/s
             if (index === 0) {
                 expectOrigin(a, releaseOrigin, 'caught-card release origin')
+            }
+            const wantOrigin = releaseOracle(index * DT)
+            if (index > 0 && index <= 5) {
+                const now = originOf(pageBox(a))
+                originWorst = Math.max(
+                    originWorst,
+                    Math.abs(now.x - wantOrigin.x),
+                    Math.abs(now.y - wantOrigin.y)
+                )
+                firstV = (now.x - previous.x) / DT
+                previous = now
+            }
+            if (index === 1) {
+                expectClose(firstV, 200, 20, 'release velocity enters once')
+                expectEqual(
+                    firstV < 400,
+                    true,
+                    'take velocity is not added to the release origin'
+                )
             }
             const t = releaseStart + (index + 1) * DT
             const want = expectedBox(spec, t)
@@ -388,6 +420,7 @@ export async function L_DRIVE_2(): Promise<string> {
                 Math.abs(pageBox(a).h - want.h)
             )
         })
+        expectClose(originWorst, 0, TOL, 'release origin on the oracle')
         expectClose(alongWorst, 0, TOL, 'size continuation after release')
         details.push(
             `release kept the size continuation, worst ${alongWorst.toFixed(4)} px`
@@ -1424,6 +1457,13 @@ export async function L_DRIVE_5(): Promise<string> {
                 false,
                 'reduced no-fit is not a spring timeout'
             )
+            expectEqual(
+                events.some(
+                    (e) => e.code === 'reduced-no-fit' && e.element === a
+                ),
+                true,
+                'reduced no-fit diagnostic'
+            )
             stop()
             h.dispose()
             details.push('reduced no-fit mapped to released + jump')
@@ -1455,6 +1495,68 @@ export async function L_DRIVE_5(): Promise<string> {
             stop()
             h.dispose()
             details.push('spring refusal emitted spring-timeout and snapped')
+        }
+
+        // H13-10R/P4-C8: under 'jump', a flush while held settles a stale
+        // descendant residual at its A; the child keeps riding h and lands
+        // with the parent
+        {
+            const h = harness({
+                motion: { duration: 0.3, timing: linear },
+            })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.2, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            // a live child residual before the take
+            h.group.capture()
+            child.style.left = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(parent)
+            handle.move({ x: 40, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.mc.setReducedMotion(true) // effective jump while held
+            h.group.capture()
+            await h.group.flush()
+            // the flush's t = 0 write is already at the child's A + h
+            const rel = viewBox(child).x - viewBox(parent).x
+            expectClose(rel, 80, 1, 'jump flush settles the residual at A')
+            await frames(h.mc, 4, (elapsed) => {
+                expectClose(
+                    viewBox(child).x - viewBox(parent).x,
+                    80,
+                    1,
+                    `jump held child stays at A + h (${elapsed.toFixed(3)}s)`
+                )
+            })
+            handle.release({ x: 100, y: 0 })
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(handle.state, 'released', 'jump descendant release')
+            expectEqual(h.mc.pending, 0, 'jump descendant flush unsubscribes')
+            expectEqual(h.group.stats.holds, 0, 'jump descendant hold finished')
+            expectEqual(parent.style.translate, '', 'jump parent restores')
+            expectEqual(child.style.translate, '', 'jump child restores')
+            expectClose(
+                viewBox(child).x - viewBox(parent).x,
+                80,
+                1,
+                'jump landed child at its layout offset'
+            )
+            details.push('jump flush settled the descendant residual at A')
+            h.dispose()
         }
 
         // H13-10: a policy change while landing applies at the next flush
@@ -1894,6 +1996,47 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             h.dispose()
         }
 
+        // H13-11: a running owned CSS animation in a held *descendant* is
+        // caught by the animated-owned probe and invalidates the ancestor
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const style = document.createElement('style')
+            style.textContent =
+                '@keyframes held-desc { from { translate: 0 0 } to { translate: 10px 0 } }'
+            document.head.append(style)
+            const parent = node(
+                h.root,
+                'left:0px;top:0px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(parent)
+            handle.move({ x: 20, y: 10 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'descendant probe starts held')
+            child.style.animation = 'held-desc 1s linear infinite'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(
+                handle.state,
+                'invalidated',
+                'descendant animated probe invalidates'
+            )
+            expectEqual(h.group.stats.holds, 0, 'descendant probe clears holds')
+            expectEqual(parent.style.translate, '', 'descendant probe restores')
+            child.style.animation = ''
+            style.remove()
+            h.dispose()
+            details.push('descendant animated-owned probe')
+        }
+
         // H13-16: an injected write fault during a live hold aborts the
         // transaction, restores byte-identically and leaves nothing running
         {
@@ -1927,6 +2070,8 @@ export async function L_DRIVE_EDGES(): Promise<string> {
             h.mc.frame(FRAME)
             await settleMicrotasks()
             expectEqual(h.mc.pending, 0, 'write fault unsubscribes')
+            expectEqual(h.mc.clock.size, 0, 'write fault clock cleanup')
+            expectEqual(h.mc.pending, 0, 'write fault marker cleanup')
             stop()
             h.dispose()
         }
@@ -1959,9 +2104,97 @@ export async function L_DRIVE_EDGES(): Promise<string> {
                 true,
                 'measure fault reports internal-error'
             )
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(h.mc.pending, 0, 'measure fault marker cleanup')
+            expectEqual(h.mc.clock.size, 0, 'measure fault clock cleanup')
+            // the scope is usable again: a fresh capture/flush does not abort
+            h.group.capture()
+            const afterFault = await h.group.flush()
+            expectEqual(
+                afterFault.status,
+                'no-change',
+                'measure fault recovers'
+            )
             stop()
             clearLayoutFaults()
             h.dispose()
+        }
+
+        // H13-16: an abort disarms the scroll listeners and the clock, not
+        // only the marker and the writes
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false, layoutId: 'fault-listener' })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 20, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const originalRemove = document.removeEventListener
+            let removed = 0
+            document.removeEventListener = function (
+                this: Document,
+                ...args: Parameters<Document['removeEventListener']>
+            ) {
+                removed += 1
+                return originalRemove.apply(this, args)
+            }
+            try {
+                injectLayoutFault('measure', new Error('listener fault'))
+                h.group.capture()
+                await h.group.flush()
+            } finally {
+                document.removeEventListener = originalRemove
+                clearLayoutFaults()
+            }
+            expectEqual(
+                handle.state,
+                'invalidated',
+                'listener fault invalidates'
+            )
+            expectEqual(
+                removed > 0,
+                true,
+                'listener fault disarms scroll listeners'
+            )
+            expectEqual(h.mc.clock.size, 0, 'listener fault clock cleanup')
+            h.dispose()
+            details.push('fault-related listener cleanup')
+        }
+        // coverage: a refused held size track snaps the size and keeps the
+        // hold (spring-timeout), rather than leaving a stale continuation
+        {
+            const h = harness({
+                motion: { type: 'spring', duration: 10, bounce: 0.99 },
+            })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 20, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.group.capture()
+            a.style.width = '120px'
+            await h.group.flush()
+            expectEqual(handle.state, 'held', 'size refusal keeps the hold')
+            expectEqual(
+                events.some((e) => e.code === 'spring-timeout'),
+                true,
+                'size refusal reports spring-timeout'
+            )
+            handle.cancel()
+            await frames(h.mc, 30, () => undefined)
+            expectEqual(h.mc.clock.size, 0, 'size refusal unsubscribes')
+            stop()
+            h.dispose()
+            details.push('refused size track snapped and kept the hold')
         }
 
         // H13-11/P4-C7: a running owned CSS animation is refused at take and
@@ -2214,6 +2447,8 @@ export async function L_DRIVE_FIX(): Promise<string> {
             h.mc.frame(FRAME)
             await settleMicrotasks()
             a.style.width = `${80 + delta}px`
+            h.group.capture()
+            await h.group.flush()
             h.mc.frame(FRAME)
             await settleMicrotasks()
             expectEqual(
@@ -2222,11 +2457,22 @@ export async function L_DRIVE_FIX(): Promise<string> {
                 `supported ${delta} px re-layout keeps the hold`
             )
             handle.release()
-            await frames(h.mc, 45, () => undefined)
+            let beforeFinish = 0
+            await frames(h.mc, 24, (_elapsed, index) => {
+                if (index === 17) beforeFinish = pageBox(a).w
+            })
             expectEqual(
                 handle.state,
                 'released',
                 `delta ${delta}: released, not invalidated`
+            )
+            // H13-02R: just before the landing finishes, the drawn width is
+            // the re-laid-out A, not the old 80 px box
+            expectClose(
+                beforeFinish,
+                80 + delta,
+                0.2,
+                `delta ${delta}: landing width on the new A`
             )
             expectEqual(h.mc.pending, 0, `delta ${delta}: clock unsubscribed`)
             expectEqual(h.group.stats.holds, 0, `delta ${delta}: hold finished`)
@@ -2236,6 +2482,14 @@ export async function L_DRIVE_FIX(): Promise<string> {
                 `delta ${delta}: translate restored`
             )
             expectEqual(a.style.scale, '', `delta ${delta}: scale restored`)
+            // H13-02R: the release target was the re-laid-out A, so the
+            // final box is the new layout box (size and position)
+            expectClose(
+                maxDiff(pageBox(a), { x: 0, y: 0, w: 80 + delta, h: 80 }),
+                0,
+                TOL,
+                `delta ${delta}: final layout box`
+            )
             h.dispose()
             details.push(`size ${delta} px tolerated and settled`)
         }
@@ -2301,8 +2555,15 @@ export async function L_DRIVE_FIX(): Promise<string> {
             expectEqual(first.state, 'invalidated', 'old landing invalidated')
             expectEqual(second.state, 'held', 'new hold starts')
             expectEqual(h.group.stats.holds, 1, 'one live hold after re-take')
-            // the old landing is restored synchronously; the first frame of
-            // the new hold must return to the drawn box seen at the re-take
+            // H13-05R2: the new hold's t = 0 pose is written in the same
+            // task, so an immediate read is B (the drawn box at the take),
+            // not the restored layout A
+            expectClose(
+                maxDiff(pageBox(a), current),
+                0,
+                TOL,
+                're-take writes B in the same task'
+            )
             const before = current
             h.mc.frame(FRAME)
             await settleMicrotasks()
@@ -2318,6 +2579,91 @@ export async function L_DRIVE_FIX(): Promise<string> {
             h.dispose()
         }
 
+        // H13-05R: a failing re-take must not destroy the old landing: every
+        // precondition and the current take geometry are validated first
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const first = h.group.take(a)
+            first.move({ x: 60, y: 20 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            first.release({ x: 300, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            const translate = a.style.translate
+            const scale = a.style.scale
+            const before = originOf(pageBox(a))
+            // an unsupported current geometry: a rotation the support check
+            // cannot classify must fail the re-take before the old landing is
+            // settled or invalidated
+            a.style.rotate = '45deg'
+            invalidCall(() => h.group.take(a), 'rotated landing re-take')
+            expectEqual(first.state, 'released', 'failed re-take keeps landing')
+            expectEqual(h.group.stats.holds, 1, 'failed re-take keeps one hold')
+            expectEqual(a.style.translate, translate, 'failed re-take pose x')
+            expectEqual(a.style.scale, scale, 'failed re-take pose scale')
+            expectClose(
+                Math.max(
+                    Math.abs(originOf(pageBox(a)).x - before.x),
+                    Math.abs(originOf(pageBox(a)).y - before.y)
+                ),
+                0,
+                1,
+                'failed re-take keeps the drawn origin'
+            )
+            a.style.rotate = ''
+            // a landing reparented under a held ancestor is refused; the old
+            // landing and the ancestor hold both stay live and unmutated
+            const parent = node(
+                h.root,
+                'left:400px;top:100px;width:200px;height:200px'
+            )
+            h.add(parent, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const parentHandle = h.group.take(parent)
+            expectEqual(parentHandle.state, 'held', 'ancestor take')
+            parent.append(a)
+            const moved = a.style.translate
+            const movedOrigin = originOf(pageBox(a))
+            invalidCall(() => h.group.take(a), 'held-ancestor landing re-take')
+            expectEqual(
+                first.state,
+                'released',
+                'reparent failure keeps landing'
+            )
+            expectEqual(
+                h.group.stats.holds,
+                2,
+                'reparent failure keeps both live holds'
+            )
+            expectEqual(a.style.translate, moved, 'reparent failure pose x')
+            expectEqual(
+                parentHandle.state,
+                'held',
+                'reparent failure keeps the ancestor hold'
+            )
+            expectClose(
+                Math.max(
+                    Math.abs(originOf(pageBox(a)).x - movedOrigin.x),
+                    Math.abs(originOf(pageBox(a)).y - movedOrigin.y)
+                ),
+                0,
+                1,
+                'reparent failure keeps the drawn origin'
+            )
+            first.cancel()
+            await frames(h.mc, 40, () => undefined)
+            parentHandle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            h.dispose()
+            details.push('failed re-takes leave the old landing intact')
+        }
+
         // H13-02: a supported >0.5 px re-layout while held does not invalidate
         {
             const h = harness({ motion: { duration: 0.3, timing: linear } })
@@ -2330,22 +2676,117 @@ export async function L_DRIVE_FIX(): Promise<string> {
             h.mc.frame(FRAME)
             await settleMicrotasks()
             a.style.width = '86px'
+            h.group.capture()
+            await h.group.flush()
             h.mc.frame(FRAME)
             await settleMicrotasks()
             expectEqual(handle.state, 'held', 'supported re-layout holds')
             handle.release()
-            await frames(h.mc, 45, () => undefined)
+            let beforeFinish = 0
+            await frames(h.mc, 24, (_elapsed, index) => {
+                if (index === 17) beforeFinish = pageBox(a).w
+            })
+            expectClose(beforeFinish, 86, 0.3, 'supported 6 px landing width')
             expectEqual(h.mc.pending, 0, 'supported re-layout unsubscribes')
             expectEqual(a.style.translate, '', 'supported re-layout restores')
+            expectClose(
+                maxDiff(pageBox(a), { x: 0, y: 0, w: 86, h: 80 }),
+                0,
+                TOL,
+                'supported 6 px final layout box'
+            )
             details.push('supported 6 px held re-layout kept the hold')
             h.dispose()
         }
 
+        // H13-02R: the take-read path (no capture/flush) also adopts the new
+        // A, so release lands on the re-laid-out box
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const a = node(h.root, 'left:0px;top:0px;width:80px;height:80px')
+            h.add(a, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(a)
+            handle.move({ x: 40, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            a.style.width = '81.5px'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'take-read 1.5 px keeps the hold')
+            handle.release()
+            let beforeFinish = 0
+            await frames(h.mc, 24, (_elapsed, index) => {
+                if (index === 17) beforeFinish = pageBox(a).w
+            })
+            expectClose(
+                beforeFinish,
+                81.5,
+                0.2,
+                'take-read 1.5 px lands on the new A'
+            )
+            expectClose(
+                maxDiff(pageBox(a), { x: 0, y: 0, w: 81.5, h: 80 }),
+                0,
+                TOL,
+                'take-read 1.5 px final layout box'
+            )
+            h.dispose()
+            details.push('take-read size re-layout landed on A')
+        }
+        // H13-02R: a held child under a participant parent uses the parent
+        // map when resolving the new A from its take read
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:80px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const handle = h.group.take(child)
+            handle.move({ x: 20, y: 0 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            child.style.width = '88px'
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'parented take-read keeps hold')
+            handle.release()
+            let beforeFinish = 0
+            await frames(h.mc, 24, (_elapsed, index) => {
+                if (index === 17) beforeFinish = pageBox(child).w
+            })
+            expectClose(
+                beforeFinish,
+                88,
+                0.2,
+                'parented take-read lands on the new A width'
+            )
+            expectClose(
+                maxDiff(pageBox(child), { x: 120, y: 120, w: 88, h: 60 }),
+                0,
+                TOL,
+                'parented take-read final layout box'
+            )
+            h.dispose()
+            details.push('parented take-read size re-layout landed on A')
+        }
+
         // H13-23/P4-C4: held nodes and riders count for maxNodes
         {
+            const snaps: { element: HTMLElement; reason: string }[] = []
             const h = harness({
                 motion: { duration: 0.2, timing: linear },
                 maxNodes: 2,
+                onSnap: (element, reason) => snaps.push({ element, reason }),
             })
             const parent = node(
                 h.root,
@@ -2381,6 +2822,22 @@ export async function L_DRIVE_FIX(): Promise<string> {
             expectEqual(h.mc.pending, 0, 'cap unsubscribes')
             expectEqual(parent.style.translate, '', 'cap restores parent')
             expectEqual(child.style.translate, '', 'cap restores child')
+            expectEqual(
+                snaps.some(
+                    (entry) =>
+                        entry.element === parent && entry.reason === 'capped'
+                ),
+                true,
+                'cap onSnap lists the held node'
+            )
+            expectEqual(
+                snaps.some(
+                    (entry) =>
+                        entry.element === child && entry.reason === 'capped'
+                ),
+                true,
+                'cap onSnap lists the rider'
+            )
             details.push('mover cap counted the hold + rider and snapped')
             h.dispose()
         }
@@ -2462,7 +2919,7 @@ export async function L_DRIVE_FIX(): Promise<string> {
             expectClose(
                 handle.velocity.x,
                 400,
-                30,
+                2,
                 'static child carries ancestor velocity'
             )
             handle.cancel()
@@ -2470,6 +2927,154 @@ export async function L_DRIVE_FIX(): Promise<string> {
             h.dispose()
             details.push('static child take carried ancestor velocity')
         }
+        // H13-12R/P4-C10: a static child under a parent width track. The
+        // width change reflows the child's A; the handle carries that
+        // ancestor-induced drawn velocity (independent A delta / duration).
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:400px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:50%;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, { radius: false })
+            h.group.capture()
+            await h.group.flush()
+            const before = originOf(pageBox(child))
+            h.group.capture()
+            parent.style.width = '200px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const after = originOf(pageBox(child))
+            expectEqual(
+                Math.abs(after.x - before.x) > 1,
+                true,
+                'the width reflow moved the child A'
+            )
+            const handle = h.group.take(child)
+            expectEqual(handle.state, 'held', 'static child under width held')
+            // the child's own layout track is the ancestor width reflow:
+            // half of −200 px over 0.4 s
+            expectClose(
+                handle.velocity.x,
+                -250,
+                2,
+                'static child ancestor-carried width velocity'
+            )
+            handle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            h.dispose()
+            details.push(
+                `static child width take: v ${handle.velocity.x.toFixed(1)} px/s (oracle −250)`
+            )
+        }
+        // H13-14: a driven child under the same ancestor width track; its
+        // handle velocity is the child's whole A delta over its own motion
+        // duration, with the ancestor component included once
+        {
+            const h = harness({ motion: { duration: 0.4, timing: linear } })
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:400px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:50%;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.2, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            parent.style.width = '200px'
+            child.style.top = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(child)
+            expectEqual(handle.state, 'held', 'driven child under width held')
+            // x: the child's A moved −100 px from the parent width over its
+            // own 0.2 s; y: its own +60 px over 0.2 s
+            expectClose(
+                handle.velocity.x,
+                -500,
+                2,
+                'driven child ancestor-carried width velocity'
+            )
+            expectClose(handle.velocity.y, 300, 2, 'driven child own velocity')
+            handle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            h.dispose()
+            details.push(
+                `driven width take: v ${handle.velocity.x.toFixed(1)}, ${handle.velocity.y.toFixed(1)} px/s`
+            )
+        }
+        // coverage: a refused residual re-plan jumps the child to its A and
+        // reports the typed refusal; the parent hold continues
+        {
+            const h = harness({ motion: { duration: 0.3, timing: linear } })
+            const events: LayoutDiagnostic[] = []
+            const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+            const parent = node(
+                h.root,
+                'left:100px;top:100px;width:200px;height:200px'
+            )
+            const child = node(
+                parent,
+                'position:relative;left:20px;top:20px;width:60px;height:60px'
+            )
+            h.add(parent, { radius: false })
+            h.add(child, {
+                radius: false,
+                motion: { duration: 0.2, timing: linear },
+            })
+            h.group.capture()
+            await h.group.flush()
+            h.group.capture()
+            child.style.left = '80px'
+            h.group.flush()
+            await frames(h.mc, 2, () => undefined)
+            const handle = h.group.take(parent)
+            handle.move({ x: 30, y: 10 })
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            h.group.set(child, {
+                radius: false,
+                motion: { type: 'spring', duration: 10, bounce: 0.99 },
+            })
+            h.group.capture()
+            child.style.left = '120px'
+            await h.group.flush()
+            h.mc.frame(FRAME)
+            await settleMicrotasks()
+            expectEqual(handle.state, 'held', 'residual refusal keeps the hold')
+            expectEqual(
+                events.some(
+                    (e) => e.code === 'spring-timeout' && e.element === child
+                ),
+                true,
+                'residual refusal reports spring-timeout'
+            )
+            expectClose(
+                viewBox(child).x - viewBox(parent).x,
+                120,
+                TOL,
+                'residual refusal lands the child at A'
+            )
+            handle.cancel()
+            await frames(h.mc, 40, () => undefined)
+            expectEqual(h.mc.clock.size, 0, 'residual refusal unsubscribes')
+            stop()
+            h.dispose()
+            details.push('refused residual re-plan jumped to A')
+        }
+
         // P4-C9/H13-19: take after an unflushed layout uses take reads
         {
             const h = harness({ motion: { duration: 0.3, timing: linear } })
@@ -2527,17 +3132,46 @@ export async function L_DRIVE_FIX(): Promise<string> {
             handle.move({ x: 40, y: 20 })
             let min = Infinity
             let max = -Infinity
-            await frames(h.mc, 8, () => {
+            const sample = (label: string) => {
                 const rel = viewBox(child).x - viewBox(parent).x
+                // biome-ignore lint/suspicious/noConsole: debug
+                console.log(
+                    'anchor',
+                    label,
+                    rel,
+                    'parent',
+                    viewBox(parent),
+                    'child',
+                    viewBox(child)
+                )
                 min = Math.min(min, rel)
                 max = Math.max(max, rel)
-            })
+                return label
+            }
+            await frames(h.mc, 6, () => sample('held before reflow'))
+            // H13-08R: the held parent's A, width/scale and track change in a
+            // flush; the anchored child must stay on its anchor offset, not
+            // fall back to the absolute residual frame
+            h.group.capture()
+            parent.style.left = '300px'
+            parent.style.width = '320px'
+            await h.group.flush()
+            sample('immediately after reflow flush')
+            await frames(h.mc, 14, () => sample('held after reflow'))
             expectEqual(min >= 19, true, 'anchored child does not jump left')
             expectEqual(
                 max <= 81,
                 true,
                 'anchored child stays in its offset path'
             )
+            // the residual ends at to = 80 relative to the *drawn* parent
+            // anchor; an unanchored residual would sit near 60 here
+            const finalRel = viewBox(child).x - viewBox(parent).x
+            if (!(finalRel >= 75)) {
+                throw new Error(
+                    `anchored child stays on the drawn parent anchor: final rel ${finalRel.toFixed(2)}, range ${min.toFixed(2)}..${max.toFixed(2)}`
+                )
+            }
             handle.cancel()
             await frames(h.mc, 30, () => undefined)
             expectEqual(child.style.translate, '', 'anchored child restores')
@@ -2546,8 +3180,10 @@ export async function L_DRIVE_FIX(): Promise<string> {
             )
             h.dispose()
         }
-        // H13-12/P4-C10: take a moving parent with a moving child; the child's
-        // residual subtracts the inherited parent velocity exactly once
+        // H13-12R/P4-C10: take a moving parent with a moving child. The
+        // descendants ride h; the child's residual is an independent oracle
+        // track from its own B to A with v = child − parent, not a
+        // self-referential subtraction.
         {
             const h = harness({ motion: { duration: 0.5, timing: linear } })
             const parent = node(
@@ -2565,50 +3201,115 @@ export async function L_DRIVE_FIX(): Promise<string> {
             })
             h.group.capture()
             await h.group.flush()
+            const parentBefore = pageBox(parent)
+            const childBefore = pageBox(child)
             h.group.capture()
             parent.style.left = '300px'
             child.style.left = '80px'
             h.group.flush()
             h.mc.frame(FRAME)
             await settleMicrotasks()
-            const childBefore = viewBox(child).x
             h.mc.frame(FRAME)
             await settleMicrotasks()
-            const childV = (viewBox(child).x - childBefore) / DT
+            // independent tracks: the child's own B→A includes the parent's
+            // layout move, so its drawn rate is 260 px / 0.2 s
+            const parentAfter = { ...parentBefore, x: parentBefore.x + 200 }
+            const childAfter = { ...childBefore, x: childBefore.x + 260 }
+            const parentSpec = specOf(parentBefore, parentAfter, null, 0.5)
+            const childSpec = specOf(childBefore, childAfter, null, 0.2)
+            const parentDrawn = expectedBox(parentSpec, DT)
+            const childDrawn = expectedBox(childSpec, DT)
+            expectBoxAt(parent, parentDrawn, 'moving parent at the take')
+            expectBoxAt(child, childDrawn, 'moving child at the take')
+            const parentV = velocityOf(parentSpec, DT)
+            const childV = velocityOf(childSpec, DT)
             const handle = h.group.take(parent)
+            expectEqual(handle.state, 'held', 'moving parent held')
             expectClose(
                 handle.velocity.x,
-                400,
+                parentV.x,
                 20,
                 'ancestor-carried take velocity'
             )
-            const rel0 = viewBox(child).x - viewBox(parent).x
-            h.mc.frame(FRAME)
-            await settleMicrotasks()
-            const rel1 = viewBox(child).x - viewBox(parent).x
-            const inherited = (rel1 - rel0) / DT
-            // the child's own residual is its drawn velocity minus the
-            // ancestor flight exactly once, not the raw drawn velocity and
-            // not v − 2 ḣ
-            expectClose(
-                inherited,
-                childV - handle.velocity.x,
-                200,
-                'child residual velocity = v − ḣ'
+            // h is measured from the *new* A (the layout already moved to
+            // 300), not from the pre-flush box
+            const hOffset = {
+                x: originOf(parentDrawn).x - originOf(parentAfter).x,
+                y: originOf(parentDrawn).y - originOf(parentAfter).y,
+            }
+            const residualSpec = specOf(
+                shiftBox(childDrawn, -hOffset.x, -hOffset.y),
+                childAfter,
+                { x: childV.x - parentV.x, y: 0, w: 0, h: 0 },
+                0.2
             )
+            // P4-C10: the residual's analytic initial velocity is exactly
+            // v − ḣ (900 px/s), independent of the handle's own reading
             expectClose(
-                inherited < childV - 200 ? 0 : 1,
+                velocityOf(residualSpec, 0).x,
+                childV.x - parentV.x,
+                0.5,
+                'residual oracle initial velocity'
+            )
+            let posWorst = 0
+            let velWorst = 0
+            let firstMeasured = 0
+            let previous = shiftBox(childDrawn, -hOffset.x, -hOffset.y)
+            for (let index = 0; index < 5; index++) {
+                h.mc.frame(FRAME)
+                await settleMicrotasks()
+                const t = (index + 1) * DT
+                const rel = shiftBox(pageBox(child), -hOffset.x, -hOffset.y)
+                const want = expectedBox(residualSpec, t)
+                posWorst = Math.max(posWorst, maxDiff(rel, want))
+                const measuredV = {
+                    x: (rel.x - previous.x) / DT,
+                    y: (rel.y - previous.y) / DT,
+                }
+                const oracleV = {
+                    x: (want.x - expectedBox(residualSpec, t - DT).x) / DT,
+                    y: (want.y - expectedBox(residualSpec, t - DT).y) / DT,
+                }
+                if (index === 0) firstMeasured = measuredV.x
+                velWorst = Math.max(
+                    velWorst,
+                    Math.abs(measuredV.x - oracleV.x),
+                    Math.abs(measuredV.y - oracleV.y)
+                )
+                previous = rel
+            }
+            expectClose(posWorst, 0, TOL, 'child residual on the oracle')
+            expectClose(
+                velWorst,
                 0,
-                1,
-                'inherited velocity is subtracted once'
+                20,
+                'child residual velocity on the oracle'
+            )
+            // controls: the residual is the child rate minus the ancestor
+            // exactly once, not the raw child rate and not minus it twice
+            const once = childV.x - parentV.x
+            const raw = childV.x
+            const twice = childV.x - 2 * parentV.x
+            expectEqual(
+                Math.abs(firstMeasured - once) < Math.abs(firstMeasured - raw),
+                true,
+                'residual is not the raw child velocity'
+            )
+            expectEqual(
+                Math.abs(firstMeasured - once) <
+                    Math.abs(firstMeasured - twice),
+                true,
+                'residual is not the double subtraction'
             )
             handle.move({ x: 40, y: 0 })
             h.mc.frame(FRAME)
             await settleMicrotasks()
+            // the finger move changes h for both; the relative geometry is
+            // the residual at the new time, still on the oracle
             expectClose(
                 viewBox(child).x - viewBox(parent).x,
-                rel1,
-                20,
+                expectedBox(residualSpec, 6 * DT).x - parentAfter.x,
+                TOL,
                 'moving-parent take keeps the child relative geometry'
             )
             handle.cancel()
@@ -2624,10 +3325,11 @@ export async function L_DRIVE_FIX(): Promise<string> {
                 'moving-parent child restores'
             )
             details.push(
-                `moving-parent take: v ${handle.velocity.x.toFixed(1)} px/s, child residual ${inherited.toFixed(1)} px/s`
+                `moving-parent take: v ${handle.velocity.x.toFixed(1)} px/s, residual position ${posWorst.toFixed(4)} px, velocity ${velWorst.toFixed(1)} px/s`
             )
             h.dispose()
         }
+
         // H13-29/P4-C6: a cross-scope nested hold is allowed (documented
         // limitation); the DOM child is carried by the parent's pose
         {
