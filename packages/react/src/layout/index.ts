@@ -6,6 +6,7 @@ export {
     usePresence,
     usePresenceControl,
 } from './presence'
+export { useLayoutDrive } from './use_drive'
 export {
     type LayoutGroupControl,
     type UseLayoutOptions,
