@@ -821,11 +821,24 @@ function drawnMotion(
         } else {
             box = node.a
         }
-        // a descendant of a held node rides one common displacement; an
-        // anchored own track already rides the parent's drawn anchor point
+        // A descendant of a held node rides one common displacement. An
+        // anchored own track already rides the parent's drawn anchor point; a
+        // kept pose and a follower whose lead is inside the same hold already
+        // include h through the parent/lead map (H13-09).
         if (node.ride !== undefined && node.ride >= 0 && !anchored) {
-            const h = rideOffset(i)
-            box = { ...box, x: box.x + h.x, y: box.y + h.y }
+            const lead = node.follow >= 0 ? nodes[node.follow]! : null
+            const includesH =
+                node.posed !== undefined && node.posed !== null
+                    ? true
+                    : lead === null
+                      ? false
+                      : lead.override !== undefined && lead.override !== null
+                        ? true
+                        : lead.ride === node.ride
+            if (!includesH) {
+                const h = rideOffset(i)
+                box = { ...box, x: box.x + h.x, y: box.y + h.y }
+            }
         }
         boxes[i] = box
         return box
@@ -883,8 +896,19 @@ function drawnMotion(
             v = ZERO_VELOCITY
         }
         if (node.ride !== undefined && node.ride >= 0) {
-            const hv = rideVelocity(i)
-            v = { ...v, x: v.x + hv.x, y: v.y + hv.y }
+            const lead = node.follow >= 0 ? nodes[node.follow]! : null
+            const includesH =
+                node.posed !== undefined && node.posed !== null
+                    ? true
+                    : lead === null
+                      ? false
+                      : lead.override !== undefined && lead.override !== null
+                        ? true
+                        : lead.ride === node.ride
+            if (!includesH) {
+                const hv = rideVelocity(i)
+                v = { ...v, x: v.x + hv.x, y: v.y + hv.y }
+            }
         }
         velocities[i] = v
         return v
