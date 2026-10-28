@@ -167,6 +167,18 @@ describe('D1: public drive surface and take preconditions (§5.10)', () => {
         h.dispose()
     })
 
+    it('take on a registered element adopted into another document throws', async () => {
+        const h = harness({ motion: linear })
+        const a = node(h.root, { x: 0, y: 0, w: 80, h: 80 })
+        h.add(a)
+        h.group.capture()
+        await h.group.flush()
+        const other = document.implementation.createHTMLDocument('adopt')
+        other.body.append(other.adoptNode(a))
+        invalid(() => h.group.take(a), 'adopted document')
+        h.dispose()
+    })
+
     it('take in a second document throws', async () => {
         const h = harness({ motion: linear })
         const a = node(h.root, { x: 0, y: 0, w: 80, h: 80 })
