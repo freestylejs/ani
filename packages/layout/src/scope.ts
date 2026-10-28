@@ -1155,6 +1155,10 @@ export function createLayoutGroup(
             if (disposed) return
             snapToDisabled()
         },
+        resume(): void {
+            if (disposed) return
+            syncListeners()
+        },
     }
     const unregisterRuntimeScope = registerRuntimeScope(runtimeScope)
 
@@ -1849,13 +1853,16 @@ export function createLayoutGroup(
     /**
      * Ends a live hold for a lifecycle event: the handle becomes
      * `invalidated` (a terminal state), reads stop, its riding descendants
-     * stop riding, and the node follows the caller's event rule. A handle
-     * that already reached a terminal state is left as it is.
+     * stop riding, and the node follows the caller's event rule. A
+     * `released`/`cancelled` landing is still live under P4-C3, so a
+     * normative invalidation (kill switch, abort, cap, removal, support
+     * failure) invalidates it too; only normal completion leaves the terminal
+     * `released`/`cancelled` state (`finishHold` never calls this).
      */
     function invalidateHold(p: Participant): void {
         const hold = p.hold
         if (!hold) return
-        if (hold.state === 'held') hold.state = 'invalidated'
+        if (hold.state !== 'invalidated') hold.state = 'invalidated'
         p.hold = null
         hold.releaseTrack = null
         for (const rider of hold.rides) {
@@ -6776,6 +6783,9 @@ export function createLayoutGroup(
             frame = frame.filter((node) => node.p.drive !== null)
             realizer.stop()
             stats.tracks = 0
+            // §7.2: the kill switch also disarms the scroll listeners;
+            // setMode('animate') re-arms them through resume()
+            if (status === 'disabled') disarm()
             if (!nested) flushDeferred()
         } finally {
             if (!nested) deferDepth -= 1
