@@ -1870,6 +1870,9 @@ export function createLayoutGroup(
         // declaration keeps its §4.4 path
         if (capture.registered.has(p) || presenceOf(element) !== undefined)
             return
+        // §9.1: count connected participants before any read; over the cap the
+        // mount takes no B and the flush snaps the whole scope (N2)
+        if (connectedParticipants().length > maxParticipants) return
         capture.rects.set(p, viewRect(element))
         stats.rects += 1
         capture.registered.add(p)
@@ -2333,9 +2336,10 @@ export function createLayoutGroup(
             stats.tracks = 0
             return resolved('no-change')
         }
-        // §4.3 gate 1, §9.1: over the participant cap, read nothing and snap
-        // the whole scope
-        if (list.length > maxParticipants) {
+        // §4.3 gate 1, §9.1: a capture that counted over the participant cap
+        // latches, even if the scope shrank before the flush; read nothing
+        // and snap the whole scope (N3)
+        if (cap?.capped || list.length > maxParticipants) {
             if (touched) for (const p of list) touched.add(p)
             return cappedFlush(list)
         }
@@ -3260,12 +3264,10 @@ export function createLayoutGroup(
             }
         }
         // a late-registered lead that took a handoff has a valid B (the
-        // departing box): it is measured for the §4.4 report too
+        // departing box), whether or not it needs a track: it is measured
+        // for the §4.4 report too (N1)
         if (fresh) {
-            result.actions.forEach((action, i) => {
-                if (action.kind === 'track' && action.handoffFrom !== undefined)
-                    unmeasured[i] = false
-            })
+            for (const i of result.handoffs.keys()) unmeasured[i] = false
             // a scroll-degraded handoff appears at A/its enter, reported
             // handoff-scroll-active, never stale
             for (const { index } of result.degraded) unmeasured[index] = false
