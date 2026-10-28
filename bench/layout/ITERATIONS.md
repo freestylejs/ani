@@ -188,3 +188,141 @@ values and RK4/reference integration pass.
   180 s.
 
 No gate or tolerance was changed in this iteration.
+
+## Iteration 1 — H14 fix round on fixed H11b base 4eb2f7e
+
+- Worktree: `ani-h14`, branch `helper/h14`, rebased/merged onto `4eb2f7e`
+  (fixed H11b transaction) from `helper/h11b`; no origin reset, no push.
+- Date: 2026-10-29.
+- Command: `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check`.
+- Report: `bench/layout/iteration-1/report.json`.
+- Instrument load at start: **4.30**, so cost remains **advisory**; frame gates
+  still decide. WebKit remains unisolated under Playwright, `g = 1 ms`.
+- S-CARD `shape.inert` and G6's removed-follower check still fail until H12/P3b.
+  This is recorded as an expected dependency, not a harness bug.
+
+### Invocation vs certification
+
+The report now has separate fields:
+
+- `pass`: the selected invocation. It is `false` for this run.
+- `certification`: `NOT CERTIFIED` with reasons:
+  - cost fingerprint advisory (load 7.04);
+  - pending S-REORDER, S-SHEET and S-BULK G12 (P4);
+  - S-CARD fail in Chromium and WebKit (P3b inert);
+  - Chromium S-BULK cost pending (G12) and measured G9/G11 fail;
+  - WebKit S-BULK cost blocked/not valid (1 ms timer).
+- `certification.ts` unit tests prove: runs=1, single engine, single scene and
+  advisory-even-if-passing all fail certification; only the full five-run,
+  two-engine, all-scene, non-advisory, non-pending report certifies.
+
+### Fixed-base scene table (5 measured runs; medians and worst)
+
+| Scene | Chromium | WebKit |
+|---|---|---|
+| S-CARD C1 completeness | pass (757 participant-frames) | pass |
+| S-CARD G1 | 0.00132 px pass, frame 102 card-title left | 0.00045 px pass, frame 73 sheet-content bottom |
+| S-CARD G2 | 0.00117 px pass, reverse frame 68 | 0.00011 px pass |
+| S-CARD G3 | analytic 0 pass; observed FD 218.7 px/s supporting (acceleration) | same |
+| S-CARD G4 | 0.00132 px pass | 0.00031 px pass |
+| S-CARD G5/G7/G13 | pass | pass |
+| S-CARD G6 | **FAIL 3**: removed follower card inert absent (P3b) | **FAIL 3**: same |
+| S-CARD G8 | 0.190 ms pass (117 frames) | 1.000 ms pass (61 frames, quantized ±0.5) |
+| S-CARD shape.inert | **FAIL 261**, frame 0 card (P3b) | **FAIL 261** (P3b) |
+| S-CARD shape.focus/font/opacity/coverage/radius/teardown | pass | pass |
+| S-CARD G9.probe | 2.479× non-deciding at N=7 | 1.250× non-deciding at N=7 |
+| S-SEG C1/G1–G8/G13 | all pass (G1 0.00007 px; G8 0.195 ms) | all pass (G1 0.00002 px; G8 1.000 ms) |
+| S-SEG shape | all pass; pill radius 0 | all pass |
+| S-SEG G9.probe | 5.960× non-deciding at N=1 | n/a/NaN non-deciding (1 ms timer; no fabricated ratio) |
+| S-BULK G9 unscrolled | **FAIL 3.272×** measured (3.304/3.272/3.185/3.234/3.323) | **BLOCK** 2.250× diagnostic, not deciding |
+| S-BULK G9 scrolled | **FAIL 3.256×** (3.360/3.256/3.148/3.249/3.271) | **BLOCK** 2.000× diagnostic |
+| S-BULK G9 floor audit | pass both shapes | pass both shapes |
+| S-BULK G10 | 0.745 ms pass (A-19 150+150) | **BLOCK** 1.000 ms diagnostic |
+| S-BULK G11 | **FAIL 11.705 ms** 60 Hz commit script p95 | **BLOCK** 10.000 ms diagnostic; refresh ~30 Hz; 300 commits at 59.3–60.0/s |
+| S-BULK G13 | pass (2N/2N/300 computed; steady 0) | pass (2N/2N/600 computed incl. Typed OM; steady 0) |
+| S-BULK G12 | pending P4 | pending P4 |
+
+Chromium S-BULK cost is `valid: true`, `status: pending` because G12 is P4;
+the measured G9/G11 are still printed as failures. WebKit cost is
+`valid: false`, `status: blocked`: the 1 ms timer makes the G9/G10/G11 values
+non-deciding, and no quantized ratio is presented as a measured failure.
+
+### Required-work floor (iteration 1)
+
+Both shapes (unscrolled 32×27, scrolled 16×54 at scrollTop 1080), same process,
+5 discarded + 30 measured, reset to rest between samples:
+
+| Count | Engine | Floor |
+|---|---|---|
+| capture rects / offset pairs | 2,000 / 2,000 (1,000 + 1,000) | 1,000 / 1,000 |
+| flush rects / offset pairs | 1,000 / 1,000 | 1,000 / 1,000 |
+| §4.3 step 2 computed reads | 300 (Chromium), 600 (WebKit incl. Typed OM) | 300 / 600 |
+| t=0 poses (translate+scale) | 300 | 300 |
+| extra reads | 0 | 0 |
+
+The floor audit passes both shapes in both engines. A `floor-extra-read`
+control fails the audit in both engines. Engine/floor medians: Chromium
+unscrolled ~9.22–9.92 ms / ~2.895–2.985 ms; scrolled ~9.12–9.63 / ~2.86–2.90.
+WebKit diagnostic only at 1 ms resolution.
+
+### H14 fix evidence
+
+| ID | Fix | Test/result |
+|---|---|---|
+| H14-01 | C1 completeness contract; blank/partial trace fails; n/a declared metrics fail; C1 included in scene pass | `scoring.test` blank/partial tests; S-CARD/S-SEG C1 pass |
+| H14-02 | `pass` vs `certification`; five runs, both engines, all scenes, no pending, non-advisory, no launch error | `certification.test` four invocation cases; final report `NOT CERTIFIED` |
+| H14-03 | Floor adds active §4.3 computed reads (Typed OM on WebKit), resets both fixtures, audits styles/poses/counts | floor audit pass; `floor-extra-read` fail |
+| H14-04 | WebKit G9/G10/G11 `BLOCK`, not a measured failure; raw ratios diagnostic | WebKit cost `valid:false`, `status:blocked` |
+| H14-05 | G11 times one pair per 60 Hz commit; refresh recorded; 300 commits; no 30 Hz frame called 60 Hz | Chromium 300 commits 59.65–59.97/s; WebKit blocked |
+| H14-06 | next-frame commit attribution in `FrameSampler` | `frame_sampler.test` two-frame test |
+| H14-07 | observed finite difference at retargets; analytic pair remains gate | G3 detail; trace-level jump test |
+| H14-08 | priorities/full cssText recorded; mount snapshots before registration; removed participants checked | priority test; S-CARD removed-follower G6 fails at P3a |
+| H14-09 | per-commit computed-style range; over-read fails; Typed OM included | G13 tests; WebKit 600 expected |
+| H14-10 | non-deciding engine/floor probe at S-CARD N=7 and S-SEG N=1 | `G9.probe` in report; NaN allowed as non-deciding |
+| H14-11 | per-commit/participant aged G2; 0.5 only aged | aged test |
+| H14-12 | no fake 20-frame average; raw + quantization bound | `stats.test` coarse-g path |
+| H14-13 | G12 pending keeps cost/scene pass false; top-level pass false while pending | cost status pending; certification reasons |
+| H14-14 | card-no-inert marked inconclusive while primary fails | control output |
+| H14-15 | retarget B = previous observation | oracle builder; S-CARD/S-SEG exact |
+| H14-16 | data-only `window.__scene` descriptor | page descriptor |
+| H14-17 | A-19 850 tiles + 150 labels; 300 movers; 32×27/16×54 | cost participant assert |
+| H14-18 | stats tests | `stats.test` |
+| H14-19 | shape.focus + browser focus control | control fails at P3a |
+| H14-20 | teardown/pill-radius/G12/G14 controls or mapping | tests/README mapping |
+| H14-21 | per-run gate aggregation; missing/NaN fail | `aggregate.test` |
+| H14-22 | real twin diagnostics/final checked; removed nodes checked in manual G6 | S-SEG/S-CARD runs |
+| H14-23 | README/ITERATIONS corrected | this document |
+| H14-24 | engine/floor audit objects in report | JSON reports |
+| H14-25 | visual deviations recorded | README |
+| H14-26 | no bench lint suppression; biome scope documented | `pnpm check` |
+| H14-27 | oracle 0.01 ms reference label/high-bounce/dead code | oracle tests |
+| H14-28 | 5 discarded + 30 measured; raw g source recorded | cost report gSource |
+| H14-29 | compare reports missing/added scenes/metrics | compare implementation |
+| H14-30 | real twin content-layer timing declared | README |
+| H14-31 | `--check` runs all controls (no scene filter) | `--check` output |
+| H14-32 | Firefox build advisory-only | fingerprint test |
+
+### Negative controls (both engines)
+
+- Unit self-tests: 54 tests pass, including C1 blank/partial, stats, sampler,
+  per-run aggregation, certification, aged G2, priority, style over-read,
+  teardown/pill-radius, G3 observed jump.
+- Browser controls: `card-no-image-id` G1 fail; `card-image-offset` G1 fail;
+  `card-focus-follower` shape.focus fail; `seg-rest-retarget` G1 fail;
+  `seg-jump-from-A` G2 fail; `seg-leftover-pose` G6 fail; `floor-extra-read`
+  floor audit fail. `card-no-inert` is **inconclusive** at P3a (primary already
+  fails); it becomes conclusive after H12.
+- `--check` exits 1 on the real misses; all controls behaved as required.
+
+### Residual risks / next
+
+- H12/P3b must land for S-CARD G6/shape.inert to pass.
+- P4 must land for S-REORDER/S-SHEET/G12; until then certification cannot be
+  claimed.
+- Chromium G9/G11 are genuine measured failures under the new floor and commit
+  timing. They are advisory because the load was 7.04; a quiet instrument is
+  needed for certification.
+- WebKit G9/G10/G11 cannot decide on a 1 ms timer. A finer/batched protocol
+  must be proven or the checkpoint remains BLOCK.
+- WebKit G8 uses quantized raw samples; the passed values are not a claim of
+  sub-millisecond precision.
