@@ -2690,3 +2690,196 @@ export async function MUTATION(): Promise<string> {
         layoutRuntime.setMode('animate')
     }
 }
+
+/* ───────────── adversarial caps and status precedence (browser) ───────────── */
+
+/**
+ * The participant and mover caps at their exact boundary, and the status
+ * precedence pairs a capped flush can meet: `'disabled'` and `'failed'` must
+ * win over `'capped'`, with the styles restored and no read over the cap.
+ */
+export async function CAPS_STATUS(): Promise<string> {
+    const events: LayoutDiagnostic[] = []
+    const stop = layoutRuntime.onDiagnostic((event) => events.push(event))
+    const quiet = silenceWarnings()
+    const details: string[] = []
+    try {
+        // the participant cap, exactly at it: normal animation
+        {
+            const h = harness({ motion, maxParticipants: 2 })
+            const a = node(h.root, boxAt(0, 0))
+            const b = node(h.root, boxAt(100, 0))
+            h.add(a)
+            h.add(b)
+            h.group.capture()
+            a.style.left = '40px'
+            b.style.left = '140px'
+            const run = h.group.flush()
+            expectEqual(h.group.stats.tracks, 2, 'at cap: two tracks')
+            h.group.finish()
+            const report = await run
+            expectEqual(report.status, 'ended', 'at cap: status')
+            expectEqual(report.snapped.length, 0, 'at cap: snapped')
+            expectEqual(a.style.translate, '', 'at cap: a restored')
+            expectEqual(b.style.translate, '', 'at cap: b restored')
+            h.dispose()
+            details.push('participant cap at 2: animates')
+        }
+
+        // over the participant cap: no read, capped, styles restored
+        {
+            const h = harness({ motion, maxParticipants: 2 })
+            const a = node(h.root, boxAt(0, 0))
+            const b = node(h.root, boxAt(100, 0))
+            const c = node(h.root, boxAt(200, 0))
+            for (const element of [a, b, c]) h.add(element)
+            const before = h.group.stats
+            h.group.capture()
+            const captured = h.group.stats
+            expectEqual(captured.rects, before.rects, 'over cap: capture rects')
+            expectEqual(
+                captured.styles,
+                before.styles,
+                'over cap: capture styles'
+            )
+            a.style.left = '40px'
+            b.style.left = '140px'
+            c.style.left = '240px'
+            const report = await h.group.flush()
+            const after = h.group.stats
+            expectEqual(report.status, 'capped', 'over cap: status')
+            expectEqual(report.snapped.length, 3, 'over cap: every participant')
+            expectEqual(after.reads, before.reads, 'over cap: no read')
+            expectEqual(a.style.translate, '', 'over cap: a restored')
+            expectEqual(b.style.translate, '', 'over cap: b restored')
+            expectEqual(c.style.translate, '', 'over cap: c restored')
+            expectEqual(
+                events.filter((event) => event.code === 'participant-cap')
+                    .length,
+                1,
+                'over cap: participant-cap'
+            )
+            h.dispose()
+            details.push('participant cap over 2: capped, zero reads')
+        }
+
+        // `'disabled'` precedes `'capped'`
+        {
+            layoutRuntime.setMode('snap')
+            const h = harness({ motion, maxParticipants: 2 })
+            const a = node(h.root, boxAt(0, 0))
+            const b = node(h.root, boxAt(100, 0))
+            const c = node(h.root, boxAt(200, 0))
+            for (const element of [a, b, c]) h.add(element)
+            h.group.capture()
+            a.style.left = '40px'
+            b.style.left = '140px'
+            c.style.left = '240px'
+            const report = await h.group.flush()
+            expectEqual(
+                report.status,
+                'disabled',
+                'disabled over capped: status'
+            )
+            expectEqual(
+                report.snapped.map((entry) => entry.reason),
+                ['disabled', 'disabled', 'disabled'],
+                'disabled over capped: reasons'
+            )
+            expectEqual(
+                events.filter((event) => event.code === 'runtime-disabled')
+                    .length,
+                1,
+                'disabled over capped: runtime-disabled'
+            )
+            h.dispose()
+            layoutRuntime.setMode('animate')
+            details.push('disabled precedes capped')
+        }
+
+        // an engine fault in a capped flush: `'failed'` precedes `'capped'`
+        {
+            const h = harness({ motion, maxParticipants: 2 })
+            const a = node(h.root, boxAt(0, 0))
+            const b = node(h.root, boxAt(100, 0))
+            const c = node(h.root, boxAt(200, 0))
+            for (const element of [a, b, c]) h.add(element)
+            h.group.capture()
+            a.style.left = '40px'
+            b.style.left = '140px'
+            c.style.left = '240px'
+            injectLayoutFault('write')
+            const report = await h.group.flush()
+            expectEqual(report.status, 'failed', 'fault over capped: status')
+            expectEqual(
+                report.snapped.map((entry) => entry.reason),
+                ['failed', 'failed', 'failed'],
+                'fault over capped: reasons'
+            )
+            for (const element of [a, b, c]) {
+                for (const property of [
+                    'translate',
+                    'scale',
+                    'opacity',
+                ] as const) {
+                    expectEqual(
+                        element.style.getPropertyValue(property),
+                        '',
+                        `fault over capped: ${property} restored`
+                    )
+                }
+            }
+            expectEqual(
+                h.mc.clock.size,
+                0,
+                'fault over capped: no subscription'
+            )
+            h.dispose()
+            clearLayoutFaults()
+            details.push('failed precedes capped')
+        }
+
+        // the mover cap at its boundary
+        {
+            const h = harness({ motion, maxNodes: 1 })
+            const a = node(h.root, boxAt(0, 0))
+            h.add(a)
+            h.group.capture()
+            a.style.left = '40px'
+            const run = h.group.flush()
+            expectEqual(h.group.stats.tracks, 1, 'mover cap at 1: a track')
+            h.group.finish()
+            expectEqual((await run).status, 'ended', 'mover cap at 1: status')
+            await h.group.flush()
+            h.dispose()
+            details.push('mover cap at 1: animates')
+        }
+        {
+            const h = harness({ motion, maxNodes: 1 })
+            const a = node(h.root, boxAt(0, 0))
+            const b = node(h.root, boxAt(100, 0))
+            h.add(a)
+            h.add(b)
+            h.group.capture()
+            a.style.left = '40px'
+            b.style.left = '140px'
+            const report = await h.group.flush()
+            expectEqual(report.status, 'capped', 'mover cap over 1: status')
+            expectEqual(a.style.translate, '', 'mover cap over 1: a restored')
+            expectEqual(b.style.translate, '', 'mover cap over 1: b restored')
+            expectEqual(
+                events.filter((event) => event.code === 'mover-cap').length,
+                1,
+                'mover cap over 1: mover-cap'
+            )
+            h.dispose()
+            details.push('mover cap over 1: capped')
+        }
+        return `CAPS_STATUS: ${details.join('; ')}`
+    } finally {
+        stop()
+        quiet.restore()
+        clearLayoutFaults()
+        layoutRuntime.setMode('animate')
+    }
+}
