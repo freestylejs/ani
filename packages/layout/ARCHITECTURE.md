@@ -1180,7 +1180,9 @@ function Toast({ toast }) {
   duplicate interactive or accessible target exists during a shared crossfade. If focus is inside
   the follower (flat-tree containment of `document.activeElement`, through shadow roots) when the
   exit starts, the crossfade is skipped for that pair (the lead appears at A, the follower exits
-  under presence alone) and diagnostic `focus-in-follower` is emitted. The author moves focus.
+  under presence alone) and diagnostic `focus-in-follower` is emitted. Because the crossfade is
+  skipped, layout does not take `inert` ownership of that follower; focus stays until the author
+  moves it. The author moves focus.
 - **Gestures.** The gesture layer must offer keyboard operation through the same port (take,
   stepwise move, cancel, release), with announcements as component patterns. The held phase is
   direct manipulation (§5.10).

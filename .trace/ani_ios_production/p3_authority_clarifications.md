@@ -56,3 +56,28 @@ invalidation to §5.10/L-DRIVE-4; this makes the phase boundary explicit.
 The code table keeps the code, but there is no emitter until the S1 measurement fallback exists.
 §11.4 ships that fallback only if the measurement spike fails; the current Chrome/WebKit capture is
 valid, so no condition is reachable. The type remains stable for a future engine-specific fallback.
+
+## C5 — focus-in-follower and `inert`
+
+§5.8 says the exiting follower is `inert` from the crossfade's first frame, and §8 says a focus
+inside the follower skips the crossfade and the author moves focus. Those two sentences would fight
+if the skipped follower were also made `inert`: setting `inert` blurs the focused descendant.
+
+**Ruling.** When focus is inside the follower and the crossfade is skipped, layout does **not** take
+`inert` ownership of that follower. It exits under presence alone; focus remains until the author
+moves it. The `focus-in-follower` diagnostic is emitted only when a crossfade would otherwise run
+(both nodes allow it, the threshold is met, no presence-opacity exclusion). A pair that cannot
+crossfade for another reason reports nothing and keeps its normal handoff.
+
+**Why.** The purpose of `inert` is to remove the duplicate target created by a live crossfade. A
+skipped crossfade creates no duplicate, and blurring the user's focus would violate §8's focus
+ownership rule.
+
+## C6 — read-after-write across documents
+
+§11.3's "no read after the first write in a batch" is a same-document layout discipline: a write in
+one document cannot force the scope document's layout. When an adopted participant is evicted, its
+restore is written in the document it moved to; the capture's subsequent reads are in the scope
+document. The fuzz check therefore scopes the rule per document. A same-document restore must still
+be deferred until after the capture's reads; the foreign-document eviction restore is not a
+same-batch write in the reading document.
