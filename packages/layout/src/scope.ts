@@ -288,10 +288,6 @@ interface Participant {
     removed: boolean
     /** Resolved motion for a reduced-motion mode, until its options change. */
     motion: { readonly mode: string; readonly value: Motion } | null
-    /**
-     * The shadow root holding it, tracked for the flat-tree walks (§4.6):
-     * `null` in a document, `undefined` until it is first seen connected.
-     */
     /** Every shadow root containing it, innermost first (§4.6, §8). */
     roots: ShadowRoot[]
 }
@@ -1064,13 +1060,10 @@ export function createLayoutGroup(
     }
 
     /**
-     * Tracks the root node of a participant's element (§4.6): a shadow root
-     * is known from then on, a document holds none. Run at `add` and, for
-     * every connected participant, at each capture and flush: an element
-     * found under another root node than the one tracked drops the old root
-     * and tracks the new one (`getRootNode()`, no layout read). An element
-     * that is not in a document or a shadow root yet is tracked when first
-     * seen connected.
+     * Tracks every shadow root containing a participant's element (§4.6,
+     * H12-05), not only the immediate one. Run at `add` and, for every
+     * connected participant, at each capture and flush; a root the element
+     * left is dropped, a new one tracked (`getRootNode()`, no layout read).
      */
     const MAX_SHADOW_DEPTH = 1000
 

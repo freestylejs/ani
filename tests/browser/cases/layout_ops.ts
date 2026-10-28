@@ -2458,6 +2458,17 @@ export async function FUZZ(): Promise<string> {
                         `${step}:${pick.toFixed(3)} card=${cardPresence.phase} opacity=${card.style.opacity || '-'} inert=${card.hasAttribute('inert')}`
                     )
                     await microtasks()
+                    // H12-13: when nothing is moving or holding, layout owns
+                    // no inline declaration or inert attribute
+                    if (
+                        h.group.stats.tracks === 0 &&
+                        cardPresence.phase !== 'exiting' &&
+                        cardPresence.phase !== 'entering' &&
+                        detailPresence?.phase !== 'exiting' &&
+                        detailPresence?.phase !== 'entering'
+                    ) {
+                        layoutOwnedRestored()
+                    }
                 }
                 // terminate every run and handle; everything resolves
                 h.group.dispose()
