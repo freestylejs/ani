@@ -2,6 +2,31 @@
 
 ## FINAL GOAL
 
+### Teleology — the essential purpose
+
+The only frame that exists is the one the user actually sees. A layout box, a planned trajectory,
+a React render and a promised spring are models; none of them proves that the screen moved
+correctly. This program exists to make the painted frame the ground truth of web layout motion:
+
+1. **Measure the presented state.** The engine reads what is actually on screen now — the presented
+   geometry `B` and its velocity `v` — rather than trusting what the previous model intended.
+2. **Continue from it exactly.** Every new commit starts from `(B, v)` and moves toward the new
+   layout `A` with the specified physics. Interruption, scroll, re-layout, concurrent rendering,
+   shadow DOM, reparenting and reduced motion are the normal conditions of the web, not exceptions
+   to be handled after the design.
+3. **Never draw a plausible lie.** When the authority cannot prove that the next frame is exact, the
+   engine snaps to `A` and reports a typed reason. "Snap, never wrong motion" is the first law; a
+   visually pleasant but wrong trajectory is a failure.
+4. **Keep motion truth in the engine.** Framework adapters and applications consume the engine's
+   truth; they do not own it, and they cannot redefine correctness through scheduling convenience.
+5. **Prove, do not assert.** Every claim is judged frame by frame against an independent oracle on
+   the pinned instrument. A demo, a subjective impression, or a separate complex product is not
+   evidence.
+
+The resulting hierarchy is: **frame correctness > continuity > physical fidelity > performance >
+visual convenience**. The deliverable is the ani motion/layout kernel and its certification
+instrument — not a whiteboard, diagram editor or other application built as a proxy for proof.
+
 ### Top-level owner scope correction — 2026-10-28
 
 The owner explicitly withdraws the previously inferred whiteboard/diagram-product deliverable.
@@ -97,12 +122,14 @@ is not evidence for this claim.
 | D5 | Browser-engine benchmark gate | Chromium and WebKit under Playwright, on the harness of goal 3; this is not iOS-device or Mobile Safari certification |
 | D6 | New public surface | Approved: `layoutKey`, `maxParticipants`, `layoutRuntime`, diagnostics, `'failed'`/`'disabled'` |
 | D7 | Program scope | Top-level owner correction: remove the standalone board/canvas product entirely; prove iOS Native Grade from the complete P1–P5 evidence body, with P3 safety, P4 drive/direct manipulation and the P5 §11.5/§11.6 certification harness as the final proof stages |
+| D8 | Commit-cost gate | Retire the legacy absolute `layout:COST` 4 ms row. P5 gates the whole commit at ≤ 2× the measured required-work floor on the certification instrument; the absolute steady-frame p95 ≤ 2 ms, sustained-commit and held-frame gates and the exact read counts remain. Owner approval: the 2026-10-28 DECISION approving the recommendations, recorded in `gate_amendment_20261028.md` |
+| D9 | Certification instrument | The original Ubuntu/Xeon P0/P1 instrument is unreachable. P5 certifies on the recorded macOS instrument: MacBook Pro `Mac14,9`, Apple M2 Pro 10-core, 32 GB, macOS 27.0.1 arm64, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0, `chromium_headless_shell-1187` / `webkit-2203` / `firefox-1490` (advisory). Old cost reports are historical and advisory; frame-scoring authority is unchanged. Firefox is advisory: if its pinned build cannot launch on the instrument, the checkpoint records the exception and Chromium/WebKit decide |
 
 ## Roles
 
 | Role | Who | Use |
 |---|---|---|
-| Orchestrator, director, top-level judge | Claude (this session) | Plans; implements P0–P1 (the foundation) itself; from P2 on writes no product code: slices each phase, briefs the helpers, reviews and judges every patch, runs every gate, self-judges each checkpoint, commits and pushes to `dev/ecstatic-ramanujan-1mjr9q` (owner's instruction, 2026-10-27) |
+| Orchestrator, director, top-level judge | The executing agent (this session) | Plans; implements P0–P1 (the foundation) itself; from P2 on writes no product code: slices each phase, briefs the helpers, reviews and judges every patch, runs every gate, self-judges each checkpoint, commits and pushes to `dev/ecstatic-ramanujan-1mjr9q` (owner's instruction, 2026-10-27) |
 | Chief Justice | MonkeyGPT `gpt-5.6-sol`, thinking high (one reused task) | Tribunal per checkpoint under `judging-checkpoint-completion`; writes `{part}_trial_result.md` |
 | Helper, mid level | MonkeyGPT `opencode-go/deepseek-v4.1-flash`, thinking max | From P2: writes the code and tests of bounded, fully specified slices |
 | Helper, high level | Argon4 (`agy --model gemini-4-argon-high`, via MonkeyGPT bash) | From P2: writes the code and tests of the hardest slices (solver, measurement, drive) |
@@ -116,16 +143,20 @@ At most six sub-agents are live at once. Each sub-agent receives three prerequis
 
 ## Machines
 
-- **Helpers write code** in their own clone on the Mac (`~/Documents/project/freestylejs/ani-h<n>`,
-  reset to the pushed checkpoint), with light checks only (edits, `git diff`), and may run unit tests on
-  june-wsl (`~/ani-v2/h<n>`, an rsync mirror). The orchestrator pulls each patch into this
-  container, reviews it and runs every gate here.
-- **Every gate run** happens in this container. Chromium 1187, WebKit 2203 and
-  Firefox 1490 are installed under `/home/user/.pw-extra` (`PLAYWRIGHT_BROWSERS_PATH`), with
-  WebKit's system libraries installed. Runs use 4 cores.
-- **The Chief Justice** works read-only in `~/Documents/project/freestylejs/ani-trial` on the Mac,
-  a clone of this branch pulled before each trial. It can re-run light checks on june-wsl
-  (`~/ani-v2/trial`), never on the Mac.
+- **The active working tree** is `~/Documents/project/freestylejs/ani-ios-scope-correction` on the
+  Mac, branch `fix/ios-native-grade-scope`, tracking `origin/dev/ecstatic-ramanujan-1mjr9q`. The
+  older `ani` checkout is on `release/v1-hardening` and is not this program; `freestyle-root` is a
+  different repository.
+- **Every gate run** happens on the certification instrument of §11.5 (D9): this Mac, macOS 27.0.1
+  arm64, Apple M2 Pro, 32 GB, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0, with
+  `chromium_headless_shell-1187`, `webkit-2203` and `firefox-1490`. The old Ubuntu/Xeon container
+  paths (`/home/user/...`, `/home/user/.pw-extra`) are historical and must not be used.
+- **Helpers write code** in their own worktree on the Mac, reset to the exact pushed checkpoint in
+  their brief. They may run the focused checks their brief names; the orchestrator reviews the patch
+  and runs the deciding gates on the certification instrument.
+- **The Chief Justice** works read-only in `~/Documents/project/freestylejs/ani-trial`, a clone of
+  this branch pulled before each trial. It may re-run light checks on `june-wsl`, never a deciding
+  cost gate.
 
 ## Pipeline
 
@@ -146,9 +177,9 @@ Each phase ends at a checkpoint:
 | Phase / CP | Part | Objective | Gate |
 |---|---|---|---|
 | P0 | `p0_authority` | Documentation drift analysis; layout `ARCHITECTURE.md` rewritten to v3 (single authority); core API doc for `physics`; this plan | Drift matrix closed; every v3 decision placed in the authority; no contradiction with the signed-off design |
-| P1 | `p1_spring` | Core `physics`; the discriminated `LayoutMotion` and kind-level merge (layout and React); validation; spring tracks; perceptual timeline for crossfade, radius and presence release; reduced-motion grid; settle cap; WAAPI rejection | Unit and property tests against an independent oracle (1e-9); L-SPRING-1..4 in Chromium, Firefox, WebKit; existing suites green |
-| P2 | `p2_measured` | Measured presentation: capture of all participants, aging marker and the rendering-callback bound, view-space planning, pose inversion and the keep test, layout-size support check, capture-less and aged flush, flat-tree ancestry, document affinity, `layoutKey`, the active-scroll handoff rule, retained view boxes. Page boxes and the scroll `'stale'` path are removed | L-MEAS-1..13, L-HAND-1..2, L-KEY-1, L-DOC-1 ×3 engines; every existing row updated to the new authority and green |
-| P3 | `p3_safety` | Transactional flush and frames, callback isolation, the `'failed'`/`'disabled'` statuses and their precedence, `maxParticipants`, `layoutRuntime` and diagnostics, the crossfade `inert` and focus rule, model-based lifecycle fuzz, mutation tests | L-OPS-1..2, L-A11Y-1, fuzz and mutation suite ×3 engines |
-| P4 | `p4_drive` | The drive seam: `take`/`move`/`release`/`cancel`, the state machine, the held read, reduced-motion rules, React `useLayoutDrive` | L-DRIVE-1..6 ×3 engines; React adapter tests |
-| P5 | `p5_bench` | **iOS Native Grade certification:** the §11.6 interaction set and harness (Chromium, WebKit), including the P4-dependent direct-manipulation scenes; independent per-frame scoring; perf gates (commit, steady frame, sustained commits, held frame); validation → improvement iterations until every required metric passes | Native-grade report all green in both required engines; no weakened tolerance; cost gates met; iteration log records failures and fixes |
+| P1 | `p1_spring` | Core `physics`; the discriminated `LayoutMotion` and kind-level merge (layout and React); validation; spring tracks; perceptual timeline for crossfade, radius and presence release; reduced-motion grid; settle cap; WAAPI rejection | Unit and property tests against an independent oracle (1e-9); L-SPRING-1..4 in Chromium and WebKit (Firefox advisory, D5/D9); existing suites green except the retired `layout:COST` row (D8; P5 owns commit cost) |
+| P2 | `p2_measured` | Measured presentation: capture of all participants, aging marker and the rendering-callback bound, view-space planning, pose inversion and the keep test, layout-size support check, capture-less and aged flush, flat-tree ancestry, document affinity, `layoutKey`, the active-scroll handoff rule, retained view boxes. Page boxes and the scroll `'stale'` path are removed | L-MEAS-1..13, L-HAND-1..2, L-KEY-1, L-DOC-1 in Chromium and WebKit (Firefox advisory, D5/D9); every existing row updated to the new authority and green; the retired `layout:COST` row is not a P2 gate (D8); RL3 is green under load in React 18.3 and 19 |
+| P3 | `p3_safety` | Transactional flush and frames, callback isolation, the `'failed'`/`'disabled'` statuses and their precedence, `maxParticipants`, `layoutRuntime` and diagnostics, the crossfade `inert` and focus rule, model-based lifecycle fuzz, mutation tests | L-OPS-1..2, L-A11Y-1, fuzz and mutation suite in Chromium and WebKit (Firefox advisory, D5/D9) |
+| P4 | `p4_drive` | The drive seam: `take`/`move`/`release`/`cancel`, the state machine, the held read, reduced-motion rules, React `useLayoutDrive` | L-DRIVE-1..6 in Chromium and WebKit (Firefox advisory, D5/D9); React adapter tests |
+| P5 | `p5_bench` | **iOS Native Grade certification:** the §11.6 interaction set and harness (Chromium, WebKit), including the P4-dependent direct-manipulation scenes; independent per-frame scoring; perf gates (commit ≤ 2× required-work floor, steady frame, sustained commits, held frame); validation → improvement iterations until every required metric passes | Native-grade report all green in both required engines; no weakened tolerance; commit ≤ 2× floor, steady p95 ≤ 2 ms, sustained/held gates and exact read counts met; iteration log records failures and fixes |
 | P6 | `p6_release` | Docs site, READMEs, migration notes, changesets and versions; state the iOS-native-grade claim only from the complete P1–P5 evidence body; final full gate on a fresh clone; final review and cleanup | Full gate green on a fresh clone; P5 certification green; final tribunal PASS on every checkpoint |

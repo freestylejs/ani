@@ -137,6 +137,9 @@ describe('P3B: every docs code example is a test', () => {
                     '@freestylejs/ani-react': [
                         resolve(repoRoot, 'packages/react/src/index.ts'),
                     ],
+                    '@freestylejs/ani-layout': [
+                        resolve(repoRoot, 'packages/layout/src/index.ts'),
+                    ],
                     '@freestylejs/ani-vue': [
                         resolve(repoRoot, 'packages/vue/src/index.ts'),
                     ],

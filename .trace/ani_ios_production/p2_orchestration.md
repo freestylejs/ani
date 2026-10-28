@@ -199,3 +199,21 @@ whiteboard/canvas product. The former board work was therefore scope drift.
   the complete P1–P5 evidence body: frame-level correctness, continuity, the P4 layout drive seam,
   authority-defined degradation/safety and pinned performance evidence. Building an unrelated
   complex application is not substitute evidence.
+
+## Execution readiness (2026-10-28)
+
+`execution_readiness_20261028.md` is the current status and dispatch record. In summary:
+
+- P2 is **implemented through H6b but not formally closed**. There is no `p2_measured.md` and no
+  P2 tribunal result. The only remaining functional P2 gate failure at H6b was WebKit React 18
+  `RL3` under load; Chromium's `layout:COST` failure is retired by D8.
+- `layout:COST` is retired as a gate. P5 owns the whole-commit gate at ≤ 2× the measured
+  required-work floor (`gate_amendment_20261028.md`; §11.5).
+- H11 is split. **H11a** is the P2-closure RL3 robustness fix only. **H11b** is the P3a safety
+  implementation (the former H11 items 1–7 and 9). H11a lands first; H11b resets to the P2 closure
+  head.
+- The P0/P1 carried defects (J-001, J-004, P0-N002) are code-fixed in `aaa642a` with SC-7/KP-1/ST-3
+  proofs, but they have not been re-judged since. The combined P0/P1/P2 tribunal re-judges them
+  together after P2's gates are green.
+- The P5 instrument is re-pinned to the recorded macOS host (D9); the old Ubuntu/Xeon cost reports
+  are historical and advisory.
