@@ -141,8 +141,10 @@ Elements with the same `layoutId` are one element to the user. On the default `'
 -   **Lead.** Per id, the newest mounted element that is not exiting leads. Two mounted, non-exiting elements with one id print a development warning; the newest leads and the other animates on its own.
 -   **Handoff.** The new lead starts from the drawn box of the element it replaces: the live box of an element exiting under presence, or the box of a removed element, kept for `retain` seconds (default 1).
 -   **Crossfade.** When the previous element is exiting under [presence](#presence) and the box moved, both draw at the lead's box while the lead fades in and the exiting element fades out, on the lead's curve. The lead fades in over the first half and the exiting element fades out only after it, so the pair never shows what is behind it. The exiting element stays invisible until presence removes it, and presence waits for the crossfade to end. `layoutCrossfade: false` on either element turns it off.
+-   **Inert follower.** The exiting follower is `inert` from the crossfade's first frame, so there is one interactive and accessible target while the pair shares a box. Your own `inert` value, or its absence, is restored byte for byte when the element re-enters (a reversal), unmounts, or the run aborts or is disposed.
 -   **Corners.** Unless either element sets `radius: false`, the corners blend from the radius the old element showed to the new element's own, on the same curve, so the shape changes with the box.
 -   **Opacity.** If the exiting element's presence animates `opacity` itself, there is no crossfade and a development warning is printed. Animate opacity on a child instead.
+-   **Focus.** If focus is inside the exiting follower, the pair does not crossfade: the new lead appears at its final layout, the follower exits under presence alone, and the `focus-in-follower` diagnostic is emitted with action `'none'`. Layout never moves focus; the author moves it.
 
 A card that opens into a detail view, with the surface, the image and the title as three nested ids:
 
@@ -243,6 +245,15 @@ export function Cards({ cards }: { cards: CardData[] }) {
 -   The grid cell stays rendered, so the grid keeps its shape while the card is open.
 -   `layout: 'position'` keeps the title's text at its final size instead of stretching it.
 -   Presence releases an exit after at most its exit duration plus one second (the `maxExitMs` watchdog). Keep the layout motion shorter than that, or raise `maxExitMs`.
+
+### Accessibility
+
+-   **Ownership.** Layout never changes DOM order, never moves focus, and never owns `tabindex`, roles or ARIA. A keyed reorder and a re-render while an element moves keep the same element and `document.activeElement`. Give focusable content its own accessible markup; layout only animates boxes.
+-   **Crossfade followers.** An exiting crossfade follower is `inert` from the first fade frame, so the pair never exposes a duplicate interactive or accessible target. The authored `inert` attribute (present or absent, and its value) is saved and restored byte for byte on reversal, unmount, abort and dispose.
+-   **Focus inside the follower.** When focus is inside the exiting follower (in the flat tree, through open and closed shadow roots), the crossfade is skipped for that pair: the lead appears at its final layout, the follower exits under presence alone, and `focus-in-follower` is emitted with action `'none'`. Layout does not set `inert` in this case, because that would take focus away. Move focus to the new surface yourself, as part of the interaction that opened or closed it.
+-   **Reduced motion.** The accessibility rules are unchanged; [reduced motion](#reduced-motion) only shortens or removes the motion.
+
+For keyboard and screen-reader behavior of a shared open/close, keep the trigger and the close control in the rest of your markup, and move focus when the surface opens or closes. The layout engine's part is to keep the duplicate target out of the tab order and to leave focus where it was.
 
 ### Anchored children
 
@@ -365,7 +376,7 @@ Under `StrictMode`, the replayed renders, effects and ref callbacks keep one gro
 | `custom` | — | Data passed to the children as `usePresence().custom`. |
 | `onExitComplete` | — | `(key) => void` when a child's exit has finished and it is removed. |
 
-`usePresence(motion, options?)` returns `{ ref, style, isPresent, custom }`. The motion has `present` (the resting values), a required `exit` node, and an optional `enter` node and `initial` values. Spread `style` after your own styles: it carries `initial` from the first render (also on the server) until the enter has finished, and the position of an exiting child under `popLayout`. Use `isPresent` to make an exiting child inert. For an exit you run yourself, `usePresenceControl()` returns `{ isPresent, safeToRemove }`; it gets no `popLayout` style and takes no part in a crossfade.
+`usePresence(motion, options?)` returns `{ ref, style, isPresent, custom }`. The motion has `present` (the resting values), a required `exit` node, and an optional `enter` node and `initial` values. Spread `style` after your own styles: it carries `initial` from the first render (also on the server) until the enter has finished, and the position of an exiting child under `popLayout`. `isPresent` is available for your own inert/disabled states; layout owns `inert` itself on an exiting crossfade follower (see [Accessibility](#accessibility)). For an exit you run yourself, `usePresenceControl()` returns `{ isPresent, safeToRemove }`; it gets no `popLayout` style and takes no part in a crossfade.
 
 **`popLayout`.** In the render where a child stops being present, its box is measured relative to its containing block: the nearest ancestor that contains absolutely positioned elements (a positioned, transformed, filtered or contained ancestor), or the initial containing block. The commit lifts it to `position: absolute` at that box, before the flush, so the siblings are measured without it. No wrapper is required; a `position: relative` list keeps an exiting child inside the list's own scrolling and clipping.
 
@@ -454,6 +465,7 @@ With the default `'raf'` engine, layout and the other style writers own separate
 | `transform-origin` | You | Read once per change. A size animation scales around it. |
 | `opacity` | Presence and you | Layout writes it only for a `layoutId` crossfade pair. |
 | `border-radius` | Layout when `radius` is on | Restored at the end of the run. |
+| the `inert` attribute | Layout, only on an exiting crossfade follower | Saved when the crossfade starts (present or absent, and its value) and restored byte for byte on reversal, unmount, abort and dispose. Never set when focus is inside the follower. |
 | `rotate`, skew | You | An element with them, or under a non-participant ancestor that rotates, skews or scales, jumps with `'unsupported'`. |
 
 **CSS transitions.** A CSS transition on `translate`, `scale` or `all` would animate layout's own writes, so the element jumps with `'unsupported'` and a development warning. Tailwind's `transition` and `transition-all` include them; use `transition-colors`, `transition-opacity` or a `transition-property` list without them. A running CSS animation of `translate` or `scale` jumps the same way.
@@ -500,13 +512,13 @@ Anything the engine cannot animate exactly jumps to its final layout. Each chang
 | No valid capture: none was taken, or it aged past a frame (taken in an earlier task's frame, or inside an animation frame) | Elements appear at their final layout; running animations keep going, moved with their layout. Elements that may have jumped by `threshold` or more are listed | `'stale'` |
 | Reduced motion with `'jump'` | Everything jumps | `'reduced'` |
 | The layout runtime's kill switch is on | Every mover jumps, at the next flush and synchronously while running | `'disabled'` |
-| An internal exception aborts a flush or frame | Everything the transaction owned is restored byte-identically; every affected element is listed | `'failed'` |
+| An internal exception aborts a flush or frame | Every owned declaration and the crossfade follower's `inert` are restored byte-identically, holds release, listeners and markers disarm, and every affected element is listed | `'failed'` |
 
 `'unsupported'`, `'capped'` and `'stale'` print one development warning per group, naming the cause. `'culled'`, `'reduced'`, `'disabled'` and `'failed'` stay silent, and `'failed'` is reported through `internal-error`.
 
 | `status` | When |
 | :--- | :--- |
-| `'failed'` | An internal exception aborted the run; styles are restored and every affected element is listed as `'failed'`. |
+| `'failed'` | An internal exception aborted the run; styles and `inert` are restored and every affected element is listed as `'failed'`. |
 | `'disposed'` | The group was disposed or unmounted, or every element of the change was removed. Inline styles are restored. |
 | `'disabled'` | The runtime's kill switch was on. |
 | `'capped'` | More than `maxNodes` visible elements moved, or more than `maxParticipants` are connected: everything jumped. |
@@ -573,7 +585,9 @@ interface LayoutDiagnostic {
 }
 ```
 
-A flush and every frame callback run inside one transactional boundary. On an internal exception the engine restores every owned declaration byte-identically, cancels browser animations, clears pending writes, invalidates holds, releases presence holds, disarms the frame marker and listeners, stops the clock subscription, resolves every affected report `'failed'` and emits `internal-error` with action `'abort'`. A failed report lists only the participants the transaction touched and the affected run nodes; the style restore remains conservative for the whole scope. `flush()` never rejects.
+A flush and every frame callback run inside one transactional boundary. On an internal exception the engine restores every owned declaration and the crossfade follower's `inert` byte-identically, cancels browser animations, clears pending writes, invalidates holds, releases presence holds, disarms the frame marker and listeners, stops the clock subscription, resolves every affected report `'failed'` and emits `internal-error` with action `'abort'`. A failed report lists only the participants the transaction touched and the affected run nodes; the style and `inert` restore remains conservative for the whole scope. `flush()` never rejects.
+
+`focus-in-follower` is a diagnostic, not a jump: no element is added to `snapped` and `onSnap` is not called. It is emitted when the crossfade is skipped because focus is inside the exiting follower (see [Accessibility](#accessibility)).
 
 Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a stateful timing) throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS` when they are passed, never inside a frame.
 
