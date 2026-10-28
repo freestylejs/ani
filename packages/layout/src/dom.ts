@@ -528,6 +528,26 @@ export { RADIUS_PROPERTIES }
 /** Inline declarations as they were before layout owned them (or as the author last set them). */
 export type Saved = Map<string, readonly [value: string, priority: string]>
 
+/**
+ * The authored `inert` attribute of a crossfade follower (§6): present or
+ * absent, and its exact value. Restoring puts it back byte for byte.
+ */
+export interface SavedInert {
+    readonly present: boolean
+    readonly value: string | null
+}
+
+export function saveInert(element: Element): SavedInert {
+    const value = element.getAttribute('inert')
+    return { present: value !== null, value }
+}
+
+/** Whether the element's `inert` attribute is byte-identical to `saved` now. */
+export function inertMatches(element: Element, saved: SavedInert): boolean {
+    const value = element.getAttribute('inert')
+    return saved.present ? value === saved.value : value === null
+}
+
 export function save(
     element: HTMLElement,
     properties: readonly string[]
