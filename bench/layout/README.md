@@ -4,12 +4,16 @@ This is the certification instrument of `packages/layout/ARCHITECTURE.md` §11.5
 and §11.6, not a demo. It scores every frame of an iOS interaction on a manual
 clock against an independent oracle, measures the real-clock script cost and
 the required-work floor, and fails a deliberately wrong frame. A harness that
-cannot fail is worthless; every metric has a negative control.
+cannot fail is worthless; every deciding metric has a negative control or a
+documented unit-control mapping.
 
 The gate values are copied from §11.5/§11.6 and are never tuned by a scene. A
-scene is never declared to pass by construction. `bench/layout/ITERATIONS.md`
-records every failure and the root-cause hypothesis; the engine is not fixed in
-the harness.
+scene is never declared to pass by construction, and an empty or partial trace
+fails the completeness contract C1. The report separates the selected
+invocation result (`pass`) from **certification** (five measured runs, Chromium
+and WebKit, all required scenes, no pending gate, no launch error, non-advisory
+cost). `bench/layout/ITERATIONS.md` records every failure and the root-cause
+hypothesis; the engine is not fixed in the harness.
 
 ## Requirements
 
@@ -47,11 +51,13 @@ pnpm test:bench-layout
 ```
 
 `pnpm bench:layout` always writes the report before exiting and exits `1` on a
-gate miss. `--check` additionally runs the unit self-tests and the browser
-negative controls; it exits `1` if any control does not fail its target gate.
-`--engine` is repeatable; the default is Chromium and WebKit. `--scene` accepts
-`s-card`, `s-seg`, `cost` and globs. `--runs` is the number of measured runs
-(default 5); one warm-up process is always discarded first.
+gate miss. `--check` additionally runs the unit self-tests and **all** browser
+negative controls; it exits `1` if any conclusive control does not fail its
+target gate. `--engine` is repeatable; the default is Chromium and WebKit.
+`--scene` accepts `s-card`, `s-seg`, `cost` and globs. `--runs` is the number of
+measured runs (default 5); one warm-up process is always discarded first.
+Certification requires exactly 5, both engines and all required scenes; a
+`--runs 1`, single-engine or single-scene run is an invocation only.
 
 The page is served under `http://localhost/` because that is a trustworthy
 origin for COOP/COEP. Nothing listens on the port.
@@ -86,6 +92,13 @@ gitignored; the files are generated from the current source on every run.
     "load1": 5.99658203125
   },
   "advisory": { "cost": true, "reasons": ["1-minute load is 6.00, pinned below 1"] },
+  "certification": {
+    "certified": false,
+    "reasons": ["runs 1 != 5", "required engine webkit not selected", "pending S-REORDER: P4"],
+    "requiredEngines": ["chromium", "webkit"],
+    "requiredRuns": 5,
+    "requiredScenes": ["s-card", "s-seg", "cost"]
+  },
   "engines": [
     {
       "engine": "chromium", "advisory": true,
@@ -101,8 +114,9 @@ gitignored; the files are generated from the current source on every run.
         }
       ],
       "cost": {
-        "scene": "S-BULK", "status": "fail", "pending": "P4 (held shape G12)",
-        "pass": false,
+        "scene": "S-BULK", "status": "pending", "pending": "P4 (held shape G12)",
+        "pass": false, "valid": true, "blockedReasons": [],
+        "runs": [ /* engineAudit/floorAudit counts, medians, ratios, gSource */ ],
         "metrics": [ /* G9-unscrolled, G9-scrolled, G9.floor-*, G10, G11, G13 */ ],
         "runs": [ /* ratio, engine/floor medians, steady/sustained p95, g */ ],
         "notes": []
@@ -125,7 +139,8 @@ gitignored; the files are generated from the current source on every run.
 
 An `AggregateMetric` stores `median` of the per-run statistic, `perRun`,
 `passPerRun`, and the absolute `worst` with its run number, frame, participant
-and edge. The printout names the same worst frame/participant for every metric.
+and edge. The printout names the worst frame/participant where the metric has
+one; cost metrics name the run and audit detail.
 
 ## Gate values (verbatim)
 
@@ -134,15 +149,16 @@ WebKit; Firefox advisory):
 
 | ID | Metric | Gate |
 |---|---|---|
+| C1 | Trace completeness contract | required observations/commits/reports/settle frames/participants/pair data; any declared metric n/a fails |
 | G1 | Oracle error: drawn rect against the independent oracle | ≤ 0.05 px every edge |
 | G2 | First-frame continuity against the last presented frame | ≤ 0.05 px (≤ 0.5 px only with `capture-aged`) |
-| G3 | Velocity continuity at each retarget | ≤ 1 % of the larger speed + 1 px/s |
+| G3 | Velocity continuity at each retarget | ≤ 1 % of the larger speed + 1 px/s; observed rect finite difference is supporting evidence (H14-07) |
 | G4 | Spring fidelity against the independent spring oracle | ≤ 0.05 px |
 | G5 | Settle exactness: rect vs layout box, and the pose | ≤ 0.01 px; no pose declaration left |
 | G6 | Restoration of owned inline declarations | byte for byte |
 | G7 | Reports: `status`, `snapped`, diagnostics | exactly as scripted |
 | G8 | Real-clock frame | p95 ≤ 2 ms; no > 8 ms frame after the commit frame |
-| G13 | Exact reads | commit ≤ 2N rects and 2N pairs; steady frames zero |
+| G13 | Exact reads | commit ≤ 2N rects, 2N pairs and the exact §4.1/§4.3 computed count; steady frames zero |
 
 Cost gates:
 
@@ -150,8 +166,8 @@ Cost gates:
 |---|---|---|
 | G9 | Commit (capture + flush) ≤ 2× required-work floor | 1,000 participants, unscrolled and scrolled 1.5 viewports; median of 5 per-run ratios ≤ 2 |
 | G10 | Steady frame at 300 nested movers | p95 of 600 samples ≤ 2 ms |
-| G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | p95 of every frame sample in the window ≤ 2 ms |
-| G12 | Held frame ≤ 0.1 ms per held element | **pending: P4** (the drive seam is not in this base tree) |
+| G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | p95 of one `performance.now()` pair per commit ≤ 2 ms; the refresh rate is recorded and a 30 Hz rAF frame is never called 60 Hz |
+| G12 | Held frame ≤ 0.1 ms per held element | **pending: P4** (the drive seam is not in this base tree); while pending, pass is false |
 | G14 | Fingerprint | mismatch makes cost advisory; frame gates still decide |
 
 `G12` is not fabricated. The report marks the S-BULK held shape as pending P4;
@@ -175,7 +191,7 @@ S-REORDER and S-SHEET are pending P4 for the same reason.
 `bench/layout/oracle.test.ts` checks hand-computed values on every damping
 branch, exact `v(0)`, the 0.01 ms reference integration, the 0.918 s settle
 example, coverage exactly 1 for a new pair and no opacity pop on a reversal.
-No production solver, `physics`, `solve`, `plan` or timing code is imported.
+The oracle also records the presented-rect finite difference at each retarget as supporting evidence; the authority's analytic pair remains the G3 gate, and G1 decides actual engine continuity. No production solver, `physics`, `solve`, `plan` or timing code is imported.
 
 ## Required-work floor and its audit
 
@@ -187,10 +203,14 @@ same written properties. The floor performs:
   `offsetHeight` pair per participant (§4.1 item 1);
 - the same scene mutation;
 - **flush**: the same 1,000 rects and 1,000 layout-size pairs (§4.3 step 2);
+- **computed reads**: §4.3 step 2 computed values for every active node. On
+  WebKit the engine also reads the Typed OM `transform-origin` where it snaps
+  the reference box; the floor performs that read too, and the audit records
+  the expected range.
 - **poses**: one `translate` + one `scale` declaration per mover (the t = 0
-  pose of §4.3 step 4). Every measured commit starts from rest
-  (`group.finish()` between samples), so the engine and floor write exactly the
-  same pose set.
+  pose of §4.3 step 4). Both fixtures are reset to rest between samples
+  (`group.finish()` for the engine, poses removed for the floor), so they start
+  from the same rest state and write the same pose set.
 
 The audit is structural, not a claim: the page instruments
 `getBoundingClientRect`, the `offsetWidth`/`offsetHeight` getters and
@@ -207,21 +227,29 @@ warm-up (5 discarded), sample count (30) and protocol, in the same process.
 
 ## Measurement and aggregation
 
-- `g` is measured over 1,000 consecutive `performance.now()` reads. WebKit's
-  clock ticks at 1 ms and the reads can finish inside one tick; the harness
-  observes the next tick and records `g = 1 ms` instead of an optimistic zero.
-  If `g > 0.05 ms`, a frame sample is the mean of 20 consecutive frames timed
-  as one interval (§11.5).
+- `g` is measured over 1,000 consecutive `performance.now()` reads; when no
+  non-zero delta appears, the harness observes the next tick and records
+  `gSource: "tick-fallback"`. WebKit reports `g = 1 ms`.
+- When `g > 0.05 ms`, the harness does **not** average already-quantized
+  per-frame costs and call the result a 20-frame interval. It reports raw frame
+  samples with the ±g/2 quantization bound and marks the samples `quantized`;
+  the cost report is BLOCK/not deciding. The 20-frame interval can only be
+  timed as one pair, which this instrument does not claim.
 - A frame sample is the sum of every rAF callback in one animation frame
-  (same timestamp). A commit in a task between frames marks the next frame and
-  its measured commit script time is charged to that frame sample; a commit
-  inside a callback marks that callback's frame. The sustained gate therefore
-  measures the whole main-thread frame cost, including the 60 Hz commits, not
-  only the rAF callbacks.
-- Percentiles are nearest-rank. A gate's value is the median of the five
-  per-run statistics; the per-run values and pass/fail are always printed.
-  G5 and G8 additionally require every run to pass the pose/long-frame part,
-  because a median must not hide a leftover pose or a single long frame.
+  (same timestamp). A commit in a task between frames marks the next frame,
+  never the previous one; a commit inside a callback marks that callback's
+  frame. The sampler can charge a commit's script to that next frame
+  (`FrameSampler.addScript`); G8 does not invent it, and G11 times the commit
+  separately.
+- G11 is measured as one `performance.now()` pair around each of 300 commits
+  at 60 Hz; the rAF refresh (often ~30 Hz in headless WebKit) is recorded as
+  `refreshHz` and the frame samples are diagnostic only. A 30 Hz frame is never
+  presented as a 60 Hz frame.
+- Percentiles are nearest-rank and the five per-run values are printed with
+  the median. A metric uses the **per-run findings' own gate outcomes** and
+  passes when at least three of five measured runs pass (the median outcome);
+  a missing or non-finite run fails the aggregate. No threshold is recomputed
+  from the median (H14-21). The per-run pass/fail list is always printed.
 - `g`, the fingerprint and every per-run statistic are written to the report.
 
 ## Fingerprint (G14)
@@ -235,7 +263,10 @@ On this host the 1-minute load has been above 1.0 during the P5a runs, so every
 cost report is advisory until a quiet run is produced. A report with an
 advisory cost fingerprint cannot claim the cost gates; its top-level `pass` is
 `false` when the cost scene is selected, while the frame-scoring values remain
-deciding evidence.
+deciding evidence. WebKit cannot be measured validly for G9/G10/G11 with its
+1 ms timer: those metrics are `BLOCK`/non-deciding, the raw ratios are
+diagnostic, and certification is `NOT CERTIFIED` with that exact reason. No
+quantized WebKit ratio is reported as a measured failure.
 
 ## Negative controls
 
@@ -268,42 +299,55 @@ Browser controls are run by `--check`, once per engine, through the real page:
   presented box; leave a 0.05 px pose after settle.
 - S-BULK: run the floor with an extra `getBoundingClientRect()`.
 
-Each control must fail its target; a control that unexpectedly passes makes
-`--check` exit `1`.
+Each conclusive control must fail its target; a control that unexpectedly
+passes makes `--check` exit `1`. `card-no-inert` is marked **inconclusive** at
+P3a because the primary already fails shape.inert; `card-focus-follower` is
+inconclusive if P3b's inert makes the follower unfocusable. `shape.teardown`,
+`shape.pill-radius`, C1, G12 and G14 have unit controls rather than browser
+controls; the mapping is one control per deciding metric. `G9.probe` is
+non-deciding evidence and has no gate control by design.
 
-## P5a scope and known limitations
+## P5a scope, certification result and known limitations
 
-- Implemented calibration scenes: **S-CARD** (7 participants, nested shared
-  ids, radius 20 → 0, open/close/reverse at 224 ms) and **S-SEG** (one pill,
-  four taps 80 ms apart, moving retargets).
-- `S-BULK` runs the §11.5 cost shapes only; its manual-clock frame scoring is
-  not part of P5a. The held shape G12 and the S-REORDER/S-SHEET scenes are
-  **pending P4**.
-- The base tree is P3a. P3b's crossfade-follower `inert` is not present, so
-  S-CARD's `shape.inert` fails in both engines (261 frame violations). This is
-  recorded honestly in the iteration log; the `card-no-inert` control also
-  fails it. The metric is not removed or weakened.
-- Playwright's WebKit does not expose `crossOriginIsolated` on this build even
-  with the COOP/COEP headers present; `g` is 1 ms and the 20-frame sampler
-  applies. Chromium is cross-origin isolated. This is recorded as an engine
-  note in the report and is a cost-evidence risk, not a frame-gate waiver.
+- Implemented calibration scenes: **S-CARD** and **S-SEG**; **S-BULK** runs the
+  §11.5/A-19 cost shapes only (850 tiles + 150 labels = 1,000 participants,
+  300 movers; 1,000-participant cost, 300 nested movers for G10 and 60 Hz
+  commits for G11).
+- `S-REORDER`, `S-SHEET` and the S-BULK held shape G12 are **pending P4**.
+  The report keeps them pending and top-level `pass` is false while any gate is
+  pending (H14-13).
+- The base is the fixed H11b transaction `4eb2f7e`. P3b (H12) is still
+  outstanding: S-CARD's `shape.inert` and the removed-follower G6 check fail
+  with "inert absent". This is an expected dependency, not a harness bug; the
+  scene is not claimed green.
+- **Certification on this report is NOT CERTIFIED / BLOCK.** Reasons include
+  the P4 pending gates and the advisory cost fingerprint. Chromium's G9/G11
+  measured costs also fail their gates; WebKit G9/G10/G11 are BLOCK because
+  its 1 ms timer makes the cost evidence non-deciding. No threshold was
+  changed.
+- Chromium G9 is measured with the audited floor including §4.3 computed reads;
+  Chromium G11 is measured per 60 Hz commit. The cost values are advisory on
+  this host because the 1-minute load is above 1.0.
 - Firefox 1490 times out on launch on this macOS 27 instrument; it is advisory
-  (D9 exception) and the report records the launch error.
-- The DPR 1/2/3 sweep, the reduced-motion variants, S-PHOTO and the other P2
-  scenes are P5b work. P5a does not claim them.
-- G3's deciding pair is the analytic new-track velocity at the retarget against
-  the previous track's analytic velocity (A-11). The engine's actual continuity
-  is established by G1 at the retarget frame and the next frame; the observed
-  finite difference is supporting evidence. The scene plan supplies the
-  retarget; a plan-level velocity override is the negative control.
-- G13 counts the exact required reads of a commit as `N_capture + N_flush`
-  rects and pairs (for S-CARD the open commit captures 3 and flushes 7). The
-  scene-spec table's simplified "7 + 7" assumes both sides are mounted; the
-  authority's §4.1/§4.3 behaviour is used instead.
-- The cost G9 commits are from rest (finish between samples) so the floor and
-  engine write the same t=0 pose set. This is the strict reading of the floor
-  audit's "same written properties"; it is a scene contribution, not a gate
-  change.
+  and its build is never part of a Chromium/WebKit fingerprint decision.
+- DPR 1/2/3, reduced-motion variants, S-PHOTO and the other P2 scenes are P5b.
+- S-CARD visual contributions/deviation: the sheet content is registered in a
+  hidden non-participant sheet from rest so the open capture has a valid B and
+  the engine does not emit an avoidable `stale`; the sheet surface/image/title
+  join at open and hand off from the card pair. The close starts one settled
+  frame after the open report. The lead/follower z-order is explicit rather
+  than DOM-order-only. The real twin uses CSS opacity transitions for the
+  author content layer while the manual run advances its JS timeline; the
+  layout tracks and scored geometry use the same script times. These are scene
+  contributions, not gate changes.
+- G3's deciding pair is analytic (A-11); the observed finite difference is
+  supporting evidence and can be large for a correct spring because it includes
+  one frame of acceleration. G1 decides actual continuity.
+- G13 uses per-commit style ranges: radius capture + active flush, plus the
+  optional Typed OM origin on WebKit. This is the §4.1/§4.3 set, not an
+  unlimited style budget.
+- The per-scene G9 probe at N=7 and N=1 is a generic engine/floor probe and is
+  explicitly non-deciding; the named gate is S-BULK at 1,000.
 
 ## Files
 
@@ -312,11 +356,14 @@ Each control must fail its target; a control that unexpectedly passes makes
 | `run.ts` | CLI, engines, request interception, runs, aggregation, report |
 | `fingerprint.ts` | §11.5 fingerprint and advisory rule |
 | `oracle.ts`, `oracle.test.ts` | independent closed-form/RK4 oracle and unit tests |
-| `stats.ts` | nearest-rank percentiles, median, `g`, 20-frame sampling |
+| `stats.ts` | nearest-rank percentiles, median, `g`, quantization handling |
+| `aggregate.ts` | per-run gate aggregation; missing/non-finite runs fail |
+| `certification.ts` | invocation vs certification rules |
 | `scoring.ts`, `scoring.test.ts` | per-frame gates, worst frame/participant, shape, negative controls |
 | `gates.ts` | cost gates and floor audit |
 | `scene_plans.ts` | scripted geometry/motion data for the oracle |
 | `bundle.ts` | esbuild page bundle and viewable HTML |
 | `page/` | page-side recorder, S-CARD, S-SEG, S-BULK cost shapes |
 | `ITERATIONS.md` | iteration 0 evidence and root-cause hypotheses |
-| `iteration-0/` | the two full iteration-0 report JSONs (Chromium, WebKit) |
+| `iteration-0/` | historical iteration-0 reports (old base) |
+| `iteration-1/` | fixed-base iteration-1 reports (Chromium/WebKit) |
