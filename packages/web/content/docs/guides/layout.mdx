@@ -530,9 +530,12 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
 -   **The hold.** The drawn origin is the take point plus the offset every frame, under a scroll, a
     live ancestor scale, sticky positioning (the element or an ancestor) and a re-layout. The only
     read a frame adds is one rect per held element, in the clock's read phase before any write; a
-    size change also verifies support and the animated-owned probe (a running CSS animation or
-    transition on `translate`/`scale` invalidates). `stats.rects` counts the reads; `stats.holds`
-    counts every live hold (`held`, `released` and `cancelled` until it finishes or is invalidated).
+    size change also verifies support and the animated-owned probe: a running CSS animation or
+    transition on `translate`/`scale` on the held element, a participant ancestor, or any element in
+    the held subtree invalidates with `unsupported-geometry`. A box-preserving 180° rotation/zoom
+    that the support check cannot classify is a residual risk: the check may invalidate the hold.
+    `stats.rects` counts the reads; `stats.holds` counts every live hold (`held`, `released` and
+    `cancelled` until it finishes or is invalidated).
 -   **Size and descendants.** The held element's size keeps its track under one hold-specific
     tolerance (0.5 px): a supported re-layout is taken into the hold, a sub-threshold difference is
     snapped, and release always reaches its finish. Its participant descendants ride one inherited
@@ -550,7 +553,10 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
     while held never ends the hold. The policy at `release`/`cancel` decides the landing: `'jump'`
     lands at A with no motion, `{ maxDuration }` clamps, `'ignore'` plays in full. A release that
     finds no reduced-motion fit becomes `released` and lands at A (a reduced jump); a refused spring
-    emits `spring-timeout` and snaps. A release with no layout change springs back to the slot.
+    emits `spring-timeout` and snaps. A release that finds no fitting path emits the typed
+    `reduced-no-fit` diagnostic and lands at A. Under `'jump'`, a flush while held or landing
+    settles every descendant residual at its own A. A release with no layout change springs back to
+    the slot.
 -   **Admission and limits.** An exiting crossfade follower is rejected with a `drive-rejected`
     diagnostic. An element belongs to at most one live group; adding it to a second throws. The
     ancestor/descendant hold exclusion is scope-local: a cross-scope nested hold is allowed, and a
@@ -558,12 +564,15 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
     as visible movers for `maxNodes`; exceeding it invalidates the holds and reports `'capped'`.
     The kill switch wins over the `'waapi'` precondition: `take` returns an invalidated handle under
     the switch, and otherwise the `'waapi'` engine cannot take a hold. A `take` before an unflushed
-    layout uses its own rect/computed reads; unsupported current geometry throws.
+    layout uses its own rect/computed reads; unsupported current geometry throws. `onSnap` lists
+    each held node and rider with reason `'capped'`.
 
 `useLayoutDrive()` returns a dispatcher for the same port. Its `take(element)` routes to the live
 `LayoutGroup` that owns the registered element, otherwise to the implicit root of its document, and
 throws `ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref detach and re-attach
-preserves a live hold, just as it preserves registration.
+preserves a live hold, just as it preserves registration. The gesture layer maps `pointercancel`
+and `lostpointercapture` to `cancel()`, so a cancelled gesture never becomes a release; a
+box-preserving 180° rotation/zoom shares the documented support residual risk above.
 
 ### Reduced motion
 
@@ -657,6 +666,7 @@ interface LayoutDiagnostic {
         | 'runtime-disabled'
         | 'focus-in-follower'
         | 'drive-rejected'
+        | 'reduced-no-fit'
         | 'callback-error'
         | 'internal-error'
     readonly scope: number // stable per group for the page's lifetime
