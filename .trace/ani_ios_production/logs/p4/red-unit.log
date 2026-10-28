@@ -1,0 +1,229 @@
+The plugin "vite-tsconfig-paths" is detected. Vite now supports tsconfig paths resolution natively via the resolve.tsconfigPaths option. You can remove the plugin and set resolve.tsconfigPaths: true in your Vite config instead.
+
+ RUN  v4.1.2 /private/var/folders/x6/l7qs54m50blbxn2wj8_dbm8m0000gn/T/ani-p4-base/packages
+
+ ❯ layout/src/__tests__/drive.test.ts (14 tests | 14 failed) 116ms
+     × take on an unregistered element throws without state change 18ms
+     × take on a disconnected registered element throws 19ms
+     × take in a second document throws 2ms
+     × take on the waapi engine throws 1ms
+     × take under runtime snap returns an invalidated handle and emits runtime-disabled 1ms
+     × take twice, held ancestor and held descendant throw; siblings may be held at once 2ms
+     × non-finite move and release throw before any state change; terminal calls are idempotent 1ms
+     × a held read counts one rect per frame and stops after invalidation on removal 1ms
+     × dispose, finish, layoutKey and the kill switch invalidate a hold and restore its styles 1ms
+     × a caught moving card exposes its analytic origin velocity and has no jump 65ms
+     × release starts from rest timing-wise and advances on the second frame 1ms
+     × a timing release has c′(0) = v and starts at the held origin 0ms
+     × a spring release has d′(0) = v0 and the same start 1ms
+     × an adopted held element is invalidated and its styles restored 1ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > take on an unregistered element throws without state change
+AssertionError: unregistered: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ invalid layout/src/__tests__/drive.test.ts:137:42
+    135|         action()
+    136|     } catch (error) {
+    137|         expect(isAniError(error), label).toBe(true)
+       |                                          ^
+    138|         expect((error as { code?: string }).code, label).toBe(
+    139|             'ANI_INVALID_OPTIONS'
+ ❯ layout/src/__tests__/drive.test.ts:152:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > take on a disconnected registered element throws
+AssertionError: disconnected: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ invalid layout/src/__tests__/drive.test.ts:137:42
+    135|         action()
+    136|     } catch (error) {
+    137|         expect(isAniError(error), label).toBe(true)
+       |                                          ^
+    138|         expect((error as { code?: string }).code, label).toBe(
+    139|             'ANI_INVALID_OPTIONS'
+ ❯ layout/src/__tests__/drive.test.ts:166:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > take in a second document throws
+AssertionError: foreign document: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ invalid layout/src/__tests__/drive.test.ts:137:42
+    135|         action()
+    136|     } catch (error) {
+    137|         expect(isAniError(error), label).toBe(true)
+       |                                          ^
+    138|         expect((error as { code?: string }).code, label).toBe(
+    139|             'ANI_INVALID_OPTIONS'
+ ❯ layout/src/__tests__/drive.test.ts:179:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > take on the waapi engine throws
+AssertionError: waapi: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ invalid layout/src/__tests__/drive.test.ts:137:42
+    135|         action()
+    136|     } catch (error) {
+    137|         expect(isAniError(error), label).toBe(true)
+       |                                          ^
+    138|         expect((error as { code?: string }).code, label).toBe(
+    139|             'ANI_INVALID_OPTIONS'
+ ❯ layout/src/__tests__/drive.test.ts:194:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > take under runtime snap returns an invalidated handle and emits runtime-disabled
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:207:32
+    205|         await h.group.flush()
+    206|         layoutRuntime.setMode('snap')
+    207|         const handle = h.group.take(a)
+       |                                ^
+    208|         expect(handle.state).toBe('invalidated')
+    209|         expect(h.group.stats.holds).toBe(0)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > take twice, held ancestor and held descendant throw; siblings may be held at once
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:238:31
+    236|         h.group.capture()
+    237|         await h.group.flush()
+    238|         const first = h.group.take(parent)
+       |                               ^
+    239|         expect(first.state).toBe('held')
+    240|         expect(h.group.stats.holds).toBe(1)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > non-finite move and release throw before any state change; terminal calls are idempotent
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:258:32
+    256|         h.group.capture()
+    257|         await h.group.flush()
+    258|         const handle = h.group.take(a)
+       |                                ^
+    259|         expect(handle.velocity).toEqual({ x: 0, y: 0 })
+    260|         invalid(() => handle.move({ x: Number.NaN, y: 0 }), 'NaN move')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > a held read counts one rect per frame and stops after invalidation on removal
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:284:32
+    282|         await h.group.flush()
+    283|         const before = h.group.stats.rects
+    284|         const handle = h.group.take(a)
+       |                                ^
+    285|         const readsAtTake = h.group.stats.rects - before
+    286|         expect(readsAtTake).toBe(1)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D1: public drive surface and take preconditions (§5.10) > dispose, finish, layoutKey and the kill switch invalidate a hold and restore its styles
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:310:36
+    308|             await h.group.flush()
+    309|             const authored = a.style.cssText
+    310|             const handle = h.group.take(a)
+       |                                    ^
+    311|             h.mc.frames(2)
+    312|             handle.move({ x: 20, y: 10 })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D2: take point, velocity and the first release frame (§5.10, §4.5) > a caught moving card exposes its analytic origin velocity and has no jump
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:346:32
+    344|         h.mc.frame(16)
+    345|         h.mc.frame(16)
+    346|         const handle = h.group.take(a)
+       |                                ^
+    347|         // linear 200 px over 0.5 s: 400 px/s, moving in +x
+    348|         expect(handle.velocity.x).toBeGreaterThan(300)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D2: take point, velocity and the first release frame (§5.10, §4.5) > release starts from rest timing-wise and advances on the second frame
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:365:32
+    363|         h.group.capture()
+    364|         await h.group.flush()
+    365|         const handle = h.group.take(a)
+       |                                ^
+    366|         handle.move({ x: 40, y: 0 })
+    367|         h.mc.frame(16)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D3: release velocity is the track seed, exactly once (§5.2, §5.3, §5.10) > a timing release has c′(0) = v and starts at the held origin
+TypeError: trackOrigin is not a function
+ ❯ layout/src/__tests__/drive.test.ts:410:23
+    408|         )
+    409|         expect(typeof track).not.toBe('string')
+    410|         const start = trackOrigin(track as never, 0)
+       |                       ^
+    411|         expect(Math.abs(start.x - 80)).toBeLessThan(1e-9)
+    412|         expect(Math.abs(start.y - 160)).toBeLessThan(1e-9)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D3: release velocity is the track seed, exactly once (§5.2, §5.3, §5.10) > a spring release has d′(0) = v0 and the same start
+TypeError: trackOrigin is not a function
+ ❯ derivative layout/src/__tests__/drive.test.ts:388:19
+    386|         if (typeof track === 'string') throw new Error(track)
+    387|         const eps = 1e-6
+    388|         const a = trackOrigin(track, 0)
+       |                   ^
+    389|         const b = trackOrigin(track, eps)
+    390|         return { x: (b.x - a.x) / eps, y: (b.y - a.y) / eps }
+ ❯ layout/src/__tests__/drive.test.ts:435:19
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/14]⎯
+
+ FAIL  layout/src/__tests__/drive.test.ts > D4: adoption invalidates a hold (§4.6, §5.10) > an adopted held element is invalidated and its styles restored
+TypeError: h.group.take is not a function
+ ❯ layout/src/__tests__/drive.test.ts:448:32
+    446|         h.group.capture()
+    447|         await h.group.flush()
+    448|         const handle = h.group.take(a)
+       |                                ^
+    449|         handle.move({ x: 20, y: 10 })
+    450|         h.mc.frame(16)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  14 failed (14)
+   Start at  04:19:38
+   Duration  1.16s (transform 294ms, setup 0ms, import 350ms, tests 116ms, environment 572ms)
+

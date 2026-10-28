@@ -35,6 +35,7 @@ const MODULES = [
     'layout_spring',
     'layout_meas',
     'layout_ops',
+    'layout_drive',
     'react_layout',
     'acceptance',
     'showcase',

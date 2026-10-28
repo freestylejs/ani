@@ -20,6 +20,39 @@ export type {
 } from './motion'
 export type { LayoutStatus, SnapReason } from './plan'
 
+/* ───────────────────── Drive seam (§5.10) ───────────────────── */
+
+/**
+ * View-space CSS px (per second for a velocity). The gesture layer declares a
+ * structurally identical port and imports no layout type.
+ */
+export interface LayoutDriveVector {
+    readonly x: number
+    readonly y: number
+}
+
+export type LayoutDriveState = 'held' | 'released' | 'cancelled' | 'invalidated'
+
+/**
+ * One held element. `velocity` is the drawn origin velocity at the take, in
+ * px/s, so a caught moving element has no jump; `move` places the drawn
+ * origin at the take point plus `offset`; `release` hands the element back
+ * with that incoming velocity exactly once; `cancel` is `release` with zero
+ * velocity. Terminal calls are idempotent.
+ */
+export interface LayoutDriveHandle {
+    readonly state: LayoutDriveState
+    readonly velocity: LayoutDriveVector
+    move(offset: LayoutDriveVector): void
+    release(velocity?: LayoutDriveVector): void
+    cancel(): void
+}
+
+/** The layout side of direct manipulation. Precise gesture mechanics are the gesture layer's. */
+export interface LayoutDrive {
+    take(element: HTMLElement): LayoutDriveHandle
+}
+
 export interface LayoutGroupOptions {
     /** Default: `defaultClock`. Its `reducedMotion` is read at every flush. */
     readonly clock?: Clock
@@ -82,11 +115,11 @@ export interface LayoutStats {
     readonly parents: number
     /** Running tracks. */
     readonly tracks: number
-    /** Live holds. */
+    /** Live drive holds (§5.10). */
     readonly holds: number
 }
 
-export interface LayoutGroup {
+export interface LayoutGroup extends LayoutDrive {
     /** Registers a participant. Returns an idempotent remove that restores its owned styles. */
     add(element: HTMLElement, options?: LayoutOptions): () => void
     /** Replaces a participant's options. */
@@ -97,6 +130,8 @@ export interface LayoutGroup {
     flush(): Promise<LayoutReport>
     /** `capture()` → `mutate()` → `flush()`. A throwing `mutate` discards the capture and rethrows. */
     update(mutate: () => void): Promise<LayoutReport>
+    /** Takes a participant as held direct manipulation (§5.10). */
+    take(element: HTMLElement): LayoutDriveHandle
     /** Every track jumps to its end and settles. */
     finish(): void
     /** Cancels every track, restores every owned style, releases presence holds. */
@@ -118,6 +153,8 @@ export type LayoutDiagnosticCode =
     | 'document-mismatch'
     | 'runtime-disabled'
     | 'focus-in-follower'
+    | 'drive-rejected'
+    | 'reduced-no-fit'
     | 'callback-error'
     | 'internal-error'
     // codes may be added; existing meanings are stable
