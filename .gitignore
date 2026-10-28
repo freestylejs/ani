@@ -9,6 +9,7 @@ dist
 .turbo
 benchmark
 bench/browser/results/
+bench/layout/results/
 .obsidian
 .vite
 output.css
