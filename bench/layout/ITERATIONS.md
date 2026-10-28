@@ -477,3 +477,187 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 - G3's actual-continuity evidence is the observed finite difference; the
   analytic pair remains the gate per A-11.
 - S-PHOTO, DPR sweeps and reduced-motion variants remain P5b.
+
+## Iteration 3 — H15 P5b: the §11.6 P2/P3 scene set (iteration 1 of P5b)
+
+- Worktree: `ani-h15`, branch `helper/h15`, base `7ed9974` (P3 final + H14
+  harness). No production source, `tests/browser` or `ARCHITECTURE.md` change.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-3/report.json`
+- Report: `bench/layout/iteration-3/report.json`; raw log:
+  `bench/layout/iteration-3/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1 / Darwin 27.0.0, Node 24.19.0, pnpm 10.20.0, Playwright
+  1.55.0, `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **2.80**, so the cost result is **advisory**; the
+  frame gates still decide. WebKit remains unisolated under Playwright,
+  `g = 1 ms`.
+- Self-tests at run time: **73/73** across 7 files. Two oracle tests were added
+  after this run for the from-rest timing `k = 0` rule (75/75 on re-run; see
+  "Harness additions").
+- Browser controls: **14 per engine, 28 total**, all conclusive and failing
+  their target.
+- Every scene ran S-CARD/S-SEG first, then S-PHOTO, S-STACK, S-ISLAND, S-ACC,
+  S-INSERT, S-DELETE, then the S-BULK cost shapes.
+
+### Scene and metric table (5 measured runs; median and worst)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-CARD | C1/G1–G8/G13/shape | **pass**; G1 0.0013 px (frame 102 card-title left), G2 0.0012, G4 0.0013, G8 0.195 ms | **pass**; G1 0.0004 px (frame 73 sheet-content bottom), G2 0.0001, G4 0.0003, G8 1.000 ms quantized |
+| S-SEG | C1/G1–G8/G13/shape | **pass**; G1 0.0001 px (frame 17 pill right), G3 analytic 0 on 3 retargets, G8 0.260 ms | **pass**; G1 0.0000, G8 1.000 ms |
+| S-PHOTO | C1/G1–G8/G13/shape | **FAIL G1 306.2501, G2 306.2501, G4 306.2501** (frame 81 cell-37-image top; 40,635 participant-frames), **G7 4** (open `snapped [detail-image:stale] != []`) | **FAIL G1/G2/G4 306.2501** (frame 33 cell-37-image top; 26,187), **G7 5** (open status `stale != ended`) |
+| S-STACK | C1/G1–G8/G13/shape | **pass**; G1 0.0003 px (frame 73 badge-1 top), G2 0.0001, G4 0.0003, presence opacity 0.0000, G8 0.250 ms | **pass**; G1 0.0002 (frame 73 card-1 bottom), G8 1.000 ms |
+| S-ISLAND | C1/G1–G8/G13/shape | **FAIL G6 1** only: `card-content` last connected frame 65 leaves `translate`/`scale` (the counter-projection); G1 0.0006, G2 0.0006, G7/G13/shape pass | **FAIL G6 1** only: same; G1 0.0006, G8 1.000 ms |
+| S-ACC | C1/G1–G8/G13/shape | **FAIL G1 120.0000, G4 120.0000** (frame 12 body-6 bottom; 2,752/2,079 participant-frames), **G2 55.6732** (frame 18 body-6 c3); G3/G5/G6/G7/G13/shape pass | **FAIL G1/G4 120.0001, G2 55.6732** (same body-6); G3/G5/G6/G7/G13/shape pass |
+| S-INSERT | C1/G1–G8/G13/shape | **FAIL G7 2** only: `snapped [] != [new-0:culled,new-1:culled,new-2:culled]`; G1 0.0001 (frame 14 row-10 bottom), G2 0.0000, G4 0.0001, presence opacity 0.0000, G8 0.320 ms | **FAIL G7 2** only: same; G1 0.0001, G8 1.000 ms |
+| S-DELETE | C1/G1–G8/G13/shape | **pass**; G1 0.0251 px (frame 19 row-5 top), G2 0.0000, G3 analytic 0 at the row 6–8 retarget, G5 0.0000, G6 0, G13 0, G8 0.275 ms | **pass**; G1 0.0095 (frame 19 row-5 top), G2 0.0000, G8 1.000 ms |
+
+`G9.probe` is non-deciding; WebKit reports `BLOCK`/n-a because its 1 ms timer
+cannot decide a ratio, and no quantized ratio is presented as a failure.
+
+### Failure 1 — S-PHOTO nested image handoff (both engines)
+
+- Metrics: G1 306.2501 px, G2 306.2501 px, G4 306.2501 px, all on
+  `cell-37-image` (Chromium worst frame 81 top, 40,635 participant-frames;
+  WebKit worst frame 33 top, 26,187). G7: Chromium 4 (`open:
+  snapped [detail-image:stale]`), WebKit 5 (open status `stale`).
+- The detail frame takes its handoff correctly; the nested image snaps to its
+  A box (306.25 px = the F1/I1 delta). The open and back are symmetric.
+- Root-cause hypothesis: the engine's late-handoff guard
+  (`lateWithHandoff` in `scope.ts`) requires the new lead's participant parent
+  to be measured in the same plan. The new detail image's parent (the new
+  detail frame) is itself a late-registered lead and is still `unmeasured` at
+  the image's lead-change evaluation, so the image's handoff is skipped even
+  though the departing cell image is a live, measured node. The image then
+  falls through to the §4.4 stale path. WebKit's run status is `stale`;
+  Chromium's is `ended` with the same snapped stale image — a status
+  precedence difference between engines for the same trace.
+- Action: engine fix (nested late leads), then rerun; the scene is not
+  changed to avoid the handoff. No tolerance changed.
+
+### Failure 2 — S-ACC body-6 under the mid-flight row expansion (both engines)
+
+- Metrics: G1/G4 120.0000 px (Chromium) / 120.0001 (WebKit), worst frame 12
+  `body-6` bottom, 2,752 (G1) and 2,079 (G4) participant-frames; G2 55.6732 px
+  at frame 18 (row 2 collapse, `c3`).
+- At frame 12 (row 6 expands while rows 7–10 are still moving) the
+  position-pinned body-6 is drawn with `h = 34.2857 = 120 x 48/168` and
+  `y = row visual top + 48 x 48/168` — its layout box under the row's new
+  height pose, without the §5.5 counter-projection. The rest of the 43
+  participants are exact (G1 0 on the other frames; G3 analytic 0 at the
+  retarget).
+- Root-cause hypothesis: the body's own track was kept from c1; the parent
+  row's height retarget changes the parent pose at the same flush. The
+  child's A/pose re-expression appears to use the new parent pose without the
+  child's inverse projection for a kept/position child (the row-6 body is the
+  only participant in this state; the expanding row's own header/body and the
+  sibling headers/bodies are exact). This is the scene's intended
+  nested-position-under-a-size-retarget case.
+- Action: engine fix; no scene/tolerance change.
+
+### Failure 3 — S-INSERT culled report (both engines)
+
+- Metric: G7 2 (`snapped [] != [new-0:culled,new-1:culled,new-2:culled]`).
+  G1/G2/G4/G13 and `shape.presence-opacity` are exact.
+- The three new rows are above the viewport at A = -857/-779/-701 and are
+  presence-entered. The engine reports no `snapped` entries because a node
+  that mounts with presence has no B and no running track, so the plan's
+  cull branch (which is reached only after a track action) is never entered.
+  A-14's strict reading expects the three `culled` entries.
+- Action: engine fix (report a culled mount without a track); the scene keeps
+  the spec's expected snapped set and fails until it lands.
+
+### Failure 4 — S-ISLAND nested content removed with the exiting follower
+
+- Metric: G6 1, `card-content` last connected frame 65:
+  `translate`/`scale` (with priority) are non-empty. The card content is a
+  depth-1 participant under the exiting card; the card is the crossfade
+  follower. At frame 65 the parent's follower pose is still moving, so the
+  counter-projection is non-identity; the card is removed at the crossfade end
+  and the removal restores the declarations, but the harness checks the last
+  connected frame.
+- Root-cause hypothesis: a harness/scene edge, not a geometry miss. The G6
+  removed-participant rule exempts the follower itself (and checks its
+  `inert`) but not a descendant removed with it. G1–G5/G7/G13 and every shape
+  assertion pass exactly.
+- Action: keep the failure recorded; do not weaken G6. A later P5c decision
+  may scope the removed-participant check to a participant removed with a
+  follower (the same removal proof), but that is a gate-scope decision, not
+  this scene's fix.
+
+### Non-failures worth recording
+
+- S-CARD and S-SEG still pass after the H14-25 visual corrections (close X,
+  content fade p ≥ 0.5 / 0.15 s EASE_OUT, reused decoded card image, safe
+  areas, S-SEG label geometry).
+- S-STACK is exact (G1 0.0003, G2 0.0001, G4 0.0003, presence opacity
+  0.0000, G13 21/33 and 12/24, G8 0.250/1.000).
+- S-DELETE is exact (G1 0.0251, G2 0.0000, G3 analytic 0, G6 0, G13 0,
+  raw G8 0.275/1.000). The per-run invocation lines report some G8 runs as
+  FAIL under load; the 5-run aggregate passes (median and 3-of-5).
+- S-INSERT is exact except the culled report; its 3 presence timing tracks
+  match the 0.30 s EASE_OUT curve to 4.3e-7.
+- All scenes' G8 frame costs are far below 2 ms in Chromium (0.195–0.525 ms)
+  and quantized 1–2 ms in WebKit; no long frame after a commit in any scene.
+- The G13 exact per-engine sets are: S-CARD 8/15, 8/15, 9/16; S-SEG 2/3 per
+  tap; S-PHOTO open 2/2 Chromium and 0/0 WebKit, back 2/2 and 4/4; S-STACK
+  21/33 and 12/24; S-ACC 47/82 per commit; S-INSERT 16/29; S-ISLAND 5/9 and
+  6/10; S-DELETE 0/6 (layout reads; the raw React popLayout audit is 22/8
+  and its 4 rects + 8 styles are excluded as presence plumbing).
+
+### Negative controls (both engines)
+
+- 14 controls per engine, 28 total; all conclusive and failing their target:
+  `card-no-image-id` G1, `card-no-inert` shape.inert, `card-image-offset` G1,
+  `card-focus-follower` shape.focus, `seg-rest-retarget` G1,
+  `seg-jump-from-A` G2, `seg-leftover-pose` G6,
+  `photo-no-counter-scale` G1, `acc-separator-1px` G1,
+  `stack-badge-nonparticipant` G1, `island-snap-reverse` G2,
+  `insert-no-presence` shape.presence-opacity, `delete-no-lift` G1,
+  `floor-extra-read` G9.floor.
+- Unit self-tests: 73/73 at run time (75/75 after the two added timing
+  tests), including the new from-rest timing `k = 0` and moving-retarget
+  velocity tests.
+
+### Harness additions / corrections (no tolerance changed)
+
+- `oracle.ts`: a from-rest timing track is the exact curve (`k = 0`); only a
+  moving retarget carries the analytic velocity bump. This is the §1.6
+  sentence, not a change to a gate.
+- `SegmentPlan.authoredTranslate` (the S-DELETE swipe), `startMoving`
+  (author/presence timelines), `toFromB` (presence exit relative to B),
+  `presenceExit` (out of G3) and `ScenePlan.presenceOpacity` /
+  `shape.presence-opacity` (declared author opacity curves) were added.
+- React scenes use a DOM read audit for G13 (the public adapter has no
+  `group.stats`); the audit counts rects, offset pairs, computed styles and
+  Typed OM during commits/frames only. S-DELETE declares the popLayout
+  `popBox` reads as non-layout and excludes them (raw 22/8, engine 18/6 per
+  the layout set).
+- The S-INSERT scroller sets `overflow-anchor: none` to isolate the §12
+  uncompensated-shift shape; the offset is asserted unchanged at 1000.
+- The S-DELETE swipe uses an authored `left` offset (not a transform) so the
+  popLayout lift starts at the presented box; the lift is pinned and the row
+  is detached from layout before the engine flush.
+
+### Cost (S-BULK, §11.5) — unchanged by H15
+
+- Chromium: `valid: true`, `status: pending` (G12 P4); measured
+  **G9-unscrolled 3.232x**, **G9-scrolled 3.242x**, **G11 11.860 ms** p95;
+  G10 0.700 ms pass; G13 exact; floor audit pass both shapes.
+- WebKit: `valid: false`, **BLOCK** (`g = 1 ms`; G9/G10/G11 non-deciding);
+  no quantized ratio presented as a measured failure.
+- Cost fingerprint advisory (load 2.80). S-REORDER/S-SHEET/S-BULK G12 remain
+  pending P4. No threshold changed.
+
+### Residual risks / next
+
+- The four failures above are engine/harness evidence; H15 does not fix the
+  engine.
+- DPR 1/3 sweeps and the reduced-motion variants (`'jump'`,
+  `{maxDuration: 0.2}`) remain P5c; the DPR 2 primary run is this report.
+- S-DELETE's per-run G8 swings under load; the 5-run aggregate decides.
+- The React G13 audit is a DOM read count because the public adapter exposes
+  no `group.stats`; it is exact after the documented S-DELETE exclusion.
+- The S-ISLAND G6 edge needs a gate-scope decision, not a scene workaround.
