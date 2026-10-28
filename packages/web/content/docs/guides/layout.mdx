@@ -542,7 +542,10 @@ keyboard operation and announcements belong to your gesture layer. Map `pointerc
     displacement `h(t)` with their own residuals, so their geometry relative to the held element
     does not depend on how fast `h` decays. The release velocity enters exactly once, through the
     held node's origin track.
--   **States.** `held`, `released`, `cancelled`, `invalidated`. `release`/`cancel` are terminal and
+-   **States.** `held`, `released`, `cancelled`, `invalidated`. A released/cancelled landing is
+    still a live hold: the kill switch, abort, cap, removal, support failure and dispose invalidate
+    it before the hold clears; only normal landing completion keeps `released`/`cancelled`.
+    `release`/`cancel` are terminal and
     idempotent; a `move` after a terminal state is a no-op with one development warning per handle.
     Non-finite offsets and velocities throw `ANI_INVALID_OPTIONS` before any state change. A hold
     invalidated by removal, `ownerDocument` change, `layoutKey`, `dispose()`, `finish()`, the kill
@@ -576,8 +579,9 @@ throws `ANI_INVALID_OPTIONS` when no scope owns it. A StrictMode same-task ref d
 preserves a live hold, just as it preserves registration. The gesture layer maps `pointercancel`
 and `lostpointercapture` to `cancel()`, so a cancelled gesture never becomes a release; a
 box-preserving 180° rotation/zoom shares the documented support residual risk above. `dispose()`,
-abort and the kill switch remove the scope's scroll listeners and clock subscription; pointer
-capture and the pointer listeners belong to the gesture layer.
+abort and the kill switch remove the scope's scroll listeners and clock subscription;
+`setMode('animate')` re-arms them so a later handoff still sees an active scroll. Pointer capture
+and the pointer listeners belong to the gesture layer.
 
 ### Reduced motion
 
