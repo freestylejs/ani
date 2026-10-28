@@ -81,3 +81,20 @@ flush, ancestor-carried take velocity, L-DRIVE-3 sticky scope.
 release, descendant-safe, reduced-motion-compliant, transaction-safe and capped in Chromium and
 WebKit. The Chief Justice must independently re-judge; no `TRIBUNAL PASS` is claimed. P5 native-grade
 certification remains future work.
+
+## J-001 remediation (after the P4 tribunal FAIL)
+
+The tribunal found one S1: kill-switch/abort cleared a live `released`/`cancelled` landing without
+changing its public handle to `invalidated`. Fixed at `fa95fdc`:
+
+- `invalidateHold()` now transitions any live hold (`held`/`released`/`cancelled`) to `invalidated`
+  before clearing it; `finishHold()` normal completion still preserves terminal `released`/
+  `cancelled`.
+- New rows cover released and cancelled landings under kill switch and abort: handle `invalidated`,
+  `stats.holds = 0`, byte-identical styles, clock/marker/listener cleanup, `runtime-disabled` /
+  `internal-error`; normal-completion controls preserve terminal state.
+- `RuntimeScope.resume()` re-arms scroll listeners after `setMode('animate')`; `finishAll('disabled')`
+  disarms them, and the fuzz handoff-scroll row passes.
+
+Evidence: `logs/j001/` (unit 1892, Chromium 223/223, WebKit 221/221, coverage 92.27/80.35/95.48/
+94.76). No row or tolerance was weakened. Self verdict remains PASS for P4 pending re-judgment.
