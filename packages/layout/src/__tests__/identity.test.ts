@@ -7,7 +7,9 @@ import { containsFlat, flatParent, flatTree } from '../dom'
 import type { Box } from '../geometry'
 import { validateLayoutOptions } from '../motion'
 import { exitingPresence, linkPresence } from '../presence_link'
+import { layoutRuntime } from '../runtime'
 import { createLayoutGroup } from '../scope'
+import type { LayoutDiagnostic } from '../types'
 
 /** `offset` is the layout size when the rect is drawn through a scale. */
 function place(
@@ -379,13 +381,17 @@ describe('I-2: document-affine scopes — cross-document add/set (§4.6)', () =>
 })
 
 describe('I-3: adoption into another document (§4.6, §7.2)', () => {
-    it('detects adoption at capture() before any read, ends track, restores styles byte-identically, resolves run as disposed, warns once, and unregisters', async () => {
+    it('detects adoption at capture() before any read, ends track, restores styles byte-identically, resolves run as disposed, reports document-mismatch, and unregisters', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
         const clock = createManualClock()
         const group = createLayoutGroup({
             clock: clock.clock,
             motion: linearMotion,
         })
+        const diagnostics: LayoutDiagnostic[] = []
+        const stop = layoutRuntime.onDiagnostic((event) =>
+            diagnostics.push(event)
+        )
 
         const el1 = document.createElement('div')
         const el2 = document.createElement('div')
@@ -438,11 +444,18 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         // Run resolved as 'disposed'
         expect(await run).toEqual({ status: 'disposed', snapped: [] })
 
-        // Dev warning emitted once per scope despite two adopted participants
-        expect(warn).toHaveBeenCalledTimes(1)
-        expect(warn.mock.calls[0]![0]).toContain(
-            'adopted into another document'
+        // One diagnostic per adopted participant, never a development warning
+        const mismatches = diagnostics.filter(
+            (event) => event.code === 'document-mismatch'
         )
+        expect(mismatches).toHaveLength(2)
+        expect(mismatches.map((event) => event.element)).toEqual([el1, el2])
+        expect(mismatches[0]).toMatchObject({
+            version: 1,
+            action: 'finish',
+            engine: 'raf',
+        })
+        expect(warn).not.toHaveBeenCalled()
 
         // Unregistered: re-adding in otherDoc throws ANI_INVALID_OPTIONS;
         // even if adopted back into `document`, set() is a no-op
@@ -455,16 +468,21 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         await group.flush()
         expect(group.stats.reads).toBe(readsBefore)
 
+        stop()
         group.dispose()
     })
 
-    it('detects adoption at flush() before any read when no capture() preceded it', async () => {
+    it('detects adoption at flush() before any read when no capture() preceded it, reporting document-mismatch', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(noop)
         const clock = createManualClock()
         const group = createLayoutGroup({
             clock: clock.clock,
             motion: linearMotion,
         })
+        const diagnostics: LayoutDiagnostic[] = []
+        const stop = layoutRuntime.onDiagnostic((event) =>
+            diagnostics.push(event)
+        )
 
         const el = document.createElement('div')
         document.body.append(el)
@@ -501,8 +519,17 @@ describe('I-3: adoption into another document (§4.6, §7.2)', () => {
         expect(group.stats.tracks).toBe(0)
         expect(el.getAttribute('style')).toBe(beforeStyle)
         expect(await run).toEqual({ status: 'disposed', snapped: [] })
-        expect(warn).toHaveBeenCalledTimes(1)
+        expect(
+            diagnostics.filter((event) => event.code === 'document-mismatch')
+        ).toEqual([
+            expect.objectContaining({
+                action: 'finish',
+                element: el,
+            }),
+        ])
+        expect(warn).not.toHaveBeenCalled()
 
+        stop()
         group.dispose()
     })
 
