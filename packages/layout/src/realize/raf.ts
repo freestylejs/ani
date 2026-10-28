@@ -11,7 +11,6 @@ export interface FrameDriver {
 }
 
 export interface Realizer {
-    readonly running: boolean
     start(): void
     stop(): void
 }
@@ -33,9 +32,6 @@ export function createRaf(
         },
     }
     const realizer: Realizer = {
-        get running() {
-            return running
-        },
         start() {
             finished = false
             if (running) return
