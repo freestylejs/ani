@@ -326,3 +326,154 @@ WebKit diagnostic only at 1 ms resolution.
   must be proven or the checkpoint remains BLOCK.
 - WebKit G8 uses quantized raw samples; the passed values are not a claim of
   sub-millisecond precision.
+
+## Iteration 2 — H14 fix round 2 on P3 final 46b1487
+
+- Worktree: `ani-h14`, branch `helper/h14`.
+- Base: P3 final `46b1487` (includes H12/P3b), fetched from the main tree
+  `/Users/june/Documents/project/freestylejs/ani-ios-scope-correction`
+  (`fix/ios-native-grade-scope`); rebased with
+  `git rebase --onto FETCH_HEAD 4eb2f7e helper/h14`. No origin reset, no push.
+- No production source, `tests/browser`, or `ARCHITECTURE.md` change:
+  `git diff 46b1487 -- packages tests` is empty.
+- Date: 2026-10-29.
+- Command: `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check`.
+- Report: `bench/layout/iteration-2/report.json`.
+- Instrument load at start: **2.39**, so cost remains **advisory**; frame gates
+  still decide. WebKit remains unisolated under Playwright, `g = 1 ms`.
+- Self-tests: **73/73 pass across 7 files** (oracle, scoring, stats,
+  frame_sampler, aggregate, certification, cost_validity).
+- Browser controls: 8 per engine, all conclusive and failing their target.
+
+### Invocation vs certification
+
+- `pass` is the selected invocation: it is true when the selected engines,
+  scenes, and cost reports pass. It does not include global P4 pending scenes.
+  A single-engine S-CARD/S-SEG invocation can PASS while certification is NOT
+  CERTIFIED.
+- `certification` also requires exactly five runs, Chromium and WebKit, all
+  required scenes, all conclusive controls, the full self-test suite, no
+  pending gate, a non-advisory cost fingerprint, and a valid cost run.
+- The full run's invocation is FAIL because the selected S-BULK cost is
+  pending G12. Certification is NOT CERTIFIED.
+
+### Fixed-base scene table (5 measured runs; medians and worst)
+
+| Scene | Chromium | WebKit |
+|---|---|---|
+| S-CARD C1 completeness | pass (757 participant-frames) | pass |
+| S-CARD G1 | 0.00132 px pass, frame 102 card-title left | 0.00045 px pass, frame 73 sheet-content bottom |
+| S-CARD G2 | 0.00117 px pass, 18 commit layers | 0.00011 px pass |
+| S-CARD G3 | analytic 0 pass; observed FD 218.7 px/s supporting (acceleration) | same |
+| S-CARD G4 | 0.00132 px pass | 0.00031 px pass |
+| S-CARD G5/G7 | pass (8 settled participants; all reports match) | pass |
+| S-CARD G6 | **0 pass**: mount snapshots present; 0 owned mismatches; 11 author inline cssText changes recorded | **0 pass**: same |
+| S-CARD G13 | **exact**: open 8/8, close 8/8, reverse 9/9; steady 0 | **exact**: open 15/15, close 15/15, reverse 16/16; steady 0 |
+| S-CARD G8 | 0.410 ms pass (116 frames) | 1.000 ms pass (61 frames, quantized ±0.5) |
+| S-CARD shape.inert | **0 pass** (P3b inert present) | **0 pass** |
+| S-CARD shape.focus | 0 pass | 0 pass |
+| S-CARD shape.font/opacity/coverage/radius/teardown | pass | pass |
+| S-CARD G9.probe | 1.981× non-deciding at N=7 | 1.000× non-deciding at N=7 |
+| S-SEG C1/G1–G8 | all pass (G1 0.00007 px; G8 0.315 ms) | all pass (G1 0.00002 px; G8 1.000 ms) |
+| S-SEG G6/G13 | G6 0 pass; G13 exact tap-1..4 2/2, steady 0 | G6 0 pass; G13 exact tap-1..4 3/3, steady 0 |
+| S-SEG shape | all pass; pill radius 0 | all pass |
+| S-SEG G9.probe | 5.926× non-deciding at N=1 | BLOCK/n-a: all five runs null (1 ms timer) |
+| S-BULK G9 unscrolled | **FAIL 3.252×** measured (3.683/3.069/3.247/3.332/3.252) | **BLOCK** 2.250× diagnostic, not deciding |
+| S-BULK G9 scrolled | **FAIL 3.284×** (3.671/3.250/3.283/3.284/3.333) | **BLOCK** 2.000× diagnostic |
+| S-BULK G9 floor audit | pass both shapes | pass both shapes |
+| S-BULK G10 | 1.025 ms pass (A-19 150+150) | **BLOCK** 1.000 ms diagnostic |
+| S-BULK G11 | **FAIL 12.345 ms** p95 per 60 Hz commit; cadence 59.44–60.00 Hz | **BLOCK** 10.000 ms diagnostic; 300 commits at 59.04–59.94 Hz |
+| S-BULK G13 | pass: every commit 2,000 rect/pair + 300 computed + 300 poses; steady 0 | pass: 2,000 + 600 computed (incl. Typed OM) + 300 poses; steady 0 |
+| S-BULK G12 | pending P4 | pending P4 |
+
+Chromium S-BULK is `valid:true`, `status:pending` because G12 is P4; the
+measured G9/G11 failures are printed as FAIL and are certification reasons.
+WebKit S-BULK is `valid:false`, `status:blocked`: G9/G10/G11 are `BLOCK` and
+non-deciding. No quantized ratio is presented as a measured failure.
+
+### Certification reasons (iteration 2)
+
+- cost fingerprint advisory (load 2.39);
+- pending S-REORDER, S-SHEET, S-BULK G12 (P4);
+- Chromium S-BULK pending G12 and measured
+  `G9-unscrolled 3.252`, `G9-scrolled 3.284`, `G11 12.345` failures;
+- WebKit S-BULK blocked and not valid (1 ms timer).
+
+No threshold was changed.
+
+### Required-work floor (iteration 2)
+
+A-19 fixture: 850 tiles + 150 nested labels = 1,000 participants; first 150
+tiles + their 150 labels = 300 movers. Unscrolled 32×27; scrolled 16×54 at
+`scrollTop=1080`. Same process, 5 discarded + 30 measured, reset to rest
+between samples.
+
+| Count | Engine | Floor |
+|---|---:|---:|
+| capture rects / offset pairs | 2,000 / 2,000 | 1,000 / 1,000 |
+| flush rects / offset pairs | 1,000 / 1,000 | 1,000 / 1,000 |
+| §4.3 step 2 computed reads | 300 Chromium; 600 WebKit incl. Typed OM | 300 / 600 |
+| t=0 poses (`translate` + `scale`) | 300 | 300 |
+| extra reads | 0 | 0 |
+
+The floor audit passes both shapes in both engines; `floor-extra-read` fails it
+in both. Chromium engine/floor medians: unscrolled 8.715–10.707 / 2.840–2.910 ms;
+scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms.
+
+### Re-review fixes N1–N10
+
+| ID | Fix | Test/evidence |
+|---|---|---|
+| N1 | `CertificationInput` now consumes `controlsPass` and `selfTestPass`; reasons name a control/self-test failure. `controlsPass` requires `--check`, at least one control and every conclusive control `ok`; inconclusive controls do not decide. | `certification.test` control/self-test failure tests; full `--check` run passes 16/16 browser controls and 73 self-tests. |
+| N2 | Aggregation sets `nonFinite` for any non-finite run, returns `median: NaN`, `blocked:true`, `pass:false`; non-deciding findings do not contaminate scene pass. | `aggregate.test` one-finite/four-null and deciding-NaN tests; WebKit S-CARD `G9.probe` per-run `[1,null,1,1.5,null]` aggregates to `median:null, blocked:true, pass:false` and prints `BLOCK n/a`. |
+| N3 | `cost_validity.ts` requires `g ≤ 0.05`, exactly 300 commits and cadence 58.5–61.5 Hz; reasons are carried into `valid`/blocked. A cadence miss invalidates the cost run; G11 also fails its own gate. | `cost_validity.test` 42 Hz, boundary (58.5/61.5), coarse timer and 299-commit tests. Chromium cadence 59.44–60.00 Hz; WebKit 59.04–59.94 Hz (timer-blocked). |
+| N4 | `CertificationCost.failedMetrics` carries measured deciding failures; certification reasons name each. | `certification.test` G9/G11 reasons; final report lists Chromium G9 3.252/3.284 and G11 12.345. |
+| N5 | C1 requires a mount snapshot for every required key and consumes `requiredOpacityKeys`/`requiredRadiiKeys`/`requiredFontKeys`; G6, G7, G13 declare `measured`; G6 checks the full inline cssText except scene-owned author keys and checks removed participants at their last connected frame. | `scoring.test` no-mount (C1/G6 fail, G6 measured false), unowned cssText, declared opacity/radii/font tests. |
+| N6 | Scene G13 uses an exact per-engine `stylesExpected`, not a range; each commit's accepted counts are in the G13 detail. | S-CARD open 8/15, close 8/15, reverse 9/16; S-SEG 2/3 per tap; `scoring.test` extra style read fails. |
+| N7 | `evaluateInvocation` defines invocation-scoped `pass`; `evaluateCertification` is the full gate including controls/self-tests/pending/advisory. | `certification.test` clean invocation PASS, selected scene/cost failure FAIL, global P4 pending leaves invocation PASS but certification NOT CERTIFIED. |
+| N8 | `selfTests()` runs all seven `test:bench-layout` files and reports `files`; certification consumes `tests.pass`. | Full run: `self-tests ok: 14 controls across 7 files`; 73/73 tests. |
+| N9 | Cost status is derived from `heldPending` via `costOutcome`: pending only while G12 is actually pending; post-P4 `valid && !heldPending && metricsPass` is `pass`; invalid is blocked; measured failure is fail. | `cost_validity.test` pending, post-P4 pass, post-P4 fail, invalid-blocked. |
+| N10 | Non-deciding metrics print `n/a` (or `BLOCK` when non-finite), never `ok`; `G9.probe` is `deciding:false`. | Full report: Chromium `G9.probe` prints `n/a`; WebKit mixed/all-null prints `BLOCK n/a`. |
+
+### S3 polish
+
+- README/ITERATIONS numbers, load, probe table and certification reasons are
+  from this run, not iteration 1.
+- `requiredOpacityKeys`, `requiredRadiiKeys` and `requiredFontKeys` are enforced
+  and unit-tested.
+- G6 full cssText and removed-participant checks are enforced; scene-owned
+  inline changes are declared in `authorStyleKeys` (`card`, `sheet`,
+  `sheet-image`, `sheet-title`, `sheet-content`, `pill`).
+- Scene G13 exact counts are recorded in every run detail.
+- `selfTests` runs all seven files; 73 tests.
+- `test:bench-layout` remains outside `test:ci` while P5a is scaffolding; the
+  harness self-tests are mandatory in every `--check` run. This is documented
+  as a P5b decision.
+- Biome: `pnpm check` exits 0 with 10 warnings and 7,489 infos (repo-wide);
+  no errors and no bench lint suppression. The README states the exact output.
+
+### Negative controls
+
+- Unit self-tests: 73/73 pass, including C1 blank/partial/no-mount, stats,
+  frame sampler, per-run aggregation/NaN, certification invocation vs
+  certification, cost cadence/status, aged G2, priority, style over-read,
+  teardown/pill-radius and G3 observed jump.
+- Browser controls (both engines, 8 each): `card-no-image-id` G1 fail;
+  `card-no-inert` shape.inert fail (conclusive on P3 final); `card-image-offset`
+  G1 fail; `card-focus-follower` shape.focus fail; `seg-rest-retarget` G1 fail;
+  `seg-jump-from-A` G2 fail; `seg-leftover-pose` G6 fail; `floor-extra-read`
+  floor audit fail.
+- `--check` exits 1 on the real cost misses; every control behaved as required.
+
+### Residual risks / next
+
+- P4 must land for S-REORDER, S-SHEET and S-BULK G12; until then certification
+  cannot be claimed. The post-P4 all-green path is unit-tested.
+- WebKit G9/G10/G11 cannot decide on a 1 ms timer. A finer/batched protocol
+  must be proven or the checkpoint remains BLOCK.
+- Chromium G9 (3.252×/3.284×) and G11 (12.345 ms) are genuine measured failures
+  under the corrected floor and commit timing; cost is advisory at load 2.39.
+- WebKit G8 is quantized ±0.5 ms; its passes are not sub-millisecond claims.
+- G3's actual-continuity evidence is the observed finite difference; the
+  analytic pair remains the gate per A-11.
+- S-PHOTO, DPR sweeps and reduced-motion variants remain P5b.
