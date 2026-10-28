@@ -27,7 +27,9 @@ import {
     replacedOwned,
     resolveLen,
     type Saved,
+    type SavedInert,
     save,
+    saveInert,
     viewportBox,
     viewportFixed,
     viewRect,
@@ -263,6 +265,8 @@ interface Drive {
     release: (() => void) | null
     /** Last written value per owned property. */
     readonly written: Map<string, string>
+    /** The authored `inert` attribute it owns (§6), or `null`. */
+    inert: SavedInert | null
 }
 
 interface Participant {
@@ -284,11 +288,8 @@ interface Participant {
     removed: boolean
     /** Resolved motion for a reduced-motion mode, until its options change. */
     motion: { readonly mode: string; readonly value: Motion } | null
-    /**
-     * The shadow root holding it, tracked for the flat-tree walks (§4.6):
-     * `null` in a document, `undefined` until it is first seen connected.
-     */
-    root: ShadowRoot | null | undefined
+    /** Every shadow root containing it, innermost first (§4.6, §8). */
+    roots: ShadowRoot[]
 }
 
 interface Run {
@@ -630,6 +631,14 @@ interface Write {
     readonly priority: string
 }
 
+/** An attribute write queued with the commit phase (§9.2, §6). */
+interface AttributeWrite {
+    readonly element: HTMLElement
+    readonly name: string
+    /** `null` removes the attribute. */
+    readonly value: string | null
+}
+
 const GROUP_KEYS = [
     'clock',
     'motion',
@@ -822,6 +831,7 @@ export function createLayoutGroup(
     /** Advances with every clock update: the instant ghost poses are solved for. */
     let tick = 0
     let pending: Write[] = []
+    let pendingAttributes: AttributeWrite[] = []
     let disposed = false
     /** Previous lead per `layoutId`. */
     const leads = new Map<string, Participant>()
@@ -862,8 +872,12 @@ export function createLayoutGroup(
     let flushSnaps: LayoutReport['snapped'] = []
     /** Saved declarations of drives settled inside an uncommitted transaction. */
     const resting = new Map<HTMLElement, Saved>()
+    /** Authored `inert` records of followers released in an uncommitted transaction. */
+    const restingInert = new Map<HTMLElement, SavedInert>()
     /** The run of the current frame's update, carried into its commit. */
     let frameRunId: number | null = null
+    /** Elements whose flat-tree focus containment is true for this flush. */
+    let focusAverted: ReadonlySet<Element> | null = null
 
     function metricsNow(springSettleMs: number | null = null) {
         return {
@@ -1046,34 +1060,38 @@ export function createLayoutGroup(
     }
 
     /**
-     * Tracks the root node of a participant's element (§4.6): a shadow root
-     * is known from then on, a document holds none. Run at `add` and, for
-     * every connected participant, at each capture and flush: an element
-     * found under another root node than the one tracked drops the old root
-     * and tracks the new one (`getRootNode()`, no layout read). An element
-     * that is not in a document or a shadow root yet is tracked when first
-     * seen connected.
+     * Tracks every shadow root containing a participant's element (§4.6,
+     * H12-05), not only the immediate one. Run at `add` and, for every
+     * connected participant, at each capture and flush; a root the element
+     * left is dropped, a new one tracked (`getRootNode()`, no layout read).
      */
-    function trackRoot(p: Participant): void {
-        const node = p.element.getRootNode()
-        const root = isShadowRoot(node)
-            ? node
-            : node.nodeType === 9
-              ? null
-              : undefined
-        if (root === undefined || root === p.root) return
-        dropRoot(p)
-        p.root = root
-        if (!root) return
+    const MAX_SHADOW_DEPTH = 1000
+
+    /** Every shadow root containing `element`, innermost first, cycle-guarded. */
+    function rootChain(element: Element): ShadowRoot[] {
+        const chain: ShadowRoot[] = []
+        const seen = new Set<ShadowRoot>()
+        let node: Node = element
+        let root = node.getRootNode()
+        for (
+            let depth = 0;
+            isShadowRoot(root) && !seen.has(root) && depth < MAX_SHADOW_DEPTH;
+            depth++
+        ) {
+            seen.add(root)
+            chain.push(root)
+            node = root.host
+            root = node.getRootNode()
+        }
+        return chain
+    }
+
+    function addRoot(root: ShadowRoot): void {
         rootUsers.set(root, (rootUsers.get(root) ?? 0) + 1)
         roots.set(root.host, root)
     }
 
-    /** Drops a root with the last participant inside it. */
-    function dropRoot(p: Participant): void {
-        const root = p.root
-        p.root = undefined
-        if (!root) return
+    function removeRoot(root: ShadowRoot): void {
         const users = (rootUsers.get(root) ?? 1) - 1
         if (users > 0) {
             rootUsers.set(root, users)
@@ -1081,15 +1099,85 @@ export function createLayoutGroup(
         }
         rootUsers.delete(root)
         if (roots.get(root.host) === root) roots.delete(root.host)
+    }
+
+    /**
+     * Tracks every root containing a participant, not only its immediate one
+     * (H12-05): a nested closed root must be walkable from its host. An
+     * element not yet in a document tracks no root.
+     */
+    function trackRoot(p: Participant): void {
+        const chain = rootChain(p.element)
+        const same =
+            chain.length === p.roots.length &&
+            chain.every((root, i) => p.roots[i] === root)
+        if (same) return
+        for (const root of p.roots) {
+            if (!chain.includes(root)) removeRoot(root)
+        }
+        for (const root of chain) {
+            if (!p.roots.includes(root)) addRoot(root)
+        }
+        p.roots = chain
+        syncListeners()
+    }
+
+    /** Drops every root a participant was tracked in. */
+    function dropRoot(p: Participant): void {
+        for (const root of p.roots) removeRoot(root)
+        if (p.roots.length === 0) return
+        p.roots = []
         // its listeners stay until the end of the task (§5.8)
         syncListeners()
     }
 
-    /** The known roots with `element`'s own, for a check made before it is registered. */
+    /** The known roots with `element`'s chain, for a check before it is registered. */
     function rootsWith(element: HTMLElement): KnownRoots {
-        const node = element.getRootNode()
-        if (!isShadowRoot(node) || roots.get(node.host) === node) return roots
-        return new Map(roots).set(node.host, node)
+        const chain = rootChain(element)
+        if (chain.every((root) => roots.get(root.host) === root)) return roots
+        const next = new Map(roots)
+        for (const root of chain) next.set(root.host, root)
+        return next
+    }
+
+    /**
+     * The focused element, walked down through shadow roots (§8, H12-05):
+     * `document.activeElement` is retargeted to a shadow host, so the innermost
+     * focused element is the open root's `activeElement`, or the one of a
+     * closed root the scope knows because a participant lives in it. The walk
+     * is cycle-guarded and bounded.
+     */
+    function focusedElement(doc: Document): Element | null {
+        let active: Element | null = doc.activeElement
+        const seen = new Set<Element>()
+        for (
+            let depth = 0;
+            active !== null && depth < MAX_SHADOW_DEPTH && !seen.has(active);
+            depth++
+        ) {
+            seen.add(active)
+            const root: ShadowRoot | null =
+                (active as HTMLElement).shadowRoot ?? roots.get(active) ?? null
+            const next = root?.activeElement ?? null
+            if (next === null || next === active) break
+            active = next
+        }
+        return active
+    }
+
+    /** The flat-tree chain of the focused element, for containment by identity (§8). */
+    function focusedChain(doc: Document, tree: FlatTree): Set<Element> {
+        const chain = new Set<Element>()
+        // a copy: the focus walk must not add roots to the pass's listeners
+        const walk = tree.passed === null ? tree : { ...tree, passed: null }
+        for (
+            let node: Node | null = focusedElement(doc);
+            node !== null;
+            node = flatParent(node, walk)
+        ) {
+            if (node.nodeType === 1) chain.add(node as Element)
+        }
+        return chain
     }
 
     /* ─────────────── actively scrolling containers (§5.8) ─────────────── */
@@ -1357,6 +1445,93 @@ export function createLayoutGroup(
         }
     }
 
+    /** Queues one attribute write with the commit phase (§9.2). */
+    function queueAttribute(
+        element: HTMLElement,
+        name: string,
+        value: string | null
+    ): void {
+        // the batch has one outcome per attribute: its last write
+        pendingAttributes = pendingAttributes.filter(
+            (w) => w.element !== element || w.name !== name
+        )
+        pendingAttributes.push({ element, name, value })
+    }
+
+    /**
+     * Takes ownership of the follower's `inert` (§6): the authored attribute
+     * (present or absent, and its value) is saved, and the element is made
+     * inert without rewriting an authored value.
+     */
+    /** Queues the authored `inert` outcome, whatever the DOM shows now. */
+    function queueInertRestore(element: HTMLElement, saved: SavedInert): void {
+        queueAttribute(element, 'inert', saved.present ? saved.value : null)
+    }
+
+    function ownInert(p: Participant, d: Drive): void {
+        if (d.inert !== null || !p.element.isConnected) return
+        // C5: a focus-skipped follower is not made inert
+        if (focusAverted?.has(p.element)) return
+        // a re-own in one transaction keeps the authored record of the first
+        // ownership, not the layout write still on the DOM
+        const saved = restingInert.get(p.element) ?? saveInert(p.element)
+        d.inert = saved
+        if (!p.element.hasAttribute('inert'))
+            queueAttribute(
+                p.element,
+                'inert',
+                saved.present ? (saved.value ?? '') : ''
+            )
+    }
+
+    /**
+     * Gives the authored `inert` back byte-identically (§6, §9.2). The restore
+     * is queued **unconditionally**: a pending set from the same batch must be
+     * replaced by it, not trusted as already applied (H12-01). The authored
+     * record lives on `restingInert` until the commit lands, so an abort can
+     * put it back after the drive is gone (H12-02).
+     */
+    function releaseInert(element: HTMLElement, d: Drive): void {
+        const saved = d.inert
+        if (!saved) return
+        d.inert = null
+        restingInert.set(element, saved)
+        queueInertRestore(element, saved)
+    }
+
+    /**
+     * The author removed an owned `inert` mid-run and focus is not inside:
+     * layout owns it while the follower exits. With focus inside, release
+     * instead; re-inerting would take the user's focus (H12-04, C5).
+     */
+    function assertInert(element: HTMLElement, d: Drive): void {
+        if (d.inert === null) return
+        if (focusAverted?.has(element)) {
+            releaseInert(element, d)
+            return
+        }
+        if (!element.hasAttribute('inert')) queueAttribute(element, 'inert', '')
+    }
+
+    /**
+     * Ends a pair's crossfade without settling its pose: a pair whose handoff
+     * was skipped for focus (§8) gives both opacities back at A, and a
+     * follower that stays in the frame under a moving ancestor releases its
+     * presence hold and its `inert` as it exits under presence alone.
+     */
+    function dropCrossfade(p: Participant): void {
+        const d = p.drive
+        if (!d?.fade) return
+        const role = d.fade.role
+        d.fade = null
+        restoreOpacity(p.element, d)
+        if (role === 'follower') {
+            d.release?.()
+            d.release = null
+        }
+        releaseInert(p.element, d)
+    }
+
     function queuePose(node: FrameNode, solved: Solved): void {
         const d = node.p.drive!
         const { pose } = solved
@@ -1428,6 +1603,7 @@ export function createLayoutGroup(
         // the transaction must restore this even if its commit later throws
         resting.set(p.element, d.saved)
         queueRestore(p.element, d)
+        releaseInert(p.element, d)
     }
 
     /* ───────────────────────── WAAPI (§10) ───────────────────────── */
@@ -1665,7 +1841,7 @@ export function createLayoutGroup(
         })
         // every chain was walked, from each participant up: with their own
         // roots, the shadow roots on them
-        for (const p of list) if (p.root) passed.add(p.root)
+        for (const p of list) for (const root of p.roots) passed.add(root)
         chainRoots = passed
         syncListeners()
         return {
@@ -2282,6 +2458,7 @@ export function createLayoutGroup(
             if (deferDepth === 0) flushDeferred()
             touched = null
             inTransaction = false
+            focusAverted = null
             runId = null
         }
     }
@@ -2323,9 +2500,9 @@ export function createLayoutGroup(
         // inline changes to owned properties are taken in (§6)
         for (const p of registry.values()) {
             if (!p.drive) continue
-            if (p.element.isConnected)
+            if (p.element.isConnected) {
                 adoptAuthored(p.element, p.drive.saved, p.drive.written)
-            else settle(p, true)
+            } else settle(p, true)
         }
         const { list, parents, index, flat, tree } = participantTree()
         participants = list.length
@@ -2342,6 +2519,21 @@ export function createLayoutGroup(
         if (cap?.capped || list.length > maxParticipants) {
             if (touched) for (const p of list) touched.add(p)
             return cappedFlush(list)
+        }
+        /**
+         * §8: the focused element's flat-ancestor chain, computed after the
+         * cap gate (N2: no non-measurement DOM reads before a capped flush)
+         * and before any inert re-assert (H12-04). Containment by identity
+         * keeps a deep participant chain linear.
+         */
+        const doc = list[0]!.element.ownerDocument
+        const focusChain = shared > 0 ? focusedChain(doc, tree) : null
+        focusAverted = focusChain
+        // layout owns the exiting follower's `inert` (§6, §8); an author
+        // removal is re-asserted only when focus is not inside it
+        for (const p of registry.values()) {
+            if (!p.drive || p.drive.inert === null) continue
+            assertInert(p.element, p.drive)
         }
         const hasChild = list.map(() => false)
         for (const parent of parents) if (parent >= 0) hasChild[parent] = true
@@ -2387,7 +2579,8 @@ export function createLayoutGroup(
 
         // 1. reads: every rect and layout size, then computed styles of what
         // the support check and the plan need
-        const doc = list[0]!.element.ownerDocument
+        // `doc` and the focus chain were computed before the inert re-assert
+        if (doc === null) return resolved('no-change')
         // probed when the scope was created; another document is probed here
         const snapsReference = snapsReferenceBox(doc)
         // §11.4 S2: the anchoring probe, once per document, at the start of
@@ -2989,6 +3182,7 @@ export function createLayoutGroup(
                     crossfade: options.layoutCrossfade ?? true,
                     exiting: exitingNow(p),
                     presenceOpacity: presence?.opacity ?? false,
+                    focusInside: focusChain?.has(p.element) ?? false,
                     unsupported: unsupported !== null,
                     skip:
                         p.keyChanged ||
@@ -3399,11 +3593,17 @@ export function createLayoutGroup(
                 reason: 'disabled',
             })
         }
-        for (const { index: i } of result.degraded) {
+        for (const { index: i, reason } of result.degraded) {
             if (disabled) continue
-            diagnose('handoff-scroll-active', 'enter', {
-                element: list[i]!.element,
-            })
+            // §5.8, §8: a degradation, not a snap; focus in the exiting
+            // follower skips the pair's crossfade, nothing is moved
+            diagnose(
+                reason,
+                reason === 'focus-in-follower' ? 'none' : 'enter',
+                {
+                    element: list[i]!.element,
+                }
+            )
         }
         if (staleReportedAt.length > 0) {
             const code: LayoutDiagnosticCode | null =
@@ -3500,6 +3700,7 @@ export function createLayoutGroup(
                 fade: null,
                 radiusBlend: null,
                 lead: null,
+                inert: null,
                 saved: save(p.element, all),
                 authored: g.authored,
                 radius: g.radiusSource,
@@ -3649,10 +3850,70 @@ export function createLayoutGroup(
             }
         }
 
+        // §8: a pair skipped for focus is not coupled, even when one of its
+        // nodes is static under a moving ancestor and does not settle here.
+        // A held old follower that is now the lead is settled, not left at
+        // opacity 0 and the follower pose (H12-03).
+        const focusSettled = new Set<Participant>()
+        const planFocus = new Set<number>()
+        for (const degraded of result.degraded) {
+            if (degraded.reason === 'focus-in-follower')
+                planFocus.add(degraded.index)
+        }
+        /**
+         * H12-04/C5: focus inside a **continuing** live or held follower.
+         * Keeping the follower interactive while its fade runs — or after it
+         * ends, invisible at opacity 0 — creates the duplicate target §8
+         * forbids. End the pair here: restore both opacities, release the
+         * presence hold and the authored `inert`, emit the diagnostic, and
+         * let presence alone draw the follower. The follower's action is
+         * skipped below; the lead's position track may continue to A.
+         */
+        for (const p of list) {
+            const d = p.drive
+            const id = p.options.layoutId
+            if (!d || id === undefined || !focusChain?.has(p.element)) continue
+            if (planFocus.has(index.get(p)!)) continue
+            const leadIndex = result.leads.get(id)
+            if (leadIndex === undefined || !d.lead) continue
+            if (index.get(d.lead) !== leadIndex) continue
+            if (
+                !(d.kind === 'follow' && d.fade?.role === 'follower') &&
+                d.kind !== 'held'
+            ) {
+                continue
+            }
+            const leadDrive = d.lead.drive
+            if (leadDrive?.fade?.role === 'lead') dropCrossfade(d.lead)
+            diagnose('focus-in-follower', 'none', { element: p.element })
+            focusSettled.add(p)
+            settle(p)
+        }
+
+        const dropFocus = (p: Participant): void => {
+            const d = p.drive
+            if (d?.kind === 'held') {
+                focusSettled.add(p)
+                settle(p)
+                return
+            }
+            dropCrossfade(p)
+        }
+        for (const degraded of result.degraded) {
+            if (degraded.reason !== 'focus-in-follower') continue
+            const follower = list[degraded.index]!
+            dropFocus(follower)
+            const id = follower.options.layoutId
+            const lead = id === undefined ? undefined : result.leads.get(id)
+            if (lead !== undefined && lead !== degraded.index)
+                dropFocus(list[lead]!)
+        }
+
         actions.forEach((action, i) => {
             const p = list[i]!
             const g = geometry[i]
             const d = p.drive
+            if (focusSettled.has(p)) return
             if (action.kind !== 'none' || d) touch(p)
             switch (action.kind) {
                 case 'none':
@@ -3702,7 +3963,12 @@ export function createLayoutGroup(
                     return
                 }
                 case 'static': {
-                    if (d?.kind === 'held') return
+                    if (d?.kind === 'held') {
+                        // a held follower that is no longer exiting was
+                        // reversed into a lead: it belongs at A, not at 0
+                        if (!nodes[i]!.exiting) settle(p)
+                        return
+                    }
                     if (d?.run) {
                         finishRunNode(p)
                         d.run = null
@@ -3737,8 +4003,12 @@ export function createLayoutGroup(
                         g!,
                         action.fadeLead ? OPACITY_PROPERTIES : []
                     )
-                    if (wasFollower && !action.fadeLead)
-                        restoreOpacity(p.element, drive)
+                    if (wasFollower) {
+                        // a reversing follower keeps its current opacity as the
+                        // new lead's from (§5.8), but is interactive again
+                        if (!action.fadeLead) restoreOpacity(p.element, drive)
+                        releaseInert(p.element, drive)
+                    }
                     // a node painted moving continues from that frame's time:
                     // B and its velocity are the drawn box and velocity of the
                     // last painted frame, so a held first frame would stall it
@@ -3775,6 +4045,11 @@ export function createLayoutGroup(
                     if (!action.start) {
                         const blend = radiusBlendFrom.get(action.lead)
                         if (blend && d) d.radiusBlend = blend
+                        // the follower is inert for its whole exit (§6, §8)
+                        if (d) {
+                            ownInert(p, d)
+                            assertInert(p.element, d)
+                        }
                         return
                     }
                     if (d?.run) {
@@ -3825,6 +4100,8 @@ export function createLayoutGroup(
                         )
                         drive.release = release
                     }
+                    // §5.8/§8: no duplicate interactive target while the pair fades
+                    ownInert(p, drive)
                     return
                 }
             }
@@ -3923,9 +4200,16 @@ export function createLayoutGroup(
         drainWrites()
         // the restores of drives settled in this transaction were applied
         resting.clear()
+        restingInert.clear()
     }
 
     function drainWrites(): void {
+        const attributes = pendingAttributes
+        pendingAttributes = []
+        for (const w of attributes) {
+            if (w.value === null) w.element.removeAttribute(w.name)
+            else w.element.setAttribute(w.name, w.value)
+        }
         const writes = pending
         pending = []
         for (const w of writes) put(w.element, w.property, w.value, w.priority)
@@ -3969,6 +4253,7 @@ export function createLayoutGroup(
             markerTarget = null
             // clear writes, then restore every owned declaration below
             pending = []
+            pendingAttributes = []
             for (const p of registry.values()) {
                 const d = p.drive
                 if (!d) continue
@@ -3992,6 +4277,7 @@ export function createLayoutGroup(
                 } catch {
                     // the direct saved write below still runs
                 }
+                releaseInert(p.element, d)
             }
             // every drive that settled earlier in this transaction
             for (const [element, saved] of resting) {
@@ -4001,8 +4287,27 @@ export function createLayoutGroup(
                     // a failing element must not hide the others
                 }
             }
+            // an inert restore queued by a follower settled earlier must land
+            // even though its drive is gone (H12-02)
+            for (const [element, saved] of restingInert) {
+                try {
+                    queueInertRestore(element, saved)
+                } catch {
+                    // a failing element must not hide the others
+                }
+            }
             // best effort: one failing put still leaves the rest written and
-            // every cleanup step below runs
+            // every cleanup step below runs; attributes first, as one batch
+            const attributes = pendingAttributes
+            pendingAttributes = []
+            for (const w of attributes) {
+                try {
+                    if (w.value === null) w.element.removeAttribute(w.name)
+                    else w.element.setAttribute(w.name, w.value)
+                } catch {
+                    // handled as a cleanup failure; the first error is reported
+                }
+            }
             const writes = pending
             pending = []
             for (const w of writes) {
@@ -4038,6 +4343,7 @@ export function createLayoutGroup(
             // before any user callback can re-enter the engine
             touched = null
             resting.clear()
+            restingInert.clear()
             aborting = false
             callbacks = true
             const previous = runId
@@ -4057,6 +4363,7 @@ export function createLayoutGroup(
             if (!callbacks) {
                 touched = null
                 resting.clear()
+                restingInert.clear()
                 aborting = false
             }
         }
@@ -4313,6 +4620,9 @@ export function createLayoutGroup(
         if (!d) return
         writeLifecycle(() => {
             pending = pending.filter((w) => w.element !== p.element)
+            pendingAttributes = pendingAttributes.filter(
+                (w) => w.element !== p.element
+            )
             settle(p, cancelled)
             commitWrites()
             rebuildFrame()
@@ -4433,7 +4743,7 @@ export function createLayoutGroup(
                     parent: null,
                     removed: false,
                     motion: null,
-                    root: undefined,
+                    roots: [],
                 }
                 registry.set(element, p)
                 trackRoot(p)
@@ -4480,6 +4790,9 @@ export function createLayoutGroup(
                     // 'disposed' if nothing else of it is left
                     writeLifecycle(() => {
                         pending = pending.filter((w) => w.element !== element)
+                        pendingAttributes = pendingAttributes.filter(
+                            (w) => w.element !== element
+                        )
                         settle(self, true)
                         commitWrites()
                         rebuildFrame()
