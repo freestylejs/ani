@@ -354,6 +354,9 @@ export async function RL2(): Promise<string> {
 const controls: { set: ((update: (s: AppState) => AppState) => void) | null } =
     { set: null }
 
+/** RL3's snap reasons for the current attempt; an aged commit must report `'stale'`. */
+let rl3Snaps: { id: string; reason: string }[] = []
+
 interface AppState {
     readonly order: readonly string[]
     readonly suspend: number
@@ -410,12 +413,22 @@ function Slow(): ReactNode {
     return null
 }
 
+/** Advances the manual clock after the group's render capture: a deterministic aged commit. */
+function AgeCapture({ advance }: { advance: () => void }): ReactNode {
+    advance()
+    return null
+}
+
 function ConcurrentApp({
     clock,
     deferred,
+    onSnap,
+    advance,
 }: {
     clock: Clock
     deferred: boolean
+    onSnap?: (element: Element, reason: string) => void
+    advance?: () => void
 }): ReactNode {
     const [state, setState] = useState<AppState>({
         order: ['a', 'b', 'c', 'd', 'e', 'f'],
@@ -428,7 +441,7 @@ function ConcurrentApp({
     const order = deferred ? deferredOrder : state.order
     return h(
         LayoutGroup,
-        { clock },
+        { clock, onSnap },
         // time-sliced: a transition's render spans many tasks; its last
         // slice renders the participants, so the capture is fresh (§4.1)
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => h(Slow, { key: i })),
@@ -441,7 +454,8 @@ function ConcurrentApp({
             Column,
             null,
             order.map((id) => h(Item, { key: id, id }))
-        )
+        ),
+        advance ? h(AgeCapture, { key: 'age-capture', advance }) : null
     )
 }
 
@@ -571,16 +585,203 @@ async function concurrent(
     }
 }
 
+const RL3_ATTEMPTS = 3
+const RL3_ITEMS = ['a', 'b', 'c', 'd', 'e', 'f'] as const
+
+function listIds(host: HTMLElement): string[] {
+    return [...host.querySelectorAll<HTMLElement>('[data-id]')].map(
+        (element) => element.dataset.id!
+    )
+}
+
+/**
+ * The exact §4.4 outcome of an aged RL3 commit: every participant sits at its
+ * layout box with the authored style, and every moved participant is reported
+ * `'stale'`; no other snap reason is allowed. Over-reporting is conservative
+ * and permitted; under-reporting a moved participant is not.
+ */
+function rl3Aged(
+    host: HTMLElement,
+    before: readonly string[],
+    snaps: readonly { id: string; reason: string }[]
+): string {
+    const after = listIds(host).filter(
+        (id) =>
+            before.includes(id) && (RL3_ITEMS as readonly string[]).includes(id)
+    )
+    const moved = after.filter((id) => before.indexOf(id) !== after.indexOf(id))
+    if (moved.length === 0) {
+        throw new Error(
+            'an aged RL3 commit reported a reorder that did not happen'
+        )
+    }
+    const other = snaps.filter((snap) => snap.reason !== 'stale')
+    if (other.length > 0) {
+        throw new Error(
+            `an aged RL3 commit snapped for a reason other than 'stale': ${other
+                .map((snap) => `${snap.id}:${snap.reason}`)
+                .join(', ')}`
+        )
+    }
+    const stale = new Set(snaps.map((snap) => snap.id))
+    const missing = moved.filter((id) => !stale.has(id))
+    if (missing.length > 0) {
+        throw new Error(
+            `an aged RL3 commit left moved participants unreported: ${missing.join(', ')}`
+        )
+    }
+    for (const id of after) {
+        const element = byId(host, id)
+        expectEqual(
+            element.style.cssText,
+            ITEM_STYLE,
+            `${id} is at its layout box with the authored style after the aged flush`
+        )
+    }
+    return `'stale' ${after.filter((id) => stale.has(id)).join('')}`
+}
+
 /** RL3: transitions interrupting each other across time-sliced renders. */
 export async function RL3(): Promise<string> {
-    return concurrent(false, async () => {
-        for (let i = 0; i < 6; i++) {
-            startTransition(() =>
-                controls.set!((s) => ({ ...s, order: rotate(s.order, i) }))
+    const slips: string[] = []
+    for (let attempt = 1; attempt <= RL3_ATTEMPTS; attempt++) {
+        const mc = createManualClock()
+        const view = mountRoot()
+        resources.clear()
+        rl3Snaps = []
+        const quiet = silenceWarnings()
+        try {
+            await view.render(
+                h(ConcurrentApp, {
+                    clock: mc.clock,
+                    deferred: false,
+                    onSnap: (element, reason) => {
+                        const id = (element as HTMLElement).dataset.id
+                        if (id) rl3Snaps.push({ id, reason })
+                    },
+                })
             )
-            await sleep(i % 2 === 0 ? 4 : 25)
+            const before = listIds(view.host)
+            const { checks, commits } = await frozen(
+                view.host,
+                async () => {
+                    for (let i = 0; i < 6; i++) {
+                        startTransition(() =>
+                            controls.set!((s) => ({
+                                ...s,
+                                order: rotate(s.order, i),
+                            }))
+                        )
+                        await sleep(i % 2 === 0 ? 4 : 25)
+                    }
+                },
+                {
+                    until: () =>
+                        rl3Snaps.some((snap) => snap.reason === 'stale') ||
+                        quiet.messages.some((message) =>
+                            message.includes('no valid measurement')
+                        ),
+                }
+            )
+            const aged =
+                rl3Snaps.some((snap) => snap.reason === 'stale') ||
+                quiet.messages.some((message) =>
+                    message.includes('no valid measurement')
+                )
+            if (aged) {
+                expectStaleWarnings(quiet.messages)
+                slips.push(
+                    `attempt ${attempt} ${rl3Aged(view.host, before, rl3Snaps)}`
+                )
+                continue
+            }
+            expectEqual(quiet.messages.join(' | '), '', 'no warning')
+            const pending = [
+                ...view.host.querySelectorAll<HTMLElement>('[data-id]'),
+            ].filter((element) => element.style.translate !== '')
+            if (pending.length === 0) {
+                throw new Error(
+                    'nothing was left to animate: the commits snapped'
+                )
+            }
+            await settleAll(mc, view.host)
+            const order = listIds(view.host)
+            const prior = slips.length > 0 ? `${slips.join('; ')}; ` : ''
+            return `${prior}${checks} checks over ${commits} DOM mutations, picture unmoved; ${pending.length} nodes animated and settled (${order.join('')})`
+        } finally {
+            quiet.restore()
+            view.dispose()
         }
-    })
+    }
+    throw new Error(
+        `RL3 never produced the intended measured transition: ${slips.join('; ')}`
+    )
+}
+
+/**
+ * RL3 under a deliberately aged commit: a child advances the manual clock
+ * between the group's render capture and its commit. The only valid outcome
+ * is the §4.4 one: every list participant at its layout box, moved
+ * participants reported `'stale'`, and no other snap reason.
+ */
+export async function RL3_AGED(): Promise<string> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    resources.clear()
+    rl3Snaps = []
+    const quiet = silenceWarnings()
+    try {
+        await view.render(
+            h(ConcurrentApp, {
+                clock: mc.clock,
+                deferred: false,
+                advance: () => mc.frame(FRAME_MS),
+                onSnap: (element, reason) => {
+                    const id = (element as HTMLElement).dataset.id
+                    if (id) rl3Snaps.push({ id, reason })
+                },
+            })
+        )
+        // The mount's own aged capture is not the sequence under test.
+        quiet.messages.length = 0
+        const before = listIds(view.host)
+        await frozen(
+            view.host,
+            async () => {
+                // The capture is taken during render; AgeCapture advances the
+                // clock before the commit, so the commit is deterministically aged.
+                startTransition(() =>
+                    controls.set!((s) => ({
+                        ...s,
+                        order: rotate(s.order, 1),
+                    }))
+                )
+                await sleep(80)
+            },
+            {
+                until: () =>
+                    rl3Snaps.some((snap) => snap.reason === 'stale') ||
+                    quiet.messages.some((message) =>
+                        message.includes('no valid measurement')
+                    ),
+            }
+        )
+        const aged =
+            rl3Snaps.some((snap) => snap.reason === 'stale') ||
+            quiet.messages.some((message) =>
+                message.includes('no valid measurement')
+            )
+        if (!aged) {
+            throw new Error(
+                `premise: the advanced capture did not age the commit (messages: ${quiet.messages.join(' | ') || 'none'}; snaps: ${rl3Snaps.map((snap) => `${snap.id}:${snap.reason}`).join(', ') || 'none'})`
+            )
+        }
+        expectStaleWarnings(quiet.messages)
+        return `advanced aged commit: ${rl3Aged(view.host, before, rl3Snaps)}`
+    } finally {
+        quiet.restore()
+        view.dispose()
+    }
 }
 
 /** RL4: a deferred value renders the list in a later, lower-priority pass. */
