@@ -14,6 +14,7 @@ export {
 } from './motion'
 export { createPresence } from './presence'
 export { reconcilePresence, settlePresence } from './presence_state'
+export { layoutRuntime } from './runtime'
 export { createLayoutGroup } from './scope'
 export type * from './types'
 export {

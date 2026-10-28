@@ -8,7 +8,7 @@ import type {
     RunResult,
 } from '@freestylejs/ani-core'
 import type { LayoutMotion, LayoutOptions } from './motion'
-import type { SnapReason } from './plan'
+import type { LayoutStatus, SnapReason } from './plan'
 
 /* ───────────────────────── Layout ───────────────────────── */
 
@@ -18,7 +18,7 @@ export type {
     LayoutMotion,
     LayoutOptions,
 } from './motion'
-export type { SnapReason } from './plan'
+export type { LayoutStatus, SnapReason } from './plan'
 
 export interface LayoutGroupOptions {
     /** Default: `defaultClock`. Its `reducedMotion` is read at every flush. */
@@ -31,6 +31,8 @@ export interface LayoutGroupOptions {
     readonly threshold?: number
     /** Visible movers per flush; above it the whole flush snaps. Default: 300. */
     readonly maxNodes?: number
+    /** Connected participants; above it capture and flush read nothing. Default: 2000. */
+    readonly maxParticipants?: number
     /** Seconds a removed `layoutId` lead's box stays available for a handoff. Default: 1. */
     readonly retain?: number
     readonly onSnap?: (element: HTMLElement, reason: SnapReason) => void
@@ -54,15 +56,6 @@ export interface LayoutGroupOptions {
      */
     readonly engine?: 'raf' | 'waapi'
 }
-
-export type LayoutStatus =
-    | 'ended'
-    | 'interrupted'
-    | 'no-change'
-    | 'reduced'
-    | 'capped'
-    | 'stale'
-    | 'disposed'
 
 export interface LayoutReport {
     readonly status: LayoutStatus
@@ -109,6 +102,60 @@ export interface LayoutGroup {
     /** Cancels every track, restores every owned style, releases presence holds. */
     dispose(): void
     readonly stats: LayoutStats
+}
+
+/* ─────────────────── Runtime and diagnostics (§7.2) ─────────────────── */
+
+export type LayoutDiagnosticCode =
+    | 'capture-less-flush'
+    | 'capture-aged'
+    | 'measurement-unsupported'
+    | 'unsupported-geometry'
+    | 'handoff-scroll-active'
+    | 'spring-timeout'
+    | 'participant-cap'
+    | 'mover-cap'
+    | 'document-mismatch'
+    | 'runtime-disabled'
+    | 'focus-in-follower'
+    | 'callback-error'
+    | 'internal-error'
+    // codes may be added; existing meanings are stable
+    | (string & Record<never, never>)
+
+export type LayoutDiagnosticAction =
+    | 'none'
+    | 'snap'
+    | 'enter'
+    | 'finish'
+    | 'abort'
+
+export interface LayoutDiagnosticMetrics {
+    readonly participants: number
+    readonly rectReads: number
+    readonly styleReads: number
+    readonly springSettleMs: number | null
+}
+
+export interface LayoutDiagnostic {
+    readonly version: 1
+    readonly code: LayoutDiagnosticCode
+    /** Stable per scope for the page's lifetime. */
+    readonly scope: number
+    readonly run: number | null
+    readonly engine: 'raf' | 'waapi'
+    readonly action: LayoutDiagnosticAction
+    readonly element?: HTMLElement
+    readonly reason?: SnapReason
+    readonly metrics: LayoutDiagnosticMetrics
+    readonly error?: unknown
+}
+
+export interface LayoutRuntime {
+    readonly mode: 'animate' | 'snap'
+    /** Takes effect synchronously in every explicit and implicit scope. */
+    setMode(mode: 'animate' | 'snap'): void
+    onDiagnostic(listener: (event: LayoutDiagnostic) => void): () => void
 }
 
 /* ─────────────────────── Presence state ─────────────────────── */

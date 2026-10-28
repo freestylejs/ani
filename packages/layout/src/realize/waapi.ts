@@ -4,6 +4,8 @@
  * frame without a `startTime`, so its first painted frame is τ = 0 and it runs
  * on the compositor. The only module that calls `Element.animate`.
  */
+
+import { layoutFault } from '../fault'
 import type { Curve } from '../motion'
 
 /** Largest drawn error of the sampled easing, px. */
@@ -65,6 +67,7 @@ export function play(
     track: WaapiTrack,
     onEnd: () => void
 ): Animation {
+    layoutFault('animate')
     const [fx, fy] = track.from
     const [tx, ty] = track.to
     const keyframe = (x: number, y: number): Keyframe => {
