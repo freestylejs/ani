@@ -331,6 +331,9 @@ interface DriveHold {
     shiftY: number
     /** The last solved drawn box, view space (the frame the shift is measured against). */
     lastDrawn: Box | null
+    /** The element's layout offset at the last geometry read. */
+    layoutLeft: number
+    layoutTop: number
     /** The held node's size continuation: its own track, or `null` for a constant size. */
     sizeTrack: Track | null
     sizeElapsed: number
@@ -2056,6 +2059,41 @@ export function createLayoutGroup(
                 hold.shiftY = 0
                 continue
             }
+            // H13-02R/S3: a pure layout-position change under the same
+            // written pose is adopted as a new A; only an unchanged layout
+            // offset is a camera shift. Detect it before the size branches.
+            const fx = p.geometry?.fx ?? 0.5
+            const fy = p.geometry?.fy ?? 0.5
+            const drawnX = hold.hx - hold.shiftX - fx * hold.sizeW
+            const drawnY = hold.hy - hold.shiftY - fy * hold.sizeH
+            if (
+                Math.abs(rect.x - drawnX) > 0.01 ||
+                Math.abs(rect.y - drawnY) > 0.01
+            ) {
+                const layoutLeft = p.element.offsetLeft
+                const layoutTop = p.element.offsetTop
+                if (
+                    layoutLeft !== hold.layoutLeft ||
+                    layoutTop !== hold.layoutTop
+                ) {
+                    const measured = heldRectSupported(p, rect)
+                    if (measured !== null) {
+                        const g = heldTakeGeometry(p, rect, measured)
+                        adoptHeldGeometry(p, g)
+                        const dx = layoutLeft - hold.layoutLeft
+                        const dy = layoutTop - hold.layoutTop
+                        hold.layoutLeft = layoutLeft
+                        hold.layoutTop = layoutTop
+                        // remove the layout move from the camera shift, so
+                        // the drawn origin stays at H
+                        hold.shiftX = rect.x - last.x - dx
+                        hold.shiftY = rect.y - last.y - dy
+                        hold.sizeTargetW = g.a.w
+                        hold.sizeTargetH = g.a.h
+                        continue
+                    }
+                }
+            }
             const sizeError = Math.max(
                 Math.abs(rect.w - hold.sizeW),
                 Math.abs(rect.h - hold.sizeH)
@@ -2072,6 +2110,8 @@ export function createLayoutGroup(
                 // a release must land at the re-laid-out box and restore it
                 const g = heldTakeGeometry(p, rect, measured)
                 adoptHeldGeometry(p, g)
+                hold.layoutLeft = p.element.offsetLeft
+                hold.layoutTop = p.element.offsetTop
                 hold.sizeTrack = null
                 hold.sizeElapsed = 0
                 hold.sizeStarted = false
@@ -2100,6 +2140,8 @@ export function createLayoutGroup(
                     if (measured !== null) {
                         const next = heldTakeGeometry(p, rect, measured)
                         adoptHeldGeometry(p, next)
+                        hold.layoutLeft = p.element.offsetLeft
+                        hold.layoutTop = p.element.offsetTop
                         hold.sizeTargetW = next.a.w
                         hold.sizeTargetH = next.a.h
                     }
@@ -2663,7 +2705,19 @@ export function createLayoutGroup(
             invalidateHold(p)
             if (p.drive) settle(p)
             frame = frame.filter((node) => node.p.drive !== null)
-            if (deferDepth === 0) commitWrites()
+            if (deferDepth === 0) {
+                // a fault in these restores aborts the boundary cleanly and
+                // leaves no new hold behind
+                const ok = frameBoundary(
+                    () => {
+                        commitWrites()
+                        return true
+                    },
+                    false,
+                    null
+                )
+                if (!ok) return terminalHandle()
+            }
             p.geometry = null
         }
         p.geometry = g
@@ -2671,11 +2725,39 @@ export function createLayoutGroup(
         const takeX = retake ? retake.takeX : rect.x + g.fx * rect.w
         const takeY = retake ? retake.takeY : rect.y + g.fy * rect.h
         const drawnVelocity = engine.rates.get(p) ?? ZERO_VELOCITY
+        // A trackless child under an animating participant ancestor is
+        // counter-projected to its own A, so its own drawn rate is zero. The
+        // handle must still carry the ancestor's drawn origin velocity
+        // (P4-C10): the finger catches that motion.
+        const ownTrack =
+            p.drive?.kind === 'track' &&
+            p.drive.track !== null &&
+            p.drive.timeline === null &&
+            !trackEnded(p.drive.track, p.drive.elapsed)
+        let ancestorVX = 0
+        let ancestorVY = 0
+        if (!retake && !ownTrack && p.drive?.timeline === null) {
+            const chain = chainOf(p)
+            for (let i = chain.length - 1; i >= 0; i--) {
+                const ancestor = chain[i]!
+                const rate = engine.rates.get(ancestor)
+                if (!rate) continue
+                const fx = ancestor.geometry?.fx ?? 0.5
+                const fy = ancestor.geometry?.fy ?? 0.5
+                const vx = rate.x + fx * rate.w
+                const vy = rate.y + fy * rate.h
+                if (Math.hypot(vx, vy) > 1e-6) {
+                    ancestorVX = vx
+                    ancestorVY = vy
+                    break
+                }
+            }
+        }
         const velocity: LayoutDriveVector = retake
             ? retake.velocity
             : {
-                  x: drawnVelocity.x + g.fx * drawnVelocity.w,
-                  y: drawnVelocity.y + g.fy * drawnVelocity.h,
+                  x: drawnVelocity.x + g.fx * drawnVelocity.w + ancestorVX,
+                  y: drawnVelocity.y + g.fy * drawnVelocity.h + ancestorVY,
               }
         // a kept pose timeline has no single size channel to continue: freeze
         // the presented size instead (continuous at the take)
@@ -2721,6 +2803,8 @@ export function createLayoutGroup(
             shiftX: retake ? 0 : rect.x - analytic.x,
             shiftY: retake ? 0 : rect.y - analytic.y,
             lastDrawn: retake ? rect : analytic,
+            layoutLeft: element.offsetLeft,
+            layoutTop: element.offsetTop,
             sizeTrack,
             sizeElapsed: retake ? retake.sizeElapsed : (p.drive?.elapsed ?? 0),
             sizeStarted: retake
@@ -2825,8 +2909,15 @@ export function createLayoutGroup(
         // write the new hold's t = 0 pose before returning, so a synchronous
         // read after take is the drawn box B, not the restored layout A
         if (retake !== null && deferDepth === 0) {
-            step(null)
-            commitWrites()
+            frameBoundary(
+                () => {
+                    step(null)
+                    commitWrites()
+                    return true
+                },
+                false,
+                null
+            )
         }
         return handle
     }
@@ -5966,7 +6057,21 @@ export function createLayoutGroup(
             }
             const b = fresh?.rects.get(p) ?? null
             const v = velocity.get(p) ?? null
-            if (!b || !v) continue
+            if (!b || !v) {
+                // H13-10R/S3: under jump a capture-less flush has no B/v, but
+                // the stale residual must still settle at its own A
+                const d = p.drive
+                if (reduced === 'jump' && d) {
+                    d.track = null
+                    d.timeline = null
+                    d.target = g.a
+                    d.kind = 'static'
+                    d.elapsed = 0
+                    d.started = false
+                    d.mode = reduced
+                }
+                continue
+            }
             const residualBefore = {
                 x: b.x - presentedH.x,
                 y: b.y - presentedH.y,
