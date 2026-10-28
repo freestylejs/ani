@@ -14,11 +14,13 @@ import {
     createManualClock,
     type ManualClock,
 } from '@freestylejs/ani-core/testing'
+import type { LayoutDrive } from '@freestylejs/ani-layout'
 import {
     AnimatePresence,
     LayoutGroup,
     type LayoutGroupProps,
     useLayout,
+    useLayoutDrive,
     useLayoutGroup,
     usePresence,
 } from '@freestylejs/ani-react/layout'
@@ -3431,5 +3433,236 @@ export async function L_MEAS_5_COALESCE(): Promise<string> {
         return `two commits and a scroll in one task, one flush: first frame = last presented, then on the oracle to the last commit's layout (max error ${error.toFixed(4)} px)`
     } finally {
         run.dispose()
+    }
+}
+
+/* ─────────────── P4: useLayoutDrive and StrictMode holds ─────────────── */
+
+const driveBox: { current: LayoutDrive | null } = { current: null }
+const cardRef: { current: ((element: HTMLDivElement | null) => void) | null } =
+    { current: null }
+
+function DriveCard(): ReactNode {
+    const ref = useLayout<HTMLDivElement>({
+        radius: false,
+        motion: { duration: 0.3, timing: timing.linear() },
+    })
+    cardRef.current = ref
+    return h('div', {
+        ref,
+        'data-id': 'drive',
+        style: {
+            position: 'absolute',
+            left: '20px',
+            top: '20px',
+            width: '80px',
+            height: '80px',
+            background: 'rgb(80, 120, 200)',
+        },
+    })
+}
+
+function DriveApp({ clock }: { clock: Clock }): ReactNode {
+    const drive = useLayoutDrive()
+    driveBox.current = drive
+    return h(
+        LayoutGroup,
+        { clock, motion: { duration: 0.3, timing: timing.linear() } },
+        h(DriveCard)
+    )
+}
+
+function ImplicitDriveCard(): ReactNode {
+    const drive = useLayoutDrive()
+    driveBox.current = drive
+    const ref = useLayout<HTMLDivElement>({
+        radius: false,
+        motion: { duration: 0.2, timing: timing.linear() },
+    })
+    return h('div', {
+        ref,
+        'data-id': 'implicit',
+        style: {
+            position: 'absolute',
+            left: '20px',
+            top: '200px',
+            width: '60px',
+            height: '60px',
+            background: 'rgb(120, 80, 200)',
+        },
+    })
+}
+
+/**
+ * `useLayoutDrive` dispatches to the live scope that owns the element: an
+ * explicit `LayoutGroup` (even when the hook is rendered outside it), the
+ * implicit root of the element's document, and `ANI_INVALID_OPTIONS` when no
+ * scope owns it. No DOM is owned by the hook or by React.
+ */
+export async function RL_DRIVE(): Promise<string> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    const quiet = silenceWarnings()
+    try {
+        await view.render(h(DriveApp, { clock: mc.clock }))
+        const card = byId(view.host, 'drive')
+        const drive = driveBox.current
+        if (!drive) throw new Error('useLayoutDrive returned no dispatcher')
+        const take = pageBox(card)
+        const handle = drive.take(card)
+        expectEqual(handle.state, 'held', 'explicit group hold')
+        handle.move({ x: 60, y: 30 })
+        mc.frame(FRAME_MS)
+        await microtasks()
+        const got = pageBox(card)
+        expectClose(got.x - take.x, 60, TOL, 'explicit take offset x')
+        expectClose(got.y - take.y, 30, TOL, 'explicit take offset y')
+        // a gesture can take an element outside every scope: no owner, throw
+        const outside = document.createElement('div')
+        view.host.append(outside)
+        let threw = false
+        try {
+            drive.take(outside)
+        } catch (error) {
+            threw = true
+            if ((error as { code?: string }).code !== 'ANI_INVALID_OPTIONS') {
+                throw new Error(`no-owner take: wrong error ${String(error)}`)
+            }
+        }
+        expectEqual(threw, true, 'no-owner take throws')
+        outside.remove()
+        handle.cancel()
+        await frames(mc, 30, () => undefined)
+        expectEqual(card.style.translate, '', 'explicit hold restores styles')
+        view.dispose()
+
+        // the implicit root of the document owns a group-less participant
+        const implicitView = mountRoot()
+        try {
+            await implicitView.render(h(ImplicitDriveCard))
+            const element = byId(implicitView.host, 'implicit')
+            const implicitDrive = driveBox.current
+            if (!implicitDrive) throw new Error('no dispatcher')
+            const before = pageBox(element)
+            const handle2 = implicitDrive.take(element)
+            expectEqual(handle2.state, 'held', 'implicit root hold')
+            handle2.move({ x: 30, y: 10 })
+            await sleep(80)
+            const after = pageBox(element)
+            expectClose(after.x - before.x, 30, TOL, 'implicit take offset x')
+            expectClose(after.y - before.y, 10, TOL, 'implicit take offset y')
+            handle2.cancel()
+            await sleep(400)
+            expectEqual(element.style.translate, '', 'implicit hold restores')
+        } finally {
+            implicitView.dispose()
+        }
+        return 'dispatcher routes to the explicit group and the implicit root; no-owner take throws'
+    } finally {
+        quiet.restore()
+        view.dispose()
+    }
+}
+
+let strictOrder: ((next: readonly string[]) => void) | null = null
+
+function StrictDriveCard({
+    id,
+    index,
+}: {
+    id: string
+    index: number
+}): ReactNode {
+    const ref = useLayout<HTMLDivElement>({
+        radius: false,
+        motion: { duration: 0.3, timing: timing.linear() },
+    })
+    return h('div', {
+        ref,
+        'data-id': id,
+        style: {
+            position: 'absolute',
+            left: '20px',
+            top: `${20 + index * 60}px`,
+            width: '80px',
+            height: '40px',
+            background: 'rgb(80, 80, 80)',
+        },
+    })
+}
+
+function StrictDriveApp({ clock }: { clock: Clock }): ReactNode {
+    const drive = useLayoutDrive()
+    driveBox.current = drive
+    const [order, setOrder] = useState<readonly string[]>(['a', 'b', 'c'])
+    strictOrder = (next) => setOrder(next)
+    return h(
+        LayoutGroup,
+        { clock, motion: { duration: 0.3, timing: timing.linear() } },
+        order.map((id, index) => h(StrictDriveCard, { key: id, id, index }))
+    )
+}
+
+/**
+ * Under StrictMode React replays a moved fiber's ref callbacks in the commit's
+ * task. The adapter's deferred removal keeps the registration, and a live
+ * hold survives the same-task detach/re-attach: the element keeps following
+ * the finger, then releases and restores its authored style.
+ */
+export async function RL_DRIVE_STRICT(): Promise<string> {
+    const mc = createManualClock()
+    const view = mountRoot()
+    const quiet = silenceWarnings()
+    try {
+        await view.render(
+            h(StrictMode, null, h(StrictDriveApp, { clock: mc.clock }))
+        )
+        const card = byId(view.host, 'a')
+        const drive = driveBox.current
+        if (!drive) throw new Error('no dispatcher')
+        const before = pageBox(card)
+        const handle = drive.take(card)
+        expectEqual(handle.state, 'held', 'StrictMode initial hold')
+        handle.move({ x: 50, y: 25 })
+        mc.frame(FRAME_MS)
+        await microtasks()
+        const held = pageBox(card)
+        // reorder the keyed list in one task: React may replay the refs
+        // the replay's exact mechanic: the ref detaches and re-attaches in
+        // the same task; the adapter defers the removal to the task's end
+        cardRef.current?.(null)
+        cardRef.current?.(card as HTMLDivElement)
+        flushSync(() => strictOrder!(['c', 'a', 'b']))
+        await microtasks()
+        expectEqual(handle.state, 'held', 'StrictMode replay keeps the hold')
+        expectEqual(
+            document.querySelector('[data-id="a"]'),
+            card,
+            'the same element after the reorder'
+        )
+        mc.frame(FRAME_MS)
+        await microtasks()
+        const after = pageBox(card)
+        expectClose(after.x, held.x, TOL, 'hold x survives the replay')
+        expectClose(after.y, held.y, TOL, 'hold y survives the replay')
+        handle.release()
+        await frames(mc, 30, () => undefined)
+        expectEqual(
+            card.style.translate,
+            '',
+            'StrictMode hold restores translate'
+        )
+        expectEqual(card.style.scale, '', 'StrictMode hold restores scale')
+        expectClose(
+            pageBox(card).y,
+            view.host.getBoundingClientRect().top + scrollY + 20 + 60,
+            TOL,
+            'StrictMode release lands on the reordered slot'
+        )
+        void before
+        return 'StrictMode same-task replay kept the hold and its finger offset; release landed on the new slot'
+    } finally {
+        quiet.restore()
+        view.dispose()
     }
 }
