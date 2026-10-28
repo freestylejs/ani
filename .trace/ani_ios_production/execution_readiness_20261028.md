@@ -4,9 +4,10 @@ Status snapshot and dispatch record for the iOS Native Grade program. This file 
 not an authority: `00_plan.md`, `packages/layout/ARCHITECTURE.md` and the owner decisions in
 `00_plan.md` decide. It exists so no future agent has to reconstruct the position from chat.
 
-Snapshot basis: `origin/dev/ecstatic-ramanujan-1mjr9q` at `2c34085` plus the preparation commit
-that adds this file. Worktree: `/Users/june/Documents/project/freestylejs/ani-ios-scope-correction`
-(branch `fix/ios-native-grade-scope`).
+Snapshot basis: `origin/dev/ecstatic-ramanujan-1mjr9q` at `2c34085` plus the two preparation
+commits `9997552` (teleology, D8/D9, COST retirement, docs-test mapping) and `4ac1224` (H11a/H11b
+split). Worktree: `/Users/june/Documents/project/freestylejs/ani-ios-scope-correction` (branch
+`fix/ios-native-grade-scope`).
 
 ## 1. Where the program actually is
 
@@ -85,7 +86,7 @@ has a PASS (`00_plan.md`, Pipeline).
 
 Each step ends with evidence; no step may claim a later step's PASS.
 
-### Step 0 — Preparation (this commit)
+### Step 0 — Preparation (these commits)
 
 - Authority/plan/readiness edits; COST row removed from the browser cases; docs test mapping.
 - Verify: `pnpm test`, `pnpm ts:typecheck`, `pnpm check`, `git diff --check`; run the `layout` browser
@@ -96,7 +97,8 @@ Each step ends with evidence; no step may claim a later step's PASS.
 
 ### Step 1 — H11a: RL3 under load (P2 closure, test-only)
 
-- Base: the Step 0 preparation head (exact hash in `briefs/h11a.md`).
+- Base: the pushed head that contains this brief (`git fetch` + `git reset --hard
+  origin/dev/ecstatic-ramanujan-1mjr9q`).
 - Write scope: `tests/browser/cases/react_layout.ts` and, only if unavoidable, its shared test
   helper. No `packages/*/src` change.
 - Reproduce the failure under induced load first. Then implement the L_MEAS_5a pattern: if the
