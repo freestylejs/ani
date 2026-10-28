@@ -30,6 +30,14 @@ import {
     waitMs,
     waitUntil,
 } from '../harness.ts'
+import {
+    EASE_IN,
+    EASE_OUT,
+    homeIndicator,
+    perceptual,
+    STATUS_CSS,
+    statusBar,
+} from './kit.ts'
 
 const FONT =
     '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif'
@@ -73,6 +81,7 @@ function installStyles(): void {
     stylesInstalled = true
     const style = document.createElement('style')
     style.textContent = `
+        ${STATUS_CSS}
         .card-stage {
             position: fixed; inset: 0; width: 390px; height: 844px;
             overflow: hidden; background: #F2F2F7; color: #000;
@@ -139,8 +148,8 @@ function installStyles(): void {
         .card-close {
             position: absolute; left: 342px; top: 56px; width: 32px; height: 32px;
             border: 0; border-radius: 16px; padding: 0; background: rgba(118,118,128,0.16);
-            color: #3C3C43; font: 400 22px/32px ${FONT}; text-align: center; cursor: pointer;
-            z-index: 12;
+            color: #3C3C43; cursor: pointer; z-index: 12;
+            display: flex; align-items: center; justify-content: center;
         }
     `
     document.head.append(style)
@@ -190,12 +199,6 @@ function buildStage(): {
     installStyles()
     const stage = document.createElement('div')
     stage.className = 'card-stage'
-    const status = document.createElement('div')
-    status.className = 'card-status'
-    const statusTime = document.createElement('div')
-    statusTime.className = 'card-status-time'
-    statusTime.textContent = '9:41'
-    status.append(statusTime)
     const date = document.createElement('div')
     date.className = 'card-date'
     date.textContent = 'Monday, October 28'
@@ -235,7 +238,16 @@ function buildStage(): {
     tag.className = 'card-hero-tag'
     tag.textContent = 'Eight studios to watch'
     card.append(cardImage, cardTitle, tag)
-    stage.append(status, date, header, headerButton, feed1, feed2, card)
+    stage.append(
+        statusBar(),
+        date,
+        header,
+        headerButton,
+        feed1,
+        feed2,
+        card,
+        homeIndicator()
+    )
     document.body.append(stage)
     return {
         stage,
@@ -291,7 +303,8 @@ function buildSheet(): {
     const close = document.createElement('button')
     close.type = 'button'
     close.className = 'card-close'
-    close.textContent = '×'
+    close.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 1l12 12M13 1L1 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
     close.setAttribute('aria-label', 'Close story')
     close.tabIndex = -1
     content.append(subtitle, body, read, close)
@@ -345,9 +358,15 @@ function diagnosticsListener(
     )
 }
 
-function easeOut(x: number): number {
-    const t = Math.min(1, Math.max(0, x))
-    return 1 - (1 - t) * (1 - t)
+function contentDelay(): number {
+    let low = 0
+    let high = 0.55
+    for (let i = 0; i < 40; i++) {
+        const mid = (low + high) / 2
+        if (perceptual(0.55, mid) < 0.5) low = mid
+        else high = mid
+    }
+    return high
 }
 
 class CardRuntime {
@@ -371,6 +390,11 @@ class CardRuntime {
     closeDone = false
     reverseDone = false
     contentOpacity = 0
+    cardTemplate: {
+        root: HTMLButtonElement
+        image: HTMLImageElement
+        title: HTMLDivElement
+    } | null = null
     contentMode: 'off' | 'opening' | 'open' | 'closing' | 'reversing' = 'off'
     contentSince = 0
     contentFrom = 0
@@ -572,6 +596,11 @@ class CardRuntime {
         card.imagePresence.dispose()
         card.titlePresence.dispose()
         card.root.remove()
+        this.cardTemplate = {
+            root: card.root,
+            image: card.image,
+            title: card.title,
+        }
         this.card = null
         this.elements.set('card', null)
         this.elements.set('card-image', null)
@@ -718,17 +747,31 @@ class CardRuntime {
             sheet.titlePresence.exit(),
         ]
         this.closeReport = this.captureCommit('close', () => {
-            const built = buildStage()
-            const card: CardLayer = {
-                root: built.card.root,
-                image: built.card.image,
-                title: built.card.title,
-                presence: null as unknown as PresenceHandle,
-                imagePresence: null as unknown as PresenceHandle,
-                titlePresence: null as unknown as PresenceHandle,
-                removers: [],
-            }
-            built.stage.remove()
+            const template = this.cardTemplate
+            const card: CardLayer = template
+                ? {
+                      root: template.root,
+                      image: template.image,
+                      title: template.title,
+                      presence: null as unknown as PresenceHandle,
+                      imagePresence: null as unknown as PresenceHandle,
+                      titlePresence: null as unknown as PresenceHandle,
+                      removers: [],
+                  }
+                : (() => {
+                      const built = buildStage()
+                      const layer: CardLayer = {
+                          root: built.card.root,
+                          image: built.card.image,
+                          title: built.card.title,
+                          presence: null as unknown as PresenceHandle,
+                          imagePresence: null as unknown as PresenceHandle,
+                          titlePresence: null as unknown as PresenceHandle,
+                          removers: [],
+                      }
+                      built.stage.remove()
+                      return layer
+                  })()
             if (this.card) this.removeCard()
             this.stage.append(card.root)
             card.root.style.zIndex = '11'
@@ -801,19 +844,19 @@ class CardRuntime {
         if (!sheet) return
         const content = sheet.content
         if (this.contentMode === 'opening') {
-            content.style.transition = 'opacity 150ms linear 275ms'
+            content.style.transition = `opacity 150ms cubic-bezier(0,0,0.58,1) ${(contentDelay() * 1000).toFixed(1)}ms`
             content.style.opacity = '1'
             content.style.visibility = 'visible'
             content.style.pointerEvents = 'auto'
             sheet.close.tabIndex = 0
         } else if (this.contentMode === 'closing') {
-            content.style.transition = 'opacity 200ms ease-in'
+            content.style.transition = 'opacity 200ms cubic-bezier(0.42,0,1,1)'
             content.style.opacity = '0'
             content.style.visibility = 'hidden'
             content.style.pointerEvents = 'none'
             sheet.close.tabIndex = -1
         } else if (this.contentMode === 'reversing') {
-            content.style.transition = 'opacity 150ms ease-out'
+            content.style.transition = 'opacity 150ms cubic-bezier(0,0,0.58,1)'
             content.style.opacity = '1'
             content.style.visibility = 'visible'
             content.style.pointerEvents = 'auto'
@@ -827,19 +870,25 @@ class CardRuntime {
         const content = sheet.content
         if (this.contentMode === 'off') return
         const elapsed = (this.clockNow() - this.contentSince) / 1000
+        const delay = contentDelay()
         let target = this.contentOpacity
         if (this.contentMode === 'opening') {
+            // The from-rest lead's first clock frame carries dt = 0 (§4.5).
+            const lead = Math.max(0, elapsed - 0.016)
+            const p = perceptual(0.55, lead)
             target =
-                this.contentFrom +
-                (1 - this.contentFrom) * easeOut((elapsed - 0.275) / 0.15)
-            if (elapsed >= 0.425) this.contentMode = 'open'
+                p < 0.5
+                    ? this.contentFrom
+                    : this.contentFrom +
+                      (1 - this.contentFrom) * EASE_OUT((lead - delay) / 0.15)
+            if (p >= 1) this.contentMode = 'open'
         } else if (this.contentMode === 'closing') {
-            target = this.contentFrom * (1 - easeOut(elapsed / 0.2))
+            target = this.contentFrom * (1 - EASE_IN(elapsed / 0.2))
             if (elapsed >= 0.2) this.contentMode = 'off'
         } else if (this.contentMode === 'reversing') {
             target =
                 this.contentFrom +
-                (1 - this.contentFrom) * easeOut(elapsed / 0.15)
+                (1 - this.contentFrom) * EASE_OUT(elapsed / 0.15)
             if (elapsed >= 0.15) this.contentMode = 'open'
         }
         this.contentOpacity = Math.min(1, Math.max(0, target))
