@@ -108,7 +108,8 @@ function installStyles(): void {
         .island-progress { position: absolute; left: 96px; top: 63px; width: 214px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.18); }
         .island-progress i { display: block; width: 40%; height: 4px; border-radius: 2px; background: #30D158; }
         .island-times { position: absolute; left: 96px; top: 73px; width: 214px; display: flex; justify-content: space-between; font: 400 11px/13px ${FONT}; letter-spacing: 0.07px; color: rgba(255,255,255,0.60); }
-        .island-transport { position: absolute; right: 18px; bottom: 14px; display: flex; gap: 20px; color: rgba(255,255,255,0.92); font: 400 18px/20px ${FONT}; }
+        .island-transport { position: absolute; right: 18px; bottom: 14px; display: flex; gap: 20px; color: rgba(255,255,255,0.92); }
+        .island-transport svg { width: 18px; height: 18px; }
         .island-focus { position: absolute; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; border: 0; background: transparent; }
         .island-demo { position: absolute; left: 16px; top: 60px; width: 2px; height: 2px; opacity: 0; border: 0; background: transparent; }
     `
@@ -174,7 +175,8 @@ function buildLayer(): IslandLayer {
     times.innerHTML = '<span>1:03</span><span>2:14</span>'
     const transport = document.createElement('div')
     transport.className = 'island-transport'
-    transport.innerHTML = '<span>⏮</span><span>⏸</span><span>⏭</span>'
+    transport.innerHTML =
+        '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2v12M13 2L5 8l8 6V2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2l9 6-9 6V2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11 2v12M3 2l8 6-8 6V2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>'
     cardContent.append(art, title, sub, progress, times, transport)
     card.append(cardContent)
 
@@ -390,8 +392,8 @@ class IslandRuntime {
             radiusKeys: new Set(['pill', 'card']),
             typedOM: isWebKitEngine(),
             stats: () => this.group.stats,
-            run: () =>
-                this.group.update(() => {
+            run: () => {
+                const run = this.group.update(() => {
                     layer.card.style.visibility = 'visible'
                     delete layer.card.dataset.collapsed
                     this.elements.set('card', layer.card)
@@ -410,7 +412,10 @@ class IslandRuntime {
                             ...(this.mc ? { clock: this.mc.clock } : {}),
                         }
                     )
-                }),
+                })
+                if (this.control === 'island-extra-read') this.group.capture()
+                return run
+            },
         })
         this.builder.record('flush', this.frame, 'expand')
         this.tracker!.track('expand', result.promise, () => this.frame)

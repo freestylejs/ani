@@ -54,8 +54,6 @@ const KEYS = Array.from({ length: 6 }, (_, i) => [
     `card-${i}`,
     `badge-${i}`,
 ]).flat()
-const CARDS = Array.from({ length: 6 }, (_, i) => `card-${i}`)
-const BADGES = Array.from({ length: 6 }, (_, i) => `badge-${i}`)
 const COUNT_LABELS = [6, 5, 4, 3, 2, 1]
 const TITLES = [
     'Messages',
@@ -293,6 +291,7 @@ class StackRuntime {
     readonly mc: ManualClock | null
     readonly builder: TraceBuilder | null
     readonly elements = new Map<string, HTMLElement | null>()
+    readonly samples: Map<string, HTMLElement | null>
     readonly diagnostics: string[] = []
     readonly tracker: ReturnType<typeof reportTracker> | null
     readonly radii = new Set(KEYS)
@@ -304,8 +303,10 @@ class StackRuntime {
     constructor(options: {
         mc: ManualClock | null
         builder: TraceBuilder | null
+        samples?: Map<string, HTMLElement | null>
         control?: string | undefined
     }) {
+        this.samples = options.samples ?? new Map()
         this.control = options.control
         installStyles()
         this.layer = buildLayer()
@@ -347,6 +348,7 @@ class StackRuntime {
             const badgeKey = `badge-${i}`
             this.elements.set(cardKey, entry.card)
             this.elements.set(badgeKey, entry.badge)
+            this.samples.set(`${badgeKey}-disc`, entry.disc)
             if (this.builder) {
                 participant(this.builder, cardKey, entry.card, true)
                 participant(this.builder, badgeKey, entry.badge, true)
@@ -381,6 +383,7 @@ class StackRuntime {
         duration: number,
         curve: 'ease-out' | 'ease-in'
     ): void {
+        if (this.control === 'stack-no-badge-scale') return
         const entry = this.layer.cards[index]!
         const from = Number.parseFloat(
             entry.disc.style.transform.match(/scale\(([\d.]+)\)/)?.[1] ?? '1'
@@ -423,10 +426,13 @@ class StackRuntime {
             typedOM: isWebKitEngine(),
             stats: () => this.group.stats,
             stylesExpected: isWebKitEngine() ? 33 : 21,
-            run: () =>
-                this.group.update(() => {
+            run: () => {
+                const run = this.group.update(() => {
                     setExpanded(this.layer, true)
-                }),
+                })
+                if (this.control === 'stack-extra-read') this.group.capture()
+                return run
+            },
         })
         return this.finishCommit('expand', result.promise)
     }
@@ -482,17 +488,20 @@ export class StackScene {
     ): Promise<SceneTrace> {
         const mc = createManualClock()
         const elements = new Map<string, HTMLElement | null>()
+        const samples = new Map<string, HTMLElement | null>()
         const builder = new TraceBuilder({
             scene: 's-stack',
             stepMs: 16,
             keys: KEYS,
             elements,
             radii: new Set(KEYS),
+            samples,
             clock: mc,
         })
         const runtime = new StackRuntime({
             mc,
             builder,
+            samples,
             control: options.control,
         })
         for (const key of KEYS)
@@ -533,6 +542,11 @@ export class StackScene {
                 await stepStack(mc, builder, runtime)
             }
             await microtasks()
+            if (options.control === 'stack-leftover-pose') {
+                runtime.elements
+                    .get('card-0')
+                    ?.style.setProperty('translate', '0.5px 0px', 'important')
+            }
             await stepStack(mc, builder, runtime)
             builder.settleFrames.push(runtime.frame)
             const connected = KEYS.filter(

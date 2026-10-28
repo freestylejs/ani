@@ -46,7 +46,6 @@ import { HomeIndicator, IosStatus } from './react_kit.tsx'
 const ROWS = 11
 const EXPANDED = 168
 const COLLAPSED = 48
-const PITCH = 48.5
 const GROUP_TOP = 107
 const KEYS = [
     ...Array.from({ length: ROWS }, (_, i) => `row-${i}`),
@@ -59,17 +58,37 @@ const HEADER_KEYS = Array.from({ length: ROWS }, (_, i) => `header-${i}`)
 const BODY_KEYS = Array.from({ length: ROWS }, (_, i) => `body-${i}`)
 const SEP_KEYS = Array.from({ length: ROWS - 1 }, (_, i) => `sep-${i}`)
 const ICONS = [
-    ['✈', '#FF9500', 'Airplane Mode'],
-    ['◉', '#007AFF', 'Wi-Fi'],
-    ['ᛒ', '#007AFF', 'Bluetooth'],
-    ['▮', '#34C759', 'Cellular'],
-    ['◎', '#007AFF', 'Personal Hotspot'],
-    ['◍', '#FF3B30', 'Notifications'],
-    ['♪', '#FF2D55', 'Sounds & Haptics'],
-    ['☾', '#5E5CE6', 'Focus'],
-    ['▤', '#5E5CE6', 'Screen Time'],
-    ['⚙', '#8E8E93', 'General'],
-    ['✋', '#007AFF', 'Privacy & Security'],
+    ['M1 8h9l4-6M1 8h9l4 6M4 8l2-3', '#FF9500', 'Airplane Mode'],
+    [
+        'M2 6a9 9 0 0112 0M4 9a6 6 0 018 0M6.5 12a2 2 0 013 0',
+        '#007AFF',
+        'Wi-Fi',
+    ],
+    ['M5 2l6 4-6 4V2zm0 12l6-4-6-4v8z', '#007AFF', 'Bluetooth'],
+    ['M3 13V9M6 13V6M9 13V3M12 13V1', '#34C759', 'Cellular'],
+    [
+        'M4 6a6 6 0 010 8M7 4a9 9 0 010 12M10 3a12 12 0 010 14',
+        '#007AFF',
+        'Personal Hotspot',
+    ],
+    [
+        'M4 12h8M5 12V7a3 3 0 016 0v5M6 4a2 2 0 014 0',
+        '#FF3B30',
+        'Notifications',
+    ],
+    ['M3 6v4h3l4 3V3L6 6H3zM12 6a3 3 0 010 4', '#FF2D55', 'Sounds & Haptics'],
+    ['M12 10a5 5 0 01-6-6 5 5 0 106 6z', '#5E5CE6', 'Focus'],
+    ['M2 3h12v9H2zM5 14h6', '#5E5CE6', 'Screen Time'],
+    [
+        'M8 5a3 3 0 100 6 3 3 0 000-6zM8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M13 3l-1.5 1.5M4.5 11.5L3 13',
+        '#8E8E93',
+        'General',
+    ],
+    [
+        'M5 8V4a1 1 0 012 0v4M7 8V3a1 1 0 012 0v5M9 8V4a1 1 0 012 0v4M11 8v3a4 4 0 01-8 0V8',
+        '#007AFF',
+        'Privacy & Security',
+    ],
 ]
 const BODIES = [
     'Off',
@@ -114,9 +133,8 @@ function installStyles(): void {
             overscroll-behavior: contain; z-index: 1;
         }
         .acc-scroller::-webkit-scrollbar { display: none; }
-        .acc-spacer { height: 16px; }
         .acc-group {
-            position: relative; left: 16px; width: 358px;
+            position: relative; left: 16px; top: 16px; width: 358px;
             border-radius: 12px; background: #FFFFFF; overflow: hidden;
         }
         .acc-row {
@@ -131,9 +149,10 @@ function installStyles(): void {
         }
         .acc-icon {
             position: absolute; left: 16px; top: 9.5px; width: 29px; height: 29px;
-            border-radius: 7px; color: #FFFFFF; font: 600 16px/29px ${FONT};
-            text-align: center;
+            border-radius: 7px; color: #FFFFFF; display: flex; align-items: center;
+            justify-content: center;
         }
+        .acc-icon svg { width: 17px; height: 17px; }
         .acc-title {
             position: absolute; left: 61px; top: 13px; width: 240px;
             font: 400 17px/22px ${FONT}; letter-spacing: -0.41px; color: #000;
@@ -224,7 +243,17 @@ function Row({ i, open, record }: RowProps): React.ReactElement {
                 aria-expanded={open}
             >
                 <span className="acc-icon" style={{ background: color }}>
-                    {glyph}
+                    <svg
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d={glyph} />
+                    </svg>
                 </span>
                 <span className="acc-title">{label}</span>
                 <svg className="acc-chev" viewBox="0 0 8 13" aria-hidden="true">
@@ -302,7 +331,6 @@ function AccBody({
                 <div className="acc-nav-title">Settings</div>
             </div>
             <div className="acc-scroller" data-scroller="">
-                <div className="acc-spacer" />
                 <div className="acc-group" data-group="">
                     {rows}
                 </div>
@@ -368,6 +396,7 @@ class AccRuntime {
     frame = 0
     private readonly offDiagnostic: () => void
     private readonly record: (key: string, element: HTMLElement) => void
+    private readonly control: string | undefined
 
     constructor(options: {
         mc: ManualClock | null
@@ -379,6 +408,7 @@ class AccRuntime {
         this.mc = options.mc
         this.builder = options.builder
         this.elements = options.elements ?? new Map()
+        this.control = options.control
         this.tracker = options.builder ? reportTracker(options.builder) : null
         this.offDiagnostic = layoutRuntime.onDiagnostic((event) => {
             this.diagnostics.push(event.code)
@@ -391,10 +421,10 @@ class AccRuntime {
         })
         for (const key of KEYS) this.elements.set(key, null)
         this.record = (key, element) => {
+            this.elements.set(key, element)
             if (!this.builder) return
             this.builder.mount(key, element)
             this.builder.initial(key, element)
-            this.elements.set(key, element)
         }
         this.stage = document.createElement('div')
         this.stage.className = 'acc-stage'
@@ -458,10 +488,13 @@ class AccRuntime {
             // 43 participant style reads + 4 support/anchoring reads per
             // commit, audited by the DOM read counter (2026-10-29).
             stylesExpected: isWebKitEngine() ? 82 : 47,
-            run: () =>
-                control.update(() => {
+            run: () => {
+                if (this.control === 'acc-extra-read')
+                    document.body.getBoundingClientRect()
+                return control.update(() => {
                     setOpen(rows)
-                }),
+                })
+            },
         })
         this.builder!.record('flush', this.frame, label)
         this.tracker!.track(label, result.promise, () => this.frame)
@@ -547,6 +580,11 @@ export class AccScene {
                 await stepAcc(mc, builder, runtime)
             }
             await microtasks()
+            if (options.control === 'acc-leftover-pose') {
+                elements
+                    .get('row-0')
+                    ?.style.setProperty('translate', '0.5px 0px', 'important')
+            }
             await stepAcc(mc, builder, runtime)
             builder.settleFrames.push(runtime.frame)
             const final = finalState({

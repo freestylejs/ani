@@ -51,7 +51,6 @@ import { HomeIndicator, IosStatus } from './react_kit.tsx'
 
 const ROW = 78
 const SCROLL_TOP = 1000
-const LIST_TOP = 143
 const STATIC_BEFORE = 9
 const PARTICIPANTS = 13
 const NEW = 3
@@ -490,9 +489,9 @@ class InsertRuntime {
         })
         for (const key of KEYS) this.elements.set(key, null)
         this.record = (key, element) => {
+            this.elements.set(key, element)
             if (!this.builder) return
             this.builder.mount(key, element)
-            this.elements.set(key, element)
         }
         this.stage = document.createElement('div')
         this.stage.className = 'mail-stage'
@@ -589,7 +588,11 @@ class InsertRuntime {
             audit: this.audit,
             // The audited engine set is pinned after the first measurement.
             stylesExpected: isWebKitEngine() ? 29 : 16,
-            run: () => control.update(run),
+            run: () => {
+                if (this.control === 'insert-extra-read')
+                    document.body.getBoundingClientRect()
+                return control.update(run)
+            },
         })
         this.builder!.record('flush', this.frame, label)
         this.tracker!.track(label, result.promise, () => this.frame)
@@ -690,6 +693,11 @@ export class InsertScene {
                 await stepInsert(mc, builder, runtime)
             }
             await microtasks()
+            if (options.control === 'insert-leftover-pose') {
+                elements
+                    .get('row-9')
+                    ?.style.setProperty('translate', '0.5px 0px', 'important')
+            }
             await stepInsert(mc, builder, runtime)
             builder.settleFrames.push(runtime.frame)
             if (Math.abs(runtime.scrollOffset() - SCROLL_TOP) > 0.01) {

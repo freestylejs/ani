@@ -47,7 +47,6 @@ import {
 const CELL = 128.66666666666666
 const GAP = 2
 const PITCH = CELL + GAP
-const GRID_WIDTH = 390
 const CONTENT_HEIGHT = 100 * CELL + 99 * GAP
 const SCROLL_TOP = 1077
 const SELECTED = 37
@@ -146,8 +145,9 @@ function installStyles(): void {
         .photo-toolbar {
             position: absolute; left: 0; bottom: 34px; width: 390px; height: 50px;
             display: flex; align-items: center; justify-content: center; gap: 44px;
-            color: #FFFFFF; z-index: 20; font: 400 20px/24px ${FONT};
+            color: #FFFFFF; z-index: 20;
         }
+        .photo-toolbar svg { width: 22px; height: 22px; }
         .photo-chrome { opacity: 0; }
     `
     )
@@ -432,12 +432,10 @@ class PhotoRuntime {
             if (this.builder) {
                 participant(this.builder, key, element, false)
             }
+            if (index === SELECTED) return
             const remove = this.group.add(element, {
                 layout: true,
                 radius: false,
-                ...(index === SELECTED
-                    ? { layoutId: 'photo-37-frame', layoutCrossfade: false }
-                    : {}),
             })
             this.removers.set(key, remove)
         })
@@ -450,6 +448,29 @@ class PhotoRuntime {
                 false
             )
         }
+        if (this.builder) {
+            this.builder.mount('detail-frame', this.layer.frame)
+            this.builder.mount('detail-image', this.layer.image)
+        }
+    }
+
+    private detailRegistered = false
+
+    /**
+     * The selected cell and its image carry the only layoutIds in the grid.
+     * They join after the initial scroll, so the scroll's event never meets
+     * the engine's active-scroller listeners (WebKit 2203 has no scrollend).
+     */
+    mountSelected(): void {
+        this.removers.set(
+            'cell-37',
+            this.group.add(this.layer.cell37, {
+                layout: true,
+                layoutId: 'photo-37-frame',
+                layoutCrossfade: false,
+                radius: false,
+            })
+        )
         this.removers.set(
             'cell-37-image',
             this.group.add(this.layer.cellImage, {
@@ -459,13 +480,7 @@ class PhotoRuntime {
                 radius: false,
             })
         )
-        if (this.builder) {
-            this.builder.mount('detail-frame', this.layer.frame)
-            this.builder.mount('detail-image', this.layer.image)
-        }
     }
-
-    private detailRegistered = false
 
     open(): Promise<LayoutReport> | null {
         const layer = this.layer
@@ -482,9 +497,9 @@ class PhotoRuntime {
             radiusKeys: new Set(),
             typedOM: isWebKitEngine(),
             stats: () => this.group.stats,
-            stylesExpected: isWebKitEngine() ? 0 : 2,
-            run: () =>
-                this.group.update(() => {
+            stylesExpected: isWebKitEngine() ? 4 : 2,
+            run: () => {
+                const run = this.group.update(() => {
                     const index = [...layer.grid.childNodes].indexOf(
                         layer.cell37
                     )
@@ -533,7 +548,10 @@ class PhotoRuntime {
                     this.shadeSince = this.mc ? this.mc.now : performance.now()
                     this.shadeFrom = this.shade
                     layer.stage.classList.add('photo-light')
-                }),
+                })
+                if (this.control === 'photo-extra-read') this.group.capture()
+                return run
+            },
         })
         this.builder.record('flush', this.frame, 'open')
         this.tracker!.track('open', result.promise, () => this.frame)
@@ -745,17 +763,51 @@ class PhotoRuntime {
 }
 
 async function setScroll(scroller: HTMLElement, top: number): Promise<void> {
+    const before = scroller.scrollTop
     scroller.scrollTop = top
-    await new Promise<void>((resolve) => {
+    if (
+        Math.abs(before - top) < 0.01 &&
+        Math.abs(scroller.scrollTop - top) < 0.01
+    ) {
+        // The scroller is already at the scripted offset. No scroll event is
+        // pending, so there is no active scroll to wait for; an unconditional
+        // scrollend wait would hang in engines that only emit it on a scroll.
+        await nextFrame()
+        return
+    }
+    await new Promise<void>((resolve, reject) => {
         let done = false
         const finish = (): void => {
             if (done) return
             done = true
+            scroller.removeEventListener('scroll', onScroll)
             scroller.removeEventListener('scrollend', finish)
             resolve()
         }
-        scroller.addEventListener('scrollend', finish, { once: true })
-        window.setTimeout(finish, 250)
+        const onScroll = (): void => {
+            // WebKit 2203 has no scrollend; two frames after the last scroll
+            // event are the settle proof. The selected cell's layoutIds are
+            // not registered yet, so the engine has no active-scroller
+            // listener during this scroll.
+            requestAnimationFrame(() => requestAnimationFrame(finish))
+        }
+        scroller.addEventListener('scroll', onScroll)
+        if ('onscrollend' in window)
+            scroller.addEventListener('scrollend', finish, { once: true })
+        window.setTimeout(() => {
+            if (done) return
+            requestAnimationFrame(() => requestAnimationFrame(finish))
+        }, 100)
+        window.setTimeout(() => {
+            if (done) return
+            done = true
+            scroller.removeEventListener('scroll', onScroll)
+            reject(
+                new Error(
+                    's-photo: the scripted scroll did not settle; the handoff would be scroll-active'
+                )
+            )
+        }, 1000)
     })
     await nextFrame()
     if (Math.abs(scroller.scrollTop - top) > 0.01) {
@@ -810,6 +862,7 @@ export class PhotoScene {
         )
         await runtime.layer.decoded.decode().catch(() => undefined)
         await setScroll(runtime.layer.scroller, SCROLL_TOP)
+        runtime.mountSelected()
         for (const key of KEYS) {
             const element = elements.get(key)
             if (element?.isConnected) builder.initial(key, element)
@@ -845,6 +898,11 @@ export class PhotoScene {
                 await stepPhoto(mc, builder, runtime)
             }
             await microtasks()
+            if (options.control === 'photo-leftover-pose') {
+                elements
+                    .get('cell-0')
+                    ?.style.setProperty('translate', '0.5px 0px', 'important')
+            }
             await stepPhoto(mc, builder, runtime)
             builder.settleFrames.push(runtime.frame)
             const connected = KEYS.filter(
@@ -878,6 +936,7 @@ export class PhotoScene {
         )
         await runtime.layer.decoded.decode().catch(() => undefined)
         await setScroll(runtime.layer.scroller, SCROLL_TOP)
+        runtime.mountSelected()
         const commits: { label: string; at: number }[] = []
         try {
             await nextFrame()

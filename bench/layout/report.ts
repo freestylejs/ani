@@ -50,6 +50,8 @@ export interface RunSceneReport {
             readonly offsets: number
             readonly styles: number
             readonly frameReads: number
+            readonly presenceRects?: number | undefined
+            readonly presenceStyles?: number | undefined
         }[]
         readonly reports: readonly {
             readonly label: string

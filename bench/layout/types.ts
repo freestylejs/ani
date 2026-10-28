@@ -44,6 +44,8 @@ export interface Observation {
     readonly radii: Readonly<Record<string, readonly number[] | null>>
     readonly style: Readonly<Record<string, StyleSnapshot>>
     readonly font: Readonly<Record<string, string>>
+    /** Non-participant sample elements (e.g. an inner presence disc). */
+    readonly samples: Readonly<Record<string, string>>
     /** Participant key containing document.activeElement, or null. */
     readonly activeElementKey: string | null
 }
@@ -81,6 +83,9 @@ export interface CommitObservation {
     readonly stylesExpected: number
     readonly styleRadiusCapture: number
     readonly styleActiveFlush: number
+    /** Non-layout React presence reads excluded from the layout read gate. */
+    readonly presenceRects?: number | undefined
+    readonly presenceStyles?: number | undefined
 }
 
 export interface ReportObservation {
@@ -249,6 +254,16 @@ export interface PresenceOpacityTrack {
 }
 
 /** An authored translate (a gesture layer), linear in frame time. */
+export interface PresenceScaleTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly from: number
+    readonly to: number
+    readonly durationMs: number
+    readonly easing: 'linear' | 'ease-out' | 'ease-in'
+}
+
+/** An authored translate (a gesture layer), linear in frame time. */
 export interface AuthoredTranslateTrack {
     readonly key: string
     readonly startFrame: number
@@ -272,6 +287,15 @@ export interface ScenePlan {
     readonly authorStyleKeys?: readonly string[] | undefined
     readonly expectedDiagnostics?: readonly string[] | undefined
     readonly expectedOnSnap?: readonly string[] | undefined
+    /**
+     * A participant removed together with a crossfade follower (its DOM
+     * parent). The follower's removal proof covers the subtree; the harness
+     * checks the follower's inert and does not read the descendant's
+     * mid-exit pose as a restoration failure.
+     */
+    readonly removedWith?: Readonly<Record<string, string>> | undefined
+    /** Inner presence scale samples (computed transform). */
+    readonly presenceScale?: readonly PresenceScaleTrack[] | undefined
     /** Author opacity layers declared by the scene (presence/exit fades). */
     readonly presenceOpacity?: readonly PresenceOpacityTrack[] | undefined
     /** Authored gesture translations composed over the layout track. */

@@ -125,7 +125,7 @@ export interface CountTimeline {
 export function timelineValue(track: CountTimeline, now: number): number {
     if (now <= track.start) return track.from
     if (track.duration <= 0) return track.to
-    const p = (now - track.start) / track.duration
+    const p = (now - track.start) / (track.duration * 1000)
     return track.from + (track.to - track.from) * ease(track.curve)(p)
 }
 
@@ -203,6 +203,9 @@ export interface ReadCounts {
     readonly offsets: number
     readonly styles: number
     readonly typedOM: number
+    /** Reads made by React's popLayout presence probe (not the layout engine). */
+    readonly presenceRects: number
+    readonly presenceStyles: number
 }
 
 /**
@@ -218,6 +221,8 @@ export class ReadAudit {
     private heights = 0
     private styles = 0
     private typedOM = 0
+    private presenceRects = 0
+    private presenceStyles = 0
     private installed = false
     private restore: (() => void)[] = []
 
@@ -228,7 +233,10 @@ export class ReadAudit {
         Element.prototype.getBoundingClientRect = function (
             this: Element
         ): DOMRect {
-            if (auditRef.active) auditRef.rects += 1
+            if (auditRef.active) {
+                if (auditRef.inPresenceProbe()) auditRef.presenceRects += 1
+                else auditRef.rects += 1
+            }
             return rect.call(this)
         }
         for (const property of ['offsetWidth', 'offsetHeight'] as const) {
@@ -261,7 +269,10 @@ export class ReadAudit {
             element: Element,
             pseudo?: string | null
         ): CSSStyleDeclaration => {
-            if (auditRef.active) auditRef.styles += 1
+            if (auditRef.active) {
+                if (auditRef.inPresenceProbe()) auditRef.presenceStyles += 1
+                else auditRef.styles += 1
+            }
             return realGetComputedStyle(element, pseudo ?? undefined)
         }) as typeof window.getComputedStyle
         this.restore.push(() => {
@@ -292,6 +303,8 @@ export class ReadAudit {
         this.heights = 0
         this.styles = 0
         this.typedOM = 0
+        this.presenceRects = 0
+        this.presenceStyles = 0
         this.active = true
     }
 
@@ -302,7 +315,25 @@ export class ReadAudit {
             offsets: Math.min(this.widths, this.heights),
             styles: this.styles,
             typedOM: this.typedOM,
+            presenceRects: this.presenceRects,
+            presenceStyles: this.presenceStyles,
         }
+    }
+
+    /**
+     * Whether the read comes from React's `popBox`/`containsAbsolute`/`ownMap`
+     * presence probe. Those functions are in the bundled presence module; the
+     * layout engine never calls them. The classification is audited by the
+     * presence counters recorded on every commit.
+     */
+    inPresenceProbe(): boolean {
+        const stack = new Error().stack
+        if (!stack) return false
+        return (
+            stack.includes('popBox') ||
+            stack.includes('containsAbsolute') ||
+            stack.includes('ownMap')
+        )
     }
 
     dispose(): void {
@@ -344,6 +375,8 @@ export interface CommitOptions {
         | undefined
     /** Exact computed reads for this commit, when the default formula is not it. */
     readonly stylesExpected?: number | undefined
+    /** The exact number of participants measured in the flush. */
+    readonly activeFlush?: number | undefined
 }
 
 export interface CommitResult {
@@ -374,16 +407,13 @@ export function recordCommit(options: CommitOptions): CommitResult {
     let offsets: number
     let styles: number
     if (auditCounts) {
-        rects = Math.max(
-            0,
-            auditCounts.rects - (options.excludeReads?.rects ?? 0)
-        )
+        rects = Math.max(0, auditCounts.rects - auditCounts.presenceRects)
         offsets = auditCounts.offsets
         styles = Math.max(
             0,
             auditCounts.styles +
                 auditCounts.typedOM -
-                (options.excludeReads?.styles ?? 0)
+                auditCounts.presenceStyles
         )
     } else if (statsBefore && options.stats) {
         const statsAfter = options.stats()
@@ -424,7 +454,13 @@ export function recordCommit(options: CommitOptions): CommitResult {
             options.stylesExpected ??
             expectedStyles(radiusCapture, nAfter, typedOM),
         styleRadiusCapture: radiusCapture,
-        styleActiveFlush: nAfter,
+        styleActiveFlush: options.activeFlush ?? nAfter,
+        ...(auditCounts
+            ? {
+                  presenceRects: auditCounts.presenceRects,
+                  presenceStyles: auditCounts.presenceStyles,
+              }
+            : {}),
     })
     return { promise, radiusCapture, nBefore, nAfter }
 }
@@ -484,7 +520,6 @@ export interface FrameCounter {
 /** One recorded manual frame, with steady-frame reads accounted. */
 export function frameRunner(options: FrameOptions): FrameCounter {
     let frame = 0
-    let stats = options.group?.stats
     return {
         get frame() {
             return frame
@@ -517,7 +552,6 @@ export function frameRunner(options: FrameOptions): FrameCounter {
             await Promise.resolve()
             options.author(options.clock.now)
             options.builder.record('frame', frame)
-            stats = options.group?.stats
         },
     }
 }
