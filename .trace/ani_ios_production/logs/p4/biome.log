@@ -279,7 +279,7 @@ tests/browser/waapi_trace_page.ts:38:40 lint/style/noMagicNumbers ━━━━�
   
 
 The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
-Diagnostics not shown: 7211.
-Checked 450 files in 313ms. No fixes applied.
+Diagnostics not shown: 7218.
+Checked 450 files in 346ms. No fixes applied.
 Found 10 warnings.
-Found 7221 infos.
+Found 7228 infos.
