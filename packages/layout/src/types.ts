@@ -154,6 +154,7 @@ export type LayoutDiagnosticCode =
     | 'runtime-disabled'
     | 'focus-in-follower'
     | 'drive-rejected'
+    | 'reduced-no-fit'
     | 'callback-error'
     | 'internal-error'
     // codes may be added; existing meanings are stable
