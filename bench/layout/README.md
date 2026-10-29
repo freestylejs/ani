@@ -341,15 +341,16 @@ than browser controls; the mapping is one control per deciding metric.
   WebKit S-BULK is blocked because its 1 ms timer makes G9/G10/G11
   non-deciding. No threshold was changed.
 - **Iteration 3 (H17) moves the Chromium commit gate to pass and leaves G11
-  structural.** Five-run medians are G9 1.963× unscrolled and 1.963× scrolled
-  (floor 2.84–2.94 ms; exact audits; zero steady reads), G10 0.930 ms, G13
-  exact. G11 is 8.045 ms; the audited floor itself is 2.84–2.94 ms per commit
-  and a direct 300-commit floor run measured p95 3.215 ms, so the absolute
-  2 ms sustained ceiling is below the required work. A floor-relative owner
+  structural.** Five-run medians are G9 1.945× unscrolled and 1.932× scrolled
+  (floor 2.87–2.93 ms; exact audits; zero steady reads), G10 0.530 ms, G13
+  exact. G11 is 9.035 ms (8.045 ms on an earlier, quieter run); the audited
+  floor itself is 2.87–2.93 ms per commit and a direct 300-commit floor run
+  measured p95 3.215 ms, so the absolute 2 ms sustained ceiling is below the
+  required work. A floor-relative owner
   amendment is proposed in
   `.trace/ani_ios_production/evidence/h17/g11_floor_amendment_proposal.md`; it
   is not applied and G11 is not claimed as a pass. The Chromium cost values are
-  advisory on this host (load 1.55), so certification still requires a quiet
+  advisory on this host (load 3.92), so certification still requires a quiet
   run. See `ITERATIONS.md` iteration 3.
 - Chromium G9 is measured with the audited floor including §4.3 computed reads;
   Chromium G11 is measured per 60 Hz commit, and its five measured cadences are
