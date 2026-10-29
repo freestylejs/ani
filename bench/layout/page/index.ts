@@ -1,3 +1,4 @@
+import type { VariantRunOptions } from '../types.ts'
 import {
     runCostShapes,
     runFloorAudit,
@@ -17,8 +18,11 @@ import { SheetScene } from './scenes/s_sheet.ts'
 import { StackScene } from './scenes/s_stack.ts'
 
 interface BenchScene {
-    runManual(options?: { control?: string }): Promise<unknown>
-    runReal(): Promise<unknown>
+    runManual(options?: {
+        control?: string
+        variant?: VariantRunOptions
+    }): Promise<unknown>
+    runReal(options?: { variant?: VariantRunOptions }): Promise<unknown>
     demo(): Promise<void>
 }
 

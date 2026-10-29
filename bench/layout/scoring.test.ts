@@ -444,12 +444,7 @@ test('negative control G12: 0.11 ms per held element fails', () => {
         heldIncrementalGate([0.51, 0.51], [0.4, 0.4], 1, 0.01).pass,
         false
     )
-    const negative = heldIncrementalGate(
-        [0.2, 0.2],
-        [0.5, 0.5],
-        1,
-        0.01
-    )
+    const negative = heldIncrementalGate([0.2, 0.2], [0.5, 0.5], 1, 0.01)
     assert.equal(negative.pass, true)
     assert.ok(negative.value < 0)
     assert.match(negative.detail ?? '', /baseline p95/)
@@ -805,4 +800,56 @@ test('N15-01: post-removal evidence proves owned declarations restored', () => {
         },
     ]
     assert.equal(metric(scoreScene(plan, proven), 'G6').pass, true)
+})
+
+test('H20 jump: a pair is scored at the completed fade endpoint', () => {
+    const plan = copy(basePlan())
+    ;(plan as unknown as { pairs: unknown[] }).pairs = [
+        {
+            id: 'today-title',
+            startFrame: 0,
+            lead: 'pill',
+            follower: 'pill2',
+            radiusFrom: 20,
+            radiusTo: 0,
+            reducedJump: true,
+        },
+    ]
+    ;(plan.initial as Record<string, Box>).pill2 = START
+    ;(plan.mounts as Record<string, StyleSnapshot>).pill2 = EMPTY_STYLE
+    ;(plan.commits[0] as unknown as { segments: SegmentPlan[] }).segments = [
+        { key: 'pill', kind: 'none', to: MID, reducedJump: true },
+        {
+            ...segment('pill2', MID),
+            kind: 'none',
+            handoffFrom: 'pill',
+            reducedJump: true,
+        },
+    ]
+    ;(plan.commits[1] as unknown as { segments: SegmentPlan[] }).segments = [
+        { key: 'pill', kind: 'none', to: END, reducedJump: true },
+    ]
+    ;(plan as unknown as { reducedMotion?: string }).reducedMotion = 'jump'
+    const trace = copy(makeTrace(plan))
+    for (const observation of trace.observations) {
+        if (!observation.connected.includes('pill')) continue
+        ;(observation.connected as string[]).push('pill2')
+        ;(observation.boxes as Record<string, Box>).pill2 =
+            observation.boxes.pill!
+        ;(observation.opacity as Record<string, number>).pill = 1
+        ;(observation.opacity as Record<string, number>).pill2 = 0
+        ;(observation.radii as Record<string, number[] | null>).pill = [
+            0, 0, 0, 0, 0, 0, 0, 0,
+        ]
+        ;(observation.radii as Record<string, number[] | null>).pill2 = [
+            0, 0, 0, 0, 0, 0, 0, 0,
+        ]
+        ;(observation.style as Record<string, StyleSnapshot>).pill2 = {
+            ...EMPTY_STYLE,
+            inert: '',
+        }
+    }
+    const score = scoreScene(plan, trace)
+    assert.equal(shape(score, 'shape.opacity').pass, true)
+    assert.equal(shape(score, 'shape.radius').pass, true)
 })

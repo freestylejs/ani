@@ -151,9 +151,25 @@ export interface HoldEvidence {
     readonly killSwitch?: KillSwitchEvidence | undefined
 }
 
+/** A support variant run (H19): a DPR sweep or a reduced-motion policy. */
+export type VariantId = 'dpr1' | 'dpr3' | 'rm-jump' | 'rm-max' | 'rm-ignore'
+
+export interface VariantRunOptions {
+    readonly id: VariantId
+    readonly kind: 'dpr' | 'reduced'
+    /** Device scale factor for a DPR variant; 2 for the primary run. */
+    readonly dpr: number
+    /** The group policy; null for a DPR variant. */
+    readonly policy: 'jump' | 'maxDuration' | 'ignore' | null
+    /** Whether the injected clock prefers reduced motion. */
+    readonly reducedPreference: boolean
+}
+
 export interface SceneTrace {
     readonly scene: string
     readonly mode: 'manual'
+    /** The support variant, when this trace is a variant run. */
+    readonly variant?: VariantId | undefined
     readonly stepMs: number
     readonly observations: readonly Observation[]
     readonly commits: readonly CommitObservation[]
@@ -309,6 +325,22 @@ export interface SegmentPlan {
     readonly toFromB?: { readonly dx: number; readonly dy: number } | undefined
     /** A presence exit is not a layout retarget; exclude it from G3. */
     readonly presenceExit?: boolean | undefined
+    /**
+     * Reduced-motion variants only: the §9.4 clamp chose the carried-velocity
+     * pass (true) or the from-rest retry (false). Unset on primary tracks.
+     */
+    readonly reducedCarry?: boolean | undefined
+    /**
+     * Reduced-motion `'jump'`: the flush lands at `to` (the policy's target),
+     * not at the last presented box. G2/G3/G4 are policy rows, not track gates.
+     */
+    readonly reducedJump?: boolean | undefined
+    /**
+     * A crossfade follower under `'jump'` is invisible (opacity 0) until
+     * presence unmounts it. Its drawn box is held at the presented box B; the
+     * policy's visible result is the lead at A.
+     */
+    readonly reducedHoldFrom?: boolean | undefined
 }
 
 export interface CommitPlan {
@@ -337,6 +369,8 @@ export interface PairPlan {
     readonly radiusFrom?: number | undefined
     readonly radiusTo?: number | undefined
     readonly reversal?: boolean | undefined
+    /** `'jump'` finishes the crossfade at the lead endpoint immediately. */
+    readonly reducedJump?: boolean | undefined
 }
 
 export interface RestorationCheck {
@@ -452,6 +486,10 @@ export interface ScenePlan {
      * other scene may use it, and the requiredRestorations proof must exist.
      */
     readonly allowEmptyFinal?: boolean | undefined
+    /** The support variant this plan scores (`H19`). */
+    readonly reducedMotion?: 'jump' | 'maxDuration' | 'ignore' | undefined
+    /** The `{ maxDuration }` policy value in seconds. */
+    readonly maxDuration?: number | undefined
 }
 
 /* ───────────────────────── cost shapes ───────────────────────── */

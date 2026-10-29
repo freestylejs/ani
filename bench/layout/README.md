@@ -34,7 +34,7 @@ pnpm install --frozen-lockfile --offline
 # the P2/P3 scene set and the S-BULK cost shapes, in Chromium and WebKit
 pnpm bench:layout
 
-# what the checkpoint reviews: the same run plus all seven self-test files and
+# what the checkpoint reviews: the same run plus all eight self-test files and
 # every browser negative control
 pnpm bench:layout --check
 
@@ -48,12 +48,18 @@ pnpm bench:layout --engine chromium --scene s-sheet --runs 1
 pnpm bench:layout --engine chromium --scene s-bulk --runs 1
 pnpm bench:layout --engine chromium --scene cost --runs 1
 
+# H19 support variants: DPR 1/3 and reduced motion. The default is every
+# variant applicable to the selected scenes; select a subset while iterating.
+pnpm bench:layout --engine chromium --scene s-photo --variant dpr3 --runs 1
+pnpm bench:layout --engine chromium --scene s-card --variant rm-jump --runs 1
+pnpm bench:layout --engine webkit --scene s-acc --variant rm-max --runs 1
+
 # write elsewhere, compare a previous report
 pnpm bench:layout --out bench/layout/results/iter-1.json
 pnpm bench:layout --compare bench/layout/results/iter-0.json
 
 # the pure harness tests alone (oracle, scoring, stats, sampler, aggregation,
-# certification, cost validity)
+# certification, cost validity, variants)
 pnpm test:bench-layout
 ```
 
@@ -63,7 +69,9 @@ negative controls; it exits `1` if any conclusive control does not fail its
 target gate. `--engine` is repeatable; the default is Chromium and WebKit.
 `--scene` accepts `s-card`, `s-seg`, `s-photo`, `s-stack`, `s-acc`,
 `s-insert`, `s-island`, `s-delete`, `s-reorder`, `s-sheet`, `s-bulk`, `cost`
-and globs. `--runs` is the number of
+and globs. `--variant` accepts `dpr1`, `dpr3`, `rm-jump`, `rm-max`,
+`rm-ignore` and is repeatable; the default is every variant applicable to the
+selected scenes. `--runs` is the number of
 measured runs (default 5); one warm-up process is always discarded first.
 Certification requires exactly 5, both engines and all required scenes; a
 `--runs 1`, single-engine or single-scene run is an invocation only. `pass` is
@@ -117,10 +125,11 @@ gitignored; the files are generated from the current source on every run.
   "advisory": { "cost": true, "reasons": ["1-minute load is 2.39, pinned below 1"] },
   "certification": {
     "certified": false,
-    "reasons": ["cost fingerprint is advisory", "blocked chromium scene s-reorder: G12 ...", "blocked chromium scene s-sheet: G12 ...", "blocked webkit scene s-reorder: G12 ...", "blocked webkit scene s-sheet: G12 ...", "blocked webkit scene s-bulk: G8 ...", "blocked webkit S-BULK cost: timer ...", "blocked DPR 1/3 sweep: P5c BLOCK", "blocked reduced-motion variants: P5c BLOCK", "blocked G12 baseline-subtracted: D11/H17c ...", "chromium S-BULK G11 6.465 failed"],
+    "reasons": ["cost fingerprint is advisory", "chromium variant s-card@rm-jump fail (failed G6 ...)", "chromium variant s-card@rm-max fail (failed G1 ...)", "webkit variant s-reorder@rm-jump fail (G8 3 ...)", "chromium S-BULK G11 2.131 failed"],
     "requiredEngines": ["chromium", "webkit"],
     "requiredRuns": 5,
-    "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"]
+    "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"],
+    "requiredVariants": ["s-card@dpr1", "s-card@dpr3", "...", "s-sheet@rm-ignore"]
   },
   "engines": [
     {
@@ -133,6 +142,21 @@ gitignored; the files are generated from the current source on every run.
           "metrics": [ /* AggregateMetric: G1..G8, G13 */ ],
           "shape": [ /* AggregateMetric: opacity, coverage, radius, inert, font, teardown */ ],
           "runs": [ /* per-run metrics, shape, worst frame/participant, real-clock G8, commit reads */ ],
+          "notes": []
+        }
+      ],
+      "variants": [
+        {
+          "scene": "s-card@rm-jump",
+          "variant": {
+            "id": "rm-jump", "scene": "s-card", "kind": "reduced",
+            "dpr": 2, "reducedMotion": "jump",
+            "label": "s-card reduced-motion jump"
+          },
+          "status": "fail", "pass": false,
+          "metrics": [ /* the same G1..G8/G13 rows */ ],
+          "shape": [ /* …, including shape.reduced-policy */ ],
+          "runs": [ /* per-run traces */ ],
           "notes": []
         }
       ],
@@ -152,16 +176,15 @@ gitignored; the files are generated from the current source on every run.
   "selfTests": { "pass": true, "controls": ["negative control G1: ..."],
                  "files": ["oracle.test.ts", "scoring.test.ts", "stats.test.ts",
                            "frame_sampler.test.ts", "aggregate.test.ts",
-                           "certification.test.ts", "cost_validity.test.ts"],
+                           "certification.test.ts", "cost_validity.test.ts",
+                           "variants.test.ts"],
                  "detail": "..." },
   "pending": [],
   "blocked": [
-    { "item": "chromium scene s-reorder", "reason": "G12 (D11/H17c unavailable)" },
-    { "item": "chromium scene s-sheet", "reason": "G12 (D11/H17c unavailable)" },
-    { "item": "webkit scene s-bulk", "reason": "G8 (1 ms-quantized)" },
-    { "item": "G12 baseline-subtracted", "reason": "D11/H17c harness not yet available" },
-    { "item": "DPR 1/3 sweep", "reason": "P5c BLOCK: not run in this iteration" },
-    { "item": "reduced-motion variants", "reason": "P5c BLOCK: not run in this iteration" }
+    { "item": "chromium variant s-card@rm-jump", "reason": "G6 3 (sheet); shape.inert 6" },
+    { "item": "chromium variant s-card@rm-max", "reason": "G1 226.7 (sheet-content); G4 196.6 (card-title)" },
+    { "item": "webkit variant s-card@rm-jump", "reason": "G6 3 (sheet); shape.inert 6" },
+    { "item": "webkit variant s-card@rm-max", "reason": "G1 226.7 (sheet-content); G4 196.6 (card-title)" }
   ],
   "pass": false
 }
@@ -311,13 +334,13 @@ of 300 commits. G12 is BLOCK on WebKit for the same timer reason. No quantized
 WebKit ratio is reported as a measured failure. The authority's
 20-frame mean is **not claimed** on WebKit: the harness reports raw quantized
 per-frame samples with the ±g/2 bound and marks the cost/G12 result BLOCK.
-DPR 1/3 and the reduced-motion variants are P5c **BLOCK** in this iteration
-(the top-level `blocked` list and certification reasons name them); the DPR 2
-primary run is the certification run.
+DPR 1/2/3 and the reduced-motion variants are H19 support rows (see the H19
+section): DPR 2 remains the primary certification run, and the DPR 1/3 and
+policy runs are scored separately with the same gates.
 
 ## Negative controls
 
-The self-tests in all seven files run by `test:bench-layout` feed deliberately
+The self-tests in all eight files run by `test:bench-layout` feed deliberately
 broken traces and assert each gate fails. The certification input consumes the
 result of the whole suite, not only oracle/scoring:
 
@@ -336,6 +359,8 @@ result of the whole suite, not only oracle/scoring:
 | sustained p95 > 2 ms | G11 |
 | 0.11 ms per held element; an extra rect in a 10-held frame | G12 (unit); G13-held (browser `held-extra-read`) |
 | extra rect / steady-frame read | G13 |
+| DPR 1/3 variant: the primary scene control at DPR 1/3 | G1/G6 (same gate, same oracle) |
+| reduced-motion variant: ignore/unclamp the policy | G1 (the variant's endpoint/curve misses) |
 | load or build mismatch | G14 advisory (not a frame gate) |
 | broken opacity, coverage, radius, inert, focus, font | shape checks |
 
@@ -370,6 +395,12 @@ Browser controls are run by `--check`, once per engine, through the real page:
   (G13), leave a 0.5 px pose after settle (G6).
 - Cost held shape: a 10-held frame with an extra rect read fails G13-held; the
   G12 unit control is 0.11 ms per held element.
+- H19 variant controls, run at their own variant (DPR or reduced policy):
+  `dpr1-card-no-image-id` (G1), `dpr3-photo-no-counter-scale` (G1),
+  `dpr1-acc-separator-1px` (G1), `dpr3-seg-leftover-pose` (G6),
+  `rm-jump-card-policy-ignored` and `rm-jump-photo-policy-ignored` (G1),
+  `rm-max-acc-unclamped` (G1), `rm-jump-reorder-policy-ignored` (G1),
+  `rm-max-sheet-unclamped` (G1), `rm-ignore-photo-jump` (G1).
 - S-PHOTO: leftover pose on `cell-0` (G6), extra rect read (G13).
 - S-ACC: leftover pose on `row-0` (G6), extra rect read in the commit (G13).
 - S-INSERT: leftover pose on `row-9` (G6), extra rect read (G13).
@@ -562,10 +593,9 @@ same public engine surface.
   a crossfade follower is exempt from the last-frame owned-declaration check
   (the follower's removal and inert proof cover it). The earlier G6 failure was
   a harness false positive, not an engine or geometry defect.
-- DPR 1/3 and the reduced-motion variants are **P5c BLOCK**: they are not run
-  in this iteration and are listed in the report's top-level `blocked` list
-  and the certification reasons. The DPR 2 primary run is the certification
-  run.
+- DPR 1/2/3 and the reduced-motion variants are H19 support rows; DPR 2 is
+  still the primary certification run. See the H19 section for the measured
+  variant table and the two S-CARD reduced-motion engine findings.
 - Firefox 1490 is advisory and times out on launch on this macOS 27
   instrument (D9 exception).
 
@@ -612,7 +642,7 @@ The S-REORDER title is a nested position participant; the held row and its
 title are the direct-manipulation pair. The row's inline `top` and the DOM
 order change inside each reorder commit; the title's local box is fixed.
 
-**Tooling honesty.** Biome reports **810 infos, 0 errors, 0 warnings** on
+**Tooling honesty.** Biome reports **963 infos, 0 errors, 0 warnings** on
 `bench/layout` (the infos are the repository's baseline `noMagicNumbers` /
 naming diagnostics). This is not a clean biome report and is not claimed as
 one; `tsc` and `test:bench-layout` are clean.
@@ -648,6 +678,86 @@ The 2026-10-29 clarifications resolve the release/status rows:
 The old iteration-6/7/8 failure values remain in `ITERATIONS.md` as history;
 they are not the current H18-base result.
 
+## H19 — DPR 1/2/3 and reduced-motion support variants
+
+The §11.6 support rows are now first-class `engine.variants` reports, scored by
+the same plan/oracle/gates as the primary scene:
+
+- **DPR 1/3** for S-CARD, S-PHOTO, S-ACC and S-SEG. Only the browser context's
+  `deviceScaleFactor` changes; the authored CSS layout, the scene script, the
+  oracle tolerance and the gates are unchanged. DPR 2 remains the primary
+  certification run and is reported by the scene row.
+- **Reduced motion** for S-CARD, S-PHOTO, S-ACC, S-REORDER and S-SHEET:
+  `'jump'`, `{ maxDuration: 0.2 }` and `'ignore'` (the last with the injected
+  clock preference true, so the policy, not the preference, decides). The
+  variant plan re-derives the §9.4 grid with the independent oracle: the
+  largest factor of `{1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1}` whose
+  `delay·f + T_s(D·f, x₀, v₀)` fits 0.2 s, carry pass first then from rest,
+  bounce clamped to ≤ 0. `'jump'` rewrites every planned track to its endpoint
+  A, finishes the crossfade endpoint, and reports `'reduced'` with the snapped
+  `reduced` set. A jump follower is invisible and held at its presented box B;
+  the lead, radius, coverage and inert state are the §1.10 endpoint.
+- `shape.reduced-policy` is the §9.4 outcome row: for `'jump'` every reduced
+  commit resolves at its own frame with status `reduced`; for
+  `{ maxDuration }` every report settles within the 0.2 s bound. G6 is the
+  restoration row. G2/G3/G4 are explicit policy rows on `'jump'` (there is no
+  track to be continuous about); G1, G5, G6, G7 and G13 remain measured.
+  G13's rect/pair/frame counts stay exact; under `'jump'` the §4.3 computed set
+  is policy-dependent and is reported as evidence with the exact count.
+- The controls are variant-scoped: `dpr1-card-no-image-id`,
+  `dpr3-photo-no-counter-scale`, `dpr1-acc-separator-1px`,
+  `dpr3-seg-leftover-pose`, `rm-jump-card-policy-ignored`,
+  `rm-jump-photo-policy-ignored`, `rm-max-acc-unclamped`,
+  `rm-jump-reorder-policy-ignored`, `rm-max-sheet-unclamped` and
+  `rm-ignore-photo-jump`. Each fails its target at the variant, proving the
+  variant oracle is not a pass-by-construction.
+- Certification requires all 23 variant keys (8 DPR + 15 reduced) in both
+  engines in addition to the 11 primary scenes and the cost scene. A missing
+  or failed variant is a certification reason; a WebKit variant blocked only
+  on the 1 ms G12 timer is a D12 advisory, exactly like the scene/cost rows.
+
+### H19 measured outcome (`iteration-10/report.json`, five runs)
+
+- **DPR 1/2/3.** All 8 DPR support variants pass in both engines. Worst G1
+  edge at the fractional boxes: S-CARD 0.0013 px at DPR 1/3 (frame 102,
+  `card-title` left, Chromium), S-PHOTO 0.0002 px (frame 44, `detail-image`
+  left), S-ACC 0.0002 px (frame 15, `body-6` bottom), S-SEG 0.0001 px (frame
+  17, `pill` right). DPR 2 is the primary row (worst S-CARD 0.0013, S-PHOTO
+  0.0002, S-ACC 0.0002, S-SEG 0.0001). G13 is exact in every DPR row: S-CARD
+  reverse 14/14 rects/pairs and 9/9 computed reads (Chromium) / 16/16
+  (WebKit); S-PHOTO 602/602 and 2/2 / 4/4; S-ACC 86/86 and 47/47 / 82/82;
+  S-SEG 2/2 and 2/2 / 3/3.
+- **Reduced motion.** S-PHOTO, S-ACC, S-REORDER and S-SHEET pass their
+  `'jump'`, `{ maxDuration: 0.2 }` and `'ignore'` variants in both engines,
+  apart from the D12 WebKit G12 advisories on S-REORDER/S-SHEET (and the
+  WebKit `s-reorder@rm-jump` G8 below). S-PHOTO/ACC G1/G4 are at most
+  0.0002 px; S-REORDER/S-SHEET G1/G4 at most 0.0001 px. `shape.reduced-policy`
+  passes 0 in every variant; G7 statuses and G6 restoration pass.
+- **S-CARD `'jump'` fails the §1.10 endpoint in both engines.** The primary
+  jump track is geometrically exact (G1/G13 pass), but the new crossfade does
+  not complete its fade: lead opacity is 0 (shape.opacity 1), the lead radius
+  stays at the departing 20 instead of the target (shape.radius 20), the
+  follower is not inert (shape.inert 6, frame 0) and it is removed without
+  `inert` (G6 3, `sheet` frame 2).
+- **S-CARD `{ maxDuration: 0.2 }` fails G1/G4 in both engines.** The
+  per-participant clamps choose different factors (surface 0.1, title 0.2);
+  the engine does not draw the follower and the counter-projected
+  `sheet-content` at the lead's clamped track. Worst: G1 226.734 px at frame
+  19 (`sheet-content` bottom), G4 196.630 px at frame 7 (`card-title`
+  bottom); Chromium and WebKit agree to <0.001 px.
+- **WebKit `s-reorder@rm-jump` G8.** Two of five measured runs p95 3 ms
+  (1 ms-quantized, 11 samples; no long frame). The primary S-REORDER G8 is
+  1 ms. This is a measured WebKit frame miss under load 10.24, not a gate
+  change; it is reported as a certification reason, not hidden.
+- **Controls.** 94 browser controls (47 per engine), all conclusive and ok;
+  the 10 new variant controls fail their targets as required.
+- **Certification.** `certified: false`: the four S-CARD reduced-motion
+  variant failures, the WebKit `s-reorder@rm-jump` G8, Chromium G11 2.131×,
+  the advisory cost fingerprint (load 10.24) and the resulting cost advisory.
+  G9 1.754/1.726×, G10 1.180 ms and G12 −0.225/−0.010 ms/held pass; G11 is
+  still open. No engine source file, gate, tolerance or oracle value was
+  changed; no P5 claim is made.
+
 ## Files
 
 | Path | Purpose |
@@ -662,6 +772,7 @@ they are not the current H18-base result.
 | `scoring.ts`, `scoring.test.ts` | per-frame gates, worst frame/participant, shape, negative controls |
 | `gates.ts` | cost gates and floor audit |
 | `scene_plans.ts` | scripted geometry/motion data for the oracle |
+| `variants.ts`, `variants.test.ts` | H19 DPR/reduced-motion variant plans and the §9.4 clamp |
 | `bundle.ts` | esbuild page bundle and viewable HTML |
 | `page/` | page-side recorder and the P2/P3/P4 scene pages; `page/scenes/` holds S-CARD, S-SEG, S-PHOTO, S-STACK, S-ACC, S-INSERT, S-ISLAND, S-DELETE, S-REORDER, S-SHEET, S-BULK and the kit |
 | `ITERATIONS.md` | iteration 0/1/2/3 evidence and root-cause hypotheses |

@@ -787,8 +787,9 @@ the same keep test applies (§10).
   closes), the pair keeps crossfading however little it moves. `from_L` is the opacity the new lead
   currently shows and `from_F` is the opacity the new follower currently shows: neither layer pops,
   no box jumps, and pair coverage cannot decrease from the reversal frame.
-- The follower is held at opacity 0 (where it was drawn when the fade ended) until presence
-  unmounts it, and presence's release waits for the crossfade to end (`p = 1`). Nothing pops back to
+- The follower draws at the lead's track until that track ends (the lead's clamped track under
+  `{ maxDuration }`, §9.4), then is held at opacity 0 at the lead's final A until presence unmounts
+  it, and presence's release waits for the crossfade to end (`p = 1`). Nothing pops back to
   opacity 1.
 - A lead retargeted during its crossfade (same lead, A moved) keeps the fade: its timeline, the
   follower's and the release stay one; the lead gives its opacity back when the fade ends, not when
@@ -1252,7 +1253,10 @@ A held phase is never affected. A mode toggled during a run applies at the next 
 tracks: `'jump'` finishes them; `maxDuration` re-plans them clamped from their presented box,
 carrying velocity under `'raf'` and starting at rest under WAAPI. A crossfade finished by `'jump'`
 ends as a completed fade: the lead gets its opacity back, and the exiting follower is held at
-opacity 0 (and `inert`) until presence unmounts it.
+opacity 0 (and `inert`) until presence unmounts it. Under `{ maxDuration }` the pair's clamped
+timeline is the lead's: the follower and the participants counter-projected through it draw at
+that track for the whole fade, so a per-participant clamp never moves a layer of the pair to a
+different timeline.
 
 ## 10. WAAPI engine (`engine: 'waapi'`)
 
@@ -1437,7 +1441,8 @@ the authority requires, in the same order and count, with plain DOM calls and no
 measured immediately before or after the engine fixture in the same process, with the same warm-up,
 discard and sample count. The run's statistic is
 `median(engine commit) / median(floor commit)`. The gate's value is the median of the 5 per-run
-ratios; it passes only when that value is ≤ 2 in Chromium and WebKit. The harness fails if the
+ratios; it passes only when that value is ≤ 2 in Chromium. WebKit cost rows are BLOCK/advisory
+under D12; WebKit frame/scoring rows still decide. The harness fails if the
 floor's audited read/write counts differ from §4.1/§4.3, or if the engine and floor fixtures differ
 in participant count or written properties.
 
@@ -1457,10 +1462,10 @@ mean of 20 consecutive frames timed as one interval. Percentiles are nearest-ran
 
 **Aggregation.** Per engine, one warm-up run is discarded, then 5 runs are measured, each in a fresh
 browser process. A gate's value is the median of the 5 per-run statistics (for the commit gate, the
-per-run ratio of the engine and floor medians), and it passes only when that value meets the gate in
-both required engines. The report lists every per-run statistic, the medians,
-`g` and the fingerprint, so an independent runner on the pinned environment reaches the same
-pass/fail with no parameter left to choose.
+per-run ratio of the engine and floor medians). Cost gates pass on Chromium; frame-scoring gates
+must pass in both required engines. WebKit cost rows remain BLOCK/advisory under D12. The report
+lists every per-run statistic, the medians, `g` and the fingerprint, so an independent runner on the
+pinned environment reaches the same pass/fail with no parameter left to choose.
 
 ### 11.6 The iOS-grade scene set (P5)
 
