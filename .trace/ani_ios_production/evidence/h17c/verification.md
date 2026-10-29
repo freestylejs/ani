@@ -33,18 +33,20 @@ block.
 
 ## Final reports
 
-`bench/layout/iteration-9/chromium.json` and `webkit.json`, five runs each,
-`sourceRevision` `66c2a94d13dbb7b69bec751dbd88fcb802fd64d2`.
+`bench/layout/iteration-9/report.json`, one combined five-run report for both
+engines with controls/self-tests, `sourceRevision`
+`8939234d04f02157c4eb11a33de8a84f7d74217c`.
 
-Chromium (all 11 scenes pass; load 5.78, advisory):
+Chromium (all 11 scenes pass; combined load 5.42, advisory):
 
-- G9 1.823× unscrolled pass / 1.796× scrolled pass; floor audits exact.
-- G10 0.980 ms pass.
-- G11 2.118× FAIL (per-run 2.096/2.621/2.104/2.151/2.118); G11.floor exact.
-- G12-1 −0.170, G12-10 −0.004 incremental ms/held pass.
+- G9 1.687× unscrolled / 1.661× scrolled pass; floor audits exact.
+- G10 1.120 ms pass.
+- G11 2.015× FAIL (per-run 1.977/2.054/2.015/1.979/2.299); G11.floor exact.
+- G12-1 −0.030, G12-10 0.0015 incremental ms/held pass; negative
+  increments are accepted as signed measurements.
 - G13/G13-held exact.
 
-WebKit (load 5.84, cost BLOCK due the 1 ms timer):
+WebKit (combined load 5.42, cost BLOCK due the 1 ms timer):
 
 - S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE,
   S-BULK pass.
@@ -67,8 +69,8 @@ WebKit (load 5.84, cost BLOCK due the 1 ms timer):
 
 ## Residual risks
 
-1. G11 is 2.118× in the final five-run report; the cost is advisory
-   (load 5.78), and G11 remains open. No performance-complete claim.
+1. G11 is 2.015× in the final combined five-run report; cost is advisory
+   (load 5.42), and G11 remains open. No performance-complete claim.
 2. WebKit G9/G11/G12 are undecidable with the 1 ms timer under the required
    protocol.
 3. WebKit S-REORDER/S-SHEET G12 cost rows are BLOCK/advisory under D12;
