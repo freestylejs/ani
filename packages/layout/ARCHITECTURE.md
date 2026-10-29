@@ -1441,7 +1441,8 @@ the authority requires, in the same order and count, with plain DOM calls and no
 measured immediately before or after the engine fixture in the same process, with the same warm-up,
 discard and sample count. The run's statistic is
 `median(engine commit) / median(floor commit)`. The gate's value is the median of the 5 per-run
-ratios; it passes only when that value is ≤ 2 in Chromium and WebKit. The harness fails if the
+ratios; it passes only when that value is ≤ 2 in Chromium. WebKit cost rows are BLOCK/advisory
+under D12; WebKit frame/scoring rows still decide. The harness fails if the
 floor's audited read/write counts differ from §4.1/§4.3, or if the engine and floor fixtures differ
 in participant count or written properties.
 
@@ -1461,10 +1462,10 @@ mean of 20 consecutive frames timed as one interval. Percentiles are nearest-ran
 
 **Aggregation.** Per engine, one warm-up run is discarded, then 5 runs are measured, each in a fresh
 browser process. A gate's value is the median of the 5 per-run statistics (for the commit gate, the
-per-run ratio of the engine and floor medians), and it passes only when that value meets the gate in
-both required engines. The report lists every per-run statistic, the medians,
-`g` and the fingerprint, so an independent runner on the pinned environment reaches the same
-pass/fail with no parameter left to choose.
+per-run ratio of the engine and floor medians). Cost gates pass on Chromium; frame-scoring gates
+must pass in both required engines. WebKit cost rows remain BLOCK/advisory under D12. The report
+lists every per-run statistic, the medians, `g` and the fingerprint, so an independent runner on the
+pinned environment reaches the same pass/fail with no parameter left to choose.
 
 ### 11.6 The iOS-grade scene set (P5)
 
