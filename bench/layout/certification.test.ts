@@ -324,3 +324,17 @@ test('D12: a WebKit scene blocked for a non-cost reason still blocks', () => {
     assert.equal(result.certified, false)
     assert.match(result.reasons.join(';'), /webkit scene s-reorder blocked/)
 })
+
+test('D12: invocation pass ignores a WebKit cost BLOCK', () => {
+    const result = evaluateInvocation({
+        engines: [
+            cleanEngine('chromium'),
+            {
+                ...cleanEngine('webkit'),
+                cost: { status: 'blocked' as const, valid: false },
+            },
+        ],
+    })
+    assert.equal(result.pass, true)
+    assert.deepEqual(result.reasons, [])
+})
