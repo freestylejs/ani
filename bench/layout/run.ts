@@ -39,6 +39,7 @@ import {
 import {
     auditFloor,
     floorAuditGate,
+    heldGate,
     realClockGate,
     steadyFrameGate,
 } from './gates.ts'
@@ -58,12 +59,15 @@ import {
 } from './report.ts'
 import {
     accPlan,
+    bulkPlan,
     cardPlan,
     deletePlan,
     insertPlan,
     islandPlan,
     photoPlan,
+    reorderPlan,
     segPlan,
+    sheetPlan,
     stackPlan,
 } from './scene_plans.ts'
 import { type MetricFinding, scoreScene } from './scoring.ts'
@@ -90,6 +94,9 @@ const SCENES = [
     's-acc',
     's-insert',
     's-delete',
+    's-reorder',
+    's-sheet',
+    's-bulk',
 ] as const
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
@@ -331,17 +338,28 @@ async function openPage(
     return { context, page, problems }
 }
 
+function sceneViewport(scene: string): {
+    readonly viewport: { readonly width: number; readonly height: number }
+    readonly dpr: number
+} {
+    // S-BULK is the 1,000-participant 1280x720@1 shape (spec 1.2/2.11).
+    return scene === 's-bulk'
+        ? { viewport: COST_VIEWPORT, dpr: 1 }
+        : { viewport: IOS_VIEWPORT, dpr: 2 }
+}
+
 async function runManual(
     browser: Browser,
     bundle: string,
     scene: string,
     control?: string | undefined
 ): Promise<{ trace: SceneTrace; problems: readonly string[] }> {
+    const { viewport, dpr } = sceneViewport(scene)
     const opened = await openPage(
         browser,
         bundle,
-        IOS_VIEWPORT,
-        2,
+        viewport,
+        dpr,
         engineFor(browser)
     )
     try {
@@ -376,11 +394,12 @@ async function runReal(
     bundle: string,
     scene: string
 ): Promise<{ trace: RealTrace; problems: readonly string[] }> {
+    const { viewport, dpr } = sceneViewport(scene)
     const opened = await openPage(
         browser,
         bundle,
-        IOS_VIEWPORT,
-        2,
+        viewport,
+        dpr,
         engineFor(browser)
     )
     try {
@@ -458,6 +477,48 @@ async function runCost(
             return bench.runCost()
         })) as CostTrace
         return { trace, problems: opened.problems }
+    } finally {
+        await opened.context.close()
+    }
+}
+
+async function runHeldAudit(
+    browser: Browser,
+    bundle: string,
+    extraRead: boolean
+): Promise<{
+    frames: number
+    rects: number
+    offsets: number
+    styles: number
+    holds: number
+    mismatches: number
+}> {
+    const opened = await openPage(
+        browser,
+        bundle,
+        COST_VIEWPORT,
+        1,
+        engineFor(browser)
+    )
+    try {
+        return (await opened.page.evaluate(async (extraRead) => {
+            const bench = (
+                window as unknown as {
+                    __bench: {
+                        runHeldAudit(extraRead: boolean): Promise<unknown>
+                    }
+                }
+            ).__bench
+            return bench.runHeldAudit(extraRead)
+        }, extraRead)) as {
+            frames: number
+            rects: number
+            offsets: number
+            styles: number
+            holds: number
+            mismatches: number
+        }
     } finally {
         await opened.context.close()
     }
@@ -666,6 +727,47 @@ function evaluateCost(
         measured: trace.exactReads.length > 0,
         detail: exactDetail,
     })
+    // G12: the held shape at 1 and 10 held elements. A held frame reads one
+    // rect per held element before any write; p95 / held is the gate value.
+    let heldReadsPass = true
+    const heldReadsDetail: string[] = []
+    for (const [label, shape] of [
+        ['1', trace.held.one],
+        ['10', trace.held.ten],
+    ] as const) {
+        const gate = heldGate(shape.samples, shape.held, trace.g)
+        const samplesComplete = shape.samples.length === 600
+        const readPass =
+            shape.reads.mismatches === 0 &&
+            shape.reads.frames === 600 &&
+            shape.reads.rects === shape.reads.holds &&
+            shape.reads.offsets === 0 &&
+            shape.reads.styles === 0
+        if (!readPass) heldReadsPass = false
+        heldReadsDetail.push(
+            `${shape.held} held: ${shape.reads.rects} rects / ${shape.reads.holds} hold-frames, ${shape.reads.offsets} pairs, ${shape.reads.styles} styles, ${shape.reads.mismatches} mismatched frames`
+        )
+        findings.push({
+            ...gate,
+            id: `G12-${label}`,
+            label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
+            blocked: !validity.timerValid,
+            measured: samplesComplete,
+            pass:
+                samplesComplete && shape.releaseClean && readPass && gate.pass,
+            detail: `${gate.detail ?? ''}; ${shape.samples.length} samples; per held ${shape.perHeld.toFixed(4)} ms; held reads exactly one rect per element; release ${shape.releaseClean ? 'clean' : 'left a hold/track'}`,
+        })
+    }
+    findings.push({
+        id: 'G13-held',
+        label: 'Held frame reads exactly one rect per held element',
+        gate: 'one rect per live hold per frame, zero offset/style reads, 600 frames',
+        unit: 'excess reads',
+        value: heldReadsPass ? 0 : 1,
+        pass: heldReadsPass,
+        measured: true,
+        detail: heldReadsDetail.join('; '),
+    })
     const floorPass = findings
         .filter((finding) => finding.id.startsWith('G9.floor'))
         .every((finding) => finding.pass)
@@ -678,7 +780,6 @@ function evaluateCost(
             run: 0,
             warmup: false,
             valid: validCost,
-            heldPending: trace.heldPending,
             blockedReasons: validity.reasons,
             engineAudit: trace.unscrolled.engineAudit,
             floorAudit: {
@@ -709,6 +810,10 @@ function evaluateCost(
                 .join('; '),
             exactReadsPass: exactPass,
             exactReadsDetail: exactDetail,
+            heldOnePerHeld: trace.held.one.perHeld,
+            heldTenPerHeld: trace.held.ten.perHeld,
+            heldReadsPass,
+            heldReadsDetail: heldReadsDetail.join('; '),
             g: trace.g,
             gSource: trace.gSource,
         },
@@ -731,12 +836,10 @@ function aggregateCost(
     const blockedReasons = [
         ...new Set(measured.flatMap((run) => run.blockedReasons)),
     ]
-    // A cost report can be pending only while the trace says G12 is pending.
-    const heldPending = measured.some((run) => run.heldPending)
     const metricsPass = metrics
         .filter((metric) => metric.deciding)
         .every((metric) => metric.pass)
-    const outcome = costOutcome({ valid, heldPending, metricsPass })
+    const outcome = costOutcome({ valid, metricsPass })
     return {
         scene: 'S-BULK',
         status: outcome.status,
@@ -746,16 +849,11 @@ function aggregateCost(
         blockedReasons,
         metrics,
         runs,
-        notes: heldPending
-            ? [
-                  'G9/G10/G11/G13 are measured; the held shape G12 is P4-only and is not run.',
-                  'A valid cost run cannot pass while G12 is pending.',
-                  'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
-              ]
-            : [
-                  'G9/G10/G11/G13 are measured; G12 is no longer pending in this trace.',
-                  'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
-              ],
+        notes: [
+            'G9/G10/G11/G12/G13 are measured; G12 is the 1- and 10-held shape on the real clock.',
+            'G12 and G13-held pass only when every held frame reads exactly one rect per held element and the release leaves no hold or track.',
+            'S-BULK frame scoring (G1–G8, manual clock) is the separate s-bulk scene.',
+        ],
         measuredRuns: measured.length,
     }
 }
@@ -910,6 +1008,72 @@ const SCENE_CONTROLS: readonly {
         control: 'delete-extra-read',
         target: 'G13',
     },
+    {
+        name: 'reorder-kill-switch-skip',
+        scene: 's-reorder',
+        control: 'reorder-kill-switch-skip',
+        target: 'shape.kill-switch',
+    },
+    {
+        name: 'reorder-extra-read',
+        scene: 's-reorder',
+        control: 'reorder-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'reorder-no-rebase',
+        scene: 's-reorder',
+        control: 'reorder-no-rebase',
+        target: 'G1',
+    },
+    {
+        name: 'reorder-cancel-instead',
+        scene: 's-reorder',
+        control: 'reorder-cancel-instead',
+        target: 'shape.hold',
+    },
+    {
+        name: 'sheet-medium-detent',
+        scene: 's-sheet',
+        control: 'sheet-medium-detent',
+        target: 'G5',
+    },
+    {
+        name: 'sheet-release-jump',
+        scene: 's-sheet',
+        control: 'sheet-release-jump',
+        target: 'G2',
+    },
+    {
+        name: 'sheet-extra-read',
+        scene: 's-sheet',
+        control: 'sheet-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'sheet-cancel-instead',
+        scene: 's-sheet',
+        control: 'sheet-cancel-instead',
+        target: 'shape.hold',
+    },
+    {
+        name: 'bulk-target-offset',
+        scene: 's-bulk',
+        control: 'bulk-target-offset',
+        target: 'G1',
+    },
+    {
+        name: 'bulk-extra-read',
+        scene: 's-bulk',
+        control: 'bulk-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'bulk-leftover-pose',
+        scene: 's-bulk',
+        control: 'bulk-leftover-pose',
+        target: 'G6',
+    },
 ]
 
 async function browserControls(
@@ -992,6 +1156,28 @@ async function browserControls(
                     detail: describeError(error),
                 })
             }
+        }
+        try {
+            const heldAudit = await runHeldAudit(browser, bundle, true)
+            results.push({
+                name: 'held-extra-read',
+                target: 'G13-held',
+                expected: 'fail',
+                observed: heldAudit.mismatches > 0 ? 'fail' : 'pass',
+                conclusive: true,
+                ok: heldAudit.mismatches > 0,
+                detail: `${heldAudit.rects} rects / ${heldAudit.holds} holds at one audited frame; ${heldAudit.offsets} pairs, ${heldAudit.styles} styles`,
+            })
+        } catch (error) {
+            results.push({
+                name: 'held-extra-read',
+                target: 'G13-held',
+                expected: 'fail',
+                observed: 'error',
+                conclusive: true,
+                ok: false,
+                detail: describeError(error),
+            })
         }
         try {
             const auditTrace = await runFloorAudit(browser, bundle, true)
@@ -1108,6 +1294,9 @@ function planFor(
     if (scene === 's-island') return islandPlan(trace)
     if (scene === 's-photo') return photoPlan(trace)
     if (scene === 's-stack') return stackPlan(trace)
+    if (scene === 's-reorder') return reorderPlan(trace)
+    if (scene === 's-sheet') return sheetPlan(trace)
+    if (scene === 's-bulk') return bulkPlan(trace)
     throw new Error(`no scene plan for "${scene}"`)
 }
 
@@ -1126,15 +1315,40 @@ function sceneOutcome(
     const longFrames = real.frameCosts.filter(
         (frame) => !frame.commit && frame.ms > 8
     ).length
-    const pass =
-        score.pass &&
-        g8.pass &&
-        allProblems.length === 0 &&
-        manual.final.tracks === 0 &&
-        manual.final.holds === 0 &&
-        manual.final.clockPending === 0 &&
-        manual.final.clockSize === 0
     const metrics: MetricFinding[] = [...score.metrics, g8]
+    if (real.held) {
+        const gate = heldGate(real.held.samples, 1, real.g)
+        const readsPass =
+            real.held.reads.mismatches === 0 &&
+            real.held.reads.frames === 600 &&
+            real.held.reads.rects === real.held.reads.holds &&
+            real.held.reads.offsets === 0 &&
+            real.held.reads.styles === 0
+        metrics.push({
+            ...gate,
+            id: 'G12',
+            label: 'Held frame at 1 held element (scene shape)',
+            blocked: real.g > 0.05,
+            deciding: real.g <= 0.05,
+            measured: real.held.samples.length === 600,
+            pass:
+                real.held.samples.length === 600 &&
+                real.held.releaseClean &&
+                readsPass &&
+                gate.pass,
+            detail: `${gate.detail ?? ''}; scene held shape, 1 held; ${real.held.samples.length} samples; per held ${gate.value.toFixed(4)} ms; reads ${real.held.reads.rects}/${real.held.reads.holds} rects/hold-frames; ${real.held.reads.mismatches} mismatched frames; release ${real.held.releaseClean ? 'clean' : 'left a hold/track'}`,
+        })
+        metrics.push({
+            id: 'G13-held',
+            label: 'Held frame reads exactly one rect per held element (scene)',
+            gate: 'one rect per live hold per frame, zero offset/style reads, 600 frames',
+            unit: 'excess reads',
+            value: readsPass ? 0 : 1,
+            pass: readsPass,
+            measured: true,
+            detail: `scene held shape: ${real.held.reads.rects} rects / ${real.held.reads.holds} hold-frames, ${real.held.reads.offsets} pairs, ${real.held.reads.styles} styles, ${real.held.reads.mismatches} mismatched frames`,
+        })
+    }
     if (probe) {
         metrics.push({
             id: 'G9.probe',
@@ -1160,6 +1374,23 @@ function sceneOutcome(
             detail: 'scene cost probe missing',
         })
     }
+    // The scene's per-run pass includes every deciding metric added after the
+    // plan score (G8, the scene G12 and G13-held); a metric that is BLOCK on a
+    // coarse timer is non-deciding.
+    const addedPass = metrics
+        .filter(
+            (metric) => metric.deciding !== false && metric.blocked !== true
+        )
+        .every((metric) => metric.pass)
+    const pass =
+        score.pass &&
+        g8.pass &&
+        addedPass &&
+        allProblems.length === 0 &&
+        manual.final.tracks === 0 &&
+        manual.final.holds === 0 &&
+        manual.final.clockPending === 0 &&
+        manual.final.clockSize === 0
     return {
         report: {
             scene: manual.scene,
@@ -1319,16 +1550,7 @@ function pendingEntries(
     options: Options,
     engines: readonly EngineReport[]
 ): { scene: string; reason: string }[] {
-    const entries: { scene: string; reason: string }[] = [
-        {
-            scene: 'S-REORDER',
-            reason: 'P4 (take/move/release drive seam not in the base tree)',
-        },
-        {
-            scene: 'S-SHEET',
-            reason: 'P4 (drive seam not in the base tree)',
-        },
-    ]
+    const entries: { scene: string; reason: string }[] = []
     const costPending = engines.some(
         (engine) => engine.cost?.pending !== null && engine.cost !== null
     )

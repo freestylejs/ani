@@ -61,6 +61,9 @@ const REQUIRED_SCENES = [
     's-acc',
     's-insert',
     's-delete',
+    's-reorder',
+    's-sheet',
+    's-bulk',
     'cost',
 ] as const
 const REQUIRED_SCENE_ROWS = REQUIRED_SCENES.filter((scene) => scene !== 'cost')

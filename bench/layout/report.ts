@@ -81,7 +81,6 @@ export interface CostRunReport {
     readonly run: number
     readonly warmup: boolean
     readonly valid: boolean
-    readonly heldPending: boolean
     readonly blockedReasons: readonly string[]
     readonly engineAudit: {
         readonly rects: number
@@ -127,6 +126,10 @@ export interface CostRunReport {
     readonly floorAuditDetail: string
     readonly exactReadsPass: boolean
     readonly exactReadsDetail: string
+    readonly heldOnePerHeld: number
+    readonly heldTenPerHeld: number
+    readonly heldReadsPass: boolean
+    readonly heldReadsDetail: string
     readonly g: number
     readonly gSource: 'reads' | 'tick-fallback'
 }
@@ -275,7 +278,7 @@ export function formatReport(report: BenchReport): string {
             }
             for (const run of cost.runs) {
                 lines.push(
-                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms; g ${run.g.toFixed(4)} ms`
+                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms; held 1/10 ${run.heldOnePerHeld.toFixed(4)}/${run.heldTenPerHeld.toFixed(4)} ms; held reads ${run.heldReadsPass ? 'ok' : 'FAIL'}; g ${run.g.toFixed(4)} ms`
                 )
             }
         }

@@ -18,6 +18,7 @@ import {
     zeroBoxVelocity,
 } from './oracle.ts'
 import type {
+    HoldPlan,
     Observation,
     ScenePlan,
     SceneTrace,
@@ -94,6 +95,62 @@ interface Expected {
             readonly label: string
         }[]
     }[]
+    /** First-frame continuity at a take: the drawn box must not jump. */
+    readonly holdContinuity: readonly {
+        readonly key: string
+        readonly source: string
+        readonly error: number
+        readonly frame: number
+    }[]
+}
+
+/**
+ * The held element's drawn top-left box at `frame`: the take box at the take
+ * frame, then the latest scripted finger point. The oracle's held box is the
+ * finger, never the engine's presented box (§5.10, §1.6 item 7).
+ */
+function holdBoxAt(plan: ScenePlan, hold: HoldPlan, frame: number): Box | null {
+    if (frame < hold.takeFrame || frame > hold.releaseFrame) return null
+    const rest = hold.takeBox ?? plan.initial[hold.key]
+    if (!rest) return null
+    let point: HoldPlan['points'][number] | null = null
+    for (const candidate of hold.points) {
+        if (candidate.frame <= frame) point = candidate
+    }
+    return {
+        x: point?.x ?? rest.x,
+        y: point?.y ?? rest.y,
+        w: rest.w,
+        h: rest.h,
+    }
+}
+
+function riderBox(
+    plan: ScenePlan,
+    held: Box,
+    rider: HoldPlan['riders'][number]
+): Box | null {
+    const rest = plan.initial[rider.key]
+    if (!rest) return null
+    return {
+        x: held.x + rider.dx,
+        y: held.y + rider.dy,
+        w: rest.w,
+        h: rest.h,
+    }
+}
+
+function heldExpected(
+    plan: ScenePlan,
+    hold: HoldPlan,
+    frame: number,
+    key: string
+): Box | null {
+    const held = holdBoxAt(plan, hold, frame)
+    if (!held) return null
+    if (key === hold.key) return held
+    const rider = hold.riders.find((entry) => entry.key === key)
+    return rider ? riderBox(plan, held, rider) : null
 }
 
 function velocityAllowed(before: number, after: number): number {
@@ -229,6 +286,7 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
         Map<string, { box: Box; spring: boolean }>
     >()
     const commits: Expected['commits'][number][] = []
+    const holdContinuity: Expected['holdContinuity'][number][] = []
     const states = new Map<string, SegmentState>()
     const commitByLabel = new Map(
         plan.commits.map((commit) => [commit.label, commit])
@@ -236,6 +294,29 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
     const stepMs = plan.stepMs
 
     trace.observations.forEach((observation, index) => {
+        // A take freezes the presented origin: the take flush must equal the
+        // last presented frame for the held element and its riders.
+        if (observation.kind === 'flush') {
+            const previous = trace.observations[index - 1]
+            for (const hold of plan.holds ?? []) {
+                if (hold.takeFrame !== observation.frame) continue
+                for (const key of [
+                    hold.key,
+                    ...hold.riders.map((rider) => rider.key),
+                ]) {
+                    const shown = previous?.boxes[key] ?? null
+                    const drawn = observation.boxes[key] ?? null
+                    if (shown && drawn) {
+                        holdContinuity.push({
+                            key,
+                            source: key,
+                            error: edgeError(drawn, shown).max,
+                            frame: observation.frame,
+                        })
+                    }
+                }
+            }
+        }
         let g2: {
             key: string
             source: string
@@ -291,10 +372,12 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                         ? sourceVelocity
                         : (segment.velocityOverride ?? zeroBoxVelocity())
                 const moving =
-                    segment.startMoving === true ||
-                    (segment.velocityOverride === undefined
-                        ? active
-                        : v0.x !== 0 || v0.y !== 0)
+                    segment.holdRelease === true
+                        ? false
+                        : segment.startMoving === true ||
+                          (segment.velocityOverride === undefined
+                              ? active
+                              : v0.x !== 0 || v0.y !== 0)
                 const target = segment.toFromB
                     ? {
                           x: from.x + segment.toFromB.dx,
@@ -325,12 +408,13 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                     v0,
                     moving,
                     carrying:
-                        segment.velocityOverride === undefined
+                        segment.holdRelease === true ||
+                        (segment.velocityOverride === undefined
                             ? active && segment.startMoving !== true
                             : v0.x !== 0 ||
                               v0.y !== 0 ||
                               v0.w !== 0 ||
-                              v0.h !== 0,
+                              v0.h !== 0),
                     settle,
                 }
                 pending.push({ segment, state, source })
@@ -349,7 +433,7 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                         ]
                     }
                     if (
-                        active &&
+                        (active || segment.velocityBefore !== undefined) &&
                         segment.presenceExit !== true &&
                         commitPlan.segments.some((entry) => entry === segment)
                     ) {
@@ -357,7 +441,8 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                             ...g3,
                             {
                                 key: segment.key,
-                                before: sourceVelocity,
+                                before:
+                                    segment.velocityBefore ?? sourceVelocity,
                                 after: v0,
                                 frame: observation.frame,
                                 label: commitPlan.label,
@@ -395,10 +480,23 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                 spring: state?.kind === 'spring',
             })
         }
+        // While held, the finger owns the drawn box (§5.10): the held element
+        // and its riders are not on the layout track.
+        for (const hold of plan.holds ?? []) {
+            for (const key of [
+                hold.key,
+                ...hold.riders.map((rider) => rider.key),
+            ]) {
+                if (!observation.connected.includes(key)) continue
+                const box = heldExpected(plan, hold, observation.frame, key)
+                if (!box) continue
+                expected.set(key, { box, spring: false })
+            }
+        }
         byObservation.set(index, expected)
     })
 
-    return { byObservation, commits }
+    return { byObservation, commits, holdContinuity }
 }
 
 function scoreOracle(
@@ -479,6 +577,17 @@ function scoreContinuity(trace: SceneTrace, expected: Expected): MetricFinding {
                     ? 'aged capture, allowance 0.5 px'
                     : 'fresh capture, gate 0.05 px'
             }
+        }
+    }
+    for (const pair of expected.holdContinuity) {
+        count += 1
+        if (pair.error > 0.05) failures += 1
+        if (pair.error > worst) {
+            worst = pair.error
+            worstFrame = pair.frame
+            worstKey = pair.key
+            worstLabel = 'take'
+            worstDetail = 'held take, fresh gate 0.05 px'
         }
     }
     return {
@@ -853,6 +962,7 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     let problems = 0
     let detail: string | undefined
     for (const commit of plan.commits) {
+        if (commit.kind === 'release') continue
         const report = trace.reports.find(
             (entry) => entry.label === commit.label
         )
@@ -885,9 +995,12 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         problems += 1
         detail ??= `onSnap [${actualOnSnap.join(',')}] != [${expectedOnSnap.join(',')}]`
     }
-    if (trace.reports.length !== plan.commits.length) {
+    const engineCommits = plan.commits.filter(
+        (commit) => commit.kind !== 'release'
+    )
+    if (trace.reports.length !== engineCommits.length) {
         problems += 1
-        detail ??= `${trace.reports.length} reports for ${plan.commits.length} commits`
+        detail ??= `${trace.reports.length} reports for ${engineCommits.length} commits`
     }
     const firstLabel = plan.commits[0]?.label
     return {
@@ -932,6 +1045,23 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         excess += trace.steadyFrameReads
         exact = false
         detail ??= `steady frame ${trace.steadyFrameReadsAt}: ${trace.steadyFrameReads} reads`
+    }
+    let frameExcessTotal = 0
+    let frameDetail: string | undefined
+    for (const entry of trace.frameReads ?? []) {
+        // §5.10/§11.5: a held frame reads exactly one rect per held element
+        // before any write; every unheld frame reads zero.
+        const frameExcess =
+            Math.abs(entry.rects - entry.holds) + entry.offsets + entry.styles
+        if (frameExcess > 0) {
+            frameExcessTotal += frameExcess
+            excess += frameExcess
+            exact = false
+            frameDetail ??= `frame ${entry.frame}: ${entry.rects} rects for ${entry.holds} holds, ${entry.offsets} pairs, ${entry.styles} styles`
+        }
+    }
+    if (frameExcessTotal > 0) {
+        detail = `${detail === undefined ? '' : `${detail}; `}${frameDetail ?? ''} (+${frameExcessTotal} frame excess)`
     }
     const exactSummary = trace.commits
         .map(
@@ -1117,6 +1247,164 @@ function scorePresenceScale(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     }
 }
 
+/**
+ * Drive-hold state machine and held reads (§5.10): `holds` is one while
+ * held/landing, the held frame reads exactly one rect per held element before
+ * any write, and the release lands with no live hold left.
+ */
+function scoreHold(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    const holds = plan.holds ?? []
+    const evidence = trace.holds ?? []
+    let problems = 0
+    let detail: string | undefined
+    let worstFrame: number | undefined
+    let worstKey: string | undefined
+    const note = (key: string, frame: number, message: string) => {
+        problems += 1
+        worstKey ??= key
+        worstFrame ??= frame
+        detail ??= message
+    }
+    if (evidence.length !== holds.length) {
+        note(
+            holds[0]?.key ?? 'hold',
+            holds[0]?.takeFrame ?? 0,
+            `${evidence.length} hold evidence entries for ${holds.length} planned holds`
+        )
+    }
+    holds.forEach((hold, index) => {
+        const entry = evidence[index]
+        if (!entry) return
+        if (entry.key !== hold.key) {
+            note(hold.key, hold.takeFrame, `hold ${index}: key ${entry.key}`)
+        }
+        if (entry.takeState !== 'held') {
+            note(
+                hold.key,
+                hold.takeFrame,
+                `hold ${index}: take state ${entry.takeState}`
+            )
+        }
+        if (entry.holdsAtTake !== 1) {
+            note(
+                hold.key,
+                hold.takeFrame,
+                `hold ${index}: ${entry.holdsAtTake} holds at take`
+            )
+        }
+        if (entry.moves.length !== hold.points.length) {
+            note(
+                hold.key,
+                hold.releaseFrame,
+                `hold ${index}: ${entry.moves.length} held frames for ${hold.points.length} points`
+            )
+        }
+        for (const move of entry.moves) {
+            // The held rect read is the state-machine check; unheld offset/
+            // style support reads on a held frame are G13's row, not this one.
+            if (move.rects !== move.holds) {
+                note(
+                    hold.key,
+                    move.frame,
+                    `hold ${index} frame ${move.frame}: ${move.rects} rects for ${move.holds} holds`
+                )
+            }
+        }
+        if (entry.releaseState !== 'released') {
+            note(
+                hold.key,
+                hold.releaseFrame,
+                `hold ${index}: release state ${entry.releaseState}`
+            )
+        }
+        if (entry.holdsAtRelease < 1) {
+            note(
+                hold.key,
+                hold.releaseFrame,
+                `hold ${index}: ${entry.holdsAtRelease} holds at release (the landing is a live hold)`
+            )
+        }
+        if (entry.finalHolds !== 0) {
+            note(
+                hold.key,
+                hold.releaseFrame,
+                `hold ${index}: ${entry.finalHolds} holds after the landing`
+            )
+        }
+    })
+    return {
+        id: 'shape.hold',
+        label: 'Drive hold state machine and held-frame reads',
+        gate: 'held while held, one rect per held element per frame, released with no live hold',
+        unit: 'violations',
+        value: problems,
+        pass: holds.length === 0 || problems === 0,
+        measured: holds.length > 0,
+        deciding: holds.length > 0,
+        detail:
+            holds.length === 0 ? 'n/a: the scene has no drive hold' : undefined,
+        worst: { frame: worstFrame, participant: worstKey, detail },
+    }
+}
+
+/** The drive-hold kill switch row (L-DRIVE-4, §7.2). */
+function scoreKillSwitch(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    if (plan.expectedKillSwitch !== true) {
+        return {
+            id: 'shape.kill-switch',
+            label: 'Drive-hold kill switch: invalidated, restored, unsubscribed',
+            gate: 'runtime-disabled, holds 0, clock 0, styles restored',
+            unit: 'violations',
+            value: 0,
+            pass: true,
+            measured: false,
+            detail: 'n/a: the scene does not run the kill-switch row',
+            deciding: false,
+        }
+    }
+    const evidence =
+        trace.holds?.find((entry) => entry.killSwitch !== undefined)
+            ?.killSwitch ?? null
+    if (!evidence) {
+        return {
+            id: 'shape.kill-switch',
+            label: 'Drive-hold kill switch: invalidated, restored, unsubscribed',
+            gate: 'runtime-disabled, holds 0, clock 0, styles restored',
+            unit: 'violations',
+            value: 1,
+            pass: false,
+            measured: true,
+            worst: { detail: 'kill-switch evidence is missing' },
+        }
+    }
+    const problems: string[] = []
+    if (evidence.state !== 'invalidated')
+        problems.push(`handle state ${evidence.state}`)
+    if (evidence.holds !== 0) problems.push(`${evidence.holds} holds`)
+    if (evidence.clockSize !== 0)
+        problems.push(`clock size ${evidence.clockSize}`)
+    if (evidence.clockPending !== 0)
+        problems.push(`clock pending ${evidence.clockPending}`)
+    if (!evidence.restored) problems.push('owned styles not restored')
+    if (!evidence.diagnostics.includes('runtime-disabled'))
+        problems.push('no runtime-disabled diagnostic')
+    if (!evidence.snaps.includes('disabled')) problems.push('no disabled snap')
+    return {
+        id: 'shape.kill-switch',
+        label: 'Drive-hold kill switch: invalidated, restored, unsubscribed',
+        gate: 'runtime-disabled, holds 0, clock 0, styles restored',
+        unit: 'violations',
+        value: problems.length,
+        pass: problems.length === 0,
+        measured: true,
+        worst: { detail: problems.join('; ') || undefined },
+        detail:
+            problems.length === 0
+                ? `state ${evidence.state}, diagnostics [${evidence.diagnostics.join(',')}], snaps [${evidence.snaps.join(',')}]`
+                : undefined,
+    }
+}
+
 function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
     return [
         scoreCrossfadeOpacity(plan, trace),
@@ -1128,6 +1416,8 @@ function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
         scoreInert(plan, trace),
         scoreFocus(plan, trace),
         scoreFont(plan, trace),
+        scoreHold(plan, trace),
+        scoreKillSwitch(plan, trace),
         scoreTeardown(trace),
     ]
 }
@@ -1311,14 +1601,17 @@ function stateHistory(
                 motion: segment.motion,
                 v0,
                 moving:
-                    segment.startMoving === true ||
-                    (segment.velocityOverride === undefined
-                        ? active
-                        : v0.x !== 0 || v0.y !== 0),
+                    segment.holdRelease === true
+                        ? false
+                        : segment.startMoving === true ||
+                          (segment.velocityOverride === undefined
+                              ? active
+                              : v0.x !== 0 || v0.y !== 0),
                 carrying:
-                    segment.velocityOverride === undefined
+                    segment.holdRelease === true ||
+                    (segment.velocityOverride === undefined
                         ? active && segment.startMoving !== true
-                        : v0.x !== 0 || v0.y !== 0 || v0.w !== 0 || v0.h !== 0,
+                        : v0.x !== 0 || v0.y !== 0 || v0.w !== 0 || v0.h !== 0),
                 settle,
             }
             pending.push({ key: segment.key, state })
@@ -1478,8 +1771,11 @@ function scoreStaticRadius(plan: ScenePlan, trace: SceneTrace): MetricFinding {
             const radii = observation.radii[key]
             if (!radii) continue
             compared += 1
-            for (const radius of radii) {
-                const error = Math.abs(radius - want)
+            const corners =
+                typeof want === 'number' ? [want, want, want, want] : [...want]
+            for (let i = 0; i < radii.length; i++) {
+                const corner = corners[Math.floor(i / 2)] ?? corners[0] ?? 0
+                const error = Math.abs(radii[i]! - corner)
                 if (error > worst) {
                     worst = error
                     worstFrame = observation.frame
@@ -1619,7 +1915,10 @@ function scoreCompleteness(
             `commits ${trace.commits.length} != required ${req.requiredCommits}`
         )
     }
-    const expectedCommitLabels = plan.commits.map((commit) => commit.label)
+    const engineCommits = plan.commits.filter(
+        (commit) => commit.kind !== 'release'
+    )
+    const expectedCommitLabels = engineCommits.map((commit) => commit.label)
     const actualCommitLabels = trace.commits.map((commit) => commit.label)
     if (
         actualCommitLabels.length !== expectedCommitLabels.length ||
@@ -1641,6 +1940,8 @@ function scoreCompleteness(
         if (reports.length !== 1) {
             note(`report "${label}" count ${reports.length} != 1`)
         }
+    }
+    for (const label of plan.commits.map((commit) => commit.label)) {
         const flushes = trace.observations.filter(
             (observation) =>
                 observation.kind === 'flush' &&
@@ -1779,7 +2080,7 @@ function scoreCompleteness(
         if (finding.detail?.startsWith('n/a'))
             note(`required shape metric ${id} is n/a`)
     }
-    if (trace.final.connected.length === 0) {
+    if (trace.final.connected.length === 0 && plan.allowEmptyFinal !== true) {
         note('no connected participants in the final state')
     }
     return {
