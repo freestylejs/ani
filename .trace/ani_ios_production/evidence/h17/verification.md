@@ -1,4 +1,9 @@
-# H17 verification record
+# H17 verification record (superseded by H17b)
+
+> The final H17b numbers and S1/S2 verdicts are in
+> `.trace/ani_ios_production/evidence/h17b/verification.md`. This file is the
+> H17 record, retained as history.
+
 
 Branch `helper/h17`. The code is at `1cec4d6` (D10) on `f8b7223` (H17
 regressions) on `d234350`; no remote was pushed. No authority, scene,

@@ -1,8 +1,8 @@
 {
   "schema": "ani-layout-bench/v1",
-  "generatedAt": "2026-10-29T02:48:11.911Z",
+  "generatedAt": "2026-10-29T03:42:09.942Z",
   "command": "pnpm bench:layout --engine webkit --scene cost --runs 5 --out bench/layout/iteration-3/webkit-cost.json",
-  "sourceRevision": "1cec4d6b72f14f36fe7b5960ac6f5565fc481c76",
+  "sourceRevision": "6dd04d27bd99ac6a693536e4de681212108afb89",
   "fingerprint": {
     "host": "Mac14,9",
     "os": {
@@ -21,12 +21,12 @@
       "webkit": "webkit-2203",
       "firefox": "firefox-1490"
     },
-    "load1": 4.73388671875
+    "load1": 2.87255859375
   },
   "advisory": {
     "cost": true,
     "reasons": [
-      "1-minute load is 4.73, pinned below 1"
+      "1-minute load is 2.87, pinned below 1"
     ]
   },
   "engines": [
@@ -44,7 +44,7 @@
         "pass": false,
         "valid": false,
         "blockedReasons": [
-          "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+          "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
         ],
         "metrics": [
           {
@@ -52,54 +52,48 @@
             "label": "Commit over the required-work floor, unscrolled",
             "gate": "median of 5 per-run ratios <= 2",
             "unit": "ratio",
-            "median": 1.3333333333333333,
+            "median": null,
             "blocked": true,
-            "deciding": true,
-            "pass": true,
+            "deciding": false,
+            "pass": false,
             "perRun": [
-              1.3333333333333333,
-              1.2500000000005684,
-              1.25,
-              1.3333333333333333,
-              1.3333333333339397
+              null,
+              null,
+              null,
+              null,
+              null
             ],
             "passPerRun": [
-              true,
-              true,
-              true,
-              true,
-              true
-            ],
-            "worst": {
-              "run": 5
-            }
+              false,
+              false,
+              false,
+              false,
+              false
+            ]
           },
           {
             "id": "G9-scrolled",
             "label": "Commit over the required-work floor, scrolled 1.5 viewports",
             "gate": "median of 5 per-run ratios <= 2",
             "unit": "ratio",
-            "median": 1.3333333333333333,
+            "median": null,
             "blocked": true,
-            "deciding": true,
-            "pass": true,
+            "deciding": false,
+            "pass": false,
             "perRun": [
-              1.3333333333333333,
-              1.2500000000005684,
-              1.6666666666661614,
-              1.3333333333333333,
-              1.3333333333333333
+              null,
+              null,
+              null,
+              null,
+              null
             ],
             "passPerRun": [
-              true,
-              true,
-              true,
-              true,
-              true
-            ],
-            "worst": {
-              "run": 3
-            }
+              false,
+              false,
+              false,
+              false,
+              false
+            ]
           },
           {
             "id": "G9.floor-unscrolled",
@@ -160,16 +154,16 @@
             "label": "Steady frame at 300 nested movers (A-19 150+150)",
             "gate": "p95 <= 2 ms",
             "unit": "ms",
-            "median": 0.29999999999990906,
+            "median": 0.25,
             "blocked": false,
             "deciding": true,
             "pass": true,
             "perRun": [
-              0.2500000000000909,
-              0.29999999999990906,
-              0.3,
-              0.2500000000000909,
-              0.29999999999990906
+              0.25,
+              0.25,
+              0.20000000000009094,
+              0.25,
+              0.25
             ],
             "passPerRun": [
               true,
@@ -179,7 +173,7 @@
               true
             ],
             "worst": {
-              "run": 3
+              "run": 1
             }
           },
           {
@@ -187,27 +181,24 @@
             "label": "Sustained 60 Hz commits with 300 moving participants",
             "gate": "p95(engine commits) / p95(floor commits) <= 2",
             "unit": "ratio",
-            "median": 1.4999999999994316,
+            "median": null,
             "blocked": true,
-            "deciding": true,
-            "pass": true,
+            "deciding": false,
+            "pass": false,
             "perRun": [
-              1.4999999999996874,
-              1.4000000000002546,
-              1.4999999999994316,
-              1.9999999999993936,
-              1.4999999999993179
+              null,
+              null,
+              null,
+              null,
+              null
             ],
             "passPerRun": [
-              true,
-              true,
-              true,
-              true,
-              true
-            ],
-            "worst": {
-              "run": 4
-            }
+              false,
+              false,
+              false,
+              false,
+              false
+            ]
           },
           {
             "id": "G11.floor",
@@ -271,7 +262,7 @@
             "valid": false,
             "heldPending": true,
             "blockedReasons": [
-              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
             ],
             "engineAudit": {
               "rects": 2000,
@@ -303,16 +294,17 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.125000000000739,
-            "ratioScrolled": 1.6666666666666667,
-            "engineMedianUnscrolled": 4.5000000000009095,
-            "floorMedianUnscrolled": 3.999999999998181,
-            "engineMedianScrolled": 5,
+            "ratioUnscrolled": 1.6666666666666667,
+            "ratioScrolled": 1.6666666666663634,
+            "engineMedianUnscrolled": 5,
+            "floorMedianUnscrolled": 3,
+            "engineMedianScrolled": 4.9999999999990905,
             "floorMedianScrolled": 3,
-            "steadyP95": 0.2500000000000909,
-            "sustainedP95": 6,
-            "sustainedFloorP95": 4,
-            "sustainedRatio": 1.5,
+            "steadyP95": 0.25,
+            "steadySampleMode": "batch20",
+            "sustainedP95": 7,
+            "sustainedFloorP95": 3.9999999999990905,
+            "sustainedRatio": 1.750000000000398,
             "sustainedCommits": 300,
             "sustainedCommitHz": 60.084117764870804,
             "sustainedSampleMode": "quantized",
@@ -346,7 +338,7 @@
             "valid": false,
             "heldPending": true,
             "blockedReasons": [
-              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
             ],
             "engineAudit": {
               "rects": 2000,
@@ -378,18 +370,19 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.3333333333333333,
+            "ratioUnscrolled": 1.6666666666663634,
             "ratioScrolled": 1.3333333333333333,
-            "engineMedianUnscrolled": 4,
+            "engineMedianUnscrolled": 4.9999999999990905,
             "floorMedianUnscrolled": 3,
             "engineMedianScrolled": 4,
             "floorMedianScrolled": 3,
-            "steadyP95": 0.2500000000000909,
-            "sustainedP95": 6.000000000000114,
-            "sustainedFloorP95": 4.0000000000009095,
-            "sustainedRatio": 1.4999999999996874,
+            "steadyP95": 0.25,
+            "steadySampleMode": "batch20",
+            "sustainedP95": 6.999999999999972,
+            "sustainedFloorP95": 4,
+            "sustainedRatio": 1.749999999999993,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 59.97600959616154,
+            "sustainedCommitHz": 59.64214711729622,
             "sustainedSampleMode": "quantized",
             "sustainedErrorBound": 0.5,
             "sustainedEngineAudit": {
@@ -421,7 +414,7 @@
             "valid": false,
             "heldPending": true,
             "blockedReasons": [
-              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
             ],
             "engineAudit": {
               "rects": 2000,
@@ -453,18 +446,19 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.2500000000005684,
-            "ratioScrolled": 1.2500000000005684,
-            "engineMedianUnscrolled": 5,
-            "floorMedianUnscrolled": 3.999999999998181,
-            "engineMedianScrolled": 5,
-            "floorMedianScrolled": 3.999999999998181,
-            "steadyP95": 0.29999999999990906,
-            "sustainedP95": 7,
-            "sustainedFloorP95": 4.9999999999990905,
-            "sustainedRatio": 1.4000000000002546,
+            "ratioUnscrolled": 1.6666666666663634,
+            "ratioScrolled": 1.3333333333336366,
+            "engineMedianUnscrolled": 4.9999999999990905,
+            "floorMedianUnscrolled": 3,
+            "engineMedianScrolled": 4.0000000000009095,
+            "floorMedianScrolled": 3,
+            "steadyP95": 0.25,
+            "steadySampleMode": "batch20",
+            "sustainedP95": 6.999999999999773,
+            "sustainedFloorP95": 4,
+            "sustainedRatio": 1.7499999999999432,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 60,
+            "sustainedCommitHz": 59.97600959616154,
             "sustainedSampleMode": "quantized",
             "sustainedErrorBound": 0.5,
             "sustainedEngineAudit": {
@@ -496,7 +490,7 @@
             "valid": false,
             "heldPending": true,
             "blockedReasons": [
-              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
             ],
             "engineAudit": {
               "rects": 2000,
@@ -528,18 +522,19 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.25,
-            "ratioScrolled": 1.6666666666661614,
+            "ratioUnscrolled": 1.6666666666666667,
+            "ratioScrolled": 1.3333333333336366,
             "engineMedianUnscrolled": 5,
-            "floorMedianUnscrolled": 4,
-            "engineMedianScrolled": 5,
-            "floorMedianScrolled": 3.0000000000009095,
-            "steadyP95": 0.3,
-            "sustainedP95": 6.000000000000455,
-            "sustainedFloorP95": 4.000000000001819,
-            "sustainedRatio": 1.4999999999994316,
+            "floorMedianUnscrolled": 3,
+            "engineMedianScrolled": 4.0000000000009095,
+            "floorMedianScrolled": 3,
+            "steadyP95": 0.20000000000009094,
+            "steadySampleMode": "batch20",
+            "sustainedP95": 7,
+            "sustainedFloorP95": 4,
+            "sustainedRatio": 1.75,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 60.04803843074459,
+            "sustainedCommitHz": 60.02400960384152,
             "sustainedSampleMode": "quantized",
             "sustainedErrorBound": 0.5,
             "sustainedEngineAudit": {
@@ -571,7 +566,7 @@
             "valid": false,
             "heldPending": true,
             "blockedReasons": [
-              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
             ],
             "engineAudit": {
               "rects": 2000,
@@ -603,18 +598,19 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.3333333333333333,
-            "ratioScrolled": 1.3333333333333333,
-            "engineMedianUnscrolled": 4,
+            "ratioUnscrolled": 1.6666666666666667,
+            "ratioScrolled": 1.6666666666666667,
+            "engineMedianUnscrolled": 5,
             "floorMedianUnscrolled": 3,
-            "engineMedianScrolled": 4,
+            "engineMedianScrolled": 5,
             "floorMedianScrolled": 3,
-            "steadyP95": 0.2500000000000909,
-            "sustainedP95": 6,
-            "sustainedFloorP95": 3.0000000000009095,
-            "sustainedRatio": 1.9999999999993936,
+            "steadyP95": 0.25,
+            "steadySampleMode": "batch20",
+            "sustainedP95": 6.999999999999972,
+            "sustainedFloorP95": 5,
+            "sustainedRatio": 1.3999999999999944,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 59.976009596161525,
+            "sustainedCommitHz": 60.0120024004801,
             "sustainedSampleMode": "quantized",
             "sustainedErrorBound": 0.5,
             "sustainedEngineAudit": {
@@ -646,7 +642,7 @@
             "valid": false,
             "heldPending": true,
             "blockedReasons": [
-              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses 20-frame interval samples"
+              "timer g 1.0000 ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples"
             ],
             "engineAudit": {
               "rects": 2000,
@@ -678,18 +674,19 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.3333333333339397,
-            "ratioScrolled": 1.3333333333333333,
-            "engineMedianUnscrolled": 4.000000000001819,
-            "floorMedianUnscrolled": 3,
-            "engineMedianScrolled": 4,
+            "ratioUnscrolled": 1.2499999999995453,
+            "ratioScrolled": 1.6666666666666667,
+            "engineMedianUnscrolled": 4.999999999998181,
+            "floorMedianUnscrolled": 4,
+            "engineMedianScrolled": 5,
             "floorMedianScrolled": 3,
-            "steadyP95": 0.29999999999990906,
-            "sustainedP95": 6,
-            "sustainedFloorP95": 4.000000000001819,
-            "sustainedRatio": 1.4999999999993179,
+            "steadyP95": 0.25,
+            "steadySampleMode": "batch20",
+            "sustainedP95": 7,
+            "sustainedFloorP95": 5,
+            "sustainedRatio": 1.4,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 60.060060060060046,
+            "sustainedCommitHz": 59.820538384845456,
             "sustainedSampleMode": "quantized",
             "sustainedErrorBound": 0.5,
             "sustainedEngineAudit": {
@@ -732,20 +729,20 @@
   "selfTests": {
     "pass": true,
     "controls": [
-      "negative control G1: a 0.1 px offset fails the oracle error (2.364459ms)",
-      "negative control G2: a 0.1 px first-frame jump fails continuity (2.724917ms)",
-      "negative control G3: starting a retarget from rest fails velocity continuity (2.237333ms)",
-      "negative control G4: a 0.1 px spring displacement fails spring fidelity (1.737ms)",
-      "negative control G5: a leftover pose and a 0.02 px settle error fail (1.734875ms)",
-      "negative control G6: a leftover declaration fails restoration (1.573542ms)",
-      "negative control G7: a wrong status or a wrong snapped set fails reports (2.896333ms)",
-      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.205584ms)",
-      "negative control G9: a floor with an extra read fails its audit (0.248333ms)",
-      "negative control G10 and G11: a p95 above 2 ms or 2x floor fails (0.149875ms)",
-      "negative control G12: 0.11 ms per held element fails (0.078375ms)",
-      "negative control G13: an extra rect or a steady-frame read fails (2.808083ms)",
-      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.15325ms)",
-      "shape negative controls: opacity, coverage, radius, inert and font fail (82.866833ms)"
+      "negative control G1: a 0.1 px offset fails the oracle error (2.446584ms)",
+      "negative control G2: a 0.1 px first-frame jump fails continuity (2.56725ms)",
+      "negative control G3: starting a retarget from rest fails velocity continuity (2.212333ms)",
+      "negative control G4: a 0.1 px spring displacement fails spring fidelity (1.554958ms)",
+      "negative control G5: a leftover pose and a 0.02 px settle error fail (1.766917ms)",
+      "negative control G6: a leftover declaration fails restoration (1.570458ms)",
+      "negative control G7: a wrong status or a wrong snapped set fails reports (3.018792ms)",
+      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.224833ms)",
+      "negative control G9: a floor with an extra read fails its audit (0.262833ms)",
+      "negative control G10 and G11: a p95 above 2 ms or 2x floor fails (0.159042ms)",
+      "negative control G12: 0.11 ms per held element fails (0.092958ms)",
+      "negative control G13: an extra rect or a steady-frame read fails (2.917125ms)",
+      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.119375ms)",
+      "shape negative controls: opacity, coverage, radius, inert and font fail (83.186917ms)"
     ],
     "files": [
       "bench/layout/oracle.test.ts",
