@@ -36,6 +36,13 @@ export interface MetricFinding {
     readonly blocked?: boolean
     /** False for reporting-only evidence; it never decides a scene gate. */
     readonly deciding?: boolean
+    /**
+     * Aggregation rule across measured runs. `median` uses the literal median
+     * of the per-run values against `aggregateLimit` (D10); the default keeps
+     * the five-run majority of the per-run gate outcomes.
+     */
+    readonly aggregate?: 'median'
+    readonly aggregateLimit?: number
     readonly worst?:
         | {
               readonly frame?: number | undefined

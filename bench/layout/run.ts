@@ -503,9 +503,7 @@ function aggregateScene(
     )
     const pass =
         pending === null &&
-        metrics
-            .filter((metric) => metric.deciding)
-            .every((metric) => metric.pass) &&
+        metrics.every((metric) => metric.pass) &&
         shapeMetrics.every((metric) => metric.pass)
     return {
         scene,
@@ -542,25 +540,36 @@ function evaluateCost(
         steadyBatch: trace.steady.sampleMode === 'batch20',
     })
     const validCost = validity.valid
+    const blockedByTimer = !validity.timerValid
     findings.push({
         id: 'G9-unscrolled',
         label: 'Commit over the required-work floor, unscrolled',
         gate: 'median of 5 per-run ratios <= 2',
         unit: 'ratio',
-        value: unscrolledRatio,
-        pass: unscrolledRatio <= 2,
-        blocked: !validity.timerValid,
-        detail: `${median(trace.unscrolled.engine).toFixed(3)} ms / ${median(trace.unscrolled.floor).toFixed(3)} ms`,
+        value: blockedByTimer ? Number.NaN : unscrolledRatio,
+        pass: !blockedByTimer && unscrolledRatio <= 2,
+        blocked: blockedByTimer,
+        deciding: !blockedByTimer,
+        aggregate: 'median',
+        aggregateLimit: 2,
+        detail: blockedByTimer
+            ? `BLOCK: timer g ${trace.g.toFixed(4)} ms; the quantized ratio is diagnostic, not a gate value`
+            : `${median(trace.unscrolled.engine).toFixed(3)} ms / ${median(trace.unscrolled.floor).toFixed(3)} ms`,
     })
     findings.push({
         id: 'G9-scrolled',
         label: 'Commit over the required-work floor, scrolled 1.5 viewports',
         gate: 'median of 5 per-run ratios <= 2',
         unit: 'ratio',
-        value: scrolledRatio,
-        pass: scrolledRatio <= 2,
-        blocked: !validity.timerValid,
-        detail: `${median(trace.scrolled.engine).toFixed(3)} ms / ${median(trace.scrolled.floor).toFixed(3)} ms`,
+        value: blockedByTimer ? Number.NaN : scrolledRatio,
+        pass: !blockedByTimer && scrolledRatio <= 2,
+        blocked: blockedByTimer,
+        deciding: !blockedByTimer,
+        aggregate: 'median',
+        aggregateLimit: 2,
+        detail: blockedByTimer
+            ? `BLOCK: timer g ${trace.g.toFixed(4)} ms; the quantized ratio is diagnostic, not a gate value`
+            : `${median(trace.scrolled.engine).toFixed(3)} ms / ${median(trace.scrolled.floor).toFixed(3)} ms`,
     })
     for (const [name, run] of [
         ['unscrolled', trace.unscrolled],
@@ -616,14 +625,22 @@ function evaluateCost(
     const steadyP95 = steady.value
     const sustainedP95 = commitP95
     const sustainedRatio = commitP95 / floorP95
+    const steadyBlocked =
+        (trace.steady.sampleMode !== 'batch20' && !validity.timerValid) ||
+        steady.blocked === true
     findings.push({
         ...steady,
         id: 'G10',
         label: 'Steady frame at 300 nested movers (A-19 150+150)',
-        blocked:
-            (trace.steady.sampleMode !== 'batch20' && !validity.timerValid) ||
-            steady.blocked === true,
-        detail: `${steady.detail ?? ''}; refresh ${trace.steady.refreshHz.toFixed(1)} Hz`,
+        value: steadyBlocked ? Number.NaN : steady.value,
+        pass: !steadyBlocked && steady.pass,
+        blocked: steadyBlocked,
+        deciding: !steadyBlocked,
+        detail: `${steady.detail ?? ''}; ${
+            trace.steady.sampleMode === 'batch20'
+                ? 'real-clock 20-frame batch samples'
+                : `refresh ${trace.steady.refreshHz.toFixed(1)} Hz`
+        }`,
     })
     const sustainedGate = sustainedRatioGate(
         trace.sustained.commitCosts,
@@ -633,11 +650,16 @@ function evaluateCost(
     )
     findings.push({
         ...sustainedGate,
-        blocked: !validity.timerValid,
+        value: blockedByTimer ? Number.NaN : sustainedGate.value,
+        pass: !blockedByTimer && sustainedGate.pass,
+        blocked: blockedByTimer,
+        deciding: !blockedByTimer,
+        aggregate: 'median',
+        aggregateLimit: 2,
         measured:
             trace.sustained.commitCosts.length > 0 &&
             trace.sustained.floorCosts.length > 0,
-        detail: `${sustainedGate.detail ?? ''}; ${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms; sample ${trace.sustained.sampleMode}${trace.sustained.errorBound > 0 ? ` ±${trace.sustained.errorBound.toFixed(4)} ms` : ''}`,
+        detail: `${blockedByTimer ? 'BLOCK: timer too coarse; the quantized ratio is diagnostic, not a gate value. ' : ''}${sustainedGate.detail ?? ''}; ${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms; sample ${trace.sustained.sampleMode}${trace.sustained.errorBound > 0 ? ` ±${trace.sustained.errorBound.toFixed(4)} ms` : ''}`,
     })
     const sustainedAudit = auditFloor({
         participants: trace.unscrolled.participants,
@@ -747,6 +769,7 @@ function evaluateCost(
             engineMedianScrolled: median(trace.scrolled.engine),
             floorMedianScrolled: median(trace.scrolled.floor),
             steadyP95,
+            steadySampleMode: trace.steady.sampleMode,
             sustainedP95,
             sustainedFloorP95: floorP95,
             sustainedRatio,
@@ -796,9 +819,7 @@ function aggregateCost(
     ]
     // A cost report can be pending only while the trace says G12 is pending.
     const heldPending = measured.some((run) => run.heldPending)
-    const metricsPass = metrics
-        .filter((metric) => metric.deciding)
-        .every((metric) => metric.pass)
+    const metricsPass = metrics.every((metric) => metric.pass)
     const outcome = costOutcome({ valid, heldPending, metricsPass })
     return {
         scene: 'S-BULK',

@@ -118,6 +118,7 @@ export interface CostRunReport {
     readonly engineMedianScrolled: number
     readonly floorMedianScrolled: number
     readonly steadyP95: number
+    readonly steadySampleMode: 'frame' | 'batch20'
     readonly sustainedP95: number
     readonly sustainedFloorP95: number
     readonly sustainedRatio: number
@@ -294,8 +295,14 @@ export function formatReport(report: BenchReport): string {
                 )
             }
             for (const run of cost.runs) {
+                if (run.sustainedSampleMode === 'quantized') {
+                    lines.push(
+                        `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: BLOCK (quantized timer; G9/G11 samples non-deciding); floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms${run.steadySampleMode === 'batch20' ? ' (20-frame real-clock batch)' : ''}; g ${run.g.toFixed(4)} ms`
+                    )
+                    continue
+                }
                 lines.push(
-                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms / floor p95 ${run.sustainedFloorP95.toFixed(3)} ms = ${run.sustainedRatio.toFixed(3)}× (${run.sustainedSampleMode}); g ${run.g.toFixed(4)} ms`
+                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms${run.steadySampleMode === 'batch20' ? ' (20-frame real-clock batch)' : ''}; sustained p95 ${run.sustainedP95.toFixed(3)} ms / floor p95 ${run.sustainedFloorP95.toFixed(3)} ms = ${run.sustainedRatio.toFixed(3)}× (${run.sustainedSampleMode}); g ${run.g.toFixed(4)} ms`
                 )
             }
         }

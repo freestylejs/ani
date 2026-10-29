@@ -3,11 +3,11 @@
  * nested labels; 300 movers = 150 moving tiles + their 150 labels. The floor
  * includes §4.3 step 2 computed reads for the active nodes, and both fixtures
  * are reset to rest between samples. WebKit's 1 ms timer makes G9/G11
- * non-deciding; the report returns BLOCK, not a fabricated ratio.
+ * non-deciding; G10 uses real-clock 20-frame batches. The report returns
+ * BLOCK for G9/G11, not a fabricated ratio.
  */
 
-import { timing } from '@freestylejs/ani-core'
-import { createManualClock } from '@freestylejs/ani-core/testing'
+import { createClock, timing } from '@freestylejs/ani-core'
 import { createLayoutGroup, type LayoutGroup } from '@freestylejs/ani-layout'
 import { median } from '../stats.ts'
 import type { CostRun, CostTrace, FloorAuditTrace } from '../types.ts'
@@ -512,10 +512,11 @@ async function measureSteady(
 
 /**
  * §11.5 coarse-timer protocol: one sample is the mean of 20 consecutive
- * frames timed as one `performance.now()` interval. The frames are advanced
- * back-to-back on a manual clock, so the interval contains the 20 frames'
- * script work and no display idle. 30 samples cover 600 frames. This is a
- * frame-sample protocol only; it cannot be used for a 60 Hz commit cadence.
+ * frames timed as one `performance.now()` interval. A real rAF tick starts
+ * each batch; the 20 engine frame callbacks then run back-to-back on the real
+ * clock, so the interval contains their script work and no display idle.
+ * 30 samples cover 600 frames. This is a frame-sample protocol only; it cannot
+ * be used for a 60 Hz commit cadence.
  */
 async function measureSteadyBatch(g: number): Promise<{
     costs: number[]
@@ -524,9 +525,9 @@ async function measureSteadyBatch(g: number): Promise<{
     errorBound: number
 }> {
     const fixture = buildBulk(false, false)
-    const mc = createManualClock()
+    const batch = createRealClockBatcher()
     const group = createLayoutGroup({
-        clock: mc.clock,
+        clock: batch.clock,
         motion: { type: 'timing', duration: 10, timing: timing.linear() },
         reducedMotion: 'ignore',
         maxNodes: 300,
@@ -536,18 +537,63 @@ async function measureSteadyBatch(g: number): Promise<{
     group.update((() => mutateBulk(fixture, true)) as () => void)
     const costs: number[] = []
     for (let i = 0; i < 30; i++) {
-        const before = performance.now()
-        mc.frames(20)
-        costs.push((performance.now() - before) / 20)
+        await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => {
+                const before = performance.now()
+                batch.frames(20)
+                costs.push((performance.now() - before) / 20)
+                resolve()
+            })
+        })
     }
     group.finish()
     group.dispose()
+    batch.clock.dispose()
     fixture.dispose()
     return {
         costs,
-        refreshHz: 60,
+        // A batch spans 20 engine frame callbacks, not 20 display frames.
+        refreshHz: 0,
         sampleMode: 'batch20',
         errorBound: g / 20,
+    }
+}
+
+/**
+ * A real clock whose frame callbacks are queued instead of being handed to
+ * the browser. `frames(n)` runs n callbacks back-to-back, which is the
+ * unquantized 20-frame interval the coarse-timer protocol times.
+ */
+function createRealClockBatcher(): {
+    readonly clock: ReturnType<typeof createClock>
+    frames(count: number): void
+} {
+    let nextId = 1
+    const queue = new Map<number, (timestamp: number) => void>()
+    const clock = createClock({
+        reducedMotion: false,
+        visibility: false,
+        now: () => performance.now(),
+        requestFrame: (callback) => {
+            const id = nextId
+            nextId += 1
+            queue.set(id, callback)
+            return id
+        },
+        cancelFrame: (id) => {
+            queue.delete(id)
+        },
+    })
+    return {
+        clock,
+        frames(count: number) {
+            for (let i = 0; i < count; i++) {
+                const callbacks = [...queue.values()]
+                queue.clear()
+                const timestamp = performance.now()
+                for (const callback of callbacks) callback(timestamp)
+            }
+        },
     }
 }
 
