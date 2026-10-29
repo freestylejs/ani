@@ -552,15 +552,22 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
             trace.observations[flushIndex]?.boxes[hold.key] ??
             null
         if (!next || !releaseBox) return
-        const riders = [{ key: hold.key, dx: 0, dy: 0 }, ...hold.riders]
+        const riders = [
+            { key: hold.key, dx: 0, dy: 0, held: true },
+            ...hold.riders.map((rider) => ({ ...rider, held: false })),
+        ]
         for (const rider of riders) {
             const shown = next.boxes[rider.key] ?? null
             if (!shown) continue
+            // The rider keeps its own rest size (title 270×22); the held
+            // row's 358×52 size applies only to the held node. Using the
+            // held size here would manufacture a width-edge failure.
+            const rest = plan.initial[rider.key]
             const want = {
                 x: releaseBox.x + rider.dx,
                 y: releaseBox.y + rider.dy,
-                w: releaseBox.w,
-                h: releaseBox.h,
+                w: rider.held ? releaseBox.w : (rest?.w ?? releaseBox.w),
+                h: rider.held ? releaseBox.h : (rest?.h ?? releaseBox.h),
             }
             releaseContinuity.push({
                 key: rider.key,

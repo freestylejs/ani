@@ -137,18 +137,25 @@ export function aggregateSceneReport(args: {
             detail: failing
                 ? [
                       ...failing.metrics
+                          .filter((metric) => metric.blocked === true)
+                          .map((metric) => `BLOCK ${metric.id}`),
+                      ...failing.metrics
                           .filter(
                               (metric) =>
-                                  !metric.pass && metric.deciding !== false
+                                  !metric.pass &&
+                                  metric.blocked !== true &&
+                                  metric.deciding !== false
                           )
                           .map(
                               (metric) =>
                                   `${metric.id} ${metric.value}${metric.worst?.participant ? ` (${metric.worst.participant}${metric.worst.frame === undefined ? '' : ` frame ${metric.worst.frame}`})` : ''}`
                           ),
                       ...failing.problems,
-                      failing.real.pass
-                          ? ''
-                          : `G8 p95 ${failing.real.p95} ms, ${failing.real.longFrames} long frames`,
+                      failing.real.blocked
+                          ? `BLOCK G8 p95 ${failing.real.p95} ms (1 ms-quantized WebKit; 20-frame mean not claimed)`
+                          : failing.real.pass
+                            ? ''
+                            : `G8 p95 ${failing.real.p95} ms, ${failing.real.longFrames} long frames`,
                       `manual final tracks ${failing.summary.final.tracks}, holds ${failing.summary.final.holds}, clock pending ${failing.summary.final.clockPending}, clock size ${failing.summary.final.clockSize}`,
                   ]
                       .filter(Boolean)

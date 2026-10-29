@@ -45,6 +45,12 @@ import {
     styleOnce,
 } from './kit.ts'
 
+/**
+ * Scene contribution (H16/F14): the manual clock uses one 16 ms step, so the
+ * spec's second-hold 20 ms row is amended to 16 ms. The detent policy
+ * (`projected = top + v·0.20`, nearest of {124, 422, 844}) and the ≥1 s second
+ * take are implemented exactly as the scene spec states.
+ */
 const STEP = 16
 const SHEET_SPRING = {
     type: 'spring',
