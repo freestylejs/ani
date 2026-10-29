@@ -371,7 +371,8 @@ than browser controls; the mapping is one control per deciding metric.
   defects (late nested handoff; nested counter-projection). Certification is
   **NOT CERTIFIED**: S-PHOTO/S-ACC, pending P4 and the unchanged S-BULK cost
   block are the reasons. The full per-metric table and the H15 fix ledger are
-  in `ITERATIONS.md`.
+  in `ITERATIONS.md`; iteration 5 adds the N15-01 restoration proof and the
+  N15-02 real-twin fidelity fix.
 
 ### Scene table (P5b)
 
@@ -381,7 +382,7 @@ than browser controls; the mapping is one control per deciding metric.
 | S-PHOTO | vanilla | 301 | 2 | 16 ms | PHOTO 0.45/0 | open, back at scrollTop 1077 |
 | S-SEG | vanilla | 1 | 1 | 16 ms | SEG 0.35/0.12 | four taps 80 ms apart |
 | S-STACK | vanilla | 12 | 12 | 16 ms | STACK 0.55/0.08 | expand, collapse |
-| S-ACC | React | 43 | 33/17/35 | 16 ms | ACC 0.50/0.06 | row 2, row 6 mid-flight, row 2 collapse |
+| S-ACC | React | 43 | 33/17/33 | 16 ms | ACC 0.50/0.06 | row 2, row 6 mid-flight, row 2 collapse |
 | S-INSERT | React | 16 | 13 + 3 presence | 16 ms | INSERT 0.50/0.05 | prepend 3 at scrollTop 1000 |
 | S-ISLAND | vanilla | 4 | 2 | 10 ms | ISLAND 0.50/0.10 | expand, reverse at 30 % |
 | S-DELETE | React | 9 | 8 + 2 presence | 10 ms | DELETE 0.45/0.08 | delete row 2, row 5 at +100 ms |
@@ -431,7 +432,7 @@ same public engine surface.
   presence probe are classified as non-layout and recorded per commit
   (`presenceRects`/`presenceStyles`) instead of being subtracted by a constant;
   the gate uses the layout subset. The exact set is 18/18 rects, 4/4 or 3/3
-  computed reads (Chromium) and 6/6 (WebKit, including Typed OM).
+  computed reads (Chromium) and 10/10 and 8/8 (WebKit, including Typed OM).
 - **S-STACK badge presence** is on the badge's inner count disc: the badge
   participant is a 22×22 wrapper (so the position track is exact), its
   opacity enters/exits under presence, and the red disc scales 0.8→1 about its
@@ -444,12 +445,21 @@ same public engine surface.
   the card on a 0.28 s critically damped spring and is removed with the card.
   This is a deliberate departure from the spec's `layout: 'position'` for the
   **exiting** card content: a position wrapper leaves a counter-projected pose
-  on the subtree when it is removed with the follower. The pill content remains
-  a position wrapper; both wrappers are counter-projected during the expand.
-  The content fade start is quantized to the first frame whose lead perceptual
-  progress is ≥ 0.5. The harness exempts a descendant removed with a crossfade
-  follower (H15-07) from the last-frame owned-declaration check, because the
-  follower's removal restores the subtree.
+  on the subtree when it is removed with the follower, and the engine does not
+  counter-project it under the follower at the needed accuracy. The pill
+  content remains a position wrapper; both wrappers are counter-projected
+  during the expand. **Text-crispness assertion:** the incoming pill content
+  and the expanded card content are position-pinned at the authored glyph
+  size; the exiting card content is a size-tracking layer whose text scales
+  with the 0.28 s shrink while its declared opacity fades to 0 over 0.12 s
+  (`shape.presence-opacity`). The G1 box track and the opacity timeline are the
+  assertion; the departing text is never presented after the fade. The content
+  fade start is quantized to the first frame whose lead perceptual progress is
+  ≥ 0.5. The harness exempts a descendant removed with a crossfade follower
+  (H15-07) from the last-frame owned-declaration check, and the exemption is
+  backed by the post-removal before/after style snapshot (N15-01) required by
+  `requiredRestorations`; the snapshot proves the engine restored the owned
+  translate/scale before the element is removed.
 - **S-CARD** keeps the sheet content registered in a hidden non-participant
   sheet from rest (valid B), separates lead/follower z-order, and starts the
   close one settled frame after the open report. The content layer is an author
@@ -508,10 +518,13 @@ same public engine surface.
   (nested under the new frame) is skipped by the engine's late-handoff guard
   (`lateWithHandoff` requires the parent to be measured in the same plan), so it
   snaps to its target. G1/G2/G4 are 306.25 px; both engines report
-  `snapped [detail-image:stale]` (G7 4) and the engine's stale diagnostic. The
-  real twin reports the same path plus one extra frame diagnostic (3 vs 2);
-  this is the H18 nested-image defect, recorded rather than suppressed. Engine
-  defect, not worked around.
+  `snapped [detail-image:stale]` (G7 4) and the engine's stale diagnostic.
+  N15-02 makes `openReal()`/`backReal()` mirror the manual unregister/add
+  path, set `data-p`/`elements` and insert the returned cell at the selected
+  index; the real twin now emits exactly the same two `capture-less-flush`
+  stale diagnostics as the manual (open detail image, back cell image), not
+  three. They are the H18 nested-image path, recorded as problems and not
+  suppressed. Engine defect, not worked around.
 - **S-ACC** fails on `body-6` at the mid-flight row 6 expansion: the position-
   pinned body is drawn as its layout box under the row's new height pose
   (h = 120·48/168), not the 120 px rest box, at the retarget flush. G1/G4 are
