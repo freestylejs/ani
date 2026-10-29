@@ -1323,6 +1323,29 @@ describe('solve: spring tracks (§5.3)', () => {
         expect(springs).toBeGreaterThan(1000)
     })
 
+    it('L-SPRING-1: a spring settles on every visible edge, not only on its origin and size channels', () => {
+        const motion = resolveMotion([
+            { type: 'spring', duration: 0.45, bounce: 0 },
+        ])
+        const b: Box = { x: 0, y: 0, w: 100, h: 50 }
+        const a: Box = { x: 30, y: 10, w: 200, h: 100 }
+        const track = planTrack(b, a, null, 0.5, 0.5, true, motion, null)
+        if (typeof track === 'string' || track.law.kind !== 'spring') {
+            throw new Error(String(track))
+        }
+        const edges = [
+            settleOracle(0.45, 0, b.x - a.x, 0),
+            settleOracle(0.45, 0, b.x + b.w - (a.x + a.w), 0),
+            settleOracle(0.45, 0, b.y - a.y, 0),
+            settleOracle(0.45, 0, b.y + b.h - (a.y + a.h), 0),
+        ]
+        // the right edge moves 130 px while the origin moves 80 and the size
+        // 100: a settle on the channels alone would leave it 0.1 px off.
+        expect(track.law.settle).toBeGreaterThanOrEqual(
+            Math.max(...edges) - 1e-9
+        )
+    })
+
     it('L-SPRING-1: analytic velocities of spring trees equal finite differences', () => {
         for (let seed = 700; seed < 800; seed++) {
             const built = randomTree(seed, 1)
