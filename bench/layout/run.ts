@@ -37,6 +37,7 @@ import {
     floorAuditGate,
     realClockGate,
     steadyFrameGate,
+    sustainedRatioGate,
 } from './gates.ts'
 import {
     type AggregateMetric,
@@ -538,6 +539,7 @@ function evaluateCost(
         g: trace.g,
         commits: trace.sustained.commits,
         commitHz: trace.sustained.commitHz,
+        steadyBatch: trace.steady.sampleMode === 'batch20',
     })
     const validCost = validity.valid
     findings.push({
@@ -602,31 +604,72 @@ function evaluateCost(
             )
         }
     }
-    const steady = steadyFrameGate(trace.steady.costs, trace.steady.g)
+    const steady = steadyFrameGate(
+        trace.steady.costs,
+        trace.steady.g,
+        'Steady frame at 300 nested movers (A-19 150+150)',
+        trace.steady.sampleMode,
+        trace.steady.errorBound
+    )
     const commitP95 = percentile(trace.sustained.commitCosts, 0.95)
+    const floorP95 = percentile(trace.sustained.floorCosts, 0.95)
     const steadyP95 = steady.value
     const sustainedP95 = commitP95
+    const sustainedRatio = commitP95 / floorP95
     findings.push({
         ...steady,
         id: 'G10',
         label: 'Steady frame at 300 nested movers (A-19 150+150)',
-        blocked: !validity.timerValid,
+        blocked:
+            (trace.steady.sampleMode !== 'batch20' && !validity.timerValid) ||
+            steady.blocked === true,
         detail: `${steady.detail ?? ''}; refresh ${trace.steady.refreshHz.toFixed(1)} Hz`,
     })
+    const sustainedGate = sustainedRatioGate(
+        trace.sustained.commitCosts,
+        trace.sustained.floorCosts,
+        validity.cadenceValid,
+        trace.sustained.errorBound
+    )
     findings.push({
-        id: 'G11',
-        label: 'Sustained 60 Hz commit script cost, 300 moving participants',
-        gate: 'p95 of one performance.now() pair per 60 Hz commit <= 2 ms',
-        unit: 'ms',
-        value: commitP95,
-        pass:
-            validity.cadenceValid &&
-            Number.isFinite(commitP95) &&
-            commitP95 <= 2,
+        ...sustainedGate,
         blocked: !validity.timerValid,
-        measured: trace.sustained.commitCosts.length > 0,
-        detail: `${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms`,
+        measured:
+            trace.sustained.commitCosts.length > 0 &&
+            trace.sustained.floorCosts.length > 0,
+        detail: `${sustainedGate.detail ?? ''}; ${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms; sample ${trace.sustained.sampleMode}${trace.sustained.errorBound > 0 ? ` ±${trace.sustained.errorBound.toFixed(4)} ms` : ''}`,
     })
+    const sustainedAudit = auditFloor({
+        participants: trace.unscrolled.participants,
+        poses: trace.unscrolled.poses,
+        typedOM: trace.typedOM,
+        captureRects: trace.sustained.floorAudit.captureRects,
+        captureOffsets: trace.sustained.floorAudit.captureOffsets,
+        flushRects: trace.sustained.floorAudit.flushRects,
+        flushOffsets: trace.sustained.floorAudit.flushOffsets,
+        styleReads: trace.sustained.floorAudit.styleReads,
+        poseWrites: trace.sustained.floorAudit.poseWrites,
+        extraReads: trace.sustained.floorAudit.extraReads,
+    })
+    findings.push({
+        ...floorAuditGate(sustainedAudit),
+        id: 'G11.floor',
+        label: 'Sustained required-work floor audit',
+        value: sustainedAudit.pass ? 0 : sustainedAudit.mismatches.length,
+        detail: sustainedAudit.summary,
+    })
+    const sustainedRequired = trace.unscrolled.participants * 2
+    const sustainedStyles = trace.unscrolled.poses * (trace.typedOM ? 2 : 1)
+    if (
+        trace.sustained.engineAudit.rects !== sustainedRequired ||
+        trace.sustained.engineAudit.offsets !== sustainedRequired ||
+        trace.sustained.engineAudit.styleReads !== sustainedStyles ||
+        trace.sustained.engineAudit.poseWrites !== trace.unscrolled.poses
+    ) {
+        problems.push(
+            `sustained: engine audit ${trace.sustained.engineAudit.rects} rects / ${trace.sustained.engineAudit.offsets} pairs / ${trace.sustained.engineAudit.styleReads} styles / ${trace.sustained.engineAudit.poseWrites} poses, required ${sustainedRequired}/${sustainedRequired}/${sustainedStyles}/${trace.unscrolled.poses}`
+        )
+    }
     let exactPass = true
     let exactDetail = ''
     const requiredStyles = trace.unscrolled.poses * (trace.typedOM ? 2 : 1)
@@ -650,6 +693,15 @@ function evaluateCost(
         exactPass = false
         exactDetail ||= `steady frame reads ${trace.unscrolled.steadyFrameReads}/${trace.scrolled.steadyFrameReads}`
     }
+    if (
+        trace.sustained.engineAudit.rects !== sustainedRequired ||
+        trace.sustained.engineAudit.offsets !== sustainedRequired ||
+        trace.sustained.engineAudit.styleReads !== sustainedStyles ||
+        trace.sustained.engineAudit.poseWrites !== trace.unscrolled.poses
+    ) {
+        exactPass = false
+        exactDetail ||= `sustained engine audit ${trace.sustained.engineAudit.rects}/${trace.sustained.engineAudit.offsets}/${trace.sustained.engineAudit.styleReads}/${trace.sustained.engineAudit.poseWrites}`
+    }
     if (exactPass) {
         exactDetail = `every commit ${trace.unscrolled.participants * 2} rect/pair reads, ${requiredStyles} computed reads (${trace.typedOM ? 'incl. Typed OM' : 'Chromium set'}), ${trace.unscrolled.poses} poses; steady frames read zero`
     }
@@ -664,7 +716,10 @@ function evaluateCost(
         detail: exactDetail,
     })
     const floorPass = findings
-        .filter((finding) => finding.id.startsWith('G9.floor'))
+        .filter(
+            (finding) =>
+                finding.id.startsWith('G9.floor') || finding.id === 'G11.floor'
+        )
         .every((finding) => finding.pass)
     return {
         findings,
@@ -693,12 +748,23 @@ function evaluateCost(
             floorMedianScrolled: median(trace.scrolled.floor),
             steadyP95,
             sustainedP95,
+            sustainedFloorP95: floorP95,
+            sustainedRatio,
             sustainedCommits: trace.sustained.commits,
             sustainedCommitHz: trace.sustained.commitHz,
+            sustainedSampleMode: trace.sustained.sampleMode,
+            sustainedErrorBound: trace.sustained.errorBound,
+            sustainedEngineAudit: trace.sustained.engineAudit,
+            sustainedFloorAudit: trace.sustained.floorAudit,
+            sustainedFloorAuditPass: sustainedAudit.pass,
             floorAuditPass: floorPass && problems.length === 0,
             floorAuditDetail: [
                 ...findings
-                    .filter((finding) => finding.id.startsWith('G9.floor'))
+                    .filter(
+                        (finding) =>
+                            finding.id.startsWith('G9.floor') ||
+                            finding.id === 'G11.floor'
+                    )
                     .map((finding) => finding.detail ?? ''),
                 ...problems,
             ]
@@ -1393,10 +1459,18 @@ async function main(): Promise<number> {
         launchErrors.length === 0 &&
         scenePass &&
         costPass
+    const sourceRevision = (() => {
+        const revision = spawnSync('git', ['rev-parse', 'HEAD'], {
+            cwd: REPO_ROOT,
+            encoding: 'utf8',
+        })
+        return revision.status === 0 ? revision.stdout.trim() : undefined
+    })()
     const report: BenchReport = {
         schema: 'ani-layout-bench/v1',
         generatedAt: new Date().toISOString(),
         command: `pnpm bench:layout ${process.argv.slice(2).join(' ')}`.trim(),
+        ...(sourceRevision ? { sourceRevision } : {}),
         fingerprint,
         advisory,
         engines: engineReports,

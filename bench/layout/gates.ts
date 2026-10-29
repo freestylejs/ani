@@ -12,6 +12,7 @@ export interface GateResult {
     readonly unit: string
     readonly value: number
     readonly pass: boolean
+    readonly blocked?: boolean
     readonly perRun?: readonly number[]
     readonly worst?:
         | {
@@ -175,7 +176,9 @@ export function realClockGate(
 export function steadyFrameGate(
     costs: readonly number[],
     g: number,
-    label = 'Steady frame at 300 nested movers'
+    label = 'Steady frame at 300 nested movers',
+    sampleMode: 'frame' | 'batch20' = 'frame',
+    errorBound = g / 2
 ): GateResult {
     if (costs.length === 0) {
         return {
@@ -188,47 +191,62 @@ export function steadyFrameGate(
             detail: 'no frame samples',
         }
     }
-    const sampleSet = frameSamples(costs, g)
-    const samples = sampleSet.samples
+    const samples =
+        sampleMode === 'batch20' ? [...costs] : frameSamples(costs, g).samples
     const p95 = percentile(samples, 0.95)
+    const pass = sampleMode === 'batch20' ? p95 + errorBound <= 2 : p95 <= 2
+    const blocked =
+        sampleMode === 'batch20'
+            ? p95 + errorBound > 2 && p95 - errorBound <= 2
+            : false
     return {
         id: 'G10',
         label,
         gate: 'p95 <= 2 ms',
         unit: 'ms',
         value: p95,
-        pass: p95 <= 2,
-        detail: `${sampleSet.detail}; ${samples.length} samples`,
+        pass: pass && !blocked,
+        blocked,
+        detail:
+            sampleMode === 'batch20'
+                ? `20-frame intervals, ${samples.length} samples; p95 ${p95.toFixed(3)} ms ±${errorBound.toFixed(4)} ms`
+                : `${frameSamples(costs, g).detail}; ${samples.length} samples`,
     }
 }
 
-export function sustainedGate(
-    costs: readonly number[],
-    g: number,
-    gateMs = 2
+export function sustainedRatioGate(
+    engineCosts: readonly number[],
+    floorCosts: readonly number[],
+    cadenceValid = true,
+    errorBound = 0
 ): GateResult {
-    if (costs.length === 0) {
+    if (engineCosts.length === 0 || floorCosts.length === 0) {
         return {
             id: 'G11',
             label: 'Sustained 60 Hz commits with 300 moving participants',
-            gate: `p95 of every frame sample in the 5 s window <= ${gateMs} ms`,
-            unit: 'ms',
+            gate: 'p95(engine commits) / p95(floor commits) <= 2',
+            unit: 'ratio',
             value: Number.POSITIVE_INFINITY,
             pass: false,
-            detail: 'no frame samples',
+            detail: 'no engine or floor samples',
         }
     }
-    const sampleSet = frameSamples(costs, g)
-    const samples = sampleSet.samples
-    const p95 = percentile(samples, 0.95)
+    const engineP95 = percentile(engineCosts, 0.95)
+    const floorP95 = percentile(floorCosts, 0.95)
+    const ratio = engineP95 / floorP95
     return {
         id: 'G11',
         label: 'Sustained 60 Hz commits with 300 moving participants',
-        gate: `p95 of every frame sample in the 5 s window <= ${gateMs} ms`,
-        unit: 'ms',
-        value: p95,
-        pass: p95 <= gateMs,
-        detail: `${sampleSet.detail}; ${samples.length} samples`,
+        gate: 'p95(engine commits) / p95(floor commits) <= 2',
+        unit: 'ratio',
+        value: ratio,
+        pass:
+            cadenceValid &&
+            Number.isFinite(ratio) &&
+            Number.isFinite(floorP95) &&
+            floorP95 > 0 &&
+            ratio <= 2,
+        detail: `engine p95 ${engineP95.toFixed(3)} ms / floor p95 ${floorP95.toFixed(3)} ms = ${ratio.toFixed(3)}×; ${engineCosts.length} engine / ${floorCosts.length} floor samples${errorBound > 0 ? `; ±${errorBound.toFixed(4)} ms per-sample` : ''}`,
     }
 }
 

@@ -292,17 +292,41 @@ export interface CostTrace {
         readonly costs: readonly number[]
         readonly g: number
         readonly refreshHz: number
+        /** `frame`: one pair per rAF frame; `batch20`: one interval per 20 frames. */
+        readonly sampleMode: 'frame' | 'batch20'
+        readonly errorBound: number
     }
     readonly sustained: {
         /** One performance.now() pair around each 60 Hz commit. */
         readonly commitCosts: readonly number[]
+        /** One performance.now() pair around each floor replica commit. */
+        readonly floorCosts: readonly number[]
         /** rAF frame costs; diagnostic only when the refresh is below 60 Hz. */
         readonly frameCosts: readonly number[]
         readonly g: number
+        /** `commit`: one pair per commit; `quantized`: raw pairs at g > 0.05 ms. */
+        readonly sampleMode: 'commit' | 'quantized'
+        /** Worst per-sample error bound under the timer mode. */
+        readonly errorBound: number
         readonly commits: number
         readonly refreshHz: number
         readonly durationMs: number
         readonly commitHz: number
+        readonly engineAudit: {
+            readonly rects: number
+            readonly offsets: number
+            readonly styleReads: number
+            readonly poseWrites: number
+        }
+        readonly floorAudit: {
+            readonly captureRects: number
+            readonly captureOffsets: number
+            readonly flushRects: number
+            readonly flushOffsets: number
+            readonly styleReads: number
+            readonly poseWrites: number
+            readonly extraReads: number
+        }
     }
     readonly exactReads: readonly {
         readonly label: string

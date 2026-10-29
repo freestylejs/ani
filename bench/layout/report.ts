@@ -119,8 +119,28 @@ export interface CostRunReport {
     readonly floorMedianScrolled: number
     readonly steadyP95: number
     readonly sustainedP95: number
+    readonly sustainedFloorP95: number
+    readonly sustainedRatio: number
     readonly sustainedCommits: number
     readonly sustainedCommitHz: number
+    readonly sustainedSampleMode: 'commit' | 'quantized'
+    readonly sustainedErrorBound: number
+    readonly sustainedEngineAudit: {
+        readonly rects: number
+        readonly offsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+    }
+    readonly sustainedFloorAudit: {
+        readonly captureRects: number
+        readonly captureOffsets: number
+        readonly flushRects: number
+        readonly flushOffsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+        readonly extraReads: number
+    }
+    readonly sustainedFloorAuditPass: boolean
     readonly floorAuditPass: boolean
     readonly floorAuditDetail: string
     readonly exactReadsPass: boolean
@@ -167,6 +187,8 @@ export interface BenchReport {
     readonly schema: 'ani-layout-bench/v1'
     readonly generatedAt: string
     readonly command: string
+    /** Git revision of the source that produced the bundle, when available. */
+    readonly sourceRevision?: string
     readonly fingerprint: Fingerprint
     readonly advisory: Advisory
     readonly engines: readonly EngineReport[]
@@ -273,7 +295,7 @@ export function formatReport(report: BenchReport): string {
             }
             for (const run of cost.runs) {
                 lines.push(
-                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms; g ${run.g.toFixed(4)} ms`
+                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms / floor p95 ${run.sustainedFloorP95.toFixed(3)} ms = ${run.sustainedRatio.toFixed(3)}× (${run.sustainedSampleMode}); g ${run.g.toFixed(4)} ms`
                 )
             }
         }
