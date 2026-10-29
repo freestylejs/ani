@@ -1,7 +1,8 @@
 {
   "schema": "ani-layout-bench/v1",
-  "generatedAt": "2026-10-29T00:35:33.220Z",
+  "generatedAt": "2026-10-29T02:46:25.634Z",
   "command": "pnpm bench:layout --engine webkit --scene s-card --runs 5 --out bench/layout/iteration-3/webkit-s-card.json",
+  "sourceRevision": "1cec4d6b72f14f36fe7b5960ac6f5565fc481c76",
   "fingerprint": {
     "host": "Mac14,9",
     "os": {
@@ -20,12 +21,12 @@
       "webkit": "webkit-2203",
       "firefox": "firefox-1490"
     },
-    "load1": 1.71435546875
+    "load1": 2.5859375
   },
   "advisory": {
     "cost": true,
     "reasons": [
-      "1-minute load is 1.71, pinned below 1"
+      "1-minute load is 2.59, pinned below 1"
     ]
   },
   "engines": [
@@ -321,8 +322,8 @@
               "pass": true,
               "perRun": [
                 1,
-                1.0000000000002274,
-                1.0000000000002274,
+                1,
+                1,
                 1,
                 1
               ],
@@ -334,8 +335,8 @@
                 true
               ],
               "worst": {
-                "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 62 samples, 62 frames",
-                "run": 2
+                "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames",
+                "run": 1
               }
             },
             {
@@ -350,9 +351,9 @@
               "perRun": [
                 null,
                 1,
-                1,
-                1,
-                1
+                0.9999999999999858,
+                null,
+                null
               ],
               "passPerRun": [
                 true,
@@ -598,9 +599,9 @@
               "costProbe": {
                 "participants": 7,
                 "movers": 6,
-                "engineMedian": 1,
-                "floorMedian": 1,
-                "ratio": 1
+                "engineMedian": 0,
+                "floorMedian": 0,
+                "ratio": null
               },
               "metrics": [
                 {
@@ -736,10 +737,10 @@
                   "label": "Real-clock frame script cost",
                   "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
                   "unit": "ms",
-                  "value": 1.0000000000002274,
+                  "value": 0.9999999999997726,
                   "pass": true,
                   "worst": {
-                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 62 samples, 62 frames"
+                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 115 samples, 115 frames"
                   }
                 },
                 {
@@ -747,11 +748,11 @@
                   "label": "Engine/floor commit ratio at scene N=7 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 1,
+                  "value": null,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
-                  "detail": "7 participants, 6 movers; engine 1.000 ms / floor 1.000 ms"
+                  "detail": "7 participants, 6 movers; engine 0.000 ms / floor 0.000 ms"
                 }
               ],
               "shape": [
@@ -847,8 +848,8 @@
               "real": {
                 "g": 1,
                 "gSource": "tick-fallback",
-                "frames": 62,
-                "p95": 1.0000000000002274,
+                "frames": 115,
+                "p95": 0.9999999999997726,
                 "longFrames": 0,
                 "pass": true
               },
@@ -1070,7 +1071,7 @@
                   "value": 1,
                   "pass": true,
                   "worst": {
-                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 61 samples, 61 frames"
+                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames"
                   }
                 },
                 {
@@ -1178,7 +1179,7 @@
               "real": {
                 "g": 1,
                 "gSource": "tick-fallback",
-                "frames": 61,
+                "frames": 116,
                 "p95": 1,
                 "longFrames": 0,
                 "pass": true
@@ -1398,10 +1399,10 @@
                   "label": "Real-clock frame script cost",
                   "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
                   "unit": "ms",
-                  "value": 1.0000000000002274,
+                  "value": 1,
                   "pass": true,
                   "worst": {
-                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 62 samples, 62 frames"
+                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames"
                   }
                 },
                 {
@@ -1508,9 +1509,9 @@
               ],
               "real": {
                 "g": 1,
-                "gSource": "reads",
-                "frames": 62,
-                "p95": 1.0000000000002274,
+                "gSource": "tick-fallback",
+                "frames": 116,
+                "p95": 1,
                 "longFrames": 0,
                 "pass": true
               },
@@ -1591,9 +1592,9 @@
               "costProbe": {
                 "participants": 7,
                 "movers": 6,
-                "engineMedian": 1,
+                "engineMedian": 0.9999999999999858,
                 "floorMedian": 1,
-                "ratio": 1
+                "ratio": 0.9999999999999858
               },
               "metrics": [
                 {
@@ -1729,10 +1730,10 @@
                   "label": "Real-clock frame script cost",
                   "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
                   "unit": "ms",
-                  "value": 1.0000000000002274,
+                  "value": 1,
                   "pass": true,
                   "worst": {
-                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 62 samples, 62 frames"
+                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames"
                   }
                 },
                 {
@@ -1740,7 +1741,7 @@
                   "label": "Engine/floor commit ratio at scene N=7 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 1,
+                  "value": 0.9999999999999858,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
@@ -1838,10 +1839,10 @@
                 }
               ],
               "real": {
-                "g": 1.000000000000007,
+                "g": 1,
                 "gSource": "tick-fallback",
-                "frames": 62,
-                "p95": 1.0000000000002274,
+                "frames": 116,
+                "p95": 1,
                 "longFrames": 0,
                 "pass": true
               },
@@ -1922,9 +1923,9 @@
               "costProbe": {
                 "participants": 7,
                 "movers": 6,
-                "engineMedian": 1,
-                "floorMedian": 1,
-                "ratio": 1
+                "engineMedian": 0,
+                "floorMedian": 0,
+                "ratio": null
               },
               "metrics": [
                 {
@@ -2063,7 +2064,7 @@
                   "value": 1,
                   "pass": true,
                   "worst": {
-                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 62 samples, 62 frames"
+                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames"
                   }
                 },
                 {
@@ -2071,11 +2072,11 @@
                   "label": "Engine/floor commit ratio at scene N=7 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 1,
+                  "value": null,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
-                  "detail": "7 participants, 6 movers; engine 1.000 ms / floor 1.000 ms"
+                  "detail": "7 participants, 6 movers; engine 0.000 ms / floor 0.000 ms"
                 }
               ],
               "shape": [
@@ -2169,9 +2170,9 @@
                 }
               ],
               "real": {
-                "g": 1.000000000000007,
-                "gSource": "reads",
-                "frames": 62,
+                "g": 1,
+                "gSource": "tick-fallback",
+                "frames": 116,
                 "p95": 1,
                 "longFrames": 0,
                 "pass": true
@@ -2253,9 +2254,9 @@
               "costProbe": {
                 "participants": 7,
                 "movers": 6,
-                "engineMedian": 1,
-                "floorMedian": 1,
-                "ratio": 1
+                "engineMedian": 0,
+                "floorMedian": 0,
+                "ratio": null
               },
               "metrics": [
                 {
@@ -2394,7 +2395,7 @@
                   "value": 1,
                   "pass": true,
                   "worst": {
-                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 62 samples, 62 frames"
+                    "detail": "timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames"
                   }
                 },
                 {
@@ -2402,11 +2403,11 @@
                   "label": "Engine/floor commit ratio at scene N=7 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 1,
+                  "value": null,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
-                  "detail": "7 participants, 6 movers; engine 1.000 ms / floor 1.000 ms"
+                  "detail": "7 participants, 6 movers; engine 0.000 ms / floor 0.000 ms"
                 }
               ],
               "shape": [
@@ -2500,9 +2501,9 @@
                 }
               ],
               "real": {
-                "g": 1.000000000000007,
+                "g": 1,
                 "gSource": "tick-fallback",
-                "frames": 62,
+                "frames": 116,
                 "p95": 1,
                 "longFrames": 0,
                 "pass": true
@@ -2590,20 +2591,20 @@
   "selfTests": {
     "pass": true,
     "controls": [
-      "negative control G1: a 0.1 px offset fails the oracle error (3.369458ms)",
-      "negative control G2: a 0.1 px first-frame jump fails continuity (3.497625ms)",
-      "negative control G3: starting a retarget from rest fails velocity continuity (3.09225ms)",
-      "negative control G4: a 0.1 px spring displacement fails spring fidelity (2.322042ms)",
-      "negative control G5: a leftover pose and a 0.02 px settle error fail (2.411417ms)",
-      "negative control G6: a leftover declaration fails restoration (2.138625ms)",
-      "negative control G7: a wrong status or a wrong snapped set fails reports (4.014ms)",
-      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.298166ms)",
-      "negative control G9: a floor with an extra read fails its audit (0.363333ms)",
-      "negative control G10 and G11: a p95 above 2 ms fails (0.154916ms)",
-      "negative control G12: 0.11 ms per held element fails (0.110709ms)",
-      "negative control G13: an extra rect or a steady-frame read fails (3.861917ms)",
-      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.182458ms)",
-      "shape negative controls: opacity, coverage, radius, inert and font fail (117.391875ms)"
+      "negative control G1: a 0.1 px offset fails the oracle error (2.321083ms)",
+      "negative control G2: a 0.1 px first-frame jump fails continuity (2.3145ms)",
+      "negative control G3: starting a retarget from rest fails velocity continuity (2.147583ms)",
+      "negative control G4: a 0.1 px spring displacement fails spring fidelity (1.523166ms)",
+      "negative control G5: a leftover pose and a 0.02 px settle error fail (1.716375ms)",
+      "negative control G6: a leftover declaration fails restoration (1.446333ms)",
+      "negative control G7: a wrong status or a wrong snapped set fails reports (2.825375ms)",
+      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.209916ms)",
+      "negative control G9: a floor with an extra read fails its audit (0.252292ms)",
+      "negative control G10 and G11: a p95 above 2 ms or 2x floor fails (0.141208ms)",
+      "negative control G12: 0.11 ms per held element fails (0.073875ms)",
+      "negative control G13: an extra rect or a steady-frame read fails (2.622541ms)",
+      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.113458ms)",
+      "shape negative controls: opacity, coverage, radius, inert and font fail (87.329083ms)"
     ],
     "files": [
       "bench/layout/oracle.test.ts",
