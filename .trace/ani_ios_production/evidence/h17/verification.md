@@ -16,8 +16,8 @@ was touched. The changes are in `packages/layout/src/{scope,plan,solve,dom}.ts`.
 
 ## Final per-scene reports
 
-- `bench/layout/iteration-3/chromium-cost.json` — G9 1.945×/1.932× pass,
-  G10 0.530 ms pass, G11 9.035 ms fail, G13 exact, floor audits exact.
+- `bench/layout/iteration-3/chromium-cost.json` — G9 1.904×/1.949× pass,
+  G10 0.950 ms pass, G11 8.190 ms fail, G13 exact, floor audits exact.
 - `bench/layout/iteration-3/chromium-s-card.json` — pass.
 - `bench/layout/iteration-3/chromium-s-seg.json` — pass.
 - `bench/layout/iteration-3/webkit-cost.json` — BLOCK (g = 1 ms); G13/floor
@@ -27,8 +27,8 @@ was touched. The changes are in `packages/layout/src/{scope,plan,solve,dom}.ts`.
 The full two-engine invocation's Chromium failure is a browser-process loss
 (`GPU process exited unexpectedly: exit_code=15`) before the first measured
 run, followed by a Playwright closed-browser wait. It is recorded, not hidden.
-The cost fingerprint load was 3.92 on the final cost run (earlier per-scene
-runs 1.48–2.22; advisory); a quiet run is still required
+The cost fingerprint load was 2.48 on the final cost run (earlier per-scene
+runs 1.48–3.92; advisory); a quiet run is still required
 for certification.
 
 ## What was verified directly

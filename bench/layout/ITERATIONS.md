@@ -495,7 +495,7 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 - Fingerprint: MacBook Pro `Mac14,9`, Apple M2 Pro, 10 cores, 32 GB,
   macOS 27.0.1 / Darwin 27.0.0, Node 24.19.0, pnpm 10.20.0, Playwright
   1.55.0, `chromium_headless_shell-1187`, `webkit-2203`. 1-minute load at the
-  final cost run: **3.92** (earlier per-scene runs 1.48–2.22). Cost is **advisory**;
+  final cost run: **2.48** (earlier per-scene runs 1.48–3.92). Cost is **advisory**;
   the ratios are measured but not a certification claim until a quiet run.
 - No scene expectation, row, tolerance or `knownFailure` changed.
 
@@ -503,13 +503,13 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 
 | Metric | Iteration 2 | Iteration 3 | Gate |
 |---|---:|---:|---|
-| G9 unscrolled | **3.252× FAIL** | **1.945× pass** (per-run 1.968/2.000/1.939/1.945/1.930) | ≤ 2 |
-| G9 scrolled | **3.284× FAIL** | **1.932× pass** (1.932/2.029/1.920/1.885/1.966) | ≤ 2 |
-| engine commit unscrolled | 8.72–10.71 ms | 5.53–5.81 ms | — |
-| engine commit scrolled | 9.31–10.46 ms | 5.52–5.85 ms | — |
-| floor commit | 2.84–2.92 ms | 2.87–2.93 ms | audited |
-| G10 steady p95 | 1.025 ms | 0.530 ms | ≤ 2 |
-| G11 sustained p95 | **12.345 ms FAIL** | **9.035 ms FAIL** (8.015/9.035/9.670/9.145/8.575) | ≤ 2 |
+| G9 unscrolled | **3.252× FAIL** | **1.904× pass** (per-run 1.930/1.885/1.916/1.904/1.880) | ≤ 2 |
+| G9 scrolled | **3.284× FAIL** | **1.949× pass** (1.949/1.919/2.008/1.924/2.013) | ≤ 2 |
+| engine commit unscrolled | 8.72–10.71 ms | 5.53–5.69 ms | — |
+| engine commit scrolled | 9.31–10.46 ms | 5.59–5.85 ms | — |
+| floor commit | 2.84–2.92 ms | 2.81–3.00 ms | audited |
+| G10 steady p95 | 1.025 ms | 0.950 ms | ≤ 2 |
+| G11 sustained p95 | **12.345 ms FAIL** | **8.190 ms FAIL** (8.110/8.250/7.870/9.410/8.190) | ≤ 2 |
 | G13 exact reads | pass | pass, zero steady reads | exact |
 
 The audited floor is unchanged: 2,000 rects/2,000 layout-size pairs in
@@ -561,11 +561,11 @@ Typed OM), 300 pose declarations, no extra read. G11 completed 300 commits at
 ### G11 — absolute gate is below the required-work floor
 
 The sustained shape commits the same 1,000-participant work every 16.667 ms.
-The audited floor median is **2.87–2.93 ms per commit**, so the absolute 2 ms
+The audited floor median is **2.81–3.00 ms per commit**, so the absolute 2 ms
 G11 gate is below the floor before any planner work. A direct same-shape
 300-commit floor run (plain DOM, Chromium) measured **median 2.805 ms, p95
 3.215 ms, max 3.405 ms** (`evidence/h17/floor_sustained.json`). The current
-engine p95 is 9.035 ms on the final (load 3.92) run, and 8.045 ms on the earlier (load 1.55) run; both are ≈2.8–3.1× floor. A 2× floor replacement would also
+engine p95 is 8.190 ms on the final run (8.045–9.035 ms across H17 runs), ≈2.8–3.1× floor. A 2× floor replacement would also
 still fail; H17 therefore reports the structural fact and proposes a
 floor-relative owner decision without applying it
 (`.trace/ani_ios_production/evidence/h17/g11_floor_amendment_proposal.md`).
