@@ -1293,6 +1293,11 @@ scene has the exemption.
   S-REORDER/S-SHEET blocked only on the G12 1 ms timer bound (D12 cost
   advisory); their frame/status rows pass; G10 0.200 ms pass with the real-clock 20-frame batch;
   G9/G11/G12 BLOCK with no gate value; G13/floor exact.
+- D12: `certification.advisory` records the WebKit cost/G12 BLOCKs and
+  `certification.reasons` does not; Chromium G9/G11/G12 still decide, and
+  every WebKit frame/scoring/shape/status row remains required. The D12 unit
+  cases cover WebKit cost advisory, a WebKit frame failure, and a non-cost
+  WebKit scene block.
 - H18-F F4: `offsetLeft`/`offsetTop` held reads are counted in
   `stats.layoutOffsets` and included in `stats.reads`; G13 print describes
   the count. No hidden layout read.
