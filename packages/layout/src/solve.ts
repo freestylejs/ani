@@ -354,6 +354,39 @@ export function createTrack(
     // the spring: displacements and incoming velocities of every channel
     // (the anchor offset replaces the origin channels)
     const x0 = start.map((x, i) => x - to[i]!)
+    // The visible box edges, from the track's actual start size (a pinned
+    // channel starts at A's size, not at B's): the last step to A must land
+    // under 0.05 px on every edge, not only on the origin point and size.
+    const startBox = {
+        x: start[0]! - fx * start[2]!,
+        y: start[1]! - fy * start[3]!,
+        w: start[2]!,
+        h: start[3]!,
+    }
+    const endBox = {
+        x: to[0]! - fx * to[2]!,
+        y: to[1]! - fy * to[3]!,
+        w: to[2]!,
+        h: to[3]!,
+    }
+    const edges = [
+        {
+            x0: startBox.x - endBox.x,
+            v0: incoming[0]! - fx * incoming[2]!,
+        },
+        {
+            x0: startBox.x + startBox.w - (endBox.x + endBox.w),
+            v0: incoming[0]! + (1 - fx) * incoming[2]!,
+        },
+        {
+            x0: startBox.y - endBox.y,
+            v0: incoming[1]! - fy * incoming[3]!,
+        },
+        {
+            x0: startBox.y + startBox.h - (endBox.y + endBox.h),
+            v0: incoming[1]! + (1 - fy) * incoming[3]!,
+        },
+    ]
     const ax0 = anchor
         ? [anchor.fromX - anchor.toX, anchor.fromY - anchor.toY]
         : []
@@ -365,6 +398,13 @@ export function createTrack(
         for (let i = 0; i < 4; i++) {
             t = Math.max(t, settleTimeOf(s, x0[i]!, carry ? incoming[i]! : 0))
         }
+        // The oracle and §5.3 judge the settle on every visible edge, not
+        // only on the origin point and the size: a composed edge can still be
+        // 0.1 px off its target when both channels are inside their own
+        // tolerances (a fractional transform origin).
+        edges.forEach((edge) => {
+            t = Math.max(t, settleTimeOf(s, edge.x0, carry ? edge.v0 : 0))
+        })
         for (let i = 0; i < ax0.length; i++) {
             t = Math.max(t, settleTimeOf(s, ax0[i]!, carry ? av0[i]! : 0))
         }
@@ -1119,7 +1159,6 @@ export function solve(
             (node.layers === null || node.layers === undefined) &&
             node.follow < 0 &&
             (node.posed === undefined || node.posed === null) &&
-            (node.override === undefined || node.override === null) &&
             (node.ride === undefined || node.ride < 0) &&
             !node.track?.anchor &&
             node.fade === null &&
@@ -1127,8 +1166,14 @@ export function solve(
             (node.radiusBlend === null || node.radiusBlend === undefined)
     )
     if (simple) {
+        // H18-G: a held frame is usually one node with an override and no
+        // layers/rides: draw its exact box without the general epoch algebra.
         const drawn = nodes.map((node) =>
-            node.track ? ownBox(node.track, node.elapsed) : node.a
+            node.override
+                ? node.override.box
+                : node.track
+                  ? ownBox(node.track, node.elapsed)
+                  : node.a
         )
         const fulls = nodes.map((node, i) => onto(cssOf(node), drawn[i]!))
         return nodes.map((node, i) => {
