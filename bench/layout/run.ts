@@ -169,6 +169,15 @@ function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
 }
 
+/** The revision measured: resolve it before any long run can move HEAD. */
+function gitRevision(): string | undefined {
+    const revision = spawnSync('git', ['rev-parse', 'HEAD'], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+    })
+    return revision.status === 0 ? revision.stdout.trim() : undefined
+}
+
 function globToRegExp(glob: string): RegExp {
     const source = glob
         .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -2561,6 +2570,7 @@ function failedCostReport(
 
 async function main(): Promise<number> {
     const options = parseOptions(process.argv.slice(2))
+    const sourceRevision = gitRevision()
     const fingerprint = collectFingerprint()
     const advisory = evaluateFingerprint(fingerprint)
     const bundle = await bundlePage()
@@ -2889,13 +2899,6 @@ async function main(): Promise<number> {
         scenePass &&
         variantPass &&
         costPass
-    const sourceRevision = (() => {
-        const revision = spawnSync('git', ['rev-parse', 'HEAD'], {
-            cwd: REPO_ROOT,
-            encoding: 'utf8',
-        })
-        return revision.status === 0 ? revision.stdout.trim() : undefined
-    })()
     const report: BenchReport = {
         schema: 'ani-layout-bench/v1',
         generatedAt: new Date().toISOString(),
