@@ -51,6 +51,33 @@ const SHEET_SPRING = {
     duration: 0.45,
     bounce: 0.08,
 } as const
+const DETENTS = [
+    { name: 'large', top: 124 },
+    { name: 'medium', top: 422 },
+    { name: 'dismissed', top: 844 },
+] as const
+
+/**
+ * Scene policy (A-10, not an engine rule): `projected = top + v·0.20 s`; the
+ * nearest detent wins. Ties would go to the smaller |distance|; this script
+ * has no tie.
+ */
+function chooseDetent(
+    top: number,
+    velocityY: number
+): (typeof DETENTS)[number] & { projected: number } {
+    const projected = top + velocityY * 0.2
+    let best: (typeof DETENTS)[number] = DETENTS[0]!
+    let distance = Math.abs(best.top - projected)
+    for (const candidate of DETENTS.slice(1)) {
+        const next = Math.abs(candidate.top - projected)
+        if (next < distance) {
+            best = candidate
+            distance = next
+        }
+    }
+    return { ...best, projected }
+}
 
 function installStyles(): void {
     styleOnce(
@@ -380,7 +407,10 @@ export class SheetScene {
             }
             const release1Frame = frame
             const wrongDetent = options.control === 'sheet-medium-detent'
-            detent('detent-1', 124, { wrongDetent })
+            const release1Top = viewBox(layer.sheet).y
+            const firstChoice = chooseDetent(release1Top, -1200)
+            const release1At = mc.now
+            detent('detent-1', firstChoice.top, { wrongDetent })
             release('release-1', { x: 0, y: -1200 })
             release1Box = viewBox(layer.sheet)
             release1State = handle.state
@@ -392,14 +422,18 @@ export class SheetScene {
             }
             firstSettle = frame
             builder.settleFrames.push(firstSettle)
+            // A-10 scene script: the second take is at least 1 s after the
+            // first release (not only after its settle).
+            while (mc.now - release1At < 1000) await step()
             layer.scrim.style.opacity = '0.35'
             // Second hold: medium-to-dismissed flick.
+            const take2Frame = frame
             handle = group.take(layer.sheet)
             take2Box = viewBox(layer.sheet)
             take2State = handle.state
             take2Velocity = handle.velocity
             holdsAtTake2 = group.stats.holds
-            builder.record('flush', firstSettle)
+            builder.record('flush', frame)
             for (let k = 1; k <= 10; k++) {
                 handle.move({ x: 0, y: 30 * k })
                 await step()
@@ -414,8 +448,22 @@ export class SheetScene {
                 })
             }
             const release2Frame = frame
-            detent('detent-2', 844, {})
+            const release2Top = viewBox(layer.sheet).y
+            const secondChoice = chooseDetent(release2Top, 1600)
+            detent('detent-2', secondChoice.top, {})
             release('release-2', { x: 0, y: 1600 })
+            ;(
+                window as unknown as {
+                    __scene?: { policy?: unknown }
+                }
+            ).__scene!.policy = {
+                projected: firstChoice.projected,
+                chosen: firstChoice.name,
+                top: firstChoice.top,
+                secondProjected: secondChoice.projected,
+                secondChosen: secondChoice.name,
+                secondTop: secondChoice.top,
+            }
             layer.scrim.style.opacity = '0'
             release2Box = viewBox(layer.sheet)
             release2State = handle.state
@@ -468,7 +516,7 @@ export class SheetScene {
             }
             const hold2: HoldEvidence = {
                 key: 'sheet',
-                takeFrame: firstSettle,
+                takeFrame: take2Frame,
                 takeState: take2State,
                 takeVelocity: take2Velocity,
                 takeBox: take2Box,
@@ -527,22 +575,29 @@ export class SheetScene {
                 handle.move({ x: 0, y: -15 * k })
                 await nextFrame()
             }
+            const release1Top = viewBox(layer.sheet).y
+            const firstChoice = chooseDetent(release1Top, -1200)
+            const release1At = performance.now()
             sampler.markCommit()
             void group.update(() => {
-                layer.sheet.style.top = '124px'
+                layer.sheet.style.top = `${firstChoice.top}px`
                 handle.release({ x: 0, y: -1200 })
             })
             commits.push({ label: 'release-1', at: performance.now() })
             await waitUntilSettled(group)
+            const remaining = 1000 - (performance.now() - release1At)
+            if (remaining > 0) await waitMs(remaining)
             layer.scrim.style.opacity = '0.35'
             const second = group.take(layer.sheet)
             for (let k = 1; k <= 10; k++) {
                 second.move({ x: 0, y: 30 * k })
                 await nextFrame()
             }
+            const release2Top = viewBox(layer.sheet).y
+            const secondChoice = chooseDetent(release2Top, 1600)
             sampler.markCommit()
             void group.update(() => {
-                layer.sheet.style.top = '844px'
+                layer.sheet.style.top = `${secondChoice.top}px`
                 second.release({ x: 0, y: 1600 })
             })
             commits.push({ label: 'release-2', at: performance.now() })

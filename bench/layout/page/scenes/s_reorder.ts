@@ -328,6 +328,9 @@ export class ReorderScene {
         }
         const step = async () => {
             const before = group.stats
+            // F9: the control's extra capture must be inside the measured
+            // frame, after the before snapshot, or its reads are invisible.
+            if (controls.extraRead && frame === 3) group.capture()
             mc.frame(STEP)
             frame += 1
             const after = group.stats
@@ -427,10 +430,6 @@ export class ReorderScene {
                         ? 60
                         : 0
                 handle?.move({ x: 0, y: 18 * k + stale })
-                if (controls.extraRead && k === 4) {
-                    // a deliberate extra capture in a held frame (G13)
-                    group.capture()
-                }
                 await step()
                 const last = builder.frameReads[builder.frameReads.length - 1]!
                 moves.push({

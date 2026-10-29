@@ -164,6 +164,26 @@ test('H15-01: a metric-clean run with a problem fails the scene', () => {
     assert.match(run?.worst?.detail ?? '', /no connected participants/)
 })
 
+test('F11: a blocked deciding metric makes the scene blocked, not pass', () => {
+    const blocked: MetricFinding = {
+        ...finding(0, false),
+        id: 'G12',
+        label: 'held',
+        gate: 'p95 / held <= 0.1 ms',
+        blocked: true,
+        deciding: true,
+    }
+    const report = aggregateSceneReport({
+        scene: 's-test',
+        runs: [runReport(true, [])],
+        findings: [[blocked]],
+        shape: [[]],
+    })
+    assert.equal(report.status, 'blocked')
+    assert.equal(report.pass, false)
+    assert.match(report.blockedReasons.join(';'), /G12/)
+})
+
 test('H15-03: a real twin with no connected participants fails teardown', () => {
     const real = {
         scene: 's-test',

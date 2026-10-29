@@ -102,6 +102,13 @@ interface Expected {
         readonly error: number
         readonly frame: number
     }[]
+    /** The release's first frame against HoldEvidence.releaseBox (dt = 0). */
+    readonly releaseContinuity: readonly {
+        readonly key: string
+        readonly source: string
+        readonly error: number
+        readonly frame: number
+    }[]
 }
 
 /**
@@ -287,6 +294,7 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
     >()
     const commits: Expected['commits'][number][] = []
     const holdContinuity: Expected['holdContinuity'][number][] = []
+    const releaseContinuity: Expected['releaseContinuity'][number][] = []
     const states = new Map<string, SegmentState>()
     const commitByLabel = new Map(
         plan.commits.map((commit) => [commit.label, commit])
@@ -493,10 +501,77 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                 expected.set(key, { box, spring: false })
             }
         }
+        // After release the rider has no own velocity (§5.10): it is drawn
+        // at the held element's release track plus its fixed local offset.
+        for (const hold of plan.holds ?? []) {
+            if (observation.frame < hold.takeFrame) continue
+            const held = expected.get(hold.key)?.box
+            if (!held) continue
+            for (const rider of hold.riders) {
+                if (!observation.connected.includes(rider.key)) continue
+                const rest = plan.initial[rider.key]
+                if (!rest) continue
+                expected.set(rider.key, {
+                    box: {
+                        x: held.x + rider.dx,
+                        y: held.y + rider.dy,
+                        w: rest.w,
+                        h: rest.h,
+                    },
+                    spring: false,
+                })
+            }
+        }
         byObservation.set(index, expected)
     })
 
-    return { byObservation, commits, holdContinuity }
+    // F8: the release's first frame is dt = 0 (§5.10). Measure the drawn box
+    // of the release frame's next frame against HoldEvidence.releaseBox.
+    plan.holds?.forEach((hold, holdIndex) => {
+        const evidence = trace.holds?.[holdIndex]
+        const releasePlan = plan.commits.find(
+            (commit) =>
+                commit.kind === 'release' && commit.frame === hold.releaseFrame
+        )
+        if (!releasePlan) return
+        const flushIndex = trace.observations.findIndex(
+            (observation) =>
+                observation.kind === 'flush' &&
+                observation.commitLabel === releasePlan.label
+        )
+        if (flushIndex < 0) return
+        const next = trace.observations
+            .slice(flushIndex + 1)
+            .find(
+                (observation) =>
+                    observation.kind === 'frame' &&
+                    observation.frame > hold.releaseFrame
+            )
+        const releaseBox =
+            evidence?.releaseBox ??
+            trace.observations[flushIndex]?.boxes[hold.key] ??
+            null
+        if (!next || !releaseBox) return
+        const riders = [{ key: hold.key, dx: 0, dy: 0 }, ...hold.riders]
+        for (const rider of riders) {
+            const shown = next.boxes[rider.key] ?? null
+            if (!shown) continue
+            const want = {
+                x: releaseBox.x + rider.dx,
+                y: releaseBox.y + rider.dy,
+                w: releaseBox.w,
+                h: releaseBox.h,
+            }
+            releaseContinuity.push({
+                key: rider.key,
+                source: hold.key,
+                error: edgeError(shown, want).max,
+                frame: next.frame,
+            })
+        }
+    })
+
+    return { byObservation, commits, holdContinuity, releaseContinuity }
 }
 
 function scoreOracle(
@@ -590,6 +665,18 @@ function scoreContinuity(trace: SceneTrace, expected: Expected): MetricFinding {
             worstDetail = 'held take, fresh gate 0.05 px'
         }
     }
+    for (const pair of expected.releaseContinuity) {
+        count += 1
+        if (pair.error > 0.05) failures += 1
+        if (pair.error > worst) {
+            worst = pair.error
+            worstFrame = pair.frame
+            worstKey = pair.key
+            worstLabel = 'release first frame'
+            worstDetail =
+                'release dt = 0: drawn box against HoldEvidence.releaseBox, gate 0.05 px'
+        }
+    }
     return {
         id: 'G2',
         label: 'First-frame continuity against the last presented frame',
@@ -643,7 +730,11 @@ function observedVelocityDetail(
     return `observed FD before ${vBefore.toFixed(1)} px/s after ${vAfter.toFixed(1)} px/s, error ${error.toFixed(1)} (allowed ${allowed.toFixed(1)}; supporting only, acceleration included)`
 }
 
-function scoreVelocity(trace: SceneTrace, expected: Expected): MetricFinding {
+function scoreVelocity(
+    plan: ScenePlan,
+    trace: SceneTrace,
+    expected: Expected
+): MetricFinding {
     let worstRatio = 0
     let worstFrame: number | undefined
     let worstKey: string | undefined
@@ -670,6 +761,20 @@ function scoreVelocity(trace: SceneTrace, expected: Expected): MetricFinding {
                 worstLabel = pair.label
                 worstDetail = `analytic before ${JSON.stringify(pair.before)} after ${JSON.stringify(pair.after)}; ${observedVelocityDetail(trace, pair.key, pair.frame, pair.label)}`
             }
+        }
+    }
+    if (count === 0 && plan.g3Blocked !== undefined) {
+        return {
+            id: 'G3',
+            label: 'Velocity continuity at each retarget',
+            gate: '<= 1 % of the larger edge speed + 1 px/s',
+            unit: 'ratio',
+            value: Number.NaN,
+            pass: false,
+            blocked: true,
+            deciding: true,
+            measured: false,
+            detail: plan.g3Blocked,
         }
     }
     return {
@@ -706,8 +811,34 @@ function scoreSettle(plan: ScenePlan, trace: SceneTrace): MetricFinding {
             const drawn = observation.boxes[key]
             if (!drawn) continue
             const mount = plan.mounts[key]
-            const target =
-                latestSegment(plan, key, frame)?.to ?? plan.initial[key]
+            const hold = plan.holds?.find(
+                (candidate) =>
+                    candidate.key === key ||
+                    candidate.riders.some((rider) => rider.key === key)
+            )
+            let target: Box | undefined
+            if (hold) {
+                const heldTarget =
+                    latestSegment(plan, hold.key, frame)?.to ??
+                    hold.takeBox ??
+                    plan.initial[hold.key]
+                const rider = hold.riders.find(
+                    (candidate) => candidate.key === key
+                )
+                const rest = plan.initial[key]
+                target =
+                    heldTarget && (rider === undefined || rest)
+                        ? {
+                              x: heldTarget.x + (rider?.dx ?? 0),
+                              y: heldTarget.y + (rider?.dy ?? 0),
+                              w: rider ? rest!.w : heldTarget.w,
+                              h: rider ? rest!.h : heldTarget.h,
+                          }
+                        : heldTarget
+            } else {
+                target =
+                    latestSegment(plan, key, frame)?.to ?? plan.initial[key]
+            }
             if (!target) continue
             checked += 1
             firstFrame ??= frame
@@ -961,20 +1092,35 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     const actualOnSnap = trace.onSnap.map((snap) => snap.reason).sort()
     let problems = 0
     let detail: string | undefined
+    const blockedRows: string[] = []
     for (const commit of plan.commits) {
-        if (commit.kind === 'release') continue
+        if (commit.kind === 'release') {
+            blockedRows.push(
+                `${commit.label}: release() has no public LayoutReport (§5.10/§7.1)`
+            )
+            continue
+        }
         const report = trace.reports.find(
             (entry) => entry.label === commit.label
         )
-        if (!report) {
+        if (commit.statusBlocked !== undefined) {
+            blockedRows.push(
+                `${commit.label}: ${commit.statusBlocked} (observed ${report?.status ?? 'no report'})`
+            )
+            if (!report) {
+                problems += 1
+                detail ??= `${commit.label}: no report resolved`
+                continue
+            }
+        } else if (!report) {
             problems += 1
             detail ??= `${commit.label}: no report resolved`
             continue
-        }
-        if (report.status !== commit.expectedStatus) {
+        } else if (report.status !== commit.expectedStatus) {
             problems += 1
             detail ??= `${commit.label}: status "${report.status}" != "${commit.expectedStatus}"`
         }
+        if (!report) continue
         const expectedSnapped = [...(commit.expectedSnapped ?? [])].sort()
         const actualSnapped = report.snapped
             .map((snap) => `${snap.key}:${snap.reason}`)
@@ -1003,19 +1149,22 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         detail ??= `${trace.reports.length} reports for ${engineCommits.length} commits`
     }
     const firstLabel = plan.commits[0]?.label
+    const blocked = blockedRows.length > 0
     return {
         id: 'G7',
         label: 'Reports: status, snapped set and diagnostics',
         gate: 'exactly as the scene script expects',
         unit: 'mismatches',
         value: problems,
-        pass: problems === 0,
+        pass: problems === 0 && !blocked,
+        blocked,
+        deciding: true,
         measured: true,
         worst: {
             label: firstLabel,
-            detail: detail ?? 'all reports match',
+            detail: blockedRows.join('; ') || detail || 'all reports match',
         },
-        detail,
+        detail: blocked ? `BLOCK/authority: ${blockedRows.join('; ')}` : detail,
     }
 }
 
@@ -2102,7 +2251,7 @@ export function scoreScene(plan: ScenePlan, trace: SceneTrace): SceneScore {
     const base: MetricFinding[] = [
         scoreOracle('G1', trace, expected, false),
         scoreContinuity(trace, expected),
-        scoreVelocity(trace, expected),
+        scoreVelocity(plan, trace, expected),
         scoreOracle('G4', trace, expected, true),
         scoreSettle(plan, trace),
         scoreRestoration(plan, trace),
@@ -2117,8 +2266,8 @@ export function scoreScene(plan: ScenePlan, trace: SceneTrace): SceneScore {
         metrics,
         shape,
         pass:
-            metrics.every((metric) => metric.pass) &&
-            shape.every((metric) => metric.pass),
+            metrics.every((metric) => metric.blocked === true || metric.pass) &&
+            shape.every((metric) => metric.blocked === true || metric.pass),
         observations: trace.observations.length,
     }
 }

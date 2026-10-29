@@ -68,8 +68,10 @@ export interface RunSceneReport {
 
 export interface SceneReport {
     readonly scene: string
-    readonly status: 'pass' | 'fail' | 'pending'
+    readonly status: 'pass' | 'fail' | 'pending' | 'blocked'
     readonly pending: string | null
+    /** A required metric could not be decided (timer/authority); not a pass. */
+    readonly blockedReasons: readonly string[]
     readonly pass: boolean
     readonly metrics: readonly AggregateMetric[]
     readonly shape: readonly AggregateMetric[]
@@ -186,6 +188,11 @@ export interface BenchReport {
         readonly scene: string
         readonly reason: string
     }[]
+    /** Required rows/evidence that are BLOCK, not pass and not pending. */
+    readonly blocked: readonly {
+        readonly item: string
+        readonly reason: string
+    }[]
     readonly certification: CertificationReport
     readonly pass: boolean
 }
@@ -236,7 +243,7 @@ export function formatReport(report: BenchReport): string {
         for (const note of engine.notes) lines.push(`  note: ${note}`)
         for (const scene of engine.scenes) {
             lines.push(
-                `${scene.status.toUpperCase()} ${scene.scene}${scene.pending ? ` (pending: ${scene.pending})` : ''}`
+                `${scene.status.toUpperCase()} ${scene.scene}${scene.pending ? ` (pending: ${scene.pending})` : ''}${scene.blockedReasons.length > 0 ? ` (BLOCK: ${scene.blockedReasons.join('; ')})` : ''}`
             )
             for (const metric of [...scene.metrics, ...scene.shape]) {
                 const worst = metric.worst
@@ -296,6 +303,12 @@ export function formatReport(report: BenchReport): string {
     if (report.pending.length > 0) {
         for (const pending of report.pending) {
             lines.push(`pending ${pending.scene}: ${pending.reason}`)
+        }
+    }
+    if (report.blocked.length > 0) {
+        lines.push('blocked (required evidence that is not deciding/pass)')
+        for (const entry of report.blocked) {
+            lines.push(`  BLOCK ${entry.item}: ${entry.reason}`)
         }
     }
     lines.push('')

@@ -317,6 +317,11 @@ export interface CommitPlan {
      * engine commit and no observable report (§5.10/§7.1). Default `commit`.
      */
     readonly kind?: 'commit' | 'release' | undefined
+    /**
+     * The status row is an authority ambiguity: the scene does not claim an
+     * exact status. G7 is reported BLOCK with this reason.
+     */
+    readonly statusBlocked?: string | undefined
 }
 
 export interface PairPlan {
@@ -428,6 +433,12 @@ export interface ScenePlan {
     readonly holds?: readonly HoldPlan[] | undefined
     /** The drive-hold kill switch row must be present and correct. */
     readonly expectedKillSwitch?: boolean | undefined
+    /**
+     * G3 is authority-BLOCK: a release from direct manipulation has no
+     * analytic layout track before the supplied gesture velocity, so no
+     * analytic before/after pair exists (§5.10/A-11).
+     */
+    readonly g3Blocked?: string | undefined
     /**
      * A scene whose script unmounts its only participant at the end. The
      * removal is proven by a post-removal restoration snapshot instead of a
