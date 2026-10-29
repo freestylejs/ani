@@ -120,6 +120,7 @@ vi.mock('@freestylejs/ani-layout', async (original) => {
                     rects: 0,
                     offsets: 0,
                     styles: 0,
+                    layoutOffsets: 0,
                     probes: 0,
                     parents: 0,
                     tracks: 0,

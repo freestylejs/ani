@@ -14,6 +14,7 @@ import {
     perceptualSpring,
     springDisplacement,
     springSettle,
+    trackState,
 } from './oracle.ts'
 
 const W = 2 * Math.PI
@@ -173,4 +174,48 @@ test('high-bounce settles are finite and meet the tolerance', () => {
             assert.ok(Math.abs(v) <= 1 + 1e-9, `v b=${bounce} t=${t}`)
         }
     }
+})
+
+test('a from-rest timing track is the exact curve with k = 0', () => {
+    const from: Box = { x: 0, y: 0, w: 0, h: 0 }
+    const to: Box = { x: 100, y: -40, w: 0, h: 0 }
+    const motion = {
+        type: 'timing' as const,
+        duration: 0.3,
+        easing: 'ease-out' as const,
+    }
+    for (const elapsed of [0.0, 0.03, 0.096, 0.15, 0.3]) {
+        const state = trackState(motion, from, to, null, elapsed, 0.3)
+        const e = bezierAt(EASE_OUT, Math.min(1, elapsed / 0.3)).value
+        close(state.box.x, 100 * e, 1e-9, 'x from rest')
+        close(state.box.y, -40 * e, 1e-9, 'y from rest')
+    }
+})
+
+test('a moving timing retarget carries the incoming velocity once', () => {
+    const from: Box = { x: 0, y: 0, w: 0, h: 0 }
+    const to: Box = { x: 100, y: 0, w: 0, h: 0 }
+    const motion = {
+        type: 'timing' as const,
+        duration: 0.3,
+        easing: 'ease-out' as const,
+    }
+    const state = trackState(
+        motion,
+        from,
+        to,
+        { x: 50, y: 0, w: 0, h: 0 },
+        1e-6,
+        0.3
+    )
+    close(state.velocity.x, 50, 1, 'incoming velocity')
+    const atRest = trackState(
+        motion,
+        from,
+        to,
+        { x: 50, y: 0, w: 0, h: 0 },
+        0.3,
+        0.3
+    )
+    close(atRest.box.x, 100, 1e-9, 'settled target')
 })

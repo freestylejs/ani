@@ -478,168 +478,728 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
   analytic pair remains the gate per A-11.
 - S-PHOTO, DPR sweeps and reduced-motion variants remain P5b.
 
-## Iteration 3 — H17 S-BULK commit and sustained cost (P5 performance)
+## Iteration 3 — H15 P5b: the §11.6 P2/P3 scene set (iteration 1 of P5b)
 
-- Worktree: `ani-h17`, branch `helper/h17`, base `c7cba21` (P4 acting
-  PASS + H14 harness). No remote and no push.
+- Worktree: `ani-h15`, branch `helper/h15`, base `7ed9974` (P3 final + H14
+  harness). No production source, `tests/browser` or `ARCHITECTURE.md` change.
 - Date: 2026-10-29.
-- Command: `pnpm bench:layout --runs 5 --engine chromium --engine webkit --check`
-  was attempted twice; both invocations lost the Chromium GPU process
-  (`exit_code=15`) after the warm-up, before run 1, and Playwright then spun in
-  a closed-browser wait. The same code was run per scene on both engines:
-  - `pnpm bench:layout --engine chromium --scene s-card --runs 5`
-  - `pnpm bench:layout --engine chromium --scene s-seg --runs 5`
-  - `pnpm bench:layout --engine chromium --scene cost --runs 5 --check`
-  - the same three for `--engine webkit`
-  - reports in `bench/layout/iteration-3/`.
-- Fingerprint: MacBook Pro `Mac14,9`, Apple M2 Pro, 10 cores, 32 GB,
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-3/report.json`
+- Report: `bench/layout/iteration-3/report.json`; raw log:
+  `bench/layout/iteration-3/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
   macOS 27.0.1 / Darwin 27.0.0, Node 24.19.0, pnpm 10.20.0, Playwright
-  1.55.0, `chromium_headless_shell-1187`, `webkit-2203`. 1-minute load at the
-  final cost run: **2.48** (earlier H17 runs 1.48–3.92). Cost is **advisory**;
-  the ratios are measured but not a certification claim until a quiet run.
-- No scene expectation, row, tolerance or `knownFailure` changed.
+  1.55.0, `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **2.80**, so the cost result is **advisory**; the
+  frame gates still decide. WebKit remains unisolated under Playwright,
+  `g = 1 ms`.
+- Self-tests at run time: **73/73** across 7 files. Two oracle tests were added
+  after this run for the from-rest timing `k = 0` rule (75/75 on re-run; see
+  "Harness additions").
+- Browser controls: **14 per engine, 28 total**, all conclusive and failing
+  their target.
+- Every scene ran S-CARD/S-SEG first, then S-PHOTO, S-STACK, S-ISLAND, S-ACC,
+  S-INSERT, S-DELETE, then the S-BULK cost shapes.
 
-### Before/after (Chromium S-BULK, 5 measured runs, median)
+### Scene and metric table (5 measured runs; median and worst)
 
-| Metric | Iteration 2 | Iteration 3 | Gate |
-|---|---:|---:|---|
-| G9 unscrolled | **3.252× FAIL** | **1.904× pass** (per-run 1.930/1.885/1.916/1.904/1.880) | ≤ 2 |
-| G9 scrolled | **3.284× FAIL** | **1.949× pass** (1.949/1.919/2.008/1.924/2.013) | ≤ 2 |
-| engine commit unscrolled | 8.72–10.71 ms | 5.53–5.69 ms | — |
-| engine commit scrolled | 9.31–10.46 ms | 5.59–5.85 ms | — |
-| floor commit | 2.84–2.92 ms | 2.81–3.00 ms | audited |
-| G10 steady p95 | 1.025 ms | 0.950 ms | ≤ 2 |
-| G11 sustained p95 | **12.345 ms FAIL** | **8.190 ms FAIL** (8.110/8.250/7.870/9.410/8.190) | ≤ 2 |
-| G13 exact reads | pass | pass, zero steady reads | exact |
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-CARD | C1/G1–G8/G13/shape | **pass**; G1 0.0013 px (frame 102 card-title left), G2 0.0012, G4 0.0013, G8 0.195 ms | **pass**; G1 0.0004 px (frame 73 sheet-content bottom), G2 0.0001, G4 0.0003, G8 1.000 ms quantized |
+| S-SEG | C1/G1–G8/G13/shape | **pass**; G1 0.0001 px (frame 17 pill right), G3 analytic 0 on 3 retargets, G8 0.260 ms | **pass**; G1 0.0000, G8 1.000 ms |
+| S-PHOTO | C1/G1–G8/G13/shape | **FAIL G1 306.2501, G2 306.2501, G4 306.2501** (frame 81 cell-37-image top; 40,635 participant-frames), **G7 4** (open `snapped [detail-image:stale] != []`) | **FAIL G1/G2/G4 306.2501** (frame 33 cell-37-image top; 26,187), **G7 5** (open status `stale != ended`) |
+| S-STACK | C1/G1–G8/G13/shape | **pass**; G1 0.0003 px (frame 73 badge-1 top), G2 0.0001, G4 0.0003, presence opacity 0.0000, G8 0.250 ms | **pass**; G1 0.0002 (frame 73 card-1 bottom), G8 1.000 ms |
+| S-ISLAND | C1/G1–G8/G13/shape | **FAIL G6 1** only: `card-content` last connected frame 65 leaves `translate`/`scale` (the counter-projection); G1 0.0006, G2 0.0006, G7/G13/shape pass | **FAIL G6 1** only: same; G1 0.0006, G8 1.000 ms |
+| S-ACC | C1/G1–G8/G13/shape | **FAIL G1 120.0000, G4 120.0000** (frame 12 body-6 bottom; 2,752/2,079 participant-frames), **G2 55.6732** (frame 18 body-6 c3); G3/G5/G6/G7/G13/shape pass | **FAIL G1/G4 120.0001, G2 55.6732** (same body-6); G3/G5/G6/G7/G13/shape pass |
+| S-INSERT | C1/G1–G8/G13/shape | **FAIL G7 2** only: `snapped [] != [new-0:culled,new-1:culled,new-2:culled]`; G1 0.0001 (frame 14 row-10 bottom), G2 0.0000, G4 0.0001, presence opacity 0.0000, G8 0.320 ms | **FAIL G7 2** only: same; G1 0.0001, G8 1.000 ms |
+| S-DELETE | C1/G1–G8/G13/shape | **pass**; G1 0.0251 px (frame 19 row-5 top), G2 0.0000, G3 analytic 0 at the row 6–8 retarget, G5 0.0000, G6 0, G13 0, G8 0.275 ms | **pass**; G1 0.0095 (frame 19 row-5 top), G2 0.0000, G8 1.000 ms |
 
-The audited floor is unchanged: **1,000 rects / 1,000 layout-size pairs in
-capture**, **1,000 / 1,000 in flush** (2,000 rects/pairs per commit across both),
-300 computed reads (Chromium; 600 WebKit with Typed OM), 300 poses = 600 pose
-declarations, no extra read. G11 completed 300 commits at
-59.98–60.04 Hz with `g = 0.005 ms`; G13 reports zero steady-frame reads.
+`G9.probe` is non-deciding; WebKit reports `BLOCK`/n-a because its 1 ms timer
+cannot decide a ratio, and no quantized ratio is presented as a failure.
 
-### Root causes and behavior-preserving fixes
+### Failure 1 — S-PHOTO nested image handoff (both engines)
 
-1. **Every spring track recomputed its settle time.** `createTrack` built a
-   fresh `Spring` and bisected `settleTime` for all four channels of 300
-   tracks on every commit (`lastExit` was the largest single sampled block,
-   ~1.2 ms). `solve.ts` now reuses pure `Spring` instances by
-   `(duration, bounce)` and pure settle results by `(spring, x0, v0)`, with
-   bounded maps; a zero/zero channel returns 0 without a lookup.
-2. **Planning built 1,000 full `PlanNode`s and ran the decision for 700 static
-   tiles.** A top-level participant with no drive anywhere in its subtree, no
-   shared id, no hold, a valid B and an unchanged box cannot animate, snap or
-   report. Its array slot is now `null` (still index-aligned); `plan` emits
-   `none`. With no `layoutId` in the scope the lead/handoff pass is skipped.
-3. **The participant tree was rebuilt at capture and flush.** A pass is now
-   reused only after verifying the registry order/connection, shadow
-   membership, flat parents and distinct nearest participant ancestors; a
-   `MutationObserver` (document childList plus `slot`/`name` attributes)
-   invalidates it on structural changes. This is a structure cache, not a
-   read cache: no DOM read is skipped; a reparent invalidates it.
-4. **The flush ran the presentation/keep/reexpress/solve machinery with no
-   frame.** From-rest commits now skip those paths; hold, focus, lead and
-   inactive-drive scans are guarded by the scope's live state. `frameIndex`,
-   tree depth/parent/flat and `trusted` ancestry are carried on the participant
-   instead of rebuilt maps.
-5. **Support passes re-read computed values even when the check would read
-   none.** A capture pass with zero computed reads is reused only while every
-   input (participant order, parents, rect/layout size, pose scale) is
-   identical; at flush it is reused only while every active node's computed
-   `q` this flush read is 1. Any verification, exact-size read, non-1 `q` or
-   size change runs the check again. C-6b and the 1.003-scale test stay exact.
-6. **600 write records, per-drive arrays and per-track maps were allocated per
-   commit.** Applied `Write` records are pooled; a drive with no extra owned
-   property uses the shared pose list; integer pose channels bypass
-   `toFixed(6)`; identity parent maps, identity ancestry and the common
-   single-parent/identity geometry take a direct path; `update()` no longer
-   arms a frame marker for a capture it consumes synchronously.
-7. **Smaller walks.** `flatTree` returns a shared empty slot map when the
-   scope knows no shadow root; `trackRoot` skips the root-chain allocation
-   outside shadow roots; capture loops were merged; dead frame maps were
-   removed.
+- Metrics: G1 306.2501 px, G2 306.2501 px, G4 306.2501 px, all on
+  `cell-37-image` (Chromium worst frame 81 top, 40,635 participant-frames;
+  WebKit worst frame 33 top, 26,187). G7: Chromium 4 (`open:
+  snapped [detail-image:stale]`), WebKit 5 (open status `stale`).
+- The detail frame takes its handoff correctly; the nested image snaps to its
+  A box (306.25 px = the F1/I1 delta). The open and back are symmetric.
+- Root-cause hypothesis: the engine's late-handoff guard
+  (`lateWithHandoff` in `scope.ts`) requires the new lead's participant parent
+  to be measured in the same plan. The new detail image's parent (the new
+  detail frame) is itself a late-registered lead and is still `unmeasured` at
+  the image's lead-change evaluation, so the image's handoff is skipped even
+  though the departing cell image is a live, measured node. The image then
+  falls through to the §4.4 stale path. WebKit's run status is `stale`;
+  Chromium's is `ended` with the same snapped stale image — a status
+  precedence difference between engines for the same trace.
+- Action: engine fix (nested late leads), then rerun; the scene is not
+  changed to avoid the handoff. No tolerance changed.
 
-### G11 — absolute gate is below the required-work floor
+### Failure 2 — S-ACC body-6 under the mid-flight row expansion (both engines)
 
-The sustained shape commits the same 1,000-participant work every 16.667 ms.
-The audited floor median is **2.81–3.00 ms per commit**, so the absolute 2 ms
-G11 gate is below the floor before any planner work. A direct same-shape
-300-commit floor run (plain DOM, Chromium) measured **median 2.805 ms, p95
-3.215 ms, max 3.405 ms** (`evidence/h17/floor_sustained.json`). The current
-engine p95 is 8.190 ms on the final run (8.045–9.035 ms across H17 runs), ≈2.8–3.1× floor. A 2× floor replacement would also
-still fail; H17 therefore reports the structural fact and proposes a
-floor-relative owner decision without applying it
-(`.trace/ani_ios_production/evidence/h17/g11_floor_amendment_proposal.md`).
+- Metrics: G1/G4 120.0000 px (Chromium) / 120.0001 (WebKit), worst frame 12
+  `body-6` bottom, 2,752 (G1) and 2,079 (G4) participant-frames; G2 55.6732 px
+  at frame 18 (row 2 collapse, `c3`).
+- At frame 12 (row 6 expands while rows 7–10 are still moving) the
+  position-pinned body-6 is drawn with `h = 34.2857 = 120 x 48/168` and
+  `y = row visual top + 48 x 48/168` — its layout box under the row's new
+  height pose, without the §5.5 counter-projection. The rest of the 43
+  participants are exact (G1 0 on the other frames; G3 analytic 0 at the
+  retarget).
+- Root-cause hypothesis: the body's own track was kept from c1; the parent
+  row's height retarget changes the parent pose at the same flush. The
+  child's A/pose re-expression appears to use the new parent pose without the
+  child's inverse projection for a kept/position child (the row-6 body is the
+  only participant in this state; the expanding row's own header/body and the
+  sibling headers/bodies are exact). This is the scene's intended
+  nested-position-under-a-size-retarget case.
+- Action: engine fix; no scene/tolerance change.
 
-### WebKit
+### Failure 3 — S-INSERT culled report (both engines)
 
-WebKit remains **BLOCK**. `g = 1.0000 ms` in all five runs; the report is
-`valid: false`, `status: blocked`, G9/G10/G11 are non-deciding. Diagnostic raw
-values (1.200×/1.200×, 2.000 ms, 8.000 ms) are not presented as results. The
-floor audits and G13 are exact. A 20-commit batch mean would be ±0.05 ms per
-commit but cannot decide the p95 of 300 commits, so it was not claimed
-(`evidence/h17/webkit_timer_block.md`).
+- Metric: G7 2 (`snapped [] != [new-0:culled,new-1:culled,new-2:culled]`).
+  G1/G2/G4/G13 and `shape.presence-opacity` are exact.
+- The three new rows are above the viewport at A = -857/-779/-701 and are
+  presence-entered. The engine reports no `snapped` entries because a node
+  that mounts with presence has no B and no running track, so the plan's
+  cull branch (which is reached only after a track action) is never entered.
+  A-14's strict reading expects the three `culled` entries.
+- Action: engine fix (report a culled mount without a track); the scene keeps
+  the spec's expected snapped set and fails until it lands.
 
-### Scenes
+### Failure 4 — S-ISLAND nested content removed with the exiting follower
 
-S-CARD and S-SEG pass all gates in both engines over five runs (reports in
-`iteration-3/`). S-REORDER, S-SHEET and S-BULK G12 remain P4 and are reported
-pending, never passed. Cost remains advisory on the current load, so this is
-not a certification claim.
+- Metric: G6 1, `card-content` last connected frame 65:
+  `translate`/`scale` (with priority) are non-empty. The card content is a
+  depth-1 participant under the exiting card; the card is the crossfade
+  follower. At frame 65 the parent's follower pose is still moving, so the
+  counter-projection is non-identity; the card is removed at the crossfade end
+  and the removal restores the declarations, but the harness checks the last
+  connected frame.
+- Root-cause hypothesis: a harness/scene edge, not a geometry miss. The G6
+  removed-participant rule exempts the follower itself (and checks its
+  `inert`) but not a descendant removed with it. G1–G5/G7/G13 and every shape
+  assertion pass exactly.
+- Action: keep the failure recorded; do not weaken G6. A later P5c decision
+  may scope the removed-participant check to a participant removed with a
+  follower (the same removal proof), but that is a gate-scope decision, not
+  this scene's fix.
 
-No gate or tolerance was changed in this iteration.
+### Non-failures worth recording
 
-## Iteration 4 — D10 sustained gate and H17/H17b review fixes
+- S-CARD and S-SEG still pass after the H14-25 visual corrections (close X,
+  content fade p ≥ 0.5 / 0.15 s EASE_OUT, reused decoded card image, safe
+  areas, S-SEG label geometry).
+- S-STACK is exact (G1 0.0003, G2 0.0001, G4 0.0003, presence opacity
+  0.0000, G13 21/33 and 12/24, G8 0.250/1.000).
+- S-DELETE is exact (G1 0.0251, G2 0.0000, G3 analytic 0, G6 0, G13 0,
+  raw G8 0.275/1.000). The per-run invocation lines report some G8 runs as
+  FAIL under load; the 5-run aggregate passes (median and 3-of-5).
+- S-INSERT is exact except the culled report; its 3 presence timing tracks
+  match the 0.30 s EASE_OUT curve to 4.3e-7.
+- All scenes' G8 frame costs are far below 2 ms in Chromium (0.195–0.525 ms)
+  and quantized 1–2 ms in WebKit; no long frame after a commit in any scene.
+- The G13 exact per-engine sets are: S-CARD 8/15, 8/15, 9/16; S-SEG 2/3 per
+  tap; S-PHOTO open 2/2 Chromium and 0/0 WebKit, back 2/2 and 4/4; S-STACK
+  21/33 and 12/24; S-ACC 47/82 per commit; S-INSERT 16/29; S-ISLAND 5/9 and
+  6/10; S-DELETE 0/6 (layout reads; the raw React popLayout audit is 22/8
+  and its 4 rects + 8 styles are excluded as presence plumbing).
 
-- Branch `helper/h17`; final code commit `6dd04d2` (`4994308` fixes H17b
-  S1/S2; `1cec4d6` implements D10; `f8b7223` fixes H17-01…H17-04 on
-  `d234350`). No authority, scene, tolerance, row or `knownFailure` changed.
-- Owner decision D10 is implemented: Chromium G11 is
-  `median of 5 per-run p95(engine commits) / p95(floor commits) <= 2`.
-  The floor is the same audited required-work replica (1,000 participants,
-  300 movers) run at 60 Hz in the same page/process, 5 warm-ups + 300 samples.
-  G9 remains the whole-commit ratio; G10 remains the absolute non-commit
-  p95 <= 2 ms. G11 floor audit is exact.
-- Final reports (`bench/layout/iteration-3/`, sourceRevision `6dd04d2`):
-  G9 1.880× unscrolled / 1.898× scrolled (pass), G10 0.330 ms (pass), G13
-  exact; G11 **2.624× FAIL** (per-run 3.109/2.589/2.427/2.624/2.857; engine
-  p95 6.5–7.2 ms / floor p95 2.2–3.0 ms). Chromium load 2.84, so cost is
-  advisory. The sustained path needs further work to reach 2×; the D10 gate
-  itself is implemented and does not use the retired absolute threshold.
-- WebKit: G10 uses a **real-clock 20-frame batch** (one real rAF tick starts
-  each batch; 20 engine frame callbacks run back-to-back under one
-  `performance.now()` pair; 30 samples; ±g/20 = ±0.05 ms) and is deciding:
-  **0.250 ms p95, pass**. G9/G11 remain **BLOCK**: `pass:false`,
-  `deciding:false`, no gate value; a 20-commit interval cannot be timed without
-  including frame idle, changing the from-rest G9 work, or breaking the 60 Hz
-  G11 cadence. No WebKit ratio is claimed. WebKit cost load 2.87
-  (`valid: false`).
-- H17 review fixes: connectedness restored in the tree cache (H17-01);
-  quiescent parents with participant children are no longer skipped (H17-02);
-  flat-parent/shadow-host cache validation (H17-03); fixed capture order limit
-  plus an `added` set for out-of-order `captureAdded` (H17-04); reports record
-  `sourceRevision` (H17-06); floor is per-run, not ad-hoc (H17-07); exact
-  capture/flush prose corrected (H17-09).
-- H17b review fixes: cache reuse is verified in one pass instead of consuming
-  the structural flag before `sameParticipantTree` (S1-1); blocked G9/G11 are
-  `pass:false`/`deciding:false` with no gate value (S1-2); G10 uses a real-clock
-  batch and G9/G11 stay BLOCK (S2-1); the measured-jump shortcut is disabled for
-  scroll, size change, nested parents, retained leads and shared ids (S2-2);
-  ratio aggregation is the literal median-of-five with blocked/missing/
-  non-finite failures (S2-3); shadow ancestry is memoized and closed roots are
-  covered (S2-5); G11 stays open (S2-6).
-- Regression tests: `H17-01` detached-wrapper zero reads/no stale, `H17-02`
-  anchored child first frame 20.5, `H17-03` shadow host listener, `H17-04`
-  out-of-order late reads, `S1-1` attach-shadow/reparent between capture and
-  flush, `S2-2` shortcut conservative cases, `S2-5` closed root. Full layout
-  457/457, browser 223/223, unit coverage 1,904/1,904 at the final code.
-- H15 scenes (`s-stack`, `s-photo`, `s-island`, `s-acc`, `s-insert`,
-  `s-delete`) are not present in this worktree and are **open/unrun**. Only
-  H14 S-CARD, S-SEG and the S-BULK cost shapes were run; no all-scene or
-  all-green claim is made.
-- H17-05: no quiet (<1.0) run was possible; loads 2.84 (Chromium) and 2.87
-  (WebKit) keep cost advisory. Reports carry the exact load and
-  `sourceRevision`. G11 remains open at 2.624×; there is no performance-complete
-  claim.
+### Negative controls (both engines)
 
-No gate or tolerance was weakened.
+- 14 controls per engine, 28 total; all conclusive and failing their target:
+  `card-no-image-id` G1, `card-no-inert` shape.inert, `card-image-offset` G1,
+  `card-focus-follower` shape.focus, `seg-rest-retarget` G1,
+  `seg-jump-from-A` G2, `seg-leftover-pose` G6,
+  `photo-no-counter-scale` G1, `acc-separator-1px` G1,
+  `stack-badge-nonparticipant` G1, `island-snap-reverse` G2,
+  `insert-no-presence` shape.presence-opacity, `delete-no-lift` G1,
+  `floor-extra-read` G9.floor.
+- Unit self-tests: 73/73 at run time (75/75 after the two added timing
+  tests), including the new from-rest timing `k = 0` and moving-retarget
+  velocity tests.
+
+### Harness additions / corrections (no tolerance changed)
+
+- `oracle.ts`: a from-rest timing track is the exact curve (`k = 0`); only a
+  moving retarget carries the analytic velocity bump. This is the §1.6
+  sentence, not a change to a gate.
+- `SegmentPlan.authoredTranslate` (the S-DELETE swipe), `startMoving`
+  (author/presence timelines), `toFromB` (presence exit relative to B),
+  `presenceExit` (out of G3) and `ScenePlan.presenceOpacity` /
+  `shape.presence-opacity` (declared author opacity curves) were added.
+- React scenes use a DOM read audit for G13 (the public adapter has no
+  `group.stats`); the audit counts rects, offset pairs, computed styles and
+  Typed OM during commits/frames only. S-DELETE declares the popLayout
+  `popBox` reads as non-layout and excludes them (raw 22/8, engine 18/6 per
+  the layout set).
+- The S-INSERT scroller sets `overflow-anchor: none` to isolate the §12
+  uncompensated-shift shape; the offset is asserted unchanged at 1000.
+- The S-DELETE swipe uses an authored `left` offset (not a transform) so the
+  popLayout lift starts at the presented box; the lift is pinned and the row
+  is detached from layout before the engine flush.
+
+### Cost (S-BULK, §11.5) — unchanged by H15
+
+- Chromium: `valid: true`, `status: pending` (G12 P4); measured
+  **G9-unscrolled 3.232x**, **G9-scrolled 3.242x**, **G11 11.860 ms** p95;
+  G10 0.700 ms pass; G13 exact; floor audit pass both shapes.
+- WebKit: `valid: false`, **BLOCK** (`g = 1 ms`; G9/G10/G11 non-deciding);
+  no quantized ratio presented as a measured failure.
+- Cost fingerprint advisory (load 2.80). S-REORDER/S-SHEET/S-BULK G12 remain
+  pending P4. No threshold changed.
+
+### Residual risks / next
+
+- The four failures above are engine/harness evidence; H15 does not fix the
+  engine.
+- DPR 1/3 sweeps and the reduced-motion variants (`'jump'`,
+  `{maxDuration: 0.2}`) remain P5c; the DPR 2 primary run is this report.
+- S-DELETE's per-run G8 swings under load; the 5-run aggregate decides.
+- The React G13 audit is a DOM read count because the public adapter exposes
+  no `group.stats`; it is exact after the documented S-DELETE exclusion.
+- The S-ISLAND G6 edge needs a gate-scope decision, not a scene workaround.
+
+## Iteration 4 — H15 fix round: trustworthy P5b evidence
+
+- Worktree: `ani-h15`, branch `helper/h15`, base `ad060d4` (review-blocked
+  P5b evidence); no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-4/report.json`
+- Report: `bench/layout/iteration-4/report.json`; log:
+  `bench/layout/iteration-4/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **4.85**, cost **advisory**; frame gates decide.
+- Self-tests: **14 controls across 7 files pass** (75/75 tests on the
+  standalone `pnpm test:bench-layout`).
+- Browser controls: **25 per engine / 50 total, all ok; 46 conclusive, 4
+  inconclusive** (`photo-no-counter-scale` and `acc-separator-1px` on each
+  engine, because the primary S-PHOTO/S-ACC G1 already fails; they are not
+  counted as evidence).
+
+### H15 fix ledger
+
+| ID | Fix | Test / result |
+|---|---|---|
+| H15-01 | `aggregateSceneReport` adds a deciding `RUN` metric and fails the scene if **any** measured run fails (problems, real twin, teardown, G8 or a metric); the `RUN` detail names the failing metric/participant/frame and problems. | `aggregate.test` H15-01 metric-clean/problem-carrying test; S-DELETE per-run now passes; `RUN=0` for every passing scene; `RUN=5` for S-PHOTO/S-ACC; the full report is fail, not a false pass. |
+| H15-02 | `REQUIRED_SCENES` includes every P5b scene plus cost; certification reasons name every non-pass required scene. | `certification.test` P5b-failure case; report `requiredScenes` lists all nine; reasons include `chromium/webkit scene s-photo fail` and `s-acc fail`. |
+| H15-03 | React `record` populates `elements` before the builder check; `realTwinProblems` checks diagnostics, connected, tracks and holds; a unit test covers the teardown. | S-ACC real connected 43, S-INSERT 16, S-DELETE 7, S-PHOTO 301; `aggregate.test` H15-03 real-twin teardown test; no run carries the old `real twin has no connected participants`. |
+| H15-04 | S-DELETE swipe is authored `translateX(0→−80)`; the exiting row keeps its registration, changes `layoutKey` to end the layout track, is pinned to its presented box (measured in the exiting render), the own transform is divided out by `popLayout` (J-027), and the presence translateX starts at 0. Opacity is an author `1→0` 0.2 s linear timeline. | S-DELETE G2 0.0095 px at `delete-2`; G1 0.0095; `delete-2` rects 18/18; ITERATIONS records the 0.2 s opacity (not 0.25). |
+| H15-05 | G13 asserts exact `2N` rects and pairs (not `<=`), exact computed reads, zero frame reads; S-DELETE `delete-2` is 18/18 (not 16); the blanket `{rects:4, styles:8}` exclusion is removed. React `popBox`/`containsAbsolute`/`ownMap` reads are classified by call stack and recorded as `presenceRects`/`presenceStyles`; the gate uses the layout subset. | S-DELETE Chromium 18/18 rects, 4/4 and 3/3 computed; WebKit 10/8; the G13 extra-read controls fail; the report shows the excluded presence reads (2/2 per commit). |
+| H15-06 | Controls are conclusive only when the primary passes the target (the contaminated photo/acc G1 controls are reported inconclusive); isolated G6, G13 and badge-scale controls were added for every new scene. | 50 controls, 46 conclusive, all conclusive fail their target; `photo-leftover-pose`, `photo-extra-read`, `acc-leftover-pose`, `acc-extra-read`, `insert-leftover-pose`, `insert-extra-read`, `stack-extra-read`, `stack-leftover-pose`, `stack-no-badge-scale`, `island-extra-read`, `delete-extra-read` all fail. |
+| H15-07 | `ScenePlan.removedWith` and `removedWithFollower` exempt a descendant removed with a crossfade follower; S-ISLAND declares `card-content → card`. | `scoring.test` H15-07 descendant-exemption test; S-ISLAND G6 0 and the scene passes in both engines (was the only failure). |
+| H15-08 | S-INSERT expects `snapped []` / `onSnap []`: a mounting row has no B and §9.1 requires both B and A outside the viewport. The earlier three-`culled` expectation was scene/oracle overreach, not an engine defect. | S-INSERT G7 0; the scene passes both engines; G1/G2/G4/G13 unchanged. |
+| H15-09 | S-STACK disc scale is checked by `shape.badge-scale` (computed transform sampled per frame, declared 0.8→1 / 1→0.8 timeline); the control disables it. | `shape.badge-scale` 4.9e-7; `stack-no-badge-scale` fails at 0.2; S-STACK passes. |
+| H15-10 | S-ISLAND's exiting card content keeps the 0.28 s spring (spec `position` departure) and is documented/tested as the H15-10 contribution; the pill content remains a position wrapper. | README scene contributions and this ledger; S-ISLAND G1–G5/G7/G13 pass; the H15-07 rule covers the removal. |
+| H15-11 | S-PHOTO registers the selected cell/image (the only layoutIds) after the initial scroll, so the scroll event never meets the engine's active-scroller listeners; WebKit 2203 has no `scrollend`, so the settle proof is the scroll event plus two frames, and an unsettled scroll rejects instead of silently continuing. N15-02 makes the real `openReal()`/`backReal()` mirror the manual unregister/add path, set `data-p`/`elements` and insert the returned cell at the selected index. | S-PHOTO runs in WebKit; the manual and real diagnostics are exactly the same two H18 nested-image stale events (2/2), not three; no `handoff-scroll-active`; G13 2/4 and 4/4 exact. |
+| S3 | Inline SVG icons with `currentColor` in S-ACC/S-PHOTO/S-ISLAND; S-ACC spacer arithmetic now uses a relative group top (scroller content 773); README/report G13 and popBox claims corrected; 6 biome warnings removed. | `pnpm exec biome check bench/layout` 0 errors, 0 warnings; S-ACC spacer geometry unchanged for participants; icons are non-participants. |
+
+### Scene and metric table (5 measured runs; median and worst)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-CARD | C1/G1–G8/G13/shape | **pass**; G1 0.0013 (frame 102 card-title left), G2 0.0012, G4 0.0013, G13 8/15, 8/15, 9/16, G8 0.320 ms | **pass**; G1 0.0004 (frame 73 sheet-content bottom), G13 15/15, 16/16, G8 1.000 ms |
+| S-SEG | C1/G1–G8/G13/shape | **pass**; G1 0.0001 (frame 17 pill right), G13 2/2, G8 0.280 ms | **pass**; G1 0.0000, G13 3/3, G8 1.000 ms |
+| S-PHOTO | C1/G1–G8/G13/shape | **FAIL** RUN 5, G1 306.2501, G2 306.2501, G4 306.2501 (frame 81 cell-37-image top), G7 4 (open `snapped [detail-image:stale]`); G13 2/2; G8 0.255 ms | **FAIL** RUN 5, G1/G2/G4 306.2501 (frame 81 cell-37-image top), G7 4; G13 4/4; G8 1.000 ms |
+| S-STACK | C1/G1–G8/G13/shape | **pass**; G1 0.0003 (frame 73 badge-1 top), G13 21/33 and 12/24, badge-scale 0, G8 0.415 ms | **pass**; G1 0.0002, G13 33/33 and 24/24, G8 1.000 ms |
+| S-ISLAND | C1/G1–G8/G13/shape | **pass**; G1 0.0006 (frame 17 card-content right), G2 0.0006, G13 5/9 and 6/10, G8 0.420 ms | **pass**; G1 0.0003, G2 0.0001, G13 9/9 and 10/10, G8 1.000 ms |
+| S-ACC | C1/G1–G8/G13/shape | **FAIL** RUN 5, G1 120.0000, G4 120.0000 (frame 12 body-6 bottom), G2 55.6732 (frame 18 body-6 c3); G13 47/47; G8 0.525 ms | **FAIL** RUN 5, G1/G4 120.0001, G2 55.6732; G13 82/82; G8 1.000–2.000 ms |
+| S-INSERT | C1/G1–G8/G13/shape | **pass**; G1 0.0001 (frame 14 row-10 bottom), G2 0, G4 0.0001, G7 0, G13 16/16, G8 0.600 ms | **pass**; G1 0.0001 (frame 14 row-21 bottom), G13 29/29, G8 2.000 ms median (per-run 1/2/2/2/1) |
+| S-DELETE | C1/G1–G8/G13/shape | **pass**; G1 0.0095 (frame 18 row-5 top), G2 0.0095, G3 0, G6 0, G7 0, G13 18/18 with 4/4 and 3/3, G8 0.465 ms | **pass**; G1 0.0095, G2 0.0095, G13 18/18 with 10/8, G8 1.000 ms |
+
+### Four failures — final classification
+
+- **S-PHOTO 306.25 px**: genuine engine late nested handoff defect (H18
+  evidence). The detail frame hands off; the nested detail image is skipped by
+  the late-handoff guard and snaps to A. Keep failing; do not fix in H15.
+- **S-ACC 120/55.67 px**: genuine engine counter-projection defect (H18
+  evidence). `body-6` is drawn as its layout box under the row's new height
+  pose at the mid-flight row 6 expansion. Keep failing; do not fix in H15.
+- **S-INSERT `snapped []`**: scene/oracle overreach, not engine. Fixed to the
+  correct `[]`; S-INSERT passes.
+- **S-ISLAND G6**: harness false positive. Fixed by the H15-07 descendant
+  exemption; S-ISLAND passes.
+
+### Certification and controls (iteration 4)
+
+- `certified: false`; reasons: advisory cost, pending S-REORDER/S-SHEET/
+  S-BULK G12 (P4), Chromium/WebKit S-PHOTO fail, Chromium/WebKit S-ACC fail,
+  Chromium S-BULK G9 3.321/3.353 and G11 11.665, WebKit S-BULK blocked/invalid.
+- `requiredScenes` now includes every P5b scene and `cost`.
+- 50 controls (25 per engine), all `ok`; 46 conclusive and all fail; 4
+  inconclusive are the contaminated photo/acc G1 controls. The full control
+  output is in the report.
+- Cost unchanged: Chromium G9 3.321/3.353×, G11 11.665 ms, G10 1.080 ms,
+  floor audit pass; WebKit blocked by the 1 ms timer. Load 4.85 → advisory.
+
+### Residual risks / next
+
+- S-PHOTO and S-ACC are the two H18 engine defects; H15 does not edit the
+  engine.
+- WebKit 2203 has no `scrollend`; S-PHOTO's settle proof is the scroll event
+  plus two frames with the selected layoutIds registered only after the
+  scroll. The engine's active-scroller rule is not exercised on WebKit's
+  missing event; the scene does not hide a scroll-active handoff (an unsettled
+  scroll rejects).
+- The S-PHOTO real twin used to assert exactly the two `capture-less-flush`
+  stale diagnostics of the old H18 defect (`s_photo.ts:980-991`). That
+  assertion was removed in the H18 rebase-prep commit: the real twin returns
+  the actual diagnostics and `realTwinProblems` fails any diagnostic. On the
+  pre-H18 branch the two events are still recorded and the scene fails
+  honestly; on the H18 base the expected result is **zero stale diagnostics**
+  and G1/G2/G4 ~0.0002 px. Rebase onto H18 before the final rerun.
+- The exact G13 read sets are pinned per scene/commit from the audited
+  §4.1/§4.3 set; the React presence probe reads are classified per commit, not
+  subtracted by a constant. The style totals remain scene/engine constants
+  because the engine's measured-node set (support/cache/Typed OM) is
+  implementation-specific; the rect/pair counts are exact `2N`.
+- DPR 1/3 and reduced-motion variants remain P5c; P4 remains pending.
+
+## Iteration 5 — N15 fixes: N15-01/N15-02 and S3
+
+- Worktree: `ani-h15`, branch `helper/h15`, base `ba20a0f`; no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-5/report.json`
+- Report: `bench/layout/iteration-5/report.json`; log:
+  `bench/layout/iteration-5/run.log`.
+- 1-minute load at start: **2.66**, cost advisory; frame gates decide.
+- Self-tests: **80/80**; browser controls **50 (25 per engine), all ok,
+  46 conclusive, 4 inconclusive** (the same primary-G1-failing photo/acc
+  controls).
+- Scene result: S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass
+  in Chromium and WebKit; S-PHOTO and S-ACC fail on the H18 engine defects.
+  Certification is NOT CERTIFIED for those two, pending P4 and the unchanged
+  S-BULK cost block.
+
+### N15-01 — S-ISLAND post-removal restoration proof
+
+- Failing before: the H15-07 exemption skipped G6 for `card-content` and only
+  mapped it to the follower; there was no evidence that the engine removed the
+  owned `translate`/`scale`.
+- Fix: `PhotoRuntime` — no; **S-ISLAND** takes a before snapshot from the last
+  connected observation (frame 65) and an after snapshot immediately after the
+  engine `remove()` in `removeExitedCard()`, records them on the trace
+  (`restorations`), and the S-ISLAND plan requires
+  `requiredRestorations: ['card-content']`. `restorationMismatches()` checks
+  the after snapshot against the mount (owned declarations + author cssText
+  rule); a missing snapshot or a leftover declaration fails G6.
+- Evidence: before `translate: 5.8e-05px !important; scale: 0.998141
+  0.996705 !important` at frame 65; after `translate`/`scale` empty. G6 0 in
+  every measured run, detail `1 post-removal restoration snapshot(s)`.
+- Test: `scoring.test` N15-01 (after matches -> pass; leftover -> fail; missing
+  required restoration -> fail; author cssText accepted). 80/80.
+
+### N15-02 — S-PHOTO real-twin fidelity
+
+- Failing before: `openReal()` did not unregister the cell/image or insert the
+  placeholder; `backReal()` appended the new cell instead of inserting it at
+  the selected index, did not set the image's `data-p`, and the real twin
+  emitted **three** `capture-less-flush` diagnostics versus the manual's two.
+- Fix: `openReal()` and `backReal()` now mirror the manual path exactly:
+  unregister the selected cell/image, remove the cell, insert the placeholder;
+  on back, create the cell/image with `data-p="cell-37"`/`"cell-37-image"`,
+  set the `elements` entries, remove the detail registrations, and insert the
+  returned cell at `ROW * 3 + COL` before `group.add`; focus and detail
+  visibility match. The real twin asserts that its diagnostics are exactly the
+  two H18 stale events (`capture-less-flush` open image + back image); the
+  diagnostics remain in `RealTrace.diagnostics` and are reported as problems,
+  not hidden.
+- Evidence: real `final.connected = 301`; diagnostics exactly 2/2, same as the
+  manual; no extra; G13 2/4 (Chromium) and 4/4 (WebKit) still exact. S-PHOTO
+  still fails G1 306.25 / G2 306.25 / G4 306.25 / G7 4 as H18 evidence.
+
+### S3 quick fixes
+
+- README S-ACC movers: `33/17/33` (c1/c2/c3), not `33/17/35`.
+- Removed the duplicate `delete-no-lift` guard and the dead `excludeReads`
+  option.
+- S-ISLAND exiting-content text-crispness assertion documented in README and
+  here: the incoming pill content and the expanded card content are
+  position-pinned at the authored glyph size; the exiting card content is a
+  0.28 s size-tracking layer whose declared opacity fades to 0 over 0.12 s
+  (`shape.presence-opacity`), with the G1 box track as the geometry assertion;
+  the departing text is not presented after the fade. The position-wrapper
+  attempt was rejected because the engine does not counter-project the
+  position child under the follower (G1 121 px), so the documented H15-10
+  contribution remains.
+- S-PHOTO private-use glyphs were replaced with inline SVG/currentColor in
+  iteration 4 (toolbar); S-ACC icons are inline SVG/currentColor; the S3 claim
+  is corrected.
+- README/report G13 and popBox numbers corrected: S-DELETE 18/18 rects;
+  Chromium 4/4 and 3/3; WebKit 10/10 and 8/8; presence reads 2/2 per commit;
+  no blanket exclusion.
+
+### Scene and metric table (5 measured runs; medians and worst)
+
+| Scene | Chromium | WebKit |
+|---|---|---|
+| S-CARD | **pass**; G1 0.0013, G13 8/15, 8/15, 9/16, G8 0.320 ms | **pass**; G1 0.0004, G13 15/15, 16/16, G8 1.000 ms |
+| S-SEG | **pass**; G1 0.0001, G13 2/2, G8 0.280 ms | **pass**; G1 0.0000, G13 3/3, G8 1.000 ms |
+| S-PHOTO | **FAIL** RUN 5, G1/G2/G4 306.2501 (frame 81 cell-37-image top), G7 4; G13 2/2; G8 0.255 ms | **FAIL** RUN 5, G1/G2/G4 306.2501, G7 4; G13 4/4; G8 1.000 ms |
+| S-STACK | **pass**; G1 0.0003, G13 21/33 and 12/24, badge-scale 0, G8 0.415 ms | **pass**; G1 0.0002, G13 33/33 and 24/24, G8 1.000 ms |
+| S-ISLAND | **pass**; G1 0.0006, G2 0.0006, G6 0 with 1 restoration snapshot, G13 5/9 and 6/10, G8 0.420 ms | **pass**; G1 0.0003, G2 0.0001, G6 0 with 1 snapshot, G13 9/9 and 10/10, G8 1.000 ms |
+| S-ACC | **FAIL** RUN 5, G1/G4 120.0000 (frame 12 body-6 bottom), G2 55.6732 (frame 18 body-6 c3); G13 47/47; G8 0.525 ms | **FAIL** RUN 5, G1/G4 120.0001, G2 55.6732; G13 82/82; G8 1.000–2.000 ms |
+| S-INSERT | **pass**; G1 0.0001, G2 0, G4 0.0001, G7 0, G13 16/16, G8 0.600 ms | **pass**; G1 0.0001, G13 29/29, G8 2.000 ms median |
+| S-DELETE | **pass**; G1 0.0095, G2 0.0095, G3 0, G6 0, G7 0, G13 18/18 with 4/4 and 3/3, G8 0.465 ms | **pass**; G1 0.0095, G2 0.0095, G13 18/18 with 10/10 and 8/8, G8 1.000 ms |
+
+### Merge verdict
+
+**Conditionally PASS, mergeable as H15 P5b evidence.** The two N15
+conditions are met: S-ISLAND G6 is backed by a before/after post-removal
+restoration snapshot (and the required-restoration gate), and the S-PHOTO
+real twin mirrors the manual unregister/add/registration path with exactly the
+same two H18 stale diagnostics (no unexplained third). S-PHOTO and S-ACC
+remain the two genuine H18 engine defects; certification remains NOT CERTIFIED
+for those, pending P4 and the unchanged S-BULK cost block. No gate, tolerance,
+production source or knownFailure was added.
+
+## Iteration 6 — H16 P5c: drive scenes, held cost and the full §11.6 set
+
+- Worktree: `ani-h16`, branch `helper/h16`, base `5e3ab8e` (P4 acting PASS +
+  H14 harness + H15 P2/P3 scenes); no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-6/report.json`
+- Report: `bench/layout/iteration-6/report.json`; log:
+  `bench/layout/iteration-6/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: 2.36; cost fingerprint is **advisory** (pinned
+  below 1). The frame gates still decide.
+- Self-tests: **79/79 tests, 14 controls**. Browser controls: **74 (37 per
+  engine), all ok; 66 conclusive, 8 inconclusive**. The inconclusive controls
+  are the two contamination cases from H15 (`photo-no-counter-scale`,
+  `acc-separator-1px`) and the two S-REORDER controls whose primary already
+  fails G1/G13 (`reorder-no-rebase`, `reorder-extra-read`), per engine.
+
+### What P5c adds
+
+- **S-REORDER** (14 participants, 20 ms): take row 1 at its centre, ten 18 px
+  moves, reorders at k = 2/5/9 (offsets 36/90/162), release with
+  `{x: 0, y: 900}`. The reorder changes the row's A and the nested title's A;
+  the held point must stay under the finger and the title must ride one `h`.
+  The drive-hold kill switch (L-DRIVE-4) runs after the scored script.
+- **S-SHEET** (1 participant, 16 ms): medium → large with −1200 px/s, then
+  medium → dismissed with +1600 px/s; the detent is chosen by the scene's
+  `projected = top + v·0.20 s` policy; the final sheet is unmounted with a
+  post-removal restoration proof.
+- **S-BULK** (1,000 participants, 300 movers, 16 ms): the 150-cycle shuffle on
+  the manual clock, scored G1–G8/G13 at 1280×720@1.
+- **G12**: the 1- and 10-held shapes on the 1,000-participant cost DOM (600
+  real-clock frames each), plus a 600-frame 1-held shape on the S-REORDER and
+  S-SHEET real twins. **G13-held** audits one rect per live hold per frame.
+- The release is not an engine commit or report (§5.10/§7.1); the scene
+  records a flush observation at the release frame but no `LayoutReport`.
+  G7 therefore covers the reorder/detent commits and the spec's "release run"
+  row is recorded as an API gap.
+
+### Scene and metric table (5 measured runs; median and worst)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1 oracle | **FAIL 96.0000 px** (title-1, frame 3, top) | **FAIL 96.0000 px** (title-1, frame 3) |
+| S-REORDER | G2/G3 | pass 0 / 0 | pass 0 / 0 |
+| S-REORDER | G4 spring | **FAIL 62.7711 px** (title-1, frame 11, top) | **FAIL 62.7711 px** |
+| S-REORDER | G5/G6/G7 | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-REORDER | G8 | 0.585 ms pass (44 frames) | 1.000 ms pass |
+| S-REORDER | G13 | **FAIL 6** (held support read; commits 28/28, 8/8) | **FAIL 6** (16/16 computed) |
+| S-REORDER | G12 scene | **FAIL 0.230 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-REORDER | G13-held / shape.hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G3/G4 | pass 0.0000825 / 0 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0 / 0.0000871 |
+| S-SHEET | G5/G6/G7 | pass 0 / 0 (1 removal proof) / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G8 | 0.260 ms pass (101 frames) | 1.000 ms pass |
+| S-SHEET | G13 | 0 (2/2, 1/1) | 0 (2/2, 2/2) |
+| S-SHEET | G12 scene | **FAIL 0.270 ms/held** (per-run 0.105–0.365) | BLOCK 1 ms (non-deciding) |
+| S-SHEET | G13-held / shape.hold | pass 0 / 0 | pass 0 / 0 |
+| S-BULK | G1/G4 | pass 0.0000848 | pass 0.0000848 |
+| S-BULK | G2/G3/G5/G6/G7 | pass 0 / 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 / 0 |
+| S-BULK | G13 | pass 0 (2000/2000, 300/300) | pass 0 (2000/2000, 600/600) |
+| S-BULK | G8 | 1.170 ms pass (48 frames) | 1.000 ms pass |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **FAIL 2.688 / 2.694** | BLOCK (raw 2.000 / 2.333) |
+| S-BULK cost | G10 | pass 0.845 ms | BLOCK (raw 1.000) |
+| S-BULK cost | G11 | **FAIL 8.495 ms** | BLOCK (raw 8.000) |
+| S-BULK cost | G12-1 / G12-10 | **FAIL 0.360 / pass 0.057** | BLOCK (raw 1.000 / 0.100) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Failure 1 — S-REORDER held origin shifts after a reorder (P4/H18)
+
+At frames 3, 6 and 10 (the first move after each reorder) the held row's drawn
+top is +60 px from the finger: 364 at frame 3 (expected 304), 418 at frame 6
+(expected 358), 490 at frame 10 (expected 430). The next move self-corrects.
+Root cause (read from the engine's §5.10 rebase): when the held read sees the
+layout change, it sets `shift = drawn − last − layoutDelta`; because the
+element's drawn box did not move with its layout, the layout delta is applied
+as an extra camera shift. The L-DRIVE-1 browser row reorders the held element
+but does not move it again afterward, so it does not cover this path.
+**Engine defect; H16 does not edit the engine.**
+
+### Failure 2 — S-REORDER nested title double-counts `h` (P4/H18)
+
+The title is a nested position participant inside the held row. At frame 1 the
+row is at 268 (exact) and the title at 296 (expected 278): the title is drawn at
+`row + 10 + h` instead of `row + 10`, so the parent's pose and the title's own
+inherited displacement both apply. The drift grows with the row's 60 px rebase
+error and reaches the G1 worst **96 px** (title-1, frame 3) and the release
+G4 **62.77 px** (title-1, frame 11). **Engine defect; not fixed here.**
+
+### Failure 3 — S-REORDER G13 held-frame support read (P4)
+
+The three reorder-adjacent held frames read one offset pair and one computed
+style in addition to the one rect per held element. The commit reads are exact
+2N/2N and the computed set is exact (4/6/8 active nodes; 0 radius capture), so
+G13's 6-excess failure is the held-frame support read. The strict reading of
+"held frames add exactly one rect per held element" is kept; the engine's
+§4.2 support check is reported, not excused.
+
+### Failure 4 — G12 1-held fixed frame cost (Chromium)
+
+The cost scene's 1-held shape **fails** at 0.360 ms/held (per-run
+0.110–0.460); the 10-held shape passes at 0.057 ms/held (0.0255–0.065). The
+per-held slope scales correctly; the 1-held frame is dominated by the fixed
+per-frame engine/harness work. S-REORDER's 600-frame 1-held scene shape is
+0.230 ms/held; S-SHEET's is 0.270 ms/held (0.105–0.365 per run). The scene
+shapes are deciding on Chromium; WebKit's 1 ms timer makes the ratio BLOCK.
+Recorded; no gate change. This is the main P4 cost finding: the 1-held fixed
+cost must come down to ≤0.1 ms.
+
+### Status / report ambiguities
+
+- `LayoutDriveHandle.release()` returns void and starts no `LayoutRun`: the
+  engine creates a release track but no `LayoutReport`. The p5 spec's
+  "release run `'ended'`" row is therefore not observable through the public
+  API. The scenes record the release's `t = 0` flush observation (G2/G3/G4) and
+  expect `no-change` for the detent updates; G7 does not claim a release status.
+- The p5 table's S-REORDER statuses (`interrupted` at the next reorder) do not
+  match §7.1/A-13 for this script. Each reorder targets a different sibling;
+  the earlier sibling's track is untouched and keeps running, and the three
+  runs resolve `ended` at frames 28/31/35. The plan expects `ended`; the p5
+  row is the ambiguity, not a gate change.
+- A reorder-adjacent held frame changes the held layout, so the engine's §4.2
+  support check reads one offset pair + one computed style in addition to the
+  one held rect. G13's strict reading counts 6 excess; the authority does not
+  explicitly exempt the support read.
+
+### Controls
+
+74 browser controls (37 per engine), all ok, 66 conclusive. The new controls
+are conclusive and fail their target: `reorder-kill-switch-skip` →
+`shape.kill-switch` (1), `reorder-cancel-instead` → `shape.hold` (2),
+`sheet-medium-detent` → G5 (298 px), `sheet-release-jump` → G2 (118 px),
+`sheet-extra-read` → G13 (2), `sheet-cancel-instead` → `shape.hold` (1),
+`bulk-target-offset` → G1 (1.001 px), `bulk-extra-read` → G13 (3000/2000
+rects), `bulk-leftover-pose` → G6 (2), `held-extra-read` → G13-held (11
+rects / 10 holds). `reorder-no-rebase` → G1 and `reorder-extra-read` → G13
+are **inconclusive** because the primary S-REORDER already fails those
+targets; they are reported, not counted as control evidence. The G12 unit
+control is 0.11 ms/held.
+
+### Certification and controls (iteration 6)
+
+- `certified: false`; reasons: advisory cost, Chromium/WebKit S-PHOTO fail,
+  Chromium/WebKit S-ACC fail, Chromium/WebKit S-REORDER fail, Chromium
+  S-SHEET fail (G12 scene shape), Chromium S-BULK cost fail with G9
+  unscrolled 2.688 / scrolled 2.694 and G11 8.495 and G12-1 0.360, WebKit
+  S-BULK cost blocked/invalid (1 ms timer).
+- The named G12 shapes: G12-1 0.360 fail, G12-10 0.057 pass (Chromium);
+  WebKit BLOCK. G13-held 0 in both engines.
+- All 11 scenes and the cost scene were selected; `pending` is empty.
+- S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass in both
+  engines; S-BULK passes the frame scene in both engines; S-SHEET passes every
+  interaction/settle/restoration row and fails only the 1-held G12 scene shape
+  on Chromium.
+
+### Residual risks / next (H18 engine work, not the harness)
+
+1. Held rebase: a `move` after a reorder applies the layout delta as an extra
+   camera shift (row-1 +60 px at frames 3/6/10). L-DRIVE-1 should be extended
+   to move again after the reorder; the scene is the evidence.
+2. Nested held descendant: `title-1` is drawn at `row + 10 + h` instead of
+   `row + 10`; the double-count is the G1 96 px / G4 62.77 px failure.
+3. Held-frame support read: a reorder-adjacent held frame reads one offset
+   pair + one computed style; the strict G13 reading fails with 6 excess.
+4. G12 1-held fixed cost: 0.360 ms/held (cost) and 0.230–0.270 ms/held
+   (scene); the 10-held slope passes. The 1-held path must reach ≤0.1 ms.
+5. S-BULK G9/G11: unchanged engine commit/flush cost (~10 ms) and sustained
+   ~12 ms; not a gate change.
+6. The release has no public `LayoutReport`; G7 covers the detent/reorder
+   commits only. The p5 spec's release row needs an authority/API decision.
+7. Firefox remains advisory (D9 launch timeout). DPR 1/3 and reduced-motion
+   variants remain P5c evidence outside this iteration.
+
+## Iteration 7 — H16 fix round: measured release continuity, blocked rows and detent policy
+
+- Worktree: `ani-h16`, branch `helper/h16`, base `7cd1e44` (H16 iteration 6);
+  no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-7/report.json`
+- Report: `bench/layout/iteration-7/report.json`; log:
+  `bench/layout/iteration-7/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **1.99**; cost fingerprint **advisory**. The frame
+  gates still decide.
+- Self-tests: **81/81, 14 controls**. Browser controls: **74 (37 per engine),
+  all ok, 68 conclusive, 6 inconclusive** (the two contaminated photo/acc G1
+  controls and `reorder-no-rebase` on each engine).
+
+### F-ledger
+
+| ID | Fix | Result |
+|---|---|---|
+| F8 | Release-frame continuity is measured: `HoldEvidence.releaseBox` against the next frame for the held node and its riders; the release G3 is BLOCK/authority because the pre-release velocity is the gesture estimate, not an analytic layout track. | S-REORDER G2 **88 px fail** (title-1, frame 11); S-SHEET G2 0.0000. G3 BLOCK in both scenes. |
+| F9 | The `reorder-extra-read` control captures **inside** the measured frame, after the `before` snapshot; the browser control is conclusive by the isolated G13 delta. | G13 = 34 vs primary 6 (`isolated delta 34 > primary 6`). |
+| F11 | A blocked required metric no longer passes a scene: the scene status is `blocked`, the report has a top-level `blocked` list, and certification names it. | WebKit S-SHEET **BLOCKED** (G3, G7, G12); Chromium S-SHEET fail on G12. |
+| F12 | S-REORDER reorder status rows are marked BLOCK/authority (A-13 `ended` vs p5 `interrupted`); G7 does not claim exact. | G7 BLOCK, observed statuses `ended` at frames 28/31/35. |
+| F13 | S-SHEET release rows are BLOCK/authority because `release()` has no public `LayoutReport`; G7 does not claim exact. | G7 BLOCK for `release-1` and `release-2`. |
+| F10 | The nested title is a release **rider**: expected at the row's release track + (66, 10), with no own release velocity; G5 uses the rider target. | G5 0; the title no longer has its own 900 px/s spring. G1 title 96 and G4 row 60 remain the engine defects. |
+| F14 | S-SHEET computes `projected = top + v·0.20`, nearest of {124, 422, 844}; the second take is ≥1 s after the first release. The second hold is 16 ms (uniform manual step); the 20 ms spec row is explicitly amended. | First release projects 2 → large 124; second projects 744 → dismissed 844; the scene's 1 s wait is recorded. |
+| F16 | The stale G9/G11 text in the README report example is corrected. | **2.688 / 2.694** G9 and **8.495 ms** G11. |
+| F15 | WebKit's 1 ms timer makes the 20-frame mean unclaimable; cost/G12 are BLOCK, not a measured pass. | WebKit cost BLOCK; top-level blocked list and certification reasons. |
+| F18 | Biome is reported honestly; DPR 1/3 and reduced-motion variants are P5c BLOCK. | **810 infos, 0 errors, 0 warnings** (not "clean"); DPR/reduced in the top-level blocked list. |
+
+**Scene contributions.** S-SHEET uses the manual clock's uniform 16 ms step
+for both holds; the spec's second-hold 20 ms row is amended (source comment
+and README). `allowEmptyFinal` is used only by S-SHEET (single participant
+unmounted after the second release) and is backed by
+`requiredRestorations: ['sheet']` plus the post-removal snapshot; no other
+scene has the exemption.
+
+### Scene and metric table (5 measured runs; median)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1 oracle | **FAIL 96.0000 px** (title-1, frame 3) | **FAIL 96.0000 px** |
+| S-REORDER | G2 release continuity | **FAIL 88.0000 px** (title-1, frame 11, release first frame) | **FAIL 88.0000 px** |
+| S-REORDER | G3 | **BLOCK/authority** (gesture release) | **BLOCK/authority** |
+| S-REORDER | G4 spring | **FAIL 60.0000 px** (row-1, frame 11) | **FAIL 60.0000 px** |
+| S-REORDER | G5/G6 | pass 0 / 0 | pass 0 / 0 |
+| S-REORDER | G7 | **BLOCK/authority** (A-13 ended vs p5 interrupted; no release report) | **BLOCK/authority** |
+| S-REORDER | G8 | 0.440 ms pass | 1.000 ms pass |
+| S-REORDER | G12 scene | **FAIL 0.295 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-REORDER | G13 | **FAIL 6** (held support read; commit 28/28, 8/8) | **FAIL 6** (16/16 computed) |
+| S-REORDER | G13-held / shape.hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G4 | pass 0.0000825 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0.0000871 |
+| S-SHEET | G3/G7 | **BLOCK/authority** (release velocity/report) | **BLOCK/authority** |
+| S-SHEET | G5/G6 | pass 0 / 0 (1 removal proof) | pass 0 / 0 |
+| S-SHEET | G8 | 0.265 ms pass | 1.000 ms pass |
+| S-SHEET | G12 scene | **FAIL 0.275 ms/held** (one run 0.090, four 0.210–0.315) | BLOCK 1 ms (non-deciding) |
+| S-SHEET | G13 / G13-held / shape.hold | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-BULK | G1/G4 | pass 0.0000848 | pass 0.0000848 |
+| S-BULK | G2/G3/G5/G6/G7 | pass 0 / 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 / 0 |
+| S-BULK | G8 | 1.125 ms pass (48 frames) | 2.000 ms pass |
+| S-BULK | G13 | pass 0 (2000/2000, 300/300) | pass 0 (2000/2000, 600/600) |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **FAIL 2.960 / 2.808** | BLOCK (raw 2.000 / 2.333) |
+| S-BULK cost | G10 | pass 1.040 ms | BLOCK (raw 2.000) |
+| S-BULK cost | G11 | **FAIL 8.940 ms** | BLOCK (raw 8.000) |
+| S-BULK cost | G12-1 / G12-10 | **FAIL 0.390 / pass 0.058** | BLOCK (raw 1.000 / 0.100) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Controls and certification
+
+- 74 browser controls, 37 per engine, all ok; **68 conclusive, 6
+  inconclusive** (photo/acc G1 ×2 and `reorder-no-rebase` ×2). The
+  `reorder-extra-read` control is now conclusive by the isolated G13 delta
+  (34 vs the primary 6); `held-extra-read` fails G13-held (11/10).
+- `certified: false`; the report's top-level `blocked` list names
+  `webkit scene s-sheet` (G3/G7/G12), `webkit S-BULK cost` (1 ms timer), the
+  DPR 1/3 sweep and the reduced-motion variants. Certification reasons also
+  include S-PHOTO/S-ACC/S-REORDER/S-SHEET failures, Chromium S-BULK cost
+  failures (G9 2.960/2.808, G11 8.940, G12-1 0.390) and the WebKit cost
+  BLOCK. `pending` is empty.
+- S-SHEET is **BLOCKED** on WebKit, not pass; Chromium S-SHEET fails G12 and
+  is BLOCK on G3/G7. The scene's measured interaction rows (G1/G2/G4/G5/G6/
+  G8/G13) pass; the detent policy and 1 s second take are implemented.
+
+### Residual risks
+
+1. S-REORDER engine defects: held rebase (+60 px after a reorder) and nested
+   title double-`h` (G1 96 px); release first-frame jump (G2 88 px); release
+   spring (G4 60 px); held support read (G13 6). H18, not this harness.
+2. G12 1-held fixed cost; the 10-held shape passes.
+3. S-PHOTO/S-ACC H18 defects unchanged.
+4. WebKit 1 ms timer: G9–G12 BLOCK; no 20-frame mean claimed.
+5. S-BULK G9/G11 remain above the gate.
+6. DPR/reduced variants and Firefox remain BLOCK/advisory.
+
+## Iteration 8 — H16 S2 verification fixes
+
+- Worktree: `ani-h16`, branch `helper/h16`, base `e4a6867` (H16 iteration 7);
+  no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-8/report.json`
+- Report: `bench/layout/iteration-8/report.json`; log:
+  `bench/layout/iteration-8/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **2.62**; cost fingerprint **advisory**.
+- Self-tests: **81/81, 14 controls**. Browser controls: **74 (37 per engine),
+  all ok, 68 conclusive, 6 inconclusive** (photo/acc G1 ×2 and
+  `reorder-no-rebase` ×2).
+
+### S2 fixes
+
+| ID | Fix | Failing before | Result |
+|---|---|---|---|
+| F8 | `releaseContinuity` uses each rider's rest size (title 270×22), not the held row's 358×52. | G2 88.0000 px (width-edge artifact) | **G2 60.0000 px** (row-1 top, frame 11); title top 49.06 px. Failure kept. |
+| G8 | S-BULK WebKit G8 is BLOCK when `g > 0.05`: its p95 is raw 1 ms-quantized frames and the §11.5 20-frame mean is not claimed. | 2.000 ms pass | **BLOCK**; WebKit S-BULK scene blocked, top-level blocked + cert reason. |
+| S3 | Certification reasons list every deciding, non-blocked failed metric; RUN detail labels blocked G3/G7 as `BLOCK` rather than NaN/0. | RUN detail `G3 NaN; G7 0`, cert reason only scene status | `BLOCK G3; BLOCK G7; G1 96; G2 60; G4 60; G13 6; G12 ...`; cert reasons enumerate G1/G2/G4/G13/G12 and S-SHEET G12. |
+| S3 | Removed the stale iteration-6 Failure 5 (3.3–3.5× / 12 ms) text. | stale | removed; iteration 7/8 values remain. |
+| S3 | S-SHEET second hold uses the uniform 16 ms step; the p5 20 ms row is an explicit scene contribution in source/README/ITERATIONS. | implicit | documented. |
+| S3 | `allowEmptyFinal` scope documented: only S-SHEET, backed by `requiredRestorations: ['sheet']` and the post-removal snapshot. | implicit | documented and source-commented. |
+
+### Scene and metric table (5 measured runs; median)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1 oracle | **FAIL 96.0000 px** (title-1, frame 3) | **FAIL 96.0000 px** |
+| S-REORDER | G2 release continuity | **FAIL 60.0000 px** (row-1 top, frame 11); title top 49.06 px | **FAIL 60.0000 px** |
+| S-REORDER | G3 | **BLOCK/authority** (gesture release) | **BLOCK/authority** |
+| S-REORDER | G4 spring | **FAIL 60.0000 px** (row-1, frame 11) | **FAIL 60.0000 px** |
+| S-REORDER | G5/G6 | pass 0 / 0 | pass 0 / 0 |
+| S-REORDER | G7 | **BLOCK/authority** (A-13 ended vs p5 interrupted; no release report) | **BLOCK/authority** |
+| S-REORDER | G8 | 0.695 ms pass | 2.000 ms pass |
+| S-REORDER | G12 scene | **FAIL 0.330 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-REORDER | G13 | **FAIL 6** (held support read; commit 28/28, 8/8) | **FAIL 6** (16/16 computed) |
+| S-REORDER | G13-held / shape.hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G4 | pass 0.0000825 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0.0000871 |
+| S-SHEET | G3/G7 | **BLOCK/authority** | **BLOCK/authority** |
+| S-SHEET | G5/G6 | pass 0 / 0 (1 removal proof) | pass 0 / 0 |
+| S-SHEET | G8 | 0.305 ms pass | 1.000 ms pass |
+| S-SHEET | G12 scene | **FAIL 0.310 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-SHEET | G13 / G13-held / shape.hold | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-BULK | G1/G4 | pass 0.0000848 | pass 0.0000848 |
+| S-BULK | G2/G3/G5/G6/G7 | pass 0 / 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 / 0 |
+| S-BULK | G8 | 1.490 ms pass (48 frames) | **BLOCK** (1 ms-quantized; 20-frame mean not claimed) |
+| S-BULK | G13 | pass 0 (2000/2000, 300/300) | pass 0 (2000/2000, 600/600) |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **FAIL 2.951 / 2.817** | BLOCK (raw 1.750 / 1.714) |
+| S-BULK cost | G10 | pass 1.365 ms | BLOCK (raw 3.000) |
+| S-BULK cost | G11 | **FAIL 8.090 ms** | BLOCK (raw 8.000) |
+| S-BULK cost | G12-1 / G12-10 | **FAIL 0.415 / pass 0.061** | BLOCK (raw 1.000 / 0.100) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Controls and certification
+
+- 74 browser controls, 37 per engine, all ok; **68 conclusive, 6
+  inconclusive** (photo/acc G1 ×2 and `reorder-no-rebase` ×2). The
+  `reorder-extra-read` isolated delta is 34 vs the primary 6; the held-read
+  control is 11/10.
+- `certified: false`; top-level `blocked` names `webkit scene s-sheet`
+  (G3/G7/G12), `webkit scene s-bulk` (G8), `webkit S-BULK cost` (1 ms timer),
+  the DPR 1/3 sweep and the reduced-motion variants. Certification reasons
+  list every failed metric, e.g. Chromium S-REORDER `G1 96, G2 60, G4 60,
+  G13 6, G12 0.330`, Chromium S-SHEET `G12 0.310`, and the RUN detail labels
+  the blocked G3/G7 (and G12 on WebKit) as `BLOCK`, not NaN/0.
+- S-BULK is **BLOCKED** on WebKit (G8), not a measured pass; Chromium S-BULK
+  passes the frame scene. S-SHEET is fail on Chromium (G12) and blocked on
+  WebKit. S-REORDER fails G1/G2/G4/G13/G12 and blocks G3/G7.

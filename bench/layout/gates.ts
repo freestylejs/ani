@@ -250,6 +250,43 @@ export function sustainedRatioGate(
     }
 }
 
+/**
+ * D11 G12: the incremental per-held cost at the same scene/frame no-hold
+ * baseline: `(p95(held) - p95(no-hold)) / held <= 0.1`. Both p95 values are
+ * reported; the absolute total-frame G8 gate is separate and unchanged.
+ */
+export function heldIncrementalGate(
+    heldCosts: readonly number[],
+    baselineCosts: readonly number[],
+    held: number,
+    g: number
+): GateResult {
+    if (held <= 0) throw new Error('held count must be positive')
+    if (heldCosts.length === 0 || baselineCosts.length === 0) {
+        return {
+            id: 'G12',
+            label: `Held incremental at ${held} held element${held === 1 ? '' : 's'}`,
+            gate: '(p95(held) - p95(no-hold)) / held <= 0.1 ms',
+            unit: 'ms/held',
+            value: Number.POSITIVE_INFINITY,
+            pass: false,
+            detail: 'no held or baseline samples',
+        }
+    }
+    const heldP95 = percentile(heldCosts, 0.95)
+    const baselineP95 = percentile(baselineCosts, 0.95)
+    const value = (heldP95 - baselineP95) / held
+    return {
+        id: 'G12',
+        label: `Held incremental at ${held} held element${held === 1 ? '' : 's'}`,
+        gate: '(p95(held) - p95(no-hold)) / held <= 0.1 ms',
+        unit: 'ms/held',
+        value,
+        pass: Number.isFinite(value) && value <= 0.1,
+        detail: `held p95 ${heldP95.toFixed(3)} ms - baseline p95 ${baselineP95.toFixed(3)} ms = ${(heldP95 - baselineP95).toFixed(3)} ms / ${held} = ${value.toFixed(4)} ms/held; ${heldCosts.length} held / ${baselineCosts.length} baseline samples; g ${g.toFixed(4)} ms`,
+    }
+}
+
 export function heldGate(
     costs: readonly number[],
     held: number,
