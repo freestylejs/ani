@@ -1,0 +1,656 @@
+{
+  "schema": "ani-layout-bench/v1",
+  "generatedAt": "2026-10-29T00:39:16.632Z",
+  "command": "pnpm bench:layout --engine webkit --scene cost --runs 5 --out bench/layout/iteration-3/webkit-cost.json",
+  "fingerprint": {
+    "host": "Mac14,9",
+    "os": {
+      "productVersion": "27.0.1",
+      "kernel": "27.0.0"
+    },
+    "cpu": "Apple M2 Pro",
+    "cores": 10,
+    "memoryBytes": 34359738368,
+    "node": "v24.19.0",
+    "pnpm": "10.20.0",
+    "playwright": "1.55.0",
+    "browsers": {
+      "chromium": "chromium_headless_shell-1187",
+      "chromiumHeadlessShell": "chromium_headless_shell-1187",
+      "webkit": "webkit-2203",
+      "firefox": "firefox-1490"
+    },
+    "load1": 2.8046875
+  },
+  "advisory": {
+    "cost": true,
+    "reasons": [
+      "1-minute load is 2.80, pinned below 1"
+    ]
+  },
+  "engines": [
+    {
+      "engine": "webkit",
+      "advisory": true,
+      "browserVersion": "26.0",
+      "build": "webkit-2203",
+      "launchError": null,
+      "scenes": [],
+      "cost": {
+        "scene": "S-BULK",
+        "status": "blocked",
+        "pending": "P4 (held shape G12; take/move/release not in the base tree)",
+        "pass": false,
+        "valid": false,
+        "blockedReasons": [
+          "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+        ],
+        "metrics": [
+          {
+            "id": "G9-unscrolled",
+            "label": "Commit over the required-work floor, unscrolled",
+            "gate": "median of 5 per-run ratios <= 2",
+            "unit": "ratio",
+            "median": 1.2,
+            "blocked": true,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.2,
+              1.2,
+              1.2,
+              1.2000000000000273,
+              1.2
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 4
+            }
+          },
+          {
+            "id": "G9-scrolled",
+            "label": "Commit over the required-work floor, scrolled 1.5 viewports",
+            "gate": "median of 5 per-run ratios <= 2",
+            "unit": "ratio",
+            "median": 1.2000000000000546,
+            "blocked": true,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.499999999999659,
+              1.2,
+              1.2,
+              1.3333333333331987,
+              1.2000000000000546
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G9.floor-unscrolled",
+            "label": "Required-work floor audit (unscrolled)",
+            "gate": "exact required counts; no extra read",
+            "unit": "count mismatches",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G9.floor-scrolled",
+            "label": "Required-work floor audit (scrolled)",
+            "gate": "exact required counts; no extra read",
+            "unit": "count mismatches",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G10",
+            "label": "Steady frame at 300 nested movers (A-19 150+150)",
+            "gate": "p95 <= 2 ms",
+            "unit": "ms",
+            "median": 2,
+            "blocked": true,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.000000000001819,
+              2,
+              2,
+              2,
+              1.000000000001819
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 2
+            }
+          },
+          {
+            "id": "G11",
+            "label": "Sustained 60 Hz commit script cost, 300 moving participants",
+            "gate": "p95 of one performance.now() pair per 60 Hz commit <= 2 ms",
+            "unit": "ms",
+            "median": 8,
+            "blocked": true,
+            "deciding": true,
+            "pass": false,
+            "perRun": [
+              8,
+              7.000000000003638,
+              8,
+              8.000000000003638,
+              8.000000000003638
+            ],
+            "passPerRun": [
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            "worst": {
+              "run": 4
+            }
+          },
+          {
+            "id": "G13",
+            "label": "Exact read counts per commit and zero steady-frame reads",
+            "gate": "<= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero",
+            "unit": "excess reads",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          }
+        ],
+        "runs": [
+          {
+            "run": 0,
+            "warmup": true,
+            "valid": false,
+            "heldPending": true,
+            "blockedReasons": [
+              "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+            ],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.2,
+            "ratioScrolled": 1.5,
+            "engineMedianUnscrolled": 6,
+            "floorMedianUnscrolled": 5,
+            "engineMedianScrolled": 6,
+            "floorMedianScrolled": 4,
+            "steadyP95": 2,
+            "sustainedP95": 8.000000000003638,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 59.92808629644426,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 600 computed reads (incl. Typed OM), 300 poses; steady frames read zero",
+            "g": 1,
+            "gSource": "reads"
+          },
+          {
+            "run": 1,
+            "warmup": false,
+            "valid": false,
+            "heldPending": true,
+            "blockedReasons": [
+              "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+            ],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.2,
+            "ratioScrolled": 1.499999999999659,
+            "engineMedianUnscrolled": 6,
+            "floorMedianUnscrolled": 5,
+            "engineMedianScrolled": 6,
+            "floorMedianScrolled": 4.0000000000009095,
+            "steadyP95": 1.000000000001819,
+            "sustainedP95": 8,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 59.535622147251445,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 600 computed reads (incl. Typed OM), 300 poses; steady frames read zero",
+            "g": 0.9999999999999929,
+            "gSource": "tick-fallback"
+          },
+          {
+            "run": 2,
+            "warmup": false,
+            "valid": false,
+            "heldPending": true,
+            "blockedReasons": [
+              "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+            ],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.2,
+            "ratioScrolled": 1.2,
+            "engineMedianUnscrolled": 6,
+            "floorMedianUnscrolled": 5,
+            "engineMedianScrolled": 6,
+            "floorMedianScrolled": 5,
+            "steadyP95": 2,
+            "sustainedP95": 7.000000000003638,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 59.91611743559018,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 600 computed reads (incl. Typed OM), 300 poses; steady frames read zero",
+            "g": 1,
+            "gSource": "tick-fallback"
+          },
+          {
+            "run": 3,
+            "warmup": false,
+            "valid": false,
+            "heldPending": true,
+            "blockedReasons": [
+              "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+            ],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.2,
+            "ratioScrolled": 1.2,
+            "engineMedianUnscrolled": 6,
+            "floorMedianUnscrolled": 5,
+            "engineMedianScrolled": 6,
+            "floorMedianScrolled": 5,
+            "steadyP95": 2,
+            "sustainedP95": 8,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 59.66587112171838,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 600 computed reads (incl. Typed OM), 300 poses; steady frames read zero",
+            "g": 1.000000000000007,
+            "gSource": "reads"
+          },
+          {
+            "run": 4,
+            "warmup": false,
+            "valid": false,
+            "heldPending": true,
+            "blockedReasons": [
+              "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+            ],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.2000000000000273,
+            "ratioScrolled": 1.3333333333331987,
+            "engineMedianUnscrolled": 6,
+            "floorMedianUnscrolled": 4.999999999999886,
+            "engineMedianScrolled": 6,
+            "floorMedianScrolled": 4.500000000000455,
+            "steadyP95": 2,
+            "sustainedP95": 8.000000000003638,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 59.92808629644426,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 600 computed reads (incl. Typed OM), 300 poses; steady frames read zero",
+            "g": 0.9999999999999929,
+            "gSource": "tick-fallback"
+          },
+          {
+            "run": 5,
+            "warmup": false,
+            "valid": false,
+            "heldPending": true,
+            "blockedReasons": [
+              "timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result"
+            ],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 600,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 600,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.2,
+            "ratioScrolled": 1.2000000000000546,
+            "engineMedianUnscrolled": 6,
+            "floorMedianUnscrolled": 5,
+            "engineMedianScrolled": 6,
+            "floorMedianScrolled": 4.999999999999773,
+            "steadyP95": 1.000000000001819,
+            "sustainedP95": 8.000000000003638,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 59.95203836930456,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 600, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 600 computed reads (incl. Typed OM), 300 poses; steady frames read zero",
+            "g": 1.000000000000007,
+            "gSource": "tick-fallback"
+          }
+        ],
+        "notes": [
+          "G9/G10/G11/G13 are measured; the held shape G12 is P4-only and is not run.",
+          "A valid cost run cannot pass while G12 is pending.",
+          "S-BULK frame scoring (G1–G8, manual clock) is not part of P5a."
+        ],
+        "measuredRuns": 5
+      },
+      "notes": [
+        "Playwright WebKit does not expose crossOriginIsolated even with the COOP/COEP headers present; performance.now ticks at 1 ms, so g = 1 ms and the §11.5 20-frame sampler applies."
+      ]
+    }
+  ],
+  "negativeControls": [],
+  "selfTests": {
+    "pass": true,
+    "controls": [
+      "negative control G1: a 0.1 px offset fails the oracle error (3.274041ms)",
+      "negative control G2: a 0.1 px first-frame jump fails continuity (3.555125ms)",
+      "negative control G3: starting a retarget from rest fails velocity continuity (3.157625ms)",
+      "negative control G4: a 0.1 px spring displacement fails spring fidelity (2.248625ms)",
+      "negative control G5: a leftover pose and a 0.02 px settle error fail (2.406458ms)",
+      "negative control G6: a leftover declaration fails restoration (2.099333ms)",
+      "negative control G7: a wrong status or a wrong snapped set fails reports (4.07125ms)",
+      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.269917ms)",
+      "negative control G9: a floor with an extra read fails its audit (0.324333ms)",
+      "negative control G10 and G11: a p95 above 2 ms fails (0.141167ms)",
+      "negative control G12: 0.11 ms per held element fails (0.114125ms)",
+      "negative control G13: an extra rect or a steady-frame read fails (3.948ms)",
+      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.184125ms)",
+      "shape negative controls: opacity, coverage, radius, inert and font fail (115.460542ms)"
+    ],
+    "files": [
+      "bench/layout/oracle.test.ts",
+      "bench/layout/scoring.test.ts",
+      "bench/layout/stats.test.ts",
+      "bench/layout/frame_sampler.test.ts",
+      "bench/layout/aggregate.test.ts",
+      "bench/layout/certification.test.ts",
+      "bench/layout/cost_validity.test.ts"
+    ],
+    "detail": "14 negative controls failed as required across 7 test files"
+  },
+  "pending": [
+    {
+      "scene": "S-REORDER",
+      "reason": "P4 (take/move/release drive seam not in the base tree)"
+    },
+    {
+      "scene": "S-SHEET",
+      "reason": "P4 (drive seam not in the base tree)"
+    },
+    {
+      "scene": "S-BULK",
+      "reason": "P4 (held shape G12; take/move/release not in the base tree)"
+    }
+  ],
+  "certification": {
+    "certified": false,
+    "reasons": [
+      "required engine chromium not selected",
+      "required scene s-card not selected",
+      "required scene s-seg not selected",
+      "cost fingerprint is advisory",
+      "negative controls failed or were not run",
+      "pending S-REORDER: P4 (take/move/release drive seam not in the base tree)",
+      "pending S-SHEET: P4 (drive seam not in the base tree)",
+      "pending S-BULK: P4 (held shape G12; take/move/release not in the base tree)",
+      "required engine chromium has no report",
+      "webkit scene s-card missing",
+      "webkit scene s-seg missing",
+      "webkit S-BULK cost blocked",
+      "webkit S-BULK cost is not valid"
+    ],
+    "requiredEngines": [
+      "chromium",
+      "webkit"
+    ],
+    "requiredRuns": 5,
+    "requiredScenes": [
+      "s-card",
+      "s-seg",
+      "cost"
+    ]
+  },
+  "pass": false
+}

@@ -477,3 +477,112 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 - G3's actual-continuity evidence is the observed finite difference; the
   analytic pair remains the gate per A-11.
 - S-PHOTO, DPR sweeps and reduced-motion variants remain P5b.
+
+## Iteration 3 — H17 S-BULK commit and sustained cost (P5 performance)
+
+- Worktree: `ani-h17`, branch `helper/h17`, base `c7cba21` (P4 acting
+  PASS + H14 harness). No remote and no push.
+- Date: 2026-10-29.
+- Command: `pnpm bench:layout --runs 5 --engine chromium --engine webkit --check`
+  was attempted twice; both invocations lost the Chromium GPU process
+  (`exit_code=15`) after the warm-up, before run 1, and Playwright then spun in
+  a closed-browser wait. The same code was run per scene on both engines:
+  - `pnpm bench:layout --engine chromium --scene s-card --runs 5`
+  - `pnpm bench:layout --engine chromium --scene s-seg --runs 5`
+  - `pnpm bench:layout --engine chromium --scene cost --runs 5 --check`
+  - the same three for `--engine webkit`
+  - reports in `bench/layout/iteration-3/`.
+- Fingerprint: MacBook Pro `Mac14,9`, Apple M2 Pro, 10 cores, 32 GB,
+  macOS 27.0.1 / Darwin 27.0.0, Node 24.19.0, pnpm 10.20.0, Playwright
+  1.55.0, `chromium_headless_shell-1187`, `webkit-2203`. 1-minute load at the
+  cost run: **1.55** (other per-scene runs 1.48–2.22). Cost is **advisory**;
+  the ratios are measured but not a certification claim until a quiet run.
+- No scene expectation, row, tolerance or `knownFailure` changed.
+
+### Before/after (Chromium S-BULK, 5 measured runs, median)
+
+| Metric | Iteration 2 | Iteration 3 | Gate |
+|---|---:|---:|---|
+| G9 unscrolled | **3.252× FAIL** | **1.963× pass** (per-run 1.938/2.010/1.955/1.988/1.963) | ≤ 2 |
+| G9 scrolled | **3.284× FAIL** | **1.963× pass** (1.965/1.990/1.922/1.949/1.963) | ≤ 2 |
+| engine commit unscrolled | 8.72–10.71 ms | 5.70–5.80 ms | — |
+| engine commit scrolled | 9.31–10.46 ms | 5.55–5.66 ms | — |
+| floor commit | 2.84–2.92 ms | 2.84–2.94 ms | audited |
+| G10 steady p95 | 1.025 ms | 0.930 ms | ≤ 2 |
+| G11 sustained p95 | **12.345 ms FAIL** | **8.045 ms FAIL** | ≤ 2 |
+| G13 exact reads | pass | pass, zero steady reads | exact |
+
+The audited floor is unchanged: 2,000 rects/2,000 layout-size pairs in
+capture, 1,000/1,000 in flush, 300 computed reads (Chromium; 600 WebKit with
+Typed OM), 300 pose declarations, no extra read.
+
+### Root causes and behavior-preserving fixes
+
+1. **Every spring track recomputed its settle time.** `createTrack` built a
+   fresh `Spring` and bisected `settleTime` for all four channels of 300
+   tracks on every commit (`lastExit` was the largest single sampled block,
+   ~1.2 ms). `solve.ts` now reuses pure `Spring` instances by
+   `(duration, bounce)` and pure settle results by `(spring, x0, v0)`, with
+   bounded maps; a zero/zero channel returns 0 without a lookup.
+2. **Planning built 1,000 full `PlanNode`s and ran the decision for 700 static
+   tiles.** A top-level participant with no drive anywhere in its subtree, no
+   shared id, no hold, a valid B and an unchanged box cannot animate, snap or
+   report. Its array slot is now `null` (still index-aligned); `plan` emits
+   `none`. With no `layoutId` in the scope the lead/handoff pass is skipped.
+3. **The participant tree was rebuilt at capture and flush.** A pass is now
+   reused only after verifying the registry order/connection, shadow
+   membership, flat parents and distinct nearest participant ancestors; a
+   `MutationObserver` (document childList plus `slot`/`name` attributes)
+   invalidates it on structural changes. This is a structure cache, not a
+   read cache: no DOM read is skipped; a reparent invalidates it.
+4. **The flush ran the presentation/keep/reexpress/solve machinery with no
+   frame.** From-rest commits now skip those paths; hold, focus, lead and
+   inactive-drive scans are guarded by the scope's live state. `frameIndex`,
+   tree depth/parent/flat and `trusted` ancestry are carried on the participant
+   instead of rebuilt maps.
+5. **Support passes re-read computed values even when the check would read
+   none.** A capture pass with zero computed reads is reused only while every
+   input (participant order, parents, rect/layout size, pose scale) is
+   identical; at flush it is reused only while every active node's computed
+   `q` this flush read is 1. Any verification, exact-size read, non-1 `q` or
+   size change runs the check again. C-6b and the 1.003-scale test stay exact.
+6. **600 write records, per-drive arrays and per-track maps were allocated per
+   commit.** Applied `Write` records are pooled; a drive with no extra owned
+   property uses the shared pose list; integer pose channels bypass
+   `toFixed(6)`; identity parent maps, identity ancestry and the common
+   single-parent/identity geometry take a direct path; `update()` no longer
+   arms a frame marker for a capture it consumes synchronously.
+7. **Smaller walks.** `flatTree` returns a shared empty slot map when the
+   scope knows no shadow root; `trackRoot` skips the root-chain allocation
+   outside shadow roots; capture loops were merged; dead frame maps were
+   removed.
+
+### G11 — absolute gate is below the required-work floor
+
+The sustained shape commits the same 1,000-participant work every 16.667 ms.
+The audited floor median is **2.84–2.94 ms per commit**, so the absolute 2 ms
+G11 gate is below the floor before any planner work. A direct same-shape
+300-commit floor run (plain DOM, Chromium) measured **median 2.805 ms, p95
+3.215 ms, max 3.405 ms** (`evidence/h17/floor_sustained.json`). The current
+engine p95 is 8.045 ms (ratio ≈ 2.8× floor). A 2× floor replacement would also
+still fail; H17 therefore reports the structural fact and proposes a
+floor-relative owner decision without applying it
+(`.trace/ani_ios_production/evidence/h17/g11_floor_amendment_proposal.md`).
+
+### WebKit
+
+WebKit remains **BLOCK**. `g = 1.0000 ms` in all five runs; the report is
+`valid: false`, `status: blocked`, G9/G10/G11 are non-deciding. Diagnostic raw
+values (1.200×/1.200×, 2.000 ms, 8.000 ms) are not presented as results. The
+floor audits and G13 are exact. A 20-commit batch mean would be ±0.05 ms per
+commit but cannot decide the p95 of 300 commits, so it was not claimed
+(`evidence/h17/webkit_timer_block.md`).
+
+### Scenes
+
+S-CARD and S-SEG pass all gates in both engines over five runs (reports in
+`iteration-3/`). S-REORDER, S-SHEET and S-BULK G12 remain P4 and are reported
+pending, never passed. Cost remains advisory on the current load, so this is
+not a certification claim.
+
+No gate or tolerance was changed in this iteration.
