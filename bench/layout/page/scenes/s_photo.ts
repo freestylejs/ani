@@ -486,7 +486,9 @@ class PhotoRuntime {
         const layer = this.layer
         layer.cell37.focus()
         if (!this.builder) {
-            return this.openReal()
+            const real = this.openReal()
+            void real.then(() => this.layer.back.focus())
+            return real
         }
         const result = recordCommit({
             builder: this.builder,
@@ -562,7 +564,20 @@ class PhotoRuntime {
     private openReal(): Promise<LayoutReport> {
         const layer = this.layer
         return this.group.update(() => {
+            const index = [...layer.grid.childNodes].indexOf(layer.cell37)
+            const placeholder = document.createElement('div')
+            placeholder.className = 'photo-placeholder'
+            placeholder.style.left = `${COL * PITCH}px`
+            placeholder.style.top = `${ROW * PITCH}px`
+            this.removers.get('cell-37')?.()
+            this.removers.get('cell-37-image')?.()
+            this.removers.delete('cell-37')
+            this.removers.delete('cell-37-image')
             layer.cell37.remove()
+            layer.grid.insertBefore(
+                placeholder,
+                layer.grid.childNodes[index] ?? null
+            )
             this.elements.set('cell-37', null)
             this.elements.set('cell-37-image', null)
             layer.detail.style.visibility = 'visible'
@@ -687,12 +702,24 @@ class PhotoRuntime {
         return this.group.update(() => {
             const layer = this.layer
             const newCell = makeCell(SELECTED, true) as HTMLButtonElement
+            newCell.dataset.p = 'cell-37'
             const newImage = this.layer.decoded.cloneNode(
                 false
             ) as HTMLImageElement
             newImage.className = 'photo-cell-img'
+            newImage.dataset.p = 'cell-37-image'
             newImage.alt = ''
             newCell.append(newImage)
+            newCell.style.left = `${COL * PITCH}px`
+            newCell.style.top = `${ROW * PITCH}px`
+            const placeholder = layer.grid.querySelector('.photo-placeholder')
+            placeholder?.remove()
+            layer.grid.insertBefore(
+                newCell,
+                layer.grid.childNodes[ROW * 3 + COL] ?? null
+            )
+            this.elements.set('cell-37', newCell)
+            this.elements.set('cell-37-image', newImage)
             this.removers.get('detail-frame')?.()
             this.removers.get('detail-image')?.()
             this.removers.delete('detail-frame')
@@ -715,8 +742,6 @@ class PhotoRuntime {
                     radius: false,
                 })
             )
-            layer.grid.querySelector('.photo-placeholder')?.remove()
-            layer.grid.append(newCell)
             newCell.focus()
             layer.frame.style.visibility = 'hidden'
             layer.image.style.visibility = 'hidden'
@@ -952,6 +977,18 @@ export class PhotoScene {
             commits.push({ label: 'back', at: performance.now() })
             await backed
             for (let i = 0; i < 4; i++) await nextFrame()
+            // H18 nested-image defect: the open detail image and the back cell
+            // image take the engine stale path. Assert that exact path; the
+            // diagnostics are returned to the report and are not hidden.
+            const diagnostics = [...runtime.diagnostics]
+            if (
+                diagnostics.length !== 2 ||
+                diagnostics.some((code) => code !== 'capture-less-flush')
+            ) {
+                throw new Error(
+                    `s-photo real twin diagnostics [${diagnostics.join(',')}] are not the expected two H18 stale events`
+                )
+            }
             const final = {
                 tracks: runtime.group.stats.tracks,
                 holds: runtime.group.stats.holds,
