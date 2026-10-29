@@ -137,18 +137,25 @@ export function aggregateSceneReport(args: {
             detail: failing
                 ? [
                       ...failing.metrics
+                          .filter((metric) => metric.blocked === true)
+                          .map((metric) => `BLOCK ${metric.id}`),
+                      ...failing.metrics
                           .filter(
                               (metric) =>
-                                  !metric.pass && metric.deciding !== false
+                                  !metric.pass &&
+                                  metric.blocked !== true &&
+                                  metric.deciding !== false
                           )
                           .map(
                               (metric) =>
                                   `${metric.id} ${metric.value}${metric.worst?.participant ? ` (${metric.worst.participant}${metric.worst.frame === undefined ? '' : ` frame ${metric.worst.frame}`})` : ''}`
                           ),
                       ...failing.problems,
-                      failing.real.pass
-                          ? ''
-                          : `G8 p95 ${failing.real.p95} ms, ${failing.real.longFrames} long frames`,
+                      failing.real.blocked
+                          ? `BLOCK G8 p95 ${failing.real.p95} ms (1 ms-quantized WebKit; 20-frame mean not claimed)`
+                          : failing.real.pass
+                            ? ''
+                            : `G8 p95 ${failing.real.p95} ms, ${failing.real.longFrames} long frames`,
                       `manual final tracks ${failing.summary.final.tracks}, holds ${failing.summary.final.holds}, clock pending ${failing.summary.final.clockPending}, clock size ${failing.summary.final.clockSize}`,
                   ]
                       .filter(Boolean)
@@ -158,17 +165,40 @@ export function aggregateSceneReport(args: {
     }
     const allMetrics = [runMetric, ...metrics]
     const pending = args.pending ?? null
-    const pass =
-        pending === null &&
-        runMetric.pass &&
-        allMetrics
-            .filter((metric) => metric.deciding)
-            .every((metric) => metric.pass) &&
-        shapeMetrics.every((metric) => metric.pass)
+    const blockedReasons = [...allMetrics, ...shapeMetrics]
+        .filter(
+            (metric) =>
+                metric.blocked === true &&
+                // A non-deciding probe is not a required row; G12 is a
+                // required timer-limited shape even when it is non-deciding.
+                (metric.deciding !== false || metric.id.startsWith('G12'))
+        )
+        .map(
+            (metric) =>
+                `${metric.id} (${metric.gate})${metric.worst?.detail ? `: ${metric.worst.detail}` : ''}`
+        )
+    const blocked = blockedReasons.length > 0
+    const metricFail =
+        allMetrics.some(
+            (metric) => metric.deciding && !metric.blocked && !metric.pass
+        ) ||
+        shapeMetrics.some(
+            (metric) => metric.deciding && !metric.blocked && !metric.pass
+        )
+    const failed = !runMetric.pass || metricFail
+    const pass = pending === null && !failed && !blocked
     return {
         scene: args.scene,
-        status: pending === null ? (pass ? 'pass' : 'fail') : 'pending',
+        status:
+            pending === null
+                ? failed
+                    ? 'fail'
+                    : blocked
+                      ? 'blocked'
+                      : 'pass'
+                : 'pending',
         pending,
+        blockedReasons,
         pass,
         metrics: allMetrics,
         shape: shapeMetrics,
@@ -186,7 +216,7 @@ export function realTwinProblems(real: RealTrace): string[] {
         problems.push(`real twin final tracks ${real.final.tracks}`)
     if (real.final.holds !== 0)
         problems.push(`real twin final holds ${real.final.holds}`)
-    if (real.final.connected <= 0)
+    if (real.final.connected <= 0 && real.allowEmptyFinal !== true)
         problems.push('real twin has no connected participants at the end')
     return problems
 }

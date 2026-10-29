@@ -8,7 +8,10 @@ import type { CertificationReport } from './report.ts'
 
 export interface CertificationScene {
     readonly scene: string
-    readonly status: 'pass' | 'fail' | 'pending'
+    readonly status: 'pass' | 'fail' | 'pending' | 'blocked'
+    readonly blockedReasons?: readonly string[] | undefined
+    /** Deciding, non-blocked metric misses with their medians. */
+    readonly failedMetrics?: readonly string[] | undefined
 }
 
 export interface CertificationCost {
@@ -34,6 +37,10 @@ export interface CertificationInput {
     readonly advisory: { readonly cost: boolean }
     readonly controlsPass: boolean
     readonly selfTestPass: boolean
+    readonly blocked?: readonly {
+        readonly item: string
+        readonly reason: string
+    }[]
 }
 
 export interface CertificationOptions {
@@ -61,6 +68,9 @@ const REQUIRED_SCENES = [
     's-acc',
     's-insert',
     's-delete',
+    's-reorder',
+    's-sheet',
+    's-bulk',
     'cost',
 ] as const
 const REQUIRED_SCENE_ROWS = REQUIRED_SCENES.filter((scene) => scene !== 'cost')
@@ -125,6 +135,9 @@ export function evaluateCertification(
     for (const pending of input.pending) {
         reasons.push(`pending ${pending.scene}: ${pending.reason}`)
     }
+    for (const blocked of input.blocked ?? []) {
+        reasons.push(`blocked ${blocked.item}: ${blocked.reason}`)
+    }
     for (const engineName of REQUIRED_ENGINES) {
         const engine = input.engines.find(
             (entry) => entry.engine === engineName
@@ -140,7 +153,9 @@ export function evaluateCertification(
             const result = engine.scenes.find((entry) => entry.scene === scene)
             if (!result) reasons.push(`${engineName} scene ${scene} missing`)
             else if (result.status !== 'pass')
-                reasons.push(`${engineName} scene ${scene} ${result.status}`)
+                reasons.push(
+                    `${engineName} scene ${scene} ${result.status}${(result.failedMetrics ?? []).length > 0 ? ` (failed ${(result.failedMetrics ?? []).join(', ')})` : ''}${(result.blockedReasons ?? []).length > 0 ? ` (blocked ${(result.blockedReasons ?? []).join('; ')})` : ''}`
+                )
         }
         if (!engine.cost) reasons.push(`${engineName} S-BULK cost missing`)
         else if (engine.cost.status !== 'pass')

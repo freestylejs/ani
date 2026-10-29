@@ -40,6 +40,8 @@ export interface RunSceneReport {
         readonly p95: number
         readonly longFrames: number
         readonly pass: boolean
+        /** A 1 ms-quantized WebKit S-BULK G8 is BLOCK, not a measured pass. */
+        readonly blocked?: boolean | undefined
     }
     readonly summary: {
         readonly observations: number
@@ -68,8 +70,10 @@ export interface RunSceneReport {
 
 export interface SceneReport {
     readonly scene: string
-    readonly status: 'pass' | 'fail' | 'pending'
+    readonly status: 'pass' | 'fail' | 'pending' | 'blocked'
     readonly pending: string | null
+    /** A required metric could not be decided (timer/authority); not a pass. */
+    readonly blockedReasons: readonly string[]
     readonly pass: boolean
     readonly metrics: readonly AggregateMetric[]
     readonly shape: readonly AggregateMetric[]
@@ -81,7 +85,6 @@ export interface CostRunReport {
     readonly run: number
     readonly warmup: boolean
     readonly valid: boolean
-    readonly heldPending: boolean
     readonly blockedReasons: readonly string[]
     readonly engineAudit: {
         readonly rects: number
@@ -127,6 +130,10 @@ export interface CostRunReport {
     readonly floorAuditDetail: string
     readonly exactReadsPass: boolean
     readonly exactReadsDetail: string
+    readonly heldOnePerHeld: number
+    readonly heldTenPerHeld: number
+    readonly heldReadsPass: boolean
+    readonly heldReadsDetail: string
     readonly g: number
     readonly gSource: 'reads' | 'tick-fallback'
 }
@@ -183,6 +190,11 @@ export interface BenchReport {
         readonly scene: string
         readonly reason: string
     }[]
+    /** Required rows/evidence that are BLOCK, not pass and not pending. */
+    readonly blocked: readonly {
+        readonly item: string
+        readonly reason: string
+    }[]
     readonly certification: CertificationReport
     readonly pass: boolean
 }
@@ -233,7 +245,7 @@ export function formatReport(report: BenchReport): string {
         for (const note of engine.notes) lines.push(`  note: ${note}`)
         for (const scene of engine.scenes) {
             lines.push(
-                `${scene.status.toUpperCase()} ${scene.scene}${scene.pending ? ` (pending: ${scene.pending})` : ''}`
+                `${scene.status.toUpperCase()} ${scene.scene}${scene.pending ? ` (pending: ${scene.pending})` : ''}${scene.blockedReasons.length > 0 ? ` (BLOCK: ${scene.blockedReasons.join('; ')})` : ''}`
             )
             for (const metric of [...scene.metrics, ...scene.shape]) {
                 const worst = metric.worst
@@ -275,7 +287,7 @@ export function formatReport(report: BenchReport): string {
             }
             for (const run of cost.runs) {
                 lines.push(
-                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms; g ${run.g.toFixed(4)} ms`
+                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms; held 1/10 ${run.heldOnePerHeld.toFixed(4)}/${run.heldTenPerHeld.toFixed(4)} ms; held reads ${run.heldReadsPass ? 'ok' : 'FAIL'}; g ${run.g.toFixed(4)} ms`
                 )
             }
         }
@@ -293,6 +305,12 @@ export function formatReport(report: BenchReport): string {
     if (report.pending.length > 0) {
         for (const pending of report.pending) {
             lines.push(`pending ${pending.scene}: ${pending.reason}`)
+        }
+    }
+    if (report.blocked.length > 0) {
+        lines.push('blocked (required evidence that is not deciding/pass)')
+        for (const entry of report.blocked) {
+            lines.push(`  BLOCK ${entry.item}: ${entry.reason}`)
         }
     }
     lines.push('')

@@ -14,6 +14,9 @@ const cleanEngine = (engine: string) => ({
         { scene: 's-acc', status: 'pass' as const },
         { scene: 's-insert', status: 'pass' as const },
         { scene: 's-delete', status: 'pass' as const },
+        { scene: 's-reorder', status: 'pass' as const },
+        { scene: 's-sheet', status: 'pass' as const },
+        { scene: 's-bulk', status: 'pass' as const },
     ],
     cost: { status: 'pass' as const, valid: true },
 })
@@ -36,6 +39,9 @@ const full = {
         's-acc',
         's-insert',
         's-delete',
+        's-reorder',
+        's-sheet',
+        's-bulk',
         'cost',
     ],
     runs: 5,
@@ -45,6 +51,32 @@ test('a complete clean invocation certifies', () => {
     const result = evaluateCertification(clean, full)
     assert.equal(result.certified, true)
     assert.deepEqual(result.reasons, [])
+})
+
+test('F11: a blocked scene and top-level blocked row do not certify', () => {
+    const blockedEngine = {
+        ...cleanEngine('chromium'),
+        scenes: cleanEngine('chromium').scenes.map((scene) =>
+            scene.scene === 's-sheet'
+                ? {
+                      scene: 's-sheet',
+                      status: 'blocked' as const,
+                      blockedReasons: ['G12 timer BLOCK'],
+                  }
+                : scene
+        ),
+    }
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [blockedEngine, cleanEngine('webkit')],
+            blocked: [{ item: 'DPR 1/3 sweep', reason: 'P5c BLOCK' }],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /chromium scene s-sheet blocked/)
+    assert.match(result.reasons.join(';'), /DPR 1\/3 sweep/)
 })
 
 test('one measured run does not certify', () => {

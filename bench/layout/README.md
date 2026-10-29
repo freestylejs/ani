@@ -43,6 +43,9 @@ pnpm bench:layout --engine chromium --scene s-card --runs 1
 pnpm bench:layout --engine webkit --scene s-seg --runs 1
 pnpm bench:layout --engine chromium --scene s-photo --runs 1
 pnpm bench:layout --engine webkit --scene s-delete --runs 1
+pnpm bench:layout --engine chromium --scene s-reorder --runs 1
+pnpm bench:layout --engine chromium --scene s-sheet --runs 1
+pnpm bench:layout --engine chromium --scene s-bulk --runs 1
 pnpm bench:layout --engine chromium --scene cost --runs 1
 
 # write elsewhere, compare a previous report
@@ -59,7 +62,8 @@ gate miss. `--check` additionally runs the unit self-tests and **all** browser
 negative controls; it exits `1` if any conclusive control does not fail its
 target gate. `--engine` is repeatable; the default is Chromium and WebKit.
 `--scene` accepts `s-card`, `s-seg`, `s-photo`, `s-stack`, `s-acc`,
-`s-insert`, `s-island`, `s-delete`, `cost` and globs. `--runs` is the number of
+`s-insert`, `s-island`, `s-delete`, `s-reorder`, `s-sheet`, `s-bulk`, `cost`
+and globs. `--runs` is the number of
 measured runs (default 5); one warm-up process is always discarded first.
 Certification requires exactly 5, both engines and all required scenes; a
 `--runs 1`, single-engine or single-scene run is an invocation only. `pass` is
@@ -84,6 +88,9 @@ The bundled pages are emitted on every run as self-contained files:
 - `bench/layout/results/pages/s-insert.html`
 - `bench/layout/results/pages/s-island.html`
 - `bench/layout/results/pages/s-delete.html`
+- `bench/layout/results/pages/s-reorder.html`
+- `bench/layout/results/pages/s-sheet.html`
+- `bench/layout/results/pages/s-bulk.html`
 
 Open any file directly in a browser to view the real scene. `results/` is
 gitignored; the files are generated from the current source on every run.
@@ -110,10 +117,10 @@ gitignored; the files are generated from the current source on every run.
   "advisory": { "cost": true, "reasons": ["1-minute load is 2.39, pinned below 1"] },
   "certification": {
     "certified": false,
-    "reasons": ["cost fingerprint is advisory", "pending S-REORDER: P4", "pending S-BULK: P4", "chromium S-BULK G9-unscrolled 3.252 failed", "chromium S-BULK G11 12.345 failed", "webkit S-BULK cost blocked"],
+    "reasons": ["cost fingerprint is advisory", "chromium scene s-reorder fail", "chromium scene s-sheet fail", "chromium S-BULK G9-unscrolled 2.951 failed", "chromium S-BULK G9-scrolled 2.817 failed", "chromium S-BULK G11 8.090 failed", "blocked webkit scene s-sheet: G12 ...", "blocked DPR 1/3 sweep: P5c BLOCK"],
     "requiredEngines": ["chromium", "webkit"],
     "requiredRuns": 5,
-    "requiredScenes": ["s-card", "s-seg", "cost"]
+    "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"]
   },
   "engines": [
     {
@@ -130,11 +137,10 @@ gitignored; the files are generated from the current source on every run.
         }
       ],
       "cost": {
-        "scene": "S-BULK", "status": "pending", "pending": "P4 (held shape G12; take/move/release not in the base tree)",
+        "scene": "S-BULK", "status": "fail", "pending": null,
         "pass": false, "valid": true, "blockedReasons": [],
-        "runs": [ /* engineAudit/floorAudit counts, medians, ratios, gSource */ ],
-        "metrics": [ /* G9-unscrolled, G9-scrolled, G9.floor-*, G10, G11, G13 */ ],
-        "runs": [ /* ratio, engine/floor medians, steady/sustained p95, g */ ],
+        "runs": [ /* engineAudit/floorAudit counts, medians, ratios, held shapes, gSource */ ],
+        "metrics": [ /* G9-unscrolled, G9-scrolled, G9.floor-*, G10, G11, G12-1, G12-10, G13, G13-held */ ],
         "notes": []
       }
     }
@@ -148,10 +154,11 @@ gitignored; the files are generated from the current source on every run.
                            "frame_sampler.test.ts", "aggregate.test.ts",
                            "certification.test.ts", "cost_validity.test.ts"],
                  "detail": "..." },
-  "pending": [
-    { "scene": "S-REORDER", "reason": "P4 (take/move/release drive seam not in the base tree)" },
-    { "scene": "S-SHEET", "reason": "P4 (drive seam not in the base tree)" },
-    { "scene": "S-BULK", "reason": "held shape G12 pending P4 ..." }
+  "pending": [],
+  "blocked": [
+    { "item": "webkit scene s-sheet", "reason": "G3 ...; G7 ...; G12 ..." },
+    { "item": "DPR 1/3 sweep", "reason": "P5c BLOCK: not run in this iteration" },
+    { "item": "reduced-motion variants", "reason": "P5c BLOCK: not run in this iteration" }
   ],
   "pass": false
 }
@@ -187,11 +194,14 @@ Cost gates:
 | G9 | Commit (capture + flush) ≤ 2× required-work floor | 1,000 participants, unscrolled and scrolled 1.5 viewports; median of 5 per-run ratios ≤ 2 |
 | G10 | Steady frame at 300 nested movers | p95 of 600 samples ≤ 2 ms |
 | G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | p95 of one `performance.now()` pair per commit ≤ 2 ms; the measured cadence must be 58.5–61.5 Hz over 300 commits or the run is invalid; the refresh rate is recorded and a 30 Hz rAF frame is never called 60 Hz |
-| G12 | Held frame ≤ 0.1 ms per held element | **pending: P4** (the drive seam is not in this base tree); while pending, pass is false |
+| G12 | Held frame ≤ 0.1 ms per held element | p95 of 600 real-clock held frames / held count, at 1 and 10 held on the S-BULK DOM; S-REORDER/S-SHEET add a 1-held scene shape. WebKit's 1 ms timer makes the ratio BLOCK/non-deciding |
 | G14 | Fingerprint | mismatch makes cost advisory; frame gates still decide |
 
-`G12` is not fabricated. The report marks the S-BULK held shape as pending P4;
-S-REORDER and S-SHEET are pending P4 for the same reason.
+`G12` is measured, not fabricated: the 1- and 10-held shapes each run 600
+real-clock frames and the held read is audited (one rect per held element per
+frame, zero offset/style reads). S-REORDER and S-SHEET run their own 600-frame
+1-held shape on the real twin. The held-frame support read on a reorder/detent
+layout-change frame is measured and reported; it is not hidden.
 
 ## Independent oracle
 
@@ -287,10 +297,15 @@ On this host the 1-minute load has been above 1.0 during the P5a runs, so every
 cost report is advisory until a quiet run is produced. A report with an
 advisory cost fingerprint cannot claim the cost gates; its top-level `pass` is
 `false` when the cost scene is selected, while the frame-scoring values remain
-deciding evidence. WebKit cannot be measured validly for G9/G10/G11 with its
-1 ms timer: those metrics are `BLOCK`/non-deciding, the raw ratios are
+deciding evidence. WebKit cannot be measured validly for G9/G10/G11/G12 with
+its 1 ms timer: those metrics are `BLOCK`/non-deciding, the raw ratios are
 diagnostic, and certification is `NOT CERTIFIED` with that exact reason. No
-quantized WebKit ratio is reported as a measured failure.
+quantized WebKit ratio is reported as a measured failure. The authority's
+20-frame mean is **not claimed** on WebKit: the harness reports raw quantized
+per-frame samples with the ±g/2 bound and marks the cost/G12 result BLOCK.
+DPR 1/3 and the reduced-motion variants are P5c **BLOCK** in this iteration
+(the top-level `blocked` list and certification reasons name them); the DPR 2
+primary run is the certification run.
 
 ## Negative controls
 
@@ -311,7 +326,7 @@ result of the whole suite, not only oracle/scoring:
 | floor with an extra read, ratio > 2 | G9 / floor audit |
 | p95 > 2 ms | G10 |
 | sustained p95 > 2 ms | G11 |
-| 0.11 ms per held element | G12 (metric function; the browser shape is pending P4) |
+| 0.11 ms per held element; an extra rect in a 10-held frame | G12 (unit); G13-held (browser `held-extra-read`) |
 | extra rect / steady-frame read | G13 |
 | load or build mismatch | G14 advisory (not a frame gate) |
 | broken opacity, coverage, radius, inert, focus, font | shape checks |
@@ -335,6 +350,18 @@ Browser controls are run by `--check`, once per engine, through the real page:
   fails.
 - S-DELETE: skip the presented-box lift/pin for the second deleted row; the
   engine keeps moving it after the lift; G1 fails.
+- S-REORDER: skip the drive-hold kill switch (shape.kill-switch), cancel
+  instead of release (shape.hold), supply a stale offset after a reorder (G1,
+  inconclusive while the primary G1 fails), and an extra capture **inside the
+  measured held frame** (G13: 34 excess vs the primary 6; conclusive by the
+  isolated delta even though the primary G13 is already red).
+- S-SHEET: release to the medium detent (G5), start the first release frame at
+  A (G2), extra capture in a held frame (G13), cancel instead of the second
+  release (shape.hold).
+- S-BULK: move one tile's target by 1 px (G1), extra capture in the commit
+  (G13), leave a 0.5 px pose after settle (G6).
+- Cost held shape: a 10-held frame with an extra rect read fails G13-held; the
+  G12 unit control is 0.11 ms per held element.
 - S-PHOTO: leftover pose on `cell-0` (G6), extra rect read (G13).
 - S-ACC: leftover pose on `row-0` (G6), extra rect read in the commit (G13).
 - S-INSERT: leftover pose on `row-9` (G6), extra rect read (G13).
@@ -358,21 +385,17 @@ than browser controls; the mapping is one control per deciding metric.
 ## P5b scope — the §11.6 P2/P3 scene set
 
 - Implemented scenes: **S-CARD**, **S-SEG**, **S-PHOTO**, **S-STACK**,
-  **S-ACC**, **S-INSERT**, **S-ISLAND**, **S-DELETE**; **S-BULK** runs the
-  §11.5/A-19 cost shapes only (850 tiles + 150 labels = 1,000 participants,
-  300 movers).
-- `S-REORDER`, `S-SHEET` and the S-BULK held shape G12 are **pending P4**.
-  They are reported as pending; `pass` is invocation-scoped and
-  `certification` is `NOT CERTIFIED`.
-- The base is P3 final `7ed9974` (P3 final + H14 harness); the H15 fix round
-  is iteration 4. The Firefox advisory exception (D9) is unchanged.
-- Iteration 4: S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass in
-  Chromium and WebKit; S-PHOTO and S-ACC fail honestly on the two H18 engine
-  defects (late nested handoff; nested counter-projection). Certification is
-  **NOT CERTIFIED**: S-PHOTO/S-ACC, pending P4 and the unchanged S-BULK cost
-  block are the reasons. The full per-metric table and the H15 fix ledger are
-  in `ITERATIONS.md`; iteration 5 adds the N15-01 restoration proof and the
-  N15-02 real-twin fidelity fix.
+  **S-ACC**, **S-INSERT**, **S-ISLAND**, **S-DELETE**, **S-REORDER**,
+  **S-SHEET** and **S-BULK**; the cost scene runs the §11.5/A-19 shapes. The
+  P4 drive scenes and the held shape are implemented in P5c below.
+- The base is P3 final + P4 drive + H14 harness; the H15 fix round is
+  iteration 4 and N15 is iteration 5. The Firefox advisory exception (D9) is
+  unchanged.
+- Iteration 4/5: S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass
+  in Chromium and WebKit; S-PHOTO and S-ACC fail honestly on the two H18
+  engine defects (late nested handoff; nested counter-projection). Iteration 6
+  adds the P4 scenes and held cost; see the P5c section for the current
+  evidence.
 
 ### Scene table (P5b)
 
@@ -537,10 +560,113 @@ same public engine surface.
   a crossfade follower is exempt from the last-frame owned-declaration check
   (the follower's removal and inert proof cover it). The earlier G6 failure was
   a harness false positive, not an engine or geometry defect.
-- DPR 1/3 and the reduced-motion variants are not part of the H15 scene runs;
-  they remain P5c evidence. The DPR 2 primary run is the certification run.
+- DPR 1/3 and the reduced-motion variants are **P5c BLOCK**: they are not run
+  in this iteration and are listed in the report's top-level `blocked` list
+  and the certification reasons. The DPR 2 primary run is the certification
+  run.
 - Firefox 1490 is advisory and times out on launch on this macOS 27
   instrument (D9 exception).
+
+## P5c scope — drive scenes, held cost and the full §11.6 set
+
+- Implemented scenes: **S-CARD**, **S-SEG**, **S-PHOTO**, **S-STACK**,
+  **S-ACC**, **S-INSERT**, **S-ISLAND**, **S-DELETE**, **S-REORDER**,
+  **S-SHEET** and **S-BULK** (the frame-scored 1,000-participant shuffle; the
+  §11.5 cost shapes remain the `cost` scene). No scene is pending.
+- **G12** is measured: the cost scene's 1- and 10-held shapes (600 real-clock
+  frames each) and the S-REORDER/S-SHEET 1-held scene shape. Every held frame
+  reads exactly one rect per held element (G13-held).
+- The drive-hold kill switch (L-DRIVE-4, §7.2) runs on S-REORDER after the
+  scored script: the handle is `invalidated` synchronously, `holds` and the
+  clock subscription are zero, the authored styles are restored byte for byte,
+  and `runtime-disabled` + a `disabled` snap are reported. `shape.kill-switch`
+  is the row; skipping the switch fails it.
+- S-BULK is scored on the manual clock at 1280×720@1: 850 tiles + 150 nested
+  labels = 1,000 participants, 300 movers, one shuffle; G1–G8/G13 and the
+  settle/restoration rows pass in Chromium and WebKit. The cost scene owns
+  G9–G13 at 1,000 participants.
+
+### P5c scene table
+
+| Scene | API | Participants | Movers | Step | Motion | Script |
+|---|---|---|---|---|---|---|
+| S-REORDER | vanilla + drive | 14 | 14 (held pair + displaced pairs) | 20 ms | REORDER 0.45/0.10 | take, 10 moves, reorder at k=2/5/9, release 900 px/s; kill switch |
+| S-SHEET | vanilla + drive | 1 | 1 | 16 ms | SHEET 0.45/0.08 | medium→large (−1200), medium→dismissed (+1600) |
+| S-BULK | vanilla | 1,000 | 300 | 16 ms | BULK 0.40/0.10 | 150-tile cyclic shuffle |
+
+S-SHEET uses 16 ms frames for both holds (the spec's second hold is written as
+20 ms; that timing is a scene contribution, and the source comment records the
+amendment). The second take is at least 1 s after the first release, and the
+detent is the scene's `projected = top + v·0.20 s` nearest of {124, 422, 844};
+the release vectors and geometry are unchanged.
+
+`ScenePlan.allowEmptyFinal` is deliberately narrow: **only S-SHEET** sets it,
+because its single participant is unmounted after the second release. The
+removal is proven by `requiredRestorations: ['sheet']` and the post-removal
+restoration snapshot; no other scene may use the exemption, and C1 still
+requires a connected final participant everywhere else. S-REORDER and S-BULK
+keep their participants connected.
+The S-REORDER title is a nested position participant; the held row and its
+title are the direct-manipulation pair. The row's inline `top` and the DOM
+order change inside each reorder commit; the title's local box is fixed.
+
+**Tooling honesty.** Biome reports **813 infos, 0 errors, 0 warnings** on
+`bench/layout` (the infos are the repository's baseline `noMagicNumbers` /
+naming diagnostics). This is not a clean biome report and is not claimed as
+one; `tsc` and `test:bench-layout` are clean.
+
+### P5c evidence and known failures (iteration 6)
+
+- **S-REORDER fails G1 96.0, G2 60.0, G4 60.0, G13 6 and G12 (Chromium and
+  WebKit); G3 and G7 are BLOCK/authority.** The scene exposes two P4 engine
+  defects that the L-DRIVE-1 browser row does not cover: (a) after a reorder
+  changes the held row's A, the first subsequent `move` shifts the drawn
+  origin by the A delta (row-1 is +60 px on frames 3, 6 and 10,
+  self-correcting one frame later); (b) a nested held descendant
+  double-counts the inherited displacement (`title-1` is drawn at
+  `row + 10 + h` instead of `row + 10`), so the title drifts by up to 96 px.
+  The release-frame continuity is **measured** (`HoldEvidence.releaseBox` to
+  the next frame) and fails G2 60 px on the row top edge; the title top edge
+  is 49.06 px. The earlier 88 px was a rider-size artifact (the held row's
+  358×52 size was used for the 270×22 title); the rider now uses its rest
+  size. The release spring fails G4 60 px; G5 uses the rider target and
+  passes. The exact commit reads are 2N/2N and
+  the computed set is exact; G13 fails only on the held-frame support read
+  (one offset pair + one computed style) on the reorder-adjacent held frames.
+  G3 is BLOCK because a release from direct manipulation has no analytic
+  layout track before the gesture velocity; G7 is BLOCK for the A-13
+  `ended`/p5-`interrupted` ambiguity and the release's missing report.
+  `shape.hold` and `shape.kill-switch` pass.
+- **S-SHEET fails only the scene G12 shape on Chromium** (0.310 ms/held at
+  1 held, per-run 0.270–0.320; the 1-held fixed frame cost, not the 10-held
+  slope). The measured frame rows G1/G2/G4/G5/G6/G8/G13 pass; G3/G7 are
+  BLOCK/authority (release velocity and missing release report), and the
+  detent policy (`top + v·0.20`, nearest) and the ≥1 s second take are
+  implemented. On WebKit G12 is BLOCK/non-deciding; the scene is reported
+  **BLOCKED**, not pass, and the block is a top-level report and certification
+  reason.
+- **S-BULK frame scoring passes on Chromium**; the cost shapes still fail G9
+  (2.951 / 2.817×) and G11 (8.090 ms) in Chromium. G12-1 **fails** at
+  0.415 ms/held (the 1-held fixed frame cost); G12-10 passes at 0.061 ms/held.
+  Iteration 6 measured G9 2.688/2.694 and G11 8.495; both reports are
+  recorded. WebKit's 1 ms timer makes G9–G12 BLOCK. The WebKit **S-BULK G8**
+  row is also BLOCK: its 2.000 ms p95 is exactly one timer tick, and the
+  §11.5 single-interval 20-frame mean is not claimed. WebKit S-BULK is
+  therefore **blocked**, not a measured G8 pass.
+- The release is not an engine commit or report (§5.10/§7.1): the scene
+  records its `t = 0` flush observation, but there is no `LayoutReport` for a
+  release. The S-REORDER/S-SHEET G7 expectations therefore cover the reorder
+  and detent commits only; the spec's "release run" row is an API gap, not a
+  scene failure.
+- The p5 table's S-REORDER statuses (`interrupted` at the next reorder) do not
+  match §7.1/A-13 for this script: each reorder targets a different sibling,
+  the earlier sibling's track is untouched and keeps running, so the runs
+  resolve `ended` at their own settles (frames 28/31/35). The scene expects
+  `ended`; the p5 row is an ambiguity, not a weakened gate.
+- A held frame that follows a reorder changes the held layout, so the engine's
+  §4.2 support check reads one offset pair + one computed style in addition to
+  the one held rect. The strict G13 reading counts this as excess (6 in the
+  run); the authority does not explicitly exempt the support read.
 
 ## Files
 
@@ -557,9 +683,12 @@ same public engine surface.
 | `gates.ts` | cost gates and floor audit |
 | `scene_plans.ts` | scripted geometry/motion data for the oracle |
 | `bundle.ts` | esbuild page bundle and viewable HTML |
-| `page/` | page-side recorder and the P2/P3 scene pages; `page/scenes/` holds S-CARD, S-SEG, S-PHOTO, S-STACK, S-ACC, S-INSERT, S-ISLAND, S-DELETE and the kit |
+| `page/` | page-side recorder and the P2/P3/P4 scene pages; `page/scenes/` holds S-CARD, S-SEG, S-PHOTO, S-STACK, S-ACC, S-INSERT, S-ISLAND, S-DELETE, S-REORDER, S-SHEET, S-BULK and the kit |
 | `ITERATIONS.md` | iteration 0/1/2/3 evidence and root-cause hypotheses |
 | `iteration-0/` | historical iteration-0 reports (old base) |
 | `iteration-1/` | fixed-H11b iteration-1 reports |
 | `iteration-2/` | P3-final iteration-2 reports |
-| `iteration-3/` | H15 P5b iteration-1 report (current) |
+| `iteration-3/` | H15 P5b iteration-1 report |
+| `iteration-4/` | H15 fix-round report |
+| `iteration-5/` | N15 fix report |
+| `iteration-6/` | H16 P5c full §11.6 set, drive scenes and G12 (current) |
