@@ -679,18 +679,19 @@ they are not the current H18-base result.
 `helper/h17` was merged onto H18/H16 `3c24925` at `b7ead0f`. The H17 D10
 relative sustained gate and D11 baseline-subtracted held gate are now the
 harness gates; H18 engine A–F, the H15/H16 scene set and the H16 assertion
-fix are preserved. The full report is `iteration-9/{chromium,webkit}.json`
-with `sourceRevision` `66c2a94`.
+fix are preserved. The final combined report is `iteration-9/report.json` with
+`sourceRevision` `8939234`; the old per-engine files are not certification
+inputs.
 
 Chromium, five runs, all 11 scenes and cost:
 
 | Gate | Result |
 |---|---|
 | S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-REORDER, S-SHEET, S-BULK | **pass** |
-| G9 | **1.823× unscrolled / 1.796× scrolled pass**; floor audits exact |
-| G10 | **0.980 ms pass** |
-| G11 | **2.118× FAIL** (per-run 2.096/2.621/2.104/2.151/2.118; floor audit exact) — open |
-| G12-1 / G12-10 | **pass** (`−0.170` / `−0.004` incremental ms/held; both p95 values reported) |
+| G9 | **1.687× unscrolled / 1.661× scrolled pass**; floor audits exact |
+| G10 | **1.120 ms pass** |
+| G11 | **2.015× FAIL** (per-run 1.977/2.054/2.015/1.979/2.299; floor audit exact) — open |
+| G12-1 / G12-10 | **pass** (`−0.030` / `0.0015` incremental ms/held; both p95 values reported) |
 | G13 / G13-held | exact; layout-offset reads counted |
 
 WebKit, five runs:
@@ -704,10 +705,12 @@ WebKit, five runs:
 | G12 | **BLOCK/advisory** on the 1 ms timer (D12) |
 | G13 / floor | exact |
 
-The run load was 5.78 (Chromium) and 5.84 (WebKit), so cost remains advisory.
+The combined run load was 5.42, so cost remains advisory. D11 accepts a
+negative incremental (held p95 below the no-hold baseline) as a valid
+measurement; it is a diagnostic of zero marginal held cost, not a claim of
+positive held work.
 D12 applies: Chromium decides G9/G11/G12; WebKit remains required for
 frame/scoring/shape/status rows, and its cost/G12 BLOCKs are advisory
 (`cert advisory`), not certification blockers. H18-F F4 is fixed by counting
 `offsetLeft`/`offsetTop` in `stats.layoutOffsets`; G13 reports the count
-instead of hiding it. G11 remains open at 2.118×; there is no
-performance-complete claim.
+instead of hiding it. G11 remains open at 2.015×; there is no performance-complete claim.

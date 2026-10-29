@@ -832,6 +832,7 @@ function evaluateCost(
             ...gate,
             id: `G12-${label}`,
             label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
+            value: validity.timerValid ? gate.value : Number.NaN,
             blocked: !validity.timerValid,
             deciding: validity.timerValid,
             measured: samplesComplete,
@@ -1453,6 +1454,7 @@ function sceneOutcome(
             ...gate,
             id: 'G12',
             label: 'Held frame at 1 held element (scene shape)',
+            value: real.g <= 0.05 ? gate.value : Number.NaN,
             blocked: real.g > 0.05,
             deciding: real.g <= 0.05,
             measured:
