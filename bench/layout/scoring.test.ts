@@ -11,7 +11,11 @@ import {
     sustainedGate,
 } from './gates.ts'
 import { type Box, settleOfBox, trackState, zeroBoxVelocity } from './oracle.ts'
-import { scoreScene } from './scoring.ts'
+import {
+    removedWithFollower,
+    restorationMismatches,
+    scoreScene,
+} from './scoring.ts'
 import type {
     Observation,
     ScenePlan,
@@ -170,6 +174,7 @@ function makeTrace(plan: ScenePlan): SceneTrace {
             radii: { pill: null },
             style: { pill: EMPTY_STYLE },
             font: {},
+            samples: {},
             activeElementKey: null,
         })
     }
@@ -704,4 +709,78 @@ test('N5: declared opacity, radii and font data are required', () => {
     assert.match(detail, /required opacity/)
     assert.match(detail, /required radii/)
     assert.match(detail, /required font/)
+})
+
+test('H15-07: a descendant removed with a crossfade follower is exempt', () => {
+    const plan = {
+        ...basePlan(),
+        pairs: [
+            {
+                id: 'pair',
+                startFrame: 0,
+                lead: 'pill',
+                follower: 'card',
+            },
+        ],
+        removedWith: { content: 'card' },
+    }
+    assert.equal(removedWithFollower(plan, 'content', 5), true)
+    assert.equal(removedWithFollower(plan, 'content', 0), true)
+    assert.equal(removedWithFollower(plan, 'other', 5), false)
+    const later = {
+        ...plan,
+        pairs: [
+            ...plan.pairs,
+            {
+                id: 'pair',
+                startFrame: 4,
+                lead: 'card',
+                follower: 'pill',
+            },
+        ],
+    }
+    assert.equal(removedWithFollower(later, 'content', 5), false)
+})
+
+test('N15-01: post-removal evidence proves owned declarations restored', () => {
+    const plan = {
+        ...basePlan(),
+        mounts: { pill: EMPTY_STYLE, content: EMPTY_STYLE },
+        requiredRestorations: ['content'],
+    }
+    assert.deepEqual(restorationMismatches(plan, 'content', EMPTY_STYLE), [])
+    assert.deepEqual(
+        restorationMismatches(plan, 'content', {
+            ...EMPTY_STYLE,
+            translate: '1px 0px',
+        }),
+        ['translate']
+    )
+    assert.deepEqual(
+        restorationMismatches({ ...plan, authorStyleKeys: [] }, 'content', {
+            ...EMPTY_STYLE,
+            inline: 'opacity: 0;',
+        }),
+        ['inline cssText']
+    )
+    const missing = scoreScene(plan, makeTrace(plan))
+    assert.equal(metric(missing, 'G6').pass, false)
+    assert.match(
+        metric(missing, 'G6').worst?.detail ?? '',
+        /required post-removal restoration/
+    )
+    const proven = copy(makeTrace(plan))
+    ;(
+        proven as unknown as {
+            restorations: unknown[]
+        }
+    ).restorations = [
+        {
+            key: 'content',
+            frame: 6,
+            before: { ...EMPTY_STYLE, translate: '1px 0px' },
+            after: EMPTY_STYLE,
+        },
+    ]
+    assert.equal(metric(scoreScene(plan, proven), 'G6').pass, true)
 })

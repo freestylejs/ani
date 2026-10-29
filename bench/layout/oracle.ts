@@ -401,6 +401,9 @@ export function timingTrack(
     const e = bezierAt(curve, tau)
     const slope0 = bezierSlope0(curve)
     const v0 = velocity ?? zeroBoxVelocity()
+    // The bump carries an incoming velocity only; a from-rest track is the
+    // exact curve and has k = 0 (§1.6: "k = 0 at rest").
+    const carry = velocity !== null
     const channels: readonly (readonly [number, number, number])[] = [
         [from.x, to.x, v0.x],
         [from.y, to.y, v0.y],
@@ -410,7 +413,7 @@ export function timingTrack(
     const values: number[] = []
     const rates: number[] = []
     for (const [b, a, v] of channels) {
-        const k = v * duration + (b - a) * slope0
+        const k = carry ? v * duration + (b - a) * slope0 : 0
         const bump = k * tau * (1 - tau) * (1 - tau)
         values.push(a + (b - a) * (1 - e.value) + bump)
         const dtau = -(b - a) * e.slope + k * (1 - tau) * (1 - 3 * tau)
