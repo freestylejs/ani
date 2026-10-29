@@ -746,10 +746,13 @@ cannot decide a ratio, and no quantized ratio is presented as a failure.
   scroll. The engine's active-scroller rule is not exercised on WebKit's
   missing event; the scene does not hide a scroll-active handoff (an unsettled
   scroll rejects).
-- The S-PHOTO real twin emits exactly the same two `capture-less-flush`
-  stale diagnostics as the manual run (open detail image, back cell image),
-  both on the H18 nested-image path; they are recorded, not suppressed. The
-  S-PHOTO scene fails honestly.
+- The S-PHOTO real twin used to assert exactly the two `capture-less-flush`
+  stale diagnostics of the old H18 defect (`s_photo.ts:980-991`). That
+  assertion was removed in the H18 rebase-prep commit: the real twin returns
+  the actual diagnostics and `realTwinProblems` fails any diagnostic. On the
+  pre-H18 branch the two events are still recorded and the scene fails
+  honestly; on the H18 base the expected result is **zero stale diagnostics**
+  and G1/G2/G4 ~0.0002 px. Rebase onto H18 before the final rerun.
 - The exact G13 read sets are pinned per scene/commit from the audited
   §4.1/§4.3 set; the React presence probe reads are classified per commit, not
   subtracted by a constant. The style totals remain scene/engine constants
