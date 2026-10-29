@@ -367,7 +367,22 @@ export function measure(
     transform: Transform | string = readTransform(style)
 ): Measured {
     layoutFault('measure')
-    const origin = style.transformOrigin.split(' ').map(px)
+    const originText = style.transformOrigin
+    const firstSpace = originText.indexOf(' ')
+    let originX: number
+    let originY: number
+    if (firstSpace < 0) {
+        originX = px(originText)
+        originY = 0
+    } else {
+        const secondSpace = originText.indexOf(' ', firstSpace + 1)
+        originX = px(originText.slice(0, firstSpace))
+        originY = px(
+            secondSpace < 0
+                ? originText.slice(firstSpace + 1)
+                : originText.slice(firstSpace + 1, secondSpace)
+        )
+    }
     const display = style.display
     let unsupported: string | null = null
     if (display === 'contents' || display === 'none') {
@@ -376,8 +391,8 @@ export function measure(
         unsupported = 'display: inline (transforms do not apply)'
     } else if (typeof transform === 'string') {
         unsupported = transform
-    } else if (!Number.isFinite(origin[0]) || !Number.isFinite(origin[1])) {
-        unsupported = `unparseable transform-origin "${style.transformOrigin}"`
+    } else if (!Number.isFinite(originX) || !Number.isFinite(originY)) {
+        unsupported = `unparseable transform-origin "${originText}"`
     } else if (transitionsConfigured(style) || animated().has(element)) {
         unsupported =
             'a CSS transition or animation on translate/scale (use a transition-property without translate, scale or all)'
@@ -392,7 +407,7 @@ export function measure(
         translate: parsed?.translate ?? [ZERO, ZERO],
         scale: parsed?.scale ?? [1, 1],
         matrix: parsed?.matrix ?? IDENTITY_MATRIX,
-        origin: [origin[0] ?? 0, origin[1] ?? 0],
+        origin: [originX, originY],
         originPct: snapsReference ? originPercents(element) : null,
         radius: radii,
     }
@@ -428,10 +443,12 @@ export interface FlatTree {
 }
 
 /** The flat tree of one pass over `roots`; `passed` collects the shadow roots its walks enter. */
+const EMPTY_SLOTS: ReadonlyMap<Node, HTMLSlotElement> = new Map()
 export function flatTree(
     roots: KnownRoots,
     passed: Set<ShadowRoot> | null = null
 ): FlatTree {
+    if (roots.size === 0) return { roots, slots: EMPTY_SLOTS, passed }
     const slots = new Map<Node, HTMLSlotElement>()
     for (const root of roots.values()) {
         if (root.mode === 'open') continue

@@ -851,3 +851,153 @@ describe('the presented velocity v at t_k (§4.2 Velocity, §5.7)', () => {
         expectBox(actual, expected, 0.02)
     })
 })
+
+describe('H17 regressions', () => {
+    it('H17-02: a sub-threshold top-level parent move keeps an anchored child exact', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const parent = element(box(0, 0, 100, 40))
+        const child = element(box(20, 10, 20, 20), parent)
+        group.add(parent, { layout: true })
+        group.add(child, {
+            layout: 'position',
+            layoutAnchor: { x: 0.5, y: 0.5 },
+        })
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        // The parent moves less than `threshold`; the child starts a new
+        // anchored track in the same commit. The parent has a participant
+        // child, so it must not become a quiescent null plan slot.
+        group.capture()
+        model.place(parent, box(0.5, 0, 100, 40))
+        model.place(child, box(50.5, 10, 20, 20))
+        const report = group.flush()
+        const frames: Box[] = []
+        for (let i = 0; i < 6; i++) {
+            mc.frame()
+            frames.push(model.rect(child))
+        }
+        // The parent's 0.5 px move is part of the anchored offset at t = 0;
+        // losing the parent plan made the child draw 20 instead of 20.5.
+        expect(frames[0]!.x).toBeCloseTo(20.5, 9)
+        mc.frames(FRAMES)
+        await report
+        expectBox(model.rect(child), model.layout(child), 1e-9)
+        group.dispose()
+    })
+})
+
+describe('S2-2 measured-jump shortcut stays conservative', () => {
+    const shortcut = (group: ReturnType<typeof createLayoutGroup>): boolean =>
+        (group as unknown as Record<symbol, () => boolean>)[
+            Symbol.for('ani-layout.keep-shortcut')
+        ]!()
+
+    it('a plain top-level measured jump uses the shortcut', async () => {
+        const { mc, group, a } = await moving()
+        group.capture()
+        model.place(a, box(70))
+        const second = group.flush()
+        expect(shortcut(group)).toBe(true)
+        mc.frames(FRAMES)
+        await second
+        expectBox(model.rect(a), model.layout(a))
+        group.dispose()
+    })
+
+    it('a size change keeps the full path', async () => {
+        const { mc, group, a, first } = await moving()
+        group.capture()
+        model.place(a, box(50, 0, 41, 40))
+        const second = group.flush()
+        expect(shortcut(group)).toBe(false)
+        mc.frames(FRAMES)
+        await second
+        expect(await first).toEqual({ status: 'interrupted', snapped: [] })
+        expectBox(model.rect(a), model.layout(a))
+        group.dispose()
+    })
+
+    it('a nested parent move keeps the full path', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const parent = element(box(0, 0, 100, 100))
+        const child = element(box(10, 10, 20, 20), parent)
+        group.add(parent)
+        group.add(child)
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(child, box(40, 10, 20, 20))
+        const first = group.flush()
+        mc.frames(2)
+        await nextTask()
+
+        group.capture()
+        model.place(parent, box(30, 0, 100, 100))
+        model.place(child, box(70, 10, 20, 20))
+        const second = group.flush()
+        expect(shortcut(group)).toBe(false)
+        mc.frames(FRAMES)
+        await second
+        expect(await first).toEqual({ status: 'interrupted', snapped: [] })
+        expectBox(model.rect(child), model.layout(child))
+        group.dispose()
+    })
+
+    it('an active scroll container keeps the full path', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(box(0))
+        const shared = element(box(200))
+        group.add(a)
+        group.add(shared, { layoutId: 'shared' })
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(a, box(50))
+        const first = group.flush()
+        mc.frames(2)
+        await nextTask()
+
+        document.dispatchEvent(new Event('scroll'))
+        group.capture()
+        model.place(a, box(60))
+        const second = group.flush()
+        expect(shortcut(group)).toBe(false)
+        mc.frames(FRAMES)
+        await second
+        expect(await first).toEqual({ status: 'interrupted', snapped: [] })
+        expectBox(model.rect(a), model.layout(a))
+        group.dispose()
+    })
+
+    it('a retained lead keeps the full path', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(box(0))
+        const shared = element(box(200))
+        group.add(a)
+        const removeShared = group.add(shared, { layoutId: 'shared' })
+        group.capture()
+        await group.flush()
+        group.capture()
+        model.place(a, box(50))
+        const first = group.flush()
+        mc.frames(2)
+        await nextTask()
+
+        group.capture()
+        removeShared()
+        model.place(a, box(60))
+        const second = group.flush()
+        expect(shortcut(group)).toBe(false)
+        mc.frames(FRAMES)
+        await second
+        expect(await first).toEqual({ status: 'interrupted', snapped: [] })
+        expectBox(model.rect(a), model.layout(a))
+        group.dispose()
+    })
+})
