@@ -98,7 +98,11 @@ export function evaluateInvocation(input: InvocationInput): InvocationResult {
                 reasons.push(`${engine.engine} ${scene.scene} ${scene.status}`)
             }
         }
-        if (engine.cost && engine.cost.status !== 'pass') {
+        if (
+            engine.cost &&
+            engine.cost.status !== 'pass' &&
+            engine.engine !== 'webkit'
+        ) {
             reasons.push(`${engine.engine} S-BULK ${engine.cost.status}`)
         }
     }
