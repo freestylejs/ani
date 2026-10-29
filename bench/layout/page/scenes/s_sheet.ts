@@ -18,6 +18,7 @@ import {
     layoutRuntime,
 } from '@freestylejs/ani-layout'
 import type { Box } from '../../oracle.ts'
+import { percentile } from '../../stats.ts'
 import type {
     HoldEvidence,
     HoldMoveEvidence,
@@ -608,8 +609,14 @@ export class SheetScene {
             })
             commits.push({ label: 'release-2', at: performance.now() })
             await waitUntilSettled(group)
-            // G12 1-held shape on the dismissed sheet: 600 real-clock frames.
+            // D11 no-hold baseline: every normal frame of this scene before
+            // the held window, at the same cadence and DOM.
             const heldStart = sampler.frames.length
+            const baselineSamples = sampler.frames
+                .slice(0, heldStart)
+                .map((sample) => sample.ms)
+            const baselineP95 = percentile(baselineSamples, 0.95)
+            // G12 1-held shape on the dismissed sheet: 600 real-clock frames.
             const reads = {
                 frames: 0,
                 rects: 0,
@@ -657,7 +664,14 @@ export class SheetScene {
                 frameCosts: sampler.frames.slice(0, heldStart),
                 commits,
                 diagnostics,
-                held: { samples, g, reads, releaseClean },
+                held: {
+                    samples,
+                    baselineSamples,
+                    baselineP95,
+                    g,
+                    reads,
+                    releaseClean,
+                },
                 allowEmptyFinal: true,
                 final: { tracks: 0, holds: 0, connected: 0 },
             }

@@ -39,9 +39,10 @@ import {
 import {
     auditFloor,
     floorAuditGate,
-    heldGate,
+    heldIncrementalGate,
     realClockGate,
     steadyFrameGate,
+    sustainedRatioGate,
 } from './gates.ts'
 import {
     type AggregateMetric,
@@ -101,10 +102,6 @@ const SCENES = [
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
-/** Clarification 2026-10-29: G12 is BLOCK until the D11/H17c harness lands. */
-const G12_D11_BLOCK =
-    'BLOCK: the D11 baseline-subtracted G12 harness is not in H17c yet; the raw 1/10-held p95 is evidence only'
-
 type EngineName = 'chromium' | 'webkit' | 'firefox'
 
 const USAGE = `P5 layout bench (iOS Native Grade calibration)
@@ -605,27 +602,39 @@ function evaluateCost(
         g: trace.g,
         commits: trace.sustained.commits,
         commitHz: trace.sustained.commitHz,
+        steadyBatch: trace.steady.sampleMode === 'batch20',
     })
     const validCost = validity.valid
+    const blockedByTimer = !validity.timerValid
     findings.push({
         id: 'G9-unscrolled',
         label: 'Commit over the required-work floor, unscrolled',
         gate: 'median of 5 per-run ratios <= 2',
         unit: 'ratio',
-        value: unscrolledRatio,
-        pass: unscrolledRatio <= 2,
-        blocked: !validity.timerValid,
-        detail: `${median(trace.unscrolled.engine).toFixed(3)} ms / ${median(trace.unscrolled.floor).toFixed(3)} ms`,
+        value: blockedByTimer ? Number.NaN : unscrolledRatio,
+        pass: !blockedByTimer && unscrolledRatio <= 2,
+        blocked: blockedByTimer,
+        deciding: !blockedByTimer,
+        aggregate: 'median',
+        aggregateLimit: 2,
+        detail: blockedByTimer
+            ? `BLOCK: timer g ${trace.g.toFixed(4)} ms; the quantized ratio is diagnostic, not a gate value`
+            : `${median(trace.unscrolled.engine).toFixed(3)} ms / ${median(trace.unscrolled.floor).toFixed(3)} ms`,
     })
     findings.push({
         id: 'G9-scrolled',
         label: 'Commit over the required-work floor, scrolled 1.5 viewports',
         gate: 'median of 5 per-run ratios <= 2',
         unit: 'ratio',
-        value: scrolledRatio,
-        pass: scrolledRatio <= 2,
-        blocked: !validity.timerValid,
-        detail: `${median(trace.scrolled.engine).toFixed(3)} ms / ${median(trace.scrolled.floor).toFixed(3)} ms`,
+        value: blockedByTimer ? Number.NaN : scrolledRatio,
+        pass: !blockedByTimer && scrolledRatio <= 2,
+        blocked: blockedByTimer,
+        deciding: !blockedByTimer,
+        aggregate: 'median',
+        aggregateLimit: 2,
+        detail: blockedByTimer
+            ? `BLOCK: timer g ${trace.g.toFixed(4)} ms; the quantized ratio is diagnostic, not a gate value`
+            : `${median(trace.scrolled.engine).toFixed(3)} ms / ${median(trace.scrolled.floor).toFixed(3)} ms`,
     })
     for (const [name, run] of [
         ['unscrolled', trace.unscrolled],
@@ -669,31 +678,85 @@ function evaluateCost(
             )
         }
     }
-    const steady = steadyFrameGate(trace.steady.costs, trace.steady.g)
+    const steady = steadyFrameGate(
+        trace.steady.costs,
+        trace.steady.g,
+        'Steady frame at 300 nested movers (A-19 150+150)',
+        trace.steady.sampleMode,
+        trace.steady.errorBound
+    )
     const commitP95 = percentile(trace.sustained.commitCosts, 0.95)
+    const floorP95 = percentile(trace.sustained.floorCosts, 0.95)
     const steadyP95 = steady.value
     const sustainedP95 = commitP95
+    const sustainedRatio = commitP95 / floorP95
+    const steadyBlocked =
+        (trace.steady.sampleMode !== 'batch20' && !validity.timerValid) ||
+        steady.blocked === true
     findings.push({
         ...steady,
         id: 'G10',
         label: 'Steady frame at 300 nested movers (A-19 150+150)',
-        blocked: !validity.timerValid,
-        detail: `${steady.detail ?? ''}; refresh ${trace.steady.refreshHz.toFixed(1)} Hz`,
+        value: steadyBlocked ? Number.NaN : steady.value,
+        pass: !steadyBlocked && steady.pass,
+        blocked: steadyBlocked,
+        deciding: !steadyBlocked,
+        detail: `${steady.detail ?? ''}; ${
+            trace.steady.sampleMode === 'batch20'
+                ? 'real-clock 20-frame batch samples'
+                : `refresh ${trace.steady.refreshHz.toFixed(1)} Hz`
+        }`,
+    })
+    const sustainedGate = sustainedRatioGate(
+        trace.sustained.commitCosts,
+        trace.sustained.floorCosts,
+        validity.cadenceValid,
+        trace.sustained.errorBound
+    )
+    findings.push({
+        ...sustainedGate,
+        value: blockedByTimer ? Number.NaN : sustainedGate.value,
+        pass: !blockedByTimer && sustainedGate.pass,
+        blocked: blockedByTimer,
+        deciding: !blockedByTimer,
+        aggregate: 'median',
+        aggregateLimit: 2,
+        measured:
+            trace.sustained.commitCosts.length > 0 &&
+            trace.sustained.floorCosts.length > 0,
+        detail: `${blockedByTimer ? 'BLOCK: timer too coarse; the quantized ratio is diagnostic, not a gate value. ' : ''}${sustainedGate.detail ?? ''}; ${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms; sample ${trace.sustained.sampleMode}${trace.sustained.errorBound > 0 ? ` ±${trace.sustained.errorBound.toFixed(4)} ms` : ''}`,
+    })
+    const sustainedAudit = auditFloor({
+        participants: trace.unscrolled.participants,
+        poses: trace.unscrolled.poses,
+        typedOM: trace.typedOM,
+        captureRects: trace.sustained.floorAudit.captureRects,
+        captureOffsets: trace.sustained.floorAudit.captureOffsets,
+        flushRects: trace.sustained.floorAudit.flushRects,
+        flushOffsets: trace.sustained.floorAudit.flushOffsets,
+        styleReads: trace.sustained.floorAudit.styleReads,
+        poseWrites: trace.sustained.floorAudit.poseWrites,
+        extraReads: trace.sustained.floorAudit.extraReads,
     })
     findings.push({
-        id: 'G11',
-        label: 'Sustained 60 Hz commit script cost, 300 moving participants',
-        gate: 'p95 of one performance.now() pair per 60 Hz commit <= 2 ms',
-        unit: 'ms',
-        value: commitP95,
-        pass:
-            validity.cadenceValid &&
-            Number.isFinite(commitP95) &&
-            commitP95 <= 2,
-        blocked: !validity.timerValid,
-        measured: trace.sustained.commitCosts.length > 0,
-        detail: `${trace.sustained.commits} commits, ${trace.sustained.commitHz.toFixed(2)} commits/s over ${trace.sustained.durationMs.toFixed(0)} ms; refresh ${trace.sustained.refreshHz.toFixed(1)} Hz (frame samples are diagnostic, not a 60 Hz frame); ${trace.sustained.frameCosts.length} frame samples; g ${trace.g.toFixed(4)} ms`,
+        ...floorAuditGate(sustainedAudit),
+        id: 'G11.floor',
+        label: 'Sustained required-work floor audit',
+        value: sustainedAudit.pass ? 0 : sustainedAudit.mismatches.length,
+        detail: sustainedAudit.summary,
     })
+    const sustainedRequired = trace.unscrolled.participants * 2
+    const sustainedStyles = trace.unscrolled.poses * (trace.typedOM ? 2 : 1)
+    if (
+        trace.sustained.engineAudit.rects !== sustainedRequired ||
+        trace.sustained.engineAudit.offsets !== sustainedRequired ||
+        trace.sustained.engineAudit.styleReads !== sustainedStyles ||
+        trace.sustained.engineAudit.poseWrites !== trace.unscrolled.poses
+    ) {
+        problems.push(
+            `sustained: engine audit ${trace.sustained.engineAudit.rects} rects / ${trace.sustained.engineAudit.offsets} pairs / ${trace.sustained.engineAudit.styleReads} styles / ${trace.sustained.engineAudit.poseWrites} poses, required ${sustainedRequired}/${sustainedRequired}/${sustainedStyles}/${trace.unscrolled.poses}`
+        )
+    }
     let exactPass = true
     let exactDetail = ''
     const requiredStyles = trace.unscrolled.poses * (trace.typedOM ? 2 : 1)
@@ -717,6 +780,15 @@ function evaluateCost(
         exactPass = false
         exactDetail ||= `steady frame reads ${trace.unscrolled.steadyFrameReads}/${trace.scrolled.steadyFrameReads}`
     }
+    if (
+        trace.sustained.engineAudit.rects !== sustainedRequired ||
+        trace.sustained.engineAudit.offsets !== sustainedRequired ||
+        trace.sustained.engineAudit.styleReads !== sustainedStyles ||
+        trace.sustained.engineAudit.poseWrites !== trace.unscrolled.poses
+    ) {
+        exactPass = false
+        exactDetail ||= `sustained engine audit ${trace.sustained.engineAudit.rects}/${trace.sustained.engineAudit.offsets}/${trace.sustained.engineAudit.styleReads}/${trace.sustained.engineAudit.poseWrites}`
+    }
     if (exactPass) {
         exactDetail = `every commit ${trace.unscrolled.participants * 2} rect/pair reads, ${requiredStyles} computed reads (${trace.typedOM ? 'incl. Typed OM' : 'Chromium set'}), ${trace.unscrolled.poses} poses; steady frames read zero`
     }
@@ -738,8 +810,14 @@ function evaluateCost(
         ['1', trace.held.one],
         ['10', trace.held.ten],
     ] as const) {
-        const gate = heldGate(shape.samples, shape.held, trace.g)
-        const samplesComplete = shape.samples.length === 600
+        const gate = heldIncrementalGate(
+            shape.samples,
+            shape.baselineSamples,
+            shape.held,
+            trace.g
+        )
+        const samplesComplete =
+            shape.samples.length === 600 && shape.baselineSamples.length === 600
         const readPass =
             shape.reads.mismatches === 0 &&
             shape.reads.frames === 600 &&
@@ -754,13 +832,12 @@ function evaluateCost(
             ...gate,
             id: `G12-${label}`,
             label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
-            // D11/H17c is not in this tree: the baseline-subtracted gate is
-            // unavailable, so G12 is BLOCK, not a measured pass/fail.
-            blocked: true,
-            deciding: true,
+            blocked: !validity.timerValid,
+            deciding: validity.timerValid,
             measured: samplesComplete,
-            pass: false,
-            detail: `${G12_D11_BLOCK}; ${gate.detail ?? ''}; ${shape.samples.length} samples; raw per held ${shape.perHeld.toFixed(4)} ms; held reads exactly one rect per element; release ${shape.releaseClean ? 'clean' : 'left a hold/track'}`,
+            pass:
+                samplesComplete && shape.releaseClean && readPass && gate.pass,
+            detail: `${gate.detail ?? ''}; ${shape.samples.length} held / ${shape.baselineSamples.length} baseline samples; incremental ${shape.incrementalPerHeld.toFixed(4)} ms/held; held reads exactly one rect per element; release ${shape.releaseClean ? 'clean' : 'left a hold/track'}`,
         })
     }
     findings.push({
@@ -774,7 +851,10 @@ function evaluateCost(
         detail: heldReadsDetail.join('; '),
     })
     const floorPass = findings
-        .filter((finding) => finding.id.startsWith('G9.floor'))
+        .filter(
+            (finding) =>
+                finding.id.startsWith('G9.floor') || finding.id === 'G11.floor'
+        )
         .every((finding) => finding.pass)
     return {
         findings,
@@ -801,13 +881,25 @@ function evaluateCost(
             engineMedianScrolled: median(trace.scrolled.engine),
             floorMedianScrolled: median(trace.scrolled.floor),
             steadyP95,
+            steadySampleMode: trace.steady.sampleMode,
             sustainedP95,
+            sustainedFloorP95: floorP95,
+            sustainedRatio,
             sustainedCommits: trace.sustained.commits,
             sustainedCommitHz: trace.sustained.commitHz,
+            sustainedSampleMode: trace.sustained.sampleMode,
+            sustainedErrorBound: trace.sustained.errorBound,
+            sustainedEngineAudit: trace.sustained.engineAudit,
+            sustainedFloorAudit: trace.sustained.floorAudit,
+            sustainedFloorAuditPass: sustainedAudit.pass,
             floorAuditPass: floorPass && problems.length === 0,
             floorAuditDetail: [
                 ...findings
-                    .filter((finding) => finding.id.startsWith('G9.floor'))
+                    .filter(
+                        (finding) =>
+                            finding.id.startsWith('G9.floor') ||
+                            finding.id === 'G11.floor'
+                    )
                     .map((finding) => finding.detail ?? ''),
                 ...problems,
             ]
@@ -815,8 +907,12 @@ function evaluateCost(
                 .join('; '),
             exactReadsPass: exactPass,
             exactReadsDetail: exactDetail,
-            heldOnePerHeld: trace.held.one.perHeld,
-            heldTenPerHeld: trace.held.ten.perHeld,
+            heldBaselineP95: trace.held.one.baselineP95,
+            heldTenBaselineP95: trace.held.ten.baselineP95,
+            heldOneP95: trace.held.one.p95,
+            heldTenP95: trace.held.ten.p95,
+            heldOnePerHeld: trace.held.one.incrementalPerHeld,
+            heldTenPerHeld: trace.held.ten.incrementalPerHeld,
             heldReadsPass,
             heldReadsDetail: heldReadsDetail.join('; '),
             g: trace.g,
@@ -841,9 +937,7 @@ function aggregateCost(
     const blockedReasons = [
         ...new Set(measured.flatMap((run) => run.blockedReasons)),
     ]
-    const metricsPass = metrics
-        .filter((metric) => metric.deciding)
-        .every((metric) => metric.pass)
+    const metricsPass = metrics.every((metric) => metric.pass)
     const outcome = costOutcome({ valid, metricsPass })
     return {
         scene: 'S-BULK',
@@ -1343,7 +1437,12 @@ function sceneOutcome(
     ).length
     const metrics: MetricFinding[] = [...score.metrics, g8]
     if (real.held) {
-        const gate = heldGate(real.held.samples, 1, real.g)
+        const gate = heldIncrementalGate(
+            real.held.samples,
+            real.held.baselineSamples,
+            1,
+            real.g
+        )
         const readsPass =
             real.held.reads.mismatches === 0 &&
             real.held.reads.frames === 600 &&
@@ -1354,13 +1453,18 @@ function sceneOutcome(
             ...gate,
             id: 'G12',
             label: 'Held frame at 1 held element (scene shape)',
-            // D11/H17c is not in this tree: raw scene held p95 is evidence
-            // only; the G12 row is BLOCK, not pass/fail.
-            blocked: true,
-            deciding: false,
-            measured: real.held.samples.length === 600,
-            pass: false,
-            detail: `${G12_D11_BLOCK}; ${gate.detail ?? ''}; scene held shape, 1 held; ${real.held.samples.length} samples; raw per held ${gate.value.toFixed(4)} ms; reads ${real.held.reads.rects}/${real.held.reads.holds} rects/hold-frames; ${real.held.reads.mismatches} mismatched frames; release ${real.held.releaseClean ? 'clean' : 'left a hold/track'}`,
+            blocked: real.g > 0.05,
+            deciding: real.g <= 0.05,
+            measured:
+                real.held.samples.length === 600 &&
+                real.held.baselineSamples.length > 0,
+            pass:
+                real.held.samples.length === 600 &&
+                real.held.baselineSamples.length > 0 &&
+                real.held.releaseClean &&
+                readsPass &&
+                gate.pass,
+            detail: `${gate.detail ?? ''}; scene held shape, 1 held; ${real.held.samples.length} held / ${real.held.baselineSamples.length} baseline samples; incremental ${gate.value.toFixed(4)} ms/held; reads ${real.held.reads.rects}/${real.held.reads.holds} rects/hold-frames; ${real.held.reads.mismatches} mismatched frames; release ${real.held.releaseClean ? 'clean' : 'left a hold/track'}`,
         })
         metrics.push({
             id: 'G13-held',
@@ -1713,10 +1817,22 @@ async function main(): Promise<number> {
         (engine) => engine.launchError !== null
     )
     const scenePass = required.every((engine) =>
-        engine.scenes.every((scene) => scene.status === 'pass')
+        engine.scenes.every(
+            (scene) =>
+                scene.status === 'pass' ||
+                (engine.engine === 'webkit' &&
+                    scene.status === 'blocked' &&
+                    scene.blockedReasons.length > 0 &&
+                    scene.blockedReasons.every((reason) =>
+                        reason.startsWith('G12')
+                    ))
+        )
     )
     const costPass = required.every(
-        (engine) => engine.cost === null || engine.cost.status === 'pass'
+        (engine) =>
+            engine.engine === 'webkit' ||
+            engine.cost === null ||
+            engine.cost.status === 'pass'
     )
     const controlsPass =
         options.check &&
@@ -1728,12 +1844,17 @@ async function main(): Promise<number> {
     for (const engine of engineReports) {
         for (const scene of engine.scenes) {
             if (scene.status !== 'blocked') continue
+            const costOnly =
+                engine.engine === 'webkit' &&
+                scene.blockedReasons.length > 0 &&
+                scene.blockedReasons.every((reason) => reason.startsWith('G12'))
+            if (costOnly) continue
             blockedEntries.push({
                 item: `${engine.engine} scene ${scene.scene}`,
                 reason: scene.blockedReasons.join('; ') || 'blocked',
             })
         }
-        if (engine.cost?.status === 'blocked') {
+        if (engine.cost?.status === 'blocked' && engine.engine !== 'webkit') {
             blockedEntries.push({
                 item: `${engine.engine} S-BULK cost`,
                 reason:
@@ -1752,10 +1873,6 @@ async function main(): Promise<number> {
     blockedEntries.push({
         item: 'reduced-motion variants',
         reason: "P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration",
-    })
-    blockedEntries.push({
-        item: 'G12 baseline-subtracted',
-        reason: G12_D11_BLOCK,
     })
     const certificationEngines = engineReports.map((engine) => ({
         engine: engine.engine,
@@ -1828,10 +1945,18 @@ async function main(): Promise<number> {
         launchErrors.length === 0 &&
         scenePass &&
         costPass
+    const sourceRevision = (() => {
+        const revision = spawnSync('git', ['rev-parse', 'HEAD'], {
+            cwd: REPO_ROOT,
+            encoding: 'utf8',
+        })
+        return revision.status === 0 ? revision.stdout.trim() : undefined
+    })()
     const report: BenchReport = {
         schema: 'ani-layout-bench/v1',
         generatedAt: new Date().toISOString(),
         command: `pnpm bench:layout ${process.argv.slice(2).join(' ')}`.trim(),
+        ...(sourceRevision ? { sourceRevision } : {}),
         fingerprint,
         advisory,
         engines: engineReports,

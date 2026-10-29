@@ -243,3 +243,98 @@ test('H15-02: every required P5b scene status is a certification reason', () => 
     assert.equal(result.certified, false)
     assert.match(result.reasons.join(';'), /chromium scene s-photo fail/)
 })
+
+test('D12: a WebKit cost BLOCK is advisory when every WebKit frame row passes', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'blocked' as const,
+                                  blockedReasons: ['G12 (D11 held cost)'],
+                              }
+                            : scene
+                    ),
+                    cost: { status: 'blocked' as const, valid: false },
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, true)
+    assert.deepEqual(result.reasons, [])
+    assert.match(result.advisory.join('; '), /G12.*D12 advisory/)
+    assert.match(result.advisory.join('; '), /S-BULK cost blocked/)
+})
+
+test('D12: a WebKit frame failure still blocks certification', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-photo'
+                            ? { scene: 's-photo', status: 'fail' as const }
+                            : scene
+                    ),
+                    cost: { status: 'blocked' as const, valid: false },
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /webkit scene s-photo fail/)
+})
+
+test('D12: a WebKit scene blocked for a non-cost reason still blocks', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'blocked' as const,
+                                  blockedReasons: ['G7 status authority'],
+                              }
+                            : scene
+                    ),
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /webkit scene s-reorder blocked/)
+})
+
+test('D12: invocation pass ignores a WebKit cost BLOCK', () => {
+    const result = evaluateInvocation({
+        engines: [
+            cleanEngine('chromium'),
+            {
+                ...cleanEngine('webkit'),
+                cost: { status: 'blocked' as const, valid: false },
+            },
+        ],
+    })
+    assert.equal(result.pass, true)
+    assert.deepEqual(result.reasons, [])
+})

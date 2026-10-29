@@ -11,6 +11,8 @@ export interface CostValidityInput {
     readonly g: number
     readonly commits: number
     readonly commitHz: number
+    /** G10 has valid 20-frame batch samples even with a coarse timer. */
+    readonly steadyBatch?: boolean
 }
 
 export interface CostValidity {
@@ -29,7 +31,9 @@ export function costValidity(input: CostValidityInput): CostValidity {
     const reasons: string[] = []
     if (!timerValid) {
         reasons.push(
-            `timer g ${input.g.toFixed(4)} ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result`
+            input.steadyBatch
+                ? `timer g ${input.g.toFixed(4)} ms > 0.05 ms: G9/G11 are non-deciding; G10 uses real-clock 20-frame interval samples`
+                : `timer g ${input.g.toFixed(4)} ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result`
         )
     }
     if (!cadenceValid) {

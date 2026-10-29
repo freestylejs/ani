@@ -152,15 +152,20 @@ describe('held rebase and release origin (§5.10)', () => {
         handle.move({ x: 0, y: 0 })
         mc.frame(16)
 
+        const layoutOffsetsBefore = group.stats.layoutOffsets
         group.capture()
         model.place(el, { x: 0, y: 160, w: 100, h: 40 })
         void group.flush()
+        // H18-F F4: the flush-side offsetLeft/offsetTop pair is counted.
+        expect(group.stats.layoutOffsets - layoutOffsetsBefore).toBe(2)
         handle.move({ x: 0, y: 30 })
         model.reset()
+        const layoutOffsetsAtFrame = group.stats.layoutOffsets
         mc.frame(16)
         expect(model.reads.rects).toBe(1)
         expect(model.reads.offsets).toBe(0)
         expect(model.reads.styles).toBe(0)
+        expect(group.stats.layoutOffsets).toBe(layoutOffsetsAtFrame)
         handle.cancel()
         mc.frames(60)
         group.dispose()

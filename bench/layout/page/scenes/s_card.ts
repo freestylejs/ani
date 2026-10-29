@@ -675,6 +675,7 @@ class CardRuntime {
             rects: after.rects - stats.rects,
             offsets: after.offsets - stats.offsets,
             styles: after.styles - stats.styles,
+            layoutOffsets: after.layoutOffsets - stats.layoutOffsets,
             probes: after.probes - stats.probes,
             parents: after.parents - stats.parents,
             frameReads,

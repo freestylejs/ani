@@ -39,6 +39,13 @@ export interface MetricFinding {
     readonly blocked?: boolean
     /** False for reporting-only evidence; it never decides a scene gate. */
     readonly deciding?: boolean
+    /**
+     * Aggregation rule across measured runs. `median` uses the literal median
+     * of the per-run values against `aggregateLimit` (D10); the default keeps
+     * the five-run majority of the per-run gate outcomes.
+     */
+    readonly aggregate?: 'median'
+    readonly aggregateLimit?: number
     readonly worst?:
         | {
               readonly frame?: number | undefined
@@ -1204,7 +1211,7 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         if (commitExcess >= excess) {
             excess = commitExcess
             worstLabel = commit.label
-            detail = `${commit.label}: ${commit.rects}/${required} rects, ${commit.offsets}/${required} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; probes ${commit.probes}, parents ${commit.parents}${(commit.presenceRects ?? 0) > 0 || (commit.presenceStyles ?? 0) > 0 ? `; audited non-layout presence reads excluded: ${commit.presenceRects ?? 0} rects, ${commit.presenceStyles ?? 0} styles` : ''}`
+            detail = `${commit.label}: ${commit.rects}/${required} rects, ${commit.offsets}/${required} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; layout offsets ${commit.layoutOffsets ?? 0}; probes ${commit.probes}, parents ${commit.parents}${(commit.presenceRects ?? 0) > 0 || (commit.presenceStyles ?? 0) > 0 ? `; audited non-layout presence reads excluded: ${commit.presenceRects ?? 0} rects, ${commit.presenceStyles ?? 0} styles` : ''}`
         }
     }
     if (trace.steadyFrameReads > 0) {

@@ -12,6 +12,7 @@ export interface GateResult {
     readonly unit: string
     readonly value: number
     readonly pass: boolean
+    readonly blocked?: boolean
     readonly perRun?: readonly number[]
     readonly worst?:
         | {
@@ -175,7 +176,9 @@ export function realClockGate(
 export function steadyFrameGate(
     costs: readonly number[],
     g: number,
-    label = 'Steady frame at 300 nested movers'
+    label = 'Steady frame at 300 nested movers',
+    sampleMode: 'frame' | 'batch20' = 'frame',
+    errorBound = g / 2
 ): GateResult {
     if (costs.length === 0) {
         return {
@@ -188,47 +191,99 @@ export function steadyFrameGate(
             detail: 'no frame samples',
         }
     }
-    const sampleSet = frameSamples(costs, g)
-    const samples = sampleSet.samples
+    const samples =
+        sampleMode === 'batch20' ? [...costs] : frameSamples(costs, g).samples
     const p95 = percentile(samples, 0.95)
+    const pass = sampleMode === 'batch20' ? p95 + errorBound <= 2 : p95 <= 2
+    const blocked =
+        sampleMode === 'batch20'
+            ? p95 + errorBound > 2 && p95 - errorBound <= 2
+            : false
     return {
         id: 'G10',
         label,
         gate: 'p95 <= 2 ms',
         unit: 'ms',
         value: p95,
-        pass: p95 <= 2,
-        detail: `${sampleSet.detail}; ${samples.length} samples`,
+        pass: pass && !blocked,
+        blocked,
+        detail:
+            sampleMode === 'batch20'
+                ? `20-frame intervals, ${samples.length} samples; p95 ${p95.toFixed(3)} ms ±${errorBound.toFixed(4)} ms`
+                : `${frameSamples(costs, g).detail}; ${samples.length} samples`,
     }
 }
 
-export function sustainedGate(
-    costs: readonly number[],
-    g: number,
-    gateMs = 2
+export function sustainedRatioGate(
+    engineCosts: readonly number[],
+    floorCosts: readonly number[],
+    cadenceValid = true,
+    errorBound = 0
 ): GateResult {
-    if (costs.length === 0) {
+    if (engineCosts.length === 0 || floorCosts.length === 0) {
         return {
             id: 'G11',
             label: 'Sustained 60 Hz commits with 300 moving participants',
-            gate: `p95 of every frame sample in the 5 s window <= ${gateMs} ms`,
-            unit: 'ms',
+            gate: 'p95(engine commits) / p95(floor commits) <= 2',
+            unit: 'ratio',
             value: Number.POSITIVE_INFINITY,
             pass: false,
-            detail: 'no frame samples',
+            detail: 'no engine or floor samples',
         }
     }
-    const sampleSet = frameSamples(costs, g)
-    const samples = sampleSet.samples
-    const p95 = percentile(samples, 0.95)
+    const engineP95 = percentile(engineCosts, 0.95)
+    const floorP95 = percentile(floorCosts, 0.95)
+    const ratio = engineP95 / floorP95
     return {
         id: 'G11',
         label: 'Sustained 60 Hz commits with 300 moving participants',
-        gate: `p95 of every frame sample in the 5 s window <= ${gateMs} ms`,
-        unit: 'ms',
-        value: p95,
-        pass: p95 <= gateMs,
-        detail: `${sampleSet.detail}; ${samples.length} samples`,
+        gate: 'p95(engine commits) / p95(floor commits) <= 2',
+        unit: 'ratio',
+        value: ratio,
+        pass:
+            cadenceValid &&
+            Number.isFinite(ratio) &&
+            Number.isFinite(floorP95) &&
+            floorP95 > 0 &&
+            ratio <= 2,
+        detail: `engine p95 ${engineP95.toFixed(3)} ms / floor p95 ${floorP95.toFixed(3)} ms = ${ratio.toFixed(3)}×; ${engineCosts.length} engine / ${floorCosts.length} floor samples${errorBound > 0 ? `; ±${errorBound.toFixed(4)} ms per-sample` : ''}`,
+    }
+}
+
+/**
+ * D11 G12: the incremental per-held cost at the same scene/frame no-hold
+ * baseline: `(p95(held) - p95(no-hold)) / held <= 0.1`. Both p95 values are
+ * reported; the absolute total-frame G8 gate is separate and unchanged.
+ */
+export function heldIncrementalGate(
+    heldCosts: readonly number[],
+    baselineCosts: readonly number[],
+    held: number,
+    g: number
+): GateResult {
+    if (held <= 0) throw new Error('held count must be positive')
+    if (heldCosts.length === 0 || baselineCosts.length === 0) {
+        return {
+            id: 'G12',
+            label: `Held incremental at ${held} held element${held === 1 ? '' : 's'}`,
+            gate: '(p95(held) - p95(no-hold)) / held <= 0.1 ms',
+            unit: 'ms/held',
+            value: Number.POSITIVE_INFINITY,
+            pass: false,
+            detail: 'no held or baseline samples',
+        }
+    }
+    const heldP95 = percentile(heldCosts, 0.95)
+    const baselineP95 = percentile(baselineCosts, 0.95)
+    const value = (heldP95 - baselineP95) / held
+    return {
+        id: 'G12',
+        label: `Held incremental at ${held} held element${held === 1 ? '' : 's'}`,
+        gate: '(p95(held) - p95(no-hold)) / held <= 0.1 ms',
+        unit: 'ms/held',
+        value,
+        pass: Number.isFinite(value) && value <= 0.1,
+        detail: `held p95 ${heldP95.toFixed(3)} ms - baseline p95 ${baselineP95.toFixed(3)} ms = ${(heldP95 - baselineP95).toFixed(3)} ms / ${held} = ${value.toFixed(4)} ms/held; ${heldCosts.length} held / ${baselineCosts.length} baseline samples; g ${g.toFixed(4)} ms`,
     }
 }
 

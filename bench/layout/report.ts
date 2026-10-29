@@ -123,13 +123,38 @@ export interface CostRunReport {
     readonly engineMedianScrolled: number
     readonly floorMedianScrolled: number
     readonly steadyP95: number
+    readonly steadySampleMode: 'frame' | 'batch20'
     readonly sustainedP95: number
+    readonly sustainedFloorP95: number
+    readonly sustainedRatio: number
     readonly sustainedCommits: number
     readonly sustainedCommitHz: number
+    readonly sustainedSampleMode: 'commit' | 'quantized'
+    readonly sustainedErrorBound: number
+    readonly sustainedEngineAudit: {
+        readonly rects: number
+        readonly offsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+    }
+    readonly sustainedFloorAudit: {
+        readonly captureRects: number
+        readonly captureOffsets: number
+        readonly flushRects: number
+        readonly flushOffsets: number
+        readonly styleReads: number
+        readonly poseWrites: number
+        readonly extraReads: number
+    }
+    readonly sustainedFloorAuditPass: boolean
     readonly floorAuditPass: boolean
     readonly floorAuditDetail: string
     readonly exactReadsPass: boolean
     readonly exactReadsDetail: string
+    readonly heldBaselineP95: number
+    readonly heldTenBaselineP95: number
+    readonly heldOneP95: number
+    readonly heldTenP95: number
     readonly heldOnePerHeld: number
     readonly heldTenPerHeld: number
     readonly heldReadsPass: boolean
@@ -176,6 +201,8 @@ export interface BenchReport {
     readonly schema: 'ani-layout-bench/v1'
     readonly generatedAt: string
     readonly command: string
+    /** Git revision of the source that produced the bundle, when available. */
+    readonly sourceRevision?: string
     readonly fingerprint: Fingerprint
     readonly advisory: Advisory
     readonly engines: readonly EngineReport[]
@@ -286,8 +313,14 @@ export function formatReport(report: BenchReport): string {
                 )
             }
             for (const run of cost.runs) {
+                if (run.sustainedSampleMode === 'quantized') {
+                    lines.push(
+                        `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: BLOCK (quantized timer; G9/G11 samples non-deciding); floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms${run.steadySampleMode === 'batch20' ? ' (20-frame real-clock batch)' : ''}; g ${run.g.toFixed(4)} ms`
+                    )
+                    continue
+                }
                 lines.push(
-                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms; sustained p95 ${run.sustainedP95.toFixed(3)} ms; held 1/10 ${run.heldOnePerHeld.toFixed(4)}/${run.heldTenPerHeld.toFixed(4)} ms; held reads ${run.heldReadsPass ? 'ok' : 'FAIL'}; g ${run.g.toFixed(4)} ms`
+                    `  run ${run.run}${run.warmup ? ' (warm-up)' : ''}: ratio ${run.ratioUnscrolled.toFixed(3)} unscrolled / ${run.ratioScrolled.toFixed(3)} scrolled; floor audit ${run.floorAuditPass ? 'ok' : 'FAIL'}; steady p95 ${run.steadyP95.toFixed(3)} ms${run.steadySampleMode === 'batch20' ? ' (20-frame real-clock batch)' : ''}; sustained p95 ${run.sustainedP95.toFixed(3)} ms / floor p95 ${run.sustainedFloorP95.toFixed(3)} ms = ${run.sustainedRatio.toFixed(3)}× (${run.sustainedSampleMode}); held 1 ${run.heldOneP95.toFixed(3)}-${run.heldBaselineP95.toFixed(3)}=${run.heldOnePerHeld.toFixed(4)} ms/held; 10 ${run.heldTenP95.toFixed(3)}-${run.heldTenBaselineP95.toFixed(3)}=${run.heldTenPerHeld.toFixed(4)} ms/held; held reads ${run.heldReadsPass ? 'ok' : 'FAIL'}; g ${run.g.toFixed(4)} ms`
                 )
             }
         }
@@ -320,6 +353,9 @@ export function formatReport(report: BenchReport): string {
     )
     for (const reason of report.certification.reasons) {
         lines.push(`  cert block: ${reason}`)
+    }
+    for (const reason of report.certification.advisory) {
+        lines.push(`  cert advisory: ${reason}`)
     }
     return lines.join('\n')
 }
@@ -422,6 +458,8 @@ export function compareReports(
 export interface CertificationReport {
     readonly certified: boolean
     readonly reasons: readonly string[]
+    /** WebKit cost BLOCK/advisory rows (D12); they do not block P5. */
+    readonly advisory: readonly string[]
     readonly requiredEngines: readonly string[]
     readonly requiredRuns: number
     readonly requiredScenes: readonly string[]

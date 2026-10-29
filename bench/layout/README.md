@@ -196,8 +196,8 @@ Cost gates:
 |---|---|---|
 | G9 | Commit (capture + flush) ≤ 2× required-work floor | 1,000 participants, unscrolled and scrolled 1.5 viewports; median of 5 per-run ratios ≤ 2 |
 | G10 | Steady frame at 300 nested movers | p95 of 600 samples ≤ 2 ms |
-| G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | p95 of one `performance.now()` pair per commit ≤ 2 ms; the measured cadence must be 58.5–61.5 Hz over 300 commits or the run is invalid; the refresh rate is recorded and a 30 Hz rAF frame is never called 60 Hz |
-| G12 | Held frame ≤ 0.1 ms per held element | p95 of 600 real-clock held frames / held count, at 1 and 10 held on the S-BULK DOM; S-REORDER/S-SHEET add a 1-held scene shape. WebKit's 1 ms timer makes the ratio BLOCK/non-deciding |
+| G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | per-run `p95(engine commits) / p95(floor commits) ≤ 2`; the D10 gate is the literal median of the 5 per-run ratios. The floor is the same audited required-work replica at the same 60 Hz cadence; cadence 58.5–61.5 Hz over 300 commits or the run is invalid |
+| G12 | Held incremental ≤ 0.1 ms per held element | D11: `(p95(held frames) − p95(same-scene no-hold frames)) / held` at 1 and 10 held on the S-BULK DOM, and the 1-held S-REORDER/S-SHEET shape. Both p95 values and the subtraction are reported. WebKit's 1 ms timer makes the result BLOCK/non-deciding |
 | G14 | Fingerprint | mismatch makes cost advisory; frame gates still decide |
 
 `G12` is measured, not fabricated: the 1- and 10-held shapes each run 600
@@ -279,14 +279,16 @@ silently passing G11.
   (`FrameSampler.addScript`); G8 does not invent it, and G11 times the commit
   separately.
 - G11 is measured as one `performance.now()` pair around each of 300 commits
-  at 60 Hz; the rAF refresh (often ~30 Hz in headless WebKit) is recorded as
-  `refreshHz` and the frame samples are diagnostic only. A 30 Hz frame is never
-  presented as a 60 Hz frame.
+  at 60 Hz and a same-shape floor replica; the run's p95 ratio is one D10
+  sample and the gate is the literal median of the five ratios. The rAF refresh
+  (often ~30 Hz in headless WebKit) is recorded as `refreshHz` and the frame
+  samples are diagnostic only. A 30 Hz frame is never presented as a 60 Hz
+  frame.
 - Percentiles are nearest-rank and the five per-run values are printed with
-  the median. A metric uses the **per-run findings' own gate outcomes** and
-  passes when at least three of five measured runs pass (the median outcome);
-  a missing or non-finite run fails the aggregate. No threshold is recomputed
-  from the median (H14-21). The per-run pass/fail list is always printed.
+  the median. G9/G11 use the literal median of the five per-run ratios against
+  the gate (D10); other metrics use their per-run outcomes. A blocked, missing
+  or non-finite run fails the aggregate and is never outvoted; blocked metrics
+  do not print a quantized gate value.
 - `g`, the fingerprint and every per-run statistic are written to the report.
 
 ## Fingerprint (G14)
@@ -300,10 +302,13 @@ On this host the 1-minute load has been above 1.0 during the P5a runs, so every
 cost report is advisory until a quiet run is produced. A report with an
 advisory cost fingerprint cannot claim the cost gates; its top-level `pass` is
 `false` when the cost scene is selected, while the frame-scoring values remain
-deciding evidence. WebKit cannot be measured validly for G9/G10/G11/G12 with
-its 1 ms timer: those metrics are `BLOCK`/non-deciding, the raw ratios are
-diagnostic, and certification is `NOT CERTIFIED` with that exact reason. No
-quantized WebKit ratio is reported as a measured failure. The authority's
+deciding evidence. WebKit's timer is 1 ms. G10 uses the real-clock 20-frame
+batch (one real rAF tick, 20 engine frame callbacks under one
+`performance.now()` pair, 30 samples, ±0.05 ms) and is deciding when the bound
+does not straddle 2 ms. G9/G11 remain BLOCK: a 20-commit interval cannot preserve
+the from-rest work or 60 Hz cadence, and a p95 of 15 batch means is not the p95
+of 300 commits. G12 is BLOCK on WebKit for the same timer reason. No quantized
+WebKit ratio is reported as a measured failure. The authority's
 20-frame mean is **not claimed** on WebKit: the harness reports raw quantized
 per-frame samples with the ±g/2 bound and marks the cost/G12 result BLOCK.
 DPR 1/3 and the reduced-motion variants are P5c **BLOCK** in this iteration
@@ -666,4 +671,43 @@ they are not the current H18-base result.
 | `iteration-3/` | H15 P5b iteration-1 report |
 | `iteration-4/` | H15 fix-round report |
 | `iteration-5/` | N15 fix report |
-| `iteration-6/` | H16 P5c full §11.6 set, drive scenes and G12 (current) |
+| `iteration-6/` | H16 P5c full §11.6 set, drive scenes and G12 |
+| `iteration-9/` | H17 D10/G12 merge with H18/H16; full 11-scene + cost reports |
+
+## Iteration 10 — H17 D10/G12 merge on the H18/H16 base
+
+`helper/h17` was merged onto H18/H16 `3c24925` at `b7ead0f`. The H17 D10
+relative sustained gate and D11 baseline-subtracted held gate are now the
+harness gates; H18 engine A–F, the H15/H16 scene set and the H16 assertion
+fix are preserved. The full report is `iteration-9/{chromium,webkit}.json`
+with `sourceRevision` `66c2a94`.
+
+Chromium, five runs, all 11 scenes and cost:
+
+| Gate | Result |
+|---|---|
+| S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-REORDER, S-SHEET, S-BULK | **pass** |
+| G9 | **1.823× unscrolled / 1.796× scrolled pass**; floor audits exact |
+| G10 | **0.980 ms pass** |
+| G11 | **2.118× FAIL** (per-run 2.096/2.621/2.104/2.151/2.118; floor audit exact) — open |
+| G12-1 / G12-10 | **pass** (`−0.170` / `−0.004` incremental ms/held; both p95 values reported) |
+| G13 / G13-held | exact; layout-offset reads counted |
+
+WebKit, five runs:
+
+| Gate | Result |
+|---|---|
+| S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-BULK | **pass** |
+| S-REORDER, S-SHEET | **BLOCKED/cost-advisory** on the scene G12 timer bound; frame/status rows pass (D12) |
+| G10 | **0.200 ms pass** with the real-clock 20-frame batch |
+| G9/G11 | **BLOCK**, no gate value |
+| G12 | **BLOCK/advisory** on the 1 ms timer (D12) |
+| G13 / floor | exact |
+
+The run load was 5.78 (Chromium) and 5.84 (WebKit), so cost remains advisory.
+D12 applies: Chromium decides G9/G11/G12; WebKit remains required for
+frame/scoring/shape/status rows, and its cost/G12 BLOCKs are advisory
+(`cert advisory`), not certification blockers. H18-F F4 is fixed by counting
+`offsetLeft`/`offsetTop` in `stats.layoutOffsets`; G13 reports the count
+instead of hiding it. G11 remains open at 2.118×; there is no
+performance-complete claim.
