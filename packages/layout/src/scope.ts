@@ -3697,9 +3697,7 @@ export function createLayoutGroup(
         for (const p of registry.values()) {
             if (
                 p !== previous.list[i] ||
-                !p.element.isConnected ||
                 p.roots.length !== 0 ||
-                isShadowRoot(p.element.getRootNode()) ||
                 // an ancestor that just gained a shadow root can slot this
                 // element without a child-list record on the document
                 ((p.element as Partial<Slottable>).assignedSlot ?? null) !==
