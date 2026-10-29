@@ -20,7 +20,7 @@ work** as the G9 commit shape, every 16.667 ms for 300 commits:
 
 The audited G9 required-work floor performs exactly those operations on exactly
 that DOM in the same process. On the pinned instrument (H14 iteration-3 report),
-its per-run medians are **2.83–2.96 ms per commit** (unscrolled and scrolled).
+its per-run medians are **2.81–3.00 ms per commit** (unscrolled and scrolled).
 The sustained loop changes only the cadence, not the required reads or writes.
 A floor sample is therefore above the absolute 2 ms G11 ceiling before any
 engine planner, track, report or diagnostic work exists.
@@ -31,7 +31,7 @@ Chromium, `.trace/ani_ios_production/evidence/h17/floor_sustained.json`) gives
 the 2 ms ceiling.
 
 The measured G11 p95 is **8.0–9.0 ms** across the H17 runs (see the report).
-The engine/floor ratio is about **2.8–3.1×**; even a hypothetical engine with zero overhead over the mandatory
+The engine/floor ratio is about **2.7–3.3×**; even a hypothetical engine with zero overhead over the mandatory
 floor would be ~2.85 ms and would still fail the absolute 2 ms gate.
 
 ## Proposed replacement (owner decision required)
@@ -53,8 +53,8 @@ about the host's absolute clock.
 
 ### Current sustained value (for the owner's decision)
 
-The H17 G11 p95 is **8.0–9.0 ms** with a floor of ~2.87–2.93 ms, i.e.
-**~2.8–3.1× floor**.
+The H17 G11 p95 is **8.0–9.4 ms** with a floor of ~2.81–3.00 ms, i.e.
+**~2.7–3.3× floor**.
 That means:
 
 - the absolute 2 ms gate is structurally impossible (the floor alone is
@@ -62,7 +62,7 @@ That means:
 - a **2× floor** replacement (≈5.7 ms) would also still fail on the current
   sustained path; H17 does **not** claim it, and does not propose pretending
   the sustained path passes;
-- if the owner wants a deciding gate now, the reported 2.8–3.1× is the evidence for
+- if the owner wants a deciding gate now, the reported 2.7–3.3× is the evidence for
   choosing a multiplier. If the owner wants 2×, G11 stays open until the
   sustained path (`engineState`, presented `L_k`, re-expression, active-node
   measurement) is reduced further. The floor alone cannot be reduced without

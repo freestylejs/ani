@@ -1,7 +1,7 @@
 {
   "schema": "ani-layout-bench/v1",
-  "generatedAt": "2026-10-29T00:48:54.469Z",
-  "command": "pnpm bench:layout --engine chromium --scene cost --runs 5 --check --out bench/layout/iteration-3/chromium-cost.json",
+  "generatedAt": "2026-10-29T00:58:02.335Z",
+  "command": "pnpm bench:layout --engine chromium --scene cost --runs 5 --out bench/layout/iteration-3/chromium-cost.json",
   "fingerprint": {
     "host": "Mac14,9",
     "os": {
@@ -20,12 +20,12 @@
       "webkit": "webkit-2203",
       "firefox": "firefox-1490"
     },
-    "load1": 3.91748046875
+    "load1": 2.478515625
   },
   "advisory": {
     "cost": true,
     "reasons": [
-      "1-minute load is 3.92, pinned below 1"
+      "1-minute load is 2.48, pinned below 1"
     ]
   },
   "engines": [
@@ -49,26 +49,26 @@
             "label": "Commit over the required-work floor, unscrolled",
             "gate": "median of 5 per-run ratios <= 2",
             "unit": "ratio",
-            "median": 1.9453125313674617,
+            "median": 1.904318404481058,
             "blocked": false,
             "deciding": true,
             "pass": true,
             "perRun": [
-              1.9684030434508188,
-              2.0000000410359005,
-              1.9389179508052181,
-              1.9453125313674617,
-              1.930252776900828
+              1.9296610245516983,
+              1.8848080039863269,
+              1.9159445964781896,
+              1.904318404481058,
+              1.879660972018792
             ],
             "passPerRun": [
               true,
-              false,
+              true,
               true,
               true,
               true
             ],
             "worst": {
-              "run": 2
+              "run": 1
             }
           },
           {
@@ -76,26 +76,26 @@
             "label": "Commit over the required-work floor, scrolled 1.5 viewports",
             "gate": "median of 5 per-run ratios <= 2",
             "unit": "ratio",
-            "median": 1.9322328655551237,
+            "median": 1.9488734701440023,
             "blocked": false,
             "deciding": true,
             "pass": true,
             "perRun": [
-              1.9322328655551237,
-              2.0286210654833496,
-              1.919999993365744,
-              1.884843457705067,
-              1.9655781227615379
+              1.9488734701440023,
+              1.9193132219119802,
+              2.008007045990052,
+              1.923539529493628,
+              2.0129087037018114
             ],
             "passPerRun": [
               true,
+              true,
               false,
               true,
-              true,
-              true
+              false
             ],
             "worst": {
-              "run": 2
+              "run": 5
             }
           },
           {
@@ -157,16 +157,16 @@
             "label": "Steady frame at 300 nested movers (A-19 150+150)",
             "gate": "p95 <= 2 ms",
             "unit": "ms",
-            "median": 0.5299999713897705,
+            "median": 0.9500000476837158,
             "blocked": false,
             "deciding": true,
             "pass": true,
             "perRun": [
-              1.0799999237060547,
-              0.934999942779541,
-              0.4700000286102295,
-              0.5299999713897705,
-              0.45999979972839355
+              1.0399999618530273,
+              1.0550000667572021,
+              0.5100002288818359,
+              0.9449999332427979,
+              0.9500000476837158
             ],
             "passPerRun": [
               true,
@@ -176,7 +176,7 @@
               true
             ],
             "worst": {
-              "run": 1
+              "run": 2
             }
           },
           {
@@ -184,16 +184,16 @@
             "label": "Sustained 60 Hz commit script cost, 300 moving participants",
             "gate": "p95 of one performance.now() pair per 60 Hz commit <= 2 ms",
             "unit": "ms",
-            "median": 9.035000085830688,
+            "median": 8.190000057220459,
             "blocked": false,
             "deciding": true,
             "pass": false,
             "perRun": [
-              8.015000104904175,
-              9.035000085830688,
-              9.670000076293945,
-              9.144999980926514,
-              8.575000047683716
+              8.109999895095825,
+              8.25,
+              7.869999885559082,
+              9.410000085830688,
+              8.190000057220459
             ],
             "passPerRun": [
               false,
@@ -203,7 +203,7 @@
               false
             ],
             "worst": {
-              "run": 3
+              "run": 4
             }
           },
           {
@@ -271,16 +271,16 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.951323561036029,
-            "ratioScrolled": 1.9497017267603463,
-            "engineMedianUnscrolled": 5.712499976158142,
-            "floorMedianUnscrolled": 2.9275001287460327,
-            "engineMedianScrolled": 5.71750009059906,
-            "floorMedianScrolled": 2.932499885559082,
-            "steadyP95": 0.9049999713897705,
-            "sustainedP95": 8.194999933242798,
+            "ratioUnscrolled": 1.9417896597180737,
+            "ratioScrolled": 1.9427817639667748,
+            "engineMedianUnscrolled": 5.5874998569488525,
+            "floorMedianUnscrolled": 2.877500057220459,
+            "engineMedianScrolled": 5.517500042915344,
+            "floorMedianScrolled": 2.8399999141693115,
+            "steadyP95": 0.7850000858306885,
+            "sustainedP95": 8.105000019073486,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 60.02286871263606,
+            "sustainedCommitHz": 60.01812547664135,
             "floorAuditPass": true,
             "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
             "exactReadsPass": true,
@@ -324,16 +324,16 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.9684030434508188,
-            "ratioScrolled": 1.9322328655551237,
-            "engineMedianUnscrolled": 5.762499928474426,
-            "floorMedianUnscrolled": 2.927500009536743,
-            "engineMedianScrolled": 5.56000018119812,
-            "floorMedianScrolled": 2.877500057220459,
-            "steadyP95": 1.0799999237060547,
-            "sustainedP95": 8.015000104904175,
+            "ratioUnscrolled": 1.9296610245516983,
+            "ratioScrolled": 1.9488734701440023,
+            "engineMedianUnscrolled": 5.692500114440918,
+            "floorMedianUnscrolled": 2.950000047683716,
+            "engineMedianScrolled": 5.622499942779541,
+            "floorMedianScrolled": 2.884999990463257,
+            "steadyP95": 1.0399999618530273,
+            "sustainedP95": 8.109999895095825,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 60.02881383178421,
+            "sustainedCommitHz": 59.99238096773152,
             "floorAuditPass": true,
             "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
             "exactReadsPass": true,
@@ -377,16 +377,16 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 2.0000000410359005,
-            "ratioScrolled": 2.0286210654833496,
-            "engineMedianUnscrolled": 5.810000061988831,
-            "floorMedianUnscrolled": 2.9049999713897705,
-            "engineMedianScrolled": 5.8475000858306885,
-            "floorMedianScrolled": 2.882499933242798,
-            "steadyP95": 0.934999942779541,
-            "sustainedP95": 9.035000085830688,
+            "ratioUnscrolled": 1.8848080039863269,
+            "ratioScrolled": 1.9193132219119802,
+            "engineMedianUnscrolled": 5.644999980926514,
+            "floorMedianUnscrolled": 2.9950000047683716,
+            "engineMedianScrolled": 5.590000033378601,
+            "floorMedianScrolled": 2.9125001430511475,
+            "steadyP95": 1.0550000667572021,
+            "sustainedP95": 8.25,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 59.98074618024734,
+            "sustainedCommitHz": 60.029954946144144,
             "floorAuditPass": true,
             "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
             "exactReadsPass": true,
@@ -430,16 +430,16 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.9389179508052181,
-            "ratioScrolled": 1.919999993365744,
-            "engineMedianUnscrolled": 5.554999947547913,
-            "floorMedianUnscrolled": 2.865000009536743,
-            "engineMedianScrolled": 5.519999980926514,
-            "floorMedianScrolled": 2.875,
-            "steadyP95": 0.4700000286102295,
-            "sustainedP95": 9.670000076293945,
+            "ratioUnscrolled": 1.9159445964781896,
+            "ratioScrolled": 2.008007045990052,
+            "engineMedianUnscrolled": 5.5274999141693115,
+            "floorMedianUnscrolled": 2.8849998712539673,
+            "engineMedianScrolled": 5.642499923706055,
+            "floorMedianScrolled": 2.8100000619888306,
+            "steadyP95": 0.5100002288818359,
+            "sustainedP95": 7.869999885559082,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 60.00258010991471,
+            "sustainedCommitHz": 59.966478737470744,
             "floorAuditPass": true,
             "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
             "exactReadsPass": true,
@@ -483,16 +483,16 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.9453125313674617,
-            "ratioScrolled": 1.884843457705067,
-            "engineMedianUnscrolled": 5.602500081062317,
-            "floorMedianUnscrolled": 2.8799999952316284,
-            "engineMedianScrolled": 5.565000057220459,
-            "floorMedianScrolled": 2.9524998664855957,
-            "steadyP95": 0.5299999713897705,
-            "sustainedP95": 9.144999980926514,
+            "ratioUnscrolled": 1.904318404481058,
+            "ratioScrolled": 1.923539529493628,
+            "engineMedianUnscrolled": 5.622500061988831,
+            "floorMedianUnscrolled": 2.9524999856948853,
+            "engineMedianScrolled": 5.597499966621399,
+            "floorMedianScrolled": 2.909999966621399,
+            "steadyP95": 0.9449999332427979,
+            "sustainedP95": 9.410000085830688,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 59.966598606406265,
+            "sustainedCommitHz": 59.993580685836754,
             "floorAuditPass": true,
             "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
             "exactReadsPass": true,
@@ -536,16 +536,16 @@
               "poseWrites": 300,
               "extraReads": 0
             },
-            "ratioUnscrolled": 1.930252776900828,
-            "ratioScrolled": 1.9655781227615379,
-            "engineMedianUnscrolled": 5.534999966621399,
-            "floorMedianUnscrolled": 2.867500066757202,
-            "engineMedianScrolled": 5.567499995231628,
-            "floorMedianScrolled": 2.8324999809265137,
-            "steadyP95": 0.45999979972839355,
-            "sustainedP95": 8.575000047683716,
+            "ratioUnscrolled": 1.879660972018792,
+            "ratioScrolled": 2.0129087037018114,
+            "engineMedianUnscrolled": 5.544999957084656,
+            "floorMedianUnscrolled": 2.950000047683716,
+            "engineMedianScrolled": 5.847499966621399,
+            "floorMedianScrolled": 2.90500009059906,
+            "steadyP95": 0.9500000476837158,
+            "sustainedP95": 8.190000057220459,
             "sustainedCommits": 300,
-            "sustainedCommitHz": 59.97499042853372,
+            "sustainedCommitHz": 60.00678076691339,
             "floorAuditPass": true,
             "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
             "exactReadsPass": true,
@@ -564,97 +564,24 @@
       "notes": []
     }
   ],
-  "negativeControls": [
-    {
-      "name": "card-no-image-id",
-      "target": "G1",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "G1 = 176.00003051757812 at frame 68"
-    },
-    {
-      "name": "card-no-inert",
-      "target": "shape.inert",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "shape.inert = 36 at frame 0"
-    },
-    {
-      "name": "card-image-offset",
-      "target": "G1",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "G1 = 19.668289184570312 at frame 0"
-    },
-    {
-      "name": "card-focus-follower",
-      "target": "shape.focus",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "shape.focus = 36 at frame 0"
-    },
-    {
-      "name": "seg-rest-retarget",
-      "target": "G1",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "G1 = 75.5505621997111 at frame 6"
-    },
-    {
-      "name": "seg-jump-from-A",
-      "target": "G2",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "G2 = 146.98617553710938 at frame 5"
-    },
-    {
-      "name": "seg-leftover-pose",
-      "target": "G6",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "G6 = 2"
-    },
-    {
-      "name": "floor-extra-read",
-      "target": "G9.floor",
-      "expected": "fail",
-      "observed": "fail",
-      "conclusive": true,
-      "ok": true,
-      "detail": "extra reads 1"
-    }
-  ],
+  "negativeControls": [],
   "selfTests": {
     "pass": true,
     "controls": [
-      "negative control G1: a 0.1 px offset fails the oracle error (3.397083ms)",
-      "negative control G2: a 0.1 px first-frame jump fails continuity (3.379833ms)",
-      "negative control G3: starting a retarget from rest fails velocity continuity (3.220875ms)",
-      "negative control G4: a 0.1 px spring displacement fails spring fidelity (2.277375ms)",
-      "negative control G5: a leftover pose and a 0.02 px settle error fail (2.478667ms)",
-      "negative control G6: a leftover declaration fails restoration (2.156416ms)",
-      "negative control G7: a wrong status or a wrong snapped set fails reports (4.025541ms)",
-      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.282375ms)",
-      "negative control G9: a floor with an extra read fails its audit (0.353417ms)",
-      "negative control G10 and G11: a p95 above 2 ms fails (0.143542ms)",
-      "negative control G12: 0.11 ms per held element fails (0.0995ms)",
-      "negative control G13: an extra rect or a steady-frame read fails (3.891458ms)",
-      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.170333ms)",
-      "shape negative controls: opacity, coverage, radius, inert and font fail (116.330375ms)"
+      "negative control G1: a 0.1 px offset fails the oracle error (3.29825ms)",
+      "negative control G2: a 0.1 px first-frame jump fails continuity (3.338666ms)",
+      "negative control G3: starting a retarget from rest fails velocity continuity (3.164083ms)",
+      "negative control G4: a 0.1 px spring displacement fails spring fidelity (2.133042ms)",
+      "negative control G5: a leftover pose and a 0.02 px settle error fail (2.288417ms)",
+      "negative control G6: a leftover declaration fails restoration (2.100708ms)",
+      "negative control G7: a wrong status or a wrong snapped set fails reports (4.371875ms)",
+      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.301667ms)",
+      "negative control G9: a floor with an extra read fails its audit (0.36375ms)",
+      "negative control G10 and G11: a p95 above 2 ms fails (0.159208ms)",
+      "negative control G12: 0.11 ms per held element fails (0.09475ms)",
+      "negative control G13: an extra rect or a steady-frame read fails (3.73975ms)",
+      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.172458ms)",
+      "shape negative controls: opacity, coverage, radius, inert and font fail (115.646791ms)"
     ],
     "files": [
       "bench/layout/oracle.test.ts",
@@ -688,13 +615,14 @@
       "required scene s-card not selected",
       "required scene s-seg not selected",
       "cost fingerprint is advisory",
+      "negative controls failed or were not run",
       "pending S-REORDER: P4 (take/move/release drive seam not in the base tree)",
       "pending S-SHEET: P4 (drive seam not in the base tree)",
       "pending S-BULK: P4 (held shape G12; take/move/release not in the base tree)",
       "chromium scene s-card missing",
       "chromium scene s-seg missing",
       "chromium S-BULK cost pending",
-      "chromium S-BULK G11 9.035 failed",
+      "chromium S-BULK G11 8.190 failed",
       "required engine webkit has no report"
     ],
     "requiredEngines": [
