@@ -6,9 +6,10 @@ import {
     commitRatioGate,
     floorAuditGate,
     heldGate,
+    heldIncrementalGate,
     realClockGate,
     steadyFrameGate,
-    sustainedGate,
+    sustainedRatioGate,
 } from './gates.ts'
 import { type Box, settleOfBox, trackState, zeroBoxVelocity } from './oracle.ts'
 import {
@@ -422,15 +423,31 @@ test('negative control G9: a floor with an extra read fails its audit', () => {
     assert.ok(ratio.value > 2)
 })
 
-test('negative control G10 and G11: a p95 above 2 ms fails', () => {
+test('negative control G10 and G11: a p95 above 2 ms or 2x floor fails', () => {
     assert.equal(steadyFrameGate([1, 1, 2.1], 0.01).pass, false)
-    assert.equal(sustainedGate([1, 1, 2.2], 0.01).pass, false)
+    assert.equal(
+        sustainedRatioGate([1, 1, 2.2], [1, 1, 1], true, 0).pass,
+        false
+    )
+    assert.equal(sustainedRatioGate([1, 1, 1.9], [1, 1, 1], true, 0).pass, true)
+    assert.equal(
+        sustainedRatioGate([1, 1, 1.9], [1, 1, 1], false, 0).pass,
+        false
+    )
     assert.equal(steadyFrameGate([1, 1, 1.9], 0.01).pass, true)
 })
 
 test('negative control G12: 0.11 ms per held element fails', () => {
     assert.equal(heldGate([0.11, 0.11, 0.11], 1, 0.01).pass, false)
     assert.equal(heldGate([0.05, 0.05], 1, 0.01).pass, true)
+    assert.equal(
+        heldIncrementalGate([0.51, 0.51], [0.4, 0.4], 1, 0.01).pass,
+        false
+    )
+    assert.equal(
+        heldIncrementalGate([0.45, 0.45], [0.4, 0.4], 1, 0.01).pass,
+        true
+    )
 })
 
 test('negative control G13: an extra rect or a steady-frame read fails', () => {

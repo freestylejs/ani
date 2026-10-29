@@ -109,6 +109,8 @@ export interface LayoutStats {
     readonly offsets: number
     /** Computed-style reads. */
     readonly styles: number
+    /** `offsetLeft`/`offsetTop` layout reads (held rebase/support). */
+    readonly layoutOffsets: number
     /** Anchoring probes (§11.4 S2): one write, one reflow, one `scrollTop` read each. */
     readonly probes: number
     /** `offsetParent` reads of the viewport-fixed test (§5.8). */

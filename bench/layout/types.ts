@@ -60,6 +60,8 @@ export interface CommitObservation {
     readonly rects: number
     readonly offsets: number
     readonly styles: number
+    /** `offsetLeft`/`offsetTop` layout reads in this commit (H18-F F4). */
+    readonly layoutOffsets?: number | undefined
     readonly probes: number
     readonly parents: number
     /** Largest `stats.reads` delta observed after any frame since the last commit. */
@@ -209,6 +211,9 @@ export interface FrameCost {
 
 export interface HeldFrameProbe {
     readonly samples: readonly number[]
+    /** No-hold frames for the same scene, DOM and clock shape (D11). */
+    readonly baselineSamples: readonly number[]
+    readonly baselineP95: number
     readonly g: number
     /** The §5.10 held read: one rect per live hold, zero offsets/styles. */
     readonly reads: {
@@ -464,8 +469,12 @@ export interface HeldShapeRun {
     readonly held: number
     /** Raw per-frame samples (600 frames). */
     readonly samples: readonly number[]
+    /** Raw no-hold frame samples for the same DOM and clock shape. */
+    readonly baselineSamples: readonly number[]
     readonly p95: number
-    readonly perHeld: number
+    readonly baselineP95: number
+    /** D11: (held p95 - baseline p95) / held. */
+    readonly incrementalPerHeld: number
     readonly g: number
     /** G13: one rect per held element per frame, zero offsets/styles. */
     readonly reads: {
@@ -521,17 +530,41 @@ export interface CostTrace {
         readonly costs: readonly number[]
         readonly g: number
         readonly refreshHz: number
+        /** `frame`: one pair per rAF frame; `batch20`: one interval per 20 frames. */
+        readonly sampleMode: 'frame' | 'batch20'
+        readonly errorBound: number
     }
     readonly sustained: {
         /** One performance.now() pair around each 60 Hz commit. */
         readonly commitCosts: readonly number[]
+        /** One performance.now() pair around each floor replica commit. */
+        readonly floorCosts: readonly number[]
         /** rAF frame costs; diagnostic only when the refresh is below 60 Hz. */
         readonly frameCosts: readonly number[]
         readonly g: number
+        /** `commit`: one pair per commit; `quantized`: raw pairs at g > 0.05 ms. */
+        readonly sampleMode: 'commit' | 'quantized'
+        /** Worst per-sample error bound under the timer mode. */
+        readonly errorBound: number
         readonly commits: number
         readonly refreshHz: number
         readonly durationMs: number
         readonly commitHz: number
+        readonly engineAudit: {
+            readonly rects: number
+            readonly offsets: number
+            readonly styleReads: number
+            readonly poseWrites: number
+        }
+        readonly floorAudit: {
+            readonly captureRects: number
+            readonly captureOffsets: number
+            readonly flushRects: number
+            readonly flushOffsets: number
+            readonly styleReads: number
+            readonly poseWrites: number
+            readonly extraReads: number
+        }
     }
     readonly exactReads: readonly {
         readonly label: string

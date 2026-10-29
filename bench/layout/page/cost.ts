@@ -3,10 +3,11 @@
  * nested labels; 300 movers = 150 moving tiles + their 150 labels. The floor
  * includes §4.3 step 2 computed reads for the active nodes, and both fixtures
  * are reset to rest between samples. WebKit's 1 ms timer makes G9/G11
- * non-deciding; the report returns BLOCK, not a fabricated ratio.
+ * non-deciding; G10 uses real-clock 20-frame batches. The report returns
+ * BLOCK for G9/G11, not a fabricated ratio.
  */
 
-import { timing } from '@freestylejs/ani-core'
+import { createClock, timing } from '@freestylejs/ani-core'
 import { createLayoutGroup, type LayoutGroup } from '@freestylejs/ani-layout'
 import { median, percentile } from '../stats.ts'
 import type {
@@ -475,8 +476,15 @@ function refreshRate(frames: readonly { at: number }[]): number {
 }
 
 async function measureSteady(
-    sampler: ReturnType<typeof installRafSampler>
-): Promise<{ costs: number[]; refreshHz: number }> {
+    sampler: ReturnType<typeof installRafSampler>,
+    g: number
+): Promise<{
+    costs: number[]
+    refreshHz: number
+    sampleMode: 'frame' | 'batch20'
+    errorBound: number
+}> {
+    if (g > 0.05) return measureSteadyBatch(g)
     const fixture = buildBulk(false, false)
     // A-19 nesting: 150 tiles + 150 labels. A 10 s linear track keeps all 600
     // samples active; the motion duration is a scene contribution, the shape
@@ -498,7 +506,99 @@ async function measureSteady(
     group.finish()
     group.dispose()
     fixture.dispose()
-    return { costs, refreshHz: refreshRate(window) }
+    return {
+        costs,
+        refreshHz: refreshRate(window),
+        sampleMode: 'frame',
+        errorBound: g / 2,
+    }
+}
+
+/**
+ * §11.5 coarse-timer protocol: one sample is the mean of 20 consecutive
+ * frames timed as one `performance.now()` interval. A real rAF tick starts
+ * each batch; the 20 engine frame callbacks then run back-to-back on the real
+ * clock, so the interval contains their script work and no display idle.
+ * 30 samples cover 600 frames. This is a frame-sample protocol only; it cannot
+ * be used for a 60 Hz commit cadence.
+ */
+async function measureSteadyBatch(g: number): Promise<{
+    costs: number[]
+    refreshHz: number
+    sampleMode: 'batch20'
+    errorBound: number
+}> {
+    const fixture = buildBulk(false, false)
+    const batch = createRealClockBatcher()
+    const group = createLayoutGroup({
+        clock: batch.clock,
+        motion: { type: 'timing', duration: 10, timing: timing.linear() },
+        reducedMotion: 'ignore',
+        maxNodes: 300,
+        maxParticipants: 2000,
+    })
+    engineAdd(group, fixture)
+    group.update((() => mutateBulk(fixture, true)) as () => void)
+    const costs: number[] = []
+    for (let i = 0; i < 30; i++) {
+        await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => {
+                const before = performance.now()
+                batch.frames(20)
+                costs.push((performance.now() - before) / 20)
+                resolve()
+            })
+        })
+    }
+    group.finish()
+    group.dispose()
+    batch.clock.dispose()
+    fixture.dispose()
+    return {
+        costs,
+        // A batch spans 20 engine frame callbacks, not 20 display frames.
+        refreshHz: 0,
+        sampleMode: 'batch20',
+        errorBound: g / 20,
+    }
+}
+
+/**
+ * A real clock whose frame callbacks are queued instead of being handed to
+ * the browser. `frames(n)` runs n callbacks back-to-back, which is the
+ * unquantized 20-frame interval the coarse-timer protocol times.
+ */
+function createRealClockBatcher(): {
+    readonly clock: ReturnType<typeof createClock>
+    frames(count: number): void
+} {
+    let nextId = 1
+    const queue = new Map<number, (timestamp: number) => void>()
+    const clock = createClock({
+        reducedMotion: false,
+        visibility: false,
+        now: () => performance.now(),
+        requestFrame: (callback) => {
+            const id = nextId
+            nextId += 1
+            queue.set(id, callback)
+            return id
+        },
+        cancelFrame: (id) => {
+            queue.delete(id)
+        },
+    })
+    return {
+        clock,
+        frames(count: number) {
+            for (let i = 0; i < count; i++) {
+                const callbacks = [...queue.values()]
+                queue.clear()
+                const timestamp = performance.now()
+                for (const callback of callbacks) callback(timestamp)
+            }
+        },
+    }
 }
 
 function buildSustainedFixture(): BulkFixture {
@@ -506,16 +606,23 @@ function buildSustainedFixture(): BulkFixture {
 }
 
 async function measureSustained(
-    sampler: ReturnType<typeof installRafSampler>
+    sampler: ReturnType<typeof installRafSampler>,
+    g: number
 ): Promise<{
     commitCosts: number[]
+    floorCosts: number[]
     frameCosts: number[]
     commits: number
     refreshHz: number
     durationMs: number
     commitHz: number
+    sampleMode: 'commit' | 'quantized'
+    errorBound: number
+    engineAudit: CostRun['engineAudit']
+    floorAudit: CostRun['floorAudit']
 }> {
     const fixture = buildSustainedFixture()
+    const participants = fixture.participants.length
     const group = createLayoutGroup({
         motion: BULK_MOTION,
         reducedMotion: 'ignore',
@@ -524,11 +631,19 @@ async function measureSustained(
     })
     engineAdd(group, fixture)
     await nextFrame()
+    // Five discarded sustained commits, as the G9 fixtures and the floor
+    // replica use; they warm the commit path but are not in the window.
+    let warmToggle = false
+    for (let i = 0; i < 5; i++) {
+        await nextFrame()
+        warmToggle = !warmToggle
+        group.update((() => mutateBulk(fixture, warmToggle)) as () => void)
+    }
     const start = performance.now()
     const frameStart = sampler.frames.length
     const commitCosts: number[] = []
     let commits = 0
-    let toggle = false
+    let toggle = warmToggle
     // 60 Hz commits. One performance.now() pair per commit: this is the
     // commit script cost, not a 30 Hz rAF frame made of two commits.
     const commitLoop = (async () => {
@@ -549,20 +664,86 @@ async function measureSustained(
     })()
     while (performance.now() < start + 7000 && commits < 300) await nextFrame()
     await commitLoop
+    const durationMs = performance.now() - start
     const frames = sampler.frames
         .slice(frameStart)
         .filter((frame) => frame.at >= start && frame.at <= start + 5000)
+    // One instrumented sustained engine commit audits the exact read/write
+    // counts of the 1,000-participant shape, as G9 does. Finish the running
+    // tracks first so the audited commit starts all 300 movers again; a
+    // sustained retarget after 5 s has some tracks already settled.
+    group.finish()
+    const engineInstrumentation = startInstrumentation()
+    group.update((() => mutateBulk(fixture, !toggle)) as () => void)
+    const engineCounted = engineInstrumentation.stop()
+    const engineAudit = {
+        rects: engineCounted.rects,
+        offsets: engineCounted.offsetReads / 2,
+        styleReads: engineCounted.styleReads,
+        poseWrites: engineCounted.poseWrites / 2,
+    }
     group.finish()
     group.dispose()
     fixture.dispose()
-    const durationMs = performance.now() - start
+
+    // The floor replica runs the same 1,000-participant DOM, the same
+    // mutation and exactly the required reads/writes at the same 60 Hz
+    // cadence. It is measured after the engine in the same process, with the
+    // same warm-up and sample count.
+    const floorFixture = buildSustainedFixture()
+    await nextFrame()
+    const typedOM = isWebKitEngine()
+    let floorToggle = false
+    for (let i = 0; i < 5; i++) {
+        await nextFrame()
+        floorCommit(floorFixture, floorToggle, typedOM)
+        floorToggle = !floorToggle
+        resetFloorPoses(floorFixture)
+    }
+    const floorCosts: number[] = []
+    const floorStart = performance.now()
+    let floorNext = floorStart
+    for (let i = 0; i < 300; i++) {
+        while (performance.now() < floorNext) await waitMs(1)
+        floorToggle = !floorToggle
+        const before = performance.now()
+        floorCommit(floorFixture, floorToggle, typedOM)
+        floorCosts.push(performance.now() - before)
+        resetFloorPoses(floorFixture)
+        floorNext += 1000 / 60
+        const now = performance.now()
+        if (floorNext < now) floorNext = now + 1000 / 60
+    }
+    const floorInstrumentation = startInstrumentation()
+    const floorAudit = floorCommit(floorFixture, false, typedOM)
+    const floorCounted = floorInstrumentation.stop()
+    resetFloorPoses(floorFixture)
+    floorFixture.dispose()
+    const totalRects = floorAudit.captureRects + floorAudit.flushRects
+    const totalOffsets = floorAudit.captureOffsets + floorAudit.flushOffsets
+    if (
+        floorCounted.rects !== totalRects + floorAudit.extraReads ||
+        floorCounted.offsetReads !== totalOffsets * 2 ||
+        floorCounted.styleReads !== floorAudit.styleReads ||
+        floorCounted.poseWrites !== floorAudit.poseWrites * 2
+    ) {
+        throw new Error(
+            `sustained floor audit instrumentation mismatch: rects ${floorCounted.rects}/${totalRects + floorAudit.extraReads}, offsets ${floorCounted.offsetReads}/${totalOffsets * 2}, styles ${floorCounted.styleReads}/${floorAudit.styleReads}, pose declarations ${floorCounted.poseWrites}/${floorAudit.poseWrites * 2}`
+        )
+    }
     return {
+        participants,
         commitCosts,
+        floorCosts,
         frameCosts: frames.map((frame) => frame.ms),
         commits,
         refreshHz: refreshRate(frames),
         durationMs,
         commitHz: commits / (durationMs / 1000),
+        sampleMode: g <= 0.05 ? 'commit' : 'quantized',
+        errorBound: g <= 0.05 ? g / 2 : g / 2,
+        engineAudit,
+        floorAudit,
     }
 }
 
@@ -585,6 +766,21 @@ async function measureHeld(
     })
     engineAdd(group, fixture)
     await nextFrame()
+    await nextFrame()
+    // The same normal scene work as the held window: all 300 movers running.
+    group.update((() => mutateBulk(fixture, true)) as () => void)
+    await nextFrame()
+    // D11: the same DOM and clock shape with no hold. This is the scene's
+    // ordinary-frame baseline, measured before the held window.
+    const baselineStart = sampler.frames.length
+    for (let i = 0; i < 600; i++) await nextFrame()
+    const baselineSamples = sampler.frames
+        .slice(baselineStart, baselineStart + 600)
+        .map((frame) => frame.ms)
+    const baselineP95 = percentile(baselineSamples, 0.95)
+    // Keep the same normal mover work in the held window: a fresh commit
+    // starts all 300 tracks again after the baseline settled.
+    group.update((() => mutateBulk(fixture, true)) as () => void)
     await nextFrame()
     const handles = fixture.movingTiles
         .slice(0, heldCount)
@@ -636,8 +832,10 @@ async function measureHeld(
     return {
         held: heldCount,
         samples,
+        baselineSamples,
         p95,
-        perHeld: p95 / heldCount,
+        baselineP95,
+        incrementalPerHeld: (p95 - baselineP95) / heldCount,
         g,
         reads,
         releaseClean,
@@ -650,10 +848,12 @@ export async function runCostShapes(): Promise<CostTrace> {
     const typedOM = isWebKitEngine()
     const sampler = installRafSampler()
     try {
+        // The sustained shape is measured first, on the least disturbed heap;
+        // the G9 shapes and the steady probe follow in the same fresh process.
+        const sustained = await measureSustained(sampler, g)
         const unscrolled = await measureEngineBulk(false, false, typedOM)
         const scrolled = await measureEngineBulk(true, true, typedOM)
-        const steady = await measureSteady(sampler)
-        const sustained = await measureSustained(sampler)
+        const steady = await measureSteady(sampler, g)
         const heldOne = await measureHeld(1, g, sampler)
         const heldTen = await measureHeld(10, g, sampler)
         sampler.stop()
@@ -664,15 +864,26 @@ export async function runCostShapes(): Promise<CostTrace> {
             typedOM,
             unscrolled,
             scrolled,
-            steady: { costs: steady.costs, g, refreshHz: steady.refreshHz },
+            steady: {
+                costs: steady.costs,
+                g,
+                refreshHz: steady.refreshHz,
+                sampleMode: steady.sampleMode,
+                errorBound: steady.errorBound,
+            },
             sustained: {
                 commitCosts: sustained.commitCosts,
+                floorCosts: sustained.floorCosts,
                 frameCosts: sustained.frameCosts,
                 g,
+                sampleMode: sustained.sampleMode,
+                errorBound: sustained.errorBound,
                 commits: sustained.commits,
                 refreshHz: sustained.refreshHz,
                 durationMs: sustained.durationMs,
                 commitHz: sustained.commitHz,
+                engineAudit: sustained.engineAudit,
+                floorAudit: sustained.floorAudit,
             },
             exactReads: [
                 ...unscrolled.engineSamples.map((sample, index) => ({

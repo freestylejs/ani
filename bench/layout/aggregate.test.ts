@@ -96,6 +96,81 @@ test('N2: a deciding metric with any non-finite run fails and is NaN', () => {
     assert.equal(metrics[0]!.blocked, true)
 })
 
+test('S2-3: a median-aggregated ratio passes on the literal five-run median, not a majority', () => {
+    const ratio = (value: number, pass = value <= 2): MetricFinding => ({
+        id: 'G11',
+        label: 'sustained',
+        gate: 'median of 5 per-run ratios <= 2',
+        unit: 'ratio',
+        value,
+        pass,
+        aggregate: 'median',
+        aggregateLimit: 2,
+    })
+    const metrics = aggregateFindings(
+        [
+            [ratio(3, false)],
+            [ratio(3, false)],
+            [ratio(1.9)],
+            [ratio(1.9)],
+            [ratio(1.9)],
+        ],
+        [1, 2, 3, 4, 5]
+    )
+    assert.equal(metrics[0]!.median, 1.9)
+    assert.equal(metrics[0]!.pass, true)
+    assert.deepEqual(metrics[0]!.passPerRun, [false, false, true, true, true])
+})
+
+test('S2-3: a blocked run fails a median-aggregated ratio even when its value passes', () => {
+    const ratio = (value: number, blocked: boolean): MetricFinding => ({
+        id: 'G11',
+        label: 'sustained',
+        gate: 'median of 5 per-run ratios <= 2',
+        unit: 'ratio',
+        value: blocked ? Number.NaN : value,
+        pass: !blocked && value <= 2,
+        blocked,
+        deciding: !blocked,
+        aggregate: 'median',
+        aggregateLimit: 2,
+    })
+    const metrics = aggregateFindings(
+        [
+            [ratio(0.5, false)],
+            [ratio(0.5, false)],
+            [ratio(0.5, false)],
+            [ratio(0.5, false)],
+            [ratio(1.5, true)],
+        ],
+        [1, 2, 3, 4, 5]
+    )
+    assert.equal(metrics[0]!.pass, false)
+    assert.equal(metrics[0]!.blocked, true)
+    assert.ok(Number.isNaN(metrics[0]!.median))
+    assert.deepEqual(metrics[0]!.passPerRun, [true, true, true, true, false])
+})
+
+test('a finite non-deciding probe stays reporting-only and does not fail a scene', () => {
+    const probe = (value: number): MetricFinding => ({
+        id: 'G9.probe',
+        label: 'probe',
+        gate: 'non-deciding',
+        unit: 'ratio',
+        value,
+        pass: true,
+        measured: true,
+        deciding: false,
+    })
+    const metrics = aggregateFindings(
+        [[probe(1.2)], [probe(1.3)], [probe(1.1)], [probe(1.2)], [probe(1.2)]],
+        [1, 2, 3, 4, 5]
+    )
+    assert.equal(metrics[0]!.deciding, false)
+    assert.equal(metrics[0]!.pass, true)
+    assert.equal(metrics[0]!.blocked, false)
+})
+
 function runReport(pass: boolean, problems: readonly string[]): RunSceneReport {
     return {
         scene: 's-test',

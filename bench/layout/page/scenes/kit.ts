@@ -399,6 +399,7 @@ export function recordCommit(options: CommitOptions): CommitResult {
     let rects: number
     let offsets: number
     let styles: number
+    let layoutOffsets = 0
     if (auditCounts) {
         rects = Math.max(0, auditCounts.rects - auditCounts.presenceRects)
         offsets = auditCounts.offsets
@@ -413,6 +414,7 @@ export function recordCommit(options: CommitOptions): CommitResult {
         rects = statsAfter.rects - statsBefore.rects
         offsets = statsAfter.offsets - statsBefore.offsets
         styles = statsAfter.styles - statsBefore.styles
+        layoutOffsets = statsAfter.layoutOffsets - statsBefore.layoutOffsets
     } else {
         throw new Error('recordCommit needs stats or an audit')
     }
@@ -424,6 +426,7 @@ export function recordCommit(options: CommitOptions): CommitResult {
         rects,
         offsets,
         styles,
+        layoutOffsets,
         probes:
             statsBefore && options.stats
                 ? options.stats().probes - statsBefore.probes

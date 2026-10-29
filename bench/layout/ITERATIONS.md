@@ -1272,3 +1272,41 @@ scene has the exemption.
   `pending` is empty.
 - The H16 scene assertion fix for S-PHOTO is valid on this base: the real twin
   records actual diagnostics (zero) and the manual/real stale path is gone.
+
+## Iteration 10 — H17 D10/D11 on the H18/H16 base
+
+- Branch `helper/h17`, merge `b7ead0f` on main `3c24925` (H18 engine A–F,
+  H16 scenes/assertion fix, H15 scene set). No gate, tolerance, row or
+  `knownFailure` was weakened.
+- D10 is implemented as a literal median of five per-run
+  `p95(engine commits) / p95(floor commits)` ratios. The floor is the same
+  1,000-participant/300-mover replica with 5 warm-ups + 300 60 Hz samples and
+  the exact read audit. D11 G12 is the baseline-subtracted incremental:
+  `(p95(held) − p95(no-hold)) / held` at 1 and 10 held on S-BULK, and the
+  1-held S-REORDER/S-SHEET shape.
+- Chromium full report (`iteration-9/chromium.json`, source `66c2a94`, load
+  5.78, five runs): all 11 scenes pass; G9 1.823× unscrolled / 1.796× scrolled pass; G10 0.980 ms pass; G13/G13-held exact; G12-1 −0.170 and
+  G12-10 −0.004 incremental ms/held pass; **G11 2.118× FAIL** (per-run
+  2.096/2.621/2.104/2.151/2.118, floor audit exact). G11 remains open; the cost is advisory.
+- WebKit full report (`iteration-9/webkit.json`, source `66c2a94`, load 5.84):
+  S-CARD/S-SEG/S-PHOTO/S-STACK/S-ISLAND/S-ACC/S-INSERT/S-DELETE/S-BULK pass;
+  S-REORDER/S-SHEET blocked only on the G12 1 ms timer bound (D12 cost
+  advisory); their frame/status rows pass; G10 0.200 ms pass with the real-clock 20-frame batch;
+  G9/G11/G12 BLOCK with no gate value; G13/floor exact.
+- D12: `certification.advisory` records the WebKit cost/G12 BLOCKs and
+  `certification.reasons` does not; Chromium G9/G11/G12 still decide, and
+  every WebKit frame/scoring/shape/status row remains required. The D12 unit
+  cases cover WebKit cost advisory, a WebKit frame failure, and a non-cost
+  WebKit scene block.
+- H18-F F4: `offsetLeft`/`offsetTop` held reads are counted in
+  `stats.layoutOffsets` and included in `stats.reads`; G13 print describes
+  the count. No hidden layout read.
+- H17b/H18 behavior fixes and the full H15/H16 scene set are preserved. The
+  H18 engine A–F fixes make S-PHOTO/S-ACC/S-REORDER frame gates pass on
+  Chromium; WebKit S-REORDER/S-SHEET cost G12 BLOCKs are D12 advisory; their frame
+  rows pass.
+
+Residual: G11 is 2.118× (advisory load, open); no performance-complete
+claim.
+WebKit G9/G11/G12 cannot be decided with the 1 ms timer; no quantized ratio is
+presented as a pass or failure.
