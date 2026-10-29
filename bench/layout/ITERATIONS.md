@@ -1037,3 +1037,93 @@ control is 0.11 ms/held.
    commits only. The p5 spec's release row needs an authority/API decision.
 7. Firefox remains advisory (D9 launch timeout). DPR 1/3 and reduced-motion
    variants remain P5c evidence outside this iteration.
+
+## Iteration 7 — H16 fix round: measured release continuity, blocked rows and detent policy
+
+- Worktree: `ani-h16`, branch `helper/h16`, base `7cd1e44` (H16 iteration 6);
+  no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-7/report.json`
+- Report: `bench/layout/iteration-7/report.json`; log:
+  `bench/layout/iteration-7/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **1.99**; cost fingerprint **advisory**. The frame
+  gates still decide.
+- Self-tests: **81/81, 14 controls**. Browser controls: **74 (37 per engine),
+  all ok, 68 conclusive, 6 inconclusive** (the two contaminated photo/acc G1
+  controls and `reorder-no-rebase` on each engine).
+
+### F-ledger
+
+| ID | Fix | Result |
+|---|---|---|
+| F8 | Release-frame continuity is measured: `HoldEvidence.releaseBox` against the next frame for the held node and its riders; the release G3 is BLOCK/authority because the pre-release velocity is the gesture estimate, not an analytic layout track. | S-REORDER G2 **88 px fail** (title-1, frame 11); S-SHEET G2 0.0000. G3 BLOCK in both scenes. |
+| F9 | The `reorder-extra-read` control captures **inside** the measured frame, after the `before` snapshot; the browser control is conclusive by the isolated G13 delta. | G13 = 34 vs primary 6 (`isolated delta 34 > primary 6`). |
+| F11 | A blocked required metric no longer passes a scene: the scene status is `blocked`, the report has a top-level `blocked` list, and certification names it. | WebKit S-SHEET **BLOCKED** (G3, G7, G12); Chromium S-SHEET fail on G12. |
+| F12 | S-REORDER reorder status rows are marked BLOCK/authority (A-13 `ended` vs p5 `interrupted`); G7 does not claim exact. | G7 BLOCK, observed statuses `ended` at frames 28/31/35. |
+| F13 | S-SHEET release rows are BLOCK/authority because `release()` has no public `LayoutReport`; G7 does not claim exact. | G7 BLOCK for `release-1` and `release-2`. |
+| F10 | The nested title is a release **rider**: expected at the row's release track + (66, 10), with no own release velocity; G5 uses the rider target. | G5 0; the title no longer has its own 900 px/s spring. G1 title 96 and G4 row 60 remain the engine defects. |
+| F14 | S-SHEET computes `projected = top + v·0.20`, nearest of {124, 422, 844}; the second take is ≥1 s after the first release. The second hold is 16 ms (uniform manual step); the 20 ms spec row is explicitly amended. | First release projects 2 → large 124; second projects 744 → dismissed 844; the scene's 1 s wait is recorded. |
+| F16 | The stale G9/G11 text in the README report example is corrected. | **2.688 / 2.694** G9 and **8.495 ms** G11. |
+| F15 | WebKit's 1 ms timer makes the 20-frame mean unclaimable; cost/G12 are BLOCK, not a measured pass. | WebKit cost BLOCK; top-level blocked list and certification reasons. |
+| F18 | Biome is reported honestly; DPR 1/3 and reduced-motion variants are P5c BLOCK. | **810 infos, 0 errors, 0 warnings** (not "clean"); DPR/reduced in the top-level blocked list. |
+
+### Scene and metric table (5 measured runs; median)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1 oracle | **FAIL 96.0000 px** (title-1, frame 3) | **FAIL 96.0000 px** |
+| S-REORDER | G2 release continuity | **FAIL 88.0000 px** (title-1, frame 11, release first frame) | **FAIL 88.0000 px** |
+| S-REORDER | G3 | **BLOCK/authority** (gesture release) | **BLOCK/authority** |
+| S-REORDER | G4 spring | **FAIL 60.0000 px** (row-1, frame 11) | **FAIL 60.0000 px** |
+| S-REORDER | G5/G6 | pass 0 / 0 | pass 0 / 0 |
+| S-REORDER | G7 | **BLOCK/authority** (A-13 ended vs p5 interrupted; no release report) | **BLOCK/authority** |
+| S-REORDER | G8 | 0.440 ms pass | 1.000 ms pass |
+| S-REORDER | G12 scene | **FAIL 0.295 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-REORDER | G13 | **FAIL 6** (held support read; commit 28/28, 8/8) | **FAIL 6** (16/16 computed) |
+| S-REORDER | G13-held / shape.hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G4 | pass 0.0000825 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0.0000871 |
+| S-SHEET | G3/G7 | **BLOCK/authority** (release velocity/report) | **BLOCK/authority** |
+| S-SHEET | G5/G6 | pass 0 / 0 (1 removal proof) | pass 0 / 0 |
+| S-SHEET | G8 | 0.265 ms pass | 1.000 ms pass |
+| S-SHEET | G12 scene | **FAIL 0.275 ms/held** (one run 0.090, four 0.210–0.315) | BLOCK 1 ms (non-deciding) |
+| S-SHEET | G13 / G13-held / shape.hold | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-BULK | G1/G4 | pass 0.0000848 | pass 0.0000848 |
+| S-BULK | G2/G3/G5/G6/G7 | pass 0 / 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 / 0 |
+| S-BULK | G8 | 1.125 ms pass (48 frames) | 2.000 ms pass |
+| S-BULK | G13 | pass 0 (2000/2000, 300/300) | pass 0 (2000/2000, 600/600) |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **FAIL 2.960 / 2.808** | BLOCK (raw 2.000 / 2.333) |
+| S-BULK cost | G10 | pass 1.040 ms | BLOCK (raw 2.000) |
+| S-BULK cost | G11 | **FAIL 8.940 ms** | BLOCK (raw 8.000) |
+| S-BULK cost | G12-1 / G12-10 | **FAIL 0.390 / pass 0.058** | BLOCK (raw 1.000 / 0.100) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Controls and certification
+
+- 74 browser controls, 37 per engine, all ok; **68 conclusive, 6
+  inconclusive** (photo/acc G1 ×2 and `reorder-no-rebase` ×2). The
+  `reorder-extra-read` control is now conclusive by the isolated G13 delta
+  (34 vs the primary 6); `held-extra-read` fails G13-held (11/10).
+- `certified: false`; the report's top-level `blocked` list names
+  `webkit scene s-sheet` (G3/G7/G12), `webkit S-BULK cost` (1 ms timer), the
+  DPR 1/3 sweep and the reduced-motion variants. Certification reasons also
+  include S-PHOTO/S-ACC/S-REORDER/S-SHEET failures, Chromium S-BULK cost
+  failures (G9 2.960/2.808, G11 8.940, G12-1 0.390) and the WebKit cost
+  BLOCK. `pending` is empty.
+- S-SHEET is **BLOCKED** on WebKit, not pass; Chromium S-SHEET fails G12 and
+  is BLOCK on G3/G7. The scene's measured interaction rows (G1/G2/G4/G5/G6/
+  G8/G13) pass; the detent policy and 1 s second take are implemented.
+
+### Residual risks
+
+1. S-REORDER engine defects: held rebase (+60 px after a reorder) and nested
+   title double-`h` (G1 96 px); release first-frame jump (G2 88 px); release
+   spring (G4 60 px); held support read (G13 6). H18, not this harness.
+2. G12 1-held fixed cost; the 10-held shape passes.
+3. S-PHOTO/S-ACC H18 defects unchanged.
+4. WebKit 1 ms timer: G9–G12 BLOCK; no 20-frame mean claimed.
+5. S-BULK G9/G11 remain above the gate.
+6. DPR/reduced variants and Firefox remain BLOCK/advisory.
