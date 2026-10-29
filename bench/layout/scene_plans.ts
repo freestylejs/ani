@@ -45,6 +45,17 @@ function commitFrame(trace: SceneTrace, label: string): number {
     return commit.frame
 }
 
+/** The frame of a scripted flush event (a release has no engine commit). */
+function flushFrame(trace: SceneTrace, label: string): number {
+    const flush = trace.observations.find(
+        (observation) =>
+            observation.kind === 'flush' && observation.commitLabel === label
+    )
+    if (!flush)
+        throw new Error(`scene ${trace.scene}: no flush event "${label}"`)
+    return flush.frame
+}
+
 function cardPairs(
     frame: number,
     reversal: boolean,
@@ -869,6 +880,311 @@ export function insertPlan(trace: SceneTrace): ScenePlan {
         authorStyleKeys: ['new-0', 'new-1', 'new-2'],
         pairs: [],
         expectedDiagnostics: [],
+    }
+}
+
+/* ───────────────────────── P5c drive scenes ───────────────────────── */
+
+const REORDER_SPRING = {
+    type: 'spring',
+    duration: 0.45,
+    bounce: 0.1,
+} as const
+const SHEET_SPRING = {
+    type: 'spring',
+    duration: 0.45,
+    bounce: 0.08,
+} as const
+const BULK_SPRING = {
+    type: 'spring',
+    duration: 0.4,
+    bounce: 0.1,
+} as const
+
+const REORDER_KEYS = Array.from({ length: 7 }, (_, i) => [
+    `row-${i}`,
+    `title-${i}`,
+]).flat()
+
+function reorderSlot(trace: SceneTrace, key: string, slot: number): Box {
+    return aBox(trace, `${key}@slot-${slot}`)
+}
+
+export function reorderPlan(trace: SceneTrace): ScenePlan {
+    const reorder2 = commitFrame(trace, 'reorder-2')
+    const reorder5 = commitFrame(trace, 'reorder-5')
+    const reorder9 = commitFrame(trace, 'reorder-9')
+    const release = flushFrame(trace, 'release')
+    const takeFrame = 0
+    const spring = (
+        key: string,
+        slot: number,
+        moving = false
+    ): SegmentPlan => ({
+        key,
+        kind: 'spring',
+        to: reorderSlot(trace, key, slot),
+        motion: REORDER_SPRING,
+        ...(moving
+            ? {
+                  holdRelease: true,
+                  velocityOverride: { x: 0, y: 900, w: 0, h: 0 },
+                  velocityBefore: { x: 0, y: 900, w: 0, h: 0 },
+              }
+            : {}),
+    })
+    const reorderCommit = (
+        label: string,
+        frame: number,
+        row: string,
+        title: string,
+        slot: number
+    ): CommitPlan => ({
+        frame,
+        label,
+        expectedStatus: 'ended',
+        segments: [spring(row, slot), spring(title, slot)],
+    })
+    return {
+        scene: 's-reorder',
+        stepMs: 20,
+        completeness: {
+            requiredObservations: 20,
+            requiredCommits: 3,
+            requiredReports: 3,
+            requiredSettleFrames: 1,
+            requiredKeys: REORDER_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: [
+                'shape.hold',
+                'shape.kill-switch',
+                'shape.pill-radius',
+                'shape.teardown',
+            ],
+            requiredOpacityKeys: [],
+            requiredRadiiKeys: REORDER_KEYS.filter((key) =>
+                key.startsWith('row-')
+            ),
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            reorderCommit('reorder-2', reorder2, 'row-2', 'title-2', 1),
+            reorderCommit('reorder-5', reorder5, 'row-3', 'title-3', 2),
+            reorderCommit('reorder-9', reorder9, 'row-4', 'title-4', 3),
+            {
+                frame: release,
+                label: 'release',
+                kind: 'release',
+                expectedStatus: 'no-change',
+                segments: [
+                    spring('row-1', 4, true),
+                    spring('title-1', 4, true),
+                ],
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: [
+            ...REORDER_KEYS.filter((key) => key.startsWith('row-')),
+        ],
+        pairs: [],
+        holds: [
+            {
+                key: 'row-1',
+                riders: [{ key: 'title-1', dx: 66, dy: 10 }],
+                takeFrame,
+                points: Array.from({ length: 10 }, (_, i) => ({
+                    frame: takeFrame + i + 1,
+                    x: 16,
+                    y: 250 + 18 * (i + 1),
+                })),
+                releaseFrame: release,
+                releaseVelocity: { x: 0, y: 900 },
+            },
+        ],
+        staticRadii: Object.fromEntries(
+            REORDER_KEYS.filter((key) => key.startsWith('row-')).map(
+                (key) => [key, 10] as const
+            )
+        ),
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+        expectedKillSwitch: true,
+    }
+}
+
+export function sheetPlan(trace: SceneTrace): ScenePlan {
+    const release1 = flushFrame(trace, 'release-1')
+    const release2 = flushFrame(trace, 'release-2')
+    const take2 = trace.holds?.[1]?.takeFrame ?? release2 - 10
+    const spring = (
+        to: Box,
+        velocity: { x: number; y: number }
+    ): SegmentPlan => ({
+        key: 'sheet',
+        kind: 'spring',
+        to,
+        motion: SHEET_SPRING,
+        holdRelease: true,
+        velocityOverride: { x: velocity.x, y: velocity.y, w: 0, h: 0 },
+        velocityBefore: { x: velocity.x, y: velocity.y, w: 0, h: 0 },
+    })
+    return {
+        scene: 's-sheet',
+        stepMs: 16,
+        completeness: {
+            requiredObservations: 20,
+            requiredCommits: 2,
+            requiredReports: 2,
+            requiredSettleFrames: 1,
+            requiredKeys: ['sheet'],
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: [
+                'shape.hold',
+                'shape.pill-radius',
+                'shape.teardown',
+            ],
+            requiredOpacityKeys: [],
+            requiredRadiiKeys: ['sheet'],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: release1,
+                label: 'detent-1',
+                expectedStatus: 'no-change',
+                segments: [],
+            },
+            {
+                frame: release1,
+                label: 'release-1',
+                kind: 'release',
+                expectedStatus: 'no-change',
+                segments: [
+                    spring(aBox(trace, 'sheet@large'), { x: 0, y: -1200 }),
+                ],
+            },
+            {
+                frame: release2,
+                label: 'detent-2',
+                expectedStatus: 'no-change',
+                segments: [],
+            },
+            {
+                frame: release2,
+                label: 'release-2',
+                kind: 'release',
+                expectedStatus: 'no-change',
+                segments: [
+                    spring(aBox(trace, 'sheet@dismissed'), { x: 0, y: 1600 }),
+                ],
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: ['sheet'],
+        pairs: [],
+        holds: [
+            {
+                key: 'sheet',
+                riders: [],
+                takeFrame: 0,
+                points: Array.from({ length: 12 }, (_, i) => ({
+                    frame: i + 1,
+                    x: 0,
+                    y: 422 - 15 * (i + 1),
+                })),
+                releaseFrame: release1,
+                releaseVelocity: { x: 0, y: -1200 },
+            },
+            {
+                key: 'sheet',
+                riders: [],
+                takeFrame: take2,
+                takeBox: aBox(trace, 'sheet@large'),
+                points: Array.from({ length: 10 }, (_, i) => ({
+                    frame: take2 + i + 1,
+                    x: 0,
+                    y: 124 + 30 * (i + 1),
+                })),
+                releaseFrame: release2,
+                releaseVelocity: { x: 0, y: 1600 },
+            },
+        ],
+        staticRadii: { sheet: [10, 10, 0, 0] },
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+        requiredRestorations: ['sheet'],
+        allowEmptyFinal: true,
+    }
+}
+
+const BULK_TILES = 850
+const BULK_LABELS = 150
+const BULK_KEYS = [
+    ...Array.from({ length: BULK_TILES }, (_, i) => `tile-${i}`),
+    ...Array.from({ length: BULK_LABELS }, (_, i) => `label-${i}`),
+]
+
+export function bulkPlan(trace: SceneTrace): ScenePlan {
+    const shuffle = commitFrame(trace, 'shuffle')
+    const mover = (key: string, to: Box): SegmentPlan => ({
+        key,
+        kind: 'spring',
+        to,
+        motion: BULK_SPRING,
+    })
+    return {
+        scene: 's-bulk',
+        stepMs: 16,
+        completeness: {
+            requiredObservations: 30,
+            requiredCommits: 1,
+            requiredReports: 1,
+            requiredSettleFrames: 1,
+            requiredKeys: BULK_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: ['shape.teardown'],
+            requiredOpacityKeys: [],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: shuffle,
+                label: 'shuffle',
+                expectedStatus: 'ended',
+                segments: [
+                    ...Array.from({ length: BULK_LABELS }, (_, i) =>
+                        mover(`tile-${i}`, aBox(trace, `tile-${i}@shuffle`))
+                    ),
+                    ...Array.from({ length: BULK_LABELS }, (_, i) =>
+                        mover(`label-${i}`, aBox(trace, `label-${i}@shuffle`))
+                    ),
+                ],
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: Array.from(
+            { length: BULK_LABELS },
+            (_, i) => `tile-${i}`
+        ),
+        pairs: [],
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
     }
 }
 

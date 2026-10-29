@@ -186,7 +186,7 @@ export function realTwinProblems(real: RealTrace): string[] {
         problems.push(`real twin final tracks ${real.final.tracks}`)
     if (real.final.holds !== 0)
         problems.push(`real twin final holds ${real.final.holds}`)
-    if (real.final.connected <= 0)
+    if (real.final.connected <= 0 && real.allowEmptyFinal !== true)
         problems.push('real twin has no connected participants at the end')
     return problems
 }
