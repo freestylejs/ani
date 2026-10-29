@@ -1284,24 +1284,24 @@ scene has the exemption.
   the exact read audit. D11 G12 is the baseline-subtracted incremental:
   `(p95(held) − p95(no-hold)) / held` at 1 and 10 held on S-BULK, and the
   1-held S-REORDER/S-SHEET shape.
-- Chromium full report (`iteration-9/chromium.json`, source `a714d9a`, load
-  10.05, five runs): all 11 scenes pass; G9 1.969× unscrolled pass / 2.079×
-  scrolled FAIL; G10 0.975 ms pass; G13/G13-held exact; G12-1 −0.285 and
-  G12-10 −0.006 incremental ms/held pass; **G11 2.424× FAIL** (per-run
-  2.630/2.424/2.376/2.585/1.293, floor audit exact). G11 remains open; the cost is advisory.
-- WebKit full report (`iteration-9/webkit.json`, source `a714d9a`, load 11.47):
+- Chromium full report (`iteration-9/chromium.json`, source `66c2a94`, load
+  5.78, five runs): all 11 scenes pass; G9 1.823× unscrolled / 1.796× scrolled pass; G10 0.980 ms pass; G13/G13-held exact; G12-1 −0.170 and
+  G12-10 −0.004 incremental ms/held pass; **G11 2.118× FAIL** (per-run
+  2.096/2.621/2.104/2.151/2.118, floor audit exact). G11 remains open; the cost is advisory.
+- WebKit full report (`iteration-9/webkit.json`, source `66c2a94`, load 5.84):
   S-CARD/S-SEG/S-PHOTO/S-STACK/S-ISLAND/S-ACC/S-INSERT/S-DELETE/S-BULK pass;
-  S-REORDER/S-SHEET blocked only on the G12 1 ms timer bound (G3/G7 remain
-  authority BLOCK); G10 0.250 ms pass with the real-clock 20-frame batch;
+  S-REORDER/S-SHEET blocked only on the G12 1 ms timer bound (D12 cost
+  advisory); their frame/status rows pass; G10 0.200 ms pass with the real-clock 20-frame batch;
   G9/G11/G12 BLOCK with no gate value; G13/floor exact.
 - H18-F F4: `offsetLeft`/`offsetTop` held reads are counted in
   `stats.layoutOffsets` and included in `stats.reads`; G13 print describes
   the count. No hidden layout read.
 - H17b/H18 behavior fixes and the full H15/H16 scene set are preserved. The
   H18 engine A–F fixes make S-PHOTO/S-ACC/S-REORDER frame gates pass on
-  Chromium; S-SHEET/S-REORDER G3/G7 remain authority BLOCK.
+  Chromium; WebKit S-REORDER/S-SHEET cost G12 BLOCKs are D12 advisory; their frame
+  rows pass.
 
-Residual: G11 is 2.424× and G9-scrolled 2.079× (advisory load, open); no
-performance-complete claim.
+Residual: G11 is 2.118× (advisory load, open); no performance-complete
+claim.
 WebKit G9/G11/G12 cannot be decided with the 1 ms timer; no quantized ratio is
 presented as a pass or failure.

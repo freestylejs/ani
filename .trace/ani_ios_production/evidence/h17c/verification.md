@@ -22,26 +22,35 @@ H16 scenes and assertion fix, H15 scene set). No reset, fetch or push.
   `stats.layoutOffsets`, included in `stats.reads`, and printed in the G13
   detail. They are no longer hidden.
 
+## D12 certification
+
+WebKit cost/G12 rows are BLOCK/advisory and appear in
+`certification.advisory`; they no longer appear as `certBlock` reasons.
+Chromium G9/G11/G12 and the cost fingerprint still decide. WebKit frame,
+scoring, shape, status and restoration rows remain required. Unit tests cover
+the WebKit cost block, a WebKit frame failure and a non-cost WebKit scene
+block.
+
 ## Final reports
 
 `bench/layout/iteration-9/chromium.json` and `webkit.json`, five runs each,
-`sourceRevision` `a714d9a4431681d6465d80e33035b9c41b9eadaf`.
+`sourceRevision` `66c2a94d13dbb7b69bec751dbd88fcb802fd64d2`.
 
-Chromium (all 11 scenes pass; load 10.05, advisory):
+Chromium (all 11 scenes pass; load 5.78, advisory):
 
-- G9 1.969× unscrolled pass / 2.079× scrolled FAIL; floor audits exact.
-- G10 0.975 ms pass.
-- G11 2.424× FAIL (per-run 2.630/2.424/2.376/2.585/1.293); G11.floor exact.
-- G12-1 −0.285, G12-10 −0.006 incremental ms/held pass.
+- G9 1.823× unscrolled pass / 1.796× scrolled pass; floor audits exact.
+- G10 0.980 ms pass.
+- G11 2.118× FAIL (per-run 2.096/2.621/2.104/2.151/2.118); G11.floor exact.
+- G12-1 −0.170, G12-10 −0.004 incremental ms/held pass.
 - G13/G13-held exact.
 
-WebKit (load 11.47, cost BLOCK due the 1 ms timer):
+WebKit (load 5.84, cost BLOCK due the 1 ms timer):
 
 - S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE,
   S-BULK pass.
-- S-REORDER and S-SHEET blocked only on G12 timer bound; G3/G7 remain
-  authority BLOCK.
-- G10 0.250 ms pass with the real-clock batch.
+- S-REORDER and S-SHEET cost G12 are BLOCK/advisory (D12); their frame,
+  scoring and status rows pass.
+- G10 0.200 ms pass with the real-clock batch.
 - G9/G11/G12 BLOCK, no gate value; G13/floor exact.
 
 ## Verification commands
@@ -52,17 +61,17 @@ WebKit (load 11.47, cost BLOCK due the 1 ms timer):
 - `pnpm check`: 0 errors (repo baseline warnings/infos).
 - `pnpm test:coverage`: 155 files, 1,911 tests passed (with the 20 s timeout
   needed by the 20,000-chain property test on this loaded host).
-- `pnpm test:browser --coverage`: 222 passed, 1 failed (`layout_spring:L_SPRING_1`,
-  a pre-existing main failure at 3c24925: settle 6.5167 s vs oracle 6.3 s);
-  engine functions 95.48%, above the 95% floor. L_MEAS_12/L_DRIVE_EDGES pass.
+- `pnpm test:browser --coverage`: 223 passed, 0 failed, 0 known failures;
+  engine functions 95.48%, above the 95% floor. L_SPRING_1 now passes on
+  the 10ec0e3 edge-settle oracle.
 
 ## Residual risks
 
-1. G11 is 2.424× and G9-scrolled 2.079× in the final five-run report; the
-   cost is advisory (load 10.05), and both remain open. No performance-complete
-   claim.
+1. G11 is 2.118× in the final five-run report; the cost is advisory
+   (load 5.78), and G11 remains open. No performance-complete claim.
 2. WebKit G9/G11/G12 are undecidable with the 1 ms timer under the required
    protocol.
-3. S-REORDER/S-SHEET G3/G7 remain authority BLOCK.
+3. WebKit S-REORDER/S-SHEET G12 cost rows are BLOCK/advisory under D12;
+   their frame/status rows pass.
 4. A quiet (<1.0 load) run was not available on this host.
 5. DPR 1/3 and reduced-motion variants remain P5c BLOCKs.
