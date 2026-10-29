@@ -375,6 +375,12 @@ function maxDurationPlan(plan: ScenePlan, trace: SceneTrace): ScenePlan {
         const index = flushIndex(trace, commit.label)
         const previous = index > 0 ? trace.observations[index - 1] : undefined
         const segments: SegmentPlan[] = []
+        // A commit's states are visible only after all its segments are
+        // planned: a follower that takes its lead's source box must see the
+        // source state from the previous commit, exactly as the independent
+        // scoring oracle does (§5.8). Updating mid-commit would make a
+        // follower see a same-frame state and drop the lead's velocity.
+        const pendingStates: [string, SimState][] = []
         for (const segment of commit.segments) {
             const source = segment.handoffFrom ?? segment.key
             const sourceState = states.get(source)
@@ -450,19 +456,23 @@ function maxDurationPlan(plan: ScenePlan, trace: SceneTrace): ScenePlan {
                 ...(kind === 'none' ? { reducedJump: !fits } : {}),
             }
             segments.push(next)
-            states.set(segment.key, {
-                key: segment.key,
-                kind,
-                startFrame: commit.frame,
-                from,
-                to: target,
-                motion: kind === 'none' ? undefined : motion,
-                v0,
-                moving,
-                carrying,
-                settle,
-            })
+            pendingStates.push([
+                segment.key,
+                {
+                    key: segment.key,
+                    kind,
+                    startFrame: commit.frame,
+                    from,
+                    to: target,
+                    motion: kind === 'none' ? undefined : motion,
+                    v0,
+                    moving,
+                    carrying,
+                    settle,
+                },
+            ])
         }
+        for (const [key, state] of pendingStates) states.set(key, state)
         const movingSegments = segments.filter(
             (segment) => segment.kind !== 'none'
         )
