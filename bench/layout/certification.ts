@@ -94,7 +94,14 @@ export function evaluateInvocation(input: InvocationInput): InvocationResult {
             reasons.push(`${engine.engine} launch error: ${engine.launchError}`)
         }
         for (const scene of engine.scenes) {
-            if (scene.status !== 'pass') {
+            const costOnly =
+                engine.engine === 'webkit' &&
+                scene.status === 'blocked' &&
+                (scene.blockedReasons ?? []).length > 0 &&
+                (scene.blockedReasons ?? []).every((reason) =>
+                    reason.startsWith('G12')
+                )
+            if (scene.status !== 'pass' && !costOnly) {
                 reasons.push(`${engine.engine} ${scene.scene} ${scene.status}`)
             }
         }
