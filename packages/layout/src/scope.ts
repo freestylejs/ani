@@ -999,6 +999,8 @@ export function createLayoutGroup(
     /** The last participant-tree pass: a capture or flush reuses it when its inputs verify. */
     let lastTree: ParticipantTree | null = null
     let frame: FrameNode[] = []
+    /** Last flush used the measured-jump shortcut; package-internal test seam. */
+    let lastKeepShortcut = false
     /** Advances with every clock update: the instant ghost poses are solved for. */
     let tick = 0
     let pending: Write[] = []
@@ -3711,31 +3713,44 @@ export function createLayoutGroup(
      * ancestor container changes the nearest participant of the distinct flat
      * parent it contains and invalidates the pass.
      */
-    /** Registry order/connection only, for a pass the capture already verified. */
-    function sameRegistryList(previous: ParticipantTree): boolean {
-        if (registry.size !== previous.list.length) return false
-        let i = 0
-        for (const p of registry.values()) {
-            if (p !== previous.list[i] || !p.element.isConnected) return false
-            i += 1
-        }
-        return true
-    }
-
-    /** Whether a shadow root sits on an element's flat-ancestor chain (cache invalidation). */
-    function shadowInAncestry(first: Node | null, tree: FlatTree): boolean {
+    /**
+     * Whether a shadow root sits on an element's flat-ancestor chain (cache
+     * invalidation). Results are memoized per validation pass: 1,000
+     * participants walk the same container chains, and each node's answer is
+     * independent of which participant reached it. A known shadow host
+     * disables reuse for every participant below it.
+     */
+    function shadowInAncestry(
+        first: Node | null,
+        tree: FlatTree,
+        memo: Map<Node, boolean>
+    ): boolean {
+        const chain: Node[] = []
         let node = first
-        for (let depth = 0; node && depth < MAX_SHADOW_DEPTH; depth++) {
+        let found = false
+        while (node) {
+            const known = memo.get(node)
+            if (known !== undefined) {
+                found = known
+                break
+            }
+            chain.push(node)
             const host = node as Element
-            if (host.shadowRoot !== null || roots.has(host)) return true
+            if (host.shadowRoot !== null || roots.has(host)) {
+                found = true
+                break
+            }
+            if (chain.length >= MAX_SHADOW_DEPTH) break
             node = flatParent(node, tree)
         }
-        return false
+        for (const visited of chain) memo.set(visited, found)
+        return found
     }
 
     function sameParticipantTree(previous: ParticipantTree): boolean {
         if (roots.size !== 0 || chainRoots.size !== 0) return false
         if (registry.size !== previous.list.length) return false
+        const shadowMemo = new Map<Node, boolean>()
         let i = 0
         for (const p of registry.values()) {
             if (
@@ -3751,7 +3766,7 @@ export function createLayoutGroup(
             const first = flatParent(p.element, previous.tree)
             if (
                 first !== previous.flat[i] ||
-                shadowInAncestry(first, previous.tree)
+                shadowInAncestry(first, previous.tree, shadowMemo)
             ) {
                 return false
             }
@@ -3815,10 +3830,9 @@ export function createLayoutGroup(
     }
 
     function participantTree(
-        previous?: ParticipantTree | null,
-        verified = false
+        previous?: ParticipantTree | null
     ): ParticipantTree {
-        if (previous && (verified || sameParticipantTree(previous))) {
+        if (previous && sameParticipantTree(previous)) {
             lastTree = previous
             syncListeners()
             return previous
@@ -4710,17 +4724,7 @@ export function createLayoutGroup(
                     adoptAuthored(p.element, p.drive.saved, p.drive.written)
                 } else settle(p, true)
             }
-        const reuseVerified =
-            cap?.tree !== null &&
-            cap?.tree !== undefined &&
-            roots.size === 0 &&
-            chainRoots.size === 0 &&
-            sameRegistryList(cap.tree) &&
-            !structureChanged()
-        const { list, parents, index, flat, tree } = participantTree(
-            cap?.tree,
-            reuseVerified
-        )
+        const { list, parents, index, flat, tree } = participantTree(cap?.tree)
         participants = list.length
         if (list.length === 0) {
             frame = []
@@ -4974,55 +4978,65 @@ export function createLayoutGroup(
          */
         let skipsKeeps = false
         if (fresh && frame.length > 0 && !stale) {
-            skipsKeeps = true
-            for (const node of frame) {
-                const p = node.p
-                const i = index.get(p)
-                const d = p.drive
-                const b = i === undefined ? null : (fresh.rects.get(p) ?? null)
-                if (
-                    i === undefined ||
-                    b === null ||
-                    unmeasured[i] ||
-                    node.ancestry.size !== 0 ||
-                    p.hold !== null ||
-                    p.ride !== null ||
-                    d === null ||
-                    d.kind !== 'track' ||
-                    d.timeline !== null ||
-                    d.fade !== null ||
-                    d.radiusBlend !== null ||
-                    d.lead !== null ||
-                    d.track === null ||
-                    d.track.anchor !== null
-                ) {
-                    skipsKeeps = false
-                    break
-                }
-                const r = rects[i]!
-                const pose = engine.poses.get(p) ?? IDENTITY_POSE
-                let ancestorsScaled = false
-                for (let k = node.parent; k >= 0; k = frame[k]!.parent) {
-                    const ap = engine.poses.get(frame[k]!.p) ?? IDENTITY_POSE
-                    if (ap.sx !== 1 || ap.sy !== 1) {
-                        ancestorsScaled = true
+            // Scroll and retained-lead runs use the presented/scroll paths;
+            // a shared id can hand a track over. None is a plain top-level
+            // retarget, so the measured-jump shortcut stays off.
+            skipsKeeps =
+                fresh.scrolling.size === 0 &&
+                retained.size === 0 &&
+                shared === 0
+            if (skipsKeeps) {
+                for (const node of frame) {
+                    const p = node.p
+                    const i = index.get(p)
+                    const d = p.drive
+                    const b =
+                        i === undefined ? null : (fresh.rects.get(p) ?? null)
+                    if (
+                        i === undefined ||
+                        b === null ||
+                        unmeasured[i] ||
+                        unowned[i] !== null ||
+                        p.keyChanged ||
+                        node.parent >= 0 ||
+                        node.ancestry.size !== 0 ||
+                        p.hold !== null ||
+                        p.ride !== null ||
+                        d === null ||
+                        d.kind !== 'track' ||
+                        d.timeline !== null ||
+                        d.fade !== null ||
+                        d.radiusBlend !== null ||
+                        d.lead !== null ||
+                        d.track === null ||
+                        d.track.anchor !== null
+                    ) {
+                        skipsKeeps = false
+                        break
+                    }
+                    const r = rects[i]!
+                    // A size change moves the transform origin relative to the
+                    // layout box; keep the full path rather than assuming the
+                    // jump is an exact translation.
+                    if (r.w !== b.w || r.h !== b.h) {
+                        skipsKeeps = false
+                        break
+                    }
+                    const pose = engine.poses.get(p) ?? IDENTITY_POSE
+                    if (
+                        pose.sx !== 1 ||
+                        pose.sy !== 1 ||
+                        (Math.abs(r.x - b.x) < threshold &&
+                            Math.abs(r.y - b.y) < threshold)
+                    ) {
+                        skipsKeeps = false
                         break
                     }
                 }
-                if (
-                    pose.sx !== 1 ||
-                    pose.sy !== 1 ||
-                    ancestorsScaled ||
-                    (Math.abs(r.x - b.x) < threshold &&
-                        Math.abs(r.y - b.y) < threshold &&
-                        Math.abs(r.w - b.w) < threshold &&
-                        Math.abs(r.h - b.h) < threshold)
-                ) {
-                    skipsKeeps = false
-                    break
-                }
             }
         }
+
+        lastKeepShortcut = skipsKeeps
 
         /**
          * `L_k` per node with a fresh B (§4.2): the capture's rect with the
@@ -7803,6 +7817,11 @@ export function createLayoutGroup(
     // the React adapter's package-internal mount hand-off: no public export
     Object.defineProperty(group, Symbol.for('ani-layout.capture-added'), {
         value: captureAdded,
+        enumerable: false,
+    })
+    // test-only observation of the measured-jump shortcut; no public export
+    Object.defineProperty(group, Symbol.for('ani-layout.keep-shortcut'), {
+        value: () => lastKeepShortcut,
         enumerable: false,
     })
     return group
