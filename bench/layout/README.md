@@ -544,10 +544,12 @@ same public engine surface.
   `snapped [detail-image:stale]` (G7 4) and the engine's stale diagnostic.
   N15-02 makes `openReal()`/`backReal()` mirror the manual unregister/add
   path, set `data-p`/`elements` and insert the returned cell at the selected
-  index; the real twin now emits exactly the same two `capture-less-flush`
-  stale diagnostics as the manual (open detail image, back cell image), not
-  three. They are the H18 nested-image path, recorded as problems and not
-  suppressed. Engine defect, not worked around.
+  index. The real twin **does not pin the old two-event sequence**: it returns
+  whatever diagnostics the engine emitted, and `realTwinProblems` fails any
+  diagnostic. On this branch (without the H18 engine fixes) the two
+  `capture-less-flush` events still appear and the scene fails honestly; on
+  the H18 base the expected result is **zero stale diagnostics** and
+  G1/G2/G4 ~0.0002 px.
 - **S-ACC** fails on `body-6` at the mid-flight row 6 expansion: the position-
   pinned body is drawn as its layout box under the row's new height pose
   (h = 120·48/168), not the 120 px rest box, at the retarget flush. G1/G4 are
