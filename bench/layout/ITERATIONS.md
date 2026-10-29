@@ -512,9 +512,10 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 | G11 sustained p95 | **12.345 ms FAIL** | **8.190 ms FAIL** (8.110/8.250/7.870/9.410/8.190) | ≤ 2 |
 | G13 exact reads | pass | pass, zero steady reads | exact |
 
-The audited floor is unchanged: 2,000 rects/2,000 layout-size pairs in
-capture, 1,000/1,000 in flush, 300 computed reads (Chromium; 600 WebKit with
-Typed OM), 300 pose declarations, no extra read. G11 completed 300 commits at
+The audited floor is unchanged: **1,000 rects / 1,000 layout-size pairs in
+capture**, **1,000 / 1,000 in flush** (2,000 rects/pairs per commit across both),
+300 computed reads (Chromium; 600 WebKit with Typed OM), 300 poses = 600 pose
+declarations, no extra read. G11 completed 300 commits at
 59.98–60.04 Hz with `g = 0.005 ms`; G13 reports zero steady-frame reads.
 
 ### Root causes and behavior-preserving fixes
@@ -587,3 +588,40 @@ pending, never passed. Cost remains advisory on the current load, so this is
 not a certification claim.
 
 No gate or tolerance was changed in this iteration.
+
+## Iteration 4 — D10 sustained gate and H17 review fixes
+
+- Branch `helper/h17`; code commit `1cec4d6` (parent `f8b7223` fixes H17-01…H17-04
+  on `d234350`). No authority, scene, tolerance, row or `knownFailure` changed.
+- Owner decision D10 is implemented: Chromium G11 is
+  `median of 5 per-run p95(engine commits) / p95(floor commits) <= 2`.
+  The floor is the same audited required-work replica (1,000 participants,
+  300 movers) run at 60 Hz in the same page/process, 5 warm-ups + 300 samples.
+  G9 remains the whole-commit median ratio; G10 remains the absolute
+  non-commit p95 <= 2 ms. G11 floor audit is exact.
+- Reports (`bench/layout/iteration-3/`): G9 1.692× unscrolled / 1.742× scrolled
+  (pass), G10 0.935 ms (pass), G13 exact; G11 **2.425× FAIL** (engine p95
+  7.3 ms / floor p95 3.0 ms; per-run 2.437/2.456/2.381/2.294/2.425).
+  Load 2.90, so cost is advisory. The sustained path needs further work to
+  reach 2×; the D10 gate itself is implemented and does not use the retired
+  absolute threshold.
+- WebKit: G10 now uses the §11.5 coarse-timer 20-frame interval (30 samples,
+  ±0.05 ms per sample) and is deciding: **0.300 ms p95, pass**. G9/G11 remain
+  **BLOCK**: a 20-commit interval cannot be timed without including frame idle,
+  changing the from-rest G9 work, or breaking the 60 Hz G11 cadence; a p95 of
+  15 batch means is not a p95 of 300 commits. No WebKit ratio is claimed. The
+  WebKit cost report was measured at load 4.73 (`valid: false`).
+- H17 review fixes: connectedness restored in the tree cache (H17-01);
+  quiescent parents with participant children are no longer skipped (H17-02);
+  flat-parent/shadow-host cache validation (H17-03); fixed capture order limit
+  plus an `added` set for out-of-order `captureAdded` (H17-04); reports record
+  `sourceRevision` (H17-06); floor is per-run, not ad-hoc (H17-07); exact
+  capture/flush prose corrected (H17-09).
+- Regression tests: `H17-01` detached-wrapper zero reads/no stale, `H17-02`
+  anchored child first frame 20.5, `H17-03` shadow host listener, `H17-04`
+  out-of-order late reads. Full layout 449/449, browser 223/223, unit coverage
+  1,896/1,896 at the final code.
+- H17-05: no quiet (<1.0) run was possible; load 2.90 makes cost advisory.
+  Reports carry the exact load and `sourceRevision`.
+
+No gate or tolerance was weakened.

@@ -1,6 +1,7 @@
 # Proposal — G11 sustained-commit gate is below its required-work floor
 
-Status: **proposed for the owner; not approved, not applied.** No gate, scene
+Status: **superseded by the owner-approved D10 amendment
+(`gate_amendment_g11_20261029.md`); retained as the H17 analysis.** No gate, scene
 tolerance, row or `knownFailure` was changed by H17. The authoritative text is
 `packages/layout/ARCHITECTURE.md` §11.5 and the P5 scene spec, not this note.
 
