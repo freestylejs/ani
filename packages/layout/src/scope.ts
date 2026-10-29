@@ -19,6 +19,7 @@ import {
     measure,
     OPACITY_PROPERTIES,
     OWNED_PRIORITY,
+    ownedAnimationIn,
     POSE_PROPERTIES,
     put,
     RADIUS_PROPERTIES,
@@ -1008,6 +1009,12 @@ export function createLayoutGroup(
     const writePool: Write[] = []
     let pendingAttributes: AttributeWrite[] = []
     let disposed = false
+    /**
+     * H18-G: participants with a live or just-invalidated hold. The held read
+     * and the invalidation event run over this set, not the whole registry,
+     * so a held frame's fixed work does not scale with the participant count.
+     */
+    const holds = new Set<Participant>()
     /** Previous lead per `layoutId`. */
     const leads = new Map<string, Participant>()
     /** Drawn boxes and velocities of leads removed within `retain` seconds. */
@@ -2123,12 +2130,7 @@ export function createLayoutGroup(
     /** The capture read phase's rect read for one held element (§5.10, §4.5). */
     function readHolds(): void {
         if (disposed || !hasDOM()) return
-        let animated: ReadonlySet<Element> | null = null
-        const animatedNow = (): ReadonlySet<Element> => {
-            animated ??= animatedOwned((scopeDocument ?? document) as Document)
-            return animated
-        }
-        for (const p of registry.values()) {
+        for (const p of holds) {
             const hold = p.hold
             if (!hold || hold.state !== 'held') continue
             // removal, adoption or an invalid handle stops the read
@@ -2142,23 +2144,12 @@ export function createLayoutGroup(
                 hold.releaseTrack = null
                 continue
             }
-            // P4-C7: the animated-owned probe applies to the held element and
-            // its participant ancestors; an owned CSS animation/transition is
-            // a map the engine does not own
-            const animations = animatedNow()
-            let animatedOwnedNow = animations.has(p.element)
+            // P4-C7: the animated-owned probe applies to the held element,
+            // its participant ancestors and its subtree. H18-G: probe only
+            // those elements, not every animation in the document.
+            let animatedOwnedNow = ownedAnimationIn(p.element, true)
             for (let a = p.parent; a && !animatedOwnedNow; a = a.parent) {
-                animatedOwnedNow = animations.has(a.element)
-            }
-            // P4-C7: the probe covers the held subtree, not only the element
-            // and its participant ancestors
-            if (!animatedOwnedNow && animations.size > 0) {
-                for (const animated of animations) {
-                    if (containsFlat(p.element, animated)) {
-                        animatedOwnedNow = true
-                        break
-                    }
-                }
+                animatedOwnedNow = ownedAnimationIn(a.element, false)
             }
             if (animatedOwnedNow) {
                 hold.state = 'invalidated'
@@ -2175,17 +2166,15 @@ export function createLayoutGroup(
                 hold.shiftY = 0
                 continue
             }
-            // H13-02R/S3: a pure layout-position change under the same
-            // written pose is adopted as a new A; only an unchanged layout
-            // offset is a camera shift. Detect it before the size branches.
-            const fx = p.geometry?.fx ?? 0.5
-            const fy = p.geometry?.fy ?? 0.5
-            const drawnX = hold.hx - hold.shiftX - fx * hold.sizeW
-            const drawnY = hold.hy - hold.shiftY - fy * hold.sizeH
-            if (
-                Math.abs(rect.x - drawnX) > 0.01 ||
-                Math.abs(rect.y - drawnY) > 0.01
-            ) {
+            // H18-C: a pending `move` changes H, not the presented rect, so
+            // the presented screen delta is the only thing that can have
+            // changed. A layout offset is read only when the screen moved: a
+            // flush has already recorded the offset it adopted, so a
+            // flush-compensated move is not re-detected here (and adds no
+            // held-frame read: H18-F).
+            const deltaX = rect.x - last.x
+            const deltaY = rect.y - last.y
+            if (Math.abs(deltaX) > 0.01 || Math.abs(deltaY) > 0.01) {
                 const layoutLeft = p.element.offsetLeft
                 const layoutTop = p.element.offsetTop
                 if (
@@ -2202,8 +2191,8 @@ export function createLayoutGroup(
                         hold.layoutTop = layoutTop
                         // remove the layout move from the camera shift, so
                         // the drawn origin stays at H
-                        hold.shiftX = rect.x - last.x - dx
-                        hold.shiftY = rect.y - last.y - dy
+                        hold.shiftX = deltaX - dx
+                        hold.shiftY = deltaY - dy
                         hold.sizeTargetW = g.a.w
                         hold.sizeTargetH = g.a.h
                         continue
@@ -2529,6 +2518,7 @@ export function createLayoutGroup(
     /** Ends a hold at its end state: every handle terminal, every drive settled. */
     function finishHold(hold: DriveHold): void {
         const p = hold.owner
+        holds.delete(p)
         if (p.hold === hold) p.hold = null
         hold.releaseTrack = null
         for (const rider of hold.rides) {
@@ -2624,6 +2614,16 @@ export function createLayoutGroup(
                 "the 'waapi' engine cannot take a drive hold; use engine: 'raf'."
             )
         }
+        // H18-D: take may run before the first flush (the scene starts at rest
+        // and takes immediately). Resolve the current participant parentage
+        // so a nested held node and its riders are solved under their real
+        // parents, not as top-level nodes whose pose the browser composes
+        // again under the parent (the nested held title's double h).
+        const current = participantTree()
+        current.list.forEach((q, i) => {
+            const parent = current.parents[i]!
+            q.parent = parent >= 0 ? current.list[parent]! : null
+        })
         const doc = element.ownerDocument
         const snappedReference = snapsReferenceBox(doc)
         // the support check on the presented box (§4.2): one rect, one
@@ -2950,6 +2950,7 @@ export function createLayoutGroup(
         const handle = makeHandle(hold)
         hold.handle = handle
         p.hold = hold
+        holds.add(p)
         ensureFrameFor(p)
         // descendants ride one common displacement from the take (§5.10)
         const h = {
@@ -3139,9 +3140,11 @@ export function createLayoutGroup(
         // one last read before the release: the current screen shift, the
         // current A and a final support check (outside a frame, so no write
         // precedes it)
+        let presented: Box | null = null
         if (p.element.isConnected) {
             const rect = viewRect(p.element)
             stats.rects += 1
+            presented = rect
             const last = hold.lastDrawn
             const sizeDelta = last
                 ? Math.max(
@@ -3196,8 +3199,16 @@ export function createLayoutGroup(
         hold.state = state
         const reduced = reducedMode()
         const target = g.a
-        const originX = hold.hx - hold.shiftX
-        const originY = hold.hy - hold.shiftY
+        // H18-E: the release starts at the presented origin, not at the last
+        // finger target H. A move that was not presented yet must not jump on
+        // the first release frame; `H` is only the fallback when the element
+        // could not be read.
+        const originX = presented
+            ? presented.x + g.fx * presented.w
+            : hold.hx - hold.shiftX
+        const originY = presented
+            ? presented.y + g.fy * presented.h
+            : hold.hy - hold.shiftY
         if (reduced === 'jump') {
             // jump: land at A with no motion; the size snaps too
             hold.sizeTrack = null
@@ -3433,7 +3444,7 @@ export function createLayoutGroup(
     function step(dt: number | null): boolean {
         // a held read (or a lifecycle event) invalidated a hold: its event
         // rule runs now, after every read of this frame
-        for (const p of registry.values()) {
+        for (const p of holds) {
             const hold = p.hold
             if (!hold || hold.state !== 'invalidated') continue
             if (hold.invalidReason === 'unsupported') {
@@ -3448,6 +3459,7 @@ export function createLayoutGroup(
             }
             invalidateHold(p)
             if (p.drive) settle(p)
+            holds.delete(p)
         }
         if (dt !== null) {
             for (const node of frame) {
@@ -5590,14 +5602,7 @@ export function createLayoutGroup(
                             ? (index.get(d.lead) ?? -1)
                             : -1,
                     measured: !unmeasured[i],
-                    lateRegistered:
-                        fresh !== null &&
-                        !p.keyChanged &&
-                        !(
-                            p.order <= fresh.registeredThrough ||
-                            fresh.added.has(p)
-                        ) &&
-                        !(parents[i]! >= 0 && unmeasured[parents[i]!]!),
+                    lateRegistered: lateRegisteredNow[i]!,
                     scrollActive: scrollActive[i]!,
                 }
             })
@@ -5611,6 +5616,29 @@ export function createLayoutGroup(
          * reparent takes the node out of a container. Reads (the fixed test of
          * a lead against the document scroller) happen before any write.
          */
+        /**
+         * H18-A: a late registrant is measured for handoff purposes when its
+         * parent is measured, or is itself a late registrant under the same
+         * rule (walked parents first). The new detail frame and its nested
+         * image mount in one commit; the frame takes the departing frame's
+         * box, so the image's parent is measured in this plan. The same
+         * eligibility decides the scroll-active handoff check below.
+         */
+        const lateRegisteredNow: boolean[] = []
+        list.forEach((p, i) => {
+            const parent = parents[i]!
+            const registered =
+                fresh !== null &&
+                (p.order <= fresh.registeredThrough || fresh.added.has(p))
+            lateRegisteredNow.push(
+                fresh !== null &&
+                    !p.keyChanged &&
+                    !registered &&
+                    (parent < 0 ||
+                        !unmeasured[parent] ||
+                        lateRegisteredNow[parent]!)
+            )
+        })
         const scrollActive = list.map(() => false)
         if (
             fresh &&
@@ -5661,13 +5689,8 @@ export function createLayoutGroup(
                 // without a valid B on either side nothing is handed over; a
                 // node registered after the capture may still take the
                 // departing lead's box (OPS-10)
-                const lateWithHandoff =
-                    fresh !== null &&
-                    !(
-                        list[i]!.order <= fresh.registeredThrough ||
-                        fresh.added.has(list[i]!)
-                    ) &&
-                    !(parents[i]! >= 0 && unmeasured[parents[i]!])
+                // the same late-registrant cascade as the plan (H18-A)
+                const lateWithHandoff = lateRegisteredNow[i]!
                 if (from === null || (unmeasured[i] && !lateWithHandoff)) {
                     continue
                 }
@@ -6274,6 +6297,23 @@ export function createLayoutGroup(
         // nodes is static under a moving ancestor and does not settle here.
         // A held old follower that is now the lead is settled, not left at
         // opacity 0 and the follower pose (H12-03).
+        /**
+         * H18-B: a nested kept track whose participant ancestor is re-planned
+         * in this flush must keep its own visual track, not its relative pose
+         * timeline: the ancestor's own pose changes going forward (a height
+         * retarget), so the child is counter-projected through the new parent
+         * map. `visualKeeps` marks those nodes.
+         */
+        const visualKeeps = new Set<number>()
+        const replanned = list.map(() => false)
+        list.forEach((_, i) => {
+            const parent = parents[i]!
+            replanned[i] =
+                parent >= 0 &&
+                (replanned[parent] === true ||
+                    actions[parent]!.kind === 'track' ||
+                    actions[parent]!.kind === 'follow')
+        })
         const focusSettled = new Set<Participant>()
         const planFocus = new Set<number>()
         for (const degraded of result.degraded) {
@@ -6367,6 +6407,12 @@ export function createLayoutGroup(
                 if (!hold) continue
                 hold.shiftX = 0
                 hold.shiftY = 0
+                // H18-C/F: the flush's A read is the support proof and the
+                // current layout offset. The next held read must not treat
+                // this already-adopted move as a new layout move (which would
+                // re-apply its delta and read an offset pair + style again).
+                hold.layoutLeft = p.element.offsetLeft
+                hold.layoutTop = p.element.offsetTop
                 hold.rides.clear()
                 const g = geometry[index.get(p)!]
                 if (!g || unowned[index.get(p)!] || g.unsupported) {
@@ -6761,12 +6807,23 @@ export function createLayoutGroup(
                     if (!d?.track || !d.target || !g) return
                     const r = reexpress[i]
                     const was = frozen.get(p)?.geometry
+                    const landsAtA =
+                        Math.abs(d.target.x - g.a.x) <= threshold &&
+                        Math.abs(d.target.y - g.a.y) <= threshold &&
+                        Math.abs(d.target.w - g.a.w) <= threshold &&
+                        Math.abs(d.target.h - g.a.h) <= threshold
                     if (d.timeline) {
-                        // its pose timeline goes on in this flush's geometry
+                        if (!(replanned[i] === true && landsAtA)) {
+                            // its pose timeline goes on in this flush's geometry
+                            d.target = g.a
+                            return
+                        }
+                        // an ancestor re-planned under a prior timeline: fall
+                        // through and keep the visual track (H18-B)
+                        d.timeline = null
                         d.target = g.a
-                        return
-                    }
-                    if (parents[i]! < 0 && was) {
+                        visualKeeps.add(i)
+                    } else if (parents[i]! < 0 && was) {
                         // top level: the same poses about the new origin
                         // (§5.7 paths 1 and 2, §4.4)
                         d.track = rebased(d.track, was, g)
@@ -6780,6 +6837,22 @@ export function createLayoutGroup(
                             x: d.target.x + r.dx,
                             y: d.target.y + r.dy,
                         }
+                    } else if (
+                        // H18-B: an ancestor's own track is re-planned in this
+                        // flush, so a relative pose timeline would draw the
+                        // child through the ancestor's new pose (a height
+                        // retarget would squash it). Its own visual track still
+                        // lands on the same A: keep the track and let solve
+                        // counter-project it through this flush's parent map.
+                        replanned[i] === true &&
+                        Math.abs(d.target.x - g.a.x) <= threshold &&
+                        Math.abs(d.target.y - g.a.y) <= threshold &&
+                        Math.abs(d.target.w - g.a.w) <= threshold &&
+                        Math.abs(d.target.h - g.a.h) <= threshold
+                    ) {
+                        d.timeline = null
+                        d.target = g.a
+                        visualKeeps.add(i)
                     } else {
                         // path 1 or §4.4 under an ancestor: its pose timeline
                         const timeline = timelines.get(i)
@@ -6962,7 +7035,7 @@ export function createLayoutGroup(
             // this flush's geometry like every node (§5.7 path 1)
             const refreshed =
                 action.kind === 'keep' &&
-                (p.drive?.timeline != null || parent < 0)
+                (p.drive?.timeline != null || parent < 0 || visualKeeps.has(i))
             const continues =
                 (action.kind === 'keep' && !refreshed) ||
                 (action.kind === 'follow' && !action.start)
@@ -7398,6 +7471,7 @@ export function createLayoutGroup(
             // §7.2: the kill switch also disarms the scroll listeners;
             // setMode('animate') re-arms them through resume()
             if (status === 'disabled') disarm()
+            holds.clear()
             if (!nested) flushDeferred()
         } finally {
             if (!nested) deferDepth -= 1
@@ -7682,6 +7756,7 @@ export function createLayoutGroup(
                             (w) => w.element !== element
                         )
                         settle(self, true)
+                        holds.delete(self)
                         commitWrites()
                         rebuildFrame()
                         stats.tracks = countTracks()
