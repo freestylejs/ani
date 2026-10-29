@@ -29,7 +29,7 @@ H16 scenes and assertion fix, H15 scene set). No reset, fetch or push.
 
 Chromium (all 11 scenes pass; load 10.05, advisory):
 
-- G9 1.748× unscrolled pass / 2.079× scrolled FAIL; floor audits exact.
+- G9 1.969× unscrolled pass / 2.079× scrolled FAIL; floor audits exact.
 - G10 0.975 ms pass.
 - G11 2.424× FAIL (per-run 2.630/2.424/2.376/2.585/1.293); G11.floor exact.
 - G12-1 −0.285, G12-10 −0.006 incremental ms/held pass.

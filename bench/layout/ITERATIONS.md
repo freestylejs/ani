@@ -1216,7 +1216,7 @@ scene has the exemption.
   `(p95(held) − p95(no-hold)) / held` at 1 and 10 held on S-BULK, and the
   1-held S-REORDER/S-SHEET shape.
 - Chromium full report (`iteration-9/chromium.json`, source `a714d9a`, load
-  10.05, five runs): all 11 scenes pass; G9 1.748× unscrolled pass / 2.079×
+  10.05, five runs): all 11 scenes pass; G9 1.969× unscrolled pass / 2.079×
   scrolled FAIL; G10 0.975 ms pass; G13/G13-held exact; G12-1 −0.285 and
   G12-10 −0.006 incremental ms/held pass; **G11 2.424× FAIL** (per-run
   2.630/2.424/2.376/2.585/1.293, floor audit exact). G11 remains open; the cost is advisory.
