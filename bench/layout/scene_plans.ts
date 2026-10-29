@@ -651,6 +651,7 @@ export function islandPlan(trace: SceneTrace): ScenePlan {
         settleFrames: trace.settleFrames,
         restorationChecks: [],
         removedWith: { 'card-content': 'card' },
+        requiredRestorations: ['card-content'],
         authorStyleKeys: ['pill', 'card', 'pill-content', 'card-content'],
         pairs: [
             {

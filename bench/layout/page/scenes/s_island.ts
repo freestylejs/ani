@@ -27,6 +27,7 @@ import {
     measureGranularityInfo,
     microtasks,
     nextFrame,
+    styleSnapshot,
     TraceBuilder,
     waitMs,
     waitUntil,
@@ -356,7 +357,8 @@ class IslandRuntime {
                 radius: false,
                 // The exiting content shrinks with the card on a shorter
                 // spring so it settles with the crossfade and is removed with
-                // an identity pose (scene contribution).
+                // an identity pose; the text is faded out and this is the
+                // documented H15-10/S3 contribution.
                 motion: { type: 'spring', duration: 0.28, bounce: 0 },
             })
         )
@@ -474,9 +476,8 @@ class IslandRuntime {
             duration: 0.12,
             curve: 'ease-out',
         }
-        // The exiting card collapses to the pill's layout so its nested
-        // content settles with an identity pose instead of leaving a
-        // counter-projected pose behind (its text is fading out).
+        // The exiting card collapses to the pill's layout; its content shrinks
+        // on the 0.28 s track and fades (documented H15-10 contribution).
         const result = recordCommit({
             builder: this.builder,
             keys: KEYS,
@@ -593,7 +594,19 @@ class IslandRuntime {
     removeExitedCard(): void {
         const card = this.layer.card
         if (this.elements.get('card') !== card) return
+        const content = this.layer.cardContent
+        const last = this.builder
+            ? [...this.builder.observations]
+                  .reverse()
+                  .find((observation) =>
+                      observation.connected.includes('card-content')
+                  )
+            : undefined
+        const before = last?.style['card-content'] ?? styleSnapshot(content)
+        const beforeFrame = last?.frame ?? this.frame
         this.removers.get('card-content')?.()
+        const after = styleSnapshot(content)
+        this.builder?.restoration('card-content', beforeFrame, before, after)
         this.removers.delete('card-content')
         this.elements.set('card-content', null)
         this.removers.get('card')?.()

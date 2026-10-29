@@ -277,6 +277,8 @@ export class TraceBuilder {
     readonly mounts: Record<string, StyleSnapshot> = {}
     readonly initialBoxes: Record<string, Box> = {}
     readonly aBoxes: Record<string, Box> = {}
+    readonly restorations: NonNullable<SceneTrace['restorations']>[number][] =
+        []
     private readonly options: TraceBuilderOptions
 
     constructor(options: TraceBuilderOptions) {
@@ -293,6 +295,16 @@ export class TraceBuilder {
 
     aBox(key: string, box: Box): void {
         this.aBoxes[key] = box
+    }
+
+    /** Evidence that the engine restored a removed participant's styles. */
+    restoration(
+        key: string,
+        frame: number,
+        before: StyleSnapshot,
+        after: StyleSnapshot
+    ): void {
+        this.restorations.push({ key, frame, before, after })
     }
 
     record(
@@ -355,6 +367,7 @@ export class TraceBuilder {
             mounts: this.mounts,
             initialBoxes: this.initialBoxes,
             aBoxes: this.aBoxes,
+            restorations: this.restorations,
             final,
         }
     }

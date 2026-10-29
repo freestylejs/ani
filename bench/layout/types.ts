@@ -127,6 +127,13 @@ export interface SceneTrace {
     readonly initialBoxes: Readonly<Record<string, Box>>
     /** Engine-free layout-probe boxes for every post-commit rest state. */
     readonly aBoxes: Readonly<Record<string, Box>>
+    /** Post-removal snapshots: before and after the engine remove. */
+    readonly restorations?: readonly {
+        readonly key: string
+        readonly frame: number
+        readonly before: StyleSnapshot
+        readonly after: StyleSnapshot
+    }[]
     readonly final: {
         readonly tracks: number
         readonly holds: number
@@ -294,6 +301,8 @@ export interface ScenePlan {
      * mid-exit pose as a restoration failure.
      */
     readonly removedWith?: Readonly<Record<string, string>> | undefined
+    /** Removed keys whose post-removal restitution must be proven. */
+    readonly requiredRestorations?: readonly string[] | undefined
     /** Inner presence scale samples (computed transform). */
     readonly presenceScale?: readonly PresenceScaleTrack[] | undefined
     /** Author opacity layers declared by the scene (presence/exit fades). */

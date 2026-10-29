@@ -11,7 +11,11 @@ import {
     sustainedGate,
 } from './gates.ts'
 import { type Box, settleOfBox, trackState, zeroBoxVelocity } from './oracle.ts'
-import { removedWithFollower, scoreScene } from './scoring.ts'
+import {
+    removedWithFollower,
+    restorationMismatches,
+    scoreScene,
+} from './scoring.ts'
 import type {
     Observation,
     ScenePlan,
@@ -736,4 +740,47 @@ test('H15-07: a descendant removed with a crossfade follower is exempt', () => {
         ],
     }
     assert.equal(removedWithFollower(later, 'content', 5), false)
+})
+
+test('N15-01: post-removal evidence proves owned declarations restored', () => {
+    const plan = {
+        ...basePlan(),
+        mounts: { pill: EMPTY_STYLE, content: EMPTY_STYLE },
+        requiredRestorations: ['content'],
+    }
+    assert.deepEqual(restorationMismatches(plan, 'content', EMPTY_STYLE), [])
+    assert.deepEqual(
+        restorationMismatches(plan, 'content', {
+            ...EMPTY_STYLE,
+            translate: '1px 0px',
+        }),
+        ['translate']
+    )
+    assert.deepEqual(
+        restorationMismatches({ ...plan, authorStyleKeys: [] }, 'content', {
+            ...EMPTY_STYLE,
+            inline: 'opacity: 0;',
+        }),
+        ['inline cssText']
+    )
+    const missing = scoreScene(plan, makeTrace(plan))
+    assert.equal(metric(missing, 'G6').pass, false)
+    assert.match(
+        metric(missing, 'G6').worst?.detail ?? '',
+        /required post-removal restoration/
+    )
+    const proven = copy(makeTrace(plan))
+    ;(
+        proven as unknown as {
+            restorations: unknown[]
+        }
+    ).restorations = [
+        {
+            key: 'content',
+            frame: 6,
+            before: { ...EMPTY_STYLE, translate: '1px 0px' },
+            after: EMPTY_STYLE,
+        },
+    ]
+    assert.equal(metric(scoreScene(plan, proven), 'G6').pass, true)
 })

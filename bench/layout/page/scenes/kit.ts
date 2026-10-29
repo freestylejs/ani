@@ -366,13 +366,6 @@ export interface CommitOptions {
     readonly stats?: (() => LayoutStats) | undefined
     /** React: the audited read counts, begun and ended around `run`. */
     readonly audit?: ReadAudit | undefined
-    /**
-     * Non-layout DOM reads made inside a React commit (the presence
-     * popLayout `popBox` probes) are excluded from the layout read gate.
-     */
-    readonly excludeReads?:
-        | { readonly rects: number; readonly styles: number }
-        | undefined
     /** Exact computed reads for this commit, when the default formula is not it. */
     readonly stylesExpected?: number | undefined
     /** The exact number of participants measured in the flush. */

@@ -678,6 +678,24 @@ export function removedWithFollower(
     )
 }
 
+/** Owned-declaration mismatches of a post-removal snapshot against mount. */
+export function restorationMismatches(
+    plan: ScenePlan,
+    key: string,
+    after: StyleSnapshot
+): string[] {
+    const mount = plan.mounts[key]
+    if (!mount) return ['no mount snapshot']
+    const mismatches = sameStyle(after, mount)
+    if (
+        after.inline !== mount.inline &&
+        !(plan.authorStyleKeys ?? []).includes(key)
+    ) {
+        mismatches.push('inline cssText')
+    }
+    return mismatches
+}
+
 function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     const req = plan.completeness
     let worstKey: string | undefined
@@ -751,7 +769,24 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         const last = trace.observations[lastIndex]!
         const removed = !final?.connected.includes(key)
         if (!removed) continue
-        if (removedWithFollower(plan, key, last.frame)) continue
+        if (removedWithFollower(plan, key, last.frame)) {
+            const evidence = trace.restorations?.find(
+                (entry) => entry.key === key
+            )
+            if (!evidence) {
+                count += 1
+                worstKey ??= key
+                worstDeclarations ??= `removed descendant ${key} at frame ${last.frame}: no post-removal restoration snapshot`
+                continue
+            }
+            const mismatches = restorationMismatches(plan, key, evidence.after)
+            if (mismatches.length > 0) {
+                count += 1
+                worstKey ??= key
+                worstDeclarations ??= `removed descendant ${key} after ${evidence.frame}: ${mismatches.join(', ')}`
+            }
+            continue
+        }
         const pair = plan.pairs.find((candidate) => candidate.follower === key)
         const followerAtRemoval =
             pair !== undefined &&
@@ -778,6 +813,14 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         }
         check(last, key, `last connected frame ${last.frame}`)
     }
+    for (const key of plan.requiredRestorations ?? []) {
+        const evidence = trace.restorations?.find((entry) => entry.key === key)
+        if (!evidence) {
+            count += 1
+            worstKey ??= key
+            worstDeclarations ??= `required post-removal restoration for ${key} is missing`
+        }
+    }
     const mountComplete = req.requiredKeys.every(
         (key) => plan.mounts[key] !== undefined
     )
@@ -794,7 +837,7 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
             detail:
                 worstDeclarations ??
                 (count === 0
-                    ? `0 mismatches; ${inlineDifferences} inline cssText difference(s) recorded as evidence`
+                    ? `0 mismatches; ${inlineDifferences} inline cssText difference(s) recorded as evidence; ${trace.restorations?.length ?? 0} post-removal restoration snapshot(s)`
                     : undefined),
         },
     }

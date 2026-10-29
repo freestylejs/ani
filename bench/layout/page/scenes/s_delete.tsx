@@ -211,7 +211,6 @@ function RemRow({
         if (!element || presence.isPresent || detached.current) return
         detached.current = true
         if (control === 'delete-no-lift' && i === 5) return
-        if (control === 'delete-no-lift' && i === 5) return
         const box = presented.current
         if (!box) return
         // popLayout divides the authored translateX out of the CSS box; pin the
