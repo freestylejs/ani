@@ -1009,6 +1009,67 @@ export function drawnRates(nodes: readonly SolveNode[]): {
     velocities: BoxVelocity[]
     poses: Pose[]
 } {
+    const simple = nodes.every(
+        (node) =>
+            (node.layers === null || node.layers === undefined) &&
+            node.follow < 0 &&
+            (node.posed === undefined || node.posed === null) &&
+            (node.override === undefined || node.override === null) &&
+            (node.ride === undefined || node.ride < 0) &&
+            !node.track?.anchor
+    )
+    if (simple) {
+        const velocities: BoxVelocity[] = []
+        const fulls: MovingMap[] = []
+        for (const node of nodes) {
+            const track = node.track
+            const box = track ? ownBox(track, node.elapsed) : node.a
+            let velocity = ZERO_VELOCITY
+            if (track) {
+                const holding = isHolding(track, node.elapsed)
+                const t = localTime(track, node.elapsed)
+                const w = holding ? 0 : channelVelocity(track, 2, t)
+                const h = holding ? 0 : channelVelocity(track, 3, t)
+                velocity = {
+                    x: channelVelocity(track, 0, t) - track.fx * w,
+                    y: channelVelocity(track, 1, t) - track.fy * h,
+                    w,
+                    h,
+                }
+            }
+            velocities.push(velocity)
+            const css = cssOf(node)
+            const kx = css.w > 0 ? box.w / css.w : 1
+            const ky = css.h > 0 ? box.h / css.h : 1
+            const rx = css.w > 0 ? velocity.w / css.w : 0
+            const ry = css.h > 0 ? velocity.h / css.h : 0
+            fulls.push({
+                map: {
+                    x: { k: kx, b: box.x - kx * css.x },
+                    y: { k: ky, b: box.y - ky * css.y },
+                },
+                rate: {
+                    x: { k: rx, b: velocity.x - rx * css.x },
+                    y: { k: ry, b: velocity.y - ry * css.y },
+                },
+            })
+        }
+        const poses = nodes.map((node, i) => {
+            const parent =
+                node.parent >= 0 ? fulls[node.parent]! : STILL_IDENTITY
+            const pose = composeMoving(
+                composeMoving(invertMoving(parent), fulls[i]!),
+                still(invert(node.inner))
+            )
+            return {
+                tx: pose.rate.x.b + pose.rate.x.k * node.ox,
+                ty: pose.rate.y.b + pose.rate.y.k * node.oy,
+                sx: pose.rate.x.k,
+                sy: pose.rate.y.k,
+            }
+        })
+        return { velocities, poses }
+    }
     const motion = drawnMotion(nodes, true)
     const poses = nodes.map((node, i) => {
         // x ↦ s·(x − o) + o + t: b = o − s·o + t, so t′ = b′ + s′·o
@@ -1041,7 +1102,15 @@ export function fadeOpacity(fade: Fade): number {
 }
 
 /** Poses, opacities and radii of every node (parents first). */
-export function solve(nodes: readonly SolveNode[]): Solved[] {
+export function solve(
+    nodes: readonly SolveNode[],
+    into?: readonly (Solved | null)[]
+): Solved[] {
+    type MutableSolved = {
+        -readonly [K in keyof Solved]: Solved[K]
+    }
+    const target = (i: number): MutableSolved =>
+        (into?.[i] ?? {}) as MutableSolved
     // the common flat move: no presence layers, followers, holds, rides,
     // anchors, fades or radii. Every drawn box is its own track's box (or A)
     // and, with no layers, a node's parent map is its parent's full map.
@@ -1066,13 +1135,13 @@ export function solve(nodes: readonly SolveNode[]): Solved[] {
             const box = drawn[i]!
             const parent = node.parent >= 0 ? fulls[node.parent]! : IDENTITY_MAP
             const local = mapBox(invert(parent), box)
-            return {
-                drawn: box,
-                pose: poseFor(local, node.box, node.ox, node.oy),
-                map: fulls[i]!,
-                opacity: null,
-                radius: null,
-            }
+            const out = target(i)
+            out.drawn = box
+            out.pose = poseFor(local, node.box, node.ox, node.oy)
+            out.map = fulls[i]!
+            out.opacity = null
+            out.radius = null
+            return out
         })
     }
     const drawn = drawnBoxes(nodes)
@@ -1100,6 +1169,12 @@ export function solve(nodes: readonly SolveNode[]): Solved[] {
             const ky = node.a.h / box.h
             radius = onScreenRadius.map((r, j) => r * (j % 2 === 0 ? kx : ky))
         }
-        return { drawn: box, pose, map: fulls[i]!, opacity, radius }
+        const out = target(i)
+        out.drawn = box
+        out.pose = pose
+        out.map = fulls[i]!
+        out.opacity = opacity
+        out.radius = radius
+        return out
     })
 }
