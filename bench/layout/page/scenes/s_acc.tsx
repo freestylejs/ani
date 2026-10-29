@@ -6,6 +6,7 @@
  * headers/bodies are position-pinned under the row's scale.
  */
 
+import { type Clock, createClock } from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -18,7 +19,7 @@ import {
 } from '@freestylejs/ani-react/layout'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Box } from '../../oracle.ts'
-import type { RealTrace, SceneTrace } from '../../types.ts'
+import type { RealTrace, SceneTrace, VariantRunOptions } from '../../types.ts'
 import {
     installRafSampler,
     isWebKitEngine,
@@ -42,6 +43,11 @@ import {
     styleOnce,
 } from './kit.ts'
 import { HomeIndicator, IosStatus } from './react_kit.tsx'
+import {
+    prefersReduced,
+    type ReducedSceneOptions,
+    reducedPolicyFor,
+} from './reduced.ts'
 
 const ROWS = 11
 const EXPANDED = 168
@@ -161,6 +167,7 @@ function installStyles(): void {
             position: absolute; right: 16px; top: 18px; width: 8px; height: 13px;
             color: #C7C7CC; transition: transform 0.2s ease;
         }
+        .acc-reduced .acc-chev { transition: none; }
         .acc-row.acc-open .acc-chev { transform: rotate(90deg); }
         .acc-body {
             position: absolute; left: 0; top: ${COLLAPSED}px; width: 358px;
@@ -391,6 +398,8 @@ class AccRuntime {
     readonly audit = installReadAudit()
     readonly api: AccApi = { control: null, setOpen: null }
     readonly stage: HTMLDivElement
+    readonly clock: Clock | undefined
+    readonly policy: ReturnType<typeof reducedPolicyFor>
     mount: { root: { unmount(): void }; container: HTMLDivElement } | null =
         null
     frame = 0
@@ -400,15 +409,22 @@ class AccRuntime {
 
     constructor(options: {
         mc: ManualClock | null
+        clock?: Clock | undefined
         builder: TraceBuilder | null
         elements?: Map<string, HTMLElement | null>
         control?: string | undefined
+        variant?: VariantRunOptions | undefined
     }) {
         installStyles()
         this.mc = options.mc
+        this.clock = options.clock ?? options.mc?.clock
         this.builder = options.builder
         this.elements = options.elements ?? new Map()
         this.control = options.control
+        this.policy = reducedPolicyFor({
+            control: options.control,
+            variant: options.variant,
+        })
         this.tracker = options.builder ? reportTracker(options.builder) : null
         this.offDiagnostic = layoutRuntime.onDiagnostic((event) => {
             this.diagnostics.push(event.code)
@@ -428,6 +444,7 @@ class AccRuntime {
         }
         this.stage = document.createElement('div')
         this.stage.className = 'acc-stage'
+        if (this.policy !== 'ignore') this.stage.classList.add('acc-reduced')
         if (options.control === 'acc-separator-1px')
             this.stage.classList.add('acc-control-sep1')
         document.body.append(this.stage)
@@ -449,9 +466,9 @@ class AccRuntime {
         }
         root.render(
             <LayoutGroup
-                {...(this.mc ? { clock: this.mc.clock } : {})}
+                {...(this.clock ? { clock: this.clock } : {})}
                 motion={SPRING.acc}
-                reducedMotion="ignore"
+                reducedMotion={this.policy}
                 threshold={1}
                 maxNodes={300}
                 maxParticipants={2000}
@@ -537,9 +554,11 @@ async function stepAcc(
 
 export class AccScene {
     static async runManual(
-        options: { control?: string | undefined } = {}
+        options: ReducedSceneOptions = {}
     ): Promise<SceneTrace> {
-        const mc = createManualClock()
+        const mc = createManualClock({
+            reducedMotion: prefersReduced(options),
+        })
         const elements = new Map<string, HTMLElement | null>()
         const builder = new TraceBuilder({
             scene: 's-acc',
@@ -553,6 +572,7 @@ export class AccScene {
             builder,
             elements,
             control: options.control,
+            variant: options.variant,
         })
         await document.fonts.ready
         await runtime.mountReact()
@@ -569,10 +589,13 @@ export class AccScene {
             builder.record('frame', 0)
             runtime.frame = 0
             runtime.commit('c1', [2])
+            await microtasks()
             for (let i = 0; i < 12; i++) await stepAcc(mc, builder, runtime)
             runtime.commit('c2', [2, 6])
+            await microtasks()
             for (let i = 0; i < 6; i++) await stepAcc(mc, builder, runtime)
             runtime.commit('c3', [6])
+            await microtasks()
             let guard = 0
             while (guard++ < 400) {
                 if (runtime.tracker?.done.get('c3') && mc.clock.size === 0)
@@ -604,11 +627,21 @@ export class AccScene {
         }
     }
 
-    static async runReal(): Promise<RealTrace> {
+    static async runReal(
+        options: ReducedSceneOptions = {}
+    ): Promise<RealTrace> {
         const granularityInfo = measureGranularityInfo()
         const g = granularityInfo.value
         const sampler = installRafSampler()
-        const runtime = new AccRuntime({ mc: null, builder: null })
+        const clock = prefersReduced(options)
+            ? createClock({ reducedMotion: true })
+            : null
+        const runtime = new AccRuntime({
+            mc: null,
+            ...(clock ? { clock } : {}),
+            builder: null,
+            variant: options.variant,
+        })
         await document.fonts.ready
         await runtime.mountReact()
         await runtime.drain()
@@ -639,6 +672,7 @@ export class AccScene {
                 ).length,
             }
             runtime.dispose()
+            clock?.dispose()
             sampler.stop()
             const frames = [...sampler.frames]
             return {
@@ -653,6 +687,7 @@ export class AccScene {
             }
         } catch (error) {
             runtime.dispose()
+            clock?.dispose()
             sampler.stop()
             throw error
         }

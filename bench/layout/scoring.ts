@@ -78,6 +78,10 @@ interface SegmentState {
     /** A moving retarget carries the analytic velocity into a timing curve. */
     readonly carrying: boolean
     readonly settle: number
+    /** Reduced-motion `'jump'`: the flush lands at `to`, not `from`. */
+    readonly jump: boolean
+    /** A jump follower is invisible and held at its presented box B. */
+    readonly holdFrom: boolean
 }
 
 interface Expected {
@@ -181,7 +185,7 @@ function elapsedAt(state: SegmentState, frame: number, stepMs: number): number {
 }
 
 function valueAt(state: SegmentState, frame: number, stepMs: number): Box {
-    if (state.kind === 'none') return state.to
+    if (state.kind === 'none') return state.holdFrom ? state.from : state.to
     const elapsed = elapsedAt(state, frame, stepMs)
     return trackState(
         state.motion!,
@@ -401,6 +405,16 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                           h: from.h,
                       }
                     : segment.to
+                const carryingChosen =
+                    segment.reducedCarry === undefined
+                        ? segment.holdRelease === true ||
+                          (segment.velocityOverride === undefined
+                              ? active && segment.startMoving !== true
+                              : v0.x !== 0 ||
+                                v0.y !== 0 ||
+                                v0.w !== 0 ||
+                                v0.h !== 0)
+                        : segment.reducedCarry
                 const settle =
                     segment.kind === 'spring'
                         ? settleOfBox(
@@ -408,7 +422,7 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                               (segment.motion as { bounce: number }).bounce,
                               from,
                               target,
-                              v0
+                              carryingChosen ? v0 : null
                           )
                         : segment.kind === 'timing'
                           ? segment.motion!.duration
@@ -422,15 +436,10 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                     motion: segment.motion,
                     v0,
                     moving,
-                    carrying:
-                        segment.holdRelease === true ||
-                        (segment.velocityOverride === undefined
-                            ? active && segment.startMoving !== true
-                            : v0.x !== 0 ||
-                              v0.y !== 0 ||
-                              v0.w !== 0 ||
-                              v0.h !== 0),
+                    carrying: carryingChosen,
                     settle,
+                    jump: segment.reducedJump === true,
+                    holdFrom: segment.reducedHoldFrom === true,
                 }
                 pending.push({ segment, state, source })
                 if (segment.kind !== 'none') {
@@ -480,7 +489,11 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                 observation.kind === 'flush' &&
                 state.startFrame === observation.frame
             )
-                box = state.from
+                box = state.jump
+                    ? state.holdFrom
+                        ? state.from
+                        : state.to
+                    : state.from
             else box = valueAt(state, observation.frame, stepMs)
             if (!box) continue
             const authored = state
@@ -496,8 +509,20 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
             })
         }
         // While held, the finger owns the drawn box (§5.10): the held element
-        // and its riders are not on the layout track.
+        // and its riders are not on the layout track. A reduced-motion
+        // `'jump'` release is the exception: its first flush lands at A.
         for (const hold of plan.holds ?? []) {
+            const jumpReleaseFlush =
+                plan.reducedMotion === 'jump' &&
+                observation.kind === 'flush' &&
+                observation.frame === hold.releaseFrame &&
+                plan.commits.some(
+                    (commit) =>
+                        commit.kind === 'release' &&
+                        commit.frame === hold.releaseFrame &&
+                        commit.label === observation.commitLabel
+                )
+            if (jumpReleaseFlush) continue
             for (const key of [
                 hold.key,
                 ...hold.riders.map((rider) => rider.key),
@@ -534,56 +559,60 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
 
     // F8: the release's first frame is dt = 0 (§5.10). Measure the drawn box
     // of the release frame's next frame against HoldEvidence.releaseBox.
-    plan.holds?.forEach((hold, holdIndex) => {
-        const evidence = trace.holds?.[holdIndex]
-        const releasePlan = plan.commits.find(
-            (commit) =>
-                commit.kind === 'release' && commit.frame === hold.releaseFrame
-        )
-        if (!releasePlan) return
-        const flushIndex = trace.observations.findIndex(
-            (observation) =>
-                observation.kind === 'flush' &&
-                observation.commitLabel === releasePlan.label
-        )
-        if (flushIndex < 0) return
-        const next = trace.observations
-            .slice(flushIndex + 1)
-            .find(
-                (observation) =>
-                    observation.kind === 'frame' &&
-                    observation.frame > hold.releaseFrame
+    // Reduced-motion `'jump'` lands at A with no motion, so the release
+    // continuity row is policy-N/A (G1 at the flush and G5 decide).
+    if (plan.reducedMotion !== 'jump')
+        plan.holds?.forEach((hold, holdIndex) => {
+            const evidence = trace.holds?.[holdIndex]
+            const releasePlan = plan.commits.find(
+                (commit) =>
+                    commit.kind === 'release' &&
+                    commit.frame === hold.releaseFrame
             )
-        const releaseBox =
-            evidence?.releaseBox ??
-            trace.observations[flushIndex]?.boxes[hold.key] ??
-            null
-        if (!next || !releaseBox) return
-        const riders = [
-            { key: hold.key, dx: 0, dy: 0, held: true },
-            ...hold.riders.map((rider) => ({ ...rider, held: false })),
-        ]
-        for (const rider of riders) {
-            const shown = next.boxes[rider.key] ?? null
-            if (!shown) continue
-            // The rider keeps its own rest size (title 270×22); the held
-            // row's 358×52 size applies only to the held node. Using the
-            // held size here would manufacture a width-edge failure.
-            const rest = plan.initial[rider.key]
-            const want = {
-                x: releaseBox.x + rider.dx,
-                y: releaseBox.y + rider.dy,
-                w: rider.held ? releaseBox.w : (rest?.w ?? releaseBox.w),
-                h: rider.held ? releaseBox.h : (rest?.h ?? releaseBox.h),
+            if (!releasePlan) return
+            const flushIndex = trace.observations.findIndex(
+                (observation) =>
+                    observation.kind === 'flush' &&
+                    observation.commitLabel === releasePlan.label
+            )
+            if (flushIndex < 0) return
+            const next = trace.observations
+                .slice(flushIndex + 1)
+                .find(
+                    (observation) =>
+                        observation.kind === 'frame' &&
+                        observation.frame > hold.releaseFrame
+                )
+            const releaseBox =
+                evidence?.releaseBox ??
+                trace.observations[flushIndex]?.boxes[hold.key] ??
+                null
+            if (!next || !releaseBox) return
+            const riders = [
+                { key: hold.key, dx: 0, dy: 0, held: true },
+                ...hold.riders.map((rider) => ({ ...rider, held: false })),
+            ]
+            for (const rider of riders) {
+                const shown = next.boxes[rider.key] ?? null
+                if (!shown) continue
+                // The rider keeps its own rest size (title 270×22); the held
+                // row's 358×52 size applies only to the held node. Using the
+                // held size here would manufacture a width-edge failure.
+                const rest = plan.initial[rider.key]
+                const want = {
+                    x: releaseBox.x + rider.dx,
+                    y: releaseBox.y + rider.dy,
+                    w: rider.held ? releaseBox.w : (rest?.w ?? releaseBox.w),
+                    h: rider.held ? releaseBox.h : (rest?.h ?? releaseBox.h),
+                }
+                releaseContinuity.push({
+                    key: rider.key,
+                    source: hold.key,
+                    error: edgeError(shown, want).max,
+                    frame: next.frame,
+                })
             }
-            releaseContinuity.push({
-                key: rider.key,
-                source: hold.key,
-                error: edgeError(shown, want).max,
-                frame: next.frame,
-            })
-        }
-    })
+        })
 
     return { byObservation, commits, holdContinuity, releaseContinuity }
 }
@@ -1192,21 +1221,29 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     }
 }
 
-function scoreReads(trace: SceneTrace): MetricFinding {
+function scoreReads(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    const jump = plan.reducedMotion === 'jump'
     let excess = 0
     let worstLabel: string | undefined
     let detail: string | undefined
     let exact = true
+    const styleEvidence: string[] = []
     for (const commit of trace.commits) {
         const required = commit.nBefore + commit.nAfter
         const rectError = Math.abs(commit.rects - required)
         const offsetError = Math.abs(commit.offsets - required)
         const styleError = Math.abs(commit.styles - commit.stylesExpected)
+        const countedStyleError = jump ? 0 : styleError
+        if (jump && styleError > 0) {
+            styleEvidence.push(
+                `${commit.label} ${commit.styles}/${commit.stylesExpected}`
+            )
+        }
         const commitExcess =
             rectError +
             offsetError +
             Math.max(0, commit.frameReads) +
-            styleError
+            countedStyleError
         if (commitExcess > 0) exact = false
         if (commitExcess >= excess) {
             excess = commitExcess
@@ -1242,6 +1279,10 @@ function scoreReads(trace: SceneTrace): MetricFinding {
                 `${commit.label} ${commit.styles}/${commit.stylesExpected}`
         )
         .join(', ')
+    const policyNote =
+        jump && styleEvidence.length > 0
+            ? `; §9.4 jump has no planned tracks, so the §4.3 computed set is policy-dependent: ${styleEvidence.join(', ')} reported as evidence (rect/pair and frame counts are exact)`
+            : ''
     return {
         id: 'G13',
         label: 'Exact read counts per commit and zero steady-frame reads',
@@ -1252,11 +1293,14 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         measured: true,
         worst: {
             label: worstLabel ?? trace.commits[0]?.label,
-            detail: detail ?? `${exactSummary}; steady frames read zero`,
+            detail:
+                (detail ?? `${exactSummary}; steady frames read zero`) +
+                policyNote,
         },
         detail:
-            detail ??
-            `exact computed reads ${exactSummary}; steady frames read zero`,
+            (detail ??
+                `exact computed reads ${exactSummary}; steady frames read zero`) +
+            policyNote,
     }
 }
 
@@ -1490,7 +1534,7 @@ function scoreHold(plan: ScenePlan, trace: SceneTrace): MetricFinding {
                 `hold ${index}: release state ${entry.releaseState}`
             )
         }
-        if (entry.holdsAtRelease < 1) {
+        if (entry.holdsAtRelease < 1 && plan.reducedMotion !== 'jump') {
             note(
                 hold.key,
                 hold.releaseFrame,
@@ -1578,6 +1622,78 @@ function scoreKillSwitch(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     }
 }
 
+/** §9.4 outcome: status, report timing and restoration evidence. */
+function scoreReducedPolicy(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    const policy = plan.reducedMotion
+    if (policy === undefined || policy === 'ignore') {
+        return {
+            id: 'shape.reduced-policy',
+            label: '§9.4 reduced-motion outcome',
+            gate: 'primary/ignore policy: full motion; no reduced row',
+            unit: 'violations',
+            value: 0,
+            pass: true,
+            deciding: false,
+            measured: true,
+            detail: 'n/a: the ignore policy plays the full track; G1–G8 decide',
+        }
+    }
+    let violations = 0
+    let worst: string | undefined
+    for (const commit of plan.commits) {
+        if (commit.kind === 'release') continue
+        const report = trace.reports.find(
+            (entry) => entry.label === commit.label
+        )
+        if (!report) {
+            violations += 1
+            worst ??= `${commit.label}: no report`
+            continue
+        }
+        if (policy === 'jump') {
+            if (commit.expectedStatus !== 'reduced') continue
+            if (report.status !== 'reduced') {
+                violations += 1
+                worst ??= `${commit.label}: status ${report.status} != reduced`
+            }
+            if (report.settledFrame !== commit.frame) {
+                violations += 1
+                worst ??= `${commit.label}: settled at frame ${report.settledFrame}, not the jump frame ${commit.frame}`
+            }
+        } else {
+            const frames =
+                report.settledFrame === null
+                    ? Number.POSITIVE_INFINITY
+                    : report.settledFrame - commit.frame
+            const allowed =
+                Math.ceil(((plan.maxDuration ?? 0.2) * 1000) / plan.stepMs) + 1
+            if (frames > allowed) {
+                violations += 1
+                worst ??= `${commit.label}: ${frames} frames > maxDuration bound ${allowed}`
+            }
+        }
+    }
+    return {
+        id: 'shape.reduced-policy',
+        label: '§9.4 reduced-motion outcome',
+        gate:
+            policy === 'jump'
+                ? 'status reduced and the run resolves at the jump commit frame; no clock subscription'
+                : 'every run settles within the { maxDuration } bound; styles restored by G6',
+        unit: 'violations',
+        value: violations,
+        pass: violations === 0,
+        measured: true,
+        worst: { detail: worst },
+        detail:
+            violations === 0
+                ? policy === 'jump'
+                    ? 'every commit resolved reduced at its own frame'
+                    : `every commit settled within ${plan.maxDuration ?? 0.2}s`
+                : worst,
+    }
+}
+
 function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
     return [
         scoreCrossfadeOpacity(plan, trace),
@@ -1632,6 +1748,7 @@ function pairProgress(
         }
     }
     if (!active || active.kind === 'none') return 0
+    if (active.jump) return 1
     return perceptualOf(active.motion!, elapsedAt(active, frame, plan.stepMs))
 }
 
@@ -1753,6 +1870,16 @@ function stateHistory(
                       h: from.h,
                   }
                 : segment.to
+            const carrying =
+                segment.reducedCarry === undefined
+                    ? segment.holdRelease === true ||
+                      (segment.velocityOverride === undefined
+                          ? active && segment.startMoving !== true
+                          : v0.x !== 0 ||
+                            v0.y !== 0 ||
+                            v0.w !== 0 ||
+                            v0.h !== 0)
+                    : segment.reducedCarry
             const settle =
                 segment.kind === 'spring'
                     ? settleOfBox(
@@ -1760,7 +1887,7 @@ function stateHistory(
                           (segment.motion as { bounce: number }).bounce,
                           from,
                           target,
-                          v0
+                          carrying ? v0 : null
                       )
                     : segment.kind === 'timing'
                       ? segment.motion!.duration
@@ -1780,12 +1907,10 @@ function stateHistory(
                           (segment.velocityOverride === undefined
                               ? active
                               : v0.x !== 0 || v0.y !== 0),
-                carrying:
-                    segment.holdRelease === true ||
-                    (segment.velocityOverride === undefined
-                        ? active && segment.startMoving !== true
-                        : v0.x !== 0 || v0.y !== 0 || v0.w !== 0 || v0.h !== 0),
+                carrying,
                 settle,
+                jump: segment.reducedJump === true,
+                holdFrom: segment.reducedHoldFrom === true,
             }
             pending.push({ key: segment.key, state })
         }
@@ -2272,7 +2397,7 @@ function scoreCompleteness(
 /** Scores every §11.6 metric and the scene-specific shape assertions. */
 export function scoreScene(plan: ScenePlan, trace: SceneTrace): SceneScore {
     const expected = buildExpected(plan, trace)
-    const base: MetricFinding[] = [
+    let base: MetricFinding[] = [
         scoreOracle('G1', trace, expected, false),
         scoreContinuity(trace, expected),
         scoreVelocity(plan, trace, expected),
@@ -2280,9 +2405,25 @@ export function scoreScene(plan: ScenePlan, trace: SceneTrace): SceneScore {
         scoreSettle(plan, trace),
         scoreRestoration(plan, trace),
         scoreReports(plan, trace),
-        scoreReads(trace),
+        scoreReads(plan, trace),
     ]
-    const shape = scoreShape(plan, trace)
+    if (plan.reducedMotion === 'jump') {
+        const policy = (metric: MetricFinding): MetricFinding => ({
+            ...metric,
+            value: 0,
+            pass: true,
+            measured: true,
+            deciding: false,
+            worst: undefined,
+            detail: 'policy: reduced-motion jump has no track; G1 at the flush and G5/G6 decide, and shape.reduced-policy checks the §9.4 outcome',
+        })
+        base = base.map((metric) =>
+            metric.id === 'G2' || metric.id === 'G3' || metric.id === 'G4'
+                ? policy(metric)
+                : metric
+        )
+    }
+    const shape = [...scoreShape(plan, trace), scoreReducedPolicy(plan, trace)]
     const completeness = scoreCompleteness(plan, trace, base, shape)
     const metrics = [completeness, ...base]
     return {
