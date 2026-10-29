@@ -4,7 +4,7 @@
  * `createPresence`, core `ani`/`timing`.
  */
 
-import { ani, timing } from '@freestylejs/ani-core'
+import { ani, type Clock, createClock, timing } from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -18,7 +18,7 @@ import {
     type PresenceHandle,
 } from '@freestylejs/ani-layout'
 import type { Box } from '../../oracle.ts'
-import type { RealTrace, SceneTrace } from '../../types.ts'
+import type { RealTrace, SceneTrace, VariantRunOptions } from '../../types.ts'
 import {
     installRafSampler,
     isWebKitEngine,
@@ -38,6 +38,11 @@ import {
     STATUS_CSS,
     statusBar,
 } from './kit.ts'
+import {
+    prefersReduced,
+    type ReducedSceneOptions,
+    reducedPolicyFor,
+} from './reduced.ts'
 
 const FONT =
     '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif'
@@ -398,30 +403,38 @@ class CardRuntime {
     contentMode: 'off' | 'opening' | 'open' | 'closing' | 'reversing' = 'off'
     contentSince = 0
     contentFrom = 0
+    readonly policy: ReturnType<typeof reducedPolicyFor>
+    private readonly scriptJump: boolean
+    private readonly clock: Clock | undefined
     private readonly offDiagnostic: () => void
     private readonly control: string | undefined
-    private readonly clockNow: () => number
 
     constructor(options: {
         mc: ManualClock | null
+        clock?: Clock | undefined
         builder: TraceBuilder | null
         elements: Map<string, HTMLElement | null>
         control?: string | undefined
-        clockNow: () => number
+        variant?: VariantRunOptions | undefined
     }) {
         installStyles()
         const built = buildStage()
         this.stage = built.stage
         this.header = built.header
         this.mc = options.mc
+        this.clock = options.clock ?? options.mc?.clock
         this.builder = options.builder
         this.elements = options.elements
         this.control = options.control
-        this.clockNow = options.clockNow
+        this.policy = reducedPolicyFor({
+            control: options.control,
+            variant: options.variant,
+        })
+        this.scriptJump = options.variant?.id === 'rm-jump'
         this.group = createLayoutGroup({
-            ...(options.mc ? { clock: options.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
             motion: { type: 'spring', duration: 0.55, bounce: 0.05 },
-            reducedMotion: 'ignore',
+            reducedMotion: this.policy,
             threshold: 1,
             maxNodes: 300,
             maxParticipants: 2000,
@@ -445,6 +458,8 @@ class CardRuntime {
             participants: [...KEYS],
             boxes: probes,
             motion: { type: 'spring', duration: 0.55, bounce: 0.05 },
+            variant: options.variant?.id ?? null,
+            reducedMotion: this.policy,
         }
         this.card = card
         for (const key of KEYS) this.elements.set(key, null)
@@ -465,6 +480,18 @@ class CardRuntime {
         }
         this.mountCard(card)
         this.mountSheetAtRest()
+    }
+
+    get jump(): boolean {
+        return this.scriptJump
+    }
+
+    get reducedAuthor(): boolean {
+        return this.policy !== 'ignore'
+    }
+
+    private now(): number {
+        return this.mc?.now ?? performance.now()
     }
 
     /**
@@ -526,13 +553,13 @@ class CardRuntime {
             })
         )
         card.presence = createPresence(card.root, motion, {
-            ...(this.mc ? { clock: this.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
         })
         card.imagePresence = createPresence(card.image, motion, {
-            ...(this.mc ? { clock: this.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
         })
         card.titlePresence = createPresence(card.title, motion, {
-            ...(this.mc ? { clock: this.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
         })
     }
 
@@ -567,13 +594,13 @@ class CardRuntime {
             )
         )
         layer.presence = createPresence(layer.root, motion, {
-            ...(this.mc ? { clock: this.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
         })
         layer.imagePresence = createPresence(layer.image, motion, {
-            ...(this.mc ? { clock: this.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
         })
         layer.titlePresence = createPresence(layer.title, motion, {
-            ...(this.mc ? { clock: this.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
         })
         for (const [key, element] of [
             ['sheet', layer.root],
@@ -710,7 +737,7 @@ class CardRuntime {
         this.openReport = this.captureCommit('open', () => {
             this.sheet = this.mountSheet()
             this.contentMode = 'opening'
-            this.contentSince = this.clockNow()
+            this.contentSince = this.now()
             this.contentFrom = 0
             this.animateContent()
         })
@@ -792,7 +819,7 @@ class CardRuntime {
             }
             this.mountCard(card)
             this.contentMode = 'closing'
-            this.contentSince = this.clockNow()
+            this.contentSince = this.now()
             this.contentFrom = this.contentOpacity
             this.animateContent()
         })
@@ -826,7 +853,7 @@ class CardRuntime {
             card.root.style.zIndex = '10'
             sheet.root.style.zIndex = '11'
             this.contentMode = 'reversing'
-            this.contentSince = this.clockNow()
+            this.contentSince = this.now()
             this.contentFrom = this.contentOpacity
             this.animateContent()
         })
@@ -844,6 +871,28 @@ class CardRuntime {
         const sheet = this.sheet
         if (!sheet) return
         const content = sheet.content
+        if (this.reducedAuthor) {
+            // §1.10: the reduced variants' author/presence layers are zero
+            // duration. The crossfade endpoint is already complete.
+            content.style.transition = 'none'
+            content.style.opacity =
+                this.contentMode === 'closing' || this.contentMode === 'off'
+                    ? '0'
+                    : '1'
+            content.style.visibility =
+                this.contentMode === 'closing' || this.contentMode === 'off'
+                    ? 'hidden'
+                    : 'visible'
+            content.style.pointerEvents =
+                this.contentMode === 'closing' || this.contentMode === 'off'
+                    ? 'none'
+                    : 'auto'
+            sheet.close.tabIndex =
+                this.contentMode === 'closing' || this.contentMode === 'off'
+                    ? -1
+                    : 0
+            return
+        }
         if (this.contentMode === 'opening') {
             content.style.transition = `opacity 150ms cubic-bezier(0,0,0.58,1) ${(contentDelay() * 1000).toFixed(1)}ms`
             content.style.opacity = '1'
@@ -870,7 +919,19 @@ class CardRuntime {
         if (!sheet) return
         const content = sheet.content
         if (this.contentMode === 'off') return
-        const elapsed = (this.clockNow() - this.contentSince) / 1000
+        if (this.reducedAuthor) {
+            const target = this.contentMode === 'closing' ? 0 : 1
+            this.contentOpacity = target
+            content.style.opacity = String(target)
+            content.style.visibility = target > 0.001 ? 'visible' : 'hidden'
+            content.style.pointerEvents = target > 0.001 ? 'auto' : 'none'
+            sheet.close.tabIndex = target > 0.001 ? 0 : -1
+            if (this.contentMode === 'opening') this.contentMode = 'open'
+            if (this.contentMode === 'reversing') this.contentMode = 'open'
+            if (this.contentMode === 'closing') this.contentMode = 'off'
+            return
+        }
+        const elapsed = (this.now() - this.contentSince) / 1000
         const delay = contentDelay()
         let target = this.contentOpacity
         if (this.contentMode === 'opening') {
@@ -913,15 +974,15 @@ class CardRuntime {
     }
 }
 
-export interface CardSceneOptions {
-    readonly control?: string | undefined
-}
+export type CardSceneOptions = ReducedSceneOptions
 
 export class CardScene {
     static async runManual(
         options: CardSceneOptions = {}
     ): Promise<SceneTrace> {
-        const mc = createManualClock()
+        const mc = createManualClock({
+            reducedMotion: prefersReduced(options),
+        })
         const elements = new Map<string, HTMLElement | null>()
         const builder = new TraceBuilder({
             scene: 's-card',
@@ -937,7 +998,7 @@ export class CardScene {
             builder,
             elements,
             control: options.control,
-            clockNow: () => mc.now,
+            variant: options.variant,
         })
         await document.fonts.ready
         await Promise.all(
@@ -969,6 +1030,7 @@ export class CardScene {
             builder.record('frame', 0)
             runtime.frame = 0
             runtime.commitOpen()
+            await microtasks()
             let guard = 0
             while (guard++ < 300) {
                 if (runtime.openDone && runtime.group.stats.tracks === 0) break
@@ -980,17 +1042,29 @@ export class CardScene {
             builder.settleFrames.push(frame)
             await step()
             runtime.commitClose()
-            for (let i = 0; i < 15; i++) await step()
-            runtime.commitReverse()
-            guard = 0
-            while (guard++ < 300) {
-                if (runtime.reverseDone && runtime.group.stats.tracks === 0)
-                    break
-                await step()
-            }
             await microtasks()
-            await step()
-            builder.settleFrames.push(frame)
+            if (runtime.jump) {
+                // §9.4 'jump': there is no flight to reverse. The close lands
+                // at the card and the crossfade completes at the endpoint.
+                for (let i = 0; i < 3; i++) await step()
+                builder.settleFrames.push(frame)
+            } else {
+                // The §1.4/A-1 reversal is at 40 % of the close flight. Under
+                // { maxDuration } the clamp shortens the flight (settle
+                // ≈ 0.12 s), so the 40 % frame is frame 5, not 15.
+                const reverseAfter = runtime.policy === 'ignore' ? 15 : 5
+                for (let i = 0; i < reverseAfter; i++) await step()
+                runtime.commitReverse()
+                guard = 0
+                while (guard++ < 300) {
+                    if (runtime.reverseDone && runtime.group.stats.tracks === 0)
+                        break
+                    await step()
+                }
+                await microtasks()
+                await step()
+                builder.settleFrames.push(frame)
+            }
             const final: SceneTrace['final'] = {
                 tracks: runtime.group.stats.tracks,
                 holds: runtime.group.stats.holds,
@@ -1008,15 +1082,19 @@ export class CardScene {
         }
     }
 
-    static async runReal(): Promise<RealTrace> {
+    static async runReal(options: CardSceneOptions = {}): Promise<RealTrace> {
         const granularityInfo = measureGranularityInfo()
         const g = granularityInfo.value
         const sampler = installRafSampler()
+        const clock = prefersReduced(options)
+            ? createClock({ reducedMotion: true })
+            : null
         const runtime = new CardRuntime({
             mc: null,
+            ...(clock ? { clock } : {}),
             builder: null,
             elements: new Map(),
-            clockNow: () => performance.now(),
+            variant: options.variant,
         })
         await document.fonts.ready
         await Promise.all(
@@ -1051,9 +1129,12 @@ export class CardScene {
             const opening = open()
             await opening
             void close()
-            await waitUntil(commits[1]!.at + 224)
-            const reversing = reverse()
-            await reversing
+            if (!runtime.jump) {
+                const reverseAfter = runtime.policy === 'ignore' ? 224 : 80
+                await waitUntil(commits[1]!.at + reverseAfter)
+                const reversing = reverse()
+                await reversing
+            }
             for (let i = 0; i < 4; i++) await nextFrame()
             const final = {
                 tracks: runtime.group.stats.tracks,
@@ -1063,6 +1144,7 @@ export class CardScene {
                 ).length,
             }
             runtime.dispose()
+            clock?.dispose()
             sampler.stop()
             const frames = [...sampler.frames]
             return {
@@ -1077,6 +1159,7 @@ export class CardScene {
             }
         } catch (error) {
             runtime.dispose()
+            clock?.dispose()
             sampler.stop()
             throw error
         }

@@ -140,6 +140,7 @@ export function aggregateSceneReport(args: {
     readonly shape: readonly (readonly MetricFinding[])[]
     readonly pending?: string | null
     readonly notes?: readonly string[]
+    readonly variant?: SceneReport['variant'] | undefined
 }): SceneReport {
     const measuredRuns = args.runs.filter((run) => !run.warmup)
     const measuredFindings = args.findings.filter(
@@ -240,6 +241,7 @@ export function aggregateSceneReport(args: {
         shape: shapeMetrics,
         runs: args.runs,
         notes: args.notes ?? [],
+        ...(args.variant === undefined ? {} : { variant: args.variant }),
     }
 }
 

@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { evaluateCertification, evaluateInvocation } from './certification.ts'
 
+const variantKeys = [
+    ...['s-card', 's-photo', 's-acc', 's-seg'].flatMap((scene) =>
+        ['dpr1', 'dpr3'].map((id) => `${scene}@${id}`)
+    ),
+    ...['s-card', 's-photo', 's-acc', 's-reorder', 's-sheet'].flatMap((scene) =>
+        ['rm-jump', 'rm-max', 'rm-ignore'].map((id) => `${scene}@${id}`)
+    ),
+]
+
 const cleanEngine = (engine: string) => ({
     engine,
     launchError: null,
@@ -18,6 +27,10 @@ const cleanEngine = (engine: string) => ({
         { scene: 's-sheet', status: 'pass' as const },
         { scene: 's-bulk', status: 'pass' as const },
     ],
+    variants: variantKeys.map((scene) => ({
+        scene,
+        status: 'pass' as const,
+    })),
     cost: { status: 'pass' as const, valid: true },
 })
 
@@ -244,6 +257,77 @@ test('H15-02: every required P5b scene status is a certification reason', () => 
     assert.match(result.reasons.join(';'), /chromium scene s-photo fail/)
 })
 
+test('H19: a failed or missing support variant does not certify', () => {
+    const failing = {
+        ...cleanEngine('chromium'),
+        variants: cleanEngine('chromium').variants.map((variant) =>
+            variant.scene === 's-card@dpr1'
+                ? { scene: variant.scene, status: 'fail' as const }
+                : variant
+        ),
+    }
+    const missing = {
+        ...cleanEngine('webkit'),
+        variants: cleanEngine('webkit').variants.filter(
+            (variant) => variant.scene !== 's-photo@rm-max'
+        ),
+    }
+    const result = evaluateCertification(
+        { ...clean, engines: [failing, missing] },
+        full
+    )
+    assert.equal(result.certified, false)
+    const text = result.reasons.join(';')
+    assert.match(text, /chromium variant s-card@dpr1 fail/)
+    assert.match(text, /webkit variant s-photo@rm-max missing/)
+})
+
+test('H19: a WebKit variant G12 BLOCK is advisory (D12)', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    variants: webkit.variants.map((variant) =>
+                        variant.scene === 's-sheet@rm-jump'
+                            ? {
+                                  scene: variant.scene,
+                                  status: 'blocked' as const,
+                                  blockedReasons: [
+                                      'G12 ((p95(held) - p95(no-hold)) / held <= 0.1 ms)',
+                                  ],
+                              }
+                            : variant
+                    ),
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, true)
+    assert.match(
+        result.advisory.join('; '),
+        /s-sheet@rm-jump G12.*D12 advisory/
+    )
+})
+
+test('H19: an invocation fails when a selected support variant fails', () => {
+    const failing = {
+        ...cleanEngine('chromium'),
+        variants: cleanEngine('chromium').variants.map((variant) =>
+            variant.scene === 's-photo@rm-jump'
+                ? { scene: variant.scene, status: 'fail' as const }
+                : variant
+        ),
+    }
+    const result = evaluateInvocation({ engines: [failing] })
+    assert.equal(result.pass, false)
+    assert.match(result.reasons.join(';'), /s-photo@rm-jump fail/)
+})
+
 test('D12: a WebKit cost BLOCK is advisory when every WebKit frame row passes', () => {
     const webkit = cleanEngine('webkit')
     const result = evaluateCertification(
@@ -338,7 +422,6 @@ test('D12: invocation pass ignores a WebKit cost BLOCK', () => {
     assert.equal(result.pass, true)
     assert.deepEqual(result.reasons, [])
 })
-
 
 test('D12: invocation ignores a WebKit G12 cost-only scene block', () => {
     const webkit = cleanEngine('webkit')

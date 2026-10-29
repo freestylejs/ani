@@ -1313,3 +1313,57 @@ claim. The D11 negative increments are valid signed measurements (held p95
 below the no-hold baseline), not positive held-cost claims.
 WebKit G9/G11/G12 cannot be decided with the 1 ms timer; no quantized ratio is
 presented as a pass or failure.
+
+## Iteration 11 — H19 DPR and reduced-motion support variants
+
+- Branch `helper/h19` on the H17d base `77cc8f9`. The primary 11-scene,
+  DPR-2, `reducedMotion: 'ignore'` set is unchanged. H19 adds the §11.6 support
+  rows without changing a production source file, a scene gate, a tolerance or
+  an oracle value.
+- **DPR sweep.** S-CARD, S-PHOTO, S-ACC and S-SEG are re-run at
+  `deviceScaleFactor` 1 and 3 (DPR 2 remains the primary run). Only the browser
+  context changes; the authored CSS layout, the script, the independent oracle
+  and every gate are the same. The report keeps the worst frame/participant and
+  the exact G13 count for each variant.
+- **Reduced motion.** S-CARD, S-PHOTO, S-ACC, S-REORDER and S-SHEET run
+  `'jump'`, `{ maxDuration: 0.2 }` and `'ignore'` with the injected clock
+  preference true. The variant plan re-derives §9.4: the grid factor from
+  `{1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1}`, the carry-then-rest retry, the
+  bounce ≤ 0 clamp and the exact settle, with the independent oracle. `'jump'`
+  rewrites tracks to their endpoint A and expects `reduced` statuses and the
+  snapped `reduced` set; a follower is held at its presented box B and the
+  lead/radius/coverage/inert endpoint is asserted. `shape.reduced-policy` is
+  the §9.4 outcome row; G6 is restoration. G2/G3/G4 are explicit policy rows
+  on `'jump'`; G1/G5/G6/G7 and the exact G13 rect/pair/frame counts remain
+  measured. Under `'jump'` the §4.3 computed-read set is policy-dependent and
+  is reported as evidence with the exact count.
+- **Controls.** Ten variant-scoped browser controls fail their target:
+  DPR 1/3 versions of the existing G1/G6 controls and policy-ignored/unclamped
+  reduced controls. They are conclusive in both engines. `--check` includes
+  them and exits 1 on a miss.
+- **Certification.** All 23 variant keys are required in both engines
+  (S-CARD/S-PHOTO/S-ACC/S-SEG DPR 1/3; S-CARD/S-PHOTO/S-ACC/S-REORDER/S-SHEET
+  jump/max/ignore). A WebKit variant blocked only on the 1 ms G12 timer is a
+  D12 advisory, not a certification reason.
+- **Measured outcome.** `iteration-10/report.json` is the five-run
+  Chromium+WebKit report (the full variant table, worst frames and G13 counts
+  are in `iteration-10/variants.md`). All 8 DPR 1/3 variants pass in both
+  engines; worst G1 is 0.0013 px (S-CARD DPR 1/3, Chromium, frame 102,
+  `card-title` left) and G13 is exact in every DPR row. S-PHOTO, S-ACC,
+  S-REORDER and S-SHEET pass `'jump'`, `{ maxDuration: 0.2 }` and `'ignore'`
+  (the S-REORDER/S-SHEET WebKit G12 rows are D12 advisories). S-CARD
+  `'jump'` fails the §1.10 endpoint (lead opacity stays 0, radius stays at
+  the departing 20, follower `inert` is not set and the follower is removed
+  without it; G6/shape.inert/shape.opacity/shape.radius). S-CARD
+  `{ maxDuration: 0.2 }` fails G1/G4 because the per-participant clamps
+  choose different factors (surface 0.1, title 0.2) and the engine does not
+  draw the follower/counter-projected layers at the lead's clamped track
+  (G1 226.734 px at frame 19 `sheet-content`; G4 196.630 px at frame 7
+  `card-title`). WebKit `s-reorder@rm-jump` has two of five G8 runs at p95
+  3 ms (1 ms-quantized, 11 samples); the primary is 1 ms. These are engine
+  findings, recorded as evidence; no engine or tolerance was changed.
+- **Cost and controls.** 94 browser controls (47 per engine) are conclusive
+  and ok. Chromium G9 1.754/1.726×, G10 1.180 ms and G12 −0.225/−0.010
+  ms/held pass; G11 is 2.131× and remains open. WebKit cost/G12 are D12
+  advisory. The load was 10.24, so cost is advisory. G11 remains open; no P5
+  claim is made.
