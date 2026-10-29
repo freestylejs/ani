@@ -609,6 +609,7 @@ async function measureSustained(
     sampler: ReturnType<typeof installRafSampler>,
     g: number
 ): Promise<{
+    participants: number
     commitCosts: number[]
     floorCosts: number[]
     frameCosts: number[]

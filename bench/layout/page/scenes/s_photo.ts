@@ -6,6 +6,7 @@
  * counter-scaled; back returns to the same scrolled cell.
  */
 
+import { type Clock, createClock } from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -17,7 +18,7 @@ import {
     layoutRuntime,
 } from '@freestylejs/ani-layout'
 import type { Box } from '../../oracle.ts'
-import type { RealTrace, SceneTrace } from '../../types.ts'
+import type { RealTrace, SceneTrace, VariantRunOptions } from '../../types.ts'
 import {
     installRafSampler,
     isWebKitEngine,
@@ -43,6 +44,11 @@ import {
     statusBar,
     styleOnce,
 } from './kit.ts'
+import {
+    prefersReduced,
+    type ReducedSceneOptions,
+    reducedPolicyFor,
+} from './reduced.ts'
 
 const CELL = 128.66666666666666
 const GAP = 2
@@ -377,24 +383,31 @@ class PhotoRuntime {
     shade = 0
     private readonly offDiagnostic: () => void
     private readonly control: string | undefined
+    private readonly clock: Clock | undefined
 
     constructor(options: {
         mc: ManualClock | null
+        clock?: Clock | undefined
         builder: TraceBuilder | null
         elements?: Map<string, HTMLElement | null>
         control?: string | undefined
+        variant?: VariantRunOptions | undefined
     }) {
         installStyles()
         this.layer = buildLayer()
         this.mc = options.mc
+        this.clock = options.clock ?? options.mc?.clock
         this.builder = options.builder
         this.control = options.control
         this.elements = options.elements ?? new Map()
         this.tracker = options.builder ? reportTracker(options.builder) : null
         this.group = createLayoutGroup({
-            ...(options.mc ? { clock: options.mc.clock } : {}),
+            ...(this.clock ? { clock: this.clock } : {}),
             motion: SPRING.photo,
-            reducedMotion: 'ignore',
+            reducedMotion: reducedPolicyFor({
+                control: options.control,
+                variant: options.variant,
+            }),
             threshold: 1,
             maxNodes: 300,
             maxParticipants: 2000,
@@ -422,6 +435,7 @@ class PhotoRuntime {
             boxes: probes,
             scrollTop: SCROLL_TOP,
             motion: SPRING.photo,
+            variant: options.variant?.id ?? null,
         }
         for (const key of KEYS) this.elements.set(key, null)
         // The 300 real cells are participants; only cell 37 and its image move.
@@ -860,9 +874,11 @@ async function stepPhoto(
 
 export class PhotoScene {
     static async runManual(
-        options: { control?: string | undefined } = {}
+        options: ReducedSceneOptions = {}
     ): Promise<SceneTrace> {
-        const mc = createManualClock()
+        const mc = createManualClock({
+            reducedMotion: prefersReduced(options),
+        })
         const elements = new Map<string, HTMLElement | null>()
         const builder = new TraceBuilder({
             scene: 's-photo',
@@ -876,6 +892,7 @@ export class PhotoScene {
             builder,
             elements,
             control: options.control,
+            variant: options.variant,
         })
         for (const key of KEYS)
             elements.set(key, runtime.elements.get(key) ?? null)
@@ -899,6 +916,7 @@ export class PhotoScene {
             builder.record('frame', 0)
             runtime.frame = 0
             runtime.open()
+            await microtasks()
             let guard = 0
             while (guard++ < 400) {
                 if (
@@ -913,6 +931,7 @@ export class PhotoScene {
             // settle + 0.5 s
             for (let i = 0; i < 31; i++) await stepPhoto(mc, builder, runtime)
             runtime.back()
+            await microtasks()
             guard = 0
             while (guard++ < 400) {
                 if (
@@ -948,11 +967,21 @@ export class PhotoScene {
         }
     }
 
-    static async runReal(): Promise<RealTrace> {
+    static async runReal(
+        options: ReducedSceneOptions = {}
+    ): Promise<RealTrace> {
         const granularityInfo = measureGranularityInfo()
         const g = granularityInfo.value
         const sampler = installRafSampler()
-        const runtime = new PhotoRuntime({ mc: null, builder: null })
+        const clock = prefersReduced(options)
+            ? createClock({ reducedMotion: true })
+            : null
+        const runtime = new PhotoRuntime({
+            mc: null,
+            ...(clock ? { clock } : {}),
+            builder: null,
+            variant: options.variant,
+        })
         await document.fonts.ready
         await Promise.all(
             [...document.images].map((image) =>
@@ -991,6 +1020,7 @@ export class PhotoScene {
                 ).length,
             }
             runtime.dispose()
+            clock?.dispose()
             sampler.stop()
             const frames = [...sampler.frames]
             return {
@@ -1005,6 +1035,7 @@ export class PhotoScene {
             }
         } catch (error) {
             runtime.dispose()
+            clock?.dispose()
             sampler.stop()
             throw error
         }

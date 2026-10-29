@@ -78,7 +78,16 @@ import type {
     FloorAuditTrace,
     RealTrace,
     SceneTrace,
+    VariantId,
+    VariantRunOptions,
 } from './types.ts'
+import {
+    applyVariantPlan,
+    selectedVariants,
+    type VariantSpec,
+    variantKey,
+    variantSpec,
+} from './variants.ts'
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const ORIGIN = 'http://localhost'
@@ -102,6 +111,13 @@ const SCENES = [
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
+const VARIANT_IDS = [
+    'dpr1',
+    'dpr3',
+    'rm-jump',
+    'rm-max',
+    'rm-ignore',
+] as const satisfies readonly VariantId[]
 type EngineName = 'chromium' | 'webkit' | 'firefox'
 
 const USAGE = `P5 layout bench (iOS Native Grade calibration)
@@ -113,6 +129,8 @@ Options:
   --engine <name>    chromium | webkit | firefox, repeatable
                      (default: chromium, webkit; Firefox advisory)
   --scene <glob>     s-card | s-seg | cost | *, repeatable (default: all)
+  --variant <id>     dpr1 | dpr3 | rm-jump | rm-max | rm-ignore, repeatable
+                     (default: all support variants for the selected scenes)
   --runs <count>     measured fresh-process runs (default 5; one warm-up is
                      always discarded first)
   --out <file>       report JSON (default: bench/layout/results/latest.json)
@@ -130,6 +148,7 @@ class UsageError extends Error {}
 interface Options {
     readonly engines: readonly EngineName[]
     readonly scenes: readonly string[]
+    readonly variants: readonly VariantId[]
     readonly runs: number
     readonly out: string
     readonly compare: string | null
@@ -159,6 +178,7 @@ function globToRegExp(glob: string): RegExp {
 function parseOptions(argv: readonly string[]): Options {
     const engines: EngineName[] = []
     const scenes: string[] = []
+    const variants: VariantId[] = []
     let runs = 5
     let out: string | null = null
     let compare: string | null = null
@@ -192,6 +212,17 @@ function parseOptions(argv: readonly string[]): Options {
                 scenes.push(next(i, arg))
                 i += 1
                 break
+            case '--variant': {
+                const value = next(i, arg)
+                if (!(VARIANT_IDS as readonly string[]).includes(value)) {
+                    throw new UsageError(
+                        `--variant must be one of ${VARIANT_IDS.join(', ')}`
+                    )
+                }
+                variants.push(value as VariantId)
+                i += 1
+                break
+            }
             case '--runs': {
                 const value = Number(next(i, arg))
                 if (!Number.isInteger(value) || value <= 0) {
@@ -235,6 +266,8 @@ function parseOptions(argv: readonly string[]): Options {
                 ? ['chromium', 'webkit']
                 : [...new Set(engines)],
         scenes: selected,
+        variants:
+            variants.length === 0 ? [...VARIANT_IDS] : [...new Set(variants)],
         runs,
         out: out ?? DEFAULT_OUT,
         compare,
@@ -352,9 +385,13 @@ async function runManual(
     browser: Browser,
     bundle: string,
     scene: string,
-    control?: string | undefined
+    options: {
+        control?: string | undefined
+        variant?: VariantRunOptions | undefined
+    } = {}
 ): Promise<{ trace: SceneTrace; problems: readonly string[] }> {
-    const { viewport, dpr } = sceneViewport(scene)
+    const { viewport } = sceneViewport(scene)
+    const dpr = options.variant?.dpr ?? sceneViewport(scene).dpr
     const opened = await openPage(
         browser,
         bundle,
@@ -364,7 +401,7 @@ async function runManual(
     )
     try {
         const trace = (await opened.page.evaluate(
-            async ({ scene, control }) => {
+            async ({ scene, control, variant }) => {
                 const bench = (
                     window as unknown as {
                         __bench: {
@@ -373,17 +410,26 @@ async function runManual(
                                 {
                                     runManual(options: {
                                         control?: string | undefined
+                                        variant?: unknown
                                     }): Promise<unknown>
                                 }
                             >
                         }
                     }
                 ).__bench
-                return bench.scenes[scene]!.runManual({ control })
+                return bench.scenes[scene]!.runManual({ control, variant })
             },
-            { scene, control }
+            {
+                scene,
+                control: options.control,
+                variant: options.variant,
+            }
         )) as SceneTrace
-        return { trace, problems: opened.problems }
+        const variant = options.variant
+        return {
+            trace: variant ? { ...trace, variant: variant.id } : trace,
+            problems: opened.problems,
+        }
     } finally {
         await opened.context.close()
     }
@@ -392,9 +438,11 @@ async function runManual(
 async function runReal(
     browser: Browser,
     bundle: string,
-    scene: string
+    scene: string,
+    variant?: VariantRunOptions | undefined
 ): Promise<{ trace: RealTrace; problems: readonly string[] }> {
-    const { viewport, dpr } = sceneViewport(scene)
+    const { viewport } = sceneViewport(scene)
+    const dpr = variant?.dpr ?? sceneViewport(scene).dpr
     const opened = await openPage(
         browser,
         bundle,
@@ -403,16 +451,26 @@ async function runReal(
         engineFor(browser)
     )
     try {
-        const trace = (await opened.page.evaluate(async (scene) => {
-            const bench = (
-                window as unknown as {
-                    __bench: {
-                        scenes: Record<string, { runReal(): Promise<unknown> }>
+        const trace = (await opened.page.evaluate(
+            async ({ scene, variant }) => {
+                const bench = (
+                    window as unknown as {
+                        __bench: {
+                            scenes: Record<
+                                string,
+                                {
+                                    runReal(options: {
+                                        variant?: unknown
+                                    }): Promise<unknown>
+                                }
+                            >
+                        }
                     }
-                }
-            ).__bench
-            return bench.scenes[scene]!.runReal()
-        }, scene)) as RealTrace
+                ).__bench
+                return bench.scenes[scene]!.runReal({ variant })
+            },
+            { scene, variant }
+        )) as RealTrace
         return { trace, problems: opened.problems }
     } finally {
         await opened.context.close()
@@ -570,7 +628,8 @@ function aggregateScene(
     findings: readonly (readonly MetricFinding[])[],
     shape: readonly (readonly MetricFinding[])[],
     pending: string | null = null,
-    notes: readonly string[] = []
+    notes: readonly string[] = [],
+    variant?: VariantSpec | undefined
 ): SceneReport {
     return aggregateSceneReport({
         scene,
@@ -579,6 +638,18 @@ function aggregateScene(
         shape,
         pending,
         notes,
+        ...(variant === undefined
+            ? {}
+            : {
+                  variant: {
+                      id: variant.id,
+                      scene: variant.scene,
+                      kind: variant.kind,
+                      dpr: variant.dpr,
+                      reducedMotion: variant.policy,
+                      label: variant.label,
+                  },
+              }),
     })
 }
 
@@ -963,6 +1034,7 @@ const SCENE_CONTROLS: readonly {
     readonly scene: string
     readonly control: string
     readonly target: string
+    readonly variant?: VariantId | undefined
 }[] = [
     {
         name: 'card-no-image-id',
@@ -1174,6 +1246,78 @@ const SCENE_CONTROLS: readonly {
         control: 'bulk-leftover-pose',
         target: 'G6',
     },
+    // H19 support-variant controls: each variant family must be able to fail
+    // its target without changing a gate value.
+    {
+        name: 'dpr1-card-no-image-id',
+        scene: 's-card',
+        control: 'card-no-image-id',
+        target: 'G1',
+        variant: 'dpr1',
+    },
+    {
+        name: 'dpr3-photo-no-counter-scale',
+        scene: 's-photo',
+        control: 'photo-no-counter-scale',
+        target: 'G1',
+        variant: 'dpr3',
+    },
+    {
+        name: 'dpr1-acc-separator-1px',
+        scene: 's-acc',
+        control: 'acc-separator-1px',
+        target: 'G1',
+        variant: 'dpr1',
+    },
+    {
+        name: 'dpr3-seg-leftover-pose',
+        scene: 's-seg',
+        control: 'leftover-pose',
+        target: 'G6',
+        variant: 'dpr3',
+    },
+    {
+        name: 'rm-jump-card-policy-ignored',
+        scene: 's-card',
+        control: 'rm-policy-ignored',
+        target: 'G1',
+        variant: 'rm-jump',
+    },
+    {
+        name: 'rm-jump-photo-policy-ignored',
+        scene: 's-photo',
+        control: 'rm-policy-ignored',
+        target: 'G1',
+        variant: 'rm-jump',
+    },
+    {
+        name: 'rm-max-acc-unclamped',
+        scene: 's-acc',
+        control: 'rm-policy-unclamped',
+        target: 'G1',
+        variant: 'rm-max',
+    },
+    {
+        name: 'rm-jump-reorder-policy-ignored',
+        scene: 's-reorder',
+        control: 'rm-policy-ignored',
+        target: 'G1',
+        variant: 'rm-jump',
+    },
+    {
+        name: 'rm-max-sheet-unclamped',
+        scene: 's-sheet',
+        control: 'rm-policy-unclamped',
+        target: 'G1',
+        variant: 'rm-max',
+    },
+    {
+        name: 'rm-ignore-photo-jump',
+        scene: 's-photo',
+        control: 'rm-policy-jump',
+        target: 'G1',
+        variant: 'rm-ignore',
+    },
 ]
 
 async function browserControls(
@@ -1187,35 +1331,51 @@ async function browserControls(
         browser = await launch(engine)
         let primaryCardInert: boolean | null = null
         const primaryScores = new Map<string, ReturnType<typeof scoreScene>>()
-        for (const scene of new Set(
-            SCENE_CONTROLS.map((entry) => entry.scene)
-        )) {
-            const primary = await runManual(browser, bundle, scene)
+        const controls = SCENE_CONTROLS.filter((entry) =>
+            scenes.includes(entry.scene)
+        )
+        const controlKeys = new Set(
+            controls.map(
+                (entry) => `${entry.scene}|${entry.variant ?? 'primary'}`
+            )
+        )
+        for (const key of controlKeys) {
+            const [scene, id] = key.split('|') as [string, string]
+            const spec =
+                id === 'primary'
+                    ? undefined
+                    : variantSpec(scene, id as VariantId)
+            const primary = await runManual(browser, bundle, scene, {
+                ...(spec ? { variant: spec } : {}),
+            })
             primaryScores.set(
-                scene,
-                scoreScene(planFor(scene, primary.trace), primary.trace)
+                key,
+                scoreScene(planFor(scene, primary.trace, spec), primary.trace)
             )
         }
-        const primaryScore = primaryScores.get('s-card')!
+        const primaryScore = primaryScores.get('s-card|primary')
         primaryCardInert =
-            primaryScore.shape.find((entry) => entry.id === 'shape.inert')
-                ?.pass ?? false
-        for (const control of SCENE_CONTROLS) {
+            primaryScore?.shape.find((entry) => entry.id === 'shape.inert')
+                ?.pass ?? null
+        for (const control of controls) {
+            const key = `${control.scene}|${control.variant ?? 'primary'}`
+            const spec =
+                control.variant === undefined
+                    ? undefined
+                    : variantSpec(control.scene, control.variant)
             try {
-                const run = await runManual(
-                    browser,
-                    bundle,
-                    control.scene,
-                    control.control
-                )
-                const plan = planFor(run.trace.scene, run.trace)
+                const run = await runManual(browser, bundle, control.scene, {
+                    control: control.control,
+                    ...(spec ? { variant: spec } : {}),
+                })
+                const plan = planFor(run.trace.scene, run.trace, spec)
                 const score = scoreScene(plan, run.trace)
                 const finding = [...score.metrics, ...score.shape].find(
                     (entry) => entry.id === control.target
                 )
                 const primaryFinding = [
-                    ...(primaryScores.get(control.scene)?.metrics ?? []),
-                    ...(primaryScores.get(control.scene)?.shape ?? []),
+                    ...(primaryScores.get(key)?.metrics ?? []),
+                    ...(primaryScores.get(key)?.shape ?? []),
                 ].find((entry) => entry.id === control.target)
                 const observed = finding
                     ? finding.pass
@@ -1347,6 +1507,7 @@ const SELF_TEST_FILES = [
     'bench/layout/aggregate.test.ts',
     'bench/layout/certification.test.ts',
     'bench/layout/cost_validity.test.ts',
+    'bench/layout/variants.test.ts',
 ] as const
 
 function selfTests(): {
@@ -1392,20 +1553,24 @@ interface RunSceneOutcome {
 
 function planFor(
     scene: string,
-    trace: SceneTrace
+    trace: SceneTrace,
+    variant?: VariantSpec | undefined
 ): ReturnType<typeof cardPlan> {
-    if (scene === 's-card') return cardPlan(trace)
-    if (scene === 's-seg') return segPlan(trace)
-    if (scene === 's-acc') return accPlan(trace)
-    if (scene === 's-insert') return insertPlan(trace)
-    if (scene === 's-delete') return deletePlan(trace)
-    if (scene === 's-island') return islandPlan(trace)
-    if (scene === 's-photo') return photoPlan(trace)
-    if (scene === 's-stack') return stackPlan(trace)
-    if (scene === 's-reorder') return reorderPlan(trace)
-    if (scene === 's-sheet') return sheetPlan(trace)
-    if (scene === 's-bulk') return bulkPlan(trace)
-    throw new Error(`no scene plan for "${scene}"`)
+    const base = (() => {
+        if (scene === 's-card') return cardPlan(trace)
+        if (scene === 's-seg') return segPlan(trace)
+        if (scene === 's-acc') return accPlan(trace)
+        if (scene === 's-insert') return insertPlan(trace)
+        if (scene === 's-delete') return deletePlan(trace)
+        if (scene === 's-island') return islandPlan(trace)
+        if (scene === 's-photo') return photoPlan(trace)
+        if (scene === 's-stack') return stackPlan(trace)
+        if (scene === 's-reorder') return reorderPlan(trace)
+        if (scene === 's-sheet') return sheetPlan(trace)
+        if (scene === 's-bulk') return bulkPlan(trace)
+        throw new Error(`no scene plan for "${scene}"`)
+    })()
+    return variant ? applyVariantPlan(base, trace, variant) : base
 }
 
 function sceneOutcome(
@@ -1414,9 +1579,10 @@ function sceneOutcome(
     manual: SceneTrace,
     real: RealTrace,
     probe: SceneCostProbeResult | null,
-    problems: readonly string[]
+    problems: readonly string[],
+    variant?: VariantSpec | undefined
 ): RunSceneOutcome {
-    const plan = planFor(manual.scene, manual)
+    const plan = planFor(manual.scene, manual, variant)
     const score = scoreScene(plan, manual)
     const allProblems = [...problems, ...realTwinProblems(real)]
     const g8Raw = realClockGate(real.frameCosts, real.g)
@@ -1526,7 +1692,10 @@ function sceneOutcome(
         manual.final.clockSize === 0
     return {
         report: {
-            scene: manual.scene,
+            scene:
+                variant === undefined
+                    ? manual.scene
+                    : variantKey(manual.scene, variant.id),
             run,
             warmup,
             pass,
@@ -1592,6 +1761,7 @@ function sceneOutcome(
 
 interface MeasuredRun {
     readonly scenes: readonly RunSceneOutcome[]
+    readonly variants: readonly RunSceneOutcome[]
     readonly cost: CostRunReport | null
     readonly costFindings: readonly MetricFinding[] | null
     readonly browserVersion: string
@@ -1608,10 +1778,15 @@ async function measureRun(
     // browser process; the cost shapes get a third with its own 1280x720 page.
     const manualBrowser = await launch(engine)
     const version = manualBrowser.version()
+    const variantSpecs = selectedVariants(
+        options.scenes.filter((scene) => scene !== 'cost'),
+        options.variants
+    )
     const manualTraces: {
         scene: string
         trace: SceneTrace
         problems: string[]
+        variant?: VariantSpec
     }[] = []
     const probes = new Map<string, SceneCostProbeResult>()
     try {
@@ -1624,7 +1799,24 @@ async function measureRun(
                 problems: [...manual.problems],
             })
         }
+        for (const variant of variantSpecs) {
+            const manual = await runManual(
+                manualBrowser,
+                bundle,
+                variant.scene,
+                {
+                    variant,
+                }
+            )
+            manualTraces.push({
+                scene: variant.scene,
+                trace: manual.trace,
+                problems: [...manual.problems],
+                variant,
+            })
+        }
         for (const manual of manualTraces) {
+            if (manual.variant) continue
             probes.set(
                 manual.scene,
                 await runSceneCostProbe(manualBrowser, bundle, manual.scene)
@@ -1639,24 +1831,49 @@ async function measureRun(
         { trace: RealTrace; problems: readonly string[] }
     >()
     try {
-        for (const scene of options.scenes) {
-            if (scene === 'cost') continue
-            realTraces.set(scene, await runReal(realBrowser, bundle, scene))
+        for (const manual of manualTraces) {
+            const key = manual.variant
+                ? variantKey(manual.scene, manual.variant.id)
+                : manual.scene
+            realTraces.set(
+                key,
+                await runReal(realBrowser, bundle, manual.scene, manual.variant)
+            )
         }
     } finally {
         await realBrowser.close()
     }
-    const scenes = manualTraces.map((manual) => {
-        const real = realTraces.get(manual.scene)!
-        return sceneOutcome(
-            run,
-            warmup,
-            manual.trace,
-            real.trace,
-            probes.get(manual.scene) ?? null,
-            [...manual.problems, ...real.problems]
+    const scenes = manualTraces
+        .filter((manual) => manual.variant === undefined)
+        .map((manual) => {
+            const real = realTraces.get(manual.scene)!
+            return sceneOutcome(
+                run,
+                warmup,
+                manual.trace,
+                real.trace,
+                probes.get(manual.scene) ?? null,
+                [...manual.problems, ...real.problems]
+            )
+        })
+    const variants = manualTraces
+        .filter(
+            (manual): manual is typeof manual & { variant: VariantSpec } =>
+                manual.variant !== undefined
         )
-    })
+        .map((manual) => {
+            const key = variantKey(manual.scene, manual.variant.id)
+            const real = realTraces.get(key)!
+            return sceneOutcome(
+                run,
+                warmup,
+                manual.trace,
+                real.trace,
+                null,
+                [...manual.problems, ...real.problems],
+                manual.variant
+            )
+        })
     let cost: CostRunReport | null = null
     let costFindings: MetricFinding[] | null = null
     if (options.scenes.includes('cost')) {
@@ -1677,7 +1894,7 @@ async function measureRun(
             await costBrowser.close()
         }
     }
-    return { scenes, cost, costFindings, browserVersion: version }
+    return { scenes, variants, cost, costFindings, browserVersion: version }
 }
 
 function pendingEntries(
@@ -1693,6 +1910,58 @@ function pendingEntries(
             scene: 'S-BULK',
             reason: HELD_PENDING_REASON,
         })
+    }
+    return entries
+}
+
+function variantBlockedEntries(
+    engines: readonly EngineReport[],
+    scenes: readonly string[],
+    ids: readonly VariantId[]
+): { item: string; reason: string }[] {
+    const specs = selectedVariants(scenes, ids)
+    const entries: { item: string; reason: string }[] = []
+    for (const engine of engines) {
+        if (engine.launchError !== null) continue
+        for (const spec of specs) {
+            const key = variantKey(spec.scene, spec.id)
+            const report = engine.variants.find(
+                (candidate) => candidate.scene === key
+            )
+            if (!report) {
+                entries.push({
+                    item: `${engine.engine} variant ${key}`,
+                    reason: 'missing from the report',
+                })
+            } else if (!report.pass) {
+                const costOnly =
+                    engine.engine === 'webkit' &&
+                    report.status === 'blocked' &&
+                    report.blockedReasons.length > 0 &&
+                    report.blockedReasons.every((reason) =>
+                        reason.startsWith('G12')
+                    )
+                if (costOnly) continue
+                entries.push({
+                    item: `${engine.engine} variant ${key}`,
+                    reason:
+                        report.blockedReasons.join('; ') ||
+                        report.metrics
+                            .filter(
+                                (metric) =>
+                                    metric.deciding &&
+                                    !metric.blocked &&
+                                    !metric.pass
+                            )
+                            .map(
+                                (metric) =>
+                                    `${metric.id} ${Number.isFinite(metric.median) ? metric.median.toFixed(3) : 'n/a'}`
+                            )
+                            .join('; ') ||
+                        report.status,
+                })
+            }
+        }
     }
     return entries
 }
@@ -1765,6 +2034,29 @@ async function main(): Promise<number> {
             }
             sceneReports.push(aggregateScene(scene, sceneRuns, findings, shape))
         }
+        const variantReports: SceneReport[] = []
+        const variantSpecs = selectedVariants(
+            options.scenes.filter((scene) => scene !== 'cost'),
+            options.variants
+        )
+        for (const spec of variantSpecs) {
+            const key = variantKey(spec.scene, spec.id)
+            const sceneRuns: RunSceneReport[] = []
+            const findings: MetricFinding[][] = []
+            const shape: MetricFinding[][] = []
+            for (const run of runs) {
+                const outcome = run.measured.variants.find(
+                    (entry) => entry.report.scene === key
+                )
+                if (!outcome) continue
+                sceneRuns.push(outcome.report)
+                findings.push([...outcome.findings])
+                shape.push([...outcome.shape])
+            }
+            variantReports.push(
+                aggregateScene(key, sceneRuns, findings, shape, null, [], spec)
+            )
+        }
         const costRuns = runs
             .map((run) => run.measured.cost)
             .filter((entry): entry is CostRunReport => entry !== null)
@@ -1798,6 +2090,7 @@ async function main(): Promise<number> {
             build: fingerprint.browsers[engine] ?? 'unknown',
             launchError,
             scenes: launchError === null ? sceneReports : [],
+            variants: launchError === null ? variantReports : [],
             cost: launchError === null ? cost : null,
             notes:
                 engine === 'webkit'
@@ -1836,6 +2129,18 @@ async function main(): Promise<number> {
             engine.cost === null ||
             engine.cost.status === 'pass'
     )
+    const variantPass = required.every((engine) =>
+        engine.variants.every(
+            (variant) =>
+                variant.status === 'pass' ||
+                (engine.engine === 'webkit' &&
+                    variant.status === 'blocked' &&
+                    variant.blockedReasons.length > 0 &&
+                    variant.blockedReasons.every((reason) =>
+                        reason.startsWith('G12')
+                    ))
+        )
+    )
     const controlsPass =
         options.check &&
         controls.length > 0 &&
@@ -1865,17 +2170,16 @@ async function main(): Promise<number> {
             })
         }
     }
-    // The DPR sweep and the reduced-motion variants are part of the P5c
-    // support evidence but are not run by this iteration. They are BLOCK,
-    // not a silent pass and not a pending scene.
-    blockedEntries.push({
-        item: 'DPR 1/3 sweep',
-        reason: 'P5c BLOCK: the DPR 1 and DPR 3 support runs are not part of this iteration',
-    })
-    blockedEntries.push({
-        item: 'reduced-motion variants',
-        reason: "P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration",
-    })
+    // The DPR sweep and the reduced-motion variants are scored as support
+    // variants in `engine.variants`; a missing or failed variant is a
+    // certification reason, not a silent BLOCK placeholder.
+    blockedEntries.push(
+        ...variantBlockedEntries(
+            engineReports,
+            options.scenes.filter((scene) => scene !== 'cost'),
+            options.variants
+        )
+    )
     const certificationEngines = engineReports.map((engine) => ({
         engine: engine.engine,
         launchError: engine.launchError,
@@ -1902,6 +2206,32 @@ async function main(): Promise<number> {
                 scene: scene.scene,
                 status: scene.status,
                 blockedReasons: scene.blockedReasons,
+                failedMetrics,
+            }
+        }),
+        variants: engine.variants.map((variant) => {
+            const failedMetrics = [...variant.metrics, ...variant.shape]
+                .filter(
+                    (metric) =>
+                        metric.id !== 'RUN' &&
+                        metric.deciding &&
+                        !metric.blocked &&
+                        !metric.pass
+                )
+                .map(
+                    (metric) =>
+                        `${metric.id} ${Number.isFinite(metric.median) ? metric.median.toFixed(3) : 'n/a'}`
+                )
+            const runMetric = variant.metrics.find(
+                (metric) => metric.id === 'RUN'
+            )
+            if (runMetric && !runMetric.pass) {
+                failedMetrics.push(`RUN ${runMetric.worst?.detail ?? 'failed'}`)
+            }
+            return {
+                scene: variant.scene,
+                status: variant.status,
+                blockedReasons: variant.blockedReasons,
                 failedMetrics,
             }
         }),
@@ -1946,6 +2276,7 @@ async function main(): Promise<number> {
         required.length > 0 &&
         launchErrors.length === 0 &&
         scenePass &&
+        variantPass &&
         costPass
     const sourceRevision = (() => {
         const revision = spawnSync('git', ['rev-parse', 'HEAD'], {

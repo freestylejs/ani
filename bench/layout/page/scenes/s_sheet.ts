@@ -7,6 +7,7 @@
  * layer. The final dismissal unmounts the sheet after a restoration snapshot.
  */
 
+import { createClock } from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -45,6 +46,11 @@ import {
     statusBar,
     styleOnce,
 } from './kit.ts'
+import {
+    prefersReduced,
+    type ReducedSceneOptions,
+    reducedPolicyFor,
+} from './reduced.ts'
 
 /**
  * Scene contribution (H16/F14): the manual clock uses one 16 ms step, so the
@@ -244,9 +250,7 @@ function waitUntilSettled(group: LayoutGroup): Promise<void> {
     })()
 }
 
-export interface SheetSceneOptions {
-    readonly control?: string | undefined
-}
+export type SheetSceneOptions = ReducedSceneOptions
 
 export class SheetScene {
     static async runManual(
@@ -254,7 +258,9 @@ export class SheetScene {
     ): Promise<SceneTrace> {
         const layer = mount()
         await document.fonts.ready
-        const mc = createManualClock()
+        const mc = createManualClock({
+            reducedMotion: prefersReduced(options),
+        })
         const elements = new Map<string, HTMLElement | null>([
             ['sheet', layer.sheet],
         ])
@@ -281,7 +287,7 @@ export class SheetScene {
         const group = createLayoutGroup({
             clock: mc.clock,
             motion: SHEET_SPRING,
-            reducedMotion: 'ignore',
+            reducedMotion: reducedPolicyFor(options),
             threshold: 1,
             maxNodes: 300,
             maxParticipants: 2000,
@@ -549,21 +555,26 @@ export class SheetScene {
         }
     }
 
-    static async runReal(): Promise<RealTrace> {
+    static async runReal(options: SheetSceneOptions = {}): Promise<RealTrace> {
         const granularityInfo = measureGranularityInfo()
         const g = granularityInfo.value
         const sampler = installRafSampler()
         const layer = mount()
         await document.fonts.ready
+        const clock = prefersReduced(options)
+            ? createClock({ reducedMotion: true })
+            : null
         ;(window as unknown as { __scene?: unknown }).__scene = {
             scene: 's-sheet',
             participants: ['sheet'],
             boxes: probeSheetTops(),
             motion: SHEET_SPRING,
+            variant: options.variant?.id ?? null,
         }
         const group = createLayoutGroup({
+            ...(clock ? { clock } : {}),
             motion: SHEET_SPRING,
-            reducedMotion: 'ignore',
+            reducedMotion: reducedPolicyFor(options),
         })
         const remove = group.add(layer.sheet, {
             layout: 'position',
@@ -651,6 +662,7 @@ export class SheetScene {
             remove()
             layer.sheet.remove()
             group.dispose()
+            clock?.dispose()
             sampler.stop()
             const samples = sampler.frames
                 .slice(heldStart, heldStart + 600)
@@ -679,6 +691,7 @@ export class SheetScene {
             offDiagnostic()
             sampler.stop()
             group.dispose()
+            clock?.dispose()
             layer.stage.remove()
             throw error
         }

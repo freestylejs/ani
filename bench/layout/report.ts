@@ -68,6 +68,15 @@ export interface RunSceneReport {
     readonly problems: readonly string[]
 }
 
+export interface VariantMeta {
+    readonly id: string
+    readonly scene: string
+    readonly kind: 'dpr' | 'reduced'
+    readonly dpr: number
+    readonly reducedMotion: 'jump' | 'maxDuration' | 'ignore' | null
+    readonly label: string
+}
+
 export interface SceneReport {
     readonly scene: string
     readonly status: 'pass' | 'fail' | 'pending' | 'blocked'
@@ -79,6 +88,7 @@ export interface SceneReport {
     readonly shape: readonly AggregateMetric[]
     readonly runs: readonly RunSceneReport[]
     readonly notes: readonly string[]
+    readonly variant?: VariantMeta | undefined
 }
 
 export interface CostRunReport {
@@ -183,6 +193,8 @@ export interface EngineReport {
     readonly build: string
     readonly launchError: string | null
     readonly scenes: readonly SceneReport[]
+    /** H19 support variants; scored with the same gates as the primary run. */
+    readonly variants: readonly SceneReport[]
     readonly cost: CostReport | null
     readonly notes: readonly string[]
 }
@@ -275,6 +287,35 @@ export function formatReport(report: BenchReport): string {
                 `${scene.status.toUpperCase()} ${scene.scene}${scene.pending ? ` (pending: ${scene.pending})` : ''}${scene.blockedReasons.length > 0 ? ` (BLOCK: ${scene.blockedReasons.join('; ')})` : ''}`
             )
             for (const metric of [...scene.metrics, ...scene.shape]) {
+                const worst = metric.worst
+                const where =
+                    worst === undefined
+                        ? ''
+                        : ` worst ${[
+                              worst.run === undefined ? '' : `run ${worst.run}`,
+                              worst.frame === undefined
+                                  ? ''
+                                  : `frame ${worst.frame}`,
+                              worst.participant ?? '',
+                              worst.edge === undefined
+                                  ? ''
+                                  : `edge ${worst.edge}`,
+                              worst.label ?? '',
+                              worst.detail ?? '',
+                          ]
+                              .filter(Boolean)
+                              .join(' ')}`
+                lines.push(
+                    `  ${metric.blocked ? 'BLOCK' : metric.deciding ? (metric.pass ? 'ok  ' : 'FAIL') : 'n/a  '} ${metric.id.padEnd(18)} ${formatValue(metric.median, metric.unit).padStart(12)}  ${metric.gate}${where}`
+                )
+            }
+        }
+        for (const variant of engine.variants) {
+            const meta = variant.variant!
+            lines.push(
+                `${variant.status.toUpperCase()} ${variant.scene} [${meta.label}]${variant.blockedReasons.length > 0 ? ` (BLOCK: ${variant.blockedReasons.join('; ')})` : ''}`
+            )
+            for (const metric of [...variant.metrics, ...variant.shape]) {
                 const worst = metric.worst
                 const where =
                     worst === undefined
@@ -419,6 +460,26 @@ export function compareReports(
                 )
             }
         }
+        for (const variant of engine.variants) {
+            const oldVariant = (before.variants ?? []).find(
+                (candidate) => candidate.scene === variant.scene
+            )
+            if (!oldVariant) {
+                lines.push(`${engine.engine} ${variant.scene}: new variant`)
+                continue
+            }
+            for (const metric of [...variant.metrics, ...variant.shape]) {
+                const oldMetric = [
+                    ...oldVariant.metrics,
+                    ...oldVariant.shape,
+                ].find((candidate) => candidate.id === metric.id)
+                if (!oldMetric) continue
+                const delta = metric.median - oldMetric.median
+                lines.push(
+                    `${engine.engine} ${variant.scene} ${metric.id}: ${oldMetric.median} -> ${metric.median} (${delta >= 0 ? '+' : ''}${delta})`
+                )
+            }
+        }
         if (engine.cost && before.cost) {
             for (const metric of engine.cost.metrics) {
                 const oldMetric = before.cost.metrics.find(
@@ -463,4 +524,6 @@ export interface CertificationReport {
     readonly requiredEngines: readonly string[]
     readonly requiredRuns: number
     readonly requiredScenes: readonly string[]
+    /** H19 DPR and reduced-motion support variants. */
+    readonly requiredVariants: readonly string[]
 }
