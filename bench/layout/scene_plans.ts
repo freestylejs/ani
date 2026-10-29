@@ -199,7 +199,8 @@ function cardReverse(frame: number, trace: SceneTrace): CommitPlan {
 export function cardPlan(trace: SceneTrace): ScenePlan {
     const openFrame = commitFrame(trace, 'open')
     const closeFrame = commitFrame(trace, 'close')
-    const reverseFrame = commitFrame(trace, 'reverse')
+    const jump = trace.variant === 'rm-jump'
+    const reverseFrame = jump ? null : commitFrame(trace, 'reverse')
     return {
         scene: 's-card',
         stepMs: 16,
@@ -245,17 +246,22 @@ export function cardPlan(trace: SceneTrace): ScenePlan {
         commits: [
             cardOpen(openFrame, trace),
             cardClose(closeFrame, trace),
-            cardReverse(reverseFrame, trace),
+            ...(reverseFrame === null
+                ? []
+                : [cardReverse(reverseFrame, trace)]),
         ],
         settleFrames: trace.settleFrames,
-        restorationChecks: [
-            {
-                key: 'sheet',
-                frame: reverseFrame,
-                label: 'sheet re-enters as lead: inert restored',
-                declarations: ['inert'],
-            },
-        ],
+        restorationChecks:
+            reverseFrame === null
+                ? []
+                : [
+                      {
+                          key: 'sheet',
+                          frame: reverseFrame,
+                          label: 'sheet re-enters as lead: inert restored',
+                          declarations: ['inert'],
+                      },
+                  ],
         authorStyleKeys: [
             'card',
             'sheet',
@@ -266,7 +272,10 @@ export function cardPlan(trace: SceneTrace): ScenePlan {
         pairs: [
             ...cardPairs(openFrame, false, true, 20, 0),
             ...cardPairs(closeFrame, false, false, 0, 20),
-            ...cardPairs(reverseFrame, true, true, 0, 0),
+            ...(reverseFrame === null
+                ? []
+                : [cardPairs(reverseFrame, true, true, 0, 0)]
+            ).flat(),
         ],
         expectedDiagnostics: [],
         expectedOnSnap: [],

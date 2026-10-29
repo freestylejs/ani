@@ -8,6 +8,7 @@
  * scripted run (L-DRIVE-4).
  */
 
+import { createClock } from '@freestylejs/ani-core'
 import {
     createManualClock,
     type ManualClock,
@@ -47,6 +48,11 @@ import {
     statusBar,
     styleOnce,
 } from './kit.ts'
+import {
+    prefersReduced,
+    type ReducedSceneOptions,
+    reducedPolicyFor,
+} from './reduced.ts'
 
 const STEP = 20
 const KEYS = Array.from({ length: 7 }, (_, i) => [
@@ -246,9 +252,7 @@ function finalOf(
     }
 }
 
-export interface ReorderSceneOptions {
-    readonly control?: string | undefined
-}
+export type ReorderSceneOptions = ReducedSceneOptions
 
 export class ReorderScene {
     static async runManual(
@@ -256,7 +260,9 @@ export class ReorderScene {
     ): Promise<SceneTrace> {
         const layer = mount()
         await document.fonts.ready
-        const mc = createManualClock()
+        const mc = createManualClock({
+            reducedMotion: prefersReduced(options),
+        })
         const elements = new Map<string, HTMLElement | null>()
         for (let i = 0; i < SLOTS; i++) {
             elements.set(`row-${i}`, layer.rows[i]!)
@@ -292,7 +298,7 @@ export class ReorderScene {
         const group = createLayoutGroup({
             clock: mc.clock,
             motion: REORDER_SPRING,
-            reducedMotion: 'ignore',
+            reducedMotion: reducedPolicyFor(options),
             threshold: 1,
             maxNodes: 300,
             maxParticipants: 2000,
@@ -452,6 +458,7 @@ export class ReorderScene {
                         for (const i of next) layer.list.append(layer.rows[i]!)
                     })
                     for (let i = 0; i < order.length; i++) order[i] = next[i]!
+                    await microtasks()
                 }
             }
             // The release is not an engine commit (§5.10/§7.1): hand the
@@ -541,21 +548,28 @@ export class ReorderScene {
         }
     }
 
-    static async runReal(): Promise<RealTrace> {
+    static async runReal(
+        options: ReorderSceneOptions = {}
+    ): Promise<RealTrace> {
         const granularityInfo = measureGranularityInfo()
         const g = granularityInfo.value
         const sampler = installRafSampler()
         const layer = mount()
         await document.fonts.ready
+        const clock = prefersReduced(options)
+            ? createClock({ reducedMotion: true })
+            : null
         ;(window as unknown as { __scene?: unknown }).__scene = {
             scene: 's-reorder',
             participants: KEYS,
             boxes: probeSlots(),
             motion: REORDER_SPRING,
+            variant: options.variant?.id ?? null,
         }
         const group = createLayoutGroup({
+            ...(clock ? { clock } : {}),
             motion: REORDER_SPRING,
-            reducedMotion: 'ignore',
+            reducedMotion: reducedPolicyFor(options),
         })
         const removers: (() => void)[] = []
         for (let i = 0; i < SLOTS; i++) {
@@ -649,6 +663,7 @@ export class ReorderScene {
             offDiagnostic()
             for (const remover of removers.reverse()) remover()
             group.dispose()
+            clock?.dispose()
             sampler.stop()
             const samples = sampler.frames
                 .slice(heldStart, heldStart + 600)
@@ -676,6 +691,7 @@ export class ReorderScene {
             offDiagnostic()
             sampler.stop()
             group.dispose()
+            clock?.dispose()
             layer.stage.remove()
             throw error
         }

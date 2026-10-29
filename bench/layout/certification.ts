@@ -5,6 +5,7 @@
  * pending gates).
  */
 import type { CertificationReport } from './report.ts'
+import { variantKey } from './variants.ts'
 
 export interface CertificationScene {
     readonly scene: string
@@ -25,6 +26,8 @@ export interface CertificationEngine {
     readonly engine: string
     readonly launchError: string | null
     readonly scenes: readonly CertificationScene[]
+    /** H19 support variants scored with the same gates. */
+    readonly variants?: readonly CertificationScene[] | undefined
     readonly cost: CertificationCost | null
 }
 
@@ -75,6 +78,18 @@ const REQUIRED_SCENES = [
 ] as const
 const REQUIRED_SCENE_ROWS = REQUIRED_SCENES.filter((scene) => scene !== 'cost')
 const REQUIRED_RUNS = 5
+const REQUIRED_VARIANTS = [
+    ...(['s-card', 's-photo', 's-acc', 's-seg'] as const).flatMap((scene) =>
+        (['dpr1', 'dpr3'] as const).map((id) => variantKey(scene, id))
+    ),
+    ...(
+        ['s-card', 's-photo', 's-acc', 's-reorder', 's-sheet'] as const
+    ).flatMap((scene) =>
+        (['rm-jump', 'rm-max', 'rm-ignore'] as const).map((id) =>
+            variantKey(scene, id)
+        )
+    ),
+]
 
 /**
  * The selected invocation. It deliberately ignores advisory, global P4
@@ -103,6 +118,20 @@ export function evaluateInvocation(input: InvocationInput): InvocationResult {
                 )
             if (scene.status !== 'pass' && !costOnly) {
                 reasons.push(`${engine.engine} ${scene.scene} ${scene.status}`)
+            }
+        }
+        for (const variant of engine.variants ?? []) {
+            const blocked = variant.blockedReasons ?? []
+            const costOnly =
+                engine.engine === 'webkit' &&
+                variant.status === 'blocked' &&
+                blocked.length > 0 &&
+                blocked.every((reason) => reason.startsWith('G12'))
+            if (costOnly) continue
+            if (variant.status !== 'pass') {
+                reasons.push(
+                    `${engine.engine} ${variant.scene} ${variant.status}`
+                )
             }
         }
         if (
@@ -162,6 +191,32 @@ export function evaluateCertification(
             reasons.push(`${engineName} launch error: ${engine.launchError}`)
         }
         const webkit = engineName === 'webkit'
+        for (const key of REQUIRED_VARIANTS) {
+            const result = (engine.variants ?? []).find(
+                (entry) => entry.scene === key
+            )
+            if (!result) {
+                reasons.push(`${engineName} variant ${key} missing`)
+                continue
+            }
+            const blocked = result.blockedReasons ?? []
+            const costOnly =
+                webkit &&
+                result.status === 'blocked' &&
+                blocked.length > 0 &&
+                blocked.every((reason) => reason.startsWith('G12'))
+            if (costOnly) {
+                advisory.push(
+                    `${engineName} variant ${key} G12 cost BLOCK (D12 advisory): ${blocked.join('; ')}`
+                )
+                continue
+            }
+            if (result.status !== 'pass') {
+                reasons.push(
+                    `${engineName} variant ${key} ${result.status}${(result.failedMetrics ?? []).length > 0 ? ` (failed ${(result.failedMetrics ?? []).join(', ')})` : ''}${blocked.length > 0 ? ` (blocked ${blocked.join('; ')})` : ''}`
+                )
+            }
+        }
         for (const scene of REQUIRED_SCENE_ROWS) {
             const result = engine.scenes.find((entry) => entry.scene === scene)
             if (!result) {
@@ -218,5 +273,6 @@ export function evaluateCertification(
         requiredEngines: [...REQUIRED_ENGINES],
         requiredRuns: REQUIRED_RUNS,
         requiredScenes: [...REQUIRED_SCENES],
+        requiredVariants: REQUIRED_VARIANTS,
     }
 }
