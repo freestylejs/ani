@@ -215,6 +215,60 @@ export const SPRING_SETTLE_CAP = 10
 /** Reduced motion `{ maxDuration }`: the factors tried for a spring (§9.4). */
 const REDUCED_GRID = [1, 0.85, 0.7, 0.55, 0.4, 0.3, 0.2, 0.1] as const
 
+/**
+ * Pure spring instances and settle times reused across tracks and flushes.
+ * `physics.spring` is stateless and `settleTime` is a pure function of the
+ * spring and its initial state, so two tracks with the same parameters and
+ * the same displacement/velocity get the same answer; caching it changes no
+ * motion. The maps are bounded so an app with endlessly varied motions cannot
+ * grow them without limit.
+ */
+const MAX_SPRINGS = 64
+const MAX_SETTLES = 4096
+const springs = new Map<string, Spring>()
+const settles = new WeakMap<
+    Spring,
+    { readonly byX: Map<number, Map<number, number>>; size: number }
+>()
+
+function springOf(duration: number, bounce: number): Spring {
+    const key = `${duration}|${bounce}`
+    let spring = springs.get(key)
+    if (!spring) {
+        if (springs.size >= MAX_SPRINGS) springs.clear()
+        spring = physics.spring({ duration, bounce })
+        springs.set(key, spring)
+    }
+    return spring
+}
+
+function settleTimeOf(spring: Spring, x0: number, v0: number): number {
+    // a channel that starts and stays at its target settles at once
+    if (x0 === 0 && v0 === 0) return 0
+    let cache = settles.get(spring)
+    if (!cache) {
+        cache = { byX: new Map(), size: 0 }
+        settles.set(spring, cache)
+    }
+    let byV = cache.byX.get(x0)
+    if (!byV) {
+        byV = new Map()
+        cache.byX.set(x0, byV)
+    }
+    const known = byV.get(v0)
+    if (known !== undefined) return known
+    const value = spring.settleTime(x0, v0)
+    if (cache.size >= MAX_SETTLES) {
+        cache.byX.clear()
+        cache.size = 0
+        byV = new Map()
+        cache.byX.set(x0, byV)
+    }
+    byV.set(v0, value)
+    cache.size += 1
+    return value
+}
+
 /** Why no track could be planned: reduced motion found no fit, or a spring is too long. */
 export type TrackRefusal = 'reduced' | 'spring-timeout'
 
@@ -309,10 +363,10 @@ export function createTrack(
     const settleOf = (s: Spring, carry: boolean): number => {
         let t = 0
         for (let i = 0; i < 4; i++) {
-            t = Math.max(t, s.settleTime(x0[i]!, carry ? incoming[i]! : 0))
+            t = Math.max(t, settleTimeOf(s, x0[i]!, carry ? incoming[i]! : 0))
         }
         for (let i = 0; i < ax0.length; i++) {
-            t = Math.max(t, s.settleTime(ax0[i]!, carry ? av0[i]! : 0))
+            t = Math.max(t, settleTimeOf(s, ax0[i]!, carry ? av0[i]! : 0))
         }
         return t
     }
@@ -346,10 +400,7 @@ export function createTrack(
     })
     const max = motion.maxDuration
     if (max === null) {
-        const s = physics.spring({
-            duration: motion.duration,
-            bounce: motion.bounce,
-        })
+        const s = springOf(motion.duration, motion.bounce)
         const settle = settleOf(s, true)
         if (!(settle <= SPRING_SETTLE_CAP)) {
             if (refusal) refusal.settle = settle
@@ -363,7 +414,7 @@ export function createTrack(
     for (const carry of [true, false]) {
         for (const f of REDUCED_GRID) {
             const duration = motion.duration * f
-            const s = physics.spring({ duration, bounce })
+            const s = springOf(duration, bounce)
             const settle = settleOf(s, carry)
             if (motion.delay * f + settle <= max) {
                 if (!(settle <= SPRING_SETTLE_CAP)) {
@@ -991,6 +1042,39 @@ export function fadeOpacity(fade: Fade): number {
 
 /** Poses, opacities and radii of every node (parents first). */
 export function solve(nodes: readonly SolveNode[]): Solved[] {
+    // the common flat move: no presence layers, followers, holds, rides,
+    // anchors, fades or radii. Every drawn box is its own track's box (or A)
+    // and, with no layers, a node's parent map is its parent's full map.
+    const simple = nodes.every(
+        (node) =>
+            (node.layers === null || node.layers === undefined) &&
+            node.follow < 0 &&
+            (node.posed === undefined || node.posed === null) &&
+            (node.override === undefined || node.override === null) &&
+            (node.ride === undefined || node.ride < 0) &&
+            !node.track?.anchor &&
+            node.fade === null &&
+            (node.radius === null || node.radius === undefined) &&
+            (node.radiusBlend === null || node.radiusBlend === undefined)
+    )
+    if (simple) {
+        const drawn = nodes.map((node) =>
+            node.track ? ownBox(node.track, node.elapsed) : node.a
+        )
+        const fulls = nodes.map((node, i) => onto(cssOf(node), drawn[i]!))
+        return nodes.map((node, i) => {
+            const box = drawn[i]!
+            const parent = node.parent >= 0 ? fulls[node.parent]! : IDENTITY_MAP
+            const local = mapBox(invert(parent), box)
+            return {
+                drawn: box,
+                pose: poseFor(local, node.box, node.ox, node.oy),
+                map: fulls[i]!,
+                opacity: null,
+                radius: null,
+            }
+        })
+    }
     const drawn = drawnBoxes(nodes)
     const fulls = nodes.map((node, i) => onto(cssOf(node), drawn[i]!))
     const parentMap = epochs(nodes, (i) => fulls[i]!, PLAIN).parent
