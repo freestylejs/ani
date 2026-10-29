@@ -789,8 +789,10 @@ the same keep test applies (§10).
   no box jumps, and pair coverage cannot decrease from the reversal frame.
 - The follower draws at the lead's track until that track ends (the lead's clamped track under
   `{ maxDuration }`, §9.4), then is held at opacity 0 at the lead's final A until presence unmounts
-  it, and presence's release waits for the crossfade to end (`p = 1`). Nothing pops back to
-  opacity 1.
+  it. A `'jump'` pair has no track: the follower is held at opacity 0 at the presented box B where
+  the fade ended. Presence's release waits for the crossfade to end (`p = 1`). Nothing pops back to
+  opacity 1. A cap or the kill switch ends a live crossfade the same way: a cap is a degradation, not
+  the author's removal, so the exiting follower is not restored while it is still mounted.
 - A lead retargeted during its crossfade (same lead, A moved) keeps the fade: its timeline, the
   follower's and the release stay one; the lead gives its opacity back when the fade ends, not when
   its new track ends.
@@ -1253,10 +1255,10 @@ A held phase is never affected. A mode toggled during a run applies at the next 
 tracks: `'jump'` finishes them; `maxDuration` re-plans them clamped from their presented box,
 carrying velocity under `'raf'` and starting at rest under WAAPI. A crossfade finished by `'jump'`
 ends as a completed fade: the lead gets its opacity back, and the exiting follower is held at
-opacity 0 (and `inert`) until presence unmounts it. Under `{ maxDuration }` the pair's clamped
-timeline is the lead's: the follower and the participants counter-projected through it draw at
-that track for the whole fade, so a per-participant clamp never moves a layer of the pair to a
-different timeline.
+opacity 0 (and `inert`) at its presented box until presence unmounts it. Under `{ maxDuration }`
+the pair's clamped timeline is the lead's: the follower and the participants counter-projected
+through it draw at that track for the whole fade, so a per-participant clamp never moves a layer of
+the pair to a different timeline.
 
 ## 10. WAAPI engine (`engine: 'waapi'`)
 
