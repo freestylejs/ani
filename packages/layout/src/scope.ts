@@ -981,6 +981,8 @@ export function createLayoutGroup(
     let scopeDocument: Document | null = null
     /** Child-list/slot changes since the last tree pass; empty means the shape is unchanged. */
     let structureObserver: MutationObserver | null = null
+    /** A mutation callback ran since the last tree check (its records are already consumed). */
+    let structureDirty = false
     let sequence = 0
     let treePass = 0
     let capture: Capture | null = null
@@ -3736,6 +3738,10 @@ export function createLayoutGroup(
             return true
         }
         if (!structureObserver) return true
+        if (structureDirty) {
+            structureDirty = false
+            return true
+        }
         return structureObserver.takeRecords().length > 0
     }
 
@@ -3749,7 +3755,9 @@ export function createLayoutGroup(
             return
         }
         structureObserver = new MutationObserver(() => {
-            // records are drained synchronously by `structureChanged`
+            // the callback consumes its records; the flag is the later check's
+            // only evidence that a structural mutation happened
+            structureDirty = true
         })
         structureObserver.observe(scopeDocument, {
             childList: true,
