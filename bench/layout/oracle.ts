@@ -309,8 +309,11 @@ export function springSettle(
 }
 
 /**
- * The track's settle time: the maximum channel settle (§5.3). Channels are
- * the origin and the size, i.e. four independent displacements.
+ * The track's settle time: the maximum over the origin/size channels and the
+ * four visible edges (§5.3). The left/top edges and the size are the oracle's
+ * channels; the right/bottom edges are composed (`x + w`, `y + h`) and can
+ * still be outside tolerance after both of their channels are inside it, so
+ * they set the settle too.
  */
 export function settleOfBox(
     duration: number,
@@ -320,11 +323,13 @@ export function settleOfBox(
     velocity: Box | null
 ): number {
     const v = velocity ?? { x: 0, y: 0, w: 0, h: 0 }
-    const channels: readonly (readonly [number, number, number])[] = [
-        [from.x - to.x, v.x, to.x],
-        [from.y - to.y, v.y, to.y],
-        [from.w - to.w, v.w, to.w],
-        [from.h - to.h, v.h, to.h],
+    const channels: readonly (readonly [number, number])[] = [
+        [from.x - to.x, v.x],
+        [from.y - to.y, v.y],
+        [from.w - to.w, v.w],
+        [from.h - to.h, v.h],
+        [from.x + from.w - (to.x + to.w), v.x + v.w],
+        [from.y + from.h - (to.y + to.h), v.y + v.h],
     ]
     let settle = 0
     for (const [x0, v0] of channels) {

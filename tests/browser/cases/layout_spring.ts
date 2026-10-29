@@ -58,21 +58,39 @@ function springBox(
     return { box, velocity }
 }
 
-/** The oracle's settle: the last frame time after which every channel stays within 0.1 px and 1 px/s. */
+/**
+ * The oracle's settle: the last time any channel or visible edge is outside
+ * 0.1 px of its target or moving faster than 1 px/s, sampled every
+ * millisecond. The four edges (`x`, `x + w`, `y`, `y + h`) are the visible
+ * corners and bound every point of the box; the compose of two channel springs
+ * can still be outside tolerance after both channels are inside it (the H18
+ * S-PHOTO residual), so the edges set the settle too.
+ */
+const SETTLE_STEP = 0.001
 function oracleSettle(
     b: OBox,
     a: OBox,
     v: OBox | null,
     D: number,
-    bounce: number,
-    step: number
+    bounce: number
 ): number {
     let last = 0
-    for (let t = 0; t < 12; t += step) {
+    for (let i = 0; i * SETTLE_STEP < 12; i++) {
+        const t = i * SETTLE_STEP
         const { box, velocity } = springBox(b, a, v, D, bounce, t)
+        const edges: readonly (readonly [number, number, number])[] = [
+            [box.x, velocity.x, a.x],
+            [box.x + box.w, velocity.x + velocity.w, a.x + a.w],
+            [box.y, velocity.y, a.y],
+            [box.y + box.h, velocity.y + velocity.h, a.y + a.h],
+        ]
         const out =
             maxDiff(box, a) > 0.1 ||
-            Math.max(...Object.values(velocity).map(Math.abs)) >= 1
+            Math.max(...Object.values(velocity).map(Math.abs)) >= 1 ||
+            edges.some(
+                ([edge, speed, target]) =>
+                    Math.abs(edge - target) > 0.1 || Math.abs(speed) >= 1
+            )
         if (out) last = t
     }
     return last
@@ -139,14 +157,7 @@ export async function L_SPRING_1(): Promise<string> {
                 expectEqual(h.mc.clock.size, 0, 'no subscriber after settle')
                 expectAt(el, after, 'final box', 0.01)
                 // the run ends at the physical settle, within one frame
-                const settle = oracleSettle(
-                    before,
-                    after,
-                    null,
-                    D,
-                    bounce,
-                    frameMs / 1000
-                )
+                const settle = oracleSettle(before, after, null, D, bounce)
                 if (
                     !(
                         lastFrame >= settle - 1e-9 &&

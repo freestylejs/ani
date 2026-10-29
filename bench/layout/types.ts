@@ -439,11 +439,12 @@ export interface ScenePlan {
     /** The drive-hold kill switch row must be present and correct. */
     readonly expectedKillSwitch?: boolean | undefined
     /**
-     * G3 is authority-BLOCK: a release from direct manipulation has no
+     * The release G3 row is N/A: a release from direct manipulation has no
      * analytic layout track before the supplied gesture velocity, so no
-     * analytic before/after pair exists (§5.10/A-11).
+     * analytic before/after pair exists (§5.10/A-11). Other G3 rows remain
+     * deciding.
      */
-    readonly g3Blocked?: string | undefined
+    readonly g3NotApplicable?: string | undefined
     /**
      * A scene whose script unmounts its only participant at the end. The
      * removal is proven by a post-removal restoration snapshot instead of a

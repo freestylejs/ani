@@ -102,7 +102,6 @@ const SCENES = [
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
-
 type EngineName = 'chromium' | 'webkit' | 'firefox'
 
 const USAGE = `P5 layout bench (iOS Native Grade calibration)
@@ -834,6 +833,7 @@ function evaluateCost(
             id: `G12-${label}`,
             label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
             blocked: !validity.timerValid,
+            deciding: !validity.timerValid,
             measured: samplesComplete,
             pass:
                 samplesComplete && shape.releaseClean && readPass && gate.pass,
