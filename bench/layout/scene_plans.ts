@@ -942,8 +942,10 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
         frame,
         label,
         expectedStatus: 'ended',
-        statusBlocked:
-            'A-13 reading: untouched sibling tracks keep running, so this run resolves ended; the p5 table says interrupted. Authority amendment required.',
+        // Clarification 2026-10-29: a per-sibling reorder does not replace a
+        // running sibling track; the runs resolve `ended` at frames 28/31/35.
+        // A future script that retargets a running sibling must expect
+        // `interrupted` (A-13) and add that row.
         segments: [spring(row, slot), spring(title, slot)],
     })
     return {
@@ -1015,8 +1017,8 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
         expectedDiagnostics: [],
         expectedOnSnap: [],
         expectedKillSwitch: true,
-        g3Blocked:
-            'BLOCK/authority: a release from direct manipulation has no analytic layout track before the supplied gesture velocity (A-11); G3 is n/a and the observed finite difference is supporting evidence only.',
+        g3NotApplicable:
+            'release G3: a release from direct manipulation has no analytic layout track before the supplied gesture velocity (A-11); G3 is not applicable. G2/G4, origin and the observed finite difference decide.',
     }
 }
 
@@ -1126,8 +1128,8 @@ export function sheetPlan(trace: SceneTrace): ScenePlan {
         expectedOnSnap: [],
         requiredRestorations: ['sheet'],
         allowEmptyFinal: true,
-        g3Blocked:
-            'BLOCK/authority: a release from direct manipulation has no analytic layout track before the supplied gesture velocity (A-11); G3 is n/a and the observed finite difference is supporting evidence only.',
+        g3NotApplicable:
+            'release G3: a release from direct manipulation has no analytic layout track before the supplied gesture velocity (A-11); G3 is not applicable. G2/G4, origin and the observed finite difference decide.',
     }
 }
 
