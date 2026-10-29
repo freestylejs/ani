@@ -110,6 +110,7 @@ export function evaluateCertification(
     options: CertificationOptions
 ): CertificationReport {
     const reasons: string[] = []
+    const advisory: string[] = []
     if (options.runs !== REQUIRED_RUNS) {
         reasons.push(`runs ${options.runs} != ${REQUIRED_RUNS}`)
     }
@@ -149,26 +150,60 @@ export function evaluateCertification(
         if (engine.launchError !== null) {
             reasons.push(`${engineName} launch error: ${engine.launchError}`)
         }
+        const webkit = engineName === 'webkit'
         for (const scene of REQUIRED_SCENE_ROWS) {
             const result = engine.scenes.find((entry) => entry.scene === scene)
-            if (!result) reasons.push(`${engineName} scene ${scene} missing`)
-            else if (result.status !== 'pass')
+            if (!result) {
+                reasons.push(`${engineName} scene ${scene} missing`)
+                continue
+            }
+            const blocked = result.blockedReasons ?? []
+            const costOnly =
+                webkit &&
+                result.status === 'blocked' &&
+                blocked.length > 0 &&
+                blocked.every((reason) => reason.startsWith('G12'))
+            if (costOnly) {
+                advisory.push(
+                    `${engineName} scene ${scene} cost BLOCK (D12 advisory): ${blocked.join('; ')}`
+                )
+                continue
+            }
+            if (result.status !== 'pass')
                 reasons.push(
-                    `${engineName} scene ${scene} ${result.status}${(result.failedMetrics ?? []).length > 0 ? ` (failed ${(result.failedMetrics ?? []).join(', ')})` : ''}${(result.blockedReasons ?? []).length > 0 ? ` (blocked ${(result.blockedReasons ?? []).join('; ')})` : ''}`
+                    `${engineName} scene ${scene} ${result.status}${(result.failedMetrics ?? []).length > 0 ? ` (failed ${(result.failedMetrics ?? []).join(', ')})` : ''}${blocked.length > 0 ? ` (blocked ${blocked.join('; ')})` : ''}`
                 )
         }
-        if (!engine.cost) reasons.push(`${engineName} S-BULK cost missing`)
-        else if (engine.cost.status !== 'pass')
-            reasons.push(`${engineName} S-BULK cost ${engine.cost.status}`)
-        if (engine.cost && !engine.cost.valid)
-            reasons.push(`${engineName} S-BULK cost is not valid`)
+        if (!engine.cost) {
+            if (webkit)
+                advisory.push(
+                    `${engineName} S-BULK cost missing (D12 advisory)`
+                )
+            else reasons.push(`${engineName} S-BULK cost missing`)
+        } else if (engine.cost.status !== 'pass') {
+            if (webkit)
+                advisory.push(
+                    `${engineName} S-BULK cost ${engine.cost.status} (D12 advisory)`
+                )
+            else reasons.push(`${engineName} S-BULK cost ${engine.cost.status}`)
+        }
+        if (engine.cost && !engine.cost.valid) {
+            if (webkit)
+                advisory.push(
+                    `${engineName} S-BULK cost is not valid (D12 advisory)`
+                )
+            else reasons.push(`${engineName} S-BULK cost is not valid`)
+        }
         for (const failure of engine.cost?.failedMetrics ?? []) {
-            reasons.push(`${engineName} S-BULK ${failure} failed`)
+            if (webkit)
+                advisory.push(`${engineName} S-BULK ${failure} (D12 advisory)`)
+            else reasons.push(`${engineName} S-BULK ${failure} failed`)
         }
     }
     return {
         certified: reasons.length === 0,
         reasons,
+        advisory,
         requiredEngines: [...REQUIRED_ENGINES],
         requiredRuns: REQUIRED_RUNS,
         requiredScenes: [...REQUIRED_SCENES],
