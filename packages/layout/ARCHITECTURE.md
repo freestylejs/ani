@@ -1385,7 +1385,9 @@ Each spike's outcome is recorded in the evidence trace.
 ### 11.5 Bench harness and cost gates (D5)
 
 The device gate is a **bench harness** of iOS-native-grade interaction scenes that runs under
-Playwright in Chromium and WebKit. Each scene is scored frame by frame on the manual clock (oracle
+Playwright in Chromium and WebKit. Chromium decides the cost gates (G9/G11/G12); WebKit remains a
+required frame/scoring/shape/status engine, and its cost rows are BLOCK/advisory on the 1 ms timer
+(D12). Each scene is scored frame by frame on the manual clock (oracle
 error, first-frame continuity, velocity continuity, spring fidelity, settle exactness, inline-style
 restoration) and on the real clock (script cost per frame and per commit, long frames). A scene
 passes only with every metric inside its gate in both engines. The harness runs in iterations until
