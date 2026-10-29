@@ -614,6 +614,15 @@ order change inside each reorder commit; the title's local box is fixed.
   release. The S-REORDER/S-SHEET G7 expectations therefore cover the reorder
   and detent commits only; the spec's "release run" row is an API gap, not a
   scene failure.
+- The p5 table's S-REORDER statuses (`interrupted` at the next reorder) do not
+  match §7.1/A-13 for this script: each reorder targets a different sibling,
+  the earlier sibling's track is untouched and keeps running, so the runs
+  resolve `ended` at their own settles (frames 28/31/35). The scene expects
+  `ended`; the p5 row is an ambiguity, not a weakened gate.
+- A held frame that follows a reorder changes the held layout, so the engine's
+  §4.2 support check reads one offset pair + one computed style in addition to
+  the one held rect. The strict G13 reading counts this as excess (6 in the
+  run); the authority does not explicitly exempt the support read.
 
 ## Files
 
