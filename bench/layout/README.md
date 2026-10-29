@@ -714,7 +714,7 @@ Chromium, five runs, all 11 scenes and cost:
 | Gate | Result |
 |---|---|
 | S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-REORDER, S-SHEET, S-BULK | **pass** |
-| G9 | **1.748× unscrolled pass / 2.079× scrolled FAIL**; floor audits exact |
+| G9 | **1.969× unscrolled pass / 2.079× scrolled FAIL**; floor audits exact |
 | G10 | **0.975 ms pass** |
 | G11 | **2.424× FAIL** (per-run 2.630/2.424/2.376/2.585/1.293; floor audit exact) — open |
 | G12-1 / G12-10 | **pass** (`−0.285` / `−0.006` incremental ms/held; both p95 values reported) |
