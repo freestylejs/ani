@@ -495,7 +495,7 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 - Fingerprint: MacBook Pro `Mac14,9`, Apple M2 Pro, 10 cores, 32 GB,
   macOS 27.0.1 / Darwin 27.0.0, Node 24.19.0, pnpm 10.20.0, Playwright
   1.55.0, `chromium_headless_shell-1187`, `webkit-2203`. 1-minute load at the
-  final cost run: **2.48** (earlier per-scene runs 1.48–3.92). Cost is **advisory**;
+  final cost run: **2.48** (earlier H17 runs 1.48–3.92). Cost is **advisory**;
   the ratios are measured but not a certification claim until a quiet run.
 - No scene expectation, row, tolerance or `knownFailure` changed.
 
