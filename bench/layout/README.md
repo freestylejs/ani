@@ -707,17 +707,17 @@ one; `tsc` and `test:bench-layout` are clean.
 relative sustained gate and D11 baseline-subtracted held gate are now the
 harness gates; H18 engine A–F, the H15/H16 scene set and the H16 assertion
 fix are preserved. The full report is `iteration-9/{chromium,webkit}.json`
-with `sourceRevision` `b7ead0f`.
+with `sourceRevision` `a714d9a`.
 
 Chromium, five runs, all 11 scenes and cost:
 
 | Gate | Result |
 |---|---|
 | S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-REORDER, S-SHEET, S-BULK | **pass** |
-| G9 | **1.703× / 1.659× pass**; floor audits exact |
-| G10 | **1.060 ms pass** |
-| G11 | **2.109× FAIL** (per-run 2.104/2.109/2.109/2.109/2.201; floor audit exact) — open |
-| G12-1 / G12-10 | **pass** (`−0.175` / `−0.009` incremental ms/held; both p95 values reported) |
+| G9 | **1.748× unscrolled pass / 2.079× scrolled FAIL**; floor audits exact |
+| G10 | **0.975 ms pass** |
+| G11 | **2.424× FAIL** (per-run 2.630/2.424/2.376/2.585/1.293; floor audit exact) — open |
+| G12-1 / G12-10 | **pass** (`−0.285` / `−0.006` incremental ms/held; both p95 values reported) |
 | G13 / G13-held | exact; layout-offset reads counted |
 
 WebKit, five runs:
@@ -726,12 +726,12 @@ WebKit, five runs:
 |---|---|
 | S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-BULK | **pass** |
 | S-REORDER, S-SHEET | **BLOCKED** on the scene G12 timer bound (G3/G7 remain authority BLOCK) |
-| G10 | **0.550 ms pass** with the real-clock 20-frame batch |
+| G10 | **0.250 ms pass** with the real-clock 20-frame batch |
 | G9/G11 | **BLOCK**, no gate value |
 | G12 | **BLOCK** on the 1 ms timer |
 | G13 / floor | exact |
 
-The run load was 10.46 (Chromium) and 6.93 (WebKit), so cost remains advisory.
+The run load was 10.05 (Chromium) and 11.47 (WebKit), so cost remains advisory.
 H18-F F4 is fixed by counting `offsetLeft`/`offsetTop` in
 `stats.layoutOffsets`; G13 reports the count instead of hiding it. G11 remains
 open; there is no performance-complete claim.
