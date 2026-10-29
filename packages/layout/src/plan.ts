@@ -473,7 +473,13 @@ export function plan(input: PlanInput): Plan {
     const warnings: PlanWarning[] = []
     const snapped: { index: number; reason: SnapReason }[] = []
     const degraded: Degraded[] = []
-    const leadList = input.leadless ? [] : resolveLeads(input, warnings)
+    // H18-A: a late registrant's handoff can only be judged after its parent's
+    // (parents first, as the plan array is ordered). Resolving the leads in
+    // that order lets a nested late lead inherit the measurement its parent
+    // takes in the same plan.
+    const leadList = input.leadless
+        ? []
+        : resolveLeads(input, warnings).sort((a, b) => a.index - b.index)
     const leads = new Map(leadList.map((lead) => [lead.id, lead.index]))
 
     // effective before-box and carried velocity: a new lead starts from the
@@ -497,9 +503,16 @@ export function plan(input: PlanInput): Plan {
     for (const lead of leadList) {
         const node = nodes[lead.index]
         if (!node) continue
+        // H18-A: a late node whose parent is measured in this plan (or took
+        // its own handoff earlier in it) may take its handoff; a late node
+        // under an unmeasured, non-late parent may not.
+        const eligible =
+            node.measured ||
+            (node.lateRegistered &&
+                (node.parent < 0 || measuredForPlan[node.parent]))
         if (
             lead.handoff === null ||
-            (!node.measured && !node.lateRegistered) ||
+            !eligible ||
             // out of an actively scrolling container: nothing is handed over
             node.scrollActive ||
             (lead.follower >= 0 && !nodes[lead.follower]!.measured)

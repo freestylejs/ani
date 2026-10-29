@@ -205,4 +205,53 @@ describe('a kept track in this flush’s geometry (§5.7 paths 1 and 2)', () => 
         expect(await r.report).toEqual({ status: 'ended', snapped: [] })
         expectBox(r.settled.child, control.settled.child, 1e-6)
     })
+
+    /**
+     * H18-B: a position-pinned child with a running own track under a parent
+     * whose own track is re-planned in the flush (a height retarget) keeps its
+     * own visual track: it is counter-projected through the parent's new pose
+     * and never drawn with the parent's height scale.
+     */
+    it('H18-B: a kept child under a parent height retarget keeps drawing its own track through the new parent pose', async () => {
+        async function scene(retarget: boolean) {
+            const mc = createManualClock()
+            const group = createLayoutGroup({ clock: mc.clock, motion })
+            const parent = element(box(0, 200, 200, 100))
+            const child = element(box(20, 220, 40, 40), parent)
+            group.add(parent)
+            group.add(child)
+            group.capture()
+            await group.flush()
+            // The parent and its child move 120 px down: the child gets its
+            // own track, cancelled visually by the parent's own translation.
+            group.capture()
+            model.place(parent, box(0, 320, 200, 100))
+            model.place(child, box(20, 340, 40, 40))
+            void group.flush()
+            mc.frames(5)
+            await nextTask()
+            if (retarget) {
+                // Only the parent's height target changes; the child's own A
+                // does not move.
+                group.capture()
+                model.place(parent, box(0, 320, 200, 300))
+                void group.flush()
+            }
+            const boxes: Box[] = []
+            for (let f = 0; f < 40; f++) {
+                mc.frame()
+                boxes.push(model.rect(child))
+            }
+            group.dispose()
+            document.body.innerHTML = ''
+            return boxes
+        }
+        const control = await scene(false)
+        const actual = await scene(true)
+        actual.forEach((box, f) => expectBox(box, control[f]!, 0.02))
+        // The child's height stays its own 40 px through the parent's 3x
+        // height pose.
+        for (const box of actual)
+            expect(Math.abs(box.h - 40)).toBeLessThan(0.02)
+    })
 })
