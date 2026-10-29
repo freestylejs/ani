@@ -117,7 +117,7 @@ gitignored; the files are generated from the current source on every run.
   "advisory": { "cost": true, "reasons": ["1-minute load is 2.39, pinned below 1"] },
   "certification": {
     "certified": false,
-    "reasons": ["cost fingerprint is advisory", "chromium scene s-reorder fail", "chromium scene s-sheet fail", "chromium S-BULK G9-unscrolled 2.960 failed", "chromium S-BULK G9-scrolled 2.808 failed", "chromium S-BULK G11 8.940 failed", "blocked webkit scene s-sheet: G12 ...", "blocked DPR 1/3 sweep: P5c BLOCK"],
+    "reasons": ["cost fingerprint is advisory", "chromium scene s-reorder fail", "chromium scene s-sheet fail", "chromium S-BULK G9-unscrolled 2.951 failed", "chromium S-BULK G9-scrolled 2.817 failed", "chromium S-BULK G11 8.090 failed", "blocked webkit scene s-sheet: G12 ...", "blocked DPR 1/3 sweep: P5c BLOCK"],
     "requiredEngines": ["chromium", "webkit"],
     "requiredRuns": 5,
     "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"]
@@ -595,22 +595,29 @@ same public engine surface.
 | S-BULK | vanilla | 1,000 | 300 | 16 ms | BULK 0.40/0.10 | 150-tile cyclic shuffle |
 
 S-SHEET uses 16 ms frames for both holds (the spec's second hold is written as
-20 ms; that timing is a scene contribution). The second take is at least 1 s
-after the first release, and the detent is the scene's `projected = top +
-v·0.20 s` nearest of {124, 422, 844}; the release vectors and geometry are
-unchanged.
+20 ms; that timing is a scene contribution, and the source comment records the
+amendment). The second take is at least 1 s after the first release, and the
+detent is the scene's `projected = top + v·0.20 s` nearest of {124, 422, 844};
+the release vectors and geometry are unchanged.
+
+`ScenePlan.allowEmptyFinal` is deliberately narrow: **only S-SHEET** sets it,
+because its single participant is unmounted after the second release. The
+removal is proven by `requiredRestorations: ['sheet']` and the post-removal
+restoration snapshot; no other scene may use the exemption, and C1 still
+requires a connected final participant everywhere else. S-REORDER and S-BULK
+keep their participants connected.
 The S-REORDER title is a nested position participant; the held row and its
 title are the direct-manipulation pair. The row's inline `top` and the DOM
 order change inside each reorder commit; the title's local box is fixed.
 
-**Tooling honesty.** Biome reports **810 infos, 0 errors, 0 warnings** on
+**Tooling honesty.** Biome reports **813 infos, 0 errors, 0 warnings** on
 `bench/layout` (the infos are the repository's baseline `noMagicNumbers` /
 naming diagnostics). This is not a clean biome report and is not claimed as
 one; `tsc` and `test:bench-layout` are clean.
 
 ### P5c evidence and known failures (iteration 6)
 
-- **S-REORDER fails G1 96.0, G2 88.0, G4 60.0, G13 6 and G12 (Chromium and
+- **S-REORDER fails G1 96.0, G2 60.0, G4 60.0, G13 6 and G12 (Chromium and
   WebKit); G3 and G7 are BLOCK/authority.** The scene exposes two P4 engine
   defects that the L-DRIVE-1 browser row does not cover: (a) after a reorder
   changes the held row's A, the first subsequent `move` shifts the drawn
@@ -619,26 +626,33 @@ one; `tsc` and `test:bench-layout` are clean.
   double-counts the inherited displacement (`title-1` is drawn at
   `row + 10 + h` instead of `row + 10`), so the title drifts by up to 96 px.
   The release-frame continuity is **measured** (`HoldEvidence.releaseBox` to
-  the next frame) and fails G2 88 px; the release spring fails G4 60 px; G5
-  now uses the rider target and passes. The exact commit reads are 2N/2N and
+  the next frame) and fails G2 60 px on the row top edge; the title top edge
+  is 49.06 px. The earlier 88 px was a rider-size artifact (the held row's
+  358×52 size was used for the 270×22 title); the rider now uses its rest
+  size. The release spring fails G4 60 px; G5 uses the rider target and
+  passes. The exact commit reads are 2N/2N and
   the computed set is exact; G13 fails only on the held-frame support read
   (one offset pair + one computed style) on the reorder-adjacent held frames.
   G3 is BLOCK because a release from direct manipulation has no analytic
   layout track before the gesture velocity; G7 is BLOCK for the A-13
   `ended`/p5-`interrupted` ambiguity and the release's missing report.
   `shape.hold` and `shape.kill-switch` pass.
-- **S-SHEET fails only the scene G12 shape on Chromium** (0.275 ms/held at
-  1 held, per-run 0.090–0.315; the 1-held fixed frame cost, not the 10-held
+- **S-SHEET fails only the scene G12 shape on Chromium** (0.310 ms/held at
+  1 held, per-run 0.270–0.320; the 1-held fixed frame cost, not the 10-held
   slope). The measured frame rows G1/G2/G4/G5/G6/G8/G13 pass; G3/G7 are
   BLOCK/authority (release velocity and missing release report), and the
   detent policy (`top + v·0.20`, nearest) and the ≥1 s second take are
   implemented. On WebKit G12 is BLOCK/non-deciding; the scene is reported
   **BLOCKED**, not pass, and the block is a top-level report and certification
   reason.
-- **S-BULK frame scoring passes**; the cost shapes still fail G9 (2.960 /
-  2.808×) and G11 (8.940 ms) in Chromium. G12-1 **fails** at 0.390 ms/held
-  (the 1-held fixed frame cost); G12-10 passes at 0.058 ms/held. Iteration 6
-  measured G9 2.688/2.694 and G11 8.495; both reports are recorded. WebKit's 1 ms timer makes G9–G12 BLOCK.
+- **S-BULK frame scoring passes on Chromium**; the cost shapes still fail G9
+  (2.951 / 2.817×) and G11 (8.090 ms) in Chromium. G12-1 **fails** at
+  0.415 ms/held (the 1-held fixed frame cost); G12-10 passes at 0.061 ms/held.
+  Iteration 6 measured G9 2.688/2.694 and G11 8.495; both reports are
+  recorded. WebKit's 1 ms timer makes G9–G12 BLOCK. The WebKit **S-BULK G8**
+  row is also BLOCK: its 2.000 ms p95 is exactly one timer tick, and the
+  §11.5 single-interval 20-frame mean is not claimed. WebKit S-BULK is
+  therefore **blocked**, not a measured G8 pass.
 - The release is not an engine commit or report (§5.10/§7.1): the scene
   records its `t = 0` flush observation, but there is no `LayoutReport` for a
   release. The S-REORDER/S-SHEET G7 expectations therefore cover the reorder
