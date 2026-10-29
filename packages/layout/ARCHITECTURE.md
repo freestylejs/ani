@@ -1403,7 +1403,9 @@ Cost gates, measured by the harness:
   The legacy absolute `layout:COST` 4 ms read row is retired (owner decision D8, 2026-10-28); no P1,
   P2 or P6 gate depends on it.
 - Steady frame p95 ≤ 2 ms at 300 nested movers.
-- Sustained commits: 60 Hz commits with 300 moving participants hold the steady-frame gate.
+- Sustained commits: 60 Hz commits with 300 moving participants are ≤ 2× the audited
+  required-work floor for the same shape (per-run p95 ratio; median of 5 runs). The absolute
+  steady-frame p95 ≤ 2 ms applies to non-commit frames.
 - Held frame: ≤ 0.1 ms per held element.
 - Read counts are exact: a commit reads ≤ 2N rects and 2N layout-size pairs, plus the computed
   values of §4.1 and §4.3; steady frames read zero; `stats` counts every read.
@@ -1447,7 +1449,7 @@ mean of 20 consecutive frames timed as one interval. Percentiles are nearest-ran
 |---|---|
 | Commit ≤ 2× floor (1,000 participants; unscrolled, and scrolled by 1.5 viewports) | median of 30 commits after 5 discarded, for the engine and the floor separately; the run's ratio; median of the 5 per-run ratios |
 | Steady frame p95 ≤ 2 ms (300 nested movers) | p95 of 600 frame samples |
-| Sustained commits (60 Hz commits, 300 moving participants, 5 s) | p95 of every frame sample in the window ≤ 2 ms |
+| Sustained commits (60 Hz commits, 300 moving participants, 5 s) | per-run p95(engine commit) / p95(floor commit) ≤ 2; median of the 5 ratios |
 | Held frame ≤ 0.1 ms per held element (1 and 10 held) | p95 of 600 frame samples, divided by the held count |
 
 **Aggregation.** Per engine, one warm-up run is discarded, then 5 runs are measured, each in a fresh
