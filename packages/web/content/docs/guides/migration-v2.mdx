@@ -633,6 +633,7 @@ Work through the list before you ship.
 -   Replace `instanceof` checks with `isRafTimeline` and `isWaapiTimeline`.
 -   Replace `events` and `EventManager` with framework handlers, and call the timeline from them.
 -   Update every binding call: `useAniRef`, `useAniStates` and their Vue, Solid and Svelte equivalents.
+-   If you used the unreleased layout entry, follow the [layout 0.1/0.2 migration](/en/docs/guides/layout): no page boxes, no inner-scroll `'stale'`, no field-by-field merge and no legacy bridge.
 -   Put `style` from the bindings on the elements, and create owned timelines with `useTimeline`.
 -   Check code that awaits `play()`: handle `'interrupted'`, drop the `.catch()`.
 -   Decide the reduced motion policy of every essential animation.
@@ -646,4 +647,5 @@ Work through the list before you ship.
 -   [Reduced motion](/en/docs/guides/reduced-motion) - Policies and testing.
 -   [Testing](/en/docs/guides/testing) - Deterministic tests with a manual clock.
 -   [Large-scale usage](/en/docs/guides/performance) - Ownership and cost rules.
+-   [Layout and presence](/en/docs/guides/layout) - The layout adapter and its 0.1/0.2 migration.
 -   [`rafTimeline`](/en/docs/core-api/dynamic_timeline) and [`waapiTimeline`](/en/docs/core-api/timeline) - The two engines.

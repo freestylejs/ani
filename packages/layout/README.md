@@ -15,8 +15,9 @@ observe every degradation in production.
 pnpm add @freestylejs/ani-core @freestylejs/ani-layout
 ```
 
-For React, use `@freestylejs/ani-react/layout` (`useLayout`, `LayoutGroup`, `AnimatePresence`,
-`usePresence`). See the [Layout guide](https://freestyle-ani.vercel.app/en/docs/guides/layout).
+For React, use `@freestylejs/ani-react/layout` (`useLayout`, `LayoutGroup`, `useLayoutGroup`,
+`AnimatePresence`, `usePresence`, `usePresenceControl`, `useLayoutDrive`). See the
+[Layout guide](https://freestyle-ani.vercel.app/en/docs/guides/layout).
 
 ## Quick start
 
@@ -54,9 +55,10 @@ const run = await group.flush() // read the boxes after it and start the run
   restores every inline style the group wrote.
 - `capture()` is valid until the next frame: take it in the same task as the change. A capture
   in a later task reads again.
-- `stats` counts `captures`, the layout reads (`rects`, `offsets` for layout-size pairs and
-  computed `styles`, with `reads` their sum), the scroll-anchoring `probes`, the `parents`
-  (`offsetParent` reads of the viewport-fixed test), running `tracks` and live `holds`.
+- `stats` counts `captures`; the layout reads `rects`, `offsets` (layout-size pairs), computed
+  `styles` and `layoutOffsets` (held rebase/support), with `reads` their sum; the scroll-anchoring
+  `probes`; the `parents` (`offsetParent` reads of the viewport-fixed test); running `tracks`; and
+  live `holds`.
 
 ## Options
 
@@ -68,7 +70,8 @@ const run = await group.flush() // read the boxes after it and start the run
 | `layoutId` | — | Shared identity in the group. A new element with the id starts from the box of the one that left. |
 | `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant. |
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
-| `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps instead of animating. |
+| `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps instead of animating (not reported). |
+| `layoutKey` | — | Semantic identity. A change resets the participant to a fresh baseline instead of interpolating from its old box. |
 | `radius` | `true` with a `layoutId`, else `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId`, the corners blend from one radius to the other unless either sets `radius: false`. |
 | `motion` | — | `{ duration, delay, timing }`, merged by kind over the group's `motion` (see below). |
 
@@ -96,7 +99,7 @@ Layers merge by kind, outermost first: a layer that names `type: 'spring'`, `tim
 | `engine` | `'raf'` | `'waapi'` runs flat position moves as compositor animations, smooth while the main thread is blocked. Requirements below. |
 
 Invalid options throw a `TypeError` or `RangeError` with the code `ANI_INVALID_OPTIONS`, from
-`createLayoutGroup`, `add` or `set`, never inside a frame.
+`createLayoutGroup`, `add`, `set` or `take`, never inside a frame.
 
 ### `engine: 'waapi'`
 
@@ -235,6 +238,11 @@ Statuses resolve in that precedence order (§9.3): `failed`, `disposed`, `disabl
 `interrupted`, `ended`, `reduced`, `stale`, `no-change`. `reduced`, `stale` and `no-change` apply
 only when no track ran.
 
+`'stale'` has exactly one meaning: no valid measurement of what was presented (no capture, or a
+capture that aged past a frame). A flush with a valid capture never reports it, whatever scrolled
+between the two reads. A scroll is measured, not a snap reason; `'stale'` is not the old
+inner-scroll degradation.
+
 `snapped` lists `{ element, reason }` for every element that jumped:
 
 | Reason | Cause |
@@ -248,6 +256,34 @@ only when no track ran.
 | `'failed'` | The transaction aborted on an internal exception; every owned style is restored. |
 
 `'unsupported'`, `'capped'` and `'stale'` also print one development warning per group.
+
+## Limits
+
+- The default `'raf'` engine runs on the main thread on Ani's clock, so it does not advance on
+  screen while the main thread is blocked. The optional `'waapi'` engine is the gated
+  compositor-smooth exception.
+- Layout never animates 3D transforms, rotation, skew, SVG or inline elements, scroll-linked
+  layout without a scroll driver, shadow correction or curved paths.
+- Capture reads the DOM during render. These are reads only, but a style change since the last
+  layout can force one.
+- Text inside a scaled element is re-rasterized and can look soft until the run ends. Use
+  `layout: 'position'` on text.
+- An authored `translate` or `scale` change during a run applies at settle, as one jump from the
+  frozen composition to the author's value.
+- A presence `transform` that animates during a layout run moves the element and its participants
+  on top of their layout motion.
+- A size channel whose carried velocity would take it below one pixel loses that part of the
+  velocity; the channel still reaches its target.
+- Nested layout motion is not compositor-smooth while the main thread is blocked. Under the WAAPI
+  engine a jank retarget can step back by the frames the main thread missed.
+- Scroll anchoring during a run is compensated only through non-driven content; with only driven
+  nodes visible in a scroller the shift is presented uncompensated. A driven node is never the
+  anchor.
+- Scrollers inside an unknown closed shadow root hide their scroll events; registering any element
+  inside that root makes it known.
+- A non-participant ancestor moved into a viewport-fixed sheet while the document scrolls carries
+  its participants without the viewport-fixed test; register the moved container as a participant
+  to cover it.
 
 ## Accessibility
 
@@ -330,5 +366,57 @@ full.
   `retimeViewTransition(motion, names?)` wrap the browser's View Transitions for discrete swaps
   such as route changes. Without browser support the update runs without a transition and
   resolves `'unsupported'`.
+
+## Migrating from the 0.1/0.2 surface
+
+The old 0.1.0 surface was never published; 0.2.0 replaces it. This is a hard migration: there is
+no shim, alias, compatibility layer or legacy bridge. Code written against the earlier surface
+must be changed as follows.
+
+- **No page boxes.** The old surface assumed page coordinates and scroll markers. The engine now
+  plans each flush in its own view space and moves kept tracks by their rest displacement. There
+  is no `layoutScroll` or `layoutRoot`; a scroll is measured, not a stale trigger.
+- **No inner-scroll `'stale'`.** `'stale'` now means only "no valid before-box". A flush with a
+  valid capture never produces it, whatever scrolled between capture and flush.
+- **No field-by-field merge.** Motion layers merge by kind (timing or spring), outermost first. A
+  layer that names `type: 'spring'`, `timing` or `type: 'timing'` selects the kind; a kind switch
+  keeps only `delay`; `duration`, `timing` and `bounce` override within the chosen kind.
+  `duration` never switches the kind.
+- **No legacy bridge.** Removed names have no aliases: `LayoutSnapshot` and `play(snapshot)` are
+  gone (use `capture()` then `flush()`, or `update(mutate)`); `capture()` returns nothing;
+  `update()` takes no `motion` argument; `active` is removed. `LayoutResult` is now
+  `LayoutReport` (`{ status, snapped }`). `layout: 'box'` and `'preserve-aspect'` are removed
+  (`layout: true` is the old box mode; `radius: true` keeps corners). `LayoutParticipantOptions`
+  is `LayoutOptions`. `maxAnimated` is `maxNodes`; `maxBoxes`, `onError`, `deps`, `LayoutConfig`
+  and `supportsFlip` are removed (`onError` is `onSnap`). `layout` now defaults to `true`, not
+  `'position'`, so size animates unless you ask for `'position'`.
+
+## Release status and evidence
+
+The iOS-native-grade claim is a **certification target**, not a shipped claim of this release.
+It is earned only when `.trace/ani_ios_production/p5_bench.md` exists and is a
+**TRIBUNAL PASS** on the D9 instrument in §11.5, with the P0–P4 evidence body green and every
+carried tribunal defect closed. At this commit there is no `p5_bench.md`; P5 is not certified, so
+this package must not be cited as "iOS Native Grade". A P5 report with a mismatched fingerprint,
+a skipped scene, a missing metric or a weakened tolerance is not a pass.
+
+## Checks
+
+Run the release checks from the repository root:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm test
+pnpm ts:typecheck
+pnpm check
+pnpm --filter @freestylejs/ani-web build
+pnpm test:browser --browser chromium
+pnpm test:browser --browser webkit
+pnpm bench:layout --runs 5 --engine chromium --engine webkit --check
+```
+
+The browser suite and the bench are the certification instrument; do not treat a docs-only run as
+native-grade evidence. Firefox is advisory (D5/D9); a launch failure on macOS 27 is recorded, not
+counted as a pass.
 
 `ARCHITECTURE.md` holds the full model and its contracts.

@@ -67,11 +67,12 @@ export function TodoList({ initial }: { initial: Todo[] }) {
 | `layoutAnchor` | — | `{ x, y }`, each from 0 to 1. Keeps this point of the box on the same point of the parent participant; see [Anchored children](#anchored-children). |
 | `layoutCrossfade` | `true` | Crossfade with an exiting element of the same `layoutId`. |
 | `layoutDependency` | — | When given and `Object.is`-equal to its value at the previous flush, the element jumps to its new box instead of animating (not reported). Use it to animate only for the changes you name. |
+| `layoutKey` | — | Semantic identity. A change resets the participant to a fresh baseline instead of interpolating from its old box. |
 | `radius` | `true` with a `layoutId`, else `false` | Keep the corners' on-screen radius while the box is scaled. Between two elements with one `layoutId`, the corners blend from one radius to the other unless either sets `radius: false`. |
 | `motion` | — | `{ duration, delay, timing }` in seconds; see [Motion](#motion). |
 | `ref` | — | Another ref that receives the element. |
 
-Options are compared by effective value on every render: an inline object or an inline `timing.spring({ ... })` with the same values changes nothing. Only an effective change of `layout`, `layoutAnchor`, `radius` or `motion` restarts a running animation, from where the element is drawn.
+Options are compared by effective value on every render: an inline object or an inline `timing.spring({ ... })` with the same values changes nothing. Only an effective change of `layout`, `layoutAnchor`, `radius` or `motion` restarts a running animation, from where the element is drawn; a `layoutKey` change starts a fresh baseline. `layoutId`, `layoutCrossfade` and `layoutDependency` alone never restart a running animation.
 
 #### Modes
 
@@ -285,12 +286,13 @@ A participant with no `LayoutGroup` above it joins an implicit root group, one p
 `LayoutGroup` renders no DOM. The outermost `LayoutGroup` owns a group; nested ones join it:
 
 -   `id` namespaces the `layoutId`s of the participants below it (`outer/inner/id`), so two lists with the same ids do not hand off to each other.
--   `motion` supplies defaults, merged field by field from the outermost group to the participant.
+-   `motion` supplies defaults, merged by kind from the outermost group to the participant. A layer that names `type: 'spring'`, `timing` or `type: 'timing'` selects the kind; a kind switch keeps only `delay`; `duration`, `timing` and `bounce` override within the chosen kind. `duration` never switches the kind.
 -   Group options are read from the outermost `LayoutGroup` only. A nested group that sets one prints a development warning.
 
 | Group option | Default | Meaning |
 | :--- | :--- | :--- |
 | `clock` | `defaultClock` | Drives the default `'raf'` engine and supplies reduced motion to both engines. |
+| `motion` | — | Defaults merged by kind into every participant's `motion`. |
 | `reducedMotion` | `'jump'` | See [Reduced motion](#reduced-motion). |
 | `threshold` | `1` | Pixels a box must move to animate. |
 | `maxNodes` | `300` | Visible moving elements per flush. Above it, the whole change jumps (`'capped'`). |
@@ -636,6 +638,8 @@ Anything the engine cannot animate exactly jumps to its final layout. Each chang
 
 Statuses resolve in exactly that order (§9.3); `'reduced'`, `'stale'` and `'no-change'` apply only when no track ran.
 
+`'stale'` has exactly one meaning: no valid measurement of what was presented (no capture, or a capture that aged past a frame). A flush with a valid capture never reports it, whatever scrolled between the two reads. A scroll is measured, not a snap reason; `'stale'` is not an inner-scroll degradation.
+
 ### Runtime and diagnostics
 
 `layoutRuntime` is a module singleton from `@freestylejs/ani-layout`:
@@ -711,7 +715,7 @@ Invalid options (an unknown key, a negative duration, an anchor outside 0–1, a
 -   Text inside an element that scales is re-rasterized and can look soft until the animation ends. Use `layout: 'position'` on text.
 -   A change of your own `translate` or `scale` during a run applies when the run ends, as one jump.
 -   A presence `transform` that animates during a layout run moves the element and its participants on top of their layout motion.
--   A box never shrinks below one pixel; a fast element headed there loses that part of its speed.
+-   A size channel whose carried velocity would take it below one pixel loses that part of the velocity; the channel still reaches its target.
 -   Not supported: 3D transforms, rotation and skew, SVG and inline elements, pointer capture and velocity estimation (the gesture layer owns those; layout provides the drive seam), scroll-linked layout without a scroll driver, shadow correction and curved paths.
 
 ### Vanilla API
@@ -749,9 +753,10 @@ group.dispose()
 | `capture()` | Reads the boxes before a change, where they are drawn. Repeated calls in the same task reuse the reading; a call in a later task reads again. The reading is valid until the next frame. |
 | `flush()` | Reads the boxes after the change and starts the animations. Resolves the report. |
 | `update(mutate)` | `capture()`, `mutate()`, `flush()`. A throwing `mutate` discards the capture and rethrows. |
+| `take(element)` | Starts a direct-manipulation hold and returns its handle; see [Direct manipulation](#direct-manipulation). |
 | `finish()` | Jumps every running animation to its end. |
 | `dispose()` | Cancels everything and restores every style the group wrote. |
-| `stats` | `{ captures, reads, rects, offsets, styles, probes, parents, tracks, holds }`: `reads` is `rects + offsets + styles` (rects, layout-size pairs and computed styles); `probes` counts the one-time scroll-anchoring probe, `parents` the `offsetParent` reads of the viewport-fixed test. |
+| `stats` | `{ captures, reads, rects, offsets, styles, layoutOffsets, probes, parents, tracks, holds }`: `reads` is `rects + offsets + styles + layoutOffsets` (rects, layout-size pairs, computed styles and held rebase/support reads); `probes` counts the one-time scroll-anchoring probe, `parents` the `offsetParent` reads of the viewport-fixed test. |
 
 `createLayoutGroup(options?)` takes the group options of the table in [Groups](#groups) plus `motion`. `createPresence(element, motion, options?)` is the presence handle behind `usePresence`: `enter()`, `exit()` and `dispose()`. A participant inside an exiting presence element takes part in a `layoutId` crossfade.
 
@@ -782,5 +787,36 @@ unshare()
 -   `retimeViewTransition(motion, names?)` retimes the browser's transition animations.
 
 Use layout animation, not View Transitions, for reorders, accordions, toasts and anything that can be interrupted.
+
+### Migrating from the 0.1/0.2 surface
+
+The old 0.1.0 surface was never published; 0.2.0 replaces it with no shim, alias, compatibility
+layer or legacy bridge. Code written against the earlier surface must change:
+
+-   **No page boxes.** The old surface assumed page coordinates and scroll markers. Each flush now
+    plans in its own view space and moves kept tracks by their rest displacement. There is no
+    `layoutScroll` or `layoutRoot`; a scroll is measured, not a stale trigger.
+-   **No inner-scroll `'stale'`.** `'stale'` now means only "no valid before-box". A flush with a
+    valid capture never produces it, whatever scrolled between capture and flush.
+-   **No field-by-field merge.** Motion layers merge by kind (timing or spring), outermost first;
+    `duration` never switches the kind. See [Motion](#motion).
+-   **No legacy bridge.** `LayoutSnapshot` and `play(snapshot)` are gone: use `capture()` and
+    `flush()`, or `update(mutate)`. `capture()` returns nothing, `update()` takes no `motion`
+    argument, and `active` is removed. `LayoutResult` is now `LayoutReport` (`{ status, snapped }`).
+    `layout: 'box'` and `'preserve-aspect'` are removed (`layout: true` is the old box mode;
+    `radius: true` keeps corners). `LayoutParticipantOptions` is `LayoutOptions`. `maxAnimated` is
+    `maxNodes`; `maxBoxes`, `onError`, `deps`, `LayoutConfig` and `supportsFlip` are removed
+    (`onError` is `onSnap`). `layout` now defaults to `true`, not `'position'`, so size animates
+    unless you ask for `'position'`. In React, `useLayout` accepts all `LayoutOptions`,
+    `useLayoutGroup().update()` resolves `LayoutReport`, `useLayoutDrive` is new, and there is no
+    snapshot API, `play()`, `deps` or facade.
+
+### Release status and evidence
+
+The iOS-native-grade claim is a **certification target**, not a shipped claim. It is earned only
+when `.trace/ani_ios_production/p5_bench.md` exists and is a TRIBUNAL PASS on the D9 instrument in
+`ARCHITECTURE.md` §11.5, with the P0–P4 evidence body green and every carried tribunal defect
+closed. At this commit P5 has no report; this guide does not claim iOS Native Grade. A report with
+a mismatched fingerprint, a skipped scene, a missing metric or a weakened tolerance is not a pass.
 
 See the live [Layout Showcase](/en/docs/showcase/layout).
