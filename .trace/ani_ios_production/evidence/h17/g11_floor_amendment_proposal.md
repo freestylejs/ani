@@ -30,8 +30,8 @@ Chromium, `.trace/ani_ios_production/evidence/h17/floor_sustained.json`) gives
 **median 2.805 ms, p95 3.215 ms, max 3.405 ms**. The floor's own p95 is 1.6×
 the 2 ms ceiling.
 
-The measured G11 p95 is **~8.2 ms** (see the report). The engine/floor ratio is
-about **2.9×**; even a hypothetical engine with zero overhead over the mandatory
+The measured G11 p95 is **8.0–9.0 ms** across the H17 runs (see the report).
+The engine/floor ratio is about **2.8–3.1×**; even a hypothetical engine with zero overhead over the mandatory
 floor would be ~2.85 ms and would still fail the absolute 2 ms gate.
 
 ## Proposed replacement (owner decision required)
@@ -53,7 +53,8 @@ about the host's absolute clock.
 
 ### Current sustained value (for the owner's decision)
 
-The H17 G11 p95 is **~8.2 ms** with a floor of ~2.85 ms, i.e. **~2.9× floor**.
+The H17 G11 p95 is **8.0–9.0 ms** with a floor of ~2.87–2.93 ms, i.e.
+**~2.8–3.1× floor**.
 That means:
 
 - the absolute 2 ms gate is structurally impossible (the floor alone is
@@ -61,7 +62,7 @@ That means:
 - a **2× floor** replacement (≈5.7 ms) would also still fail on the current
   sustained path; H17 does **not** claim it, and does not propose pretending
   the sustained path passes;
-- if the owner wants a deciding gate now, the reported 2.9× is the evidence for
+- if the owner wants a deciding gate now, the reported 2.8–3.1× is the evidence for
   choosing a multiplier. If the owner wants 2×, G11 stays open until the
   sustained path (`engineState`, presented `L_k`, re-expression, active-node
   measurement) is reduced further. The floor alone cannot be reduced without
