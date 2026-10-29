@@ -8,7 +8,7 @@ import {
     heldGate,
     realClockGate,
     steadyFrameGate,
-    sustainedGate,
+    sustainedRatioGate,
 } from './gates.ts'
 import { type Box, settleOfBox, trackState, zeroBoxVelocity } from './oracle.ts'
 import { scoreScene } from './scoring.ts'
@@ -417,9 +417,17 @@ test('negative control G9: a floor with an extra read fails its audit', () => {
     assert.ok(ratio.value > 2)
 })
 
-test('negative control G10 and G11: a p95 above 2 ms fails', () => {
+test('negative control G10 and G11: a p95 above 2 ms or 2x floor fails', () => {
     assert.equal(steadyFrameGate([1, 1, 2.1], 0.01).pass, false)
-    assert.equal(sustainedGate([1, 1, 2.2], 0.01).pass, false)
+    assert.equal(
+        sustainedRatioGate([1, 1, 2.2], [1, 1, 1], true, 0).pass,
+        false
+    )
+    assert.equal(sustainedRatioGate([1, 1, 1.9], [1, 1, 1], true, 0).pass, true)
+    assert.equal(
+        sustainedRatioGate([1, 1, 1.9], [1, 1, 1], false, 0).pass,
+        false
+    )
     assert.equal(steadyFrameGate([1, 1, 1.9], 0.01).pass, true)
 })
 
