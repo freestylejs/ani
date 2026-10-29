@@ -48,7 +48,7 @@ passed; only the H14 S-CARD, S-SEG and S-BULK cost shapes ran.
   before).
 - **S1-2** — WebKit G9/G11 are `pass:false`, `deciding:false`, `blocked:true`,
   and their gate value is omitted (`n/a`); no quantized ratio is printed as
-  pass evidence. G10 batch20 remains the only deciding WebKit cost metric.
+  pass evidence. G10 batch20 remains the only deciding WebKit performance cost metric.
 - **S2-1** — G10 now uses a real-clock 20-frame batch: one real rAF tick starts
   each batch, 20 engine frame callbacks run back-to-back under one
   `performance.now()` pair, 30 samples, ±`g/20` = ±0.05 ms. G9/G11 remain BLOCK
