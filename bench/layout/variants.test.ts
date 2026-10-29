@@ -244,3 +244,100 @@ test('H19 DPR: the authored plan is unchanged', () => {
     assert.equal(p.commits[0]!.expectedStatus, 'ended')
     assert.equal(p.reducedMotion, undefined)
 })
+
+test('H20 maxDuration: a follower sees its lead source from the previous commit', () => {
+    const base = plan()
+    const t = trace()
+    // The lead's previous track is still active at the reverse frame; both
+    // the lead and its follower take the same source box and velocity.
+    base.initial.sheet = box(10, 10, 100, 100)
+    base.commits = [
+        {
+            frame: 8,
+            label: 'open',
+            expectedStatus: 'ended',
+            segments: [
+                {
+                    key: 'sheet',
+                    kind: 'spring',
+                    to: box(0, 0, 200, 200),
+                    motion: { type: 'spring', duration: 0.55, bounce: 0 },
+                },
+            ],
+        },
+        {
+            frame: 10,
+            label: 'reverse',
+            expectedStatus: 'ended',
+            segments: [
+                {
+                    key: 'sheet',
+                    kind: 'spring',
+                    to: box(0, 0, 390, 844),
+                    handoffFrom: 'sheet',
+                    motion: { type: 'spring', duration: 0.55, bounce: 0.05 },
+                },
+                {
+                    key: 'card',
+                    kind: 'spring',
+                    to: box(0, 0, 390, 844),
+                    handoffFrom: 'sheet',
+                    motion: { type: 'spring', duration: 0.55, bounce: 0.05 },
+                },
+            ],
+        },
+    ]
+    t.observations = [
+        {
+            kind: 'flush',
+            frame: 8,
+            now: 1128,
+            commitLabel: 'open',
+            connected: ['sheet'],
+            boxes: { sheet: box(10, 10, 100, 100) },
+            opacity: {},
+            radii: {},
+            style: {},
+            font: {},
+            samples: {},
+            activeElementKey: null,
+        },
+        {
+            kind: 'frame',
+            frame: 9,
+            now: 1144,
+            connected: ['sheet'],
+            boxes: { sheet: box(5, 5, 150, 150) },
+            opacity: {},
+            radii: {},
+            style: {},
+            font: {},
+            samples: {},
+            activeElementKey: null,
+        },
+        {
+            kind: 'flush',
+            frame: 10,
+            now: 1160,
+            commitLabel: 'reverse',
+            connected: ['sheet', 'card'],
+            boxes: {
+                sheet: box(5, 5, 150, 150),
+                card: box(5, 5, 150, 150),
+            },
+            opacity: {},
+            radii: {},
+            style: {},
+            font: {},
+            samples: {},
+            activeElementKey: null,
+        },
+    ]
+    const p = applyVariantPlan(base, t, variantSpec('s-card', 'rm-max'))
+    const reverse = p.commits.find((commit) => commit.label === 'reverse')!
+    const lead = reverse.segments[0]!
+    const follower = reverse.segments[1]!
+    assert.equal(lead.reducedCarry, true)
+    assert.equal(follower.reducedCarry, true)
+    assert.deepEqual(follower.motion, lead.motion)
+})
