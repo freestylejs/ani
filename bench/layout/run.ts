@@ -1124,8 +1124,16 @@ async function browserControls(
                     : 'error'
                 const primaryTargetFails =
                     primaryFinding !== undefined && !primaryFinding.pass
+                // F9: the primary S-REORDER G13 is already red (held support
+                // reads). The extra-read control is still conclusive when it
+                // strictly grows the same measured excess.
+                const isolatedDelta =
+                    control.name === 'reorder-extra-read' &&
+                    primaryFinding !== undefined &&
+                    finding !== undefined &&
+                    finding.value > primaryFinding.value
                 const inconclusive =
-                    primaryTargetFails ||
+                    (primaryTargetFails && !isolatedDelta) ||
                     (control.name === 'card-no-inert' &&
                         primaryCardInert === false) ||
                     (control.name === 'card-focus-follower' &&
@@ -1142,7 +1150,7 @@ async function browserControls(
                               finding.worst?.frame === undefined
                                   ? ''
                                   : ` at frame ${finding.worst.frame}`
-                          }${inconclusive ? (primaryTargetFails ? '; inconclusive: the primary scene already fails this target' : '; focus did not remain in the follower, so the control cannot isolate a delta') : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
+                          }${isolatedDelta ? `; isolated delta ${finding.value} > primary ${primaryFinding?.value}` : ''}${inconclusive ? (primaryTargetFails ? '; inconclusive: the primary scene already fails this target' : '; focus did not remain in the follower, so the control cannot isolate a delta') : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
                         : 'target metric missing',
                 })
             } catch (error) {
@@ -1685,7 +1693,7 @@ async function main(): Promise<number> {
         (engine) => engine.launchError !== null
     )
     const scenePass = required.every((engine) =>
-        engine.scenes.every((scene) => scene.status !== 'fail')
+        engine.scenes.every((scene) => scene.status === 'pass')
     )
     const costPass = required.every(
         (engine) => engine.cost === null || engine.cost.status === 'pass'
@@ -1696,12 +1704,42 @@ async function main(): Promise<number> {
         controls.every((control) => control.ok)
     const selfTestPass = tests.pass
     const pending = pendingEntries(options, engineReports)
+    const blockedEntries: { item: string; reason: string }[] = []
+    for (const engine of engineReports) {
+        for (const scene of engine.scenes) {
+            if (scene.status !== 'blocked') continue
+            blockedEntries.push({
+                item: `${engine.engine} scene ${scene.scene}`,
+                reason: scene.blockedReasons.join('; ') || 'blocked',
+            })
+        }
+        if (engine.cost?.status === 'blocked') {
+            blockedEntries.push({
+                item: `${engine.engine} S-BULK cost`,
+                reason:
+                    engine.cost.blockedReasons.join('; ') ||
+                    engine.cost.notes.join('; '),
+            })
+        }
+    }
+    // The DPR sweep and the reduced-motion variants are part of the P5c
+    // support evidence but are not run by this iteration. They are BLOCK,
+    // not a silent pass and not a pending scene.
+    blockedEntries.push({
+        item: 'DPR 1/3 sweep',
+        reason: 'P5c BLOCK: the DPR 1 and DPR 3 support runs are not part of this iteration',
+    })
+    blockedEntries.push({
+        item: 'reduced-motion variants',
+        reason: "P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration",
+    })
     const certificationEngines = engineReports.map((engine) => ({
         engine: engine.engine,
         launchError: engine.launchError,
         scenes: engine.scenes.map((scene) => ({
             scene: scene.scene,
             status: scene.status,
+            blockedReasons: scene.blockedReasons,
         })),
         cost: engine.cost
             ? {
@@ -1726,6 +1764,7 @@ async function main(): Promise<number> {
             advisory,
             controlsPass,
             selfTestPass,
+            blocked: blockedEntries,
         },
         {
             engines: options.engines,
@@ -1754,6 +1793,7 @@ async function main(): Promise<number> {
         negativeControls: controls,
         selfTests: tests,
         pending,
+        blocked: blockedEntries,
         certification,
         pass,
     }

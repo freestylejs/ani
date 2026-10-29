@@ -53,6 +53,32 @@ test('a complete clean invocation certifies', () => {
     assert.deepEqual(result.reasons, [])
 })
 
+test('F11: a blocked scene and top-level blocked row do not certify', () => {
+    const blockedEngine = {
+        ...cleanEngine('chromium'),
+        scenes: cleanEngine('chromium').scenes.map((scene) =>
+            scene.scene === 's-sheet'
+                ? {
+                      scene: 's-sheet',
+                      status: 'blocked' as const,
+                      blockedReasons: ['G12 timer BLOCK'],
+                  }
+                : scene
+        ),
+    }
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [blockedEngine, cleanEngine('webkit')],
+            blocked: [{ item: 'DPR 1/3 sweep', reason: 'P5c BLOCK' }],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /chromium scene s-sheet blocked/)
+    assert.match(result.reasons.join(';'), /DPR 1\/3 sweep/)
+})
+
 test('one measured run does not certify', () => {
     const result = evaluateCertification(clean, { ...full, runs: 1 })
     assert.equal(result.certified, false)

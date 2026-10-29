@@ -929,7 +929,6 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
             ? {
                   holdRelease: true,
                   velocityOverride: { x: 0, y: 900, w: 0, h: 0 },
-                  velocityBefore: { x: 0, y: 900, w: 0, h: 0 },
               }
             : {}),
     })
@@ -943,6 +942,8 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
         frame,
         label,
         expectedStatus: 'ended',
+        statusBlocked:
+            'A-13 reading: untouched sibling tracks keep running, so this run resolves ended; the p5 table says interrupted. Authority amendment required.',
         segments: [spring(row, slot), spring(title, slot)],
     })
     return {
@@ -956,7 +957,7 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
             requiredKeys: REORDER_KEYS,
             requiredPairs: 0,
             requiredStaticRadii: [],
-            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
             requiredShape: [
                 'shape.hold',
                 'shape.kill-switch',
@@ -980,10 +981,10 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
                 label: 'release',
                 kind: 'release',
                 expectedStatus: 'no-change',
-                segments: [
-                    spring('row-1', 4, true),
-                    spring('title-1', 4, true),
-                ],
+                // §5.10: the release velocity enters once on the held node;
+                // the nested title is a rider and receives none. It is drawn
+                // at the row's release track + (66, 10).
+                segments: [spring('row-1', 4, true)],
             },
         ],
         settleFrames: trace.settleFrames,
@@ -1014,6 +1015,8 @@ export function reorderPlan(trace: SceneTrace): ScenePlan {
         expectedDiagnostics: [],
         expectedOnSnap: [],
         expectedKillSwitch: true,
+        g3Blocked:
+            'BLOCK/authority: a release from direct manipulation has no analytic layout track before the supplied gesture velocity (A-11); G3 is n/a and the observed finite difference is supporting evidence only.',
     }
 }
 
@@ -1031,7 +1034,6 @@ export function sheetPlan(trace: SceneTrace): ScenePlan {
         motion: SHEET_SPRING,
         holdRelease: true,
         velocityOverride: { x: velocity.x, y: velocity.y, w: 0, h: 0 },
-        velocityBefore: { x: velocity.x, y: velocity.y, w: 0, h: 0 },
     })
     return {
         scene: 's-sheet',
@@ -1044,7 +1046,7 @@ export function sheetPlan(trace: SceneTrace): ScenePlan {
             requiredKeys: ['sheet'],
             requiredPairs: 0,
             requiredStaticRadii: [],
-            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
             requiredShape: [
                 'shape.hold',
                 'shape.pill-radius',
@@ -1124,6 +1126,8 @@ export function sheetPlan(trace: SceneTrace): ScenePlan {
         expectedOnSnap: [],
         requiredRestorations: ['sheet'],
         allowEmptyFinal: true,
+        g3Blocked:
+            'BLOCK/authority: a release from direct manipulation has no analytic layout track before the supplied gesture velocity (A-11); G3 is n/a and the observed finite difference is supporting evidence only.',
     }
 }
 

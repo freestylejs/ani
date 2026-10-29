@@ -158,17 +158,40 @@ export function aggregateSceneReport(args: {
     }
     const allMetrics = [runMetric, ...metrics]
     const pending = args.pending ?? null
-    const pass =
-        pending === null &&
-        runMetric.pass &&
-        allMetrics
-            .filter((metric) => metric.deciding)
-            .every((metric) => metric.pass) &&
-        shapeMetrics.every((metric) => metric.pass)
+    const blockedReasons = [...allMetrics, ...shapeMetrics]
+        .filter(
+            (metric) =>
+                metric.blocked === true &&
+                // A non-deciding probe is not a required row; G12 is a
+                // required timer-limited shape even when it is non-deciding.
+                (metric.deciding !== false || metric.id.startsWith('G12'))
+        )
+        .map(
+            (metric) =>
+                `${metric.id} (${metric.gate})${metric.worst?.detail ? `: ${metric.worst.detail}` : ''}`
+        )
+    const blocked = blockedReasons.length > 0
+    const metricFail =
+        allMetrics.some(
+            (metric) => metric.deciding && !metric.blocked && !metric.pass
+        ) ||
+        shapeMetrics.some(
+            (metric) => metric.deciding && !metric.blocked && !metric.pass
+        )
+    const failed = !runMetric.pass || metricFail
+    const pass = pending === null && !failed && !blocked
     return {
         scene: args.scene,
-        status: pending === null ? (pass ? 'pass' : 'fail') : 'pending',
+        status:
+            pending === null
+                ? failed
+                    ? 'fail'
+                    : blocked
+                      ? 'blocked'
+                      : 'pass'
+                : 'pending',
         pending,
+        blockedReasons,
         pass,
         metrics: allMetrics,
         shape: shapeMetrics,
