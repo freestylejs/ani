@@ -56,7 +56,7 @@ WebKit (load 5.84, cost BLOCK due the 1 ms timer):
 ## Verification commands
 
 - `pnpm vitest run packages/layout`: 29 files, 464 tests passed.
-- `pnpm test:bench-layout`: 84 passed.
+- `pnpm test:bench-layout`: 89 passed.
 - `pnpm ts:typecheck`: 11/11.
 - `pnpm check`: 0 errors (repo baseline warnings/infos).
 - `pnpm test:coverage`: 155 files, 1,911 tests passed (with the 20 s timeout
