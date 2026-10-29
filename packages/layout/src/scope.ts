@@ -380,8 +380,6 @@ interface DriveHold {
     warnedMove: boolean
     /** Reused per-frame override object (one allocation per hold). */
     override: { box: Mutable<Box>; velocity: Mutable<Box> } | null
-    /** Removes the held-frame animation watchers (P4-C7). */
-    animationCleanup: (() => void) | null
 }
 
 /** A released/cancelled landing caught again by `take` (P4-C1). */
@@ -1985,7 +1983,6 @@ export function createLayoutGroup(
     function invalidateHold(p: Participant): void {
         const hold = p.hold
         if (!hold) return
-        stopHeldAnimationWatch(hold)
         if (hold.state !== 'invalidated') hold.state = 'invalidated'
         p.hold = null
         hold.releaseTrack = null
@@ -2141,50 +2138,6 @@ export function createLayoutGroup(
         return [element.offsetLeft, element.offsetTop]
     }
 
-    /**
-     * P4-C7 without a per-frame `getAnimations` scan: a new CSS animation or
-     * translate/scale transition on the held subtree invalidates the hold
-     * when it starts. Existing animations are caught by the take support
-     * check; this watcher covers animations that begin during the hold.
-     */
-    function watchHeldAnimations(p: Participant, hold: DriveHold): void {
-        const check = (target: EventTarget | null): void => {
-            if (!(target instanceof Element) || p.hold !== hold) return
-            if (ownedAnimationIn(target, false)) {
-                invalidateHold(p)
-            }
-        }
-        const onAnimation: EventListener = (event) => check(event.target)
-        const onTransition: EventListener = (event) => {
-            const property = (event as TransitionEvent).propertyName
-            if (
-                property === 'translate' ||
-                property === 'scale' ||
-                property === 'all'
-            ) {
-                check(event.target)
-            }
-        }
-        const roots: HTMLElement[] = [p.element]
-        for (let a = p.parent; a; a = a.parent) roots.push(a.element)
-        for (const root of roots) {
-            root.addEventListener('animationstart', onAnimation)
-            root.addEventListener('transitionrun', onTransition)
-        }
-        hold.animationCleanup = () => {
-            for (const root of roots) {
-                root.removeEventListener('animationstart', onAnimation)
-                root.removeEventListener('transitionrun', onTransition)
-            }
-            hold.animationCleanup = null
-        }
-    }
-
-    /** Removes a hold's animation watchers before its state becomes terminal. */
-    function stopHeldAnimationWatch(hold: DriveHold): void {
-        hold.animationCleanup?.()
-    }
-
     /** The capture read phase's rect read for one held element (§5.10, §4.5). */
     function readHolds(): void {
         if (disposed || !hasDOM()) return
@@ -2199,6 +2152,18 @@ export function createLayoutGroup(
             }
             if (scopeDocument && p.element.ownerDocument !== scopeDocument) {
                 hold.state = 'invalidated'
+                hold.releaseTrack = null
+                continue
+            }
+            // P4-C7: the held read uses the animated-owned probe on the held
+            // element, its participant ancestors and its subtree.
+            let animatedOwnedNow = ownedAnimationIn(p.element, true)
+            for (let a = p.parent; a && !animatedOwnedNow; a = a.parent) {
+                animatedOwnedNow = ownedAnimationIn(a.element, false)
+            }
+            if (animatedOwnedNow) {
+                hold.state = 'invalidated'
+                hold.invalidReason = 'unsupported'
                 hold.releaseTrack = null
                 continue
             }
@@ -2566,7 +2531,6 @@ export function createLayoutGroup(
     /** Ends a hold at its end state: every handle terminal, every drive settled. */
     function finishHold(hold: DriveHold): void {
         const p = hold.owner
-        stopHeldAnimationWatch(hold)
         holds.delete(p)
         if (p.hold === hold) p.hold = null
         hold.releaseTrack = null
@@ -2997,13 +2961,11 @@ export function createLayoutGroup(
             invalidReason: null,
             warnedMove: false,
             override: null,
-            animationCleanup: null,
         }
         const handle = makeHandle(hold)
         hold.handle = handle
         p.hold = hold
         holds.add(p)
-        watchHeldAnimations(p, hold)
         ensureFrameFor(p)
         // descendants ride one common displacement from the take (§5.10)
         const h = {
@@ -4266,24 +4228,22 @@ export function createLayoutGroup(
         }
         stats.rects += list.length
         stats.offsets += list.length
-        // The capture support verdict is needed for the driven subtree and
-        // for degenerate/rounded boxes whose exact computed size is the only
-        // support proof (C-6b); a plain static box is supported by its read.
+        // 2. the support check on what was presented. A plain driven/static
+        // box is re-checked at flush; capture-time exactness is needed for a
+        // transformed bounding box (rect != layout size), presence and
+        // degenerate boxes (C-6b, L_MEAS-12).
         const captureWanted = list.map(
             (p, i) =>
                 presenceOf(p.element) !== undefined ||
                 offsets[i]![0] <= 1 ||
                 offsets[i]![1] <= 1 ||
-                (p.drive !== null &&
-                    (p.lastBox === null ||
-                        rects[i]!.w !== p.lastBox.w ||
-                        rects[i]!.h !== p.lastBox.h))
+                Math.abs(rects[i]!.w - offsets[i]![0]) > 0.5 ||
+                Math.abs(rects[i]!.h - offsets[i]![1]) > 0.5
         )
         for (let i = list.length - 1; i >= 0; i--) {
             if (captureWanted[i] && parents[i]! >= 0)
                 captureWanted[parents[i]!] = true
         }
-        // 2. the support check on what was presented
         const stylesBefore = stats.styles
         let styleOf: StyleReader | null = null
         const styles = (): StyleReader => (styleOf ??= styleReader(list))
@@ -4366,9 +4326,6 @@ export function createLayoutGroup(
                       readFree,
                   }
                 : null
-        // An exact pass (no failures) is reusable while its geometry inputs
-        // stay byte-identical; a pass that had to read a degenerate/presence
-        // support proof is re-read at each capture (C-6b).
         lastSupport = captureWanted.some(Boolean) ? null : support
         const scrolling = scrollingAround(list, flat, tree)
         const current: Capture = {
