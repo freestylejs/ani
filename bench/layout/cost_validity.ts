@@ -45,12 +45,14 @@ export function costValidity(input: CostValidityInput): CostValidity {
     }
 }
 
-export const HELD_PENDING_REASON =
-    'P4 (held shape G12; take/move/release not in the base tree)'
+/**
+ * Retained for a future gate that is genuinely blocked on a missing engine
+ * surface; the P4 held shape is no longer pending (H16).
+ */
+export const HELD_PENDING_REASON = 'G12 held shape not measured in this trace'
 
 export interface CostOutcomeInput {
     readonly valid: boolean
-    readonly heldPending: boolean
     readonly metricsPass: boolean
 }
 
@@ -61,16 +63,12 @@ export interface CostOutcome {
 }
 
 /**
- * N9: G12 is pending only while the cost trace says it is. Once the held shape
- * exists, an all-green valid run is `pass`, not a permanent `pending`.
+ * An all-green valid run is `pass`. A timer/cadence failure is `blocked`, not
+ * `pending`; G12 is a measured metric, not a permanent pending gate.
  */
 export function costOutcome(input: CostOutcomeInput): CostOutcome {
-    const pending = input.heldPending ? HELD_PENDING_REASON : null
     if (!input.valid) {
-        return { status: 'blocked', pass: false, pending }
-    }
-    if (input.heldPending) {
-        return { status: 'pending', pass: false, pending }
+        return { status: 'blocked', pass: false, pending: null }
     }
     return {
         status: input.metricsPass ? 'pass' : 'fail',

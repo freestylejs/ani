@@ -58,21 +58,9 @@ test('N3: a short commit count is invalid', () => {
     assert.match(result.reasons.join(';'), /299 commits/)
 })
 
-test('N9: while G12 is pending a valid run is pending, not pass', () => {
+test('N9/H16: an all-green valid run with measured G12 is pass', () => {
     const result = costOutcome({
         valid: true,
-        heldPending: true,
-        metricsPass: true,
-    })
-    assert.equal(result.status, 'pending')
-    assert.equal(result.pass, false)
-    assert.match(result.pending ?? '', /G12/)
-})
-
-test('N9: a post-P4 all-green valid run is pass', () => {
-    const result = costOutcome({
-        valid: true,
-        heldPending: false,
         metricsPass: true,
     })
     assert.equal(result.status, 'pass')
@@ -80,10 +68,9 @@ test('N9: a post-P4 all-green valid run is pass', () => {
     assert.equal(result.pending, null)
 })
 
-test('N9: a post-P4 measured failure is fail, not pending', () => {
+test('N9/H16: a measured G12 failure is fail, not pending', () => {
     const result = costOutcome({
         valid: true,
-        heldPending: false,
         metricsPass: false,
     })
     assert.equal(result.status, 'fail')
@@ -91,10 +78,9 @@ test('N9: a post-P4 measured failure is fail, not pending', () => {
     assert.equal(result.pending, null)
 })
 
-test('N9: an invalid run is blocked and never pass', () => {
+test('N9/H16: an invalid run is blocked and never pass', () => {
     const result = costOutcome({
         valid: false,
-        heldPending: true,
         metricsPass: true,
     })
     assert.equal(result.status, 'blocked')

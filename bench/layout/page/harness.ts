@@ -5,6 +5,8 @@ import type { Box } from '../oracle.ts'
 import { granularity } from '../stats.ts'
 import type {
     FrameCost,
+    FrameReadDetail,
+    HoldEvidence,
     Observation,
     SceneTrace,
     StyleSnapshot,
@@ -272,6 +274,8 @@ export class TraceBuilder {
     readonly diagnostics: SceneTrace['diagnostics'][number][] = []
     readonly onSnap: SceneTrace['onSnap'][number][] = []
     readonly settleFrames: number[] = []
+    readonly frameReads: FrameReadDetail[] = []
+    readonly holds: HoldEvidence[] = []
     steadyFrameReads = 0
     steadyFrameReadsAt: number | null = null
     readonly mounts: Record<string, StyleSnapshot> = {}
@@ -351,6 +355,14 @@ export class TraceBuilder {
         this.onSnap.push({ key, reason, frame })
     }
 
+    hold(evidence: HoldEvidence): void {
+        this.holds.push(evidence)
+    }
+
+    frameRead(entry: FrameReadDetail): void {
+        this.frameReads.push(entry)
+    }
+
     build(final: SceneTrace['final']): SceneTrace {
         return {
             scene: this.options.scene,
@@ -364,6 +376,8 @@ export class TraceBuilder {
             settleFrames: this.settleFrames,
             steadyFrameReads: this.steadyFrameReads,
             steadyFrameReadsAt: this.steadyFrameReadsAt,
+            frameReads: this.frameReads,
+            holds: this.holds,
             mounts: this.mounts,
             initialBoxes: this.initialBoxes,
             aBoxes: this.aBoxes,

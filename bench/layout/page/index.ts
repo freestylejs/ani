@@ -1,11 +1,19 @@
-import { runCostShapes, runFloorAudit, runSceneCostProbe } from './cost.ts'
+import {
+    runCostShapes,
+    runFloorAudit,
+    runHeldAudit,
+    runSceneCostProbe,
+} from './cost.ts'
 import { AccScene } from './scenes/s_acc.tsx'
+import { BulkScene } from './scenes/s_bulk.ts'
 import { CardScene } from './scenes/s_card.ts'
 import { DeleteScene } from './scenes/s_delete.tsx'
 import { InsertScene } from './scenes/s_insert.tsx'
 import { IslandScene } from './scenes/s_island.ts'
 import { PhotoScene } from './scenes/s_photo.ts'
+import { ReorderScene } from './scenes/s_reorder.ts'
 import { SegScene } from './scenes/s_seg.ts'
+import { SheetScene } from './scenes/s_sheet.ts'
 import { StackScene } from './scenes/s_stack.ts'
 
 interface BenchScene {
@@ -20,6 +28,7 @@ interface BenchPage {
     demo(name: string): Promise<void>
     runCost(): Promise<unknown>
     runFloorAudit(extraRead?: boolean): Promise<unknown>
+    runHeldAudit(extraRead?: boolean): Promise<unknown>
     runSceneCostProbe(scene: string): Promise<unknown>
 }
 
@@ -38,6 +47,9 @@ const scenes: Record<string, BenchScene> = {
     's-island': IslandScene,
     's-photo': PhotoScene,
     's-stack': StackScene,
+    's-reorder': ReorderScene,
+    's-sheet': SheetScene,
+    's-bulk': BulkScene,
 }
 
 window.__bench = {
@@ -50,6 +62,7 @@ window.__bench = {
     },
     runCost: runCostShapes,
     runFloorAudit,
+    runHeldAudit,
     async runSceneCostProbe(scene: string) {
         if (scene === 's-card') {
             return runSceneCostProbe('s-card', 7, 6, {
@@ -105,6 +118,27 @@ window.__bench = {
                 type: 'spring',
                 duration: 0.55,
                 bounce: 0.08,
+            })
+        }
+        if (scene === 's-reorder') {
+            return runSceneCostProbe('s-reorder', 14, 14, {
+                type: 'spring',
+                duration: 0.45,
+                bounce: 0.1,
+            })
+        }
+        if (scene === 's-sheet') {
+            return runSceneCostProbe('s-sheet', 1, 1, {
+                type: 'spring',
+                duration: 0.45,
+                bounce: 0.08,
+            })
+        }
+        if (scene === 's-bulk') {
+            return runSceneCostProbe('s-bulk', 1000, 300, {
+                type: 'spring',
+                duration: 0.4,
+                bounce: 0.1,
             })
         }
         throw new Error(`no scene cost probe for "${scene}"`)

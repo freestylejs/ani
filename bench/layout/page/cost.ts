@@ -8,8 +8,13 @@
 
 import { timing } from '@freestylejs/ani-core'
 import { createLayoutGroup, type LayoutGroup } from '@freestylejs/ani-layout'
-import { median } from '../stats.ts'
-import type { CostRun, CostTrace, FloorAuditTrace } from '../types.ts'
+import { median, percentile } from '../stats.ts'
+import type {
+    CostRun,
+    CostTrace,
+    FloorAuditTrace,
+    HeldShapeRun,
+} from '../types.ts'
 import {
     installRafSampler,
     isWebKitEngine,
@@ -406,7 +411,6 @@ async function measureEngineBulk(
         participants: fixture.participants.length,
         poses: fixture.movers.length,
         typedOM,
-        heldPending: true,
         engine,
         floor: floorResult.engine,
         engineSamples: samples,
@@ -562,6 +566,84 @@ async function measureSustained(
     }
 }
 
+/**
+ * G12 held shape: 1 and 10 held tiles on the 1,000-participant DOM. Each
+ * frame reads one rect per live hold before any write; the p95 of 600 frame
+ * samples divided by the held count is the §11.5 per-held statistic.
+ */
+async function measureHeld(
+    heldCount: number,
+    g: number,
+    sampler: ReturnType<typeof installRafSampler>
+): Promise<HeldShapeRun> {
+    const fixture = buildBulk(false, false)
+    const group = createLayoutGroup({
+        motion: BULK_MOTION,
+        reducedMotion: 'ignore',
+        maxNodes: 300,
+        maxParticipants: 2000,
+    })
+    engineAdd(group, fixture)
+    await nextFrame()
+    await nextFrame()
+    const handles = fixture.movingTiles
+        .slice(0, heldCount)
+        .map((index) => group.take(fixture.tiles[index]!))
+    const reads = {
+        frames: 0,
+        rects: 0,
+        offsets: 0,
+        styles: 0,
+        holds: 0,
+        mismatches: 0,
+    }
+    const start = sampler.frames.length
+    for (let i = 0; i < 600; i++) {
+        for (const handle of handles) {
+            handle.move({ x: (i % 10) - 5, y: (i % 20) - 10 })
+        }
+        const before = group.stats
+        await nextFrame()
+        const after = group.stats
+        reads.frames += 1
+        reads.rects += after.rects - before.rects
+        reads.offsets += after.offsets - before.offsets
+        reads.styles += after.styles - before.styles
+        reads.holds += before.holds
+        if (
+            after.rects - before.rects !== before.holds ||
+            after.offsets - before.offsets !== 0 ||
+            after.styles - before.styles !== 0
+        ) {
+            reads.mismatches += 1
+        }
+    }
+    for (const handle of handles) handle.release({ x: 0, y: 0 })
+    let releaseClean = false
+    for (let i = 0; i < 600; i++) {
+        if (group.stats.tracks === 0 && group.stats.holds === 0) {
+            releaseClean = true
+            break
+        }
+        await nextFrame()
+    }
+    const samples = sampler.frames
+        .slice(start, start + 600)
+        .map((frame) => frame.ms)
+    const p95 = percentile(samples, 0.95)
+    group.dispose()
+    fixture.dispose()
+    return {
+        held: heldCount,
+        samples,
+        p95,
+        perHeld: p95 / heldCount,
+        g,
+        reads,
+        releaseClean,
+    }
+}
+
 export async function runCostShapes(): Promise<CostTrace> {
     const granularityInfo = measureGranularityInfo()
     const g = granularityInfo.value
@@ -572,13 +654,14 @@ export async function runCostShapes(): Promise<CostTrace> {
         const scrolled = await measureEngineBulk(true, true, typedOM)
         const steady = await measureSteady(sampler)
         const sustained = await measureSustained(sampler)
+        const heldOne = await measureHeld(1, g, sampler)
+        const heldTen = await measureHeld(10, g, sampler)
         sampler.stop()
         return {
             mode: 'cost',
             g,
             gSource: granularityInfo.source,
             typedOM,
-            heldPending: true,
             unscrolled,
             scrolled,
             steady: { costs: steady.costs, g, refreshHz: steady.refreshHz },
@@ -611,11 +694,53 @@ export async function runCostShapes(): Promise<CostTrace> {
                     styles: sample.styles,
                 })),
             ],
-            held: { pending: 'P4' },
+            held: { one: heldOne, ten: heldTen },
         }
     } finally {
         sampler.stop()
     }
+}
+
+/**
+ * The held-read audit control: one 10-held frame instrumented at the DOM
+ * boundary. `extraRead` adds one scene read, so the audit must report a
+ * mismatch (G13-held is not a fabricated count).
+ */
+export async function runHeldAudit(extraRead = false): Promise<{
+    frames: number
+    rects: number
+    offsets: number
+    styles: number
+    holds: number
+    mismatches: number
+}> {
+    const fixture = buildBulk(false, false)
+    const group = createLayoutGroup({
+        motion: BULK_MOTION,
+        reducedMotion: 'ignore',
+        maxNodes: 300,
+        maxParticipants: 2000,
+    })
+    engineAdd(group, fixture)
+    await nextFrame()
+    await nextFrame()
+    const handles = fixture.movingTiles
+        .slice(0, 10)
+        .map((index) => group.take(fixture.tiles[index]!))
+    for (const handle of handles) handle.move({ x: 1, y: 1 })
+    const instrumentation = startInstrumentation()
+    await nextFrame()
+    if (extraRead) fixture.tiles[0]!.getBoundingClientRect()
+    const counted = instrumentation.stop()
+    const holds = 10
+    const rects = counted.rects
+    const offsets = counted.offsetReads / 2
+    const styles = counted.styleReads
+    const mismatches = rects === holds && offsets === 0 && styles === 0 ? 0 : 1
+    for (const handle of handles) handle.release({ x: 0, y: 0 })
+    group.dispose()
+    fixture.dispose()
+    return { frames: 1, rects, offsets, styles, holds, mismatches }
 }
 
 /** Runs the audited floor alone; `extraRead` is the over-counting control. */
