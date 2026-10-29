@@ -9,6 +9,8 @@ import {
     blendRadius,
     coverage,
     crossfade,
+    EASE_IN,
+    EASE_OUT,
     edgeError,
     perceptualOf,
     settleOfBox,
@@ -65,6 +67,8 @@ interface SegmentState {
     readonly motion: SegmentPlan['motion']
     readonly v0: Box
     readonly moving: boolean
+    /** A moving retarget carries the analytic velocity into a timing curve. */
+    readonly carrying: boolean
     readonly settle: number
 }
 
@@ -112,7 +116,7 @@ function valueAt(state: SegmentState, frame: number, stepMs: number): Box {
         state.motion!,
         state.from,
         state.to,
-        state.v0,
+        state.carrying ? state.v0 : null,
         elapsed,
         state.settle
     ).box
@@ -125,7 +129,7 @@ function velocityAt(state: SegmentState, frame: number, stepMs: number): Box {
         state.motion!,
         state.from,
         state.to,
-        state.v0,
+        state.carrying ? state.v0 : null,
         elapsed,
         state.settle
     ).velocity
@@ -169,6 +173,54 @@ function observationAt(
 function worstEdge(drawn: Box, expected: Box): { error: number; edge: string } {
     const result = edgeError(drawn, expected)
     return { error: result.max, edge: result.edge }
+}
+
+function curveAt(kind: 'linear' | 'ease-out' | 'ease-in', x: number): number {
+    const clamp = Math.min(1, Math.max(0, x))
+    if (kind === 'linear') return clamp
+    const curve = kind === 'ease-in' ? EASE_IN : EASE_OUT
+    return curveAtPoint(curve, clamp)
+}
+
+function curveAtPoint(
+    curve: {
+        readonly x1: number
+        readonly y1: number
+        readonly x2: number
+        readonly y2: number
+    },
+    x: number
+): number {
+    const at = (a: number, b: number, t: number): number => {
+        const inv = 1 - t
+        return 3 * inv * inv * t * a + 3 * inv * t * t * b + t * t * t
+    }
+    let low = 0
+    let high = 1
+    for (let i = 0; i < 32; i++) {
+        const mid = (low + high) / 2
+        if (at(curve.x1, curve.x2, mid) < x) low = mid
+        else high = mid
+    }
+    return at(curve.y1, curve.y2, (low + high) / 2)
+}
+
+function authoredAt(
+    plan: ScenePlan,
+    key: string,
+    frame: number
+): { x: number; y: number } {
+    let x = 0
+    let y = 0
+    for (const track of plan.authoredTranslate ?? []) {
+        if (track.key !== key) continue
+        if (frame < track.startFrame || frame > track.endFrame) continue
+        const span = Math.max(1, track.endFrame - track.startFrame)
+        const p = Math.min(1, Math.max(0, (frame - track.startFrame) / span))
+        x += track.from.x + (track.to.x - track.from.x) * p
+        y += track.from.y + (track.to.y - track.from.y) * p
+    }
+    return { x, y }
 }
 
 function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
@@ -239,16 +291,25 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                         ? sourceVelocity
                         : (segment.velocityOverride ?? zeroBoxVelocity())
                 const moving =
-                    segment.velocityOverride === undefined
+                    segment.startMoving === true ||
+                    (segment.velocityOverride === undefined
                         ? active
-                        : v0.x !== 0 || v0.y !== 0
+                        : v0.x !== 0 || v0.y !== 0)
+                const target = segment.toFromB
+                    ? {
+                          x: from.x + segment.toFromB.dx,
+                          y: from.y + segment.toFromB.dy,
+                          w: from.w,
+                          h: from.h,
+                      }
+                    : segment.to
                 const settle =
                     segment.kind === 'spring'
                         ? settleOfBox(
                               segment.motion!.duration,
                               (segment.motion as { bounce: number }).bounce,
                               from,
-                              segment.to,
+                              target,
                               v0
                           )
                         : segment.kind === 'timing'
@@ -259,10 +320,17 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                     kind: segment.kind,
                     startFrame: observation.frame,
                     from,
-                    to: segment.to,
+                    to: target,
                     motion: segment.motion,
                     v0,
                     moving,
+                    carrying:
+                        segment.velocityOverride === undefined
+                            ? active && segment.startMoving !== true
+                            : v0.x !== 0 ||
+                              v0.y !== 0 ||
+                              v0.w !== 0 ||
+                              v0.h !== 0,
                     settle,
                 }
                 pending.push({ segment, state, source })
@@ -282,6 +350,7 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                     }
                     if (
                         active &&
+                        segment.presenceExit !== true &&
                         commitPlan.segments.some((entry) => entry === segment)
                     ) {
                         g3 = [
@@ -314,8 +383,15 @@ function buildExpected(plan: ScenePlan, trace: SceneTrace): Expected {
                 box = state.from
             else box = valueAt(state, observation.frame, stepMs)
             if (!box) continue
+            const authored = state
+                ? { x: 0, y: 0 }
+                : authoredAt(plan, key, observation.frame)
             expected.set(key, {
-                box,
+                box: {
+                    ...box,
+                    x: box.x + authored.x,
+                    y: box.y + authored.y,
+                },
                 spring: state?.kind === 'spring',
             })
         }
@@ -579,6 +655,47 @@ function latestSegment(
     return found
 }
 
+/**
+ * Whether `key` is removed with a crossfade follower: its declared DOM parent
+ * is the follower of the latest pair at the removal frame. Such a descendant
+ * has no settled state of its own; the follower's removal/inert proof covers it.
+ */
+export function removedWithFollower(
+    plan: ScenePlan,
+    key: string,
+    frame: number
+): boolean {
+    const parent = plan.removedWith?.[key]
+    if (parent === undefined) return false
+    let latestStart = -1
+    for (const pair of plan.pairs) {
+        if (pair.startFrame <= frame && pair.startFrame > latestStart)
+            latestStart = pair.startFrame
+    }
+    if (latestStart < 0) return false
+    return plan.pairs.some(
+        (pair) => pair.startFrame === latestStart && pair.follower === parent
+    )
+}
+
+/** Owned-declaration mismatches of a post-removal snapshot against mount. */
+export function restorationMismatches(
+    plan: ScenePlan,
+    key: string,
+    after: StyleSnapshot
+): string[] {
+    const mount = plan.mounts[key]
+    if (!mount) return ['no mount snapshot']
+    const mismatches = sameStyle(after, mount)
+    if (
+        after.inline !== mount.inline &&
+        !(plan.authorStyleKeys ?? []).includes(key)
+    ) {
+        mismatches.push('inline cssText')
+    }
+    return mismatches
+}
+
 function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     const req = plan.completeness
     let worstKey: string | undefined
@@ -652,6 +769,24 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         const last = trace.observations[lastIndex]!
         const removed = !final?.connected.includes(key)
         if (!removed) continue
+        if (removedWithFollower(plan, key, last.frame)) {
+            const evidence = trace.restorations?.find(
+                (entry) => entry.key === key
+            )
+            if (!evidence) {
+                count += 1
+                worstKey ??= key
+                worstDeclarations ??= `removed descendant ${key} at frame ${last.frame}: no post-removal restoration snapshot`
+                continue
+            }
+            const mismatches = restorationMismatches(plan, key, evidence.after)
+            if (mismatches.length > 0) {
+                count += 1
+                worstKey ??= key
+                worstDeclarations ??= `removed descendant ${key} after ${evidence.frame}: ${mismatches.join(', ')}`
+            }
+            continue
+        }
         const pair = plan.pairs.find((candidate) => candidate.follower === key)
         const followerAtRemoval =
             pair !== undefined &&
@@ -678,6 +813,14 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         }
         check(last, key, `last connected frame ${last.frame}`)
     }
+    for (const key of plan.requiredRestorations ?? []) {
+        const evidence = trace.restorations?.find((entry) => entry.key === key)
+        if (!evidence) {
+            count += 1
+            worstKey ??= key
+            worstDeclarations ??= `required post-removal restoration for ${key} is missing`
+        }
+    }
     const mountComplete = req.requiredKeys.every(
         (key) => plan.mounts[key] !== undefined
     )
@@ -694,7 +837,7 @@ function scoreRestoration(plan: ScenePlan, trace: SceneTrace): MetricFinding {
             detail:
                 worstDeclarations ??
                 (count === 0
-                    ? `0 mismatches; ${inlineDifferences} inline cssText difference(s) recorded as evidence`
+                    ? `0 mismatches; ${inlineDifferences} inline cssText difference(s) recorded as evidence; ${trace.restorations?.length ?? 0} post-removal restoration snapshot(s)`
                     : undefined),
         },
     }
@@ -767,22 +910,27 @@ function scoreReads(trace: SceneTrace): MetricFinding {
     let excess = 0
     let worstLabel: string | undefined
     let detail: string | undefined
+    let exact = true
     for (const commit of trace.commits) {
         const required = commit.nBefore + commit.nAfter
-        const styleExcess = Math.abs(commit.styles - commit.stylesExpected)
+        const rectError = Math.abs(commit.rects - required)
+        const offsetError = Math.abs(commit.offsets - required)
+        const styleError = Math.abs(commit.styles - commit.stylesExpected)
         const commitExcess =
-            Math.max(0, commit.rects - required) +
-            Math.max(0, commit.offsets - required) +
+            rectError +
+            offsetError +
             Math.max(0, commit.frameReads) +
-            styleExcess
-        if (commitExcess > excess) {
+            styleError
+        if (commitExcess > 0) exact = false
+        if (commitExcess >= excess) {
             excess = commitExcess
             worstLabel = commit.label
-            detail = `${commit.label}: ${commit.rects} rects, ${commit.offsets} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; required ${required}/${required}/0 (probes ${commit.probes}, parents ${commit.parents})`
+            detail = `${commit.label}: ${commit.rects}/${required} rects, ${commit.offsets}/${required} pairs, ${commit.styles}/${commit.stylesExpected} computed reads (${commit.styleRadiusCapture} radius capture + ${commit.styleActiveFlush} active flush, plus the engine's Typed OM reads), ${commit.frameReads} frame reads; probes ${commit.probes}, parents ${commit.parents}${(commit.presenceRects ?? 0) > 0 || (commit.presenceStyles ?? 0) > 0 ? `; audited non-layout presence reads excluded: ${commit.presenceRects ?? 0} rects, ${commit.presenceStyles ?? 0} styles` : ''}`
         }
     }
     if (trace.steadyFrameReads > 0) {
         excess += trace.steadyFrameReads
+        exact = false
         detail ??= `steady frame ${trace.steadyFrameReadsAt}: ${trace.steadyFrameReads} reads`
     }
     const exactSummary = trace.commits
@@ -797,7 +945,7 @@ function scoreReads(trace: SceneTrace): MetricFinding {
         gate: '<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero',
         unit: 'excess reads',
         value: excess,
-        pass: excess === 0,
+        pass: exact && excess === 0,
         measured: true,
         worst: {
             label: worstLabel ?? trace.commits[0]?.label,
@@ -841,9 +989,139 @@ function scoreFocus(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     }
 }
 
+/** Author/presence opacity timelines declared by the scene. */
+function scorePresenceOpacity(
+    plan: ScenePlan,
+    trace: SceneTrace
+): MetricFinding {
+    const tracks = plan.presenceOpacity ?? []
+    let worst = 0
+    let worstFrame: number | undefined
+    let worstKey: string | undefined
+    let compared = 0
+    const keys = new Set(tracks.map((track) => track.key))
+    for (const observation of trace.observations) {
+        for (const key of keys) {
+            const got = observation.opacity[key]
+            if (got === undefined) continue
+            const applicable = tracks
+                .filter((track) => track.key === key)
+                .filter((track) =>
+                    observation.kind === 'flush'
+                        ? track.startFrame < observation.frame ||
+                          (track.startFrame === observation.frame && true)
+                        : track.startFrame < observation.frame
+                )
+                .sort((a, b) => a.startFrame - b.startFrame)
+            const first = tracks
+                .filter((track) => track.key === key)
+                .sort((a, b) => a.startFrame - b.startFrame)[0]
+            if (!first) continue
+            let want = first.from
+            const track = applicable[applicable.length - 1]
+            if (track) {
+                const elapsed =
+                    ((observation.frame - track.startFrame) * plan.stepMs) /
+                    1000
+                const p =
+                    track.durationMs <= 0
+                        ? 1
+                        : elapsed / (track.durationMs / 1000)
+                want =
+                    track.from +
+                    (track.to - track.from) * curveAt(track.easing, p)
+            }
+            compared += 1
+            const error = Math.abs(got - want)
+            if (error > worst) {
+                worst = error
+                worstFrame = observation.frame
+                worstKey = key
+            }
+        }
+    }
+    return {
+        id: 'shape.presence-opacity',
+        label: 'Declared presence/author opacity timeline',
+        gate: '<= 1e-5 against the declared curve',
+        unit: 'opacity',
+        value: worst,
+        pass: worst <= 1e-5,
+        measured: compared > 0,
+        worst: { frame: worstFrame, participant: worstKey },
+        detail:
+            compared === 0 ? 'n/a: no declared presence opacity' : undefined,
+    }
+}
+
+function scaleOf(transform: string): number {
+    if (!transform || transform === 'none') return 1
+    const matrix = transform.match(/matrix\(([^)]+)\)/)
+    if (matrix) {
+        const parts = matrix[1]!.split(',').map((part) => Number(part))
+        const a = parts[0] ?? 1
+        const b = parts[1] ?? 0
+        return Math.hypot(a, b)
+    }
+    const scale = transform.match(/scale(?:X)?\(([-0-9.]+)/)
+    return scale ? Number(scale[1]) : 1
+}
+
+/** Inner presence-scale discs (S-STACK) declared by the scene. */
+function scorePresenceScale(plan: ScenePlan, trace: SceneTrace): MetricFinding {
+    const tracks = plan.presenceScale ?? []
+    let worst = 0
+    let worstFrame: number | undefined
+    let worstKey: string | undefined
+    let compared = 0
+    const keys = new Set(tracks.map((track) => track.key))
+    for (const observation of trace.observations) {
+        for (const key of keys) {
+            const got = observation.samples?.[key]
+            if (got === undefined) continue
+            const applicable = tracks
+                .filter((track) => track.key === key)
+                .filter((track) =>
+                    observation.kind === 'flush'
+                        ? track.startFrame <= observation.frame
+                        : track.startFrame < observation.frame
+                )
+                .sort((a, b) => a.startFrame - b.startFrame)
+            const track = applicable[applicable.length - 1]
+            if (!track) continue
+            const elapsed =
+                ((observation.frame - track.startFrame) * plan.stepMs) / 1000
+            const p =
+                track.durationMs <= 0 ? 1 : elapsed / (track.durationMs / 1000)
+            const want =
+                track.from + (track.to - track.from) * curveAt(track.easing, p)
+            compared += 1
+            const error = Math.abs(scaleOf(got) - want)
+            if (error > worst) {
+                worst = error
+                worstFrame = observation.frame
+                worstKey = key
+            }
+        }
+    }
+    return {
+        id: 'shape.badge-scale',
+        label: 'Inner presence-scale disc timeline',
+        gate: '<= 1e-4 against the declared scale curve',
+        unit: 'scale',
+        value: worst,
+        pass: worst <= 1e-4,
+        measured: compared > 0,
+        worst: { frame: worstFrame, participant: worstKey },
+        detail: compared === 0 ? 'n/a: no declared inner scale' : undefined,
+    }
+}
+
 function scoreShape(plan: ScenePlan, trace: SceneTrace): MetricFinding[] {
     return [
         scoreCrossfadeOpacity(plan, trace),
+        scorePresenceOpacity(plan, trace),
+        scorePresenceScale(plan, trace),
         scoreCoverage(plan, trace),
         scoreRadius(plan, trace),
         scoreStaticRadius(plan, trace),
@@ -1004,13 +1282,21 @@ function stateHistory(
                           )
                         : zeroBoxVelocity()
                     : (segment.velocityOverride ?? zeroBoxVelocity())
+            const target = segment.toFromB
+                ? {
+                      x: from.x + segment.toFromB.dx,
+                      y: from.y + segment.toFromB.dy,
+                      w: from.w,
+                      h: from.h,
+                  }
+                : segment.to
             const settle =
                 segment.kind === 'spring'
                     ? settleOfBox(
                           segment.motion!.duration,
                           (segment.motion as { bounce: number }).bounce,
                           from,
-                          segment.to,
+                          target,
                           v0
                       )
                     : segment.kind === 'timing'
@@ -1021,13 +1307,18 @@ function stateHistory(
                 kind: segment.kind,
                 startFrame: observation.frame,
                 from,
-                to: segment.to,
+                to: target,
                 motion: segment.motion,
                 v0,
                 moving:
-                    segment.velocityOverride === undefined
+                    segment.startMoving === true ||
+                    (segment.velocityOverride === undefined
                         ? active
-                        : v0.x !== 0 || v0.y !== 0,
+                        : v0.x !== 0 || v0.y !== 0),
+                carrying:
+                    segment.velocityOverride === undefined
+                        ? active && segment.startMoving !== true
+                        : v0.x !== 0 || v0.y !== 0 || v0.w !== 0 || v0.h !== 0,
                 settle,
             }
             pending.push({ key: segment.key, state })

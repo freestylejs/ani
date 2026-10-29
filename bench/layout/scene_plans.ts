@@ -3,7 +3,7 @@
  * derives every trajectory from this plan and the page's engine-free layout
  * probe; it never reads an engine pose to compute an expectation.
  */
-import type { Box } from './oracle.ts'
+import { type Box, bezierAt, EASE_OUT, perceptualSpring } from './oracle.ts'
 import type {
     CommitPlan,
     PairPlan,
@@ -22,6 +22,16 @@ const SEG_SPRING = {
     duration: 0.35,
     bounce: 0.12,
 } as const
+const STACK_SPRING = {
+    type: 'spring',
+    duration: 0.55,
+    bounce: 0.08,
+} as const
+
+const STACK_KEYS = Array.from({ length: 6 }, (_, i) => [
+    `card-${i}`,
+    `badge-${i}`,
+]).flat()
 
 function aBox(trace: SceneTrace, key: string): Box {
     const box = trace.aBoxes[key]
@@ -302,6 +312,667 @@ export function segPlan(trace: SceneTrace): ScenePlan {
         authorStyleKeys: ['pill'],
         pairs: [],
         staticRadii: { pill: 7 },
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+    }
+}
+
+/* ───────────────────────── P5b interaction scenes ───────────────────────── */
+
+export function stackPlan(trace: SceneTrace): ScenePlan {
+    const expandFrame = commitFrame(trace, 'expand')
+    const collapseFrame = commitFrame(trace, 'collapse')
+    const spring = (key: string, suffix: 'fan' | 'stack'): SegmentPlan => ({
+        key,
+        kind: 'spring',
+        to: aBox(trace, `${key}@${suffix}`),
+        motion: STACK_SPRING,
+    })
+    return {
+        scene: 's-stack',
+        stepMs: 16,
+        completeness: {
+            requiredObservations: 80,
+            requiredCommits: 2,
+            requiredReports: 2,
+            requiredSettleFrames: 2,
+            requiredKeys: STACK_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: [
+                'shape.presence-opacity',
+                'shape.badge-scale',
+                'shape.teardown',
+            ],
+            requiredOpacityKeys: [
+                'badge-1',
+                'badge-2',
+                'badge-3',
+                'badge-4',
+                'badge-5',
+            ],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: expandFrame,
+                label: 'expand',
+                expectedStatus: 'ended',
+                segments: STACK_KEYS.map((key) => spring(key, 'fan')),
+            },
+            {
+                frame: collapseFrame,
+                label: 'collapse',
+                expectedStatus: 'ended',
+                segments: STACK_KEYS.map((key) => spring(key, 'stack')),
+            },
+        ],
+        presenceScale: [
+            ...[1, 2, 3, 4, 5].flatMap((i) => [
+                {
+                    key: `badge-${i}-disc`,
+                    startFrame: expandFrame,
+                    from: 0.8,
+                    to: 1,
+                    durationMs: 250,
+                    easing: 'ease-out' as const,
+                },
+                {
+                    key: `badge-${i}-disc`,
+                    startFrame: collapseFrame,
+                    from: 1,
+                    to: 0.8,
+                    durationMs: 150,
+                    easing: 'ease-in' as const,
+                },
+            ]),
+        ],
+        presenceOpacity: [
+            ...[1, 2, 3, 4, 5].flatMap((i) => [
+                {
+                    key: `badge-${i}`,
+                    startFrame: expandFrame,
+                    from: 0,
+                    to: 1,
+                    durationMs: 250,
+                    easing: 'ease-out' as const,
+                },
+                {
+                    key: `badge-${i}`,
+                    startFrame: collapseFrame,
+                    from: 1,
+                    to: 0,
+                    durationMs: 150,
+                    easing: 'ease-in' as const,
+                },
+            ]),
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: STACK_KEYS.filter((key) => key.startsWith('badge-')),
+        pairs: [],
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+    }
+}
+
+const PHOTO_SPRING = {
+    type: 'spring',
+    duration: 0.45,
+    bounce: 0,
+} as const
+
+const PHOTO_KEYS = [
+    ...Array.from({ length: 300 }, (_, i) => `cell-${i}`),
+    'cell-37-image',
+    'detail-frame',
+    'detail-image',
+]
+
+export function photoPlan(trace: SceneTrace): ScenePlan {
+    const openFrame = commitFrame(trace, 'open')
+    const backFrame = commitFrame(trace, 'back')
+    const spring = (
+        key: string,
+        to: Box,
+        handoffFrom: string
+    ): SegmentPlan => ({
+        key,
+        kind: 'spring',
+        to,
+        handoffFrom,
+        motion: PHOTO_SPRING,
+    })
+    return {
+        scene: 's-photo',
+        stepMs: 16,
+        completeness: {
+            requiredObservations: 70,
+            requiredCommits: 2,
+            requiredReports: 2,
+            requiredSettleFrames: 2,
+            requiredKeys: PHOTO_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: ['shape.teardown'],
+            requiredOpacityKeys: [],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: openFrame,
+                label: 'open',
+                expectedStatus: 'ended',
+                segments: [
+                    spring(
+                        'detail-frame',
+                        aBox(trace, 'detail-frame'),
+                        'cell-37'
+                    ),
+                    spring(
+                        'detail-image',
+                        aBox(trace, 'detail-image'),
+                        'cell-37-image'
+                    ),
+                ],
+            },
+            {
+                frame: backFrame,
+                label: 'back',
+                expectedStatus: 'ended',
+                segments: [
+                    spring(
+                        'cell-37',
+                        aBox(trace, 'cell-37@rest'),
+                        'detail-frame'
+                    ),
+                    spring(
+                        'cell-37-image',
+                        aBox(trace, 'cell-37-image@rest'),
+                        'detail-image'
+                    ),
+                ],
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: [],
+        pairs: [],
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+    }
+}
+
+const ISLAND_SPRING = {
+    type: 'spring',
+    duration: 0.5,
+    bounce: 0.1,
+} as const
+const ISLAND_KEYS = ['pill', 'card', 'pill-content', 'card-content'] as const
+
+export function islandPlan(trace: SceneTrace): ScenePlan {
+    const expandFrame = commitFrame(trace, 'expand')
+    const reverseFrame = commitFrame(trace, 'reverse')
+    const stepMs = 10
+    // The content starts when the lead's perceptual timeline reaches 0.5;
+    // the fade starts on the first frame at or after that instant.
+    let cardFadeOffset = 1
+    while (perceptualSpring(0.5, ((cardFadeOffset - 1) * stepMs) / 1000) < 0.5)
+        cardFadeOffset += 1
+    const cardFadeFrame = expandFrame + cardFadeOffset
+    const cardAtReverse = bezierAt(
+        EASE_OUT,
+        Math.min(1, ((reverseFrame - cardFadeFrame) * stepMs) / 180)
+    ).value
+    const spring = (
+        key: string,
+        to: Box,
+        handoffFrom: string
+    ): SegmentPlan => ({
+        key,
+        kind: 'spring',
+        to,
+        handoffFrom,
+        motion: ISLAND_SPRING,
+    })
+    const toCard = aBox(trace, 'card')
+    const toPill = aBox(trace, 'pill')
+    const pillContent = aBox(trace, 'pill-content')
+    return {
+        scene: 's-island',
+        stepMs,
+        completeness: {
+            requiredObservations: 60,
+            requiredCommits: 2,
+            requiredReports: 2,
+            requiredSettleFrames: 1,
+            requiredKeys: [...ISLAND_KEYS],
+            requiredPairs: 2,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: [
+                'shape.opacity',
+                'shape.coverage',
+                'shape.radius',
+                'shape.inert',
+                'shape.focus',
+                'shape.presence-opacity',
+                'shape.teardown',
+            ],
+            requiredOpacityKeys: [
+                'pill',
+                'card',
+                'pill-content',
+                'card-content',
+            ],
+            requiredRadiiKeys: ['pill', 'card'],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: expandFrame,
+                label: 'expand',
+                expectedStatus: 'interrupted',
+                segments: [
+                    spring('card', toCard, 'pill'),
+                    spring('pill', toCard, 'pill'),
+                    { key: 'pill-content', kind: 'none', to: pillContent },
+                ],
+            },
+            {
+                frame: reverseFrame,
+                label: 'reverse',
+                expectedStatus: 'ended',
+                segments: [
+                    spring('pill', toPill, 'card'),
+                    spring('card', toPill, 'card'),
+                    {
+                        key: 'card-content',
+                        kind: 'spring',
+                        to: toPill,
+                        handoffFrom: 'card-content',
+                        motion: { type: 'spring', duration: 0.28, bounce: 0 },
+                    },
+                ],
+            },
+        ],
+        presenceOpacity: [
+            {
+                key: 'pill-content',
+                startFrame: expandFrame,
+                from: 1,
+                to: 0,
+                durationMs: 120,
+                easing: 'ease-out',
+            },
+            {
+                key: 'pill-content',
+                startFrame: reverseFrame,
+                from: 0,
+                to: 1,
+                durationMs: 120,
+                easing: 'ease-out',
+            },
+            {
+                key: 'card-content',
+                startFrame: expandFrame,
+                from: 0,
+                to: 0,
+                durationMs: 1,
+                easing: 'linear',
+            },
+            {
+                key: 'card-content',
+                startFrame: cardFadeFrame,
+                from: 0,
+                to: 1,
+                durationMs: 180,
+                easing: 'ease-out',
+            },
+            {
+                key: 'card-content',
+                startFrame: reverseFrame,
+                from: cardAtReverse,
+                to: 0,
+                durationMs: 120,
+                easing: 'ease-out',
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        removedWith: { 'card-content': 'card' },
+        requiredRestorations: ['card-content'],
+        authorStyleKeys: ['pill', 'card', 'pill-content', 'card-content'],
+        pairs: [
+            {
+                id: 'island',
+                startFrame: expandFrame,
+                lead: 'card',
+                follower: 'pill',
+                radiusFrom: 18.5,
+                radiusTo: 40,
+            },
+            {
+                id: 'island',
+                startFrame: reverseFrame,
+                lead: 'pill',
+                follower: 'card',
+                radiusFrom: 18.5,
+                radiusTo: 18.5,
+                reversal: true,
+            },
+        ],
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+    }
+}
+
+const ACC_SPRING = {
+    type: 'spring',
+    duration: 0.5,
+    bounce: 0.06,
+} as const
+const ACC_ROWS = 11
+const ACC_KEYS = [
+    ...Array.from({ length: ACC_ROWS }, (_, i) => `row-${i}`),
+    ...Array.from({ length: ACC_ROWS }, (_, i) => `header-${i}`),
+    ...Array.from({ length: ACC_ROWS }, (_, i) => `body-${i}`),
+    ...Array.from({ length: ACC_ROWS - 1 }, (_, i) => `sep-${i}`),
+]
+
+function accSegments(
+    phase: 'c1' | 'c2' | 'c3',
+    keys: readonly string[]
+): SegmentPlan[] {
+    return keys.map((key) => ({
+        key,
+        kind: 'spring',
+        to: aBoxByKeyCache[key]?.[phase] ?? (undefined as unknown as Box),
+        motion: ACC_SPRING,
+    }))
+}
+
+// Filled per trace by accPlan; the phase suffix maps to the probe box.
+const aBoxByKeyCache: Record<
+    string,
+    Partial<Record<'c1' | 'c2' | 'c3', Box>>
+> = {}
+
+export function accPlan(trace: SceneTrace): ScenePlan {
+    for (const key of ACC_KEYS) {
+        for (const phase of ['c1', 'c2', 'c3'] as const) {
+            const box = trace.aBoxes[`${key}@${phase}`]
+            if (box) {
+                aBoxByKeyCache[key] ??= {}
+                aBoxByKeyCache[key]![phase] = box
+            }
+        }
+    }
+    const c1Frame = commitFrame(trace, 'c1')
+    const c2Frame = commitFrame(trace, 'c2')
+    const c3Frame = commitFrame(trace, 'c3')
+    const rows = (from: number, to: number): string[] =>
+        Array.from({ length: to - from + 1 }, (_, i) => `row-${from + i}`)
+    const headers = (from: number, to: number): string[] =>
+        Array.from({ length: to - from + 1 }, (_, i) => `header-${from + i}`)
+    const bodies = (from: number, to: number): string[] =>
+        Array.from({ length: to - from + 1 }, (_, i) => `body-${from + i}`)
+    const seps = (from: number, to: number): string[] =>
+        Array.from({ length: to - from + 1 }, (_, i) => `sep-${from + i}`)
+    const c1Keys = [
+        'row-2',
+        ...rows(3, 10),
+        ...headers(3, 10),
+        ...bodies(3, 10),
+        ...seps(2, 9),
+    ]
+    const c2Keys = [
+        'row-6',
+        ...rows(7, 10),
+        ...headers(7, 10),
+        ...bodies(7, 10),
+        ...seps(6, 9),
+    ]
+    const c3Keys = [
+        'row-2',
+        ...rows(3, 10),
+        ...headers(3, 10),
+        ...bodies(3, 10),
+        ...seps(2, 9),
+    ]
+    return {
+        scene: 's-acc',
+        stepMs: 16,
+        completeness: {
+            requiredObservations: 60,
+            requiredCommits: 3,
+            requiredReports: 3,
+            requiredSettleFrames: 1,
+            requiredKeys: ACC_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: ['shape.teardown'],
+            requiredOpacityKeys: [],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: c1Frame,
+                label: 'c1',
+                expectedStatus: 'interrupted',
+                segments: accSegments('c1', c1Keys),
+            },
+            {
+                frame: c2Frame,
+                label: 'c2',
+                expectedStatus: 'interrupted',
+                segments: accSegments('c2', c2Keys),
+            },
+            {
+                frame: c3Frame,
+                label: 'c3',
+                expectedStatus: 'ended',
+                segments: accSegments('c3', c3Keys),
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: [],
+        pairs: [],
+        expectedDiagnostics: [],
+        expectedOnSnap: [],
+    }
+}
+
+const INSERT_SPRING = {
+    type: 'spring',
+    duration: 0.5,
+    bounce: 0.05,
+} as const
+const INSERT_KEYS = [
+    ...Array.from({ length: 3 }, (_, i) => `new-${i}`),
+    ...Array.from({ length: 13 }, (_, i) => `row-${9 + i}`),
+]
+
+export function insertPlan(trace: SceneTrace): ScenePlan {
+    const insertFrame = commitFrame(trace, 'insert')
+    const existing = INSERT_KEYS.filter((key) => key.startsWith('row-'))
+    return {
+        scene: 's-insert',
+        stepMs: 16,
+        completeness: {
+            requiredObservations: 40,
+            requiredCommits: 1,
+            requiredReports: 1,
+            requiredSettleFrames: 1,
+            requiredKeys: INSERT_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: ['shape.presence-opacity', 'shape.teardown'],
+            requiredOpacityKeys: ['new-0', 'new-1', 'new-2'],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: insertFrame,
+                label: 'insert',
+                expectedStatus: 'ended',
+                segments: [
+                    ...existing.map((key) => ({
+                        key,
+                        kind: 'spring' as const,
+                        to: aBox(trace, `${key}@after`),
+                        motion: INSERT_SPRING,
+                    })),
+                    ...Array.from({ length: 3 }, (_, i) => ({
+                        key: `new-${i}`,
+                        kind: 'timing' as const,
+                        to: aBox(trace, `new-${i}@after`),
+                        motion: {
+                            type: 'timing' as const,
+                            duration: 0.3,
+                            easing: 'ease-out' as const,
+                        },
+                        startMoving: true,
+                    })),
+                ],
+            },
+        ],
+        presenceOpacity: Array.from({ length: 3 }, (_, i) => ({
+            key: `new-${i}`,
+            startFrame: insertFrame,
+            from: 0,
+            to: 1,
+            durationMs: 300,
+            easing: 'ease-out' as const,
+        })),
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: ['new-0', 'new-1', 'new-2'],
+        pairs: [],
+        expectedDiagnostics: [],
+    }
+}
+
+const DELETE_SPRING = {
+    type: 'spring',
+    duration: 0.45,
+    bounce: 0.08,
+} as const
+const DELETE_LINEAR = {
+    type: 'timing',
+    duration: 0.25,
+    easing: 'linear',
+} as const
+const DELETE_KEYS = Array.from({ length: 9 }, (_, i) => `row-${i}`)
+
+export function deletePlan(trace: SceneTrace): ScenePlan {
+    const c1Frame = commitFrame(trace, 'delete-1')
+    const c2Frame = commitFrame(trace, 'delete-2')
+    const exit = (key: string): SegmentPlan => ({
+        key,
+        kind: 'timing',
+        to: aBox(trace, `${key}@init`),
+        motion: DELETE_LINEAR,
+        startMoving: true,
+        presenceExit: true,
+        toFromB: { dx: -390, dy: 0 },
+        velocityOverride: null,
+    })
+    const spring = (key: string, phase: 'c1' | 'c2'): SegmentPlan => ({
+        key,
+        kind: 'spring',
+        to: aBox(trace, `${key}@${phase}`),
+        motion: DELETE_SPRING,
+    })
+    return {
+        scene: 's-delete',
+        stepMs: 10,
+        completeness: {
+            requiredObservations: 40,
+            requiredCommits: 2,
+            requiredReports: 2,
+            requiredSettleFrames: 1,
+            requiredKeys: DELETE_KEYS,
+            requiredPairs: 0,
+            requiredStaticRadii: [],
+            requiredMetrics: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G13'],
+            requiredShape: ['shape.presence-opacity', 'shape.teardown'],
+            requiredOpacityKeys: ['row-2', 'row-5'],
+            requiredRadiiKeys: [],
+            requiredFontKeys: [],
+        },
+        initial: trace.initialBoxes,
+        mounts: trace.mounts,
+        commits: [
+            {
+                frame: c1Frame,
+                label: 'delete-1',
+                expectedStatus: 'interrupted',
+                segments: [
+                    exit('row-2'),
+                    ...[3, 4, 5, 6, 7, 8].map((i) => spring(`row-${i}`, 'c1')),
+                ],
+            },
+            {
+                frame: c2Frame,
+                label: 'delete-2',
+                expectedStatus: 'ended',
+                segments: [
+                    exit('row-5'),
+                    ...[6, 7, 8].map((i) => spring(`row-${i}`, 'c2')),
+                ],
+            },
+        ],
+        authoredTranslate: [
+            {
+                key: 'row-2',
+                startFrame: 0,
+                endFrame: 8,
+                from: { x: 0, y: 0 },
+                to: { x: -80, y: 0 },
+            },
+        ],
+        presenceOpacity: [
+            {
+                key: 'row-2',
+                startFrame: c1Frame,
+                from: 1,
+                to: 0,
+                durationMs: 200,
+                easing: 'linear',
+            },
+            {
+                key: 'row-5',
+                startFrame: c2Frame,
+                from: 1,
+                to: 0,
+                durationMs: 200,
+                easing: 'linear',
+            },
+        ],
+        settleFrames: trace.settleFrames,
+        restorationChecks: [],
+        authorStyleKeys: ['row-2', 'row-5'],
+        pairs: [],
         expectedDiagnostics: [],
         expectedOnSnap: [],
     }

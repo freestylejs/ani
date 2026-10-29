@@ -89,6 +89,7 @@ export interface RecordOptions {
     readonly elements: ReadonlyMap<string, HTMLElement | null>
     readonly radii?: ReadonlySet<string> | undefined
     readonly font?: ReadonlySet<string> | undefined
+    readonly samples?: ReadonlyMap<string, HTMLElement | null> | undefined
     readonly activeKey?: string | null | undefined
 }
 
@@ -105,6 +106,11 @@ export function observe(
     const radii: Record<string, readonly number[] | null> = {}
     const style: Record<string, StyleSnapshot> = {}
     const font: Record<string, string> = {}
+    const samples: Record<string, string> = {}
+    for (const [key, element] of options.samples ?? []) {
+        if (element?.isConnected)
+            samples[key] = getComputedStyle(element).transform
+    }
     for (const key of options.keys) {
         const element = options.elements.get(key) ?? null
         if (!element || !element.isConnected) {
@@ -130,6 +136,7 @@ export function observe(
         radii,
         style,
         font,
+        samples,
         activeElementKey: options.activeKey ?? null,
     }
 }
@@ -254,6 +261,7 @@ export interface TraceBuilderOptions {
     readonly elements: ReadonlyMap<string, HTMLElement | null>
     readonly radii?: ReadonlySet<string>
     readonly font?: ReadonlySet<string>
+    readonly samples?: ReadonlyMap<string, HTMLElement | null>
     readonly clock: { readonly now: number }
 }
 
@@ -269,6 +277,8 @@ export class TraceBuilder {
     readonly mounts: Record<string, StyleSnapshot> = {}
     readonly initialBoxes: Record<string, Box> = {}
     readonly aBoxes: Record<string, Box> = {}
+    readonly restorations: NonNullable<SceneTrace['restorations']>[number][] =
+        []
     private readonly options: TraceBuilderOptions
 
     constructor(options: TraceBuilderOptions) {
@@ -287,6 +297,16 @@ export class TraceBuilder {
         this.aBoxes[key] = box
     }
 
+    /** Evidence that the engine restored a removed participant's styles. */
+    restoration(
+        key: string,
+        frame: number,
+        before: StyleSnapshot,
+        after: StyleSnapshot
+    ): void {
+        this.restorations.push({ key, frame, before, after })
+    }
+
     record(
         kind: 'frame' | 'flush',
         frame: number,
@@ -301,6 +321,7 @@ export class TraceBuilder {
                 elements: this.options.elements,
                 radii: this.options.radii,
                 font: this.options.font,
+                samples: this.options.samples,
                 activeKey: activeKey(this.options.elements),
             },
             commitLabel
@@ -346,6 +367,7 @@ export class TraceBuilder {
             mounts: this.mounts,
             initialBoxes: this.initialBoxes,
             aBoxes: this.aBoxes,
+            restorations: this.restorations,
             final,
         }
     }

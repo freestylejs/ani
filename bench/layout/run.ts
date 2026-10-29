@@ -19,7 +19,11 @@ import {
     type Route,
     webkit,
 } from 'playwright'
-import { aggregateFindings } from './aggregate.ts'
+import {
+    aggregateFindings,
+    aggregateSceneReport,
+    realTwinProblems,
+} from './aggregate.ts'
 import { bundlePage, pageHtml } from './bundle.ts'
 import { evaluateCertification, evaluateInvocation } from './certification.ts'
 import {
@@ -52,7 +56,16 @@ import {
     type SceneReport,
     stringifyReport,
 } from './report.ts'
-import { cardPlan, segPlan } from './scene_plans.ts'
+import {
+    accPlan,
+    cardPlan,
+    deletePlan,
+    insertPlan,
+    islandPlan,
+    photoPlan,
+    segPlan,
+    stackPlan,
+} from './scene_plans.ts'
 import { type MetricFinding, scoreScene } from './scoring.ts'
 import { median, percentile } from './stats.ts'
 import type {
@@ -68,7 +81,16 @@ const PAGE_URL = `${ORIGIN}/`
 const ROUTE = `${ORIGIN}/**`
 const DEFAULT_OUT = join(REPO_ROOT, 'bench/layout/results/latest.json')
 const PAGES_DIR = join(REPO_ROOT, 'bench/layout/results/pages')
-const SCENES = ['s-card', 's-seg'] as const
+const SCENES = [
+    's-card',
+    's-seg',
+    's-photo',
+    's-stack',
+    's-island',
+    's-acc',
+    's-insert',
+    's-delete',
+] as const
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
@@ -489,33 +511,14 @@ function aggregateScene(
     pending: string | null = null,
     notes: readonly string[] = []
 ): SceneReport {
-    const measuredRuns = runs.filter((run) => !run.warmup)
-    const measuredFindings = findings.filter((_, index) => !runs[index]?.warmup)
-    const measuredShape = shape.filter((_, index) => !runs[index]?.warmup)
-    const metrics = aggregate(
-        measuredFindings,
-        measuredRuns.map((run) => run.run)
-    )
-    const shapeMetrics = aggregate(
-        measuredShape,
-        measuredRuns.map((run) => run.run)
-    )
-    const pass =
-        pending === null &&
-        metrics
-            .filter((metric) => metric.deciding)
-            .every((metric) => metric.pass) &&
-        shapeMetrics.every((metric) => metric.pass)
-    return {
+    return aggregateSceneReport({
         scene,
-        status: pending === null ? (pass ? 'pass' : 'fail') : 'pending',
-        pending,
-        pass,
-        metrics,
-        shape: shapeMetrics,
         runs,
+        findings,
+        shape,
+        pending,
         notes,
-    }
+    })
 }
 
 function evaluateCost(
@@ -805,6 +808,108 @@ const SCENE_CONTROLS: readonly {
         control: 'leftover-pose',
         target: 'G6',
     },
+    {
+        name: 'photo-no-counter-scale',
+        scene: 's-photo',
+        control: 'photo-no-counter-scale',
+        target: 'G1',
+    },
+    {
+        name: 'acc-separator-1px',
+        scene: 's-acc',
+        control: 'acc-separator-1px',
+        target: 'G1',
+    },
+    {
+        name: 'stack-badge-nonparticipant',
+        scene: 's-stack',
+        control: 'stack-badge-nonparticipant',
+        target: 'G1',
+    },
+    {
+        name: 'island-snap-reverse',
+        scene: 's-island',
+        control: 'island-snap-reverse',
+        target: 'G2',
+    },
+    {
+        name: 'insert-no-presence',
+        scene: 's-insert',
+        control: 'insert-no-presence',
+        target: 'shape.presence-opacity',
+    },
+    {
+        name: 'delete-no-lift',
+        scene: 's-delete',
+        control: 'delete-no-lift',
+        target: 'G1',
+    },
+    {
+        name: 'photo-leftover-pose',
+        scene: 's-photo',
+        control: 'photo-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'photo-extra-read',
+        scene: 's-photo',
+        control: 'photo-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'acc-leftover-pose',
+        scene: 's-acc',
+        control: 'acc-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'acc-extra-read',
+        scene: 's-acc',
+        control: 'acc-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'insert-leftover-pose',
+        scene: 's-insert',
+        control: 'insert-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'insert-extra-read',
+        scene: 's-insert',
+        control: 'insert-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'stack-extra-read',
+        scene: 's-stack',
+        control: 'stack-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'stack-leftover-pose',
+        scene: 's-stack',
+        control: 'stack-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'stack-no-badge-scale',
+        scene: 's-stack',
+        control: 'stack-no-badge-scale',
+        target: 'shape.badge-scale',
+    },
+    {
+        name: 'island-extra-read',
+        scene: 's-island',
+        control: 'island-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'delete-extra-read',
+        scene: 's-delete',
+        control: 'delete-extra-read',
+        target: 'G13',
+    },
 ]
 
 async function browserControls(
@@ -817,8 +922,17 @@ async function browserControls(
     try {
         browser = await launch(engine)
         let primaryCardInert: boolean | null = null
-        const primary = await runManual(browser, bundle, 's-card')
-        const primaryScore = scoreScene(cardPlan(primary.trace), primary.trace)
+        const primaryScores = new Map<string, ReturnType<typeof scoreScene>>()
+        for (const scene of new Set(
+            SCENE_CONTROLS.map((entry) => entry.scene)
+        )) {
+            const primary = await runManual(browser, bundle, scene)
+            primaryScores.set(
+                scene,
+                scoreScene(planFor(scene, primary.trace), primary.trace)
+            )
+        }
+        const primaryScore = primaryScores.get('s-card')!
         primaryCardInert =
             primaryScore.shape.find((entry) => entry.id === 'shape.inert')
                 ?.pass ?? false
@@ -830,20 +944,24 @@ async function browserControls(
                     control.scene,
                     control.control
                 )
-                const plan =
-                    run.trace.scene === 's-card'
-                        ? cardPlan(run.trace)
-                        : segPlan(run.trace)
+                const plan = planFor(run.trace.scene, run.trace)
                 const score = scoreScene(plan, run.trace)
                 const finding = [...score.metrics, ...score.shape].find(
                     (entry) => entry.id === control.target
                 )
+                const primaryFinding = [
+                    ...(primaryScores.get(control.scene)?.metrics ?? []),
+                    ...(primaryScores.get(control.scene)?.shape ?? []),
+                ].find((entry) => entry.id === control.target)
                 const observed = finding
                     ? finding.pass
                         ? 'pass'
                         : 'fail'
                     : 'error'
+                const primaryTargetFails =
+                    primaryFinding !== undefined && !primaryFinding.pass
                 const inconclusive =
+                    primaryTargetFails ||
                     (control.name === 'card-no-inert' &&
                         primaryCardInert === false) ||
                     (control.name === 'card-focus-follower' &&
@@ -860,7 +978,7 @@ async function browserControls(
                               finding.worst?.frame === undefined
                                   ? ''
                                   : ` at frame ${finding.worst.frame}`
-                          }${inconclusive ? '; focus did not remain in the follower, so the control cannot isolate a delta' : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
+                          }${inconclusive ? (primaryTargetFails ? '; inconclusive: the primary scene already fails this target' : '; focus did not remain in the follower, so the control cannot isolate a delta') : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
                         : 'target metric missing',
                 })
             } catch (error) {
@@ -978,6 +1096,21 @@ interface RunSceneOutcome {
     readonly shape: readonly MetricFinding[]
 }
 
+function planFor(
+    scene: string,
+    trace: SceneTrace
+): ReturnType<typeof cardPlan> {
+    if (scene === 's-card') return cardPlan(trace)
+    if (scene === 's-seg') return segPlan(trace)
+    if (scene === 's-acc') return accPlan(trace)
+    if (scene === 's-insert') return insertPlan(trace)
+    if (scene === 's-delete') return deletePlan(trace)
+    if (scene === 's-island') return islandPlan(trace)
+    if (scene === 's-photo') return photoPlan(trace)
+    if (scene === 's-stack') return stackPlan(trace)
+    throw new Error(`no scene plan for "${scene}"`)
+}
+
 function sceneOutcome(
     run: number,
     warmup: boolean,
@@ -986,20 +1119,9 @@ function sceneOutcome(
     probe: SceneCostProbeResult | null,
     problems: readonly string[]
 ): RunSceneOutcome {
-    const plan = manual.scene === 's-card' ? cardPlan(manual) : segPlan(manual)
+    const plan = planFor(manual.scene, manual)
     const score = scoreScene(plan, manual)
-    const allProblems = [...problems]
-    for (const code of real.diagnostics) {
-        allProblems.push(`real twin diagnostic: ${code}`)
-    }
-    if (real.final.tracks !== 0 || real.final.holds !== 0) {
-        allProblems.push(
-            `real twin final tracks ${real.final.tracks}, holds ${real.final.holds}`
-        )
-    }
-    if (real.final.connected <= 0) {
-        allProblems.push('real twin has no connected participants at the end')
-    }
+    const allProblems = [...problems, ...realTwinProblems(real)]
     const g8 = realClockGate(real.frameCosts, real.g)
     const longFrames = real.frameCosts.filter(
         (frame) => !frame.commit && frame.ms > 8
@@ -1078,6 +1200,13 @@ function sceneOutcome(
                     offsets: commit.offsets,
                     styles: commit.styles,
                     frameReads: commit.frameReads,
+                    ...(commit.presenceRects !== undefined ||
+                    commit.presenceStyles !== undefined
+                        ? {
+                              presenceRects: commit.presenceRects,
+                              presenceStyles: commit.presenceStyles,
+                          }
+                        : {}),
                 })),
                 reports: manual.reports.map((entry) => ({
                     label: entry.label,

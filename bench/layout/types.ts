@@ -44,6 +44,8 @@ export interface Observation {
     readonly radii: Readonly<Record<string, readonly number[] | null>>
     readonly style: Readonly<Record<string, StyleSnapshot>>
     readonly font: Readonly<Record<string, string>>
+    /** Non-participant sample elements (e.g. an inner presence disc). */
+    readonly samples: Readonly<Record<string, string>>
     /** Participant key containing document.activeElement, or null. */
     readonly activeElementKey: string | null
 }
@@ -81,6 +83,9 @@ export interface CommitObservation {
     readonly stylesExpected: number
     readonly styleRadiusCapture: number
     readonly styleActiveFlush: number
+    /** Non-layout React presence reads excluded from the layout read gate. */
+    readonly presenceRects?: number | undefined
+    readonly presenceStyles?: number | undefined
 }
 
 export interface ReportObservation {
@@ -122,6 +127,13 @@ export interface SceneTrace {
     readonly initialBoxes: Readonly<Record<string, Box>>
     /** Engine-free layout-probe boxes for every post-commit rest state. */
     readonly aBoxes: Readonly<Record<string, Box>>
+    /** Post-removal snapshots: before and after the engine remove. */
+    readonly restorations?: readonly {
+        readonly key: string
+        readonly frame: number
+        readonly before: StyleSnapshot
+        readonly after: StyleSnapshot
+    }[]
     readonly final: {
         readonly tracks: number
         readonly holds: number
@@ -171,6 +183,19 @@ export interface SegmentPlan {
      * can be shown to fail on a deliberate velocity jump.
      */
     readonly velocityOverride?: Box | null | undefined
+    /**
+     * Author timeline starting at the commit (presence enter/exit or a
+     * gesture layer): its first frame advances by dt instead of the
+     * from-rest dt = 0 rule.
+     */
+    readonly startMoving?: boolean | undefined
+    /**
+     * A presence exit target relative to the presented box B: the entrance
+     * starts at the lifted box and slides by this offset.
+     */
+    readonly toFromB?: { readonly dx: number; readonly dy: number } | undefined
+    /** A presence exit is not a layout retarget; exclude it from G3. */
+    readonly presenceExit?: boolean | undefined
 }
 
 export interface CommitPlan {
@@ -226,6 +251,34 @@ export interface AuthorStyleKeys {
     readonly keys: readonly string[]
 }
 
+export interface PresenceOpacityTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly from: number
+    readonly to: number
+    readonly durationMs: number
+    readonly easing: 'linear' | 'ease-out' | 'ease-in'
+}
+
+/** An authored translate (a gesture layer), linear in frame time. */
+export interface PresenceScaleTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly from: number
+    readonly to: number
+    readonly durationMs: number
+    readonly easing: 'linear' | 'ease-out' | 'ease-in'
+}
+
+/** An authored translate (a gesture layer), linear in frame time. */
+export interface AuthoredTranslateTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly endFrame: number
+    readonly from: { readonly x: number; readonly y: number }
+    readonly to: { readonly x: number; readonly y: number }
+}
+
 export interface ScenePlan {
     readonly scene: string
     readonly stepMs: number
@@ -241,6 +294,21 @@ export interface ScenePlan {
     readonly authorStyleKeys?: readonly string[] | undefined
     readonly expectedDiagnostics?: readonly string[] | undefined
     readonly expectedOnSnap?: readonly string[] | undefined
+    /**
+     * A participant removed together with a crossfade follower (its DOM
+     * parent). The follower's removal proof covers the subtree; the harness
+     * checks the follower's inert and does not read the descendant's
+     * mid-exit pose as a restoration failure.
+     */
+    readonly removedWith?: Readonly<Record<string, string>> | undefined
+    /** Removed keys whose post-removal restitution must be proven. */
+    readonly requiredRestorations?: readonly string[] | undefined
+    /** Inner presence scale samples (computed transform). */
+    readonly presenceScale?: readonly PresenceScaleTrack[] | undefined
+    /** Author opacity layers declared by the scene (presence/exit fades). */
+    readonly presenceOpacity?: readonly PresenceOpacityTrack[] | undefined
+    /** Authored gesture translations composed over the layout track. */
+    readonly authoredTranslate?: readonly AuthoredTranslateTrack[] | undefined
 }
 
 /* ───────────────────────── cost shapes ───────────────────────── */
