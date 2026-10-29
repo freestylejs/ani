@@ -1,0 +1,727 @@
+chromium run 0/5 (warm-up): s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+chromium run 1/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+chromium run 2/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+chromium run 3/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+chromium run 4/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+chromium run 5/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+webkit run 0/5 (warm-up): s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+webkit run 1/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+webkit run 2/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+webkit run 3/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+webkit run 4/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+webkit run 5/5: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+
+P5 layout bench — 2026-10-29T06:44:34.105Z (pnpm bench:layout --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-9/report.json)
+fingerprint Mac14,9 / 27.0.1 / Apple M2 Pro / chromium_headless_shell-1187 / webkit-2203
+1-minute load 7.69; cost ADVISORY (1-minute load is 7.69, pinned below 1)
+
+== chromium 140.0.7339.16 [chromium_headless_shell-1187]
+PASS s-card
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 757 participant-frames
+  ok   G2                    0.0012 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 68 card-title reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 68 sheet reverse analytic before {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741} after {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741}; observed FD before 0.0 px/s after 218.7 px/s, error 218.7 (allowed 3.2; supporting only, acceleration included)
+  ok   G4                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 630 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 52 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 9/9 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.360 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 5 one sample per frame; g 0.0050 ms; 117 samples, 117 frames
+  n/a   G9.probe                  1.692  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           4.70e-7  <= 1e-5 against the independent crossfade worst run 1 frame 22 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 69 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-seg
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 59 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 10 pill tap-3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 5 pill tap-2 analytic before {"x":631.6523350823729,"y":0,"w":0,"h":0} after {"x":631.6523350823729,"y":0,"w":0,"h":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 58 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 53 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 tap-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 tap-4 tap-4: 2/2 rects, 2/2 pairs, 2/2 computed reads (1 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.255 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 2 one sample per frame; g 0.0050 ms; 56 samples, 56 frames
+  n/a   G9.probe                  4.926  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 3
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 13 pill
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-photo
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 41237 participant-frames
+  ok   G2                    0.0002 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 82 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 272 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 51 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.255 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 5 one sample per frame; g 0.0050 ms; 103 samples, 103 frames
+  n/a   G9.probe                  1.694  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 3
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-stack
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0003 px  <= 0.05 px on every edge worst run 1 frame 73 badge-1 edge top 1452 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 60 badge-1 collapse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0003 px  <= 0.05 px on every edge worst run 1 frame 73 badge-1 edge top 1440 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 57 card-0
+  ok   G6                            0  byte for byte the authored one worst run 1 card-0 0 mismatches; 16 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 expand all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 collapse collapse: 24/24 rects, 24/24 pairs, 12/12 computed reads (12 radius capture + 12 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.445 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 4 one sample per frame; g 0.0050 ms; 114 samples, 114 frames
+  n/a   G9.probe                  1.046  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      5.03e-7  <= 1e-5 against the declared curve worst run 1 frame 61 badge-1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1 frame 9 badge-1-disc
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-island
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0006 px  <= 0.05 px on every edge worst run 1 frame 17 card-content edge right 327 participant-frames
+  ok   G2                    0.0006 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 16 card-content reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 16 pill reverse analytic before {"x":-448.9443717270225,"y":0,"w":897.888743454045,"h":468.2954222324974} after {"x":-448.9443717270225,"y":0,"w":897.888743454045,"h":468.2954222324974}; observed FD before 0.0 px/s after 349.9 px/s, error 349.9 (allowed 4.5; supporting only, acceleration included)
+  ok   G4                    0.0006 px  <= 0.05 px on every edge worst run 1 frame 17 card-content edge right 212 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 92 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 4 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 expand all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 8/8 rects, 8/8 pairs, 6/6 computed reads (2 radius capture + 4 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.535 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 3 one sample per frame; g 0.0050 ms; 46 samples, 46 frames
+  n/a   G9.probe                  3.271  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           4.68e-7  <= 1e-5 against the independent crossfade worst run 1 frame 3 card
+  ok   shape.presence-opacity      4.30e-7  <= 1e-5 against the declared curve worst run 1 frame 1 pill-content
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 18 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-acc
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2752 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-7 c3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":378.6164838814562,"w":0,"h":0} after {"x":0,"y":378.6164838814562,"w":0,"h":0}; observed FD before 0.0 px/s after 356.9 px/s, error 356.9 (allowed 4.6; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2079 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 59 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.565 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 2 one sample per frame; g 0.0050 ms; 65 samples, 65 frames
+  n/a   G9.probe                  0.471  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 3
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-insert
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 14 row-10 edge bottom 781 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 14 row-10 edge bottom 624 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 46 new-0
+  ok   G6                            0  byte for byte the authored one worst run 1 new-0 0 mismatches; 6 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 insert all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 insert insert: 29/29 rects, 29/29 pairs, 16/16 computed reads (0 radius capture + 16 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.595 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 52 samples, 52 frames
+  n/a   G9.probe                  0.843  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 4
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      4.29e-7  <= 1e-5 against the declared curve worst run 1 frame 2 new-0
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-delete
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0095 px  <= 0.05 px on every edge worst run 1 frame 18 row-5 edge top 662 participant-frames
+  ok   G2                    0.0095 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-5 delete-2 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 18 row-6 delete-2 analytic before {"x":0,"y":-339.28586992090396,"w":0,"h":0} after {"x":0,"y":-339.28586992090396,"w":0,"h":0}; observed FD before 0.0 px/s after 391.4 px/s, error 391.4 (allowed 4.9; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 21 row-6 edge top 336 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 70 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 delete-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 delete-2 delete-2: 18/18 rects, 18/18 pairs, 3/3 computed reads (0 radius capture + 3 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0; audited non-layout presence reads excluded: 2 rects, 2 styles
+  ok   G8                     0.435 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 2 one sample per frame; g 0.0050 ms; 45 samples, 45 frames
+  n/a   G9.probe                  1.485  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 2
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity     1.11e-16  <= 1e-5 against the declared curve worst run 1 frame 15 row-2
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+BLOCKED s-reorder (BLOCK: G12 (p95 / held <= 0.1 ms))
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 630 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 249 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 38 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 8 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 reorder-2 N/A: release: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reorder-9 reorder-9: 28/28 rects, 28/28 pairs, 8/8 computed reads (0 radius capture + 8 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.515 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 2 one sample per frame; g 0.0050 ms; 44 samples, 44 frames
+  BLOCK G12                    0.305 ms  p95 / held <= 0.1 ms worst run 3
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  n/a   G9.probe                  1.260  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 3
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 17 row-2
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  ok   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+BLOCKED s-sheet (BLOCK: G12 (p95 / held <= 0.1 ms))
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 92 sheet edge bottom 138 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 92 sheet edge bottom 108 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 47 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 detent-1 N/A: release-1: release() has no public LayoutReport; G7 not applicable; release-2: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 detent-2 detent-2: 2/2 rects, 2/2 pairs, 1/1 computed reads (0 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     0.285 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 4 one sample per frame; g 0.0050 ms; 101 samples, 101 frames
+  BLOCK G12                    0.255 ms  p95 / held <= 0.1 ms worst run 4
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  n/a   G9.probe                  4.615  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 89 sheet
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-bulk
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 6 tile-25 edge right 51000 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 6 tile-25 edge right 15000 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 48 tile-0
+  ok   G6                            0  byte for byte the authored one worst run 1 tile-0 0 mismatches; 300 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 shuffle all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 shuffle shuffle: 2000/2000 rects, 2000/2000 pairs, 300/300 computed reads (0 radius capture + 300 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 1, parents 0
+  ok   G8                     1.395 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 4 one sample per frame; g 0.0050 ms; 48 samples, 48 frames
+  n/a   G9.probe                  0.031  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 4
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+FAIL S-BULK cost shapes
+  ok   G9-unscrolled             1.838  median of 5 per-run ratios <= 2
+  ok   G9-scrolled               1.922  median of 5 per-run ratios <= 2
+  ok   G9.floor-unscrolled 0.0000 count mismatches  exact required counts; no extra read
+  ok   G9.floor-scrolled  0.0000 count mismatches  exact required counts; no extra read
+  ok   G10                    1.120 ms  p95 <= 2 ms
+  FAIL G11                    6.465 ms  p95 of one performance.now() pair per 60 Hz commit <= 2 ms
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero
+  BLOCK G12-1                  0.265 ms  p95 / held <= 0.1 ms
+  BLOCK G12-10                 0.017 ms  p95 / held <= 0.1 ms
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames
+  run 0 (warm-up): ratio 1.811 unscrolled / 1.907 scrolled; floor audit ok; steady p95 1.045 ms; sustained p95 6.920 ms; held 1/10 0.2900/0.0550 ms; held reads ok; g 0.0050 ms
+  run 1: ratio 1.838 unscrolled / 1.786 scrolled; floor audit ok; steady p95 1.155 ms; sustained p95 6.325 ms; held 1/10 0.2850/0.0165 ms; held reads ok; g 0.0050 ms
+  run 2: ratio 2.018 unscrolled / 1.951 scrolled; floor audit ok; steady p95 1.275 ms; sustained p95 6.880 ms; held 1/10 0.2450/0.0550 ms; held reads ok; g 0.0050 ms
+  run 3: ratio 1.888 unscrolled / 1.922 scrolled; floor audit ok; steady p95 0.495 ms; sustained p95 7.550 ms; held 1/10 0.1200/0.0170 ms; held reads ok; g 0.0050 ms
+  run 4: ratio 1.806 unscrolled / 2.107 scrolled; floor audit ok; steady p95 0.470 ms; sustained p95 6.305 ms; held 1/10 0.2700/0.0540 ms; held reads ok; g 0.0050 ms
+  run 5: ratio 1.672 unscrolled / 1.838 scrolled; floor audit ok; steady p95 1.120 ms; sustained p95 6.465 ms; held 1/10 0.2650/0.0175 ms; held reads ok; g 0.0050 ms
+
+== webkit 26.0 [webkit-2203]
+  note: Playwright WebKit does not expose crossOriginIsolated even with the COOP/COEP headers present; performance.now ticks at 1 ms, so g = 1 ms and the §11.5 20-frame sampler applies.
+PASS s-card
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0004 px  <= 0.05 px on every edge worst run 1 frame 73 sheet-content edge bottom 757 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 68 card reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 68 sheet reverse analytic before {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741} after {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741}; observed FD before 0.0 px/s after 218.7 px/s, error 218.7 (allowed 3.2; supporting only, acceleration included)
+  ok   G4                    0.0003 px  <= 0.05 px on every edge worst run 1 frame 14 sheet-image edge top 630 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 52 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 16/16 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 116 samples, 116 frames
+  BLOCK G9.probe                    n/a  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           4.70e-7  <= 1e-5 against the independent crossfade worst run 1 frame 22 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1 frame 69 sheet
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-seg
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 10 pill edge left 59 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 10 pill tap-3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 5 pill tap-2 analytic before {"x":631.6523350823729,"y":0,"w":0,"h":0} after {"x":631.6523350823729,"y":0,"w":0,"h":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 10 pill edge left 58 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 53 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 tap-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 tap-4 tap-4: 2/2 rects, 2/2 pairs, 3/3 computed reads (1 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 56 samples, 56 frames
+  BLOCK G9.probe                    n/a  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 8 pill
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-photo
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 38 detail-image edge left 41237 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 82 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 38 detail-image edge left 272 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 51 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 4/4 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 104 samples, 104 frames
+  n/a   G9.probe                  1.000  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 5
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-stack
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 73 card-1 edge bottom 1452 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 60 card-4 collapse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 73 card-1 edge bottom 1440 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 57 card-0
+  ok   G6                            0  byte for byte the authored one worst run 1 card-0 0 mismatches; 16 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 expand all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 collapse collapse: 24/24 rects, 24/24 pairs, 24/24 computed reads (12 radius capture + 12 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 115 samples, 115 frames
+  n/a   G9.probe                  1.000  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      5.03e-7  <= 1e-5 against the declared curve worst run 1 frame 61 badge-1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1 frame 9 badge-1-disc
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-island
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0003 px  <= 0.05 px on every edge worst run 1 frame 4 card-content edge bottom 327 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 0 card expand fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 16 pill reverse analytic before {"x":-448.9443717270225,"y":0,"w":897.888743454045,"h":468.2954222324974} after {"x":-448.9443717270225,"y":0,"w":897.888743454045,"h":468.2954222324974}; observed FD before 0.0 px/s after 349.9 px/s, error 349.9 (allowed 4.5; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 10 card edge right 212 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 92 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 4 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 expand all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 8/8 rects, 8/8 pairs, 10/10 computed reads (2 radius capture + 4 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 46 samples, 46 frames
+  BLOCK G9.probe                    n/a  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           4.68e-7  <= 1e-5 against the independent crossfade worst run 1 frame 3 card
+  ok   shape.presence-opacity      4.49e-7  <= 1e-5 against the declared curve worst run 1 frame 20 card-content
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1 frame 2 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-acc
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 12 body-6 edge bottom 2752 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 12 row-6 c2 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":378.6164838814562,"w":0,"h":0} after {"x":0,"y":378.6164838814562,"w":0,"h":0}; observed FD before 0.0 px/s after 356.9 px/s, error 356.9 (allowed 4.6; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 12 body-6 edge bottom 2079 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 59 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 82/82 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 65 samples, 65 frames
+  n/a   G9.probe                  0.500  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 3
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-insert
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 14 row-21 edge bottom 781 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 14 row-21 edge bottom 624 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 46 new-0
+  ok   G6                            0  byte for byte the authored one worst run 1 new-0 0 mismatches; 6 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 insert all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 insert insert: 29/29 rects, 29/29 pairs, 29/29 computed reads (0 radius capture + 16 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 5 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 53 samples, 53 frames
+  n/a   G9.probe                  1.000  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      4.29e-7  <= 1e-5 against the declared curve worst run 1 frame 2 new-0
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+PASS s-delete
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0095 px  <= 0.05 px on every edge worst run 1 frame 18 row-5 edge top 662 participant-frames
+  ok   G2                    0.0095 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-5 delete-2 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 18 row-6 delete-2 analytic before {"x":0,"y":-339.28586992090396,"w":0,"h":0} after {"x":0,"y":-339.28586992090396,"w":0,"h":0}; observed FD before 0.0 px/s after 391.4 px/s, error 391.4 (allowed 4.9; supporting only, acceleration included)
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 37 row-6 edge bottom 336 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 70 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 delete-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 delete-2 delete-2: 18/18 rects, 18/18 pairs, 8/8 computed reads (0 radius capture + 3 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0; audited non-layout presence reads excluded: 2 rects, 2 styles
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 46 samples, 46 frames
+  BLOCK G9.probe                    n/a  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 2
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity     1.11e-16  <= 1e-5 against the declared curve worst run 1 frame 15 row-2
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+BLOCKED s-reorder (BLOCK: G12 (p95 / held <= 0.1 ms))
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 630 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 249 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 38 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 8 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 reorder-2 N/A: release: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reorder-9 reorder-9: 28/28 rects, 28/28 pairs, 16/16 computed reads (0 radius capture + 8 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 4 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 44 samples, 44 frames
+  BLOCK G12                    1.000 ms  p95 / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 2
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 17 row-2
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  ok   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+BLOCKED s-sheet (BLOCK: G12 (p95 / held <= 0.1 ms))
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 117 sheet edge bottom 138 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 117 sheet edge bottom 108 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 47 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 detent-1 N/A: release-1: release() has no public LayoutReport; G7 not applicable; release-2: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 detent-2 detent-2: 2/2 rects, 2/2 pairs, 2/2 computed reads (0 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 0, parents 0
+  ok   G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 4 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 101 samples, 101 frames
+  BLOCK G12                    1.000 ms  p95 / held <= 0.1 ms worst run 2
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 89 sheet
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+BLOCKED s-bulk (BLOCK: G8 (p95 <= 2 ms; no long frame (> 8 ms) after the commit frame): timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 49 samples, 49 frames)
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 6 tile-25 edge right 51000 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 6 tile-25 edge right 15000 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 48 tile-0
+  ok   G6                            0  byte for byte the authored one worst run 1 tile-0 0 mismatches; 300 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 shuffle all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 shuffle shuffle: 2000/2000 rects, 2000/2000 pairs, 600/600 computed reads (0 radius capture + 300 active flush, plus the engine's Typed OM reads), 0 frame reads; probes 1, parents 0
+  BLOCK G8                     1.000 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 2 timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 49 samples, 49 frames
+  n/a   G9.probe                  0.038  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 2
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+BLOCKED S-BULK cost shapes
+  BLOCK G9-unscrolled             1.250  median of 5 per-run ratios <= 2
+  BLOCK G9-scrolled               1.429  median of 5 per-run ratios <= 2
+  ok   G9.floor-unscrolled 0.0000 count mismatches  exact required counts; no extra read
+  ok   G9.floor-scrolled  0.0000 count mismatches  exact required counts; no extra read
+  BLOCK G10                    2.000 ms  p95 <= 2 ms
+  BLOCK G11                    7.000 ms  p95 of one performance.now() pair per 60 Hz commit <= 2 ms
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero
+  BLOCK G12-1                  1.000 ms  p95 / held <= 0.1 ms
+  BLOCK G12-10                 0.100 ms  p95 / held <= 0.1 ms
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames
+  run 0 (warm-up): ratio 1.667 unscrolled / 1.667 scrolled; floor audit ok; steady p95 1.000 ms; sustained p95 7.000 ms; held 1/10 1.0000/0.1000 ms; held reads ok; g 1.0000 ms
+  run 1: ratio 1.250 unscrolled / 1.250 scrolled; floor audit ok; steady p95 2.000 ms; sustained p95 7.000 ms; held 1/10 1.0000/0.1000 ms; held reads ok; g 1.0000 ms
+  run 2: ratio 1.250 unscrolled / 1.429 scrolled; floor audit ok; steady p95 2.000 ms; sustained p95 7.000 ms; held 1/10 1.0000/0.1000 ms; held reads ok; g 1.0000 ms
+  run 3: ratio 1.667 unscrolled / 1.667 scrolled; floor audit ok; steady p95 1.000 ms; sustained p95 8.000 ms; held 1/10 1.0000/0.1000 ms; held reads ok; g 1.0000 ms
+  run 4: ratio 1.667 unscrolled / 1.667 scrolled; floor audit ok; steady p95 2.000 ms; sustained p95 8.000 ms; held 1/10 1.0000/0.1000 ms; held reads ok; g 1.0000 ms
+  run 5: ratio 1.250 unscrolled / 1.250 scrolled; floor audit ok; steady p95 1.000 ms; sustained p95 7.000 ms; held 1/10 1.0000/0.1000 ms; held reads ok; g 1.0000 ms
+
+negative controls (expected to fail their target gate)
+  ok   card-no-image-id -> G1: fail (G1 = 176.00003051757812 at frame 68)
+  ok   card-no-inert -> shape.inert: fail (shape.inert = 36 at frame 0)
+  ok   card-image-offset -> G1: fail (G1 = 19.668289184570312 at frame 0)
+  ok   card-focus-follower -> shape.focus: fail (shape.focus = 36 at frame 0)
+  ok   seg-rest-retarget -> G1: fail (G1 = 75.5505621997111 at frame 6)
+  ok   seg-jump-from-A -> G2: fail (G2 = 146.98617553710938 at frame 5)
+  ok   seg-leftover-pose -> G6: fail (G6 = 2)
+  ok   photo-no-counter-scale -> G1: fail (G1 = 306.2501220703125 at frame 82)
+  ok   acc-separator-1px -> G1: fail (G1 = 5.000395300123955 at frame 57)
+  ok   stack-badge-nonparticipant -> G1: fail (G1 = 2.49078369140625 at frame 60)
+  ok   island-snap-reverse -> G2: fail (G2 = 72.3535385131836 at frame 16)
+  ok   insert-no-presence -> shape.presence-opacity: fail (shape.presence-opacity = 1 at frame 0)
+  ok   delete-no-lift -> G1: fail (G1 = 40.131011962890625 at frame 60)
+  ok   photo-leftover-pose -> G6: fail (G6 = 2)
+  ok   photo-extra-read -> G13: fail (G13 = 602)
+  ok   acc-leftover-pose -> G6: fail (G6 = 2)
+  ok   acc-extra-read -> G13: fail (G13 = 1)
+  ok   insert-leftover-pose -> G6: fail (G6 = 2)
+  ok   insert-extra-read -> G13: fail (G13 = 1)
+  ok   stack-extra-read -> G13: fail (G13 = 24)
+  ok   stack-leftover-pose -> G6: fail (G6 = 2)
+  ok   stack-no-badge-scale -> shape.badge-scale: fail (shape.badge-scale = 0.19999999999999996 at frame 16)
+  ok   island-extra-read -> G13: fail (G13 = 10)
+  ok   delete-extra-read -> G13: fail (G13 = 1)
+  ok   reorder-kill-switch-skip -> shape.kill-switch: fail (shape.kill-switch = 1)
+  ok   reorder-extra-read -> G13: fail (G13 = 28; isolated delta 28 > primary 0)
+  ok   reorder-no-rebase -> G1: fail (G1 = 60 at frame 3)
+  ok   reorder-cancel-instead -> shape.hold: fail (shape.hold = 2 at frame 10)
+  ok   sheet-medium-detent -> G5: fail (G5 = 298 at frame 54)
+  ok   sheet-release-jump -> G2: fail (G2 = 118 at frame 12)
+  ok   sheet-extra-read -> G13: fail (G13 = 2)
+  ok   sheet-cancel-instead -> shape.hold: fail (shape.hold = 1 at frame 85)
+  ok   bulk-target-offset -> G1: fail (G1 = 1.001008505782437 at frame 27)
+  ok   bulk-extra-read -> G13: fail (G13 = 2000)
+  ok   bulk-leftover-pose -> G6: fail (G6 = 2)
+  ok   held-extra-read -> G13-held: fail (11 rects / 10 holds at one audited frame; 0 pairs, 0 styles)
+  ok   floor-extra-read -> G9.floor: fail (extra reads 1)
+  ok   card-no-image-id -> G1: fail (G1 = 176.0000113780343 at frame 0)
+  ok   card-no-inert -> shape.inert: fail (shape.inert = 36 at frame 0)
+  ok   card-image-offset -> G1: fail (G1 = 19.668289184570312 at frame 0)
+  ok   card-focus-follower -> shape.focus: fail (shape.focus = 36 at frame 0)
+  ok   seg-rest-retarget -> G1: fail (G1 = 75.55059271728922 at frame 6)
+  ok   seg-jump-from-A -> G2: fail (G2 = 146.98617553710938 at frame 5)
+  ok   seg-leftover-pose -> G6: fail (G6 = 2)
+  ok   photo-no-counter-scale -> G1: fail (G1 = 306.25006103515625 at frame 82)
+  ok   acc-separator-1px -> G1: fail (G1 = 5.00039531339246 at frame 57)
+  ok   stack-badge-nonparticipant -> G1: fail (G1 = 2.49078369140625 at frame 60)
+  ok   island-snap-reverse -> G2: fail (G2 = 72.3535385131836 at frame 16)
+  ok   insert-no-presence -> shape.presence-opacity: fail (shape.presence-opacity = 1 at frame 0)
+  ok   delete-no-lift -> G1: fail (G1 = 40.115386962890625 at frame 60)
+  ok   photo-leftover-pose -> G6: fail (G6 = 2)
+  ok   photo-extra-read -> G13: fail (G13 = 602)
+  ok   acc-leftover-pose -> G6: fail (G6 = 2)
+  ok   acc-extra-read -> G13: fail (G13 = 1)
+  ok   insert-leftover-pose -> G6: fail (G6 = 2)
+  ok   insert-extra-read -> G13: fail (G13 = 1)
+  ok   stack-extra-read -> G13: fail (G13 = 24)
+  ok   stack-leftover-pose -> G6: fail (G6 = 2)
+  ok   stack-no-badge-scale -> shape.badge-scale: fail (shape.badge-scale = 0.19999999999999996 at frame 16)
+  ok   island-extra-read -> G13: fail (G13 = 10)
+  ok   delete-extra-read -> G13: fail (G13 = 1)
+  ok   reorder-kill-switch-skip -> shape.kill-switch: fail (shape.kill-switch = 1)
+  ok   reorder-extra-read -> G13: fail (G13 = 28; isolated delta 28 > primary 0)
+  ok   reorder-no-rebase -> G1: fail (G1 = 60 at frame 3)
+  ok   reorder-cancel-instead -> shape.hold: fail (shape.hold = 2 at frame 10)
+  ok   sheet-medium-detent -> G5: fail (G5 = 298 at frame 54)
+  ok   sheet-release-jump -> G2: fail (G2 = 118 at frame 12)
+  ok   sheet-extra-read -> G13: fail (G13 = 2)
+  ok   sheet-cancel-instead -> shape.hold: fail (shape.hold = 1 at frame 85)
+  ok   bulk-target-offset -> G1: fail (G1 = 1.001008505782437 at frame 27)
+  ok   bulk-extra-read -> G13: fail (G13 = 2000)
+  ok   bulk-leftover-pose -> G6: fail (G6 = 2)
+  ok   held-extra-read -> G13-held: fail (11 rects / 10 holds at one audited frame; 0 pairs, 0 styles)
+  ok   floor-extra-read -> G9.floor: fail (extra reads 1)
+self-tests ok: 14 controls across 7 files
+blocked (required evidence that is not deciding/pass)
+  BLOCK chromium scene s-reorder: G12 (p95 / held <= 0.1 ms)
+  BLOCK chromium scene s-sheet: G12 (p95 / held <= 0.1 ms)
+  BLOCK webkit scene s-reorder: G12 (p95 / held <= 0.1 ms)
+  BLOCK webkit scene s-sheet: G12 (p95 / held <= 0.1 ms)
+  BLOCK webkit scene s-bulk: G8 (p95 <= 2 ms; no long frame (> 8 ms) after the commit frame): timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 49 samples, 49 frames
+  BLOCK webkit S-BULK cost: timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result
+  BLOCK DPR 1/3 sweep: P5c BLOCK: the DPR 1 and DPR 3 support runs are not part of this iteration
+  BLOCK reduced-motion variants: P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration
+  BLOCK G12 baseline-subtracted: BLOCK: the D11 baseline-subtracted G12 harness is not in H17c yet; the raw 1/10-held p95 is evidence only
+
+invocation: FAIL
+certification: NOT CERTIFIED
+  cert block: cost fingerprint is advisory
+  cert block: blocked chromium scene s-reorder: G12 (p95 / held <= 0.1 ms)
+  cert block: blocked chromium scene s-sheet: G12 (p95 / held <= 0.1 ms)
+  cert block: blocked webkit scene s-reorder: G12 (p95 / held <= 0.1 ms)
+  cert block: blocked webkit scene s-sheet: G12 (p95 / held <= 0.1 ms)
+  cert block: blocked webkit scene s-bulk: G8 (p95 <= 2 ms; no long frame (> 8 ms) after the commit frame): timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 49 samples, 49 frames
+  cert block: blocked webkit S-BULK cost: timer g 1.0000 ms > 0.05 ms: G9/G10/G11 are non-deciding; a 1 ms-quantized ratio is not a measured result
+  cert block: blocked DPR 1/3 sweep: P5c BLOCK: the DPR 1 and DPR 3 support runs are not part of this iteration
+  cert block: blocked reduced-motion variants: P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration
+  cert block: blocked G12 baseline-subtracted: BLOCK: the D11 baseline-subtracted G12 harness is not in H17c yet; the raw 1/10-held p95 is evidence only
+  cert block: chromium scene s-reorder blocked (blocked G12 (p95 / held <= 0.1 ms))
+  cert block: chromium scene s-sheet blocked (blocked G12 (p95 / held <= 0.1 ms))
+  cert block: chromium S-BULK cost fail
+  cert block: chromium S-BULK G11 6.465 failed
+  cert block: webkit scene s-reorder blocked (blocked G12 (p95 / held <= 0.1 ms))
+  cert block: webkit scene s-sheet blocked (blocked G12 (p95 / held <= 0.1 ms))
+  cert block: webkit scene s-bulk blocked (blocked G8 (p95 <= 2 ms; no long frame (> 8 ms) after the commit frame): timer g 1.0000 ms: raw frame samples, +/-0.5000 ms quantization; 20-frame mean not claimed; 49 samples, 49 frames)
+  cert block: webkit S-BULK cost blocked
+  cert block: webkit S-BULK cost is not valid
+
+wrote /Users/june/Documents/project/freestylejs/ani-h16/bench/layout/iteration-9/report.json
+
+cost gates are ADVISORY: 1-minute load is 7.69, pinned below 1 (pinned Mac14,9 / 27.0.1 / Apple M2 Pro)
+EXIT:1

@@ -117,7 +117,7 @@ gitignored; the files are generated from the current source on every run.
   "advisory": { "cost": true, "reasons": ["1-minute load is 2.39, pinned below 1"] },
   "certification": {
     "certified": false,
-    "reasons": ["cost fingerprint is advisory", "chromium scene s-reorder fail", "chromium scene s-sheet fail", "chromium S-BULK G9-unscrolled 2.951 failed", "chromium S-BULK G9-scrolled 2.817 failed", "chromium S-BULK G11 8.090 failed", "blocked webkit scene s-sheet: G12 ...", "blocked DPR 1/3 sweep: P5c BLOCK"],
+    "reasons": ["cost fingerprint is advisory", "blocked chromium scene s-reorder: G12 ...", "blocked chromium scene s-sheet: G12 ...", "blocked webkit scene s-reorder: G12 ...", "blocked webkit scene s-sheet: G12 ...", "blocked webkit scene s-bulk: G8 ...", "blocked webkit S-BULK cost: timer ...", "blocked DPR 1/3 sweep: P5c BLOCK", "blocked reduced-motion variants: P5c BLOCK", "blocked G12 baseline-subtracted: D11/H17c ...", "chromium S-BULK G11 6.465 failed"],
     "requiredEngines": ["chromium", "webkit"],
     "requiredRuns": 5,
     "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"]
@@ -156,7 +156,10 @@ gitignored; the files are generated from the current source on every run.
                  "detail": "..." },
   "pending": [],
   "blocked": [
-    { "item": "webkit scene s-sheet", "reason": "G3 ...; G7 ...; G12 ..." },
+    { "item": "chromium scene s-reorder", "reason": "G12 (D11/H17c unavailable)" },
+    { "item": "chromium scene s-sheet", "reason": "G12 (D11/H17c unavailable)" },
+    { "item": "webkit scene s-bulk", "reason": "G8 (1 ms-quantized)" },
+    { "item": "G12 baseline-subtracted", "reason": "D11/H17c harness not yet available" },
     { "item": "DPR 1/3 sweep", "reason": "P5c BLOCK: not run in this iteration" },
     { "item": "reduced-motion variants", "reason": "P5c BLOCK: not run in this iteration" }
   ],
@@ -536,24 +539,16 @@ same public engine surface.
 
 ### Known limitations / evidence
 
-- **S-PHOTO** fails in both engines on the nested detail image: the new detail
-  frame takes its handoff from the departing cell, but the new detail image
-  (nested under the new frame) is skipped by the engine's late-handoff guard
-  (`lateWithHandoff` requires the parent to be measured in the same plan), so it
-  snaps to its target. G1/G2/G4 are 306.25 px; both engines report
-  `snapped [detail-image:stale]` (G7 4) and the engine's stale diagnostic.
-  N15-02 makes `openReal()`/`backReal()` mirror the manual unregister/add
-  path, set `data-p`/`elements` and insert the returned cell at the selected
-  index. The real twin **does not pin the old two-event sequence**: it returns
-  whatever diagnostics the engine emitted, and `realTwinProblems` fails any
-  diagnostic. On this branch (without the H18 engine fixes) the two
-  `capture-less-flush` events still appear and the scene fails honestly; on
-  the H18 base the expected result is **zero stale diagnostics** and
-  G1/G2/G4 ~0.0002 px.
-- **S-ACC** fails on `body-6` at the mid-flight row 6 expansion: the position-
-  pinned body is drawn as its layout box under the row's new height pose
-  (h = 120·48/168), not the 120 px rest box, at the retarget flush. G1/G4 are
-  120 px and G2 55.67 px; the rest of the 43 participants are exact.
+- **S-PHOTO** is fixed on the H18 base: the nested detail image now takes its
+  late handoff and projects exactly. G1/G2/G4 are ~0.0002 px, G7 0 and the
+  manual/real twins emit **zero stale diagnostics**. N15-02 makes
+  `openReal()`/`backReal()` mirror the manual unregister/add path. The real
+  twin **does not pin the old two-event sequence**: it returns whatever the
+  engine emitted, and `realTwinProblems` fails any diagnostic. The old 306.25
+  px / two-stale result is iteration history (pre-H18).
+- **S-ACC** is fixed on the H18 base: `body-6` counter-projects exactly at the
+  mid-flight row expansion. G1/G4 ~0.0002 px and G2 ~0.0001 px; the old 120 /
+  55.67 px result is iteration history (pre-H18).
 - **S-INSERT** is exact after the reclassification: a mounting row has no B,
   and §9.1 requires both B and A outside the viewport, so `snapped []` is the
   correct expectation (H15-08). The earlier three-`culled` expectation was a
@@ -612,63 +607,41 @@ The S-REORDER title is a nested position participant; the held row and its
 title are the direct-manipulation pair. The row's inline `top` and the DOM
 order change inside each reorder commit; the title's local box is fixed.
 
-**Tooling honesty.** Biome reports **813 infos, 0 errors, 0 warnings** on
+**Tooling honesty.** Biome reports **810 infos, 0 errors, 0 warnings** on
 `bench/layout` (the infos are the repository's baseline `noMagicNumbers` /
 naming diagnostics). This is not a clean biome report and is not claimed as
 one; `tsc` and `test:bench-layout` are clean.
 
-### P5c evidence and known failures (iteration 6)
+### P5c evidence and clarifications (iteration 9, H18 base)
 
-- **S-REORDER fails G1 96.0, G2 60.0, G4 60.0, G13 6 and G12 (Chromium and
-  WebKit); G3 and G7 are BLOCK/authority.** The scene exposes two P4 engine
-  defects that the L-DRIVE-1 browser row does not cover: (a) after a reorder
-  changes the held row's A, the first subsequent `move` shifts the drawn
-  origin by the A delta (row-1 is +60 px on frames 3, 6 and 10,
-  self-correcting one frame later); (b) a nested held descendant
-  double-counts the inherited displacement (`title-1` is drawn at
-  `row + 10 + h` instead of `row + 10`), so the title drifts by up to 96 px.
-  The release-frame continuity is **measured** (`HoldEvidence.releaseBox` to
-  the next frame) and fails G2 60 px on the row top edge; the title top edge
-  is 49.06 px. The earlier 88 px was a rider-size artifact (the held row's
-  358×52 size was used for the 270×22 title); the rider now uses its rest
-  size. The release spring fails G4 60 px; G5 uses the rider target and
-  passes. The exact commit reads are 2N/2N and
-  the computed set is exact; G13 fails only on the held-frame support read
-  (one offset pair + one computed style) on the reorder-adjacent held frames.
-  G3 is BLOCK because a release from direct manipulation has no analytic
-  layout track before the gesture velocity; G7 is BLOCK for the A-13
-  `ended`/p5-`interrupted` ambiguity and the release's missing report.
-  `shape.hold` and `shape.kill-switch` pass.
-- **S-SHEET fails only the scene G12 shape on Chromium** (0.310 ms/held at
-  1 held, per-run 0.270–0.320; the 1-held fixed frame cost, not the 10-held
-  slope). The measured frame rows G1/G2/G4/G5/G6/G8/G13 pass; G3/G7 are
-  BLOCK/authority (release velocity and missing release report), and the
-  detent policy (`top + v·0.20`, nearest) and the ≥1 s second take are
-  implemented. On WebKit G12 is BLOCK/non-deciding; the scene is reported
-  **BLOCKED**, not pass, and the block is a top-level report and certification
-  reason.
-- **S-BULK frame scoring passes on Chromium**; the cost shapes still fail G9
-  (2.951 / 2.817×) and G11 (8.090 ms) in Chromium. G12-1 **fails** at
-  0.415 ms/held (the 1-held fixed frame cost); G12-10 passes at 0.061 ms/held.
-  Iteration 6 measured G9 2.688/2.694 and G11 8.495; both reports are
-  recorded. WebKit's 1 ms timer makes G9–G12 BLOCK. The WebKit **S-BULK G8**
-  row is also BLOCK: its 2.000 ms p95 is exactly one timer tick, and the
-  §11.5 single-interval 20-frame mean is not claimed. WebKit S-BULK is
-  therefore **blocked**, not a measured G8 pass.
-- The release is not an engine commit or report (§5.10/§7.1): the scene
-  records its `t = 0` flush observation, but there is no `LayoutReport` for a
-  release. The S-REORDER/S-SHEET G7 expectations therefore cover the reorder
-  and detent commits only; the spec's "release run" row is an API gap, not a
-  scene failure.
-- The p5 table's S-REORDER statuses (`interrupted` at the next reorder) do not
-  match §7.1/A-13 for this script: each reorder targets a different sibling,
-  the earlier sibling's track is untouched and keeps running, so the runs
-  resolve `ended` at their own settles (frames 28/31/35). The scene expects
-  `ended`; the p5 row is an ambiguity, not a weakened gate.
-- A held frame that follows a reorder changes the held layout, so the engine's
-  §4.2 support check reads one offset pair + one computed style in addition to
-  the one held rect. The strict G13 reading counts this as excess (6 in the
-  run); the authority does not explicitly exempt the support read.
+The 2026-10-29 clarifications resolve the release/status rows:
+
+- **S-REORDER G7 is pass**, not BLOCK: each reorder targets a different
+  sibling; untouched tracks keep running and the statuses are `ended` at
+  frames 28/31/35. The release row is **N/A** (no public `LayoutReport`).
+  A future retarget of a running sibling must expect `interrupted` (A-13).
+- **S-SHEET release G7 and G3 are N/A**: `release()` starts no public
+  `LayoutReport`, and there is no analytic layout track before a release.
+  G2/G4/origin/observed FD/restoration decide. The 16 ms second hold is the
+  documented scene contribution; the detent policy and ≥1 s second take are
+  scored.
+- **S-REORDER measured rows pass on H18**: G1/G2/G4 ~0.00002 px, G5/G6/G7/
+  G13 pass, G13-held 0, kill-switch/hold pass. The old held rebase, nested
+  title, release and support-read defects are fixed by H18.
+- **S-SHEET measured rows pass on H18**: G1 ~0.00008, G2 0, G4 ~0.00008,
+  G5/G6/G7/G13 pass, G13-held 0. G3/G7 are N/A.
+- **G12 remains BLOCK on both scenes and the cost shapes**: the D11
+  baseline-subtracted G12 harness is not in H17c yet. Raw 1/10-held values are
+  evidence only. This is a documented blocker, not a pass.
+- **S-BULK frame scoring passes on Chromium**; WebKit is **BLOCKED on G8**
+  (1 ms-quantized; §11.5 20-frame mean not claimed). Chromium cost now passes
+  G9 (1.838 / 1.922×) and G10 (1.120 ms), but still fails G11 (6.465 ms) and
+  blocks G12.
+- **S-PHOTO and S-ACC pass on H18**: G1/G2/G4 ~0.0002 px and zero stale
+  diagnostics (S-PHOTO); the old known limitations are historical.
+
+The old iteration-6/7/8 failure values remain in `ITERATIONS.md` as history;
+they are not the current H18-base result.
 
 ## Files
 
