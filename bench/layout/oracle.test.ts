@@ -12,6 +12,7 @@ import {
     integrateSpring,
     LINEAR,
     perceptualSpring,
+    settleOfBox,
     springDisplacement,
     springSettle,
     trackState,
@@ -113,6 +114,19 @@ test('settle is the first time the tolerances hold, checked after the fact', () 
         Math.abs(before.d) > 0.1 || Math.abs(before.v) > 1,
         'settle is not conservative'
     )
+})
+
+test('settleOfBox includes the composed right and bottom edges', () => {
+    // The left edge moves 100 px and the width 10 px, but the right edge
+    // moves 110 px: a settle on the channels alone would snap 10 px early.
+    const from: Box = { x: 0, y: 0, w: 10, h: 10 }
+    const to: Box = { x: 100, y: 100, w: 20, h: 20 }
+    const settle = settleOfBox(0.45, 0, from, to, null)
+    const left = springSettle(0.45, 0, from.x - to.x, 0)
+    const right = springSettle(0.45, 0, from.x + from.w - (to.x + to.w), 0)
+    const bottom = springSettle(0.45, 0, from.y + from.h - (to.y + to.h), 0)
+    assert.ok(right > left, 'right edge is the later channel')
+    close(settle, Math.max(left, right, bottom), 1e-12, 'edge settle')
 })
 
 test('the perceptual spring timeline is monotone and exactly 1 at D', () => {
