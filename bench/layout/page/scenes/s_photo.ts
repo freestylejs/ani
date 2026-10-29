@@ -977,18 +977,12 @@ export class PhotoScene {
             commits.push({ label: 'back', at: performance.now() })
             await backed
             for (let i = 0; i < 4; i++) await nextFrame()
-            // H18 nested-image defect: the open detail image and the back cell
-            // image take the engine stale path. Assert that exact path; the
-            // diagnostics are returned to the report and are not hidden.
+            // H18 fixed path: the manual and real twins must emit zero stale
+            // diagnostics. The real twin records what the engine actually
+            // emitted; realTwinProblems fails any diagnostic, so a residual
+            // capture-less-flush is an honest scene failure, not an expected
+            // H18 defect marker. Do not pin the old two-event sequence.
             const diagnostics = [...runtime.diagnostics]
-            if (
-                diagnostics.length !== 2 ||
-                diagnostics.some((code) => code !== 'capture-less-flush')
-            ) {
-                throw new Error(
-                    `s-photo real twin diagnostics [${diagnostics.join(',')}] are not the expected two H18 stale events`
-                )
-            }
             const final = {
                 tracks: runtime.group.stats.tracks,
                 holds: runtime.group.stats.holds,
@@ -1006,7 +1000,7 @@ export class PhotoScene {
                 gSource: granularityInfo.source,
                 frameCosts: frames,
                 commits,
-                diagnostics: [...runtime.diagnostics],
+                diagnostics,
                 final,
             }
         } catch (error) {
