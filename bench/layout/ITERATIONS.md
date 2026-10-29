@@ -855,3 +855,177 @@ same two H18 stale diagnostics (no unexplained third). S-PHOTO and S-ACC
 remain the two genuine H18 engine defects; certification remains NOT CERTIFIED
 for those, pending P4 and the unchanged S-BULK cost block. No gate, tolerance,
 production source or knownFailure was added.
+
+## Iteration 6 — H16 P5c: drive scenes, held cost and the full §11.6 set
+
+- Worktree: `ani-h16`, branch `helper/h16`, base `5e3ab8e` (P4 acting PASS +
+  H14 harness + H15 P2/P3 scenes); no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-6/report.json`
+- Report: `bench/layout/iteration-6/report.json`; log:
+  `bench/layout/iteration-6/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: 2.36; cost fingerprint is **advisory** (pinned
+  below 1). The frame gates still decide.
+- Self-tests: **79/79 tests, 14 controls**. Browser controls: **74 (37 per
+  engine), all ok; 66 conclusive, 8 inconclusive**. The inconclusive controls
+  are the two contamination cases from H15 (`photo-no-counter-scale`,
+  `acc-separator-1px`) and the two S-REORDER controls whose primary already
+  fails G1/G13 (`reorder-no-rebase`, `reorder-extra-read`), per engine.
+
+### What P5c adds
+
+- **S-REORDER** (14 participants, 20 ms): take row 1 at its centre, ten 18 px
+  moves, reorders at k = 2/5/9 (offsets 36/90/162), release with
+  `{x: 0, y: 900}`. The reorder changes the row's A and the nested title's A;
+  the held point must stay under the finger and the title must ride one `h`.
+  The drive-hold kill switch (L-DRIVE-4) runs after the scored script.
+- **S-SHEET** (1 participant, 16 ms): medium → large with −1200 px/s, then
+  medium → dismissed with +1600 px/s; the detent is chosen by the scene's
+  `projected = top + v·0.20 s` policy; the final sheet is unmounted with a
+  post-removal restoration proof.
+- **S-BULK** (1,000 participants, 300 movers, 16 ms): the 150-cycle shuffle on
+  the manual clock, scored G1–G8/G13 at 1280×720@1.
+- **G12**: the 1- and 10-held shapes on the 1,000-participant cost DOM (600
+  real-clock frames each), plus a 600-frame 1-held shape on the S-REORDER and
+  S-SHEET real twins. **G13-held** audits one rect per live hold per frame.
+- The release is not an engine commit or report (§5.10/§7.1); the scene
+  records a flush observation at the release frame but no `LayoutReport`.
+  G7 therefore covers the reorder/detent commits and the spec's "release run"
+  row is recorded as an API gap.
+
+### Scene and metric table (5 measured runs; median and worst)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1 oracle | **FAIL 96.0000 px** (title-1, frame 3, top) | **FAIL 96.0000 px** (title-1, frame 3) |
+| S-REORDER | G2/G3 | pass 0 / 0 | pass 0 / 0 |
+| S-REORDER | G4 spring | **FAIL 62.7711 px** (title-1, frame 11, top) | **FAIL 62.7711 px** |
+| S-REORDER | G5/G6/G7 | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-REORDER | G8 | 0.585 ms pass (44 frames) | 1.000 ms pass |
+| S-REORDER | G13 | **FAIL 6** (held support read; commits 28/28, 8/8) | **FAIL 6** (16/16 computed) |
+| S-REORDER | G12 scene | **FAIL 0.230 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-REORDER | G13-held / shape.hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G3/G4 | pass 0.0000825 / 0 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0 / 0.0000871 |
+| S-SHEET | G5/G6/G7 | pass 0 / 0 (1 removal proof) / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G8 | 0.260 ms pass (101 frames) | 1.000 ms pass |
+| S-SHEET | G13 | 0 (2/2, 1/1) | 0 (2/2, 2/2) |
+| S-SHEET | G12 scene | **FAIL 0.270 ms/held** (per-run 0.105–0.365) | BLOCK 1 ms (non-deciding) |
+| S-SHEET | G13-held / shape.hold | pass 0 / 0 | pass 0 / 0 |
+| S-BULK | G1/G4 | pass 0.0000848 | pass 0.0000848 |
+| S-BULK | G2/G3/G5/G6/G7 | pass 0 / 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 / 0 |
+| S-BULK | G13 | pass 0 (2000/2000, 300/300) | pass 0 (2000/2000, 600/600) |
+| S-BULK | G8 | 1.170 ms pass (48 frames) | 1.000 ms pass |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **FAIL 2.688 / 2.694** | BLOCK (raw 2.000 / 2.333) |
+| S-BULK cost | G10 | pass 0.845 ms | BLOCK (raw 1.000) |
+| S-BULK cost | G11 | **FAIL 8.495 ms** | BLOCK (raw 8.000) |
+| S-BULK cost | G12-1 / G12-10 | **FAIL 0.360 / pass 0.057** | BLOCK (raw 1.000 / 0.100) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Failure 1 — S-REORDER held origin shifts after a reorder (P4/H18)
+
+At frames 3, 6 and 10 (the first move after each reorder) the held row's drawn
+top is +60 px from the finger: 364 at frame 3 (expected 304), 418 at frame 6
+(expected 358), 490 at frame 10 (expected 430). The next move self-corrects.
+Root cause (read from the engine's §5.10 rebase): when the held read sees the
+layout change, it sets `shift = drawn − last − layoutDelta`; because the
+element's drawn box did not move with its layout, the layout delta is applied
+as an extra camera shift. The L-DRIVE-1 browser row reorders the held element
+but does not move it again afterward, so it does not cover this path.
+**Engine defect; H16 does not edit the engine.**
+
+### Failure 2 — S-REORDER nested title double-counts `h` (P4/H18)
+
+The title is a nested position participant inside the held row. At frame 1 the
+row is at 268 (exact) and the title at 296 (expected 278): the title is drawn at
+`row + 10 + h` instead of `row + 10`, so the parent's pose and the title's own
+inherited displacement both apply. The drift grows with the row's 60 px rebase
+error and reaches the G1 worst **96 px** (title-1, frame 3) and the release
+G4 **62.77 px** (title-1, frame 11). **Engine defect; not fixed here.**
+
+### Failure 3 — S-REORDER G13 held-frame support read (P4)
+
+The three reorder-adjacent held frames read one offset pair and one computed
+style in addition to the one rect per held element. The commit reads are exact
+2N/2N and the computed set is exact (4/6/8 active nodes; 0 radius capture), so
+G13's 6-excess failure is the held-frame support read. The strict reading of
+"held frames add exactly one rect per held element" is kept; the engine's
+§4.2 support check is reported, not excused.
+
+### Failure 4 — G12 1-held fixed frame cost (Chromium)
+
+The cost scene's 1-held shape **fails** at 0.360 ms/held (per-run
+0.110–0.460); the 10-held shape passes at 0.057 ms/held (0.0255–0.065). The
+per-held slope scales correctly; the 1-held frame is dominated by the fixed
+per-frame engine/harness work. S-REORDER's 600-frame 1-held scene shape is
+0.230 ms/held; S-SHEET's is 0.270 ms/held (0.105–0.365 per run). The scene
+shapes are deciding on Chromium; WebKit's 1 ms timer makes the ratio BLOCK.
+Recorded; no gate change. This is the main P4 cost finding: the 1-held fixed
+cost must come down to ≤0.1 ms.
+
+### Failure 5 — S-BULK G9/G11 (unchanged)
+
+Chromium G9 ≈3.3–3.5× and G11 ≈12 ms; the floor audit is exact and G10/G13
+pass. The engine commit is still ~10 ms and the sustained state ~12 ms; same
+root-cause hypotheses as iterations 0–5 (300 computed reads, 300 track plans,
+600 pose declarations, support checks over the 1,000-participant tree). WebKit
+is BLOCK on its 1 ms timer. Not fixed in P5c.
+
+### Release status / report gap
+
+`LayoutDriveHandle.release()` returns void and starts no `LayoutRun`: the
+engine creates a release track but no `LayoutReport`. The p5 spec's
+"release run `'ended'`" row is therefore not observable through the public
+API. The scenes record the release's `t = 0` flush observation (G2/G3/G4) and
+expect `no-change` for the detent updates; G7 does not claim a release status.
+This is an authority/API ambiguity for H18, not a scene tolerance.
+
+### Controls
+
+74 browser controls (37 per engine), all ok, 66 conclusive. The new controls
+are conclusive and fail their target: `reorder-kill-switch-skip` →
+`shape.kill-switch` (1), `reorder-cancel-instead` → `shape.hold` (2),
+`sheet-medium-detent` → G5 (298 px), `sheet-release-jump` → G2 (118 px),
+`sheet-extra-read` → G13 (2), `sheet-cancel-instead` → `shape.hold` (1),
+`bulk-target-offset` → G1 (1.001 px), `bulk-extra-read` → G13 (3000/2000
+rects), `bulk-leftover-pose` → G6 (2), `held-extra-read` → G13-held (11
+rects / 10 holds). `reorder-no-rebase` → G1 and `reorder-extra-read` → G13
+are **inconclusive** because the primary S-REORDER already fails those
+targets; they are reported, not counted as control evidence. The G12 unit
+control is 0.11 ms/held.
+
+### Certification and controls (iteration 6)
+
+- `certified: false`; reasons: advisory cost, Chromium/WebKit S-PHOTO fail,
+  Chromium/WebKit S-ACC fail, Chromium/WebKit S-REORDER fail, Chromium
+  S-SHEET fail (G12 scene shape), Chromium S-BULK cost fail with G9
+  unscrolled 2.688 / scrolled 2.694 and G11 8.495 and G12-1 0.360, WebKit
+  S-BULK cost blocked/invalid (1 ms timer).
+- The named G12 shapes: G12-1 0.360 fail, G12-10 0.057 pass (Chromium);
+  WebKit BLOCK. G13-held 0 in both engines.
+- All 11 scenes and the cost scene were selected; `pending` is empty.
+- S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass in both
+  engines; S-BULK passes the frame scene in both engines; S-SHEET passes every
+  interaction/settle/restoration row and fails only the 1-held G12 scene shape
+  on Chromium.
+
+### Residual risks / next (H18 engine work, not the harness)
+
+1. Held rebase: a `move` after a reorder applies the layout delta as an extra
+   camera shift (row-1 +60 px at frames 3/6/10). L-DRIVE-1 should be extended
+   to move again after the reorder; the scene is the evidence.
+2. Nested held descendant: `title-1` is drawn at `row + 10 + h` instead of
+   `row + 10`; the double-count is the G1 96 px / G4 62.77 px failure.
+3. Held-frame support read: a reorder-adjacent held frame reads one offset
+   pair + one computed style; the strict G13 reading fails with 6 excess.
+4. G12 1-held fixed cost: 0.360 ms/held (cost) and 0.230–0.270 ms/held
+   (scene); the 10-held slope passes. The 1-held path must reach ≤0.1 ms.
+5. S-BULK G9/G11: unchanged engine commit/flush cost (~10 ms) and sustained
+   ~12 ms; not a gate change.
+6. The release has no public `LayoutReport`; G7 covers the detent/reorder
+   commits only. The p5 spec's release row needs an authority/API decision.
+7. Firefox remains advisory (D9 launch timeout). DPR 1/3 and reduced-motion
+   variants remain P5c evidence outside this iteration.
