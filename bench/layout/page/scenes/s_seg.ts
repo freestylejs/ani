@@ -22,6 +22,7 @@ import {
     viewBox,
     waitMs,
 } from '../harness.ts'
+import { homeIndicator, STATUS_CSS, statusBar } from './kit.ts'
 
 const PILL_W = 86.5
 const PILL_H = 26
@@ -38,6 +39,7 @@ function installStyles(): void {
     stylesInstalled = true
     const style = document.createElement('style')
     style.textContent = `
+        ${STATUS_CSS}
         .seg-stage {
             position: fixed; inset: 0; width: 390px; height: 844px;
             overflow: hidden; background: #F2F2F7; color: #000;
@@ -58,7 +60,7 @@ function installStyles(): void {
             transform-origin: 50% 50%;
         }
         .seg-label {
-            position: absolute; top: 3px; width: ${STEP}px; height: ${PILL_H}px;
+            position: absolute; top: 2px; width: ${STEP}px; height: 28px;
             border: 0; padding: 0; margin: 0; background: transparent;
             font: 600 13px/18px ${FONT}; letter-spacing: -0.08px;
             color: rgba(60,60,67,0.60); z-index: 2; cursor: pointer;
@@ -103,7 +105,7 @@ function buildLayer(): SegLayer {
         control.append(button)
         labels.push(button)
     }
-    stage.append(nav, control)
+    stage.append(statusBar(), nav, control, homeIndicator())
     return { stage, pill, labels }
 }
 
@@ -244,6 +246,7 @@ export class SegScene {
                 rects: after.rects - stats.rects,
                 offsets: after.offsets - stats.offsets,
                 styles: after.styles - stats.styles,
+                layoutOffsets: after.layoutOffsets - stats.layoutOffsets,
                 probes: after.probes - stats.probes,
                 parents: after.parents - stats.parents,
                 frameReads: pendingReads,

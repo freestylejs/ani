@@ -12,6 +12,10 @@ const ALIAS: Record<string, string> = {
     ),
     '@freestylejs/ani-core': join(REPO_ROOT, 'packages/core/src/index.ts'),
     '@freestylejs/ani-layout': join(REPO_ROOT, 'packages/layout/src/index.ts'),
+    '@freestylejs/ani-react/layout': join(
+        REPO_ROOT,
+        'packages/react/src/layout/index.ts'
+    ),
 }
 
 const DEFINE = {

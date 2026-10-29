@@ -149,7 +149,9 @@ describe('§11.4 S2 the anchoring probe', () => {
             probes: 1,
             parents: 0,
         })
-        expect(stats.reads).toBe(stats.rects + stats.offsets + stats.styles)
+        expect(stats.reads).toBe(
+            stats.rects + stats.offsets + stats.styles + stats.layoutOffsets
+        )
         // removed in the same task
         expect(doc.documentElement.children.length).toBe(children)
 

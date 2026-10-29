@@ -1,8 +1,9 @@
 /** Per-run gate aggregation: no threshold is recomputed from the median. */
 
-import type { AggregateMetric } from './report.ts'
+import type { AggregateMetric, RunSceneReport, SceneReport } from './report.ts'
 import type { MetricFinding } from './scoring.ts'
 import { median } from './stats.ts'
+import type { RealTrace } from './types.ts'
 
 /**
  * A metric uses the per-run findings' own gate decisions. The five-run gate is
@@ -125,4 +126,133 @@ export function aggregateFindings(
             worst,
         }
     })
+}
+
+/**
+ * The scene aggregate. Individual metrics use their five-run decision, but a
+ * whole-run failure (problems, the real twin, teardown, G8) fails the scene:
+ * the report must never show a false pass for a run that was not clean.
+ */
+export function aggregateSceneReport(args: {
+    readonly scene: string
+    readonly runs: readonly RunSceneReport[]
+    readonly findings: readonly (readonly MetricFinding[])[]
+    readonly shape: readonly (readonly MetricFinding[])[]
+    readonly pending?: string | null
+    readonly notes?: readonly string[]
+}): SceneReport {
+    const measuredRuns = args.runs.filter((run) => !run.warmup)
+    const measuredFindings = args.findings.filter(
+        (_, index) => !args.runs[index]?.warmup
+    )
+    const measuredShape = args.shape.filter(
+        (_, index) => !args.runs[index]?.warmup
+    )
+    const metrics = aggregateFindings(
+        measuredFindings,
+        measuredRuns.map((run) => run.run)
+    )
+    const shapeMetrics = aggregateFindings(
+        measuredShape,
+        measuredRuns.map((run) => run.run)
+    )
+    const failing = measuredRuns.find((run) => !run.pass)
+    const runMetric: AggregateMetric = {
+        id: 'RUN',
+        label: 'Whole run: metrics, G8, problems, real twin and teardown',
+        gate: 'every measured run passes',
+        unit: 'failed runs',
+        median: measuredRuns.filter((run) => !run.pass).length,
+        pass: failing === undefined,
+        blocked: false,
+        deciding: true,
+        perRun: measuredRuns.map((run) => (run.pass ? 0 : 1)),
+        passPerRun: measuredRuns.map((run) => run.pass),
+        worst: {
+            run: failing?.run,
+            detail: failing
+                ? [
+                      ...failing.metrics
+                          .filter((metric) => metric.blocked === true)
+                          .map((metric) => `BLOCK ${metric.id}`),
+                      ...failing.metrics
+                          .filter(
+                              (metric) =>
+                                  !metric.pass &&
+                                  metric.blocked !== true &&
+                                  metric.deciding !== false
+                          )
+                          .map(
+                              (metric) =>
+                                  `${metric.id} ${metric.value}${metric.worst?.participant ? ` (${metric.worst.participant}${metric.worst.frame === undefined ? '' : ` frame ${metric.worst.frame}`})` : ''}`
+                          ),
+                      ...failing.problems,
+                      failing.real.blocked
+                          ? `BLOCK G8 p95 ${failing.real.p95} ms (1 ms-quantized WebKit; 20-frame mean not claimed)`
+                          : failing.real.pass
+                            ? ''
+                            : `G8 p95 ${failing.real.p95} ms, ${failing.real.longFrames} long frames`,
+                      `manual final tracks ${failing.summary.final.tracks}, holds ${failing.summary.final.holds}, clock pending ${failing.summary.final.clockPending}, clock size ${failing.summary.final.clockSize}`,
+                  ]
+                      .filter(Boolean)
+                      .join('; ')
+                : 'all measured runs pass',
+        },
+    }
+    const allMetrics = [runMetric, ...metrics]
+    const pending = args.pending ?? null
+    const blockedReasons = [...allMetrics, ...shapeMetrics]
+        .filter(
+            (metric) =>
+                metric.blocked === true &&
+                // A non-deciding probe is not a required row; G12 is a
+                // required timer-limited shape even when it is non-deciding.
+                (metric.deciding !== false || metric.id.startsWith('G12'))
+        )
+        .map(
+            (metric) =>
+                `${metric.id} (${metric.gate})${metric.worst?.detail ? `: ${metric.worst.detail}` : ''}`
+        )
+    const blocked = blockedReasons.length > 0
+    const metricFail =
+        allMetrics.some(
+            (metric) => metric.deciding && !metric.blocked && !metric.pass
+        ) ||
+        shapeMetrics.some(
+            (metric) => metric.deciding && !metric.blocked && !metric.pass
+        )
+    const failed = !runMetric.pass || metricFail
+    const pass = pending === null && !failed && !blocked
+    return {
+        scene: args.scene,
+        status:
+            pending === null
+                ? failed
+                    ? 'fail'
+                    : blocked
+                      ? 'blocked'
+                      : 'pass'
+                : 'pending',
+        pending,
+        blockedReasons,
+        pass,
+        metrics: allMetrics,
+        shape: shapeMetrics,
+        runs: args.runs,
+        notes: args.notes ?? [],
+    }
+}
+
+/** Every real-twin problem that must fail the run (diagnostics, teardown). */
+export function realTwinProblems(real: RealTrace): string[] {
+    const problems: string[] = []
+    for (const code of real.diagnostics)
+        problems.push(`real twin diagnostic: ${code}`)
+    if (real.final.tracks !== 0)
+        problems.push(`real twin final tracks ${real.final.tracks}`)
+    if (real.final.holds !== 0)
+        problems.push(`real twin final holds ${real.final.holds}`)
+    if (real.final.connected <= 0 && real.allowEmptyFinal !== true)
+        problems.push('real twin has no connected participants at the end')
+    return problems
 }

@@ -232,28 +232,55 @@ export function animatedOwned(doc: Document): Set<Element> {
     const animated = new Set<Element>()
     if (typeof doc.getAnimations !== 'function') return animated
     for (const animation of doc.getAnimations()) {
-        const css = animation as Animation & {
-            transitionProperty?: string
-            animationName?: string
-        }
-        const effect = animation.effect as KeyframeEffect | null
-        const target = effect?.target
-        if (!target) continue
-        if (
-            css.transitionProperty === 'translate' ||
-            css.transitionProperty === 'scale'
-        ) {
-            animated.add(target)
-        } else if (css.animationName !== undefined) {
-            for (const frame of effect.getKeyframes()) {
-                if ('translate' in frame || 'scale' in frame) {
-                    animated.add(target)
-                    break
-                }
-            }
-        }
+        const target = ownedAnimationTarget(animation)
+        if (target) animated.add(target)
     }
     return animated
+}
+
+/**
+ * H18-G: the same owned-animation probe scoped to one element (and, with
+ * `subtree`, its descendants). A held read uses it instead of scanning the
+ * whole document every frame; the checked set is exactly the held element's
+ * subtree plus its participant ancestors' own animations.
+ */
+export function ownedAnimationIn(element: Element, subtree: boolean): boolean {
+    const animations = (
+        element as Element & {
+            getAnimations?: (options?: { subtree?: boolean }) => Animation[]
+        }
+    ).getAnimations
+    if (typeof animations !== 'function') return false
+    for (const animation of animations.call(
+        element,
+        subtree ? { subtree: true } : undefined
+    )) {
+        if (ownedAnimationTarget(animation)) return true
+    }
+    return false
+}
+
+/** The element an animation drives on `translate`/`scale`, or null. */
+function ownedAnimationTarget(animation: Animation): Element | null {
+    const css = animation as Animation & {
+        transitionProperty?: string
+        animationName?: string
+    }
+    const effect = animation.effect as KeyframeEffect | null
+    const target = effect?.target
+    if (!target) return null
+    if (
+        css.transitionProperty === 'translate' ||
+        css.transitionProperty === 'scale'
+    ) {
+        return target
+    }
+    if (css.animationName !== undefined) {
+        for (const frame of effect.getKeyframes()) {
+            if ('translate' in frame || 'scale' in frame) return target
+        }
+    }
+    return null
 }
 
 /** The raw rect: a box in the view space of the read, nothing added (§3.2). */

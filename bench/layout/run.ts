@@ -19,7 +19,11 @@ import {
     type Route,
     webkit,
 } from 'playwright'
-import { aggregateFindings } from './aggregate.ts'
+import {
+    aggregateFindings,
+    aggregateSceneReport,
+    realTwinProblems,
+} from './aggregate.ts'
 import { bundlePage, pageHtml } from './bundle.ts'
 import { evaluateCertification, evaluateInvocation } from './certification.ts'
 import {
@@ -35,6 +39,7 @@ import {
 import {
     auditFloor,
     floorAuditGate,
+    heldIncrementalGate,
     realClockGate,
     steadyFrameGate,
     sustainedRatioGate,
@@ -53,7 +58,19 @@ import {
     type SceneReport,
     stringifyReport,
 } from './report.ts'
-import { cardPlan, segPlan } from './scene_plans.ts'
+import {
+    accPlan,
+    bulkPlan,
+    cardPlan,
+    deletePlan,
+    insertPlan,
+    islandPlan,
+    photoPlan,
+    reorderPlan,
+    segPlan,
+    sheetPlan,
+    stackPlan,
+} from './scene_plans.ts'
 import { type MetricFinding, scoreScene } from './scoring.ts'
 import { median, percentile } from './stats.ts'
 import type {
@@ -69,7 +86,19 @@ const PAGE_URL = `${ORIGIN}/`
 const ROUTE = `${ORIGIN}/**`
 const DEFAULT_OUT = join(REPO_ROOT, 'bench/layout/results/latest.json')
 const PAGES_DIR = join(REPO_ROOT, 'bench/layout/results/pages')
-const SCENES = ['s-card', 's-seg'] as const
+const SCENES = [
+    's-card',
+    's-seg',
+    's-photo',
+    's-stack',
+    's-island',
+    's-acc',
+    's-insert',
+    's-delete',
+    's-reorder',
+    's-sheet',
+    's-bulk',
+] as const
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
@@ -310,17 +339,28 @@ async function openPage(
     return { context, page, problems }
 }
 
+function sceneViewport(scene: string): {
+    readonly viewport: { readonly width: number; readonly height: number }
+    readonly dpr: number
+} {
+    // S-BULK is the 1,000-participant 1280x720@1 shape (spec 1.2/2.11).
+    return scene === 's-bulk'
+        ? { viewport: COST_VIEWPORT, dpr: 1 }
+        : { viewport: IOS_VIEWPORT, dpr: 2 }
+}
+
 async function runManual(
     browser: Browser,
     bundle: string,
     scene: string,
     control?: string | undefined
 ): Promise<{ trace: SceneTrace; problems: readonly string[] }> {
+    const { viewport, dpr } = sceneViewport(scene)
     const opened = await openPage(
         browser,
         bundle,
-        IOS_VIEWPORT,
-        2,
+        viewport,
+        dpr,
         engineFor(browser)
     )
     try {
@@ -355,11 +395,12 @@ async function runReal(
     bundle: string,
     scene: string
 ): Promise<{ trace: RealTrace; problems: readonly string[] }> {
+    const { viewport, dpr } = sceneViewport(scene)
     const opened = await openPage(
         browser,
         bundle,
-        IOS_VIEWPORT,
-        2,
+        viewport,
+        dpr,
         engineFor(browser)
     )
     try {
@@ -442,6 +483,48 @@ async function runCost(
     }
 }
 
+async function runHeldAudit(
+    browser: Browser,
+    bundle: string,
+    extraRead: boolean
+): Promise<{
+    frames: number
+    rects: number
+    offsets: number
+    styles: number
+    holds: number
+    mismatches: number
+}> {
+    const opened = await openPage(
+        browser,
+        bundle,
+        COST_VIEWPORT,
+        1,
+        engineFor(browser)
+    )
+    try {
+        return (await opened.page.evaluate(async (extraRead) => {
+            const bench = (
+                window as unknown as {
+                    __bench: {
+                        runHeldAudit(extraRead: boolean): Promise<unknown>
+                    }
+                }
+            ).__bench
+            return bench.runHeldAudit(extraRead)
+        }, extraRead)) as {
+            frames: number
+            rects: number
+            offsets: number
+            styles: number
+            holds: number
+            mismatches: number
+        }
+    } finally {
+        await opened.context.close()
+    }
+}
+
 async function runFloorAudit(
     browser: Browser,
     bundle: string,
@@ -490,33 +573,14 @@ function aggregateScene(
     pending: string | null = null,
     notes: readonly string[] = []
 ): SceneReport {
-    const measuredRuns = runs.filter((run) => !run.warmup)
-    const measuredFindings = findings.filter((_, index) => !runs[index]?.warmup)
-    const measuredShape = shape.filter((_, index) => !runs[index]?.warmup)
-    const metrics = aggregate(
-        measuredFindings,
-        measuredRuns.map((run) => run.run)
-    )
-    const shapeMetrics = aggregate(
-        measuredShape,
-        measuredRuns.map((run) => run.run)
-    )
-    const pass =
-        pending === null &&
-        metrics
-            .filter((metric) => metric.deciding)
-            .every((metric) => metric.pass) &&
-        shapeMetrics.every((metric) => metric.pass)
-    return {
+    return aggregateSceneReport({
         scene,
-        status: pending === null ? (pass ? 'pass' : 'fail') : 'pending',
-        pending,
-        pass,
-        metrics,
-        shape: shapeMetrics,
         runs,
+        findings,
+        shape,
+        pending,
         notes,
-    }
+    })
 }
 
 function evaluateCost(
@@ -739,6 +803,53 @@ function evaluateCost(
         measured: trace.exactReads.length > 0,
         detail: exactDetail,
     })
+    // G12: the held shape at 1 and 10 held elements. A held frame reads one
+    // rect per held element before any write; p95 / held is the gate value.
+    let heldReadsPass = true
+    const heldReadsDetail: string[] = []
+    for (const [label, shape] of [
+        ['1', trace.held.one],
+        ['10', trace.held.ten],
+    ] as const) {
+        const gate = heldIncrementalGate(
+            shape.samples,
+            shape.baselineSamples,
+            shape.held,
+            trace.g
+        )
+        const samplesComplete =
+            shape.samples.length === 600 && shape.baselineSamples.length === 600
+        const readPass =
+            shape.reads.mismatches === 0 &&
+            shape.reads.frames === 600 &&
+            shape.reads.rects === shape.reads.holds &&
+            shape.reads.offsets === 0 &&
+            shape.reads.styles === 0
+        if (!readPass) heldReadsPass = false
+        heldReadsDetail.push(
+            `${shape.held} held: ${shape.reads.rects} rects / ${shape.reads.holds} hold-frames, ${shape.reads.offsets} pairs, ${shape.reads.styles} styles, ${shape.reads.mismatches} mismatched frames`
+        )
+        findings.push({
+            ...gate,
+            id: `G12-${label}`,
+            label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
+            blocked: !validity.timerValid,
+            measured: samplesComplete,
+            pass:
+                samplesComplete && shape.releaseClean && readPass && gate.pass,
+            detail: `${gate.detail ?? ''}; ${shape.samples.length} held / ${shape.baselineSamples.length} baseline samples; incremental ${shape.incrementalPerHeld.toFixed(4)} ms/held; held reads exactly one rect per element; release ${shape.releaseClean ? 'clean' : 'left a hold/track'}`,
+        })
+    }
+    findings.push({
+        id: 'G13-held',
+        label: 'Held frame reads exactly one rect per held element',
+        gate: 'one rect per live hold per frame, zero offset/style reads, 600 frames',
+        unit: 'excess reads',
+        value: heldReadsPass ? 0 : 1,
+        pass: heldReadsPass,
+        measured: true,
+        detail: heldReadsDetail.join('; '),
+    })
     const floorPass = findings
         .filter(
             (finding) =>
@@ -754,7 +865,6 @@ function evaluateCost(
             run: 0,
             warmup: false,
             valid: validCost,
-            heldPending: trace.heldPending,
             blockedReasons: validity.reasons,
             engineAudit: trace.unscrolled.engineAudit,
             floorAudit: {
@@ -797,6 +907,14 @@ function evaluateCost(
                 .join('; '),
             exactReadsPass: exactPass,
             exactReadsDetail: exactDetail,
+            heldBaselineP95: trace.held.one.baselineP95,
+            heldTenBaselineP95: trace.held.ten.baselineP95,
+            heldOneP95: trace.held.one.p95,
+            heldTenP95: trace.held.ten.p95,
+            heldOnePerHeld: trace.held.one.incrementalPerHeld,
+            heldTenPerHeld: trace.held.ten.incrementalPerHeld,
+            heldReadsPass,
+            heldReadsDetail: heldReadsDetail.join('; '),
             g: trace.g,
             gSource: trace.gSource,
         },
@@ -819,10 +937,8 @@ function aggregateCost(
     const blockedReasons = [
         ...new Set(measured.flatMap((run) => run.blockedReasons)),
     ]
-    // A cost report can be pending only while the trace says G12 is pending.
-    const heldPending = measured.some((run) => run.heldPending)
     const metricsPass = metrics.every((metric) => metric.pass)
-    const outcome = costOutcome({ valid, heldPending, metricsPass })
+    const outcome = costOutcome({ valid, metricsPass })
     return {
         scene: 'S-BULK',
         status: outcome.status,
@@ -832,16 +948,11 @@ function aggregateCost(
         blockedReasons,
         metrics,
         runs,
-        notes: heldPending
-            ? [
-                  'G9/G10/G11/G13 are measured; the held shape G12 is P4-only and is not run.',
-                  'A valid cost run cannot pass while G12 is pending.',
-                  'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
-              ]
-            : [
-                  'G9/G10/G11/G13 are measured; G12 is no longer pending in this trace.',
-                  'S-BULK frame scoring (G1–G8, manual clock) is not part of P5a.',
-              ],
+        notes: [
+            'G9/G10/G11/G12/G13 are measured; G12 is the 1- and 10-held shape on the real clock.',
+            'G12 and G13-held pass only when every held frame reads exactly one rect per held element and the release leaves no hold or track.',
+            'S-BULK frame scoring (G1–G8, manual clock) is the separate s-bulk scene.',
+        ],
         measuredRuns: measured.length,
     }
 }
@@ -894,6 +1005,174 @@ const SCENE_CONTROLS: readonly {
         control: 'leftover-pose',
         target: 'G6',
     },
+    {
+        name: 'photo-no-counter-scale',
+        scene: 's-photo',
+        control: 'photo-no-counter-scale',
+        target: 'G1',
+    },
+    {
+        name: 'acc-separator-1px',
+        scene: 's-acc',
+        control: 'acc-separator-1px',
+        target: 'G1',
+    },
+    {
+        name: 'stack-badge-nonparticipant',
+        scene: 's-stack',
+        control: 'stack-badge-nonparticipant',
+        target: 'G1',
+    },
+    {
+        name: 'island-snap-reverse',
+        scene: 's-island',
+        control: 'island-snap-reverse',
+        target: 'G2',
+    },
+    {
+        name: 'insert-no-presence',
+        scene: 's-insert',
+        control: 'insert-no-presence',
+        target: 'shape.presence-opacity',
+    },
+    {
+        name: 'delete-no-lift',
+        scene: 's-delete',
+        control: 'delete-no-lift',
+        target: 'G1',
+    },
+    {
+        name: 'photo-leftover-pose',
+        scene: 's-photo',
+        control: 'photo-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'photo-extra-read',
+        scene: 's-photo',
+        control: 'photo-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'acc-leftover-pose',
+        scene: 's-acc',
+        control: 'acc-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'acc-extra-read',
+        scene: 's-acc',
+        control: 'acc-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'insert-leftover-pose',
+        scene: 's-insert',
+        control: 'insert-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'insert-extra-read',
+        scene: 's-insert',
+        control: 'insert-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'stack-extra-read',
+        scene: 's-stack',
+        control: 'stack-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'stack-leftover-pose',
+        scene: 's-stack',
+        control: 'stack-leftover-pose',
+        target: 'G6',
+    },
+    {
+        name: 'stack-no-badge-scale',
+        scene: 's-stack',
+        control: 'stack-no-badge-scale',
+        target: 'shape.badge-scale',
+    },
+    {
+        name: 'island-extra-read',
+        scene: 's-island',
+        control: 'island-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'delete-extra-read',
+        scene: 's-delete',
+        control: 'delete-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'reorder-kill-switch-skip',
+        scene: 's-reorder',
+        control: 'reorder-kill-switch-skip',
+        target: 'shape.kill-switch',
+    },
+    {
+        name: 'reorder-extra-read',
+        scene: 's-reorder',
+        control: 'reorder-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'reorder-no-rebase',
+        scene: 's-reorder',
+        control: 'reorder-no-rebase',
+        target: 'G1',
+    },
+    {
+        name: 'reorder-cancel-instead',
+        scene: 's-reorder',
+        control: 'reorder-cancel-instead',
+        target: 'shape.hold',
+    },
+    {
+        name: 'sheet-medium-detent',
+        scene: 's-sheet',
+        control: 'sheet-medium-detent',
+        target: 'G5',
+    },
+    {
+        name: 'sheet-release-jump',
+        scene: 's-sheet',
+        control: 'sheet-release-jump',
+        target: 'G2',
+    },
+    {
+        name: 'sheet-extra-read',
+        scene: 's-sheet',
+        control: 'sheet-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'sheet-cancel-instead',
+        scene: 's-sheet',
+        control: 'sheet-cancel-instead',
+        target: 'shape.hold',
+    },
+    {
+        name: 'bulk-target-offset',
+        scene: 's-bulk',
+        control: 'bulk-target-offset',
+        target: 'G1',
+    },
+    {
+        name: 'bulk-extra-read',
+        scene: 's-bulk',
+        control: 'bulk-extra-read',
+        target: 'G13',
+    },
+    {
+        name: 'bulk-leftover-pose',
+        scene: 's-bulk',
+        control: 'bulk-leftover-pose',
+        target: 'G6',
+    },
 ]
 
 async function browserControls(
@@ -906,8 +1185,17 @@ async function browserControls(
     try {
         browser = await launch(engine)
         let primaryCardInert: boolean | null = null
-        const primary = await runManual(browser, bundle, 's-card')
-        const primaryScore = scoreScene(cardPlan(primary.trace), primary.trace)
+        const primaryScores = new Map<string, ReturnType<typeof scoreScene>>()
+        for (const scene of new Set(
+            SCENE_CONTROLS.map((entry) => entry.scene)
+        )) {
+            const primary = await runManual(browser, bundle, scene)
+            primaryScores.set(
+                scene,
+                scoreScene(planFor(scene, primary.trace), primary.trace)
+            )
+        }
+        const primaryScore = primaryScores.get('s-card')!
         primaryCardInert =
             primaryScore.shape.find((entry) => entry.id === 'shape.inert')
                 ?.pass ?? false
@@ -919,20 +1207,32 @@ async function browserControls(
                     control.scene,
                     control.control
                 )
-                const plan =
-                    run.trace.scene === 's-card'
-                        ? cardPlan(run.trace)
-                        : segPlan(run.trace)
+                const plan = planFor(run.trace.scene, run.trace)
                 const score = scoreScene(plan, run.trace)
                 const finding = [...score.metrics, ...score.shape].find(
                     (entry) => entry.id === control.target
                 )
+                const primaryFinding = [
+                    ...(primaryScores.get(control.scene)?.metrics ?? []),
+                    ...(primaryScores.get(control.scene)?.shape ?? []),
+                ].find((entry) => entry.id === control.target)
                 const observed = finding
                     ? finding.pass
                         ? 'pass'
                         : 'fail'
                     : 'error'
+                const primaryTargetFails =
+                    primaryFinding !== undefined && !primaryFinding.pass
+                // F9: the primary S-REORDER G13 is already red (held support
+                // reads). The extra-read control is still conclusive when it
+                // strictly grows the same measured excess.
+                const isolatedDelta =
+                    control.name === 'reorder-extra-read' &&
+                    primaryFinding !== undefined &&
+                    finding !== undefined &&
+                    finding.value > primaryFinding.value
                 const inconclusive =
+                    (primaryTargetFails && !isolatedDelta) ||
                     (control.name === 'card-no-inert' &&
                         primaryCardInert === false) ||
                     (control.name === 'card-focus-follower' &&
@@ -949,7 +1249,7 @@ async function browserControls(
                               finding.worst?.frame === undefined
                                   ? ''
                                   : ` at frame ${finding.worst.frame}`
-                          }${inconclusive ? '; focus did not remain in the follower, so the control cannot isolate a delta' : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
+                          }${isolatedDelta ? `; isolated delta ${finding.value} > primary ${primaryFinding?.value}` : ''}${inconclusive ? (primaryTargetFails ? '; inconclusive: the primary scene already fails this target' : '; focus did not remain in the follower, so the control cannot isolate a delta') : ''}${run.problems.length > 0 ? `; ${run.problems.join('; ')}` : ''}`
                         : 'target metric missing',
                 })
             } catch (error) {
@@ -963,6 +1263,28 @@ async function browserControls(
                     detail: describeError(error),
                 })
             }
+        }
+        try {
+            const heldAudit = await runHeldAudit(browser, bundle, true)
+            results.push({
+                name: 'held-extra-read',
+                target: 'G13-held',
+                expected: 'fail',
+                observed: heldAudit.mismatches > 0 ? 'fail' : 'pass',
+                conclusive: true,
+                ok: heldAudit.mismatches > 0,
+                detail: `${heldAudit.rects} rects / ${heldAudit.holds} holds at one audited frame; ${heldAudit.offsets} pairs, ${heldAudit.styles} styles`,
+            })
+        } catch (error) {
+            results.push({
+                name: 'held-extra-read',
+                target: 'G13-held',
+                expected: 'fail',
+                observed: 'error',
+                conclusive: true,
+                ok: false,
+                detail: describeError(error),
+            })
         }
         try {
             const auditTrace = await runFloorAudit(browser, bundle, true)
@@ -1067,6 +1389,24 @@ interface RunSceneOutcome {
     readonly shape: readonly MetricFinding[]
 }
 
+function planFor(
+    scene: string,
+    trace: SceneTrace
+): ReturnType<typeof cardPlan> {
+    if (scene === 's-card') return cardPlan(trace)
+    if (scene === 's-seg') return segPlan(trace)
+    if (scene === 's-acc') return accPlan(trace)
+    if (scene === 's-insert') return insertPlan(trace)
+    if (scene === 's-delete') return deletePlan(trace)
+    if (scene === 's-island') return islandPlan(trace)
+    if (scene === 's-photo') return photoPlan(trace)
+    if (scene === 's-stack') return stackPlan(trace)
+    if (scene === 's-reorder') return reorderPlan(trace)
+    if (scene === 's-sheet') return sheetPlan(trace)
+    if (scene === 's-bulk') return bulkPlan(trace)
+    throw new Error(`no scene plan for "${scene}"`)
+}
+
 function sceneOutcome(
     run: number,
     warmup: boolean,
@@ -1075,33 +1415,68 @@ function sceneOutcome(
     probe: SceneCostProbeResult | null,
     problems: readonly string[]
 ): RunSceneOutcome {
-    const plan = manual.scene === 's-card' ? cardPlan(manual) : segPlan(manual)
+    const plan = planFor(manual.scene, manual)
     const score = scoreScene(plan, manual)
-    const allProblems = [...problems]
-    for (const code of real.diagnostics) {
-        allProblems.push(`real twin diagnostic: ${code}`)
-    }
-    if (real.final.tracks !== 0 || real.final.holds !== 0) {
-        allProblems.push(
-            `real twin final tracks ${real.final.tracks}, holds ${real.final.holds}`
-        )
-    }
-    if (real.final.connected <= 0) {
-        allProblems.push('real twin has no connected participants at the end')
-    }
-    const g8 = realClockGate(real.frameCosts, real.g)
+    const allProblems = [...problems, ...realTwinProblems(real)]
+    const g8Raw = realClockGate(real.frameCosts, real.g)
+    // S-BULK WebKit's p95 2.000 ms is exactly one 1 ms timer tick: it is not
+    // a measured G8 pass. The §11.5 single-interval 20-frame mean is not
+    // available in this protocol, so the row is BLOCK/limitation.
+    const g8Blocked = manual.scene === 's-bulk' && real.g > 0.05
+    const g8: MetricFinding = g8Blocked
+        ? {
+              ...g8Raw,
+              blocked: true,
+              deciding: true,
+              pass: false,
+              detail: `${g8Raw.detail ?? ''}; WebKit g ${real.g.toFixed(4)} ms: 1 ms-quantized raw samples; the §11.5 20-frame mean is not claimed; G8 is BLOCK/limitation, not a measured pass`,
+          }
+        : g8Raw
     const longFrames = real.frameCosts.filter(
         (frame) => !frame.commit && frame.ms > 8
     ).length
-    const pass =
-        score.pass &&
-        g8.pass &&
-        allProblems.length === 0 &&
-        manual.final.tracks === 0 &&
-        manual.final.holds === 0 &&
-        manual.final.clockPending === 0 &&
-        manual.final.clockSize === 0
     const metrics: MetricFinding[] = [...score.metrics, g8]
+    if (real.held) {
+        const gate = heldIncrementalGate(
+            real.held.samples,
+            real.held.baselineSamples,
+            1,
+            real.g
+        )
+        const readsPass =
+            real.held.reads.mismatches === 0 &&
+            real.held.reads.frames === 600 &&
+            real.held.reads.rects === real.held.reads.holds &&
+            real.held.reads.offsets === 0 &&
+            real.held.reads.styles === 0
+        metrics.push({
+            ...gate,
+            id: 'G12',
+            label: 'Held frame at 1 held element (scene shape)',
+            blocked: real.g > 0.05,
+            deciding: real.g <= 0.05,
+            measured:
+                real.held.samples.length === 600 &&
+                real.held.baselineSamples.length > 0,
+            pass:
+                real.held.samples.length === 600 &&
+                real.held.baselineSamples.length > 0 &&
+                real.held.releaseClean &&
+                readsPass &&
+                gate.pass,
+            detail: `${gate.detail ?? ''}; scene held shape, 1 held; ${real.held.samples.length} held / ${real.held.baselineSamples.length} baseline samples; incremental ${gate.value.toFixed(4)} ms/held; reads ${real.held.reads.rects}/${real.held.reads.holds} rects/hold-frames; ${real.held.reads.mismatches} mismatched frames; release ${real.held.releaseClean ? 'clean' : 'left a hold/track'}`,
+        })
+        metrics.push({
+            id: 'G13-held',
+            label: 'Held frame reads exactly one rect per held element (scene)',
+            gate: 'one rect per live hold per frame, zero offset/style reads, 600 frames',
+            unit: 'excess reads',
+            value: readsPass ? 0 : 1,
+            pass: readsPass,
+            measured: true,
+            detail: `scene held shape: ${real.held.reads.rects} rects / ${real.held.reads.holds} hold-frames, ${real.held.reads.offsets} pairs, ${real.held.reads.styles} styles, ${real.held.reads.mismatches} mismatched frames`,
+        })
+    }
     if (probe) {
         metrics.push({
             id: 'G9.probe',
@@ -1127,6 +1502,26 @@ function sceneOutcome(
             detail: 'scene cost probe missing',
         })
     }
+    // The scene's per-run pass includes every deciding metric added after the
+    // plan score (G8, the scene G12 and G13-held); a metric that is BLOCK on a
+    // coarse timer is non-deciding.
+    const addedPass = metrics
+        .filter(
+            (metric) => metric.deciding !== false && metric.blocked !== true
+        )
+        .every((metric) => metric.pass)
+    // A BLOCK G8 does not fail the run on its quantized raw value; it blocks
+    // the scene through blockedReasons instead.
+    const g8PassForRun = g8Blocked ? true : g8Raw.pass
+    const pass =
+        score.pass &&
+        g8PassForRun &&
+        addedPass &&
+        allProblems.length === 0 &&
+        manual.final.tracks === 0 &&
+        manual.final.holds === 0 &&
+        manual.final.clockPending === 0 &&
+        manual.final.clockSize === 0
     return {
         report: {
             scene: manual.scene,
@@ -1156,7 +1551,8 @@ function sceneOutcome(
                 frames: real.frameCosts.length,
                 p95: g8.value,
                 longFrames,
-                pass: g8.pass,
+                pass: g8Raw.pass && !g8Blocked,
+                blocked: g8Blocked,
             },
             summary: {
                 observations: manual.observations.length,
@@ -1167,6 +1563,13 @@ function sceneOutcome(
                     offsets: commit.offsets,
                     styles: commit.styles,
                     frameReads: commit.frameReads,
+                    ...(commit.presenceRects !== undefined ||
+                    commit.presenceStyles !== undefined
+                        ? {
+                              presenceRects: commit.presenceRects,
+                              presenceStyles: commit.presenceStyles,
+                          }
+                        : {}),
                 })),
                 reports: manual.reports.map((entry) => ({
                     label: entry.label,
@@ -1279,16 +1682,7 @@ function pendingEntries(
     options: Options,
     engines: readonly EngineReport[]
 ): { scene: string; reason: string }[] {
-    const entries: { scene: string; reason: string }[] = [
-        {
-            scene: 'S-REORDER',
-            reason: 'P4 (take/move/release drive seam not in the base tree)',
-        },
-        {
-            scene: 'S-SHEET',
-            reason: 'P4 (drive seam not in the base tree)',
-        },
-    ]
+    const entries: { scene: string; reason: string }[] = []
     const costPending = engines.some(
         (engine) => engine.cost?.pending !== null && engine.cost !== null
     )
@@ -1423,7 +1817,7 @@ async function main(): Promise<number> {
         (engine) => engine.launchError !== null
     )
     const scenePass = required.every((engine) =>
-        engine.scenes.every((scene) => scene.status !== 'fail')
+        engine.scenes.every((scene) => scene.status === 'pass')
     )
     const costPass = required.every(
         (engine) => engine.cost === null || engine.cost.status === 'pass'
@@ -1434,13 +1828,64 @@ async function main(): Promise<number> {
         controls.every((control) => control.ok)
     const selfTestPass = tests.pass
     const pending = pendingEntries(options, engineReports)
+    const blockedEntries: { item: string; reason: string }[] = []
+    for (const engine of engineReports) {
+        for (const scene of engine.scenes) {
+            if (scene.status !== 'blocked') continue
+            blockedEntries.push({
+                item: `${engine.engine} scene ${scene.scene}`,
+                reason: scene.blockedReasons.join('; ') || 'blocked',
+            })
+        }
+        if (engine.cost?.status === 'blocked') {
+            blockedEntries.push({
+                item: `${engine.engine} S-BULK cost`,
+                reason:
+                    engine.cost.blockedReasons.join('; ') ||
+                    engine.cost.notes.join('; '),
+            })
+        }
+    }
+    // The DPR sweep and the reduced-motion variants are part of the P5c
+    // support evidence but are not run by this iteration. They are BLOCK,
+    // not a silent pass and not a pending scene.
+    blockedEntries.push({
+        item: 'DPR 1/3 sweep',
+        reason: 'P5c BLOCK: the DPR 1 and DPR 3 support runs are not part of this iteration',
+    })
+    blockedEntries.push({
+        item: 'reduced-motion variants',
+        reason: "P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration",
+    })
     const certificationEngines = engineReports.map((engine) => ({
         engine: engine.engine,
         launchError: engine.launchError,
-        scenes: engine.scenes.map((scene) => ({
-            scene: scene.scene,
-            status: scene.status,
-        })),
+        scenes: engine.scenes.map((scene) => {
+            const failedMetrics = [...scene.metrics, ...scene.shape]
+                .filter(
+                    (metric) =>
+                        metric.id !== 'RUN' &&
+                        metric.deciding &&
+                        !metric.blocked &&
+                        !metric.pass
+                )
+                .map(
+                    (metric) =>
+                        `${metric.id} ${Number.isFinite(metric.median) ? metric.median.toFixed(3) : 'n/a'}`
+                )
+            const runMetric = scene.metrics.find(
+                (metric) => metric.id === 'RUN'
+            )
+            if (runMetric && !runMetric.pass) {
+                failedMetrics.push(`RUN ${runMetric.worst?.detail ?? 'failed'}`)
+            }
+            return {
+                scene: scene.scene,
+                status: scene.status,
+                blockedReasons: scene.blockedReasons,
+                failedMetrics,
+            }
+        }),
         cost: engine.cost
             ? {
                   status: engine.cost.status,
@@ -1464,6 +1909,7 @@ async function main(): Promise<number> {
             advisory,
             controlsPass,
             selfTestPass,
+            blocked: blockedEntries,
         },
         {
             engines: options.engines,
@@ -1500,6 +1946,7 @@ async function main(): Promise<number> {
         negativeControls: controls,
         selfTests: tests,
         pending,
+        blocked: blockedEntries,
         certification,
         pass,
     }

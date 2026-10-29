@@ -8,6 +8,15 @@ const cleanEngine = (engine: string) => ({
     scenes: [
         { scene: 's-card', status: 'pass' as const },
         { scene: 's-seg', status: 'pass' as const },
+        { scene: 's-photo', status: 'pass' as const },
+        { scene: 's-stack', status: 'pass' as const },
+        { scene: 's-island', status: 'pass' as const },
+        { scene: 's-acc', status: 'pass' as const },
+        { scene: 's-insert', status: 'pass' as const },
+        { scene: 's-delete', status: 'pass' as const },
+        { scene: 's-reorder', status: 'pass' as const },
+        { scene: 's-sheet', status: 'pass' as const },
+        { scene: 's-bulk', status: 'pass' as const },
     ],
     cost: { status: 'pass' as const, valid: true },
 })
@@ -21,7 +30,20 @@ const clean = {
 }
 const full = {
     engines: ['chromium', 'webkit'],
-    scenes: ['s-card', 's-seg', 'cost'],
+    scenes: [
+        's-card',
+        's-seg',
+        's-photo',
+        's-stack',
+        's-island',
+        's-acc',
+        's-insert',
+        's-delete',
+        's-reorder',
+        's-sheet',
+        's-bulk',
+        'cost',
+    ],
     runs: 5,
 }
 
@@ -29,6 +51,32 @@ test('a complete clean invocation certifies', () => {
     const result = evaluateCertification(clean, full)
     assert.equal(result.certified, true)
     assert.deepEqual(result.reasons, [])
+})
+
+test('F11: a blocked scene and top-level blocked row do not certify', () => {
+    const blockedEngine = {
+        ...cleanEngine('chromium'),
+        scenes: cleanEngine('chromium').scenes.map((scene) =>
+            scene.scene === 's-sheet'
+                ? {
+                      scene: 's-sheet',
+                      status: 'blocked' as const,
+                      blockedReasons: ['G12 timer BLOCK'],
+                  }
+                : scene
+        ),
+    }
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [blockedEngine, cleanEngine('webkit')],
+            blocked: [{ item: 'DPR 1/3 sweep', reason: 'P5c BLOCK' }],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /chromium scene s-sheet blocked/)
+    assert.match(result.reasons.join(';'), /DPR 1\/3 sweep/)
 })
 
 test('one measured run does not certify', () => {
@@ -177,4 +225,21 @@ test('N7: global P4 pending does not fail the invocation, only certification', (
     )
     assert.equal(certification.certified, false)
     assert.match(certification.reasons.join(';'), /pending S-REORDER/)
+})
+
+test('H15-02: every required P5b scene status is a certification reason', () => {
+    const failing = {
+        ...cleanEngine('chromium'),
+        scenes: cleanEngine('chromium').scenes.map((scene) =>
+            scene.scene === 's-photo'
+                ? { scene: 's-photo', status: 'fail' as const }
+                : scene
+        ),
+    }
+    const result = evaluateCertification(
+        { ...clean, engines: [failing, cleanEngine('webkit')] },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /chromium scene s-photo fail/)
 })

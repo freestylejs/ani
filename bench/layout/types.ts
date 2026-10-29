@@ -44,6 +44,8 @@ export interface Observation {
     readonly radii: Readonly<Record<string, readonly number[] | null>>
     readonly style: Readonly<Record<string, StyleSnapshot>>
     readonly font: Readonly<Record<string, string>>
+    /** Non-participant sample elements (e.g. an inner presence disc). */
+    readonly samples: Readonly<Record<string, string>>
     /** Participant key containing document.activeElement, or null. */
     readonly activeElementKey: string | null
 }
@@ -58,6 +60,8 @@ export interface CommitObservation {
     readonly rects: number
     readonly offsets: number
     readonly styles: number
+    /** `offsetLeft`/`offsetTop` layout reads in this commit (H18-F F4). */
+    readonly layoutOffsets?: number | undefined
     readonly probes: number
     readonly parents: number
     /** Largest `stats.reads` delta observed after any frame since the last commit. */
@@ -81,6 +85,9 @@ export interface CommitObservation {
     readonly stylesExpected: number
     readonly styleRadiusCapture: number
     readonly styleActiveFlush: number
+    /** Non-layout React presence reads excluded from the layout read gate. */
+    readonly presenceRects?: number | undefined
+    readonly presenceStyles?: number | undefined
 }
 
 export interface ReportObservation {
@@ -92,6 +99,56 @@ export interface ReportObservation {
     }[]
     /** The manual-clock frame at which the report resolved, if known. */
     readonly settledFrame: number | null
+}
+
+export interface FrameReadDetail {
+    readonly frame: number
+    readonly rects: number
+    readonly offsets: number
+    readonly styles: number
+    /** Live holds during this frame: the §5.10 allowed rect read count. */
+    readonly holds: number
+}
+
+/** One held frame's presented box and engine reads (§5.10, G13). */
+export interface HoldMoveEvidence {
+    readonly frame: number
+    readonly box: Box
+    readonly rects: number
+    readonly offsets: number
+    readonly styles: number
+    readonly holds: number
+}
+
+/** The drive-hold kill switch row (L-DRIVE-4 / §7.2). */
+export interface KillSwitchEvidence {
+    readonly state: string
+    readonly holds: number
+    readonly clockSize: number
+    readonly clockPending: number
+    readonly restored: boolean
+    readonly diagnostics: readonly string[]
+    readonly snaps: readonly string[]
+}
+
+/** One scripted hold's state-machine and held-read evidence. */
+export interface HoldEvidence {
+    readonly key: string
+    readonly takeFrame: number
+    readonly takeState: string
+    readonly takeVelocity: { readonly x: number; readonly y: number }
+    readonly takeBox: Box
+    readonly holdsAtTake: number
+    readonly moves: readonly HoldMoveEvidence[]
+    readonly releaseFrame: number
+    readonly releaseState: string
+    readonly releaseVelocity: { readonly x: number; readonly y: number }
+    /** The drawn box at the release flush: the first update is dt = 0. */
+    readonly releaseBox: Box
+    readonly holdsAtRelease: number
+    readonly finalHolds: number
+    readonly frames: number
+    readonly killSwitch?: KillSwitchEvidence | undefined
 }
 
 export interface SceneTrace {
@@ -116,12 +173,23 @@ export interface SceneTrace {
     /** Engine reads made by frames outside commits (§11.5 G13). */
     readonly steadyFrameReads: number
     readonly steadyFrameReadsAt: number | null
+    /** Per-frame read detail for held scenes (G13's held allowance). */
+    readonly frameReads?: readonly FrameReadDetail[] | undefined
+    /** Scripted drive holds and their state machine. */
+    readonly holds?: readonly HoldEvidence[] | undefined
     /** Authored inline declarations captured before registration, per key. */
     readonly mounts: Readonly<Record<string, StyleSnapshot>>
     /** Boxes at rest before the first commit. */
     readonly initialBoxes: Readonly<Record<string, Box>>
     /** Engine-free layout-probe boxes for every post-commit rest state. */
     readonly aBoxes: Readonly<Record<string, Box>>
+    /** Post-removal snapshots: before and after the engine remove. */
+    readonly restorations?: readonly {
+        readonly key: string
+        readonly frame: number
+        readonly before: StyleSnapshot
+        readonly after: StyleSnapshot
+    }[]
     readonly final: {
         readonly tracks: number
         readonly holds: number
@@ -141,6 +209,24 @@ export interface FrameCost {
     readonly commit: boolean
 }
 
+export interface HeldFrameProbe {
+    readonly samples: readonly number[]
+    /** No-hold frames for the same scene, DOM and clock shape (D11). */
+    readonly baselineSamples: readonly number[]
+    readonly baselineP95: number
+    readonly g: number
+    /** The §5.10 held read: one rect per live hold, zero offsets/styles. */
+    readonly reads: {
+        readonly frames: number
+        readonly rects: number
+        readonly offsets: number
+        readonly styles: number
+        readonly holds: number
+        readonly mismatches: number
+    }
+    readonly releaseClean: boolean
+}
+
 export interface RealTrace {
     readonly scene: string
     readonly mode: 'real'
@@ -149,6 +235,9 @@ export interface RealTrace {
     readonly frameCosts: readonly FrameCost[]
     readonly commits: readonly { readonly label: string; readonly at: number }[]
     readonly diagnostics: readonly string[]
+    /** 600 real-clock held frames for the scene's own G12 row. */
+    readonly held?: HeldFrameProbe | undefined
+    readonly allowEmptyFinal?: boolean | undefined
     readonly final: {
         readonly tracks: number
         readonly holds: number
@@ -158,11 +247,47 @@ export interface RealTrace {
 
 /* ───────────────────────── oracle plans ───────────────────────── */
 
+export interface HoldPoint {
+    readonly frame: number
+    /** The held element's drawn top-left box at this frame. */
+    readonly x: number
+    readonly y: number
+}
+
+export interface HoldRider {
+    readonly key: string
+    readonly dx: number
+    readonly dy: number
+}
+
+/**
+ * A scripted direct-manipulation phase (§5.10). The held element and its
+ * riders are expected at the finger position, not on a layout track; the
+ * release commit's segments carry the spring from the last held box.
+ */
+export interface HoldPlan {
+    readonly key: string
+    readonly riders: readonly HoldRider[]
+    readonly takeFrame: number
+    /** The take box when it differs from the scene's initial box (a retake). */
+    readonly takeBox?: Box | undefined
+    readonly points: readonly HoldPoint[]
+    readonly releaseFrame: number
+    readonly releaseVelocity: { readonly x: number; readonly y: number }
+}
+
 export interface SegmentPlan {
     readonly key: string
     readonly kind: 'spring' | 'timing' | 'none'
     /** The post-commit rest box A (from the engine-free layout probe). */
     readonly to: Box
+    /** G3 before-velocity override for a release from direct manipulation. */
+    readonly velocityBefore?: Box | undefined
+    /**
+     * A release from a hold: the incoming velocity is carried, but the first
+     * update is `dt = 0` (§5.10/§1.4), so the from-rest elapsed rule applies.
+     */
+    readonly holdRelease?: boolean | undefined
     /** The departing layer this new lead takes B and velocity from. */
     readonly handoffFrom?: string | undefined
     readonly motion?: Motion | undefined
@@ -171,6 +296,19 @@ export interface SegmentPlan {
      * can be shown to fail on a deliberate velocity jump.
      */
     readonly velocityOverride?: Box | null | undefined
+    /**
+     * Author timeline starting at the commit (presence enter/exit or a
+     * gesture layer): its first frame advances by dt instead of the
+     * from-rest dt = 0 rule.
+     */
+    readonly startMoving?: boolean | undefined
+    /**
+     * A presence exit target relative to the presented box B: the entrance
+     * starts at the lifted box and slides by this offset.
+     */
+    readonly toFromB?: { readonly dx: number; readonly dy: number } | undefined
+    /** A presence exit is not a layout retarget; exclude it from G3. */
+    readonly presenceExit?: boolean | undefined
 }
 
 export interface CommitPlan {
@@ -179,6 +317,16 @@ export interface CommitPlan {
     readonly segments: readonly SegmentPlan[]
     readonly expectedStatus: LayoutStatus
     readonly expectedSnapped?: readonly string[] | undefined
+    /**
+     * A release from a hold is a planned event with a flush observation but no
+     * engine commit and no observable report (§5.10/§7.1). Default `commit`.
+     */
+    readonly kind?: 'commit' | 'release' | undefined
+    /**
+     * The status row is an authority ambiguity: the scene does not claim an
+     * exact status. G7 is reported BLOCK with this reason.
+     */
+    readonly statusBlocked?: string | undefined
 }
 
 export interface PairPlan {
@@ -226,6 +374,34 @@ export interface AuthorStyleKeys {
     readonly keys: readonly string[]
 }
 
+export interface PresenceOpacityTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly from: number
+    readonly to: number
+    readonly durationMs: number
+    readonly easing: 'linear' | 'ease-out' | 'ease-in'
+}
+
+/** An authored translate (a gesture layer), linear in frame time. */
+export interface PresenceScaleTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly from: number
+    readonly to: number
+    readonly durationMs: number
+    readonly easing: 'linear' | 'ease-out' | 'ease-in'
+}
+
+/** An authored translate (a gesture layer), linear in frame time. */
+export interface AuthoredTranslateTrack {
+    readonly key: string
+    readonly startFrame: number
+    readonly endFrame: number
+    readonly from: { readonly x: number; readonly y: number }
+    readonly to: { readonly x: number; readonly y: number }
+}
+
 export interface ScenePlan {
     readonly scene: string
     readonly stepMs: number
@@ -236,11 +412,45 @@ export interface ScenePlan {
     readonly settleFrames: readonly number[]
     readonly restorationChecks: readonly RestorationCheck[]
     readonly pairs: readonly PairPlan[]
-    readonly staticRadii?: Readonly<Record<string, number>> | undefined
+    readonly staticRadii?:
+        | Readonly<Record<string, number | readonly number[]>>
+        | undefined
     /** Participants whose author-owned inline style changes during the run. */
     readonly authorStyleKeys?: readonly string[] | undefined
     readonly expectedDiagnostics?: readonly string[] | undefined
     readonly expectedOnSnap?: readonly string[] | undefined
+    /**
+     * A participant removed together with a crossfade follower (its DOM
+     * parent). The follower's removal proof covers the subtree; the harness
+     * checks the follower's inert and does not read the descendant's
+     * mid-exit pose as a restoration failure.
+     */
+    readonly removedWith?: Readonly<Record<string, string>> | undefined
+    /** Removed keys whose post-removal restitution must be proven. */
+    readonly requiredRestorations?: readonly string[] | undefined
+    /** Inner presence scale samples (computed transform). */
+    readonly presenceScale?: readonly PresenceScaleTrack[] | undefined
+    /** Author opacity layers declared by the scene (presence/exit fades). */
+    readonly presenceOpacity?: readonly PresenceOpacityTrack[] | undefined
+    /** Authored gesture translations composed over the layout track. */
+    readonly authoredTranslate?: readonly AuthoredTranslateTrack[] | undefined
+    /** Drive holds; the held boxes replace the layout track while held. */
+    readonly holds?: readonly HoldPlan[] | undefined
+    /** The drive-hold kill switch row must be present and correct. */
+    readonly expectedKillSwitch?: boolean | undefined
+    /**
+     * G3 is authority-BLOCK: a release from direct manipulation has no
+     * analytic layout track before the supplied gesture velocity, so no
+     * analytic before/after pair exists (§5.10/A-11).
+     */
+    readonly g3Blocked?: string | undefined
+    /**
+     * A scene whose script unmounts its only participant at the end. The
+     * removal is proven by a post-removal restoration snapshot instead of a
+     * final connected participant. Narrow scope: only S-SHEET sets this; no
+     * other scene may use it, and the requiredRestorations proof must exist.
+     */
+    readonly allowEmptyFinal?: boolean | undefined
 }
 
 /* ───────────────────────── cost shapes ───────────────────────── */
@@ -254,11 +464,39 @@ export interface CostCommitSample {
     readonly frameReads: number
 }
 
+export interface HeldShapeRun {
+    readonly held: number
+    /** Raw per-frame samples (600 frames). */
+    readonly samples: readonly number[]
+    /** Raw no-hold frame samples for the same DOM and clock shape. */
+    readonly baselineSamples: readonly number[]
+    readonly p95: number
+    readonly baselineP95: number
+    /** D11: (held p95 - baseline p95) / held. */
+    readonly incrementalPerHeld: number
+    readonly g: number
+    /** G13: one rect per held element per frame, zero offsets/styles. */
+    readonly reads: {
+        readonly frames: number
+        readonly rects: number
+        readonly offsets: number
+        readonly styles: number
+        readonly holds: number
+        readonly mismatches: number
+    }
+    /** Holds and tracks are zero after the release. */
+    readonly releaseClean: boolean
+}
+
+export interface HeldShapes {
+    readonly one: HeldShapeRun
+    readonly ten: HeldShapeRun
+}
+
 export interface CostRun {
     readonly participants: number
     readonly poses: number
     readonly typedOM: boolean
-    readonly heldPending: boolean
     readonly engine: readonly number[]
     readonly floor: readonly number[]
     readonly engineSamples: readonly CostCommitSample[]
@@ -285,7 +523,6 @@ export interface CostTrace {
     readonly g: number
     readonly gSource: 'reads' | 'tick-fallback'
     readonly typedOM: boolean
-    readonly heldPending: boolean
     readonly unscrolled: CostRun
     readonly scrolled: CostRun
     readonly steady: {
@@ -337,7 +574,7 @@ export interface CostTrace {
         readonly frameReads: number
         readonly styles: number
     }[]
-    readonly held: { readonly pending: 'P4' }
+    readonly held: HeldShapes
 }
 
 export interface FloorAuditTrace {
