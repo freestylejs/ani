@@ -444,12 +444,7 @@ test('negative control G12: 0.11 ms per held element fails', () => {
         heldIncrementalGate([0.51, 0.51], [0.4, 0.4], 1, 0.01).pass,
         false
     )
-    const negative = heldIncrementalGate(
-        [0.2, 0.2],
-        [0.5, 0.5],
-        1,
-        0.01
-    )
+    const negative = heldIncrementalGate([0.2, 0.2], [0.5, 0.5], 1, 0.01)
     assert.equal(negative.pass, true)
     assert.ok(negative.value < 0)
     assert.match(negative.detail ?? '', /baseline p95/)
