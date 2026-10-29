@@ -176,8 +176,8 @@ Cost gates:
 | ID | Metric | Gate |
 |---|---|---|
 | G9 | Commit (capture + flush) ≤ 2× required-work floor | 1,000 participants, unscrolled and scrolled 1.5 viewports; median of 5 per-run ratios ≤ 2 |
-| G10 | Steady frame at 300 nested movers | p95 of 600 samples ≤ 2 ms |
-| G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | per-run `p95(engine commits) / p95(floor commits) ≤ 2`; median of the 5 per-run ratios; the floor is the same audited required-work replica at the same cadence; cadence 58.5–61.5 Hz over 300 commits or the run is invalid. Non-commit steady frames keep the absolute 2 ms p95 (G10) |
+| G10 | Steady frame at 300 nested movers | p95 of 600 samples ≤ 2 ms; WebKit uses the real-clock 20-frame batch (one `performance.now()` pair per 20 engine frame callbacks, error ±g/20) |
+| G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | per-run `p95(engine commits) / p95(floor commits) ≤ 2`; the D10 gate value is the literal median of the 5 per-run ratios; the floor is the same audited required-work replica at the same cadence; cadence 58.5–61.5 Hz over 300 commits or the run is invalid. Non-commit steady frames keep the absolute 2 ms p95 (G10) |
 | G12 | Held frame ≤ 0.1 ms per held element | **pending: P4** (the drive seam is not in this base tree); while pending, pass is false |
 | G14 | Fingerprint | mismatch makes cost advisory; frame gates still decide |
 
@@ -246,11 +246,16 @@ silently passing G11.
 - `g` is measured over 1,000 consecutive `performance.now()` reads; when no
   non-zero delta appears, the harness observes the next tick and records
   `gSource: "tick-fallback"`. WebKit reports `g = 1 ms`.
-- When `g > 0.05 ms`, the harness does **not** average already-quantized
-  per-frame costs and call the result a 20-frame interval. It reports raw frame
-  samples with the ±g/2 quantization bound and marks the samples `quantized`;
-  the cost report is BLOCK/not deciding. The 20-frame interval can only be
-  timed as one pair, which this instrument does not claim.
+- When `g > 0.05 ms`, G10 uses a **real-clock 20-frame batch**: a real
+  `requestAnimationFrame` tick starts each sample, then 20 engine frame
+  callbacks run back-to-back on the real clock under one `performance.now()`
+  pair. The pair covers the 20 frames' script work and no display idle, so the
+  mean has error ±`g/20` (30 samples). The batch is not a 60 Hz cadence and is
+  used only for the non-commit steady-frame gate.
+- G9/G11 remain BLOCK on a coarse timer: a 20-commit interval cannot be timed
+  without either including frame idle, changing the from-rest G9 work, or
+  breaking the 60 Hz G11 cadence, and a p95 of 15 batch means is not a p95 of
+  300 commits. No quantized ratio is a gate value.
 - A frame sample is the sum of every rAF callback in one animation frame
   (same timestamp). A commit in a task between frames marks the next frame,
   never the previous one; a commit inside a callback marks that callback's
@@ -262,10 +267,12 @@ silently passing G11.
   `refreshHz` and the frame samples are diagnostic only. A 30 Hz frame is never
   presented as a 60 Hz frame.
 - Percentiles are nearest-rank and the five per-run values are printed with
-  the median. A metric uses the **per-run findings' own gate outcomes** and
-  passes when at least three of five measured runs pass (the median outcome);
-  a missing or non-finite run fails the aggregate. No threshold is recomputed
-  from the median (H14-21). The per-run pass/fail list is always printed.
+  the median. Ratio gates (G9, G11) use the **literal median of the five
+  per-run ratios** against their limit, per D10; other metrics use the per-run
+  findings' own gate outcomes (the median outcome, at least three of five).
+  A blocked, missing or non-finite run fails the aggregate and cannot be
+  outvoted; a blocked metric's gate value is not printed as a ratio. The
+  per-run pass/fail list is always printed.
 - `g`, the fingerprint and every per-run statistic are written to the report.
 
 ## Fingerprint (G14)
@@ -280,14 +287,16 @@ cost report is advisory until a quiet run is produced. A report with an
 advisory cost fingerprint cannot claim the cost gates; its top-level `pass` is
 `false` when the cost scene is selected, while the frame-scoring values remain
 deciding evidence. WebKit's timer is 1 ms. G10 uses the §11.5 coarse-timer
-protocol: one sample is the mean of 20 consecutive frames timed as one
-`performance.now()` interval (30 samples, ±0.05 ms per sample), and it is
-deciding when the interval does not straddle 2 ms. G9 and G11 remain
-**BLOCK**/non-deciding: a 20-commit interval cannot be timed without either
-including frame idle, changing the from-rest G9 work, or breaking the 60 Hz
-G11 cadence, and a p95 of 15 batch means is not a p95 of 300 commits. Raw
-WebKit ratios are diagnostic and are reported as `BLOCK`, never as a measured
-pass or failure.
+protocol: one sample is the mean of 20 consecutive engine frame callbacks timed
+as one real-clock `performance.now()` interval (30 samples, ±0.05 ms per
+sample), started from a real rAF tick; the 20 callbacks run back-to-back so the
+interval contains script work and no display idle. It decides when the upper
+bound does not straddle 2 ms. G9 and G11 remain **BLOCK**/non-deciding: a
+20-commit interval cannot be timed without either including frame idle, changing
+the from-rest G9 work, or breaking the 60 Hz G11 cadence, and a p95 of 15 batch
+means is not a p95 of 300 commits. Their blocked metrics are `pass:false`,
+`deciding:false`, have no gate value, and are not printed as quantized ratios.
+Raw per-run values remain diagnostic data in the JSON.
 
 ## Negative controls
 
@@ -349,18 +358,22 @@ than browser controls; the mapping is one control per deciding metric.
 - **Iteration 4 applies the owner-approved D10 gate.** Chromium G11 is now
   `median of 5 per-run p95(engine commits) / p95(floor commits) <= 2` on the
   audited same-shape 60 Hz floor; G9 remains the whole-commit ratio and G10 the
-  absolute non-commit 2 ms steady-frame gate. The H17 report has G9 1.692×/
-  1.742× pass, G10 0.935 ms pass, G13 exact, and G11 **2.425× FAIL** (7.3 ms /
-  3.0 ms): the D10 gate is implemented but the sustained path is not yet
-  within 2×. WebKit G10 uses the 20-frame coarse-timer interval and passes at
-  0.300 ms; WebKit G9/G11 are BLOCK with exact evidence. The Chromium cost is
-  advisory on the host load (2.90), so certification still needs a quiet run.
-  See `ITERATIONS.md` iteration 4.
+  absolute non-commit 2 ms steady-frame gate. The final report has G9 1.880×/
+  1.898× pass, G10 0.330 ms pass, G13 exact, and G11 **2.624× FAIL** (per-run
+  3.109 / 2.589 / 2.427 / 2.624 / 2.857; engine p95 6.5–7.2 ms / floor p95
+  2.2–3.0 ms): the D10 gate is implemented but the sustained path is not yet
+  within 2×. WebKit G10 uses the real-clock 20-frame batch and passes at
+  0.250 ms; WebKit G9/G11 are BLOCK (`pass:false`, `deciding:false`, no gate
+  value) with exact evidence. Chromium cost is advisory at load 2.84 and
+  WebKit at 2.87, so certification still needs a quiet run. See
+  `ITERATIONS.md` iteration 4.
 - Chromium G9 is measured with the audited floor including §4.3 computed reads;
   Chromium G11 is the per-run p95 ratio of engine/floor 60 Hz commits and its
-  measured cadence is 60.01–60.07 Hz. Chromium cost is advisory because the
-  1-minute load was 2.90; the WebKit cost run was at 4.73 (and is BLOCK for
-  G9/G11 in any case).
+  measured cadence is 60.04–60.06 Hz.
+- The H15 scenes (`s-stack`, `s-photo`, `s-island`, `s-acc`, `s-insert`,
+  `s-delete`) are not present in this worktree. Only the H14 S-CARD, S-SEG and
+  S-BULK cost shapes were run; the H15 scenes are **open/unrun**, not passed.
+  No all-scene or all-green claim is made.
 - Once P4 lands and `heldPending` is false, a valid all-green cost run takes the
   `'pass'` path (`cost_validity.test.ts`); a measured failure takes `'fail'`.
   A cadence or timer invalid run stays `'blocked'`.

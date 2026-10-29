@@ -1,8 +1,8 @@
 {
   "schema": "ani-layout-bench/v1",
-  "generatedAt": "2026-10-29T02:44:31.816Z",
+  "generatedAt": "2026-10-29T03:44:07.108Z",
   "command": "pnpm bench:layout --engine chromium --scene s-seg --runs 5 --out bench/layout/iteration-3/chromium-s-seg.json",
-  "sourceRevision": "1cec4d6b72f14f36fe7b5960ac6f5565fc481c76",
+  "sourceRevision": "6dd04d27bd99ac6a693536e4de681212108afb89",
   "fingerprint": {
     "host": "Mac14,9",
     "os": {
@@ -21,12 +21,12 @@
       "webkit": "webkit-2203",
       "firefox": "firefox-1490"
     },
-    "load1": 2.5810546875
+    "load1": 3.7333984375
   },
   "advisory": {
     "cost": true,
     "reasons": [
-      "1-minute load is 2.58, pinned below 1"
+      "1-minute load is 3.73, pinned below 1"
     ]
   },
   "engines": [
@@ -316,16 +316,16 @@
               "label": "Real-clock frame script cost",
               "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
               "unit": "ms",
-              "median": 0.125,
+              "median": 0.30499982833862305,
               "blocked": false,
               "deciding": true,
               "pass": true,
               "perRun": [
-                0.125,
-                0.18500018119812012,
-                0.19000005722045898,
-                0.11999988555908203,
-                0.125
+                0.12999987602233887,
+                0.19499993324279785,
+                0.3299999237060547,
+                0.30499982833862305,
+                0.39499998092651367
               ],
               "passPerRun": [
                 true,
@@ -335,8 +335,8 @@
                 true
               ],
               "worst": {
-                "detail": "one sample per frame; g 0.0050 ms; 55 samples, 55 frames",
-                "run": 3
+                "detail": "one sample per frame; g 0.0050 ms; 56 samples, 56 frames",
+                "run": 5
               }
             },
             {
@@ -344,23 +344,23 @@
               "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
               "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
               "unit": "ratio",
-              "median": 5.125008940705243,
+              "median": 5.714266251592291,
               "blocked": false,
               "deciding": false,
               "pass": true,
               "perRun": [
-                5.25,
-                5.125002980235081,
-                5.750005960470162,
-                4.875002980235081,
-                5.125008940705243
+                4.625008940705243,
+                4.6666746139602155,
+                6.833337306980108,
+                5.714266251592291,
+                6.250009934116936
               ],
               "passPerRun": [
-                true,
-                true,
-                true,
-                true,
-                true
+                false,
+                false,
+                false,
+                false,
+                false
               ],
               "worst": {
                 "run": 3
@@ -597,9 +597,9 @@
               "costProbe": {
                 "participants": 1,
                 "movers": 1,
-                "engineMedian": 0.14499998092651367,
+                "engineMedian": 0.09249997138977051,
                 "floorMedian": 0.019999980926513672,
-                "ratio": 7.250005960470162
+                "ratio": 4.625002980235081
               },
               "metrics": [
                 {
@@ -735,7 +735,7 @@
                   "label": "Real-clock frame script cost",
                   "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
                   "unit": "ms",
-                  "value": 0.1099998950958252,
+                  "value": 0.16499996185302734,
                   "pass": true,
                   "worst": {
                     "detail": "one sample per frame; g 0.0050 ms; 56 samples, 56 frames"
@@ -746,11 +746,11 @@
                   "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 7.250005960470162,
+                  "value": 4.625002980235081,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
-                  "detail": "1 participants, 1 movers; engine 0.145 ms / floor 0.020 ms"
+                  "detail": "1 participants, 1 movers; engine 0.092 ms / floor 0.020 ms"
                 }
               ],
               "shape": [
@@ -846,7 +846,7 @@
                 "g": 0.004999876022338867,
                 "gSource": "reads",
                 "frames": 56,
-                "p95": 0.1099998950958252,
+                "p95": 0.16499996185302734,
                 "longFrames": 0,
                 "pass": true
               },
@@ -937,9 +937,9 @@
               "costProbe": {
                 "participants": 1,
                 "movers": 1,
-                "engineMedian": 0.10499989986419678,
+                "engineMedian": 0.09250009059906006,
                 "floorMedian": 0.019999980926513672,
-                "ratio": 5.25
+                "ratio": 4.625008940705243
               },
               "metrics": [
                 {
@@ -1075,10 +1075,10 @@
                   "label": "Real-clock frame script cost",
                   "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
                   "unit": "ms",
-                  "value": 0.125,
+                  "value": 0.12999987602233887,
                   "pass": true,
                   "worst": {
-                    "detail": "one sample per frame; g 0.0050 ms; 56 samples, 56 frames"
+                    "detail": "one sample per frame; g 0.0050 ms; 55 samples, 55 frames"
                   }
                 },
                 {
@@ -1086,11 +1086,11 @@
                   "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 5.25,
+                  "value": 4.625008940705243,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
-                  "detail": "1 participants, 1 movers; engine 0.105 ms / floor 0.020 ms"
+                  "detail": "1 participants, 1 movers; engine 0.093 ms / floor 0.020 ms"
                 }
               ],
               "shape": [
@@ -1185,8 +1185,8 @@
               "real": {
                 "g": 0.004999876022338867,
                 "gSource": "reads",
-                "frames": 56,
-                "p95": 0.125,
+                "frames": 55,
+                "p95": 0.12999987602233887,
                 "longFrames": 0,
                 "pass": true
               },
@@ -1277,9 +1277,9 @@
               "costProbe": {
                 "participants": 1,
                 "movers": 1,
-                "engineMedian": 0.10249996185302734,
-                "floorMedian": 0.019999980926513672,
-                "ratio": 5.125002980235081
+                "engineMedian": 0.1400001049041748,
+                "floorMedian": 0.029999971389770508,
+                "ratio": 4.6666746139602155
               },
               "metrics": [
                 {
@@ -1415,1027 +1415,7 @@
                   "label": "Real-clock frame script cost",
                   "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
                   "unit": "ms",
-                  "value": 0.18500018119812012,
-                  "pass": true,
-                  "worst": {
-                    "detail": "one sample per frame; g 0.0050 ms; 55 samples, 55 frames"
-                  }
-                },
-                {
-                  "id": "G9.probe",
-                  "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
-                  "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
-                  "unit": "ratio",
-                  "value": 5.125002980235081,
-                  "pass": true,
-                  "measured": true,
-                  "deciding": false,
-                  "detail": "1 participants, 1 movers; engine 0.102 ms / floor 0.020 ms"
-                }
-              ],
-              "shape": [
-                {
-                  "id": "shape.opacity",
-                  "label": "Crossfade layer opacity",
-                  "gate": "<= 1e-5 against the independent crossfade",
-                  "unit": "opacity",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no crossfade pair"
-                },
-                {
-                  "id": "shape.coverage",
-                  "label": "Crossfade source-over coverage",
-                  "gate": "|coverage - 1| <= 1e-5",
-                  "unit": "coverage",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no crossfade pair"
-                },
-                {
-                  "id": "shape.radius",
-                  "label": "Crossfade on-screen corner radius",
-                  "gate": "<= 0.03 px between both layers and the blend",
-                  "unit": "px",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no radius-blended pair"
-                },
-                {
-                  "id": "shape.pill-radius",
-                  "label": "Constant participant radius",
-                  "gate": "<= 0.01 px",
-                  "unit": "px",
-                  "value": 0.000001234815300676928,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 13,
-                    "participant": "pill"
-                  }
-                },
-                {
-                  "id": "shape.inert",
-                  "label": "Crossfade follower inert, lead focusable",
-                  "gate": "follower inert from the first crossfade frame, restored on reversal",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.focus",
-                  "label": "Focus is not inside a crossfade follower",
-                  "gate": "activeElement is never the follower participant",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.font",
-                  "label": "Computed font equality across the shared title pair",
-                  "gate": "identical computed font string",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.teardown",
-                  "label": "Teardown: no track, hold, clock frame request or pending frame",
-                  "gate": "all zero",
-                  "unit": "leftovers",
-                  "value": 0,
-                  "pass": true,
-                  "worst": {
-                    "detail": "tracks 0, holds 0, clock pending 0, clock size 0"
-                  }
-                }
-              ],
-              "real": {
-                "g": 0.004999876022338867,
-                "gSource": "reads",
-                "frames": 55,
-                "p95": 0.18500018119812012,
-                "longFrames": 0,
-                "pass": true
-              },
-              "summary": {
-                "observations": 59,
-                "commits": [
-                  {
-                    "label": "tap-1",
-                    "frame": 0,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-2",
-                    "frame": 5,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-3",
-                    "frame": 10,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-4",
-                    "frame": 15,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  }
-                ],
-                "reports": [
-                  {
-                    "label": "tap-1",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 6
-                  },
-                  {
-                    "label": "tap-2",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 11
-                  },
-                  {
-                    "label": "tap-3",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 16
-                  },
-                  {
-                    "label": "tap-4",
-                    "status": "ended",
-                    "snapped": [],
-                    "settledFrame": 52
-                  }
-                ],
-                "settleFrames": [
-                  53
-                ],
-                "steadyFrameReads": 0,
-                "final": {
-                  "tracks": 0,
-                  "holds": 0,
-                  "clockPending": 0,
-                  "clockSize": 0,
-                  "connected": [
-                    "pill"
-                  ],
-                  "diagnostics": []
-                }
-              },
-              "problems": []
-            },
-            {
-              "scene": "s-seg",
-              "run": 3,
-              "warmup": false,
-              "pass": true,
-              "costProbe": {
-                "participants": 1,
-                "movers": 1,
-                "engineMedian": 0.11500000953674316,
-                "floorMedian": 0.019999980926513672,
-                "ratio": 5.750005960470162
-              },
-              "metrics": [
-                {
-                  "id": "C1",
-                  "label": "Trace completeness against the scene contract",
-                  "gate": "required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric",
-                  "unit": "contract failures",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "detail": ""
-                  },
-                  "detail": "complete"
-                },
-                {
-                  "id": "G1",
-                  "label": "Oracle error: drawn rect against the independent oracle",
-                  "gate": "<= 0.05 px on every edge",
-                  "unit": "px",
-                  "value": 0.00006559903738434514,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 17,
-                    "participant": "pill",
-                    "edge": "right",
-                    "detail": "59 participant-frames"
-                  }
-                },
-                {
-                  "id": "G2",
-                  "label": "First-frame continuity against the last presented frame",
-                  "gate": "<= 0.05 px; <= 0.5 px only for the aged participant of that commit",
-                  "unit": "px",
-                  "value": 0.0000457763671875,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 10,
-                    "participant": "pill",
-                    "label": "tap-3",
-                    "detail": "fresh capture, gate 0.05 px"
-                  },
-                  "detail": "4 commit layers; 0 over their per-commit gate"
-                },
-                {
-                  "id": "G3",
-                  "label": "Velocity continuity at each retarget",
-                  "gate": "<= 1 % of the larger edge speed + 1 px/s",
-                  "unit": "ratio",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 5,
-                    "participant": "pill",
-                    "label": "tap-2",
-                    "detail": "analytic before {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0} after {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)"
-                  }
-                },
-                {
-                  "id": "G4",
-                  "label": "Spring fidelity: drawn edge against the independent spring oracle",
-                  "gate": "<= 0.05 px on every edge",
-                  "unit": "px",
-                  "value": 0.00006559903738434514,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 17,
-                    "participant": "pill",
-                    "edge": "right",
-                    "detail": "58 participant-frames"
-                  }
-                },
-                {
-                  "id": "G5",
-                  "label": "Settle exactness: rect against the layout box, and the pose",
-                  "gate": "<= 0.01 px; no pose declaration left",
-                  "unit": "px",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 53,
-                    "participant": "pill"
-                  },
-                  "detail": "1 settled participants"
-                },
-                {
-                  "id": "G6",
-                  "label": "Restoration of every owned inline declaration",
-                  "gate": "byte for byte the authored one",
-                  "unit": "declarations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "participant": "pill",
-                    "detail": "0 mismatches; 0 inline cssText difference(s) recorded as evidence"
-                  }
-                },
-                {
-                  "id": "G7",
-                  "label": "Reports: status, snapped set and diagnostics",
-                  "gate": "exactly as the scene script expects",
-                  "unit": "mismatches",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "label": "tap-1",
-                    "detail": "all reports match"
-                  }
-                },
-                {
-                  "id": "G13",
-                  "label": "Exact read counts per commit and zero steady-frame reads",
-                  "gate": "<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero",
-                  "unit": "excess reads",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "label": "tap-1",
-                    "detail": "tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
-                  },
-                  "detail": "exact computed reads tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
-                },
-                {
-                  "id": "G8",
-                  "label": "Real-clock frame script cost",
-                  "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
-                  "unit": "ms",
-                  "value": 0.19000005722045898,
-                  "pass": true,
-                  "worst": {
-                    "detail": "one sample per frame; g 0.0050 ms; 55 samples, 55 frames"
-                  }
-                },
-                {
-                  "id": "G9.probe",
-                  "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
-                  "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
-                  "unit": "ratio",
-                  "value": 5.750005960470162,
-                  "pass": true,
-                  "measured": true,
-                  "deciding": false,
-                  "detail": "1 participants, 1 movers; engine 0.115 ms / floor 0.020 ms"
-                }
-              ],
-              "shape": [
-                {
-                  "id": "shape.opacity",
-                  "label": "Crossfade layer opacity",
-                  "gate": "<= 1e-5 against the independent crossfade",
-                  "unit": "opacity",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no crossfade pair"
-                },
-                {
-                  "id": "shape.coverage",
-                  "label": "Crossfade source-over coverage",
-                  "gate": "|coverage - 1| <= 1e-5",
-                  "unit": "coverage",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no crossfade pair"
-                },
-                {
-                  "id": "shape.radius",
-                  "label": "Crossfade on-screen corner radius",
-                  "gate": "<= 0.03 px between both layers and the blend",
-                  "unit": "px",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no radius-blended pair"
-                },
-                {
-                  "id": "shape.pill-radius",
-                  "label": "Constant participant radius",
-                  "gate": "<= 0.01 px",
-                  "unit": "px",
-                  "value": 0.000001234815300676928,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 13,
-                    "participant": "pill"
-                  }
-                },
-                {
-                  "id": "shape.inert",
-                  "label": "Crossfade follower inert, lead focusable",
-                  "gate": "follower inert from the first crossfade frame, restored on reversal",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.focus",
-                  "label": "Focus is not inside a crossfade follower",
-                  "gate": "activeElement is never the follower participant",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.font",
-                  "label": "Computed font equality across the shared title pair",
-                  "gate": "identical computed font string",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.teardown",
-                  "label": "Teardown: no track, hold, clock frame request or pending frame",
-                  "gate": "all zero",
-                  "unit": "leftovers",
-                  "value": 0,
-                  "pass": true,
-                  "worst": {
-                    "detail": "tracks 0, holds 0, clock pending 0, clock size 0"
-                  }
-                }
-              ],
-              "real": {
-                "g": 0.004999876022338867,
-                "gSource": "reads",
-                "frames": 55,
-                "p95": 0.19000005722045898,
-                "longFrames": 0,
-                "pass": true
-              },
-              "summary": {
-                "observations": 59,
-                "commits": [
-                  {
-                    "label": "tap-1",
-                    "frame": 0,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-2",
-                    "frame": 5,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-3",
-                    "frame": 10,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-4",
-                    "frame": 15,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  }
-                ],
-                "reports": [
-                  {
-                    "label": "tap-1",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 6
-                  },
-                  {
-                    "label": "tap-2",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 11
-                  },
-                  {
-                    "label": "tap-3",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 16
-                  },
-                  {
-                    "label": "tap-4",
-                    "status": "ended",
-                    "snapped": [],
-                    "settledFrame": 52
-                  }
-                ],
-                "settleFrames": [
-                  53
-                ],
-                "steadyFrameReads": 0,
-                "final": {
-                  "tracks": 0,
-                  "holds": 0,
-                  "clockPending": 0,
-                  "clockSize": 0,
-                  "connected": [
-                    "pill"
-                  ],
-                  "diagnostics": []
-                }
-              },
-              "problems": []
-            },
-            {
-              "scene": "s-seg",
-              "run": 4,
-              "warmup": false,
-              "pass": true,
-              "costProbe": {
-                "participants": 1,
-                "movers": 1,
-                "engineMedian": 0.09749996662139893,
-                "floorMedian": 0.019999980926513672,
-                "ratio": 4.875002980235081
-              },
-              "metrics": [
-                {
-                  "id": "C1",
-                  "label": "Trace completeness against the scene contract",
-                  "gate": "required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric",
-                  "unit": "contract failures",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "detail": ""
-                  },
-                  "detail": "complete"
-                },
-                {
-                  "id": "G1",
-                  "label": "Oracle error: drawn rect against the independent oracle",
-                  "gate": "<= 0.05 px on every edge",
-                  "unit": "px",
-                  "value": 0.00006559903738434514,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 17,
-                    "participant": "pill",
-                    "edge": "right",
-                    "detail": "59 participant-frames"
-                  }
-                },
-                {
-                  "id": "G2",
-                  "label": "First-frame continuity against the last presented frame",
-                  "gate": "<= 0.05 px; <= 0.5 px only for the aged participant of that commit",
-                  "unit": "px",
-                  "value": 0.0000457763671875,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 10,
-                    "participant": "pill",
-                    "label": "tap-3",
-                    "detail": "fresh capture, gate 0.05 px"
-                  },
-                  "detail": "4 commit layers; 0 over their per-commit gate"
-                },
-                {
-                  "id": "G3",
-                  "label": "Velocity continuity at each retarget",
-                  "gate": "<= 1 % of the larger edge speed + 1 px/s",
-                  "unit": "ratio",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 5,
-                    "participant": "pill",
-                    "label": "tap-2",
-                    "detail": "analytic before {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0} after {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)"
-                  }
-                },
-                {
-                  "id": "G4",
-                  "label": "Spring fidelity: drawn edge against the independent spring oracle",
-                  "gate": "<= 0.05 px on every edge",
-                  "unit": "px",
-                  "value": 0.00006559903738434514,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 17,
-                    "participant": "pill",
-                    "edge": "right",
-                    "detail": "58 participant-frames"
-                  }
-                },
-                {
-                  "id": "G5",
-                  "label": "Settle exactness: rect against the layout box, and the pose",
-                  "gate": "<= 0.01 px; no pose declaration left",
-                  "unit": "px",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 53,
-                    "participant": "pill"
-                  },
-                  "detail": "1 settled participants"
-                },
-                {
-                  "id": "G6",
-                  "label": "Restoration of every owned inline declaration",
-                  "gate": "byte for byte the authored one",
-                  "unit": "declarations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "participant": "pill",
-                    "detail": "0 mismatches; 0 inline cssText difference(s) recorded as evidence"
-                  }
-                },
-                {
-                  "id": "G7",
-                  "label": "Reports: status, snapped set and diagnostics",
-                  "gate": "exactly as the scene script expects",
-                  "unit": "mismatches",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "label": "tap-1",
-                    "detail": "all reports match"
-                  }
-                },
-                {
-                  "id": "G13",
-                  "label": "Exact read counts per commit and zero steady-frame reads",
-                  "gate": "<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero",
-                  "unit": "excess reads",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "label": "tap-1",
-                    "detail": "tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
-                  },
-                  "detail": "exact computed reads tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
-                },
-                {
-                  "id": "G8",
-                  "label": "Real-clock frame script cost",
-                  "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
-                  "unit": "ms",
-                  "value": 0.11999988555908203,
-                  "pass": true,
-                  "worst": {
-                    "detail": "one sample per frame; g 0.0050 ms; 55 samples, 55 frames"
-                  }
-                },
-                {
-                  "id": "G9.probe",
-                  "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
-                  "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
-                  "unit": "ratio",
-                  "value": 4.875002980235081,
-                  "pass": true,
-                  "measured": true,
-                  "deciding": false,
-                  "detail": "1 participants, 1 movers; engine 0.097 ms / floor 0.020 ms"
-                }
-              ],
-              "shape": [
-                {
-                  "id": "shape.opacity",
-                  "label": "Crossfade layer opacity",
-                  "gate": "<= 1e-5 against the independent crossfade",
-                  "unit": "opacity",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no crossfade pair"
-                },
-                {
-                  "id": "shape.coverage",
-                  "label": "Crossfade source-over coverage",
-                  "gate": "|coverage - 1| <= 1e-5",
-                  "unit": "coverage",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no crossfade pair"
-                },
-                {
-                  "id": "shape.radius",
-                  "label": "Crossfade on-screen corner radius",
-                  "gate": "<= 0.03 px between both layers and the blend",
-                  "unit": "px",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {},
-                  "detail": "n/a: no radius-blended pair"
-                },
-                {
-                  "id": "shape.pill-radius",
-                  "label": "Constant participant radius",
-                  "gate": "<= 0.01 px",
-                  "unit": "px",
-                  "value": 0.000001234815300676928,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 13,
-                    "participant": "pill"
-                  }
-                },
-                {
-                  "id": "shape.inert",
-                  "label": "Crossfade follower inert, lead focusable",
-                  "gate": "follower inert from the first crossfade frame, restored on reversal",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.focus",
-                  "label": "Focus is not inside a crossfade follower",
-                  "gate": "activeElement is never the follower participant",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.font",
-                  "label": "Computed font equality across the shared title pair",
-                  "gate": "identical computed font string",
-                  "unit": "violations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": false,
-                  "worst": {}
-                },
-                {
-                  "id": "shape.teardown",
-                  "label": "Teardown: no track, hold, clock frame request or pending frame",
-                  "gate": "all zero",
-                  "unit": "leftovers",
-                  "value": 0,
-                  "pass": true,
-                  "worst": {
-                    "detail": "tracks 0, holds 0, clock pending 0, clock size 0"
-                  }
-                }
-              ],
-              "real": {
-                "g": 0.004999876022338867,
-                "gSource": "reads",
-                "frames": 55,
-                "p95": 0.11999988555908203,
-                "longFrames": 0,
-                "pass": true
-              },
-              "summary": {
-                "observations": 59,
-                "commits": [
-                  {
-                    "label": "tap-1",
-                    "frame": 0,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-2",
-                    "frame": 5,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-3",
-                    "frame": 10,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  },
-                  {
-                    "label": "tap-4",
-                    "frame": 15,
-                    "rects": 2,
-                    "offsets": 2,
-                    "styles": 2,
-                    "frameReads": 0
-                  }
-                ],
-                "reports": [
-                  {
-                    "label": "tap-1",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 6
-                  },
-                  {
-                    "label": "tap-2",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 11
-                  },
-                  {
-                    "label": "tap-3",
-                    "status": "interrupted",
-                    "snapped": [],
-                    "settledFrame": 16
-                  },
-                  {
-                    "label": "tap-4",
-                    "status": "ended",
-                    "snapped": [],
-                    "settledFrame": 52
-                  }
-                ],
-                "settleFrames": [
-                  53
-                ],
-                "steadyFrameReads": 0,
-                "final": {
-                  "tracks": 0,
-                  "holds": 0,
-                  "clockPending": 0,
-                  "clockSize": 0,
-                  "connected": [
-                    "pill"
-                  ],
-                  "diagnostics": []
-                }
-              },
-              "problems": []
-            },
-            {
-              "scene": "s-seg",
-              "run": 5,
-              "warmup": false,
-              "pass": true,
-              "costProbe": {
-                "participants": 1,
-                "movers": 1,
-                "engineMedian": 0.1025000810623169,
-                "floorMedian": 0.019999980926513672,
-                "ratio": 5.125008940705243
-              },
-              "metrics": [
-                {
-                  "id": "C1",
-                  "label": "Trace completeness against the scene contract",
-                  "gate": "required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric",
-                  "unit": "contract failures",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "detail": ""
-                  },
-                  "detail": "complete"
-                },
-                {
-                  "id": "G1",
-                  "label": "Oracle error: drawn rect against the independent oracle",
-                  "gate": "<= 0.05 px on every edge",
-                  "unit": "px",
-                  "value": 0.00006559903738434514,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 17,
-                    "participant": "pill",
-                    "edge": "right",
-                    "detail": "59 participant-frames"
-                  }
-                },
-                {
-                  "id": "G2",
-                  "label": "First-frame continuity against the last presented frame",
-                  "gate": "<= 0.05 px; <= 0.5 px only for the aged participant of that commit",
-                  "unit": "px",
-                  "value": 0.0000457763671875,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 10,
-                    "participant": "pill",
-                    "label": "tap-3",
-                    "detail": "fresh capture, gate 0.05 px"
-                  },
-                  "detail": "4 commit layers; 0 over their per-commit gate"
-                },
-                {
-                  "id": "G3",
-                  "label": "Velocity continuity at each retarget",
-                  "gate": "<= 1 % of the larger edge speed + 1 px/s",
-                  "unit": "ratio",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 5,
-                    "participant": "pill",
-                    "label": "tap-2",
-                    "detail": "analytic before {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0} after {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)"
-                  }
-                },
-                {
-                  "id": "G4",
-                  "label": "Spring fidelity: drawn edge against the independent spring oracle",
-                  "gate": "<= 0.05 px on every edge",
-                  "unit": "px",
-                  "value": 0.00006559903738434514,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 17,
-                    "participant": "pill",
-                    "edge": "right",
-                    "detail": "58 participant-frames"
-                  }
-                },
-                {
-                  "id": "G5",
-                  "label": "Settle exactness: rect against the layout box, and the pose",
-                  "gate": "<= 0.01 px; no pose declaration left",
-                  "unit": "px",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "frame": 53,
-                    "participant": "pill"
-                  },
-                  "detail": "1 settled participants"
-                },
-                {
-                  "id": "G6",
-                  "label": "Restoration of every owned inline declaration",
-                  "gate": "byte for byte the authored one",
-                  "unit": "declarations",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "participant": "pill",
-                    "detail": "0 mismatches; 0 inline cssText difference(s) recorded as evidence"
-                  }
-                },
-                {
-                  "id": "G7",
-                  "label": "Reports: status, snapped set and diagnostics",
-                  "gate": "exactly as the scene script expects",
-                  "unit": "mismatches",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "label": "tap-1",
-                    "detail": "all reports match"
-                  }
-                },
-                {
-                  "id": "G13",
-                  "label": "Exact read counts per commit and zero steady-frame reads",
-                  "gate": "<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero",
-                  "unit": "excess reads",
-                  "value": 0,
-                  "pass": true,
-                  "measured": true,
-                  "worst": {
-                    "label": "tap-1",
-                    "detail": "tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
-                  },
-                  "detail": "exact computed reads tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
-                },
-                {
-                  "id": "G8",
-                  "label": "Real-clock frame script cost",
-                  "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
-                  "unit": "ms",
-                  "value": 0.125,
+                  "value": 0.19499993324279785,
                   "pass": true,
                   "worst": {
                     "detail": "one sample per frame; g 0.0050 ms; 56 samples, 56 frames"
@@ -2446,11 +1426,11 @@
                   "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
                   "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
                   "unit": "ratio",
-                  "value": 5.125008940705243,
+                  "value": 4.6666746139602155,
                   "pass": true,
                   "measured": true,
                   "deciding": false,
-                  "detail": "1 participants, 1 movers; engine 0.103 ms / floor 0.020 ms"
+                  "detail": "1 participants, 1 movers; engine 0.140 ms / floor 0.030 ms"
                 }
               ],
               "shape": [
@@ -2546,7 +1526,1027 @@
                 "g": 0.004999876022338867,
                 "gSource": "reads",
                 "frames": 56,
-                "p95": 0.125,
+                "p95": 0.19499993324279785,
+                "longFrames": 0,
+                "pass": true
+              },
+              "summary": {
+                "observations": 59,
+                "commits": [
+                  {
+                    "label": "tap-1",
+                    "frame": 0,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-2",
+                    "frame": 5,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-3",
+                    "frame": 10,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-4",
+                    "frame": 15,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  }
+                ],
+                "reports": [
+                  {
+                    "label": "tap-1",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 6
+                  },
+                  {
+                    "label": "tap-2",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 11
+                  },
+                  {
+                    "label": "tap-3",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 16
+                  },
+                  {
+                    "label": "tap-4",
+                    "status": "ended",
+                    "snapped": [],
+                    "settledFrame": 52
+                  }
+                ],
+                "settleFrames": [
+                  53
+                ],
+                "steadyFrameReads": 0,
+                "final": {
+                  "tracks": 0,
+                  "holds": 0,
+                  "clockPending": 0,
+                  "clockSize": 0,
+                  "connected": [
+                    "pill"
+                  ],
+                  "diagnostics": []
+                }
+              },
+              "problems": []
+            },
+            {
+              "scene": "s-seg",
+              "run": 3,
+              "warmup": false,
+              "pass": true,
+              "costProbe": {
+                "participants": 1,
+                "movers": 1,
+                "engineMedian": 0.2049999237060547,
+                "floorMedian": 0.029999971389770508,
+                "ratio": 6.833337306980108
+              },
+              "metrics": [
+                {
+                  "id": "C1",
+                  "label": "Trace completeness against the scene contract",
+                  "gate": "required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric",
+                  "unit": "contract failures",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "detail": ""
+                  },
+                  "detail": "complete"
+                },
+                {
+                  "id": "G1",
+                  "label": "Oracle error: drawn rect against the independent oracle",
+                  "gate": "<= 0.05 px on every edge",
+                  "unit": "px",
+                  "value": 0.00006559903738434514,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 17,
+                    "participant": "pill",
+                    "edge": "right",
+                    "detail": "59 participant-frames"
+                  }
+                },
+                {
+                  "id": "G2",
+                  "label": "First-frame continuity against the last presented frame",
+                  "gate": "<= 0.05 px; <= 0.5 px only for the aged participant of that commit",
+                  "unit": "px",
+                  "value": 0.0000457763671875,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 10,
+                    "participant": "pill",
+                    "label": "tap-3",
+                    "detail": "fresh capture, gate 0.05 px"
+                  },
+                  "detail": "4 commit layers; 0 over their per-commit gate"
+                },
+                {
+                  "id": "G3",
+                  "label": "Velocity continuity at each retarget",
+                  "gate": "<= 1 % of the larger edge speed + 1 px/s",
+                  "unit": "ratio",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 5,
+                    "participant": "pill",
+                    "label": "tap-2",
+                    "detail": "analytic before {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0} after {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)"
+                  }
+                },
+                {
+                  "id": "G4",
+                  "label": "Spring fidelity: drawn edge against the independent spring oracle",
+                  "gate": "<= 0.05 px on every edge",
+                  "unit": "px",
+                  "value": 0.00006559903738434514,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 17,
+                    "participant": "pill",
+                    "edge": "right",
+                    "detail": "58 participant-frames"
+                  }
+                },
+                {
+                  "id": "G5",
+                  "label": "Settle exactness: rect against the layout box, and the pose",
+                  "gate": "<= 0.01 px; no pose declaration left",
+                  "unit": "px",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 53,
+                    "participant": "pill"
+                  },
+                  "detail": "1 settled participants"
+                },
+                {
+                  "id": "G6",
+                  "label": "Restoration of every owned inline declaration",
+                  "gate": "byte for byte the authored one",
+                  "unit": "declarations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "participant": "pill",
+                    "detail": "0 mismatches; 0 inline cssText difference(s) recorded as evidence"
+                  }
+                },
+                {
+                  "id": "G7",
+                  "label": "Reports: status, snapped set and diagnostics",
+                  "gate": "exactly as the scene script expects",
+                  "unit": "mismatches",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "label": "tap-1",
+                    "detail": "all reports match"
+                  }
+                },
+                {
+                  "id": "G13",
+                  "label": "Exact read counts per commit and zero steady-frame reads",
+                  "gate": "<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero",
+                  "unit": "excess reads",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "label": "tap-1",
+                    "detail": "tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
+                  },
+                  "detail": "exact computed reads tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
+                },
+                {
+                  "id": "G8",
+                  "label": "Real-clock frame script cost",
+                  "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
+                  "unit": "ms",
+                  "value": 0.3299999237060547,
+                  "pass": true,
+                  "worst": {
+                    "detail": "one sample per frame; g 0.0050 ms; 56 samples, 56 frames"
+                  }
+                },
+                {
+                  "id": "G9.probe",
+                  "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
+                  "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
+                  "unit": "ratio",
+                  "value": 6.833337306980108,
+                  "pass": true,
+                  "measured": true,
+                  "deciding": false,
+                  "detail": "1 participants, 1 movers; engine 0.205 ms / floor 0.030 ms"
+                }
+              ],
+              "shape": [
+                {
+                  "id": "shape.opacity",
+                  "label": "Crossfade layer opacity",
+                  "gate": "<= 1e-5 against the independent crossfade",
+                  "unit": "opacity",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no crossfade pair"
+                },
+                {
+                  "id": "shape.coverage",
+                  "label": "Crossfade source-over coverage",
+                  "gate": "|coverage - 1| <= 1e-5",
+                  "unit": "coverage",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no crossfade pair"
+                },
+                {
+                  "id": "shape.radius",
+                  "label": "Crossfade on-screen corner radius",
+                  "gate": "<= 0.03 px between both layers and the blend",
+                  "unit": "px",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no radius-blended pair"
+                },
+                {
+                  "id": "shape.pill-radius",
+                  "label": "Constant participant radius",
+                  "gate": "<= 0.01 px",
+                  "unit": "px",
+                  "value": 0.000001234815300676928,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 13,
+                    "participant": "pill"
+                  }
+                },
+                {
+                  "id": "shape.inert",
+                  "label": "Crossfade follower inert, lead focusable",
+                  "gate": "follower inert from the first crossfade frame, restored on reversal",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.focus",
+                  "label": "Focus is not inside a crossfade follower",
+                  "gate": "activeElement is never the follower participant",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.font",
+                  "label": "Computed font equality across the shared title pair",
+                  "gate": "identical computed font string",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.teardown",
+                  "label": "Teardown: no track, hold, clock frame request or pending frame",
+                  "gate": "all zero",
+                  "unit": "leftovers",
+                  "value": 0,
+                  "pass": true,
+                  "worst": {
+                    "detail": "tracks 0, holds 0, clock pending 0, clock size 0"
+                  }
+                }
+              ],
+              "real": {
+                "g": 0.004999876022338867,
+                "gSource": "reads",
+                "frames": 56,
+                "p95": 0.3299999237060547,
+                "longFrames": 0,
+                "pass": true
+              },
+              "summary": {
+                "observations": 59,
+                "commits": [
+                  {
+                    "label": "tap-1",
+                    "frame": 0,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-2",
+                    "frame": 5,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-3",
+                    "frame": 10,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-4",
+                    "frame": 15,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  }
+                ],
+                "reports": [
+                  {
+                    "label": "tap-1",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 6
+                  },
+                  {
+                    "label": "tap-2",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 11
+                  },
+                  {
+                    "label": "tap-3",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 16
+                  },
+                  {
+                    "label": "tap-4",
+                    "status": "ended",
+                    "snapped": [],
+                    "settledFrame": 52
+                  }
+                ],
+                "settleFrames": [
+                  53
+                ],
+                "steadyFrameReads": 0,
+                "final": {
+                  "tracks": 0,
+                  "holds": 0,
+                  "clockPending": 0,
+                  "clockSize": 0,
+                  "connected": [
+                    "pill"
+                  ],
+                  "diagnostics": []
+                }
+              },
+              "problems": []
+            },
+            {
+              "scene": "s-seg",
+              "run": 4,
+              "warmup": false,
+              "pass": true,
+              "costProbe": {
+                "participants": 1,
+                "movers": 1,
+                "engineMedian": 0.19999980926513672,
+                "floorMedian": 0.03500008583068848,
+                "ratio": 5.714266251592291
+              },
+              "metrics": [
+                {
+                  "id": "C1",
+                  "label": "Trace completeness against the scene contract",
+                  "gate": "required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric",
+                  "unit": "contract failures",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "detail": ""
+                  },
+                  "detail": "complete"
+                },
+                {
+                  "id": "G1",
+                  "label": "Oracle error: drawn rect against the independent oracle",
+                  "gate": "<= 0.05 px on every edge",
+                  "unit": "px",
+                  "value": 0.00006559903738434514,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 17,
+                    "participant": "pill",
+                    "edge": "right",
+                    "detail": "59 participant-frames"
+                  }
+                },
+                {
+                  "id": "G2",
+                  "label": "First-frame continuity against the last presented frame",
+                  "gate": "<= 0.05 px; <= 0.5 px only for the aged participant of that commit",
+                  "unit": "px",
+                  "value": 0.0000457763671875,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 10,
+                    "participant": "pill",
+                    "label": "tap-3",
+                    "detail": "fresh capture, gate 0.05 px"
+                  },
+                  "detail": "4 commit layers; 0 over their per-commit gate"
+                },
+                {
+                  "id": "G3",
+                  "label": "Velocity continuity at each retarget",
+                  "gate": "<= 1 % of the larger edge speed + 1 px/s",
+                  "unit": "ratio",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 5,
+                    "participant": "pill",
+                    "label": "tap-2",
+                    "detail": "analytic before {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0} after {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)"
+                  }
+                },
+                {
+                  "id": "G4",
+                  "label": "Spring fidelity: drawn edge against the independent spring oracle",
+                  "gate": "<= 0.05 px on every edge",
+                  "unit": "px",
+                  "value": 0.00006559903738434514,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 17,
+                    "participant": "pill",
+                    "edge": "right",
+                    "detail": "58 participant-frames"
+                  }
+                },
+                {
+                  "id": "G5",
+                  "label": "Settle exactness: rect against the layout box, and the pose",
+                  "gate": "<= 0.01 px; no pose declaration left",
+                  "unit": "px",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 53,
+                    "participant": "pill"
+                  },
+                  "detail": "1 settled participants"
+                },
+                {
+                  "id": "G6",
+                  "label": "Restoration of every owned inline declaration",
+                  "gate": "byte for byte the authored one",
+                  "unit": "declarations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "participant": "pill",
+                    "detail": "0 mismatches; 0 inline cssText difference(s) recorded as evidence"
+                  }
+                },
+                {
+                  "id": "G7",
+                  "label": "Reports: status, snapped set and diagnostics",
+                  "gate": "exactly as the scene script expects",
+                  "unit": "mismatches",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "label": "tap-1",
+                    "detail": "all reports match"
+                  }
+                },
+                {
+                  "id": "G13",
+                  "label": "Exact read counts per commit and zero steady-frame reads",
+                  "gate": "<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero",
+                  "unit": "excess reads",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "label": "tap-1",
+                    "detail": "tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
+                  },
+                  "detail": "exact computed reads tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
+                },
+                {
+                  "id": "G8",
+                  "label": "Real-clock frame script cost",
+                  "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
+                  "unit": "ms",
+                  "value": 0.30499982833862305,
+                  "pass": true,
+                  "worst": {
+                    "detail": "one sample per frame; g 0.0050 ms; 55 samples, 55 frames"
+                  }
+                },
+                {
+                  "id": "G9.probe",
+                  "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
+                  "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
+                  "unit": "ratio",
+                  "value": 5.714266251592291,
+                  "pass": true,
+                  "measured": true,
+                  "deciding": false,
+                  "detail": "1 participants, 1 movers; engine 0.200 ms / floor 0.035 ms"
+                }
+              ],
+              "shape": [
+                {
+                  "id": "shape.opacity",
+                  "label": "Crossfade layer opacity",
+                  "gate": "<= 1e-5 against the independent crossfade",
+                  "unit": "opacity",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no crossfade pair"
+                },
+                {
+                  "id": "shape.coverage",
+                  "label": "Crossfade source-over coverage",
+                  "gate": "|coverage - 1| <= 1e-5",
+                  "unit": "coverage",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no crossfade pair"
+                },
+                {
+                  "id": "shape.radius",
+                  "label": "Crossfade on-screen corner radius",
+                  "gate": "<= 0.03 px between both layers and the blend",
+                  "unit": "px",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no radius-blended pair"
+                },
+                {
+                  "id": "shape.pill-radius",
+                  "label": "Constant participant radius",
+                  "gate": "<= 0.01 px",
+                  "unit": "px",
+                  "value": 0.000001234815300676928,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 13,
+                    "participant": "pill"
+                  }
+                },
+                {
+                  "id": "shape.inert",
+                  "label": "Crossfade follower inert, lead focusable",
+                  "gate": "follower inert from the first crossfade frame, restored on reversal",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.focus",
+                  "label": "Focus is not inside a crossfade follower",
+                  "gate": "activeElement is never the follower participant",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.font",
+                  "label": "Computed font equality across the shared title pair",
+                  "gate": "identical computed font string",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.teardown",
+                  "label": "Teardown: no track, hold, clock frame request or pending frame",
+                  "gate": "all zero",
+                  "unit": "leftovers",
+                  "value": 0,
+                  "pass": true,
+                  "worst": {
+                    "detail": "tracks 0, holds 0, clock pending 0, clock size 0"
+                  }
+                }
+              ],
+              "real": {
+                "g": 0.004999876022338867,
+                "gSource": "reads",
+                "frames": 55,
+                "p95": 0.30499982833862305,
+                "longFrames": 0,
+                "pass": true
+              },
+              "summary": {
+                "observations": 59,
+                "commits": [
+                  {
+                    "label": "tap-1",
+                    "frame": 0,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-2",
+                    "frame": 5,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-3",
+                    "frame": 10,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  },
+                  {
+                    "label": "tap-4",
+                    "frame": 15,
+                    "rects": 2,
+                    "offsets": 2,
+                    "styles": 2,
+                    "frameReads": 0
+                  }
+                ],
+                "reports": [
+                  {
+                    "label": "tap-1",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 6
+                  },
+                  {
+                    "label": "tap-2",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 11
+                  },
+                  {
+                    "label": "tap-3",
+                    "status": "interrupted",
+                    "snapped": [],
+                    "settledFrame": 16
+                  },
+                  {
+                    "label": "tap-4",
+                    "status": "ended",
+                    "snapped": [],
+                    "settledFrame": 52
+                  }
+                ],
+                "settleFrames": [
+                  53
+                ],
+                "steadyFrameReads": 0,
+                "final": {
+                  "tracks": 0,
+                  "holds": 0,
+                  "clockPending": 0,
+                  "clockSize": 0,
+                  "connected": [
+                    "pill"
+                  ],
+                  "diagnostics": []
+                }
+              },
+              "problems": []
+            },
+            {
+              "scene": "s-seg",
+              "run": 5,
+              "warmup": false,
+              "pass": true,
+              "costProbe": {
+                "participants": 1,
+                "movers": 1,
+                "engineMedian": 0.18750011920928955,
+                "floorMedian": 0.029999971389770508,
+                "ratio": 6.250009934116936
+              },
+              "metrics": [
+                {
+                  "id": "C1",
+                  "label": "Trace completeness against the scene contract",
+                  "gate": "required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric",
+                  "unit": "contract failures",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "detail": ""
+                  },
+                  "detail": "complete"
+                },
+                {
+                  "id": "G1",
+                  "label": "Oracle error: drawn rect against the independent oracle",
+                  "gate": "<= 0.05 px on every edge",
+                  "unit": "px",
+                  "value": 0.00006559903738434514,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 17,
+                    "participant": "pill",
+                    "edge": "right",
+                    "detail": "59 participant-frames"
+                  }
+                },
+                {
+                  "id": "G2",
+                  "label": "First-frame continuity against the last presented frame",
+                  "gate": "<= 0.05 px; <= 0.5 px only for the aged participant of that commit",
+                  "unit": "px",
+                  "value": 0.0000457763671875,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 10,
+                    "participant": "pill",
+                    "label": "tap-3",
+                    "detail": "fresh capture, gate 0.05 px"
+                  },
+                  "detail": "4 commit layers; 0 over their per-commit gate"
+                },
+                {
+                  "id": "G3",
+                  "label": "Velocity continuity at each retarget",
+                  "gate": "<= 1 % of the larger edge speed + 1 px/s",
+                  "unit": "ratio",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 5,
+                    "participant": "pill",
+                    "label": "tap-2",
+                    "detail": "analytic before {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0} after {\"x\":631.6523350823729,\"y\":0,\"w\":0,\"h\":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)"
+                  }
+                },
+                {
+                  "id": "G4",
+                  "label": "Spring fidelity: drawn edge against the independent spring oracle",
+                  "gate": "<= 0.05 px on every edge",
+                  "unit": "px",
+                  "value": 0.00006559903738434514,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 17,
+                    "participant": "pill",
+                    "edge": "right",
+                    "detail": "58 participant-frames"
+                  }
+                },
+                {
+                  "id": "G5",
+                  "label": "Settle exactness: rect against the layout box, and the pose",
+                  "gate": "<= 0.01 px; no pose declaration left",
+                  "unit": "px",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 53,
+                    "participant": "pill"
+                  },
+                  "detail": "1 settled participants"
+                },
+                {
+                  "id": "G6",
+                  "label": "Restoration of every owned inline declaration",
+                  "gate": "byte for byte the authored one",
+                  "unit": "declarations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "participant": "pill",
+                    "detail": "0 mismatches; 0 inline cssText difference(s) recorded as evidence"
+                  }
+                },
+                {
+                  "id": "G7",
+                  "label": "Reports: status, snapped set and diagnostics",
+                  "gate": "exactly as the scene script expects",
+                  "unit": "mismatches",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "label": "tap-1",
+                    "detail": "all reports match"
+                  }
+                },
+                {
+                  "id": "G13",
+                  "label": "Exact read counts per commit and zero steady-frame reads",
+                  "gate": "<= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero",
+                  "unit": "excess reads",
+                  "value": 0,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "label": "tap-1",
+                    "detail": "tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
+                  },
+                  "detail": "exact computed reads tap-1 2/2, tap-2 2/2, tap-3 2/2, tap-4 2/2; steady frames read zero"
+                },
+                {
+                  "id": "G8",
+                  "label": "Real-clock frame script cost",
+                  "gate": "p95 <= 2 ms; no long frame (> 8 ms) after the commit frame",
+                  "unit": "ms",
+                  "value": 0.39499998092651367,
+                  "pass": true,
+                  "worst": {
+                    "detail": "one sample per frame; g 0.0050 ms; 56 samples, 56 frames"
+                  }
+                },
+                {
+                  "id": "G9.probe",
+                  "label": "Engine/floor commit ratio at scene N=1 (non-deciding)",
+                  "gate": "non-deciding; the named G9 gate is S-BULK at 1,000 participants",
+                  "unit": "ratio",
+                  "value": 6.250009934116936,
+                  "pass": true,
+                  "measured": true,
+                  "deciding": false,
+                  "detail": "1 participants, 1 movers; engine 0.188 ms / floor 0.030 ms"
+                }
+              ],
+              "shape": [
+                {
+                  "id": "shape.opacity",
+                  "label": "Crossfade layer opacity",
+                  "gate": "<= 1e-5 against the independent crossfade",
+                  "unit": "opacity",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no crossfade pair"
+                },
+                {
+                  "id": "shape.coverage",
+                  "label": "Crossfade source-over coverage",
+                  "gate": "|coverage - 1| <= 1e-5",
+                  "unit": "coverage",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no crossfade pair"
+                },
+                {
+                  "id": "shape.radius",
+                  "label": "Crossfade on-screen corner radius",
+                  "gate": "<= 0.03 px between both layers and the blend",
+                  "unit": "px",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {},
+                  "detail": "n/a: no radius-blended pair"
+                },
+                {
+                  "id": "shape.pill-radius",
+                  "label": "Constant participant radius",
+                  "gate": "<= 0.01 px",
+                  "unit": "px",
+                  "value": 0.000001234815300676928,
+                  "pass": true,
+                  "measured": true,
+                  "worst": {
+                    "frame": 13,
+                    "participant": "pill"
+                  }
+                },
+                {
+                  "id": "shape.inert",
+                  "label": "Crossfade follower inert, lead focusable",
+                  "gate": "follower inert from the first crossfade frame, restored on reversal",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.focus",
+                  "label": "Focus is not inside a crossfade follower",
+                  "gate": "activeElement is never the follower participant",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.font",
+                  "label": "Computed font equality across the shared title pair",
+                  "gate": "identical computed font string",
+                  "unit": "violations",
+                  "value": 0,
+                  "pass": true,
+                  "measured": false,
+                  "worst": {}
+                },
+                {
+                  "id": "shape.teardown",
+                  "label": "Teardown: no track, hold, clock frame request or pending frame",
+                  "gate": "all zero",
+                  "unit": "leftovers",
+                  "value": 0,
+                  "pass": true,
+                  "worst": {
+                    "detail": "tracks 0, holds 0, clock pending 0, clock size 0"
+                  }
+                }
+              ],
+              "real": {
+                "g": 0.004999876022338867,
+                "gSource": "reads",
+                "frames": 56,
+                "p95": 0.39499998092651367,
                 "longFrames": 0,
                 "pass": true
               },
@@ -2641,20 +2641,20 @@
   "selfTests": {
     "pass": true,
     "controls": [
-      "negative control G1: a 0.1 px offset fails the oracle error (3.152666ms)",
-      "negative control G2: a 0.1 px first-frame jump fails continuity (2.625375ms)",
-      "negative control G3: starting a retarget from rest fails velocity continuity (2.268625ms)",
-      "negative control G4: a 0.1 px spring displacement fails spring fidelity (1.551584ms)",
-      "negative control G5: a leftover pose and a 0.02 px settle error fail (1.617584ms)",
-      "negative control G6: a leftover declaration fails restoration (1.431791ms)",
-      "negative control G7: a wrong status or a wrong snapped set fails reports (3.187833ms)",
-      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.276417ms)",
-      "negative control G9: a floor with an extra read fails its audit (0.292833ms)",
-      "negative control G10 and G11: a p95 above 2 ms or 2x floor fails (0.178417ms)",
-      "negative control G12: 0.11 ms per held element fails (0.087833ms)",
-      "negative control G13: an extra rect or a steady-frame read fails (2.74375ms)",
-      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.125833ms)",
-      "shape negative controls: opacity, coverage, radius, inert and font fail (86.218583ms)"
+      "negative control G1: a 0.1 px offset fails the oracle error (2.323125ms)",
+      "negative control G2: a 0.1 px first-frame jump fails continuity (2.452834ms)",
+      "negative control G3: starting a retarget from rest fails velocity continuity (2.130125ms)",
+      "negative control G4: a 0.1 px spring displacement fails spring fidelity (1.688792ms)",
+      "negative control G5: a leftover pose and a 0.02 px settle error fail (1.630416ms)",
+      "negative control G6: a leftover declaration fails restoration (1.432ms)",
+      "negative control G7: a wrong status or a wrong snapped set fails reports (2.78275ms)",
+      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.182625ms)",
+      "negative control G9: a floor with an extra read fails its audit (0.231ms)",
+      "negative control G10 and G11: a p95 above 2 ms or 2x floor fails (0.140042ms)",
+      "negative control G12: 0.11 ms per held element fails (0.081166ms)",
+      "negative control G13: an extra rect or a steady-frame read fails (2.723125ms)",
+      "negative control G14: a load or build mismatch is advisory, not a frame gate (0.1255ms)",
+      "shape negative controls: opacity, coverage, radius, inert and font fail (84.741875ms)"
     ],
     "files": [
       "bench/layout/oracle.test.ts",

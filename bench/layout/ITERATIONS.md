@@ -589,39 +589,57 @@ not a certification claim.
 
 No gate or tolerance was changed in this iteration.
 
-## Iteration 4 — D10 sustained gate and H17 review fixes
+## Iteration 4 — D10 sustained gate and H17/H17b review fixes
 
-- Branch `helper/h17`; code commit `1cec4d6` (parent `f8b7223` fixes H17-01…H17-04
-  on `d234350`). No authority, scene, tolerance, row or `knownFailure` changed.
+- Branch `helper/h17`; final code commit `6dd04d2` (`4994308` fixes H17b
+  S1/S2; `1cec4d6` implements D10; `f8b7223` fixes H17-01…H17-04 on
+  `d234350`). No authority, scene, tolerance, row or `knownFailure` changed.
 - Owner decision D10 is implemented: Chromium G11 is
   `median of 5 per-run p95(engine commits) / p95(floor commits) <= 2`.
   The floor is the same audited required-work replica (1,000 participants,
   300 movers) run at 60 Hz in the same page/process, 5 warm-ups + 300 samples.
-  G9 remains the whole-commit median ratio; G10 remains the absolute
-  non-commit p95 <= 2 ms. G11 floor audit is exact.
-- Reports (`bench/layout/iteration-3/`): G9 1.692× unscrolled / 1.742× scrolled
-  (pass), G10 0.935 ms (pass), G13 exact; G11 **2.425× FAIL** (engine p95
-  7.3 ms / floor p95 3.0 ms; per-run 2.437/2.456/2.381/2.294/2.425).
-  Load 2.90, so cost is advisory. The sustained path needs further work to
-  reach 2×; the D10 gate itself is implemented and does not use the retired
-  absolute threshold.
-- WebKit: G10 now uses the §11.5 coarse-timer 20-frame interval (30 samples,
-  ±0.05 ms per sample) and is deciding: **0.300 ms p95, pass**. G9/G11 remain
-  **BLOCK**: a 20-commit interval cannot be timed without including frame idle,
-  changing the from-rest G9 work, or breaking the 60 Hz G11 cadence; a p95 of
-  15 batch means is not a p95 of 300 commits. No WebKit ratio is claimed. The
-  WebKit cost report was measured at load 4.73 (`valid: false`).
+  G9 remains the whole-commit ratio; G10 remains the absolute non-commit
+  p95 <= 2 ms. G11 floor audit is exact.
+- Final reports (`bench/layout/iteration-3/`, sourceRevision `6dd04d2`):
+  G9 1.880× unscrolled / 1.898× scrolled (pass), G10 0.330 ms (pass), G13
+  exact; G11 **2.624× FAIL** (per-run 3.109/2.589/2.427/2.624/2.857; engine
+  p95 6.5–7.2 ms / floor p95 2.2–3.0 ms). Chromium load 2.84, so cost is
+  advisory. The sustained path needs further work to reach 2×; the D10 gate
+  itself is implemented and does not use the retired absolute threshold.
+- WebKit: G10 uses a **real-clock 20-frame batch** (one real rAF tick starts
+  each batch; 20 engine frame callbacks run back-to-back under one
+  `performance.now()` pair; 30 samples; ±g/20 = ±0.05 ms) and is deciding:
+  **0.250 ms p95, pass**. G9/G11 remain **BLOCK**: `pass:false`,
+  `deciding:false`, no gate value; a 20-commit interval cannot be timed without
+  including frame idle, changing the from-rest G9 work, or breaking the 60 Hz
+  G11 cadence. No WebKit ratio is claimed. WebKit cost load 2.87
+  (`valid: false`).
 - H17 review fixes: connectedness restored in the tree cache (H17-01);
   quiescent parents with participant children are no longer skipped (H17-02);
   flat-parent/shadow-host cache validation (H17-03); fixed capture order limit
   plus an `added` set for out-of-order `captureAdded` (H17-04); reports record
   `sourceRevision` (H17-06); floor is per-run, not ad-hoc (H17-07); exact
   capture/flush prose corrected (H17-09).
+- H17b review fixes: cache reuse is verified in one pass instead of consuming
+  the structural flag before `sameParticipantTree` (S1-1); blocked G9/G11 are
+  `pass:false`/`deciding:false` with no gate value (S1-2); G10 uses a real-clock
+  batch and G9/G11 stay BLOCK (S2-1); the measured-jump shortcut is disabled for
+  scroll, size change, nested parents, retained leads and shared ids (S2-2);
+  ratio aggregation is the literal median-of-five with blocked/missing/
+  non-finite failures (S2-3); shadow ancestry is memoized and closed roots are
+  covered (S2-5); G11 stays open (S2-6).
 - Regression tests: `H17-01` detached-wrapper zero reads/no stale, `H17-02`
   anchored child first frame 20.5, `H17-03` shadow host listener, `H17-04`
-  out-of-order late reads. Full layout 449/449, browser 223/223, unit coverage
-  1,896/1,896 at the final code.
-- H17-05: no quiet (<1.0) run was possible; load 2.90 makes cost advisory.
-  Reports carry the exact load and `sourceRevision`.
+  out-of-order late reads, `S1-1` attach-shadow/reparent between capture and
+  flush, `S2-2` shortcut conservative cases, `S2-5` closed root. Full layout
+  457/457, browser 223/223, unit coverage 1,904/1,904 at the final code.
+- H15 scenes (`s-stack`, `s-photo`, `s-island`, `s-acc`, `s-insert`,
+  `s-delete`) are not present in this worktree and are **open/unrun**. Only
+  H14 S-CARD, S-SEG and the S-BULK cost shapes were run; no all-scene or
+  all-green claim is made.
+- H17-05: no quiet (<1.0) run was possible; loads 2.84 (Chromium) and 2.87
+  (WebKit) keep cost advisory. Reports carry the exact load and
+  `sourceRevision`. G11 remains open at 2.624×; there is no performance-complete
+  claim.
 
 No gate or tolerance was weakened.
