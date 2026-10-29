@@ -7,7 +7,7 @@
  * cross-origin isolated, so `performance.now()` has the §11.5 resolution.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -299,14 +299,18 @@ const SCENE_TIMEOUT_MS = 300_000
 
 const BENCH_STARTED_AT = performance.now()
 
-/** Unbuffered stage progress, so a hang is visible in a piped log. */
+/**
+ * Unbuffered stage progress, so a hang is visible in a piped log. `writeSync`
+ * matters: a long synchronous scoring phase blocks the event loop, and a
+ * queued `process.stdout.write` would stay invisible until that phase ended.
+ */
 function progress(stage: string): void {
     const now = new Date()
     const clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
         .map((part) => String(part).padStart(2, '0'))
         .join(':')
     const elapsed = ((performance.now() - BENCH_STARTED_AT) / 1000).toFixed(1)
-    process.stdout.write(`[${clock} +${elapsed}s] ${stage}\n`)
+    writeSync(1, `[${clock} +${elapsed}s] ${stage}\n`)
 }
 
 /* ───────────────────────── browsers and pages ───────────────────────── */
@@ -672,7 +676,7 @@ async function runManual(
                 }
             ),
             SCENE_TIMEOUT_MS,
-            `${stage}: manual ${label}`
+            `${stage} ${label}`
         )) as SceneTrace
         progress(`${stage}: manual ${label} ok`)
         const variant = options.variant
@@ -725,7 +729,7 @@ async function runReal(
                 { scene, variant }
             ),
             SCENE_TIMEOUT_MS,
-            `${stage}: real ${label}`
+            `${stage} ${label}`
         )) as RealTrace
         progress(`${stage}: real ${label} ok`)
         return { trace, problems: opened.problems }
@@ -769,7 +773,7 @@ async function runSceneCostProbe(
                 return bench.runSceneCostProbe(scene)
             }, scene),
             SCENE_TIMEOUT_MS,
-            `${stage}: probe ${scene}`
+            `${stage} ${scene}`
         )) as SceneCostProbeResult
         progress(`${stage}: probe ${scene} ok`)
         return result
@@ -801,7 +805,7 @@ async function runCost(
                 return bench.runCost()
             }),
             SCENE_TIMEOUT_MS,
-            `${stage}: cost`
+            stage
         )) as CostTrace
         progress(`${stage}: evaluate cost ok`)
         return { trace, problems: opened.problems }
@@ -843,7 +847,7 @@ async function runHeldAudit(
                 return bench.runHeldAudit(extraRead)
             }, extraRead),
             SCENE_TIMEOUT_MS,
-            `${stage}: held audit`
+            stage
         )) as {
             frames: number
             rects: number
@@ -885,7 +889,7 @@ async function runFloorAudit(
                 return bench.runFloorAudit(extraRead)
             }, extraRead),
             SCENE_TIMEOUT_MS,
-            `${stage}: floor audit`
+            stage
         )) as FloorAuditTrace
         progress(`${stage}: floor audit ok`)
         return trace
@@ -1637,6 +1641,7 @@ async function browserControls(
                         ...(spec ? { variant: spec } : {}),
                     }
                 )
+                progress(`${engine} controls: score primary ${key}`)
                 primaryScores.set(
                     key,
                     scoreScene(
@@ -1678,6 +1683,7 @@ async function browserControls(
                     }
                 )
                 const plan = planFor(run.trace.scene, run.trace, spec)
+                progress(`${engine} controls: score ${control.name}`)
                 const score = scoreScene(plan, run.trace)
                 const finding = [...score.metrics, ...score.shape].find(
                     (entry) => entry.id === control.target
