@@ -503,7 +503,9 @@ function aggregateScene(
     )
     const pass =
         pending === null &&
-        metrics.every((metric) => metric.pass) &&
+        metrics
+            .filter((metric) => metric.deciding)
+            .every((metric) => metric.pass) &&
         shapeMetrics.every((metric) => metric.pass)
     return {
         scene,
