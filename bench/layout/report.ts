@@ -40,6 +40,8 @@ export interface RunSceneReport {
         readonly p95: number
         readonly longFrames: number
         readonly pass: boolean
+        /** A 1 ms-quantized WebKit S-BULK G8 is BLOCK, not a measured pass. */
+        readonly blocked?: boolean | undefined
     }
     readonly summary: {
         readonly observations: number

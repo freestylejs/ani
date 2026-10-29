@@ -442,7 +442,8 @@ export interface ScenePlan {
     /**
      * A scene whose script unmounts its only participant at the end. The
      * removal is proven by a post-removal restoration snapshot instead of a
-     * final connected participant (S-SHEET).
+     * final connected participant. Narrow scope: only S-SHEET sets this; no
+     * other scene may use it, and the requiredRestorations proof must exist.
      */
     readonly allowEmptyFinal?: boolean | undefined
 }

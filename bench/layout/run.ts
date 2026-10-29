@@ -1319,7 +1319,20 @@ function sceneOutcome(
     const plan = planFor(manual.scene, manual)
     const score = scoreScene(plan, manual)
     const allProblems = [...problems, ...realTwinProblems(real)]
-    const g8 = realClockGate(real.frameCosts, real.g)
+    const g8Raw = realClockGate(real.frameCosts, real.g)
+    // S-BULK WebKit's p95 2.000 ms is exactly one 1 ms timer tick: it is not
+    // a measured G8 pass. The §11.5 single-interval 20-frame mean is not
+    // available in this protocol, so the row is BLOCK/limitation.
+    const g8Blocked = manual.scene === 's-bulk' && real.g > 0.05
+    const g8: MetricFinding = g8Blocked
+        ? {
+              ...g8Raw,
+              blocked: true,
+              deciding: true,
+              pass: false,
+              detail: `${g8Raw.detail ?? ''}; WebKit g ${real.g.toFixed(4)} ms: 1 ms-quantized raw samples; the §11.5 20-frame mean is not claimed; G8 is BLOCK/limitation, not a measured pass`,
+          }
+        : g8Raw
     const longFrames = real.frameCosts.filter(
         (frame) => !frame.commit && frame.ms > 8
     ).length
@@ -1390,9 +1403,12 @@ function sceneOutcome(
             (metric) => metric.deciding !== false && metric.blocked !== true
         )
         .every((metric) => metric.pass)
+    // A BLOCK G8 does not fail the run on its quantized raw value; it blocks
+    // the scene through blockedReasons instead.
+    const g8PassForRun = g8Blocked ? true : g8Raw.pass
     const pass =
         score.pass &&
-        g8.pass &&
+        g8PassForRun &&
         addedPass &&
         allProblems.length === 0 &&
         manual.final.tracks === 0 &&
@@ -1428,7 +1444,8 @@ function sceneOutcome(
                 frames: real.frameCosts.length,
                 p95: g8.value,
                 longFrames,
-                pass: g8.pass,
+                pass: g8Raw.pass && !g8Blocked,
+                blocked: g8Blocked,
             },
             summary: {
                 observations: manual.observations.length,
@@ -1736,11 +1753,32 @@ async function main(): Promise<number> {
     const certificationEngines = engineReports.map((engine) => ({
         engine: engine.engine,
         launchError: engine.launchError,
-        scenes: engine.scenes.map((scene) => ({
-            scene: scene.scene,
-            status: scene.status,
-            blockedReasons: scene.blockedReasons,
-        })),
+        scenes: engine.scenes.map((scene) => {
+            const failedMetrics = [...scene.metrics, ...scene.shape]
+                .filter(
+                    (metric) =>
+                        metric.id !== 'RUN' &&
+                        metric.deciding &&
+                        !metric.blocked &&
+                        !metric.pass
+                )
+                .map(
+                    (metric) =>
+                        `${metric.id} ${Number.isFinite(metric.median) ? metric.median.toFixed(3) : 'n/a'}`
+                )
+            const runMetric = scene.metrics.find(
+                (metric) => metric.id === 'RUN'
+            )
+            if (runMetric && !runMetric.pass) {
+                failedMetrics.push(`RUN ${runMetric.worst?.detail ?? 'failed'}`)
+            }
+            return {
+                scene: scene.scene,
+                status: scene.status,
+                blockedReasons: scene.blockedReasons,
+                failedMetrics,
+            }
+        }),
         cost: engine.cost
             ? {
                   status: engine.cost.status,

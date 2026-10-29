@@ -10,6 +10,8 @@ export interface CertificationScene {
     readonly scene: string
     readonly status: 'pass' | 'fail' | 'pending' | 'blocked'
     readonly blockedReasons?: readonly string[] | undefined
+    /** Deciding, non-blocked metric misses with their medians. */
+    readonly failedMetrics?: readonly string[] | undefined
 }
 
 export interface CertificationCost {
@@ -152,7 +154,7 @@ export function evaluateCertification(
             if (!result) reasons.push(`${engineName} scene ${scene} missing`)
             else if (result.status !== 'pass')
                 reasons.push(
-                    `${engineName} scene ${scene} ${result.status}${(result.blockedReasons ?? []).length > 0 ? ` (${(result.blockedReasons ?? []).join('; ')})` : ''}`
+                    `${engineName} scene ${scene} ${result.status}${(result.failedMetrics ?? []).length > 0 ? ` (failed ${(result.failedMetrics ?? []).join(', ')})` : ''}${(result.blockedReasons ?? []).length > 0 ? ` (blocked ${(result.blockedReasons ?? []).join('; ')})` : ''}`
                 )
         }
         if (!engine.cost) reasons.push(`${engineName} S-BULK cost missing`)
