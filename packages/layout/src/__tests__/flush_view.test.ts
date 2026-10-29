@@ -851,3 +851,40 @@ describe('the presented velocity v at t_k (§4.2 Velocity, §5.7)', () => {
         expectBox(actual, expected, 0.02)
     })
 })
+
+describe('H17 regressions', () => {
+    it('H17-02: a sub-threshold top-level parent move keeps an anchored child exact', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const parent = element(box(0, 0, 100, 40))
+        const child = element(box(20, 10, 20, 20), parent)
+        group.add(parent, { layout: true })
+        group.add(child, {
+            layout: 'position',
+            layoutAnchor: { x: 0.5, y: 0.5 },
+        })
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        // The parent moves less than `threshold`; the child starts a new
+        // anchored track in the same commit. The parent has a participant
+        // child, so it must not become a quiescent null plan slot.
+        group.capture()
+        model.place(parent, box(0.5, 0, 100, 40))
+        model.place(child, box(50.5, 10, 20, 20))
+        const report = group.flush()
+        const frames: Box[] = []
+        for (let i = 0; i < 6; i++) {
+            mc.frame()
+            frames.push(model.rect(child))
+        }
+        // The parent's 0.5 px move is part of the anchored offset at t = 0;
+        // losing the parent plan made the child draw 20 instead of 20.5.
+        expect(frames[0]!.x).toBeCloseTo(20.5, 9)
+        mc.frames(FRAMES)
+        await report
+        expectBox(model.rect(child), model.layout(child), 1e-9)
+        group.dispose()
+    })
+})

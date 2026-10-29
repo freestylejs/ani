@@ -316,6 +316,8 @@ interface Participant {
     treeFlat: HTMLElement | null
     /** Its index in the current frame, or -1 when it has no drive. */
     frameIndex: number
+    /** Reusable frame node for this participant (one allocation per drive). */
+    frameNode: FrameNode | null
 }
 
 /**
@@ -446,8 +448,10 @@ interface Capture {
     disarm: () => void
     /** B per connected participant: the raw rect, nothing divided out. */
     readonly rects: Map<Participant, Box>
-    /** Every participant registered at capture: registration order at or below this. */
-    registeredThrough: number
+    /** Registration order at capture; later mounts are in `added`. */
+    readonly registeredThrough: number
+    /** Participants registered after capture that were given a B by captureAdded. */
+    readonly added: Set<Participant>
     /** Participants that failed the support check, with their subtrees. */
     readonly unsupported: Map<Participant, string>
     /** Shared `radius` participants' on-screen corner radii at B. */
@@ -478,6 +482,7 @@ interface Capture {
 }
 
 type Matrix = Geometry['matrix']
+type Mutable<T> = { -readonly [K in keyof T]: T[K] }
 const IDENTITY_MATRIX: Matrix = { a: 1, d: 1, e: 0, f: 0 }
 
 /**
@@ -491,14 +496,17 @@ type StyleReader = ((i: number) => CSSStyleDeclaration) & {
 
 interface FrameNode {
     readonly p: Participant
-    readonly parent: number
-    readonly geometry: Geometry
+    parent: number
+    geometry: Geometry
     /**
      * The presence matrices of its participant ancestors at the flush that
      * planned `geometry`: its track lives in that flush's visual space, so a
      * layer changed since then draws over it (§3.1, §11).
      */
-    readonly ancestry: ReadonlyMap<Participant, Matrix>
+    ancestry: ReadonlyMap<Participant, Matrix>
+    /** Reused per-node solve input/output objects (one allocation per drive). */
+    solveNode: SolveNode | null
+    solved: Solved | null
 }
 
 /** One participant-tree pass (§4.6): the list, its parents and flat parents. */
@@ -1602,7 +1610,8 @@ export function createLayoutGroup(
         const index = simple ? null : new Map<Participant, number>()
         if (index) at.forEach((node, i) => index.set(node.p, i))
         const layers = layersOf(at)
-        return at.map((node, i) => {
+        const out: SolveNode[] = []
+        at.forEach((node, i) => {
             const d = node.p.drive
             const g = node.geometry
             const live = d !== null && d.kind !== 'held'
@@ -1618,45 +1627,46 @@ export function createLayoutGroup(
                           law: d.fade.law,
                       }
                     : null
-            return {
-                parent: node.parent,
-                a: g.a,
-                box: g.box,
-                ox: g.ox,
-                oy: g.oy,
-                fx: g.fx,
-                fy: g.fy,
-                inner: g.inner,
-                track:
-                    live && d.kind === 'track' && !d.timeline ? d.track : null,
-                elapsed: d?.elapsed ?? 0,
-                posed:
-                    live && d.kind === 'track' && d.timeline
-                        ? timelinePose(d.timeline, tick, g.ox, g.oy)
-                        : null,
-                follow:
-                    live && d.kind === 'follow' && d.lead
-                        ? (index?.get(d.lead) ?? -1)
-                        : -1,
-                fade,
-                radius: live && ownsRadius(node.p.options) ? g.radius : null,
-                radiusBlend: (() => {
-                    if (!live || !ownsRadius(node.p.options) || !d.radiusBlend)
-                        return null
-                    const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
-                    const track = leadDrive?.track
-                    if (!track) return null
-                    return {
-                        ...d.radiusBlend,
-                        track,
-                        elapsed: leadDrive.elapsed,
-                    }
-                })(),
-                layers: layers[i] ?? null,
-                override: held ? heldOverride(hold, node.p) : null,
-                ride: isLiveHold(ride) ? (index?.get(ride.owner) ?? -1) : -1,
+            const s = (node.solveNode ??= {} as SolveNode) as Mutable<SolveNode>
+            s.parent = node.parent
+            s.a = g.a
+            s.box = g.box
+            s.ox = g.ox
+            s.oy = g.oy
+            s.fx = g.fx
+            s.fy = g.fy
+            s.inner = g.inner
+            s.track = live && d.kind === 'track' && !d.timeline ? d.track : null
+            s.elapsed = d?.elapsed ?? 0
+            s.posed =
+                live && d.kind === 'track' && d.timeline
+                    ? timelinePose(d.timeline, tick, g.ox, g.oy)
+                    : null
+            s.follow =
+                live && d.kind === 'follow' && d.lead
+                    ? (index?.get(d.lead) ?? -1)
+                    : -1
+            s.fade = fade
+            s.radius = live && ownsRadius(node.p.options) ? g.radius : null
+            if (!live || !ownsRadius(node.p.options) || !d.radiusBlend) {
+                s.radiusBlend = null
+            } else {
+                const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
+                const track = leadDrive?.track
+                s.radiusBlend = track
+                    ? {
+                          ...d.radiusBlend,
+                          track,
+                          elapsed: leadDrive.elapsed,
+                      }
+                    : null
             }
+            s.layers = layers[i] ?? null
+            s.override = held ? heldOverride(hold, node.p) : null
+            s.ride = isLiveHold(ride) ? (index?.get(ride.owner) ?? -1) : -1
+            out.push(s)
         })
+        return out
     }
 
     function writeValue(
@@ -2300,6 +2310,8 @@ export function createLayoutGroup(
                             : -1,
                     geometry: was.geometry,
                     ancestry: was.ancestry,
+                    solveNode: was.solveNode,
+                    solved: was.solved,
                 }
             }
             const ancestry = new Map<Participant, Matrix>()
@@ -2313,6 +2325,8 @@ export function createLayoutGroup(
                     q.parent && index.has(q.parent) ? index.get(q.parent)! : -1,
                 geometry: q.geometry!,
                 ancestry: ancestry.size > 0 ? ancestry : NO_ANCESTRY,
+                solveNode: null,
+                solved: null,
             }
         })
     }
@@ -3487,7 +3501,14 @@ export function createLayoutGroup(
                 d.release = null
             }
         }
-        const solved = solve(solveNodes(frame))
+        const solveInput = solveNodes(frame)
+        const solved = solve(
+            solveInput,
+            frame.map((node) => node.solved)
+        )
+        frame.forEach((node, i) => {
+            node.solved = solved[i]!
+        })
         // the held read compares its next rect with the box this solve wrote
         frame.forEach((node, i) => {
             const hold = node.p.hold
@@ -3690,6 +3711,28 @@ export function createLayoutGroup(
      * ancestor container changes the nearest participant of the distinct flat
      * parent it contains and invalidates the pass.
      */
+    /** Registry order/connection only, for a pass the capture already verified. */
+    function sameRegistryList(previous: ParticipantTree): boolean {
+        if (registry.size !== previous.list.length) return false
+        let i = 0
+        for (const p of registry.values()) {
+            if (p !== previous.list[i] || !p.element.isConnected) return false
+            i += 1
+        }
+        return true
+    }
+
+    /** Whether a shadow root sits on an element's flat-ancestor chain (cache invalidation). */
+    function shadowInAncestry(first: Node | null, tree: FlatTree): boolean {
+        let node = first
+        for (let depth = 0; node && depth < MAX_SHADOW_DEPTH; depth++) {
+            const host = node as Element
+            if (host.shadowRoot !== null || roots.has(host)) return true
+            node = flatParent(node, tree)
+        }
+        return false
+    }
+
     function sameParticipantTree(previous: ParticipantTree): boolean {
         if (roots.size !== 0 || chainRoots.size !== 0) return false
         if (registry.size !== previous.list.length) return false
@@ -3697,20 +3740,26 @@ export function createLayoutGroup(
         for (const p of registry.values()) {
             if (
                 p !== previous.list[i] ||
-                p.roots.length !== 0 ||
-                // an ancestor that just gained a shadow root can slot this
-                // element without a child-list record on the document
-                ((p.element as Partial<Slottable>).assignedSlot ?? null) !==
-                    null
+                !p.element.isConnected ||
+                p.roots.length !== 0
+            ) {
+                return false
+            }
+            // H17-03: an ancestor that just gained a shadow root can slot this
+            // element without a child-list record on the document; the flat
+            // parent and the ancestry check both invalidate that cache.
+            const first = flatParent(p.element, previous.tree)
+            if (
+                first !== previous.flat[i] ||
+                shadowInAncestry(first, previous.tree)
             ) {
                 return false
             }
             i += 1
         }
         // No observed child-list or slot/name change since the pass: every
-        // flat parent and every nearest participant ancestor is unchanged.
-        // `style` writes (the engine's own poses, a scene's layout) are not
-        // structural and are deliberately outside the filter.
+        // nearest participant ancestor is unchanged. `style` writes (the
+        // engine's own poses, a scene's layout) are not structural.
         if (!structureChanged()) return true
         const above = new Map<Node, Participant | null>()
         const checked = new Set<HTMLElement>()
@@ -3766,9 +3815,10 @@ export function createLayoutGroup(
     }
 
     function participantTree(
-        previous?: ParticipantTree | null
+        previous?: ParticipantTree | null,
+        verified = false
     ): ParticipantTree {
-        if (previous && sameParticipantTree(previous)) {
+        if (previous && (verified || sameParticipantTree(previous))) {
             lastTree = previous
             syncListeners()
             return previous
@@ -4058,6 +4108,7 @@ export function createLayoutGroup(
         // declaration keeps its §4.4 path
         if (
             p.order <= capture.registeredThrough ||
+            capture.added.has(p) ||
             presenceOf(element) !== undefined
         )
             return
@@ -4065,7 +4116,7 @@ export function createLayoutGroup(
         // mount takes no B and the flush snaps the whole scope (N2)
         if (connectedParticipants().length > maxParticipants) return
         capture.rects.set(p, viewRect(element))
-        capture.registeredThrough = p.order
+        capture.added.add(p)
         capture.support = null
         stats.rects += 1
     }
@@ -4092,6 +4143,7 @@ export function createLayoutGroup(
                 disarm: noop,
                 rects: new Map(),
                 registeredThrough: sequence,
+                added: new Set(),
                 unsupported: new Map(),
                 radius: new Map(),
                 engine: {
@@ -4206,6 +4258,7 @@ export function createLayoutGroup(
             disarm: noop,
             rects: presentedRects,
             registeredThrough: sequence,
+            added: new Set(),
             unsupported: failing,
             radius,
             engine,
@@ -4296,7 +4349,22 @@ export function createLayoutGroup(
         dpr: number
     ): { geometry: Geometry; full: Map2 } {
         const atTop = isIdentityMap(parentFull) && isIdentityMap(parentRest)
-        const local = atTop ? rect : mapBox(invert(parentFull), rect)
+        const translated =
+            !atTop &&
+            parentFull.x.k === 1 &&
+            parentFull.y.k === 1 &&
+            parentRest.x.k === 1 &&
+            parentRest.y.k === 1
+        const local = atTop
+            ? rect
+            : translated
+              ? {
+                    x: rect.x - parentFull.x.b,
+                    y: rect.y - parentFull.y.b,
+                    w: rect.w,
+                    h: rect.h,
+                }
+              : mapBox(invert(parentFull), rect)
         let unsupported = m.unsupported
         const kx = m.scale[0] * m.matrix.a
         const ky = m.scale[1] * m.matrix.d
@@ -4316,7 +4384,20 @@ export function createLayoutGroup(
         }
         const css = unmapOwn(local, own)
         const ownMapped = ownMap(css, own)
-        const full = atTop ? ownMapped : compose(parentFull, ownMapped)
+        const full = atTop
+            ? ownMapped
+            : translated
+              ? {
+                    x: {
+                        k: ownMapped.x.k,
+                        b: ownMapped.x.b + parentFull.x.b,
+                    },
+                    y: {
+                        k: ownMapped.y.k,
+                        b: ownMapped.y.b + parentFull.y.b,
+                    },
+                }
+              : compose(parentFull, ownMapped)
         const authored: Authored = p.drive?.authored ?? {
             tx: resolveLen(m.translate[0], css.w),
             ty: resolveLen(m.translate[1], css.h),
@@ -4336,7 +4417,14 @@ export function createLayoutGroup(
             oy
         )
         const box = mapBox(inner, css)
-        const rest = atTop ? inner : compose(parentRest, inner)
+        const rest = atTop
+            ? inner
+            : translated
+              ? {
+                    x: { k: inner.x.k, b: inner.x.b + parentRest.x.b },
+                    y: { k: inner.y.k, b: inner.y.b + parentRest.y.b },
+                }
+              : compose(parentRest, inner)
         let radius: number[] | null = null
         if (m.radius) {
             radius = m.radius.map((len: Len, i) =>
@@ -4345,7 +4433,16 @@ export function createLayoutGroup(
         }
         return {
             geometry: {
-                a: atTop ? box : mapBox(parentRest, box),
+                a: atTop
+                    ? box
+                    : translated
+                      ? {
+                            x: box.x + parentRest.x.b,
+                            y: box.y + parentRest.y.b,
+                            w: box.w,
+                            h: box.h,
+                        }
+                      : mapBox(parentRest, box),
                 box,
                 ox,
                 oy,
@@ -4613,7 +4710,17 @@ export function createLayoutGroup(
                     adoptAuthored(p.element, p.drive.saved, p.drive.written)
                 } else settle(p, true)
             }
-        const { list, parents, index, flat, tree } = participantTree(cap?.tree)
+        const reuseVerified =
+            cap?.tree !== null &&
+            cap?.tree !== undefined &&
+            roots.size === 0 &&
+            chainRoots.size === 0 &&
+            sameRegistryList(cap.tree) &&
+            !structureChanged()
+        const { list, parents, index, flat, tree } = participantTree(
+            cap?.tree,
+            reuseVerified
+        )
         participants = list.length
         if (list.length === 0) {
             frame = []
@@ -4672,7 +4779,8 @@ export function createLayoutGroup(
             if (p.drive !== null) anyDrive = true
             const parent = parents[i]!
             const registered =
-                fresh !== null && p.order <= fresh.registeredThrough
+                fresh !== null &&
+                (p.order <= fresh.registeredThrough || fresh.added.has(p))
             const b = fresh?.rects.get(p) ?? null
             // a participant that mounts under a presence enter is animated by
             // that enter; layout has no B and must not add a stale report
@@ -4857,6 +4965,66 @@ export function createLayoutGroup(
         if (measured) carryRates(index, geometry, velocity)
 
         /**
+         * A measured jump of at least `threshold` on every running track
+         * proves the keep test fails: with no presence layer and no anchor, the
+         * new A cannot equal the presented layout box. In that case the
+         * presentation maps, `L_k` recovery and keep-path machinery are not
+         * needed; every track retargets from its measured B. This is exact for
+         * the same reason `keepPath` says 'retarget' for the measured jump.
+         */
+        let skipsKeeps = false
+        if (fresh && frame.length > 0 && !stale) {
+            skipsKeeps = true
+            for (const node of frame) {
+                const p = node.p
+                const i = index.get(p)
+                const d = p.drive
+                const b = i === undefined ? null : (fresh.rects.get(p) ?? null)
+                if (
+                    i === undefined ||
+                    b === null ||
+                    unmeasured[i] ||
+                    node.ancestry.size !== 0 ||
+                    p.hold !== null ||
+                    p.ride !== null ||
+                    d === null ||
+                    d.kind !== 'track' ||
+                    d.timeline !== null ||
+                    d.fade !== null ||
+                    d.radiusBlend !== null ||
+                    d.lead !== null ||
+                    d.track === null ||
+                    d.track.anchor !== null
+                ) {
+                    skipsKeeps = false
+                    break
+                }
+                const r = rects[i]!
+                const pose = engine.poses.get(p) ?? IDENTITY_POSE
+                let ancestorsScaled = false
+                for (let k = node.parent; k >= 0; k = frame[k]!.parent) {
+                    const ap = engine.poses.get(frame[k]!.p) ?? IDENTITY_POSE
+                    if (ap.sx !== 1 || ap.sy !== 1) {
+                        ancestorsScaled = true
+                        break
+                    }
+                }
+                if (
+                    pose.sx !== 1 ||
+                    pose.sy !== 1 ||
+                    ancestorsScaled ||
+                    (Math.abs(r.x - b.x) < threshold &&
+                        Math.abs(r.y - b.y) < threshold &&
+                        Math.abs(r.w - b.w) < threshold &&
+                        Math.abs(r.h - b.h) < threshold)
+                ) {
+                    skipsKeeps = false
+                    break
+                }
+            }
+        }
+
+        /**
          * `L_k` per node with a fresh B (§4.2): the capture's rect with the
          * poses the engine had written divided out top-down, through the
          * inner maps of what was presented (a fresh capture shares this
@@ -4869,7 +5037,7 @@ export function createLayoutGroup(
             css: Box
             origin: readonly [number, number]
         } | null)[] = list.map(() => null)
-        if (fresh && frame.length > 0) {
+        if (fresh && frame.length > 0 && !skipsKeeps) {
             const nodes: PresentedNode[] = []
             const of: number[] = []
             const slot = new Map<number, number>()
@@ -5101,7 +5269,7 @@ export function createLayoutGroup(
                 chain.push(frame[k]!.p)
             return chain
         }
-        const planned = frame.length === 0 ? [] : plannedBoxes()
+        const planned = frame.length === 0 || skipsKeeps ? [] : plannedBoxes()
 
         /**
          * Per running track, its re-expression (§5.7): `δ = A_new − A_old` of
@@ -5116,60 +5284,71 @@ export function createLayoutGroup(
         const reexpress =
             frame.length === 0
                 ? []
-                : list.map((p, i) => {
-                      const d = p.drive
-                      const was = frozen.get(p)
-                      const own = planned[i]?.own
-                      if (!runs(d) || !was || !own) return null
-                      const track = d!.track!
-                      const dx = own.x + track.fx * own.w - track.a[0]
-                      const dy = own.y + track.fy * own.h - track.a[1]
-                      const before = frameChainOf(was)
-                      const ancestors: KeepAncestor[] = []
-                      let same = true
-                      let n = 0
-                      for (let k = parents[i]!; k >= 0; k = parents[k]!, n++) {
-                          const a = list[k]!
-                          const ga = geometry[k]
-                          const fa = frozen.get(a)
-                          if (a !== before[n] || !ga || !fa) {
-                              same = false
-                              break
-                          }
-                          const pose = engine.poses.get(a) ?? IDENTITY_POSE
-                          const innerNow = innerPose(ga.authored, ga.matrix)
-                          const innerPlanned = innerPose(
-                              fa.geometry.authored,
-                              was.ancestry.get(a) ?? IDENTITY_MATRIX
-                          )
-                          ancestors.push({
-                              pose: { sx: pose.sx, sy: pose.sy },
-                              innerNow: { sx: innerNow.sx, sy: innerNow.sy },
-                              innerPlanned: {
-                                  sx: innerPlanned.sx,
-                                  sy: innerPlanned.sy,
-                              },
-                          })
-                      }
-                      if (n !== before.length) same = false
-                      const b = fresh?.rects.get(p)
-                      const raw = rects[i]!
-                      const path: KeepPath | null = b
-                          ? same
-                              ? keepPath({
-                                    jump: {
-                                        x: raw.x - b.x,
-                                        y: raw.y - b.y,
-                                        w: raw.w - b.w,
-                                        h: raw.h - b.h,
-                                    },
-                                    ancestors,
-                                })
-                              : 'retarget'
-                          : null
-                      const exact = same && translationExact(ancestors)
-                      return { dx, dy, exact, path }
-                  })
+                : skipsKeeps
+                  ? list.map(() => ({
+                        dx: 0,
+                        dy: 0,
+                        exact: false,
+                        path: 'retarget' as KeepPath,
+                    }))
+                  : list.map((p, i) => {
+                        const d = p.drive
+                        const was = frozen.get(p)
+                        const own = planned[i]?.own
+                        if (!runs(d) || !was || !own) return null
+                        const track = d!.track!
+                        const dx = own.x + track.fx * own.w - track.a[0]
+                        const dy = own.y + track.fy * own.h - track.a[1]
+                        const before = frameChainOf(was)
+                        const ancestors: KeepAncestor[] = []
+                        let same = true
+                        let n = 0
+                        for (
+                            let k = parents[i]!;
+                            k >= 0;
+                            k = parents[k]!, n++
+                        ) {
+                            const a = list[k]!
+                            const ga = geometry[k]
+                            const fa = frozen.get(a)
+                            if (a !== before[n] || !ga || !fa) {
+                                same = false
+                                break
+                            }
+                            const pose = engine.poses.get(a) ?? IDENTITY_POSE
+                            const innerNow = innerPose(ga.authored, ga.matrix)
+                            const innerPlanned = innerPose(
+                                fa.geometry.authored,
+                                was.ancestry.get(a) ?? IDENTITY_MATRIX
+                            )
+                            ancestors.push({
+                                pose: { sx: pose.sx, sy: pose.sy },
+                                innerNow: { sx: innerNow.sx, sy: innerNow.sy },
+                                innerPlanned: {
+                                    sx: innerPlanned.sx,
+                                    sy: innerPlanned.sy,
+                                },
+                            })
+                        }
+                        if (n !== before.length) same = false
+                        const b = fresh?.rects.get(p)
+                        const raw = rects[i]!
+                        const path: KeepPath | null = b
+                            ? same
+                                ? keepPath({
+                                      jump: {
+                                          x: raw.x - b.x,
+                                          y: raw.y - b.y,
+                                          w: raw.w - b.w,
+                                          h: raw.h - b.h,
+                                      },
+                                      ancestors,
+                                  })
+                                : 'retarget'
+                            : null
+                        const exact = same && translationExact(ancestors)
+                        return { dx, dy, exact, path }
+                    })
 
         /** The last known box of an undriven node (§4.4). */
         const lastKnownOf = (i: number): Box | null =>
@@ -5291,6 +5470,7 @@ export function createLayoutGroup(
                     shared === 0 &&
                     d === null &&
                     parents[i]! < 0 &&
+                    !hasChild[i] &&
                     !subtreeDriven[i] &&
                     !p.keyChanged &&
                     !unmeasured[i] &&
@@ -5399,7 +5579,10 @@ export function createLayoutGroup(
                     lateRegistered:
                         fresh !== null &&
                         !p.keyChanged &&
-                        p.order > fresh.registeredThrough &&
+                        !(
+                            p.order <= fresh.registeredThrough ||
+                            fresh.added.has(p)
+                        ) &&
                         !(parents[i]! >= 0 && unmeasured[parents[i]!]!),
                     scrollActive: scrollActive[i]!,
                 }
@@ -5466,7 +5649,10 @@ export function createLayoutGroup(
                 // departing lead's box (OPS-10)
                 const lateWithHandoff =
                     fresh !== null &&
-                    list[i]!.order > fresh.registeredThrough &&
+                    !(
+                        list[i]!.order <= fresh.registeredThrough ||
+                        fresh.added.has(list[i]!)
+                    ) &&
                     !(parents[i]! >= 0 && unmeasured[parents[i]!])
                 if (from === null || (unmeasured[i] && !lateWithHandoff)) {
                     continue
@@ -6781,18 +6967,31 @@ export function createLayoutGroup(
                 }
                 ancestry = now ?? NO_ANCESTRY
             }
-            next.push({
-                p,
-                parent: parent >= 0 ? list[parent]!.frameIndex : -1,
-                geometry: kept
-                    ? keptGeometry(
-                          kept.geometry,
-                          geometry[i]!,
-                          nodes[i]?.planned ?? kept.geometry.a
-                      )
-                    : geometry[i]!,
-                ancestry,
-            })
+            const frameGeometry = kept
+                ? keptGeometry(
+                      kept.geometry,
+                      geometry[i]!,
+                      nodes[i]?.planned ?? kept.geometry.a
+                  )
+                : geometry[i]!
+            const reused = p.frameNode
+            if (reused) {
+                reused.parent = parent >= 0 ? list[parent]!.frameIndex : -1
+                reused.geometry = frameGeometry
+                reused.ancestry = ancestry
+                next.push(reused)
+            } else {
+                const node: FrameNode = {
+                    p,
+                    parent: parent >= 0 ? list[parent]!.frameIndex : -1,
+                    geometry: frameGeometry,
+                    ancestry,
+                    solveNode: null,
+                    solved: null,
+                }
+                p.frameNode = node
+                next.push(node)
+            }
         })
         frame = next
 
@@ -7118,6 +7317,8 @@ export function createLayoutGroup(
                 parent: parent ? position.get(parent)! : -1,
                 geometry: node.geometry,
                 ancestry: node.ancestry,
+                solveNode: node.solveNode,
+                solved: node.solved,
             }
         })
     }
@@ -7412,6 +7613,7 @@ export function createLayoutGroup(
                     treeParent: null,
                     treeFlat: null,
                     frameIndex: -1,
+                    frameNode: null,
                 }
                 registry.set(element, p)
                 elementScopes.set(element, scopeToken)
