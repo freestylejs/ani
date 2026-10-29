@@ -514,7 +514,8 @@ scrolled 9.313–10.462 / 2.825–2.890 ms. WebKit values are diagnostic at 1 ms
 
 The audited floor is unchanged: 2,000 rects/2,000 layout-size pairs in
 capture, 1,000/1,000 in flush, 300 computed reads (Chromium; 600 WebKit with
-Typed OM), 300 pose declarations, no extra read.
+Typed OM), 300 pose declarations, no extra read. G11 completed 300 commits at
+59.98–60.04 Hz with `g = 0.005 ms`; G13 reports zero steady-frame reads.
 
 ### Root causes and behavior-preserving fixes
 
