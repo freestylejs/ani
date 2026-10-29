@@ -117,7 +117,7 @@ gitignored; the files are generated from the current source on every run.
   "advisory": { "cost": true, "reasons": ["1-minute load is 2.39, pinned below 1"] },
   "certification": {
     "certified": false,
-    "reasons": ["cost fingerprint is advisory", "chromium scene s-reorder fail", "chromium scene s-sheet fail", "chromium S-BULK G9-unscrolled 3.349 failed", "chromium S-BULK G11 12.035 failed", "webkit S-BULK cost blocked"],
+    "reasons": ["cost fingerprint is advisory", "chromium scene s-reorder fail", "chromium scene s-sheet fail", "chromium S-BULK G9-unscrolled 2.960 failed", "chromium S-BULK G9-scrolled 2.808 failed", "chromium S-BULK G11 8.940 failed", "blocked webkit scene s-sheet: G12 ...", "blocked DPR 1/3 sweep: P5c BLOCK"],
     "requiredEngines": ["chromium", "webkit"],
     "requiredRuns": 5,
     "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"]
@@ -155,6 +155,11 @@ gitignored; the files are generated from the current source on every run.
                            "certification.test.ts", "cost_validity.test.ts"],
                  "detail": "..." },
   "pending": [],
+  "blocked": [
+    { "item": "webkit scene s-sheet", "reason": "G3 ...; G7 ...; G12 ..." },
+    { "item": "DPR 1/3 sweep", "reason": "P5c BLOCK: not run in this iteration" },
+    { "item": "reduced-motion variants", "reason": "P5c BLOCK: not run in this iteration" }
+  ],
   "pass": false
 }
 ```
@@ -292,10 +297,15 @@ On this host the 1-minute load has been above 1.0 during the P5a runs, so every
 cost report is advisory until a quiet run is produced. A report with an
 advisory cost fingerprint cannot claim the cost gates; its top-level `pass` is
 `false` when the cost scene is selected, while the frame-scoring values remain
-deciding evidence. WebKit cannot be measured validly for G9/G10/G11 with its
-1 ms timer: those metrics are `BLOCK`/non-deciding, the raw ratios are
+deciding evidence. WebKit cannot be measured validly for G9/G10/G11/G12 with
+its 1 ms timer: those metrics are `BLOCK`/non-deciding, the raw ratios are
 diagnostic, and certification is `NOT CERTIFIED` with that exact reason. No
-quantized WebKit ratio is reported as a measured failure.
+quantized WebKit ratio is reported as a measured failure. The authority's
+20-frame mean is **not claimed** on WebKit: the harness reports raw quantized
+per-frame samples with the ±g/2 bound and marks the cost/G12 result BLOCK.
+DPR 1/3 and the reduced-motion variants are P5c **BLOCK** in this iteration
+(the top-level `blocked` list and certification reasons name them); the DPR 2
+primary run is the certification run.
 
 ## Negative controls
 
@@ -342,8 +352,9 @@ Browser controls are run by `--check`, once per engine, through the real page:
   engine keeps moving it after the lift; G1 fails.
 - S-REORDER: skip the drive-hold kill switch (shape.kill-switch), cancel
   instead of release (shape.hold), supply a stale offset after a reorder (G1,
-  inconclusive while the primary G1 fails), extra capture in a held frame
-  (G13, inconclusive while the primary G13 fails).
+  inconclusive while the primary G1 fails), and an extra capture **inside the
+  measured held frame** (G13: 34 excess vs the primary 6; conclusive by the
+  isolated delta even though the primary G13 is already red).
 - S-SHEET: release to the medium detent (G5), start the first release frame at
   A (G2), extra capture in a held frame (G13), cancel instead of the second
   release (shape.hold).
@@ -549,8 +560,10 @@ same public engine surface.
   a crossfade follower is exempt from the last-frame owned-declaration check
   (the follower's removal and inert proof cover it). The earlier G6 failure was
   a harness false positive, not an engine or geometry defect.
-- DPR 1/3 and the reduced-motion variants are not part of the H15 scene runs;
-  they remain P5c evidence. The DPR 2 primary run is the certification run.
+- DPR 1/3 and the reduced-motion variants are **P5c BLOCK**: they are not run
+  in this iteration and are listed in the report's top-level `blocked` list
+  and the certification reasons. The DPR 2 primary run is the certification
+  run.
 - Firefox 1490 is advisory and times out on launch on this macOS 27
   instrument (D9 exception).
 
@@ -582,33 +595,50 @@ same public engine surface.
 | S-BULK | vanilla | 1,000 | 300 | 16 ms | BULK 0.40/0.10 | 150-tile cyclic shuffle |
 
 S-SHEET uses 16 ms frames for both holds (the spec's second hold is written as
-20 ms); the release vectors, detent projection and geometry are unchanged.
+20 ms; that timing is a scene contribution). The second take is at least 1 s
+after the first release, and the detent is the scene's `projected = top +
+v·0.20 s` nearest of {124, 422, 844}; the release vectors and geometry are
+unchanged.
 The S-REORDER title is a nested position participant; the held row and its
 title are the direct-manipulation pair. The row's inline `top` and the DOM
 order change inside each reorder commit; the title's local box is fixed.
 
+**Tooling honesty.** Biome reports **810 infos, 0 errors, 0 warnings** on
+`bench/layout` (the infos are the repository's baseline `noMagicNumbers` /
+naming diagnostics). This is not a clean biome report and is not claimed as
+one; `tsc` and `test:bench-layout` are clean.
+
 ### P5c evidence and known failures (iteration 6)
 
-- **S-REORDER fails G1/G4/G13/G12 (Chromium; G1/G4/G13 in WebKit).** The
-  scene exposes two P4 engine defects that the L-DRIVE-1 browser row does not
-  cover: (a) after a reorder changes the held row's A, the first subsequent
-  `move` shifts the drawn origin by the A delta (row-1 is +60 px on frames 3,
-  6 and 10, self-correcting one frame later); (b) a nested held descendant
+- **S-REORDER fails G1 96.0, G2 88.0, G4 60.0, G13 6 and G12 (Chromium and
+  WebKit); G3 and G7 are BLOCK/authority.** The scene exposes two P4 engine
+  defects that the L-DRIVE-1 browser row does not cover: (a) after a reorder
+  changes the held row's A, the first subsequent `move` shifts the drawn
+  origin by the A delta (row-1 is +60 px on frames 3, 6 and 10,
+  self-correcting one frame later); (b) a nested held descendant
   double-counts the inherited displacement (`title-1` is drawn at
   `row + 10 + h` instead of `row + 10`), so the title drifts by up to 96 px.
-  The release therefore also fails G4 (62.77 px). The exact commit reads are
-  2N/2N and the computed set is exact; G13 fails only on the held-frame
-  support read (one offset pair + one computed style) on the reorder-adjacent
-  held frames. `shape.hold` and `shape.kill-switch` pass.
-- **S-SHEET fails only the scene G12 shape on Chromium** (0.270 ms/held at
-  1 held, per-run 0.105–0.365; the 1-held fixed frame cost, not the 10-held
-  slope). G1–G8 and G13 pass; the sheet's restoration proof, detent policy
-  and both releases are exact. On WebKit G12 is BLOCK/non-deciding and the
-  scene passes.
-- **S-BULK frame scoring passes**; the cost shapes still fail G9 (2.688 /
-  2.694×) and G11 (8.495 ms) in Chromium, improved but not at the gate. G12-1
-  **fails** at 0.360 ms/held (the 1-held fixed frame cost); G12-10 passes at
-  0.057 ms/held. WebKit's 1 ms timer makes G9–G12 BLOCK.
+  The release-frame continuity is **measured** (`HoldEvidence.releaseBox` to
+  the next frame) and fails G2 88 px; the release spring fails G4 60 px; G5
+  now uses the rider target and passes. The exact commit reads are 2N/2N and
+  the computed set is exact; G13 fails only on the held-frame support read
+  (one offset pair + one computed style) on the reorder-adjacent held frames.
+  G3 is BLOCK because a release from direct manipulation has no analytic
+  layout track before the gesture velocity; G7 is BLOCK for the A-13
+  `ended`/p5-`interrupted` ambiguity and the release's missing report.
+  `shape.hold` and `shape.kill-switch` pass.
+- **S-SHEET fails only the scene G12 shape on Chromium** (0.275 ms/held at
+  1 held, per-run 0.090–0.315; the 1-held fixed frame cost, not the 10-held
+  slope). The measured frame rows G1/G2/G4/G5/G6/G8/G13 pass; G3/G7 are
+  BLOCK/authority (release velocity and missing release report), and the
+  detent policy (`top + v·0.20`, nearest) and the ≥1 s second take are
+  implemented. On WebKit G12 is BLOCK/non-deciding; the scene is reported
+  **BLOCKED**, not pass, and the block is a top-level report and certification
+  reason.
+- **S-BULK frame scoring passes**; the cost shapes still fail G9 (2.960 /
+  2.808×) and G11 (8.940 ms) in Chromium. G12-1 **fails** at 0.390 ms/held
+  (the 1-held fixed frame cost); G12-10 passes at 0.058 ms/held. Iteration 6
+  measured G9 2.688/2.694 and G11 8.495; both reports are recorded. WebKit's 1 ms timer makes G9–G12 BLOCK.
 - The release is not an engine commit or report (§5.10/§7.1): the scene
   records its `t = 0` flush observation, but there is no `LayoutReport` for a
   release. The S-REORDER/S-SHEET G7 expectations therefore cover the reorder
