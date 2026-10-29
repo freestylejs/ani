@@ -6,8 +6,9 @@ Mark elements, change the DOM, and every marked element whose box changed animat
 it was drawn to where layout put it. The default `'raf'` engine runs on Ani's clock and writes
 only `translate` and `scale` (plus `opacity` for a shared-element crossfade and
 `border-radius` when radius correction is on). It reads the DOM once before a change and
-once after it; animation frames do no reads.
-Anything it cannot animate exactly jumps to its final layout and is reported with a reason.
+once after it; animation frames do no reads outside a drive hold.
+Anything it cannot animate exactly jumps to its final layout; the reason is reported where the
+contract names one (culled and reduced jumps are silent by design).
 A kill switch and a versioned diagnostics stream let an app turn layout motion off remotely and
 observe every degradation in production.
 
@@ -108,7 +109,7 @@ Each move becomes one `Element.animate()` on `translate`. It never falls back si
 | Requirement | If it is not met |
 | :--- | :--- |
 | Every participant sets `layout: 'position'` | `add` / `set` throws `ANI_INVALID_OPTIONS` |
-| No `layoutAnchor`, `layoutId` or `radius: true` | `add` / `set` throws `ANI_INVALID_OPTIONS` |
+| No `layoutAnchor`, `layoutId`, `radius: true` or effective spring motion | `add` / `set` throws `ANI_INVALID_OPTIONS` |
 | No participant inside another | `add` / `set` throws; a nesting that appears later in the DOM snaps as `'unsupported'` |
 | CSS `linear()` easing is supported | The element snaps as `'unsupported'` |
 
