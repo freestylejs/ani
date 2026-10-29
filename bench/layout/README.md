@@ -59,7 +59,7 @@ pnpm bench:layout --out bench/layout/results/iter-1.json
 pnpm bench:layout --compare bench/layout/results/iter-0.json
 
 # the pure harness tests alone (oracle, scoring, stats, sampler, aggregation,
-# certification, cost validity, variants)
+# certification, cost validity, variants, timeouts)
 pnpm test:bench-layout
 ```
 
@@ -340,7 +340,7 @@ policy runs are scored separately with the same gates.
 
 ## Negative controls
 
-The self-tests in all eight files run by `test:bench-layout` feed deliberately
+The self-tests in all nine files run by `test:bench-layout` feed deliberately
 broken traces and assert each gate fails. The certification input consumes the
 result of the whole suite, not only oracle/scoring:
 
