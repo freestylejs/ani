@@ -483,7 +483,7 @@ interface Capture {
         readonly parents: readonly number[]
         readonly rects: readonly Box[]
         readonly offsets: readonly (readonly [number, number])[]
-        readonly poses: ReadonlyMap<Participant, Pose>
+        readonly poses: readonly Pose[]
         /** The pass made no computed-style read (no verification, no exact size). */
         readonly readFree: boolean
     } | null
@@ -535,6 +535,7 @@ interface ParticipantTree {
 
 const NO_ANCESTRY: ReadonlyMap<Participant, Matrix> = new Map()
 const NO_FLAT: ReadonlyMap<Participant, HTMLElement | null> = new Map()
+const NO_WANTED: readonly boolean[] = []
 
 function sameMatrix(a: Matrix, b: Matrix): boolean {
     return a.a === b.a && a.d === b.d && a.e === b.e && a.f === b.f
@@ -4009,7 +4010,7 @@ export function createLayoutGroup(
             const oa = offsets[i]!
             const ob = support.offsets[i]!
             const pose = poses.get(list[i]!) ?? IDENTITY_POSE
-            const was = support.poses.get(support.list[i]!) ?? IDENTITY_POSE
+            const was = support.poses[i] ?? IDENTITY_POSE
             if (
                 list[i] !== support.list[i] ||
                 parents[i] !== support.parents[i] ||
@@ -4271,17 +4272,27 @@ export function createLayoutGroup(
         // box is re-checked at flush; capture-time exactness is needed for a
         // transformed bounding box (rect != layout size), presence and
         // degenerate boxes (C-6b, L_MEAS-12).
-        const captureWanted = list.map(
-            (p, i) =>
+        let captureWanted: boolean[] | null = null
+        for (let i = 0; i < list.length; i++) {
+            const p = list[i]!
+            if (
                 presenceOf(p.element) !== undefined ||
                 offsets[i]![0] <= 1 ||
                 offsets[i]![1] <= 1 ||
                 Math.abs(rects[i]!.w - offsets[i]![0]) > 0.5 ||
                 Math.abs(rects[i]!.h - offsets[i]![1]) > 0.5
-        )
-        for (let i = list.length - 1; i >= 0; i--) {
-            if (captureWanted[i] && parents[i]! >= 0)
-                captureWanted[parents[i]!] = true
+            ) {
+                if (!captureWanted) {
+                    captureWanted = new Array<boolean>(list.length).fill(false)
+                }
+                captureWanted[i] = true
+            }
+        }
+        if (captureWanted) {
+            for (let i = list.length - 1; i >= 0; i--) {
+                if (captureWanted[i] && parents[i]! >= 0)
+                    captureWanted[parents[i]!] = true
+            }
         }
         const stylesBefore = stats.styles
         let styleOf: StyleReader | null = null
@@ -4305,7 +4316,7 @@ export function createLayoutGroup(
                   offsets,
                   engine.poses,
                   styles(),
-                  captureWanted
+                  captureWanted ?? NO_WANTED
               )
         const readFree = stats.styles === stylesBefore
         // 3. after every rect: shared corner radii at B, on screen (a driven
@@ -4361,11 +4372,13 @@ export function createLayoutGroup(
                       parents,
                       rects,
                       offsets,
-                      poses: engine.poses,
+                      poses: list.map(
+                          (p) => engine.poses.get(p) ?? IDENTITY_POSE
+                      ),
                       readFree,
                   }
                 : null
-        lastSupport = captureWanted.some(Boolean) ? null : support
+        lastSupport = captureWanted ? null : support
         const scrolling = scrollingAround(list, flat, tree)
         const current: Capture = {
             live: true,
