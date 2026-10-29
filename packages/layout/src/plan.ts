@@ -161,11 +161,23 @@ export interface IdHistory {
 }
 
 export interface PlanInput {
-    readonly nodes: readonly PlanNode[]
+    /**
+     * Parents before children. A `null` entry is a participant the scope has
+     * proven quiescent for this flush (no drive in its subtree, no shared id,
+     * unchanged box): it cannot animate, snap or report, so its plan action is
+     * `none`; the array stays index-aligned with the participant list.
+     */
+    readonly nodes: readonly (PlanNode | null)[]
     readonly ids: ReadonlyMap<string, IdHistory>
     readonly viewport: Box
     readonly threshold: number
     readonly maxNodes: number
+    /**
+     * The scope has no `layoutId` participant at all: no lead, handoff or
+     * crossfade is possible, so the id pass can be skipped (an optimization;
+     * the per-node actions are unchanged).
+     */
+    readonly leadless?: boolean
 }
 
 export type Action =
@@ -343,12 +355,12 @@ export interface LeadChange {
 }
 
 export function leadChanges(
-    nodes: readonly Pick<PlanNode, 'layoutId' | 'exiting' | 'order'>[],
+    nodes: readonly (Pick<PlanNode, 'layoutId' | 'exiting' | 'order'> | null)[],
     ids: ReadonlyMap<string, IdHistory>
 ): LeadChange[] {
     const byId = new Map<string, number[]>()
     nodes.forEach((node, index) => {
-        if (node.layoutId === null) return
+        if (node === null || node.layoutId === null) return
         const list = byId.get(node.layoutId)
         if (list) list.push(index)
         else byId.set(node.layoutId, [index])
@@ -368,7 +380,7 @@ export function leadChanges(
             if (previous === null) {
                 // the previous lead left the scope: its retained box
                 if (history?.retained) from = 'retained'
-            } else if (nodes[previous]!.exiting) {
+            } else if (nodes[previous]?.exiting) {
                 from = previous
             }
         }
@@ -389,10 +401,12 @@ function resolveLeads(input: PlanInput, warnings: PlanWarning[]): Lead[] {
                 handoff = history.retained
                 handoffVelocity = history.retainedVelocity
             } else if (from !== null) {
-                const old = input.nodes[from]!
-                handoff = old.before ?? old.a
-                handoffVelocity = old.velocity
-                follower = from
+                const old = input.nodes[from]
+                if (old) {
+                    handoff = old.before ?? old.a
+                    handoffVelocity = old.velocity
+                    follower = from
+                }
             }
             return { id, index, handoff, handoffVelocity, follower }
         }
@@ -459,19 +473,21 @@ export function plan(input: PlanInput): Plan {
     const warnings: PlanWarning[] = []
     const snapped: { index: number; reason: SnapReason }[] = []
     const degraded: Degraded[] = []
-    const leadList = resolveLeads(input, warnings)
+    const leadList = input.leadless ? [] : resolveLeads(input, warnings)
     const leads = new Map(leadList.map((lead) => [lead.id, lead.index]))
 
     // effective before-box and carried velocity: a new lead starts from the
     // box it takes over, moving if that node was moving. Without a valid
     // measurement nothing is taken over (§4.4)
-    const before = nodes.map((node) => node.before)
-    const carried: (BoxVelocity | null)[] = nodes.map((node) => node.velocity)
+    const before = nodes.map((node) => node?.before ?? null)
+    const carried: (BoxVelocity | null)[] = nodes.map(
+        (node) => node?.velocity ?? null
+    )
     const fadeLead = new Set<number>()
     const handoffFrom = new Map<number, number>()
     const newFollower = new Map<number, number>()
     /** A late-registered lead becomes measured by the handoff it takes. */
-    const measuredForPlan = nodes.map((node) => node.measured)
+    const measuredForPlan = nodes.map((node) => node?.measured ?? false)
     /**
      * §8: focus inside a handoff's exiting follower. When the pair would
      * otherwise crossfade, it is not coupled at all: no handoff box, no
@@ -479,7 +495,8 @@ export function plan(input: PlanInput): Plan {
      */
     const noMotion = new Set<number>()
     for (const lead of leadList) {
-        const node = nodes[lead.index]!
+        const node = nodes[lead.index]
+        if (!node) continue
         if (
             lead.handoff === null ||
             (!node.measured && !node.lateRegistered) ||
@@ -535,14 +552,29 @@ export function plan(input: PlanInput): Plan {
     const unsupported: boolean[] = []
     const animated: boolean[] = []
     const ancestorAnimated: boolean[] = []
+    let movers = 0
     for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i]!
+        const node = nodes[i]
+        if (!node) {
+            unsupported.push(false)
+            ancestorAnimated.push(false)
+            actions.push(NONE)
+            animated.push(false)
+            continue
+        }
         const p = node.parent
         unsupported.push(node.unsupported || (p >= 0 && unsupported[p]!))
         ancestorAnimated.push(p >= 0 && (animated[p]! || ancestorAnimated[p]!))
         const action = decide(i)
         actions.push(action)
         animated.push(action.kind !== 'none' && action.kind !== 'static')
+        if (
+            action.kind === 'track' ||
+            action.kind === 'keep' ||
+            action.kind === 'follow'
+        ) {
+            movers += 1
+        }
     }
 
     function decide(i: number): Action {
@@ -671,16 +703,6 @@ export function plan(input: PlanInput): Plan {
         return own
     }
 
-    let movers = 0
-    for (const action of actions) {
-        if (
-            action.kind === 'track' ||
-            action.kind === 'keep' ||
-            action.kind === 'follow'
-        ) {
-            movers += 1
-        }
-    }
     if (movers > input.maxNodes) {
         const capped = actions.flatMap((action, index) =>
             action.kind === 'track' ||

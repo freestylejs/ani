@@ -49,6 +49,16 @@ function box(x: number, y = 0, w = 40, h = 40) {
     return { x, y, w, h }
 }
 
+function expectBox(
+    actual: { x: number; y: number; w: number; h: number },
+    expected: { x: number; y: number; w: number; h: number },
+    tolerance = 1e-9
+): void {
+    for (const k of ['x', 'y', 'w', 'h'] as const) {
+        expect(Math.abs(actual[k] - expected[k])).toBeLessThanOrEqual(tolerance)
+    }
+}
+
 function element(x: number, y = 0): HTMLElement {
     const e = document.createElement('div')
     document.body.append(e)
@@ -305,6 +315,144 @@ describe('capture (§4.1)', () => {
         model.reset()
         mc.frames(3)
         expect(model.reads).toEqual({ rects: 0, offsets: 0, styles: 0 })
+        group.dispose()
+    })
+})
+
+describe('H17 cache regressions', () => {
+    it('H17-01: a participant inside a detached wrapper is not read and is not stale', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const wrapper = document.createElement('div')
+        document.body.append(wrapper)
+        const item = document.createElement('div')
+        wrapper.append(item)
+        model.place(item, box(0))
+        group.add(item)
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        wrapper.remove()
+        model.reset()
+        group.capture()
+        expect(model.reads).toEqual({ rects: 0, offsets: 0, styles: 0 })
+        model.reset()
+        const report = await group.flush()
+        expect(model.reads).toEqual({ rects: 0, offsets: 0, styles: 0 })
+        expect(report).toEqual({ status: 'no-change', snapped: [] })
+        group.dispose()
+    })
+
+    it('H17-03: attaching a shadow root on a non-participant ancestor invalidates the tree cache', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const host = document.createElement('div')
+        const wrapper = document.createElement('div')
+        const item = document.createElement('div')
+        document.body.append(host)
+        host.append(wrapper)
+        wrapper.append(item)
+        model.place(item, box(0))
+        group.add(item, { layoutId: 'shared' })
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        const root = host.attachShadow({ mode: 'open' })
+        root.append(document.createElement('slot'))
+        const added = vi.spyOn(root, 'addEventListener')
+        group.capture()
+        expect(added.mock.calls.map((call) => call[0])).toContain('scroll')
+        group.dispose()
+    })
+})
+
+describe('S1-1 structural changes between capture and flush', () => {
+    it('attaching a shadow root after capture invalidates the tree and arms the root', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const wrapper = document.createElement('div')
+        const item = document.createElement('div')
+        document.body.append(wrapper)
+        wrapper.append(item)
+        model.place(item, box(0))
+        group.add(item, { layoutId: 'shared' })
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        // The capture above is the one this flush must invalidate. attachShadow
+        // emits no child-list record, so only the ancestry check can see it.
+        group.capture()
+        const root = wrapper.attachShadow({ mode: 'open' })
+        root.append(document.createElement('slot'))
+        const added = vi.spyOn(root, 'addEventListener')
+        await group.flush()
+        expect(added.mock.calls.map((call) => call[0])).toContain('scroll')
+        group.dispose()
+    })
+
+    it('reparenting a wrapper after capture refreshes the nearest participant parent', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const parent = element(0)
+        const wrapper = document.createElement('div')
+        parent.append(wrapper)
+        const child = document.createElement('div')
+        wrapper.append(child)
+        model.place(child, box(10, 10, 10, 10))
+        group.add(parent)
+        group.add(child)
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        // Both start tracks; the parent's live pose scale is what a stale
+        // child->parent edge would draw through.
+        group.capture()
+        model.place(parent, box(0, 0, 20, 20))
+        model.place(child, box(30, 10, 10, 10))
+        void group.flush()
+        mc.frames(2)
+        await nextTask()
+        expect(Number.parseFloat(parent.style.scale)).toBeGreaterThan(1)
+
+        // The child's immediate flat parent (wrapper) does not change; its
+        // nearest participant parent goes from parent to none.
+        group.capture()
+        document.body.append(wrapper)
+        const report = group.flush()
+        mc.frames(80)
+        await report
+        expectBox(model.rect(child), model.layout(child))
+        group.dispose()
+    })
+})
+
+describe('S2-5 shadow ancestry', () => {
+    it('a closed root that comes to contain the participant is tracked and armed', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const host = document.createElement('div')
+        const outer = host.attachShadow({ mode: 'closed' })
+        const wrapper = document.createElement('div')
+        const item = document.createElement('div')
+        document.body.append(host)
+        outer.append(wrapper)
+        wrapper.append(item)
+        model.place(item, box(0))
+        group.add(item, { layoutId: 'shared' })
+        group.capture()
+        await group.flush()
+        await nextTask()
+
+        group.capture()
+        const inner = wrapper.attachShadow({ mode: 'closed' })
+        inner.append(item)
+        const added = vi.spyOn(inner, 'addEventListener')
+        await group.flush()
+        expect(added.mock.calls.map((call) => call[0])).toContain('scroll')
         group.dispose()
     })
 })

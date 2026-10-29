@@ -351,3 +351,28 @@ describe('option validation', () => {
         createLayoutGroup({ maxParticipants: 2000 }).dispose()
     })
 })
+
+describe('H17-04 capture-added order', () => {
+    it('reads every late participant exactly once even when captureAdded arrives out of order', async () => {
+        const mc = createManualClock()
+        const group = createLayoutGroup({ clock: mc.clock, motion })
+        const a = element(0)
+        group.add(a)
+        group.capture()
+        const b = element(100)
+        const c = element(200)
+        group.add(b)
+        group.add(c)
+        const captureAdded = (
+            group as unknown as Record<symbol, (element: HTMLElement) => void>
+        )[Symbol.for('ani-layout.capture-added')]!
+        model.reset()
+        captureAdded(c)
+        expect(model.reads.rects).toBe(1)
+        captureAdded(b)
+        expect(model.reads.rects).toBe(2)
+        const report = await group.flush()
+        expect(report.snapped).toEqual([])
+        group.dispose()
+    })
+})

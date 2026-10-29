@@ -154,6 +154,8 @@ import type {
 
 const DEFAULT_THRESHOLD = 1
 const DEFAULT_MAX_NODES = 300
+/** The owned declarations of a drive with no extra property. */
+const POSE_ONLY: readonly string[] = POSE_PROPERTIES
 const DEFAULT_MAX_PARTICIPANTS = 2000
 const DEFAULT_RETAIN = 1
 const MIN_SCALE = 1 / 50
@@ -307,6 +309,15 @@ interface Participant {
     motion: { readonly mode: string; readonly value: Motion } | null
     /** Every shadow root containing it, innermost first (§4.6, §8). */
     roots: ShadowRoot[]
+    /** The tree pass that last computed its depth (one pass, no maps). */
+    treePass: number
+    treeDepth: number
+    treeParent: Participant | null
+    treeFlat: HTMLElement | null
+    /** Its index in the current frame, or -1 when it has no drive. */
+    frameIndex: number
+    /** Reusable frame node for this participant (one allocation per drive). */
+    frameNode: FrameNode | null
 }
 
 /**
@@ -437,21 +448,42 @@ interface Capture {
     disarm: () => void
     /** B per connected participant: the raw rect, nothing divided out. */
     readonly rects: Map<Participant, Box>
-    /** Every participant registered at capture, connected or not. */
-    readonly registered: Set<Participant>
+    /** Registration order at capture; later mounts are in `added`. */
+    readonly registeredThrough: number
+    /** Participants registered after capture that were given a B by captureAdded. */
+    readonly added: Set<Participant>
     /** Participants that failed the support check, with their subtrees. */
     readonly unsupported: Map<Participant, string>
     /** Shared `radius` participants' on-screen corner radii at B. */
     readonly radius: Map<Participant, readonly number[]>
     /** The engine's state at `t_k`. */
     readonly engine: EngineState
+    /**
+     * The inputs of a support pass that found no failure: the same participant
+     * order, parents, rect sizes, layout sizes and poses. A flush that finds
+     * every one byte-identical reuses the pass instead of recomputing it; any
+     * change (or a capture that found a failure) runs the check again.
+     */
+    support: {
+        readonly list: readonly Participant[]
+        readonly parents: readonly number[]
+        readonly rects: readonly Box[]
+        readonly offsets: readonly (readonly [number, number])[]
+        readonly poses: ReadonlyMap<Participant, Pose>
+        /** The pass made no computed-style read (no verification, no exact size). */
+        readonly readFree: boolean
+    } | null
     /** Per participant, the actively scrolling containers it was inside (§5.8). */
     readonly scrolling: ReadonlyMap<Participant, readonly EventTarget[]>
     /** Per connected participant, its flat parent at capture (§5.8 reparents). */
     readonly flat: ReadonlyMap<Participant, HTMLElement | null>
+    /** The participant-tree pass this capture walked, for the flush to reuse. */
+    readonly tree: ParticipantTree | null
 }
 
 type Matrix = Geometry['matrix']
+type Mutable<T> = { -readonly [K in keyof T]: T[K] }
+const IDENTITY_MATRIX: Matrix = { a: 1, d: 1, e: 0, f: 0 }
 
 /**
  * One check's computed styles (`styleReader`): `has` is true once read, and
@@ -464,14 +496,27 @@ type StyleReader = ((i: number) => CSSStyleDeclaration) & {
 
 interface FrameNode {
     readonly p: Participant
-    readonly parent: number
-    readonly geometry: Geometry
+    parent: number
+    geometry: Geometry
     /**
      * The presence matrices of its participant ancestors at the flush that
      * planned `geometry`: its track lives in that flush's visual space, so a
      * layer changed since then draws over it (§3.1, §11).
      */
-    readonly ancestry: ReadonlyMap<Participant, Matrix>
+    ancestry: ReadonlyMap<Participant, Matrix>
+    /** Reused per-node solve input/output objects (one allocation per drive). */
+    solveNode: SolveNode | null
+    solved: Solved | null
+}
+
+/** One participant-tree pass (§4.6): the list, its parents and flat parents. */
+interface ParticipantTree {
+    readonly list: Participant[]
+    readonly parents: number[]
+    readonly index: Map<Participant, number>
+    /** Each participant's flat parent, by its index in `list`. */
+    readonly flat: (HTMLElement | null)[]
+    readonly tree: FlatTree
 }
 
 const NO_ANCESTRY: ReadonlyMap<Participant, Matrix> = new Map()
@@ -479,6 +524,13 @@ const NO_FLAT: ReadonlyMap<Participant, HTMLElement | null> = new Map()
 
 function sameMatrix(a: Matrix, b: Matrix): boolean {
     return a.a === b.a && a.d === b.d && a.e === b.e && a.f === b.f
+}
+
+function isIdentityMap(m: Map2): boolean {
+    return (
+        m === IDENTITY_MAP ||
+        (m.x.k === 1 && m.x.b === 0 && m.y.k === 1 && m.y.b === 0)
+    )
 }
 
 /** The inner map `Q` (§3.2) as a pose: authored translate/scale with a presence matrix. */
@@ -690,8 +742,8 @@ function epochLayers(at: readonly FrameNode[]): (Layer[] | null)[] {
         let layers: Layer[] | null = null
         for (let k = node.parent; k >= 0; k = at[k]!.parent) {
             const g = at[k]!.geometry
-            const m = node.ancestry.get(at[k]!.p)
-            if (!m || sameMatrix(m, g.matrix)) continue
+            const m = node.ancestry.get(at[k]!.p) ?? IDENTITY_MATRIX
+            if (sameMatrix(m, g.matrix)) continue
             layers ??= []
             layers.unshift({
                 at: k,
@@ -728,11 +780,11 @@ interface Retained {
 }
 
 interface Write {
-    readonly element: HTMLElement
-    readonly property: string
+    element: HTMLElement
+    property: string
     /** `''` removes the declaration. */
-    readonly value: string
-    readonly priority: string
+    value: string
+    priority: string
 }
 
 /** An attribute write queued with the commit phase (§9.2, §6). */
@@ -870,7 +922,11 @@ function validateWaapiOptions(
 
 function format(n: number): string {
     // avoid exponent notation, which CSS lengths do not accept
-    return Math.abs(n) < 1e-9 ? '0' : String(Number(n.toFixed(6)))
+    if (n === 0) return '0'
+    // integer channels (the t = 0 translation of an integer layout delta, a
+    // scale of 1) need no decimal formatting
+    if (Number.isInteger(n)) return String(n)
+    return String(Number(n.toFixed(6)))
 }
 
 function fadeEnded(fade: DriveFade): boolean {
@@ -931,12 +987,25 @@ export function createLayoutGroup(
     const roots = new Map<Element, ShadowRoot>()
     const rootUsers = new Map<ShadowRoot, number>()
     let scopeDocument: Document | null = null
+    /** Child-list/slot changes since the last tree pass; empty means the shape is unchanged. */
+    let structureObserver: MutationObserver | null = null
+    /** A mutation callback ran since the last tree check (its records are already consumed). */
+    let structureDirty = false
     let sequence = 0
+    let treePass = 0
     let capture: Capture | null = null
+    /** The last support pass whose inputs were clean, for the next capture. */
+    let lastSupport: Capture['support'] = null
+    /** The last participant-tree pass: a capture or flush reuses it when its inputs verify. */
+    let lastTree: ParticipantTree | null = null
     let frame: FrameNode[] = []
+    /** Last flush used the measured-jump shortcut; package-internal test seam. */
+    let lastKeepShortcut = false
     /** Advances with every clock update: the instant ghost poses are solved for. */
     let tick = 0
     let pending: Write[] = []
+    /** Applied write records, reused so a commit does not allocate 2M of them. */
+    const writePool: Write[] = []
     let pendingAttributes: AttributeWrite[] = []
     let disposed = false
     /** Previous lead per `layoutId`. */
@@ -1121,7 +1190,7 @@ export function createLayoutGroup(
     /** Queues a settled drive's saved declarations for an exact restore. */
     function queueSaved(element: HTMLElement, saved: Saved): void {
         for (const [property, [value, priority]] of saved) {
-            pending.push({ element, property, value, priority })
+            queueWrite(element, property, value, priority)
         }
     }
 
@@ -1217,6 +1286,14 @@ export function createLayoutGroup(
      * element not yet in a document tracks no root.
      */
     function trackRoot(p: Participant): void {
+        // the common case: no shadow root at all, so no root chain to build
+        if (!isShadowRoot(p.element.getRootNode())) {
+            if (p.roots.length === 0) return
+            for (const root of p.roots) removeRoot(root)
+            p.roots = []
+            syncListeners()
+            return
+        }
         const chain = rootChain(p.element)
         const same =
             chain.length === p.roots.length &&
@@ -1526,10 +1603,17 @@ export function createLayoutGroup(
     }
 
     function solveNodes(at: FrameNode[]): SolveNode[] {
-        const index = new Map<Participant, number>()
-        at.forEach((node, i) => index.set(node.p, i))
+        const simple = at.every(
+            (node) =>
+                node.p.hold === null &&
+                node.p.ride === null &&
+                !(node.p.drive?.kind === 'follow' && node.p.drive.lead)
+        )
+        const index = simple ? null : new Map<Participant, number>()
+        if (index) at.forEach((node, i) => index.set(node.p, i))
         const layers = layersOf(at)
-        return at.map((node, i) => {
+        const out: SolveNode[] = []
+        at.forEach((node, i) => {
             const d = node.p.drive
             const g = node.geometry
             const live = d !== null && d.kind !== 'held'
@@ -1545,45 +1629,46 @@ export function createLayoutGroup(
                           law: d.fade.law,
                       }
                     : null
-            return {
-                parent: node.parent,
-                a: g.a,
-                box: g.box,
-                ox: g.ox,
-                oy: g.oy,
-                fx: g.fx,
-                fy: g.fy,
-                inner: g.inner,
-                track:
-                    live && d.kind === 'track' && !d.timeline ? d.track : null,
-                elapsed: d?.elapsed ?? 0,
-                posed:
-                    live && d.kind === 'track' && d.timeline
-                        ? timelinePose(d.timeline, tick, g.ox, g.oy)
-                        : null,
-                follow:
-                    live && d.kind === 'follow' && d.lead
-                        ? (index.get(d.lead) ?? -1)
-                        : -1,
-                fade,
-                radius: live && ownsRadius(node.p.options) ? g.radius : null,
-                radiusBlend: (() => {
-                    if (!live || !ownsRadius(node.p.options) || !d.radiusBlend)
-                        return null
-                    const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
-                    const track = leadDrive?.track
-                    if (!track) return null
-                    return {
-                        ...d.radiusBlend,
-                        track,
-                        elapsed: leadDrive.elapsed,
-                    }
-                })(),
-                layers: layers[i] ?? null,
-                override: held ? heldOverride(hold, node.p) : null,
-                ride: isLiveHold(ride) ? (index.get(ride.owner) ?? -1) : -1,
+            const s = (node.solveNode ??= {} as SolveNode) as Mutable<SolveNode>
+            s.parent = node.parent
+            s.a = g.a
+            s.box = g.box
+            s.ox = g.ox
+            s.oy = g.oy
+            s.fx = g.fx
+            s.fy = g.fy
+            s.inner = g.inner
+            s.track = live && d.kind === 'track' && !d.timeline ? d.track : null
+            s.elapsed = d?.elapsed ?? 0
+            s.posed =
+                live && d.kind === 'track' && d.timeline
+                    ? timelinePose(d.timeline, tick, g.ox, g.oy)
+                    : null
+            s.follow =
+                live && d.kind === 'follow' && d.lead
+                    ? (index?.get(d.lead) ?? -1)
+                    : -1
+            s.fade = fade
+            s.radius = live && ownsRadius(node.p.options) ? g.radius : null
+            if (!live || !ownsRadius(node.p.options) || !d.radiusBlend) {
+                s.radiusBlend = null
+            } else {
+                const leadDrive = d.kind === 'follow' ? d.lead?.drive : d
+                const track = leadDrive?.track
+                s.radiusBlend = track
+                    ? {
+                          ...d.radiusBlend,
+                          track,
+                          elapsed: leadDrive.elapsed,
+                      }
+                    : null
             }
+            s.layers = layers[i] ?? null
+            s.override = held ? heldOverride(hold, node.p) : null
+            s.ride = isLiveHold(ride) ? (index?.get(ride.owner) ?? -1) : -1
+            out.push(s)
         })
+        return out
     }
 
     function writeValue(
@@ -1594,7 +1679,26 @@ export function createLayoutGroup(
     ): void {
         if (d.written.get(property) === value) return
         d.written.set(property, value)
-        pending.push({ element, property, value, priority: OWNED_PRIORITY })
+        queueWrite(element, property, value, OWNED_PRIORITY)
+    }
+
+    /** Queues one inline declaration, reusing an applied record when possible. */
+    function queueWrite(
+        element: HTMLElement,
+        property: string,
+        value: string,
+        priority: string
+    ): void {
+        const pooled = writePool.pop()
+        if (pooled) {
+            pooled.element = element
+            pooled.property = property
+            pooled.value = value
+            pooled.priority = priority
+            pending.push(pooled)
+        } else {
+            pending.push({ element, property, value, priority })
+        }
     }
 
     /**
@@ -1609,7 +1713,7 @@ export function createLayoutGroup(
         adoptAuthored(element, d.saved, d.written)
         for (const [property, [value, priority]] of d.saved) {
             if (properties && !properties.includes(property)) continue
-            pending.push({ element, property, value, priority })
+            queueWrite(element, property, value, priority)
         }
     }
 
@@ -1821,9 +1925,14 @@ export function createLayoutGroup(
             return existing
         }
         // the WAAPI engine writes no inline style
-        const all = waapi ? [] : [...POSE_PROPERTIES, ...properties]
-        if (!waapi && ownsRadius(p.options) && g.radius)
-            all.push(...RADIUS_PROPERTIES)
+        const radius = !waapi && ownsRadius(p.options) && g.radius
+        const extra = !waapi && (properties.length > 0 || radius || anchor)
+        const all: string[] = waapi
+            ? []
+            : extra
+              ? [...POSE_PROPERTIES, ...properties]
+              : []
+        if (radius) all.push(...RADIUS_PROPERTIES)
         if (anchor) all.push(ANCHOR_PROPERTY)
         const d: Drive = {
             kind,
@@ -1836,7 +1945,7 @@ export function createLayoutGroup(
             radiusBlend: null,
             lead: null,
             inert: null,
-            saved: save(p.element, all),
+            saved: save(p.element, waapi ? [] : extra ? all : POSE_ONLY),
             authored: g.authored,
             radius: g.radiusSource,
             mode: reduced,
@@ -2203,6 +2312,8 @@ export function createLayoutGroup(
                             : -1,
                     geometry: was.geometry,
                     ancestry: was.ancestry,
+                    solveNode: was.solveNode,
+                    solved: was.solved,
                 }
             }
             const ancestry = new Map<Participant, Matrix>()
@@ -2216,6 +2327,8 @@ export function createLayoutGroup(
                     q.parent && index.has(q.parent) ? index.get(q.parent)! : -1,
                 geometry: q.geometry!,
                 ancestry: ancestry.size > 0 ? ancestry : NO_ANCESTRY,
+                solveNode: null,
+                solved: null,
             }
         })
     }
@@ -3390,7 +3503,14 @@ export function createLayoutGroup(
                 d.release = null
             }
         }
-        const solved = solve(solveNodes(frame))
+        const solveInput = solveNodes(frame)
+        const solved = solve(
+            solveInput,
+            frame.map((node) => node.solved)
+        )
+        frame.forEach((node, i) => {
+            node.solved = solved[i]!
+        })
         // the held read compares its next rect with the box this solve wrote
         frame.forEach((node, i) => {
             const hold = node.p.hold
@@ -3585,39 +3705,173 @@ export function createLayoutGroup(
      * (§4.6); the pass's flat tree is built after, and the shadow roots on the
      * chains its walks pass are the ones the listeners cover (§5.8).
      */
-    function participantTree(): {
-        list: Participant[]
-        parents: number[]
-        index: Map<Participant, number>
-        /** Each participant's flat parent, by its index in `list`. */
-        flat: (HTMLElement | null)[]
-        tree: FlatTree
-    } {
-        const list = [...registry.values()].filter((p) => p.element.isConnected)
+    /**
+     * Whether a pass can be reused: the same registry order and connections,
+     * no shadow-root membership, every participant's flat parent unchanged,
+     * and every distinct flat parent still resolves to the same nearest
+     * participant. The check is structural, not a heuristic: a reparented
+     * ancestor container changes the nearest participant of the distinct flat
+     * parent it contains and invalidates the pass.
+     */
+    /**
+     * Whether a shadow root sits on an element's flat-ancestor chain (cache
+     * invalidation). Results are memoized per validation pass: 1,000
+     * participants walk the same container chains, and each node's answer is
+     * independent of which participant reached it. A known shadow host
+     * disables reuse for every participant below it.
+     */
+    function shadowInAncestry(
+        first: Node | null,
+        tree: FlatTree,
+        memo: Map<Node, boolean>
+    ): boolean {
+        const chain: Node[] = []
+        let node = first
+        let found = false
+        while (node) {
+            const known = memo.get(node)
+            if (known !== undefined) {
+                found = known
+                break
+            }
+            chain.push(node)
+            const host = node as Element
+            if (host.shadowRoot !== null || roots.has(host)) {
+                found = true
+                break
+            }
+            if (chain.length >= MAX_SHADOW_DEPTH) break
+            node = flatParent(node, tree)
+        }
+        for (const visited of chain) memo.set(visited, found)
+        return found
+    }
+
+    function sameParticipantTree(previous: ParticipantTree): boolean {
+        if (roots.size !== 0 || chainRoots.size !== 0) return false
+        if (registry.size !== previous.list.length) return false
+        const shadowMemo = new Map<Node, boolean>()
+        let i = 0
+        for (const p of registry.values()) {
+            if (
+                p !== previous.list[i] ||
+                !p.element.isConnected ||
+                p.roots.length !== 0
+            ) {
+                return false
+            }
+            // H17-03: an ancestor that just gained a shadow root can slot this
+            // element without a child-list record on the document; the flat
+            // parent and the ancestry check both invalidate that cache.
+            const first = flatParent(p.element, previous.tree)
+            if (
+                first !== previous.flat[i] ||
+                shadowInAncestry(first, previous.tree, shadowMemo)
+            ) {
+                return false
+            }
+            i += 1
+        }
+        // No observed child-list or slot/name change since the pass: every
+        // nearest participant ancestor is unchanged. `style` writes (the
+        // engine's own poses, a scene's layout) are not structural.
+        if (!structureChanged()) return true
+        const above = new Map<Node, Participant | null>()
+        const checked = new Set<HTMLElement>()
+        for (let k = 0; k < previous.list.length; k++) {
+            const p = previous.list[k]!
+            const first = flatParent(p.element, previous.tree)
+            if (first !== previous.flat[k]) return false
+            if (first === null || checked.has(first)) continue
+            checked.add(first)
+            const parent = nearestParticipant(first, previous.tree, above)
+            const expected =
+                previous.parents[k]! >= 0
+                    ? previous.list[previous.parents[k]!]!
+                    : null
+            if (parent !== expected) return false
+        }
+        return true
+    }
+
+    /** Whether the document's child list or a slot/name attribute changed since the last check. */
+    function structureChanged(): boolean {
+        if (typeof MutationObserver === 'undefined' || !scopeDocument) {
+            return true
+        }
+        if (!structureObserver) return true
+        if (structureDirty) {
+            structureDirty = false
+            return true
+        }
+        return structureObserver.takeRecords().length > 0
+    }
+
+    /** Starts observing the document's shape as of the tree pass that just ran. */
+    function ensureStructureObserver(): void {
+        if (
+            structureObserver ||
+            typeof MutationObserver === 'undefined' ||
+            !scopeDocument
+        ) {
+            return
+        }
+        structureObserver = new MutationObserver(() => {
+            // the callback consumes its records; the flag is the later check's
+            // only evidence that a structural mutation happened
+            structureDirty = true
+        })
+        structureObserver.observe(scopeDocument, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['slot', 'name'],
+        })
+    }
+
+    function participantTree(
+        previous?: ParticipantTree | null
+    ): ParticipantTree {
+        if (previous && sameParticipantTree(previous)) {
+            lastTree = previous
+            syncListeners()
+            return previous
+        }
+        const list: Participant[] = []
+        for (const p of registry.values()) {
+            if (p.element.isConnected) list.push(p)
+        }
         for (const p of list) trackRoot(p)
         const passed = new Set<ShadowRoot>()
         const tree = flatTree(roots, passed)
-        const parentOf = new Map<Participant, Participant | null>()
-        const flatOf = new Map<Participant, HTMLElement | null>()
-        const depth = new Map<Participant, number>()
         const above = new Map<Node, Participant | null>()
+        const pass = ++treePass
         const depthOf = (p: Participant): number => {
-            const known = depth.get(p)
-            if (known !== undefined) return known
+            if (p.treePass === pass) return p.treeDepth
             const first = flatParent(p.element, tree)
-            flatOf.set(p, first)
             const parent = nearestParticipant(first, tree, above)
-            parentOf.set(p, parent)
             const d = parent ? depthOf(parent) + 1 : 0
-            depth.set(p, d)
+            p.treePass = pass
+            p.treeDepth = d
+            p.treeParent = parent
+            p.treeFlat = first
             return d
         }
-        for (const p of list) depthOf(p)
-        list.sort((a, b) => depth.get(a)! - depth.get(b)! || a.order - b.order)
+        // registration order is usually already parent-first; only sort when
+        // the observed depths are not non-decreasing (one pass either way)
+        let ordered = true
+        let lastDepth = 0
+        for (const p of list) {
+            const d = depthOf(p)
+            if (d < lastDepth) ordered = false
+            lastDepth = d
+        }
+        if (!ordered)
+            list.sort((a, b) => a.treeDepth - b.treeDepth || a.order - b.order)
         const index = new Map<Participant, number>()
         list.forEach((p, i) => index.set(p, i))
         const parents = list.map((p) => {
-            const parent = parentOf.get(p)
+            const parent = p.treeParent
             return parent ? index.get(parent)! : -1
         })
         // every chain was walked, from each participant up: with their own
@@ -3625,13 +3879,16 @@ export function createLayoutGroup(
         for (const p of list) for (const root of p.roots) passed.add(root)
         chainRoots = passed
         syncListeners()
-        return {
+        const result: ParticipantTree = {
             list,
             parents,
             index,
-            flat: list.map((p) => flatOf.get(p)!),
+            flat: list.map((p) => p.treeFlat),
             tree,
         }
+        lastTree = result
+        ensureStructureObserver()
+        return result
     }
 
     /**
@@ -3663,6 +3920,44 @@ export function createLayoutGroup(
             }
         })
         return { poses, rates, poseRates, moving }
+    }
+
+    /**
+     * Whether a clean support pass still describes this batch: the same
+     * participants, parents, rect sizes, layout sizes and poses. Positions are
+     * not inputs of the check (§4.2 compares each axis's size interval), so a
+     * layout move does not invalidate it.
+     */
+    function supportMatches(
+        support: NonNullable<Capture['support']>,
+        list: readonly Participant[],
+        parents: readonly number[],
+        rects: readonly Box[],
+        offsets: readonly (readonly [number, number])[],
+        poses: ReadonlyMap<Participant, Pose>
+    ): boolean {
+        if (support.list.length !== list.length) return false
+        for (let i = 0; i < list.length; i++) {
+            const a = rects[i]!
+            const b = support.rects[i]!
+            const oa = offsets[i]!
+            const ob = support.offsets[i]!
+            const pose = poses.get(list[i]!) ?? IDENTITY_POSE
+            const was = support.poses.get(support.list[i]!) ?? IDENTITY_POSE
+            if (
+                list[i] !== support.list[i] ||
+                parents[i] !== support.parents[i] ||
+                a.w !== b.w ||
+                a.h !== b.h ||
+                oa[0] !== ob[0] ||
+                oa[1] !== ob[1] ||
+                pose.sx !== was.sx ||
+                pose.sy !== was.sy
+            ) {
+                return false
+            }
+        }
+        return true
     }
 
     /**
@@ -3825,17 +4120,22 @@ export function createLayoutGroup(
         // an existing participant at the capture is never re-read here; a
         // presence enter owns the mount's first frame, and an author-replaced
         // declaration keeps its §4.4 path
-        if (capture.registered.has(p) || presenceOf(element) !== undefined)
+        if (
+            p.order <= capture.registeredThrough ||
+            capture.added.has(p) ||
+            presenceOf(element) !== undefined
+        )
             return
         // §9.1: count connected participants before any read; over the cap the
         // mount takes no B and the flush snaps the whole scope (N2)
         if (connectedParticipants().length > maxParticipants) return
         capture.rects.set(p, viewRect(element))
+        capture.added.add(p)
+        capture.support = null
         stats.rects += 1
-        capture.registered.add(p)
     }
 
-    function takeCapture(): void {
+    function takeCapture(arm = true): void {
         if (disposed || !hasDOM()) return
         readsAt = { rects: stats.rects, styles: stats.styles }
         evictAdopted()
@@ -3844,7 +4144,8 @@ export function createLayoutGroup(
         // a capture that begins inside a rendering-update callback may follow
         // an unpresented change of the same frame: it is aged at once (§4.1)
         const inFrame = clock.inFrame
-        const { list, parents, flat, tree } = participantTree()
+        const pass = participantTree(lastTree)
+        const { list, parents, flat, tree } = pass
         participants = list.length
         // §4.1, §9.1: count connected participants before any read; over the
         // cap the capture reads nothing and the flush snaps the whole scope
@@ -3855,7 +4156,8 @@ export function createLayoutGroup(
                 capped: true,
                 disarm: noop,
                 rects: new Map(),
-                registered: new Set(registry.values()),
+                registeredThrough: sequence,
+                added: new Set(),
                 unsupported: new Map(),
                 radius: new Map(),
                 engine: {
@@ -3866,6 +4168,8 @@ export function createLayoutGroup(
                 },
                 scrolling: new Map(),
                 flat: NO_FLAT,
+                support: null,
+                tree: null,
             }
             capture = capped
             stats.captures += 1
@@ -3885,54 +4189,81 @@ export function createLayoutGroup(
         stats.rects += list.length
         stats.offsets += list.length
         // 2. the support check on what was presented
-        const styleOf = styleReader(list)
-        const unsupported = supportOf(
-            list,
-            parents,
-            rects,
-            offsets,
-            engine.poses,
-            styleOf
-        )
+        const stylesBefore = stats.styles
+        let styleOf: StyleReader | null = null
+        const styles = (): StyleReader => (styleOf ??= styleReader(list))
+        const reused =
+            lastSupport !== null &&
+            supportMatches(
+                lastSupport,
+                list,
+                parents,
+                rects,
+                offsets,
+                engine.poses
+            )
+        const unsupported = reused
+            ? new Array<string | null>(list.length).fill(null)
+            : supportOf(list, parents, rects, offsets, engine.poses, styles())
+        const readFree = stats.styles === stylesBefore
         // 3. after every rect: shared corner radii at B, on screen (a driven
         // node's own declarations are drawn at its poses' scale)
         const radius = new Map<Participant, readonly number[]>()
-        const kx: number[] = []
-        const ky: number[] = []
-        list.forEach((p, i) => {
-            const pose = engine.poses.get(p) ?? IDENTITY_POSE
-            const parent = parents[i]!
-            kx.push((parent >= 0 ? kx[parent]! : 1) * pose.sx)
-            ky.push((parent >= 0 ? ky[parent]! : 1) * pose.sy)
-            if (p.options.layoutId === undefined || !ownsRadius(p.options))
-                return
-            const value = readRadius(styleOf(i))
-            if (!value) return
-            radius.set(
-                p,
-                value.map((r, j) => r * (j % 2 === 0 ? kx[i]! : ky[i]!))
-            )
-        })
+        let hasRadius = false
+        if (shared > 0)
+            for (const p of list) {
+                if (p.options.layoutId !== undefined && ownsRadius(p.options)) {
+                    hasRadius = true
+                    break
+                }
+            }
+        if (hasRadius) {
+            const kx: number[] = []
+            const ky: number[] = []
+            list.forEach((p, i) => {
+                const pose = engine.poses.get(p) ?? IDENTITY_POSE
+                const parent = parents[i]!
+                kx.push((parent >= 0 ? kx[parent]! : 1) * pose.sx)
+                ky.push((parent >= 0 ? ky[parent]! : 1) * pose.sy)
+                if (p.options.layoutId === undefined || !ownsRadius(p.options))
+                    return
+                const value = readRadius(styles()(i))
+                if (!value) return
+                radius.set(
+                    p,
+                    value.map((r, j) => r * (j % 2 === 0 ? kx[i]! : ky[i]!))
+                )
+            })
+        }
         // an owned declaration the author replaced inline since layout wrote
         // it is unpresented (the same task): that node and its subtree are
         // not drawn as presented, so they supply no B (§4.1, §6)
         const unpresented: boolean[] = []
-        list.forEach((p, i) => {
-            const parent = parents[i]!
-            unpresented.push(
-                (parent >= 0 && unpresented[parent]!) ||
-                    (p.drive !== null &&
-                        replacedOwned(p.element, p.drive.written))
-            )
-        })
         const presentedRects = new Map<Participant, Box>()
         const failing = new Map<Participant, string>()
         list.forEach((p, i) => {
-            if (unpresented[i]) radius.delete(p)
+            const parent = parents[i]!
+            const un =
+                (parent >= 0 && unpresented[parent]!) ||
+                (p.drive !== null && replacedOwned(p.element, p.drive.written))
+            unpresented.push(un)
+            if (un) radius.delete(p)
             else presentedRects.set(p, rects[i]!)
             const reason = unsupported[i]
             if (reason) failing.set(p, reason)
         })
+        const support =
+            failing.size === 0
+                ? {
+                      list,
+                      parents,
+                      rects,
+                      offsets,
+                      poses: engine.poses,
+                      readFree,
+                  }
+                : null
+        lastSupport = readFree ? support : null
         const scrolling = scrollingAround(list, flat, tree)
         const current: Capture = {
             live: true,
@@ -3940,11 +4271,14 @@ export function createLayoutGroup(
             capped: false,
             disarm: noop,
             rects: presentedRects,
-            registered: new Set(registry.values()),
+            registeredThrough: sequence,
+            added: new Set(),
             unsupported: failing,
             radius,
             engine,
             scrolling,
+            support,
+            tree: pass,
             // only a participant inside an active container can be degraded
             flat:
                 scrolling.size > 0
@@ -3956,7 +4290,7 @@ export function createLayoutGroup(
                 'in-frame',
                 'capture() or update() ran while the clock runs a frame (a requestAnimationFrame callback), so its capture is aged and the change does not animate. Call it from an ordinary task: an event handler, a timer or a promise callback.'
             )
-        } else {
+        } else if (arm) {
             armMarker(
                 current,
                 (scopeDocument ?? list[0]?.element.ownerDocument ?? document)
@@ -4028,7 +4362,23 @@ export function createLayoutGroup(
         parentRest: Map2,
         dpr: number
     ): { geometry: Geometry; full: Map2 } {
-        const local = mapBox(invert(parentFull), rect)
+        const atTop = isIdentityMap(parentFull) && isIdentityMap(parentRest)
+        const translated =
+            !atTop &&
+            parentFull.x.k === 1 &&
+            parentFull.y.k === 1 &&
+            parentRest.x.k === 1 &&
+            parentRest.y.k === 1
+        const local = atTop
+            ? rect
+            : translated
+              ? {
+                    x: rect.x - parentFull.x.b,
+                    y: rect.y - parentFull.y.b,
+                    w: rect.w,
+                    h: rect.h,
+                }
+              : mapBox(invert(parentFull), rect)
         let unsupported = m.unsupported
         const kx = m.scale[0] * m.matrix.a
         const ky = m.scale[1] * m.matrix.d
@@ -4047,7 +4397,21 @@ export function createLayoutGroup(
             oy: originY,
         }
         const css = unmapOwn(local, own)
-        const full = compose(parentFull, ownMap(css, own))
+        const ownMapped = ownMap(css, own)
+        const full = atTop
+            ? ownMapped
+            : translated
+              ? {
+                    x: {
+                        k: ownMapped.x.k,
+                        b: ownMapped.x.b + parentFull.x.b,
+                    },
+                    y: {
+                        k: ownMapped.y.k,
+                        b: ownMapped.y.b + parentFull.y.b,
+                    },
+                }
+              : compose(parentFull, ownMapped)
         const authored: Authored = p.drive?.authored ?? {
             tx: resolveLen(m.translate[0], css.w),
             ty: resolveLen(m.translate[1], css.h),
@@ -4067,7 +4431,14 @@ export function createLayoutGroup(
             oy
         )
         const box = mapBox(inner, css)
-        const rest = compose(parentRest, inner)
+        const rest = atTop
+            ? inner
+            : translated
+              ? {
+                    x: { k: inner.x.k, b: inner.x.b + parentRest.x.b },
+                    y: { k: inner.y.k, b: inner.y.b + parentRest.y.b },
+                }
+              : compose(parentRest, inner)
         let radius: number[] | null = null
         if (m.radius) {
             radius = m.radius.map((len: Len, i) =>
@@ -4076,7 +4447,16 @@ export function createLayoutGroup(
         }
         return {
             geometry: {
-                a: mapBox(parentRest, box),
+                a: atTop
+                    ? box
+                    : translated
+                      ? {
+                            x: box.x + parentRest.x.b,
+                            y: box.y + parentRest.y.b,
+                            w: box.w,
+                            h: box.h,
+                        }
+                      : mapBox(parentRest, box),
                 box,
                 ox,
                 oy,
@@ -4191,7 +4571,14 @@ export function createLayoutGroup(
         }
         const changed = frame.some((node) => {
             if (moved(node.p, node.geometry.matrix)) return true
-            for (const [a, m] of node.ancestry) if (moved(a, m)) return true
+            // an absent entry means identity (§3.1): compare every ancestor's
+            // current matrix with the one the track was planned with
+            for (let k = node.parent; k >= 0; k = frame[k]!.parent) {
+                const a = frame[k]!.p
+                const now = current.get(a)
+                const was = node.ancestry.get(a) ?? IDENTITY_MATRIX
+                if (now !== undefined && !sameMatrix(now, was)) return true
+            }
             return false
         })
         if (!changed) return
@@ -4263,8 +4650,10 @@ export function createLayoutGroup(
         buffered = []
         deferDepth += 1
         touched = new Set()
-        for (const p of registry.values()) {
-            if (p.drive) touched.add(p)
+        if (frame.length > 0) {
+            for (const p of registry.values()) {
+                if (p.drive) touched.add(p)
+            }
         }
         flushSnaps = []
         try {
@@ -4328,13 +4717,14 @@ export function createLayoutGroup(
         // drives of participants that left the document end here (their
         // restores are written with the others, after every read); the author's
         // inline changes to owned properties are taken in (§6)
-        for (const p of registry.values()) {
-            if (!p.drive) continue
-            if (p.element.isConnected) {
-                adoptAuthored(p.element, p.drive.saved, p.drive.written)
-            } else settle(p, true)
-        }
-        const { list, parents, index, flat, tree } = participantTree()
+        if (frame.length > 0)
+            for (const p of registry.values()) {
+                if (!p.drive) continue
+                if (p.element.isConnected) {
+                    adoptAuthored(p.element, p.drive.saved, p.drive.written)
+                } else settle(p, true)
+            }
+        const { list, parents, index, flat, tree } = participantTree(cap?.tree)
         participants = list.length
         if (list.length === 0) {
             frame = []
@@ -4361,12 +4751,20 @@ export function createLayoutGroup(
         focusAverted = focusChain
         // layout owns the exiting follower's `inert` (§6, §8); an author
         // removal is re-asserted only when focus is not inside it
-        for (const p of registry.values()) {
-            if (!p.drive || p.drive.inert === null) continue
-            assertInert(p.element, p.drive)
-        }
+        if (frame.length > 0)
+            for (const p of registry.values()) {
+                if (!p.drive || p.drive.inert === null) continue
+                assertInert(p.element, p.drive)
+            }
         const hasChild = list.map(() => false)
-        for (const parent of parents) if (parent >= 0) hasChild[parent] = true
+        /** Some drive in the participant's own subtree: it may be drawn/counter-projected. */
+        const subtreeDriven = list.map((p) => p.drive !== null)
+        for (let i = list.length - 1; i >= 0; i--) {
+            const parent = parents[i]!
+            if (parent < 0) continue
+            hasChild[parent] = true
+            if (subtreeDriven[i]) subtreeDriven[parent] = true
+        }
         /**
          * Per node, no valid B (§4.4): no fresh capture, or a fresh capture
          * without its B (it was disconnected at capture, or an owned
@@ -4375,37 +4773,46 @@ export function createLayoutGroup(
          * plans normally.
          */
         const unmeasured: boolean[] = []
+        const beforeRects: (Box | null)[] = []
+        let anyHold = false
+        let anyRide = false
+        let anyDrive = false
         list.forEach((p, i) => {
+            if (isLiveHold(p.hold)) anyHold = true
+            if (p.ride !== null) anyRide = true
+            if (p.drive !== null) anyDrive = true
             const parent = parents[i]!
+            const registered =
+                fresh !== null &&
+                (p.order <= fresh.registeredThrough || fresh.added.has(p))
+            const b = fresh?.rects.get(p) ?? null
             // a participant that mounts under a presence enter is animated by
             // that enter; layout has no B and must not add a stale report
             const newPresence =
                 fresh !== null &&
-                !fresh.registered.has(p) &&
+                !registered &&
                 presenceOf(p.element) !== undefined
-            unmeasured.push(
+            const un =
                 !fresh ||
-                    (parent >= 0 && unmeasured[parent]!) ||
-                    (!newPresence &&
-                        (!fresh ||
-                            !fresh.registered.has(p) ||
-                            (!p.keyChanged &&
-                                fresh.registered.has(p) &&
-                                !fresh.rects.has(p))))
-            )
+                (parent >= 0 && unmeasured[parent]!) ||
+                (!newPresence &&
+                    (!fresh || !registered || (!p.keyChanged && b === null)))
+            unmeasured.push(un)
+            beforeRects.push(p.keyChanged || un ? null : b)
         })
         /** Each node's A at its previous flush, before this one replaces it. */
-        const lastBoxes = list.map((p) => p.lastBox)
+        const stale = unmeasured.some(Boolean)
+        const lastBoxes = stale ? list.map((p) => p.lastBox) : null
         /** Each node's geometry and participant parent at its previous flush. */
-        const lastGeometry = list.map((p) => p.geometry)
-        const lastParent = list.map((p) => p.parent)
+        const lastGeometry = stale ? list.map((p) => p.geometry) : null
+        const lastParent = stale ? list.map((p) => p.parent) : null
 
         // the engine's own state at t_k: the fresh capture's, or now when there
         // is none (its last writes describe the presented frame either way)
         const engine = fresh?.engine ?? engineState()
         /** Each frame node as its running track was planned. */
         const frozen = new Map<Participant, FrameNode>()
-        for (const node of frame) frozen.set(node.p, node)
+        if (frame.length > 0) for (const node of frame) frozen.set(node.p, node)
 
         // 1. reads: every rect and layout size, then computed styles of what
         // the support check and the plan need
@@ -4502,18 +4909,47 @@ export function createLayoutGroup(
             return added
         }
         // every node with a driven node at or above it divides out poses
-        const chained: boolean[] = []
-        list.forEach((p, i) => {
-            const parent = parents[i]!
-            chained.push(p.drive !== null || (parent >= 0 && chained[parent]!))
-        })
-        measureNodes(chained)
+        if (anyDrive) {
+            const chained: boolean[] = []
+            list.forEach((p, i) => {
+                const parent = parents[i]!
+                chained.push(
+                    p.drive !== null || (parent >= 0 && chained[parent]!)
+                )
+            })
+            measureNodes(chained)
+        }
 
         // the support check (§4.2) on this flush's reads, and on the fresh
         // capture's: a map the engine does not own snaps its subtree. Every
         // active node's computed values read in this flush are its q; the
         // check runs again when the plan measures more of them (no new read)
+        let noFailures: (string | null)[] | null = null
+        const reusableSupport = (): (string | null)[] | null => {
+            const s = fresh?.support
+            if (
+                !s ||
+                !s.readFree ||
+                !supportMatches(s, list, parents, rects, offsets, engine.poses)
+            ) {
+                return null
+            }
+            // §4.2, §4.3: an active node's computed values are its q at this
+            // flush. The capture's read-free pass assumed q = 1; it may be
+            // reused only while every value this flush read is still 1 (the
+            // only case in which the pass would have reached the same result).
+            for (let i = 0; i < list.length; i++) {
+                if (!styleOf.has(i)) continue
+                const g = geometry[i]
+                if (!g || g.inner.x.k !== 1 || g.inner.y.k !== 1) return null
+            }
+            return (noFailures ??= new Array<string | null>(list.length).fill(
+                null
+            ))
+        }
         const supportNow = () => {
+            const reused = reusableSupport()
+            if (reused) return reused
             const flushed = supportOf(
                 list,
                 parents,
@@ -4533,6 +4969,76 @@ export function createLayoutGroup(
         if (measured) carryRates(index, geometry, velocity)
 
         /**
+         * A measured jump of at least `threshold` on every running track
+         * proves the keep test fails: with no presence layer and no anchor, the
+         * new A cannot equal the presented layout box. In that case the
+         * presentation maps, `L_k` recovery and keep-path machinery are not
+         * needed; every track retargets from its measured B. This is exact for
+         * the same reason `keepPath` says 'retarget' for the measured jump.
+         */
+        let skipsKeeps = false
+        if (fresh && frame.length > 0 && !stale) {
+            // Scroll and retained-lead runs use the presented/scroll paths;
+            // a shared id can hand a track over. None is a plain top-level
+            // retarget, so the measured-jump shortcut stays off.
+            skipsKeeps =
+                fresh.scrolling.size === 0 &&
+                retained.size === 0 &&
+                shared === 0
+            if (skipsKeeps) {
+                for (const node of frame) {
+                    const p = node.p
+                    const i = index.get(p)
+                    const d = p.drive
+                    const b =
+                        i === undefined ? null : (fresh.rects.get(p) ?? null)
+                    if (
+                        i === undefined ||
+                        b === null ||
+                        unmeasured[i] ||
+                        unowned[i] !== null ||
+                        p.keyChanged ||
+                        node.parent >= 0 ||
+                        node.ancestry.size !== 0 ||
+                        p.hold !== null ||
+                        p.ride !== null ||
+                        d === null ||
+                        d.kind !== 'track' ||
+                        d.timeline !== null ||
+                        d.fade !== null ||
+                        d.radiusBlend !== null ||
+                        d.lead !== null ||
+                        d.track === null ||
+                        d.track.anchor !== null
+                    ) {
+                        skipsKeeps = false
+                        break
+                    }
+                    const r = rects[i]!
+                    // A size change moves the transform origin relative to the
+                    // layout box; keep the full path rather than assuming the
+                    // jump is an exact translation.
+                    if (r.w !== b.w || r.h !== b.h) {
+                        skipsKeeps = false
+                        break
+                    }
+                    const pose = engine.poses.get(p) ?? IDENTITY_POSE
+                    if (
+                        pose.sx !== 1 ||
+                        pose.sy !== 1 ||
+                        (Math.abs(r.x - b.x) < threshold &&
+                            Math.abs(r.y - b.y) < threshold)
+                    ) {
+                        skipsKeeps = false
+                        break
+                    }
+                }
+            }
+        }
+
+        lastKeepShortcut = skipsKeeps
+
+        /**
          * `L_k` per node with a fresh B (§4.2): the capture's rect with the
          * poses the engine had written divided out top-down, through the
          * inner maps of what was presented (a fresh capture shares this
@@ -4545,7 +5051,7 @@ export function createLayoutGroup(
             css: Box
             origin: readonly [number, number]
         } | null)[] = list.map(() => null)
-        if (fresh) {
+        if (fresh && frame.length > 0 && !skipsKeeps) {
             const nodes: PresentedNode[] = []
             const of: number[] = []
             const slot = new Map<number, number>()
@@ -4625,6 +5131,7 @@ export function createLayoutGroup(
         }
         const idsOf = (): Map<string, IdHistory> => {
             ids.clear()
+            if (shared === 0) return ids
             for (const p of list) {
                 const id = p.options.layoutId
                 if (id === undefined || ids.has(id)) continue
@@ -4667,14 +5174,14 @@ export function createLayoutGroup(
                 for (let k = parents[i]!; k >= 0; k = parents[k]!)
                     chain.unshift(k)
                 const differs = chain.some((k) => {
-                    const m = ancestry.get(list[k]!)
-                    return m && matrices[k] && !sameMatrix(m, matrices[k]!)
+                    const m = ancestry.get(list[k]!) ?? IDENTITY_MATRIX
+                    return matrices[k] && !sameMatrix(m, matrices[k]!)
                 })
                 if (!differs) return fallback
                 let rest = IDENTITY_MAP
                 for (const k of chain) {
                     const ga = geometry[k]
-                    const m = ancestry.get(list[k]!) ?? matrices[k]
+                    const m = ancestry.get(list[k]!) ?? IDENTITY_MATRIX
                     if (!ga || !m) return fallback
                     const au = list[k]!.drive?.authored ?? ga.authored
                     rest = compose(rest, innerOf(au, m, ga.ox, ga.oy))
@@ -4697,7 +5204,7 @@ export function createLayoutGroup(
                 for (const k of chain) {
                     const ga = geometry[k]
                     const lk = presented[k]
-                    const m = ancestry.get(list[k]!) ?? matrices[k]
+                    const m = ancestry.get(list[k]!) ?? IDENTITY_MATRIX
                     if (!ga || !lk || !m) return null
                     const au = list[k]!.drive?.authored ?? ga.authored
                     rest = compose(
@@ -4776,7 +5283,7 @@ export function createLayoutGroup(
                 chain.push(frame[k]!.p)
             return chain
         }
-        const planned = plannedBoxes()
+        const planned = frame.length === 0 || skipsKeeps ? [] : plannedBoxes()
 
         /**
          * Per running track, its re-expression (§5.7): `δ = A_new − A_old` of
@@ -4788,61 +5295,78 @@ export function createLayoutGroup(
          * (§4.4 decides). A track whose ancestors changed since it was
          * planned retargets.
          */
-        const reexpress = list.map((p, i) => {
-            const d = p.drive
-            const was = frozen.get(p)
-            const own = planned[i]?.own
-            if (!runs(d) || !was || !own) return null
-            const track = d!.track!
-            const dx = own.x + track.fx * own.w - track.a[0]
-            const dy = own.y + track.fy * own.h - track.a[1]
-            const before = frameChainOf(was)
-            const ancestors: KeepAncestor[] = []
-            let same = true
-            let n = 0
-            for (let k = parents[i]!; k >= 0; k = parents[k]!, n++) {
-                const a = list[k]!
-                const ga = geometry[k]
-                const fa = frozen.get(a)
-                if (a !== before[n] || !ga || !fa) {
-                    same = false
-                    break
-                }
-                const pose = engine.poses.get(a) ?? IDENTITY_POSE
-                const innerNow = innerPose(ga.authored, ga.matrix)
-                const innerPlanned = innerPose(
-                    fa.geometry.authored,
-                    was.ancestry.get(a) ?? fa.geometry.matrix
-                )
-                ancestors.push({
-                    pose: { sx: pose.sx, sy: pose.sy },
-                    innerNow: { sx: innerNow.sx, sy: innerNow.sy },
-                    innerPlanned: { sx: innerPlanned.sx, sy: innerPlanned.sy },
-                })
-            }
-            if (n !== before.length) same = false
-            const b = fresh?.rects.get(p)
-            const raw = rects[i]!
-            const path: KeepPath | null = b
-                ? same
-                    ? keepPath({
-                          jump: {
-                              x: raw.x - b.x,
-                              y: raw.y - b.y,
-                              w: raw.w - b.w,
-                              h: raw.h - b.h,
-                          },
-                          ancestors,
-                      })
-                    : 'retarget'
-                : null
-            const exact = same && translationExact(ancestors)
-            return { dx, dy, exact, path }
-        })
+        const reexpress =
+            frame.length === 0
+                ? []
+                : skipsKeeps
+                  ? list.map(() => ({
+                        dx: 0,
+                        dy: 0,
+                        exact: false,
+                        path: 'retarget' as KeepPath,
+                    }))
+                  : list.map((p, i) => {
+                        const d = p.drive
+                        const was = frozen.get(p)
+                        const own = planned[i]?.own
+                        if (!runs(d) || !was || !own) return null
+                        const track = d!.track!
+                        const dx = own.x + track.fx * own.w - track.a[0]
+                        const dy = own.y + track.fy * own.h - track.a[1]
+                        const before = frameChainOf(was)
+                        const ancestors: KeepAncestor[] = []
+                        let same = true
+                        let n = 0
+                        for (
+                            let k = parents[i]!;
+                            k >= 0;
+                            k = parents[k]!, n++
+                        ) {
+                            const a = list[k]!
+                            const ga = geometry[k]
+                            const fa = frozen.get(a)
+                            if (a !== before[n] || !ga || !fa) {
+                                same = false
+                                break
+                            }
+                            const pose = engine.poses.get(a) ?? IDENTITY_POSE
+                            const innerNow = innerPose(ga.authored, ga.matrix)
+                            const innerPlanned = innerPose(
+                                fa.geometry.authored,
+                                was.ancestry.get(a) ?? IDENTITY_MATRIX
+                            )
+                            ancestors.push({
+                                pose: { sx: pose.sx, sy: pose.sy },
+                                innerNow: { sx: innerNow.sx, sy: innerNow.sy },
+                                innerPlanned: {
+                                    sx: innerPlanned.sx,
+                                    sy: innerPlanned.sy,
+                                },
+                            })
+                        }
+                        if (n !== before.length) same = false
+                        const b = fresh?.rects.get(p)
+                        const raw = rects[i]!
+                        const path: KeepPath | null = b
+                            ? same
+                                ? keepPath({
+                                      jump: {
+                                          x: raw.x - b.x,
+                                          y: raw.y - b.y,
+                                          w: raw.w - b.w,
+                                          h: raw.h - b.h,
+                                      },
+                                      ancestors,
+                                  })
+                                : 'retarget'
+                            : null
+                        const exact = same && translationExact(ancestors)
+                        return { dx, dy, exact, path }
+                    })
 
         /** The last known box of an undriven node (§4.4). */
         const lastKnownOf = (i: number): Box | null =>
-            (fresh ? null : cap?.rects.get(list[i]!)) ?? lastBoxes[i] ?? null
+            (fresh ? null : cap?.rects.get(list[i]!)) ?? lastBoxes?.[i] ?? null
         /**
          * `β_π` (§4.4): how far the parent participant's local frame moved
          * on screen. A driven parent's own `β`; an undriven parent's box
@@ -4882,10 +5406,10 @@ export function createLayoutGroup(
         const ownBound = (i: number): number => {
             const p = list[i]!
             const parent = parents[i]!
-            const was = lastGeometry[i]
+            const was = lastGeometry?.[i]
             const g = geometry[i]
             const parentNow = parent >= 0 ? list[parent]! : null
-            if (!g || !was || lastParent[i] !== parentNow) {
+            if (!g || !was || lastParent?.[i] !== parentNow) {
                 return Number.POSITIVE_INFINITY
             }
             /** The node's CSS box relative to its parent's, in its parent's local frame. */
@@ -4901,7 +5425,7 @@ export function createLayoutGroup(
                 }
             }
             const gp = parent >= 0 ? geometry[parent] : null
-            const wasParent = parent >= 0 ? lastGeometry[parent] : null
+            const wasParent = parent >= 0 ? lastGeometry![parent] : null
             if (parent >= 0 && (!gp || !wasParent)) {
                 return Number.POSITIVE_INFINITY
             }
@@ -4941,16 +5465,42 @@ export function createLayoutGroup(
         const exitingMemo = new Map<Element, PresenceLink | null>()
         const exitingNow = (p: Participant): boolean =>
             exitingPresence(p.element, tree, exitingMemo) !== null
-        const planNodes = (): PlanNode[] => {
+        const planNodes = (): (PlanNode | null)[] => {
             return list.map((p, i) => {
                 const g = geometry[i]
                 const a = g?.a ?? rects[i]!
                 const d = p.drive
                 // B is a measurement of what was presented, driven or not
-                const before =
-                    p.keyChanged || unmeasured[i]
-                        ? null
-                        : (fresh?.rects.get(p) ?? null)
+                const before = beforeRects[i] ?? null
+                /**
+                 * A top-level participant with no drive anywhere in its
+                 * subtree, no shared id (the scope has none), no hold, a valid
+                 * measurement and a box that did not move cannot animate,
+                 * snap or report: the plan's action for it is `none`. It is
+                 * left out of the plan array entirely; every consumer uses
+                 * the index-aligned list, so the shape is unchanged.
+                 */
+                if (
+                    shared === 0 &&
+                    d === null &&
+                    parents[i]! < 0 &&
+                    !hasChild[i] &&
+                    !subtreeDriven[i] &&
+                    !p.keyChanged &&
+                    !unmeasured[i] &&
+                    p.hold === null &&
+                    !scrollActive[i] &&
+                    unowned[i] === null &&
+                    (g === null || g === undefined || g.unsupported === null) &&
+                    before !== null &&
+                    Math.abs(before.x - a.x) < threshold &&
+                    Math.abs(before.y - a.y) < threshold &&
+                    Math.abs(before.w - a.w) < threshold &&
+                    Math.abs(before.h - a.h) < threshold
+                ) {
+                    why[i] = null
+                    return null
+                }
                 const moving = runs(d)
                 const holding =
                     moving && !d!.timeline && d!.elapsed < d!.track!.delay
@@ -4981,11 +5531,14 @@ export function createLayoutGroup(
                     }
                 }
                 const hasDependency = 'layoutDependency' in options
-                const presence = presenceOf(p.element)
+                const presence =
+                    shared === 0 ? undefined : presenceOf(p.element)
                 let underHold = p.hold !== null
-                for (let a = p.parent; a && !underHold; a = a.parent) {
-                    const h = a.hold
-                    underHold = h !== null && isLiveHold(h)
+                if (anyHold && !underHold) {
+                    for (let a = p.parent; a && !underHold; a = a.parent) {
+                        const h = a.hold
+                        underHold = h !== null && isLiveHold(h)
+                    }
                 }
                 why[i] = unsupported
                 return {
@@ -5015,7 +5568,7 @@ export function createLayoutGroup(
                     motion: motionOf(p, reduced),
                     layoutId: p.keyChanged ? null : (options.layoutId ?? null),
                     crossfade: options.layoutCrossfade ?? true,
-                    exiting: exitingNow(p),
+                    exiting: shared === 0 ? false : exitingNow(p),
                     presenceOpacity: presence?.opacity ?? false,
                     focusInside: focusChain?.has(p.element) ?? false,
                     unsupported: unsupported !== null,
@@ -5040,7 +5593,10 @@ export function createLayoutGroup(
                     lateRegistered:
                         fresh !== null &&
                         !p.keyChanged &&
-                        !fresh.registered.has(p) &&
+                        !(
+                            p.order <= fresh.registeredThrough ||
+                            fresh.added.has(p)
+                        ) &&
                         !(parents[i]! >= 0 && unmeasured[parents[i]!]!),
                     scrollActive: scrollActive[i]!,
                 }
@@ -5107,7 +5663,10 @@ export function createLayoutGroup(
                 // departing lead's box (OPS-10)
                 const lateWithHandoff =
                     fresh !== null &&
-                    !fresh.registered.has(list[i]!) &&
+                    !(
+                        list[i]!.order <= fresh.registeredThrough ||
+                        fresh.added.has(list[i]!)
+                    ) &&
                     !(parents[i]! >= 0 && unmeasured[parents[i]!])
                 if (from === null || (unmeasured[i] && !lateWithHandoff)) {
                     continue
@@ -5148,6 +5707,7 @@ export function createLayoutGroup(
             viewport,
             threshold,
             maxNodes,
+            leadless: shared === 0,
         })
         for (;;) {
             const wanted = result.actions.map(
@@ -5178,6 +5738,7 @@ export function createLayoutGroup(
                 viewport,
                 threshold,
                 maxNodes,
+                leadless: shared === 0,
             })
         }
 
@@ -5194,17 +5755,17 @@ export function createLayoutGroup(
                     : null
         })
         for (const [id, lead] of result.leads) leads.set(id, list[lead]!)
-        for (const p of list) {
-            const id = p.options.layoutId
-            if (id === undefined || result.leads.has(id) || exitingNow(p)) {
-                continue
+        if (shared > 0)
+            for (const p of list) {
+                const id = p.options.layoutId
+                if (id === undefined || result.leads.has(id) || exitingNow(p)) {
+                    continue
+                }
+                const current = leads.get(id)
+                if (!current || current.removed || p.order >= current.order) {
+                    leads.set(id, p)
+                }
             }
-            const current = leads.get(id)
-            if (!current || current.removed || p.order >= current.order) {
-                leads.set(id, p)
-            }
-        }
-
         for (const warning of result.warnings) {
             if (warning.kind === 'duplicate-id') {
                 warn(
@@ -5236,15 +5797,16 @@ export function createLayoutGroup(
          * whole flush and invalidates every hold.
          */
         const holdMoverIndices = new Set<number>()
-        for (let i = 0; i < list.length; i++) {
-            const held = isLiveHold(list[i]!.hold)
-            if (!held) continue
-            holdMoverIndices.add(i)
-            for (const q of descendantsOf(list[i]!.element)) {
-                const qi = index.get(q)
-                if (qi !== undefined) holdMoverIndices.add(qi)
+        if (anyHold)
+            for (let i = 0; i < list.length; i++) {
+                const held = isLiveHold(list[i]!.hold)
+                if (!held) continue
+                holdMoverIndices.add(i)
+                for (const q of descendantsOf(list[i]!.element)) {
+                    const qi = index.get(q)
+                    if (qi !== undefined) holdMoverIndices.add(qi)
+                }
             }
-        }
         const actionMovers = result.actions.filter(
             (action) =>
                 action.kind === 'track' ||
@@ -5389,7 +5951,7 @@ export function createLayoutGroup(
             })
             actions = actions.map(() => ({ kind: 'none' }) as const)
         }
-        if (unmeasured.some(Boolean)) {
+        if (stale) {
             // §4.4: every node without a valid B that may have jumped is
             // reported, once
             const reported = list.map(() => false)
@@ -5573,30 +6135,32 @@ export function createLayoutGroup(
             number,
             Pick<RadiusBlend, 'from' | 'to'>
         >()
-        actions.forEach((action, i) => {
-            if (action.kind !== 'track' || !ownsRadius(list[i]!.options)) return
-            const target = geometry[i]?.radius
-            if (!target) return
-            let source: readonly number[] | null = null
-            if (action.handoffFrom !== undefined) {
-                if (action.handoffFrom >= 0) {
-                    const previous = list[action.handoffFrom]!
-                    if (!ownsRadius(previous.options)) return
-                    source = fresh?.radius.get(previous) ?? null
-                } else {
-                    const id = list[i]!.options.layoutId
-                    source =
-                        id === undefined
-                            ? null
-                            : (retained.get(id)?.radius ?? null)
+        if (shared > 0)
+            actions.forEach((action, i) => {
+                if (action.kind !== 'track' || !ownsRadius(list[i]!.options))
+                    return
+                const target = geometry[i]?.radius
+                if (!target) return
+                let source: readonly number[] | null = null
+                if (action.handoffFrom !== undefined) {
+                    if (action.handoffFrom >= 0) {
+                        const previous = list[action.handoffFrom]!
+                        if (!ownsRadius(previous.options)) return
+                        source = fresh?.radius.get(previous) ?? null
+                    } else {
+                        const id = list[i]!.options.layoutId
+                        source =
+                            id === undefined
+                                ? null
+                                : (retained.get(id)?.radius ?? null)
+                    }
+                } else if (list[i]!.drive?.radiusBlend) {
+                    // A retarget of a running blend starts from what is painted.
+                    source = fresh?.radius.get(list[i]!) ?? null
                 }
-            } else if (list[i]!.drive?.radiusBlend) {
-                // A retarget of a running blend starts from what is painted.
-                source = fresh?.radius.get(list[i]!) ?? null
-            }
-            if (!source) return
-            radiusBlendFrom.set(i, { from: source, to: target })
-        })
+                if (!source) return
+                radiusBlendFrom.set(i, { from: source, to: target })
+            })
 
         // A pair that reverses mid-crossfade swaps roles. Sample both
         // layers before any drive is mutated so neither opacity pops (§5.6).
@@ -5604,26 +6168,28 @@ export function createLayoutGroup(
             number,
             { readonly lead: number; readonly follower: number }
         >()
-        actions.forEach((action, i) => {
-            if (action.kind !== 'track' || !action.fadeLead) return
-            const leadFade = list[i]!.drive?.fade
-            if (leadFade?.role !== 'follower' || fadeEnded(leadFade)) return
-            const followerIndex = actions.findIndex(
-                (candidate) =>
-                    candidate.kind === 'follow' &&
-                    candidate.start &&
-                    candidate.lead === i
-            )
-            const followerFade =
-                followerIndex >= 0 ? list[followerIndex]!.drive?.fade : null
-            fadeFrom.set(i, {
-                lead: currentFadeOpacity(leadFade),
-                follower:
-                    followerFade?.role === 'lead' && !fadeEnded(followerFade)
-                        ? currentFadeOpacity(followerFade)
-                        : 1,
+        if (shared > 0)
+            actions.forEach((action, i) => {
+                if (action.kind !== 'track' || !action.fadeLead) return
+                const leadFade = list[i]!.drive?.fade
+                if (leadFade?.role !== 'follower' || fadeEnded(leadFade)) return
+                const followerIndex = actions.findIndex(
+                    (candidate) =>
+                        candidate.kind === 'follow' &&
+                        candidate.start &&
+                        candidate.lead === i
+                )
+                const followerFade =
+                    followerIndex >= 0 ? list[followerIndex]!.drive?.fade : null
+                fadeFrom.set(i, {
+                    lead: currentFadeOpacity(leadFade),
+                    follower:
+                        followerFade?.role === 'lead' &&
+                        !fadeEnded(followerFade)
+                            ? currentFadeOpacity(followerFade)
+                            : 1,
+                })
             })
-        })
 
         /**
          * Kept tracks under a participant ancestor that keep their pose
@@ -5632,7 +6198,7 @@ export function createLayoutGroup(
          * drawn at t_k, holding only the nodes those poses depend on.
          */
         const timelines = new Map<number, Timeline>()
-        {
+        if (actions.some((action) => action.kind === 'keep')) {
             const drawnIndex = new Map<Participant, number>()
             drawnFrame.forEach((node, j) => drawnIndex.set(node.p, j))
             const wanted: [number, number][] = []
@@ -5723,7 +6289,7 @@ export function createLayoutGroup(
          * let presence alone draw the follower. The follower's action is
          * skipped below; the lead's position track may continue to A.
          */
-        for (const p of list) {
+        for (const p of focusChain === null ? [] : list) {
             const d = p.drive
             const id = p.options.layoutId
             if (!d || id === undefined || !focusChain?.has(p.element)) continue
@@ -5795,93 +6361,46 @@ export function createLayoutGroup(
         }
         // a new view space: the held point is screen space again, and a
         // released path is re-expressed by the fresh capture below
-        for (const p of list) {
-            const hold = liveHoldOf(p)
-            if (!hold) continue
-            hold.shiftX = 0
-            hold.shiftY = 0
-            hold.rides.clear()
-            const g = geometry[index.get(p)!]
-            if (!g || unowned[index.get(p)!] || g.unsupported) {
-                // the node follows the failed support check's rule; its
-                // diagnostic comes from the plan's snapped list, once
-                if (!snapped.some((entry) => entry.element === p.element)) {
-                    snapped.push({
-                        element: p.element,
-                        reason: 'unsupported',
-                    })
-                }
-                invalidateHold(p)
-                settle(p)
-                continue
-            }
-            const i = index.get(p)!
-            const reducedNow = reducedMode()
-            // a released landing follows a policy change at the next flush;
-            // a held phase never does (§5.10, §9.4)
-            if (hold.state === 'released' && reducedNow === 'jump') {
-                finishHold(hold)
-                continue
-            }
-            const planNode = nodes[i]!
-            const sizeChanged =
-                Math.max(
-                    Math.abs(g.a.w - hold.sizeTargetW),
-                    Math.abs(g.a.h - hold.sizeTargetH)
-                ) > HOLD_SIZE_TOL
-            if (sizeChanged || planNode.optionsChanged) {
-                const pinned =
-                    (p.options.layout ?? true) === 'position' ||
-                    reducedNow === 'jump'
-                if (pinned) {
-                    hold.sizeTrack = null
-                    hold.sizeElapsed = 0
-                    hold.sizeStarted = false
-                    hold.sizeW = g.a.w
-                    hold.sizeH = g.a.h
-                    hold.sizeVW = 0
-                    hold.sizeVH = 0
-                } else {
-                    const motion = motionOf(p, reducedNow)
-                    const moving =
-                        Math.abs(hold.sizeVW) > 1e-6 ||
-                        Math.abs(hold.sizeVH) > 1e-6
-                    const continues =
-                        hold.sizeStarted && hold.sizeTrack !== null
-                    const refusal: { settle: number | null } = {
-                        settle: null,
+        if (anyHold)
+            for (const p of list) {
+                const hold = liveHoldOf(p)
+                if (!hold) continue
+                hold.shiftX = 0
+                hold.shiftY = 0
+                hold.rides.clear()
+                const g = geometry[index.get(p)!]
+                if (!g || unowned[index.get(p)!] || g.unsupported) {
+                    // the node follows the failed support check's rule; its
+                    // diagnostic comes from the plan's snapped list, once
+                    if (!snapped.some((entry) => entry.element === p.element)) {
+                        snapped.push({
+                            element: p.element,
+                            reason: 'unsupported',
+                        })
                     }
-                    const track = createTrack(
-                        { x: g.a.x, y: g.a.y, w: hold.sizeW, h: hold.sizeH },
-                        g.a,
-                        moving
-                            ? {
-                                  x: 0,
-                                  y: 0,
-                                  w: hold.sizeVW,
-                                  h: hold.sizeVH,
-                              }
-                            : null,
-                        g.fx,
-                        g.fy,
-                        true,
-                        moving ? { ...motion, delay: 0 } : motion,
-                        null,
-                        refusal
-                    )
-                    if (typeof track === 'string') {
-                        if (track === 'spring-timeout') {
-                            diagnose('spring-timeout', 'snap', {
-                                element: p.element,
-                                reason: 'unsupported',
-                                springSettleMs:
-                                    refusal.settle === null
-                                        ? null
-                                        : refusal.settle * 1000,
-                            })
-                        }
-                        // a size refusal snaps the size channel to A; the
-                        // hold itself continues (the policy never ends it)
+                    invalidateHold(p)
+                    settle(p)
+                    continue
+                }
+                const i = index.get(p)!
+                const reducedNow = reducedMode()
+                // a released landing follows a policy change at the next flush;
+                // a held phase never does (§5.10, §9.4)
+                if (hold.state === 'released' && reducedNow === 'jump') {
+                    finishHold(hold)
+                    continue
+                }
+                const planNode = nodes[i]!
+                const sizeChanged =
+                    Math.max(
+                        Math.abs(g.a.w - hold.sizeTargetW),
+                        Math.abs(g.a.h - hold.sizeTargetH)
+                    ) > HOLD_SIZE_TOL
+                if (sizeChanged || planNode.optionsChanged) {
+                    const pinned =
+                        (p.options.layout ?? true) === 'position' ||
+                        reducedNow === 'jump'
+                    if (pinned) {
                         hold.sizeTrack = null
                         hold.sizeElapsed = 0
                         hold.sizeStarted = false
@@ -5890,103 +6409,156 @@ export function createLayoutGroup(
                         hold.sizeVW = 0
                         hold.sizeVH = 0
                     } else {
-                        hold.sizeTrack = track
-                        hold.sizeElapsed = 0
-                        hold.sizeStarted = continues
-                    }
-                }
-                hold.sizeTargetW = g.a.w
-                hold.sizeTargetH = g.a.h
-            } else if (
-                Math.abs(hold.sizeW - g.a.w) <= HOLD_SIZE_TOL &&
-                Math.abs(hold.sizeH - g.a.h) <= HOLD_SIZE_TOL &&
-                (hold.sizeTrack !== null ||
-                    Math.abs(hold.sizeW - g.a.w) > 0 ||
-                    Math.abs(hold.sizeH - g.a.h) > 0)
-            ) {
-                // one size tolerance: normalize a sub-threshold difference so
-                // release can reach its finish and the clock can stop
-                hold.sizeW = g.a.w
-                hold.sizeH = g.a.h
-                hold.sizeVW = 0
-                hold.sizeVH = 0
-                hold.sizeTargetW = g.a.w
-                hold.sizeTargetH = g.a.h
-            }
-            if (hold.state === 'released') {
-                const target = hold.releaseTarget
-                const targetOrigin = target
-                    ? {
-                          x: target.x + g.fx * target.w,
-                          y: target.y + g.fy * target.h,
-                      }
-                    : null
-                const nowOrigin = {
-                    x: g.a.x + g.fx * g.a.w,
-                    y: g.a.y + g.fy * g.a.h,
-                }
-                const originDelta = targetOrigin
-                    ? Math.max(
-                          Math.abs(nowOrigin.x - targetOrigin.x),
-                          Math.abs(nowOrigin.y - targetOrigin.y)
-                      )
-                    : Number.POSITIVE_INFINITY
-                const modeChanged = hold.releaseMode !== reducedNow
-                if (
-                    hold.releaseTrack &&
-                    (originDelta >= HOLD_ORIGIN_TOL ||
-                        planNode.optionsChanged ||
-                        modeChanged)
-                ) {
-                    const b = fresh?.rects.get(p) ?? null
-                    const v = velocity.get(p) ?? null
-                    const continues = hold.releaseStarted
-                    if (b && v) {
                         const motion = motionOf(p, reducedNow)
-                        const speed = Math.hypot(v.x, v.y)
+                        const moving =
+                            Math.abs(hold.sizeVW) > 1e-6 ||
+                            Math.abs(hold.sizeVH) > 1e-6
+                        const continues =
+                            hold.sizeStarted && hold.sizeTrack !== null
+                        const refusal: { settle: number | null } = {
+                            settle: null,
+                        }
                         const track = createTrack(
-                            b,
+                            {
+                                x: g.a.x,
+                                y: g.a.y,
+                                w: hold.sizeW,
+                                h: hold.sizeH,
+                            },
                             g.a,
-                            v,
+                            moving
+                                ? {
+                                      x: 0,
+                                      y: 0,
+                                      w: hold.sizeVW,
+                                      h: hold.sizeVH,
+                                  }
+                                : null,
                             g.fx,
                             g.fy,
                             true,
-                            speed > 1e-9 ? { ...motion, delay: 0 } : motion,
-                            null
+                            moving ? { ...motion, delay: 0 } : motion,
+                            null,
+                            refusal
                         )
-                        if (typeof track !== 'string') {
-                            hold.releaseTrack = track
-                            hold.releaseElapsed = 0
-                            hold.releaseStarted = continues
+                        if (typeof track === 'string') {
+                            if (track === 'spring-timeout') {
+                                diagnose('spring-timeout', 'snap', {
+                                    element: p.element,
+                                    reason: 'unsupported',
+                                    springSettleMs:
+                                        refusal.settle === null
+                                            ? null
+                                            : refusal.settle * 1000,
+                                })
+                            }
+                            // a size refusal snaps the size channel to A; the
+                            // hold itself continues (the policy never ends it)
+                            hold.sizeTrack = null
+                            hold.sizeElapsed = 0
+                            hold.sizeStarted = false
+                            hold.sizeW = g.a.w
+                            hold.sizeH = g.a.h
+                            hold.sizeVW = 0
+                            hold.sizeVH = 0
+                        } else {
+                            hold.sizeTrack = track
+                            hold.sizeElapsed = 0
+                            hold.sizeStarted = continues
+                        }
+                    }
+                    hold.sizeTargetW = g.a.w
+                    hold.sizeTargetH = g.a.h
+                } else if (
+                    Math.abs(hold.sizeW - g.a.w) <= HOLD_SIZE_TOL &&
+                    Math.abs(hold.sizeH - g.a.h) <= HOLD_SIZE_TOL &&
+                    (hold.sizeTrack !== null ||
+                        Math.abs(hold.sizeW - g.a.w) > 0 ||
+                        Math.abs(hold.sizeH - g.a.h) > 0)
+                ) {
+                    // one size tolerance: normalize a sub-threshold difference so
+                    // release can reach its finish and the clock can stop
+                    hold.sizeW = g.a.w
+                    hold.sizeH = g.a.h
+                    hold.sizeVW = 0
+                    hold.sizeVH = 0
+                    hold.sizeTargetW = g.a.w
+                    hold.sizeTargetH = g.a.h
+                }
+                if (hold.state === 'released') {
+                    const target = hold.releaseTarget
+                    const targetOrigin = target
+                        ? {
+                              x: target.x + g.fx * target.w,
+                              y: target.y + g.fy * target.h,
+                          }
+                        : null
+                    const nowOrigin = {
+                        x: g.a.x + g.fx * g.a.w,
+                        y: g.a.y + g.fy * g.a.h,
+                    }
+                    const originDelta = targetOrigin
+                        ? Math.max(
+                              Math.abs(nowOrigin.x - targetOrigin.x),
+                              Math.abs(nowOrigin.y - targetOrigin.y)
+                          )
+                        : Number.POSITIVE_INFINITY
+                    const modeChanged = hold.releaseMode !== reducedNow
+                    if (
+                        hold.releaseTrack &&
+                        (originDelta >= HOLD_ORIGIN_TOL ||
+                            planNode.optionsChanged ||
+                            modeChanged)
+                    ) {
+                        const b = fresh?.rects.get(p) ?? null
+                        const v = velocity.get(p) ?? null
+                        const continues = hold.releaseStarted
+                        if (b && v) {
+                            const motion = motionOf(p, reducedNow)
+                            const speed = Math.hypot(v.x, v.y)
+                            const track = createTrack(
+                                b,
+                                g.a,
+                                v,
+                                g.fx,
+                                g.fy,
+                                true,
+                                speed > 1e-9 ? { ...motion, delay: 0 } : motion,
+                                null
+                            )
+                            if (typeof track !== 'string') {
+                                hold.releaseTrack = track
+                                hold.releaseElapsed = 0
+                                hold.releaseStarted = continues
+                                hold.releaseTarget = g.a
+                                hold.releaseMode = reducedNow
+                                const d = p.drive
+                                if (d) {
+                                    d.track = track
+                                    d.target = g.a
+                                    d.elapsed = 0
+                                    d.started = continues
+                                    d.mode = reducedNow
+                                }
+                            }
+                        } else {
+                            hold.releaseTrack = translated(
+                                hold.releaseTrack,
+                                g.a.x - (target?.x ?? g.a.x),
+                                g.a.y - (target?.y ?? g.a.y)
+                            )
                             hold.releaseTarget = g.a
                             hold.releaseMode = reducedNow
                             const d = p.drive
                             if (d) {
-                                d.track = track
+                                d.track = hold.releaseTrack
                                 d.target = g.a
-                                d.elapsed = 0
-                                d.started = continues
                                 d.mode = reducedNow
                             }
-                        }
-                    } else {
-                        hold.releaseTrack = translated(
-                            hold.releaseTrack,
-                            g.a.x - (target?.x ?? g.a.x),
-                            g.a.y - (target?.y ?? g.a.y)
-                        )
-                        hold.releaseTarget = g.a
-                        hold.releaseMode = reducedNow
-                        const d = p.drive
-                        if (d) {
-                            d.track = hold.releaseTrack
-                            d.target = g.a
-                            d.mode = reducedNow
                         }
                     }
                 }
             }
-        }
         /**
          * `h`/`ḣ` of every live hold in this flush's view space. While held,
          * the *displayed* h reaches the finger target H, but a descendant's
@@ -6004,154 +6576,168 @@ export function createLayoutGroup(
                 readonly dh: { readonly x: number; readonly y: number }
             }
         >()
-        for (const p of list) {
-            const hold = liveHoldOf(p)
-            const g = geometry[index.get(p)!]
-            if (!hold || !g) continue
-            const originX = g.a.x + g.fx * g.a.w
-            const originY = g.a.y + g.fy * g.a.h
-            const drawn = fresh?.rects.get(p) ?? null
-            const measured = drawn
-                ? {
-                      x: drawn.x + g.fx * drawn.w - originX,
-                      y: drawn.y + g.fy * drawn.h - originY,
-                  }
-                : { x: hold.lastHX, y: hold.lastHY }
-            const v = velocity.get(p) ?? ZERO_VELOCITY
-            const dh =
-                hold.state === 'held'
-                    ? { x: 0, y: 0 }
-                    : { x: v.x + g.fx * v.w, y: v.y + g.fy * v.h }
-            const display =
-                hold.state === 'held'
-                    ? { x: hold.hx - originX, y: hold.hy - originY }
-                    : measured
-            holdDisplacements.set(hold, { presented: measured, dh })
-            hold.lastHX = display.x
-            hold.lastHY = display.y
-        }
-        for (const p of list) {
-            const i = index.get(p)!
-            const g = geometry[i]
-            const hold = p.hold === null ? holdAncestor(p) : null
-            if (!hold) {
-                if (p.ride) {
-                    p.ride = null
-                    if (p.drive) settle(p)
-                }
-                continue
+        if (anyHold)
+            for (const p of list) {
+                const hold = liveHoldOf(p)
+                const g = geometry[index.get(p)!]
+                if (!hold || !g) continue
+                const originX = g.a.x + g.fx * g.a.w
+                const originY = g.a.y + g.fy * g.a.h
+                const drawn = fresh?.rects.get(p) ?? null
+                const measured = drawn
+                    ? {
+                          x: drawn.x + g.fx * drawn.w - originX,
+                          y: drawn.y + g.fy * drawn.h - originY,
+                      }
+                    : { x: hold.lastHX, y: hold.lastHY }
+                const v = velocity.get(p) ?? ZERO_VELOCITY
+                const dh =
+                    hold.state === 'held'
+                        ? { x: 0, y: 0 }
+                        : { x: v.x + g.fx * v.w, y: v.y + g.fy * v.h }
+                const display =
+                    hold.state === 'held'
+                        ? { x: hold.hx - originX, y: hold.hy - originY }
+                        : measured
+                holdDisplacements.set(hold, { presented: measured, dh })
+                hold.lastHX = display.x
+                hold.lastHY = display.y
             }
-            if (!g) continue
-            if (!p.drive) {
-                ensureDrive(
-                    p,
-                    'static',
-                    g,
-                    [],
-                    reducedMode(),
-                    knownTransformAnchoring(p.element.ownerDocument) === true &&
-                        !waapi
-                )
-            }
-            if (p.drive?.kind === 'follow' || p.drive?.kind === 'held') continue
-            p.ride = hold
-            hold.rides.add(p)
-            const { presented: presentedH, dh } = holdDisplacements.get(
-                hold
-            ) ?? {
-                presented: { x: 0, y: 0 },
-                dh: { x: 0, y: 0 },
-            }
-            const b = fresh?.rects.get(p) ?? null
-            const v = velocity.get(p) ?? null
-            if (!b || !v) {
-                // H13-10R/S3: under jump a capture-less flush has no B/v, but
-                // the stale residual must still settle at its own A
-                const d = p.drive
-                if (reduced === 'jump' && d) {
-                    d.track = null
-                    d.timeline = null
-                    d.target = g.a
-                    d.kind = 'static'
-                    d.elapsed = 0
-                    d.started = false
-                    d.mode = reduced
-                }
-                continue
-            }
-            const residualBefore = {
-                x: b.x - presentedH.x,
-                y: b.y - presentedH.y,
-                w: b.w,
-                h: b.h,
-            }
-            const distance = moved(residualBefore, g.a, {
-                mode: p.options.layout ?? true,
-                anchor: null,
-                fx: g.fx,
-                fy: g.fy,
-            })
-            const running = p.drive?.kind === 'track' && runs(p.drive)
-            // §5.7 on the residual: its own A is unchanged and options are
-            // equal, so keep the residual's remaining time; the new h still
-            // carries the child with the parent's t = 0 write
-            const lk = nodes[i]!.presented
-            const residualKeeps =
-                running &&
-                reduced !== 'jump' &&
-                !nodes[i]!.optionsChanged &&
-                (lk === null ||
-                    moved(lk, g.a, {
-                        mode: p.options.layout ?? true,
-                        anchor: null,
-                        fx: g.fx,
-                        fy: g.fy,
-                    }) < threshold)
-            if (residualKeeps) {
-                // §5.7 path 2: a presented layout move translates the residual
-                const target = p.drive!.target
-                if (target && p.drive!.track) {
-                    const dx = g.a.x - target.x
-                    const dy = g.a.y - target.y
-                    if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
-                        p.drive!.track = translated(p.drive!.track, dx, dy)
-                        p.drive!.target = g.a
+        if (anyHold || anyRide)
+            for (const p of list) {
+                const i = index.get(p)!
+                const g = geometry[i]
+                const hold = p.hold === null ? holdAncestor(p) : null
+                if (!hold) {
+                    if (p.ride) {
+                        p.ride = null
+                        if (p.drive) settle(p)
                     }
+                    continue
                 }
-                continue
+                if (!g) continue
+                if (!p.drive) {
+                    ensureDrive(
+                        p,
+                        'static',
+                        g,
+                        [],
+                        reducedMode(),
+                        knownTransformAnchoring(p.element.ownerDocument) ===
+                            true && !waapi
+                    )
+                }
+                if (p.drive?.kind === 'follow' || p.drive?.kind === 'held')
+                    continue
+                p.ride = hold
+                hold.rides.add(p)
+                const { presented: presentedH, dh } = holdDisplacements.get(
+                    hold
+                ) ?? {
+                    presented: { x: 0, y: 0 },
+                    dh: { x: 0, y: 0 },
+                }
+                const b = fresh?.rects.get(p) ?? null
+                const v = velocity.get(p) ?? null
+                if (!b || !v) {
+                    // H13-10R/S3: under jump a capture-less flush has no B/v, but
+                    // the stale residual must still settle at its own A
+                    const d = p.drive
+                    if (reduced === 'jump' && d) {
+                        d.track = null
+                        d.timeline = null
+                        d.target = g.a
+                        d.kind = 'static'
+                        d.elapsed = 0
+                        d.started = false
+                        d.mode = reduced
+                    }
+                    continue
+                }
+                const residualBefore = {
+                    x: b.x - presentedH.x,
+                    y: b.y - presentedH.y,
+                    w: b.w,
+                    h: b.h,
+                }
+                const distance = moved(residualBefore, g.a, {
+                    mode: p.options.layout ?? true,
+                    anchor: null,
+                    fx: g.fx,
+                    fy: g.fy,
+                })
+                const running = p.drive?.kind === 'track' && runs(p.drive)
+                // §5.7 on the residual: its own A is unchanged and options are
+                // equal, so keep the residual's remaining time; the new h still
+                // carries the child with the parent's t = 0 write
+                const lk = nodes[i]!.presented
+                const residualKeeps =
+                    running &&
+                    reduced !== 'jump' &&
+                    !nodes[i]!.optionsChanged &&
+                    (lk === null ||
+                        moved(lk, g.a, {
+                            mode: p.options.layout ?? true,
+                            anchor: null,
+                            fx: g.fx,
+                            fy: g.fy,
+                        }) < threshold)
+                if (residualKeeps) {
+                    // §5.7 path 2: a presented layout move translates the residual
+                    const target = p.drive!.target
+                    if (target && p.drive!.track) {
+                        const dx = g.a.x - target.x
+                        const dy = g.a.y - target.y
+                        if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
+                            p.drive!.track = translated(p.drive!.track, dx, dy)
+                            p.drive!.target = g.a
+                        }
+                    }
+                    continue
+                }
+                if (
+                    running ||
+                    distance >= threshold ||
+                    nodes[i]!.optionsChanged ||
+                    reduced === 'jump'
+                ) {
+                    planResidual(
+                        p,
+                        b,
+                        v,
+                        presentedH,
+                        dh,
+                        reduced,
+                        p.parent,
+                        p.parent ? (velocity.get(p.parent) ?? null) : null,
+                        p.parent
+                            ? (fresh?.rects.get(p.parent) ??
+                                  (p.parent.hold
+                                      ? {
+                                            w: p.parent.hold.sizeW,
+                                            h: p.parent.hold.sizeH,
+                                        }
+                                      : (p.parent.geometry?.a ?? null)))
+                            : null
+                    )
+                }
             }
-            if (
-                running ||
-                distance >= threshold ||
-                nodes[i]!.optionsChanged ||
-                reduced === 'jump'
-            ) {
-                planResidual(
-                    p,
-                    b,
-                    v,
-                    presentedH,
-                    dh,
-                    reduced,
-                    p.parent,
-                    p.parent ? (velocity.get(p.parent) ?? null) : null,
-                    p.parent
-                        ? (fresh?.rects.get(p.parent) ??
-                              (p.parent.hold
-                                  ? {
-                                        w: p.parent.hold.sizeW,
-                                        h: p.parent.hold.sizeH,
-                                    }
-                                  : (p.parent.geometry?.a ?? null)))
-                        : null
-                )
-            }
-        }
 
         actions.forEach((action, i) => {
             const p = list[i]!
             const g = geometry[i]
             const d = p.drive
+            // a quiescent node: no drive, no hold and no id (the plan left it
+            // null); it can have no action, no report and no write
+            if (
+                nodes[i] === null &&
+                action.kind === 'none' &&
+                d === null &&
+                p.hold === null &&
+                p.ride === null
+            ) {
+                return
+            }
             if (p.hold !== null) {
                 // the hold owns this node's origin; its event rule already ran
                 touch(p)
@@ -6168,7 +6754,7 @@ export function createLayoutGroup(
                 case 'none':
                     if (reduced === 'jump' && d?.fade) endFade(p)
                     // a crossfade follower stays invisible until presence removes it
-                    if (d && (d.kind !== 'held' || !nodes[i]!.exiting))
+                    if (d && (d.kind !== 'held' || !nodes[i]?.exiting))
                         settle(p)
                     return
                 case 'keep': {
@@ -6215,7 +6801,7 @@ export function createLayoutGroup(
                     if (d?.kind === 'held') {
                         // a held follower that is no longer exiting was
                         // reversed into a lead: it belongs at A, not at 0
-                        if (!nodes[i]!.exiting) settle(p)
+                        if (!nodes[i]?.exiting) settle(p)
                         return
                     }
                     if (d?.run) {
@@ -6361,11 +6947,10 @@ export function createLayoutGroup(
         for (let i = list.length - 1; i >= 0; i--) {
             if (inFrame[i] && parents[i]! >= 0) inFrame[parents[i]!] = true
         }
-        const frameIndex = new Map<number, number>()
         const next: FrameNode[] = []
         list.forEach((p, i) => {
             if (!inFrame[i]) return
-            frameIndex.set(i, next.length)
+            p.frameIndex = next.length
             const parent = parents[i]!
             // a kept track (or a continuing follower) keeps the presence
             // matrices it was planned with, its own and its ancestors': a
@@ -6384,24 +6969,43 @@ export function createLayoutGroup(
             const kept = continues ? frozen.get(p) : undefined
             let ancestry = kept?.ancestry
             if (!ancestry) {
-                const now = new Map<Participant, Matrix>()
+                let now: Map<Participant, Matrix> | null = null
                 for (let k = parent; k >= 0; k = parents[k]!) {
-                    if (inFrame[k]) now.set(list[k]!, geometry[k]!.matrix)
+                    const m = geometry[k]!.matrix
+                    // identity is the default an absent entry means; storing it
+                    // would allocate a map per node for no information
+                    if (m.a === 1 && m.d === 1 && m.e === 0 && m.f === 0) {
+                        continue
+                    }
+                    ;(now ??= new Map()).set(list[k]!, m)
                 }
-                ancestry = now.size > 0 ? now : NO_ANCESTRY
+                ancestry = now ?? NO_ANCESTRY
             }
-            next.push({
-                p,
-                parent: parent >= 0 ? frameIndex.get(parent)! : -1,
-                geometry: kept
-                    ? keptGeometry(
-                          kept.geometry,
-                          geometry[i]!,
-                          nodes[i]!.planned ?? kept.geometry.a
-                      )
-                    : geometry[i]!,
-                ancestry,
-            })
+            const frameGeometry = kept
+                ? keptGeometry(
+                      kept.geometry,
+                      geometry[i]!,
+                      nodes[i]?.planned ?? kept.geometry.a
+                  )
+                : geometry[i]!
+            const reused = p.frameNode
+            if (reused) {
+                reused.parent = parent >= 0 ? list[parent]!.frameIndex : -1
+                reused.geometry = frameGeometry
+                reused.ancestry = ancestry
+                next.push(reused)
+            } else {
+                const node: FrameNode = {
+                    p,
+                    parent: parent >= 0 ? list[parent]!.frameIndex : -1,
+                    geometry: frameGeometry,
+                    ancestry,
+                    solveNode: null,
+                    solved: null,
+                }
+                p.frameNode = node
+                next.push(node)
+            }
         })
         frame = next
 
@@ -6461,7 +7065,13 @@ export function createLayoutGroup(
         }
         const writes = pending
         pending = []
-        for (const w of writes) put(w.element, w.property, w.value, w.priority)
+        for (const w of writes) {
+            put(w.element, w.property, w.value, w.priority)
+            if (writePool.length < 1024) {
+                w.element = null!
+                writePool.push(w)
+            }
+        }
     }
 
     /** Every affected node as `'failed'` (§9.2 step 4). */
@@ -6721,6 +7331,8 @@ export function createLayoutGroup(
                 parent: parent ? position.get(parent)! : -1,
                 geometry: node.geometry,
                 ancestry: node.ancestry,
+                solveNode: node.solveNode,
+                solved: node.solved,
             }
         })
     }
@@ -7010,6 +7622,12 @@ export function createLayoutGroup(
                     removed: false,
                     motion: null,
                     roots: [],
+                    treePass: 0,
+                    treeDepth: 0,
+                    treeParent: null,
+                    treeFlat: null,
+                    frameIndex: -1,
+                    frameNode: null,
                 }
                 registry.set(element, p)
                 elementScopes.set(element, scopeToken)
@@ -7106,14 +7724,14 @@ export function createLayoutGroup(
             syncListeners()
         },
 
-        capture: takeCapture,
+        capture: () => takeCapture(true),
 
         flush,
 
         take: takeDrive,
 
         update(mutate) {
-            takeCapture()
+            takeCapture(false)
             try {
                 mutate()
             } catch (error) {
@@ -7162,6 +7780,12 @@ export function createLayoutGroup(
                 shared = 0
                 chainRoots = new Set()
                 try {
+                    structureObserver?.disconnect()
+                } catch {
+                    // disposal still completes
+                }
+                structureObserver = null
+                try {
                     disarm()
                 } catch {
                     // disposal still completes
@@ -7193,6 +7817,11 @@ export function createLayoutGroup(
     // the React adapter's package-internal mount hand-off: no public export
     Object.defineProperty(group, Symbol.for('ani-layout.capture-added'), {
         value: captureAdded,
+        enumerable: false,
+    })
+    // test-only observation of the measured-jump shortcut; no public export
+    Object.defineProperty(group, Symbol.for('ani-layout.keep-shortcut'), {
+        value: () => lastKeepShortcut,
         enumerable: false,
     })
     return group
