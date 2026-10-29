@@ -696,7 +696,7 @@ cannot decide a ratio, and no quantized ratio is presented as a failure.
 | H15-08 | S-INSERT expects `snapped []` / `onSnap []`: a mounting row has no B and §9.1 requires both B and A outside the viewport. The earlier three-`culled` expectation was scene/oracle overreach, not an engine defect. | S-INSERT G7 0; the scene passes both engines; G1/G2/G4/G13 unchanged. |
 | H15-09 | S-STACK disc scale is checked by `shape.badge-scale` (computed transform sampled per frame, declared 0.8→1 / 1→0.8 timeline); the control disables it. | `shape.badge-scale` 4.9e-7; `stack-no-badge-scale` fails at 0.2; S-STACK passes. |
 | H15-10 | S-ISLAND's exiting card content keeps the 0.28 s spring (spec `position` departure) and is documented/tested as the H15-10 contribution; the pill content remains a position wrapper. | README scene contributions and this ledger; S-ISLAND G1–G5/G7/G13 pass; the H15-07 rule covers the removal. |
-| H15-11 | S-PHOTO registers the selected cell/image (the only layoutIds) after the initial scroll, so the scroll event never meets the engine's active-scroller listeners; WebKit 2203 has no `scrollend`, so the settle proof is the scroll event plus two frames, and an unsettled scroll rejects instead of silently continuing. The real twin reuses the same open/back unregister/add path. | S-PHOTO runs in WebKit; the manual/real diagnostics are the H18 nested-image stale path (2/3), not a missing capture; no `handoff-scroll-active`; G13 2/4 and 4/4 exact. |
+| H15-11 | S-PHOTO registers the selected cell/image (the only layoutIds) after the initial scroll, so the scroll event never meets the engine's active-scroller listeners; WebKit 2203 has no `scrollend`, so the settle proof is the scroll event plus two frames, and an unsettled scroll rejects instead of silently continuing. N15-02 makes the real `openReal()`/`backReal()` mirror the manual unregister/add path, set `data-p`/`elements` and insert the returned cell at the selected index. | S-PHOTO runs in WebKit; the manual and real diagnostics are exactly the same two H18 nested-image stale events (2/2), not three; no `handoff-scroll-active`; G13 2/4 and 4/4 exact. |
 | S3 | Inline SVG icons with `currentColor` in S-ACC/S-PHOTO/S-ISLAND; S-ACC spacer arithmetic now uses a relative group top (scroller content 773); README/report G13 and popBox claims corrected; 6 biome warnings removed. | `pnpm exec biome check bench/layout` 0 errors, 0 warnings; S-ACC spacer geometry unchanged for participants; icons are non-participants. |
 
 ### Scene and metric table (5 measured runs; median and worst)
@@ -746,12 +746,112 @@ cannot decide a ratio, and no quantized ratio is presented as a failure.
   scroll. The engine's active-scroller rule is not exercised on WebKit's
   missing event; the scene does not hide a scroll-active handoff (an unsettled
   scroll rejects).
-- The S-PHOTO real twin emits three `capture-less-flush` stale diagnostics
-  versus the manual run's two, all on the same H18 nested image/frame path;
-  the extra one is recorded, not suppressed. The S-PHOTO scene fails honestly.
+- The S-PHOTO real twin emits exactly the same two `capture-less-flush`
+  stale diagnostics as the manual run (open detail image, back cell image),
+  both on the H18 nested-image path; they are recorded, not suppressed. The
+  S-PHOTO scene fails honestly.
 - The exact G13 read sets are pinned per scene/commit from the audited
   §4.1/§4.3 set; the React presence probe reads are classified per commit, not
   subtracted by a constant. The style totals remain scene/engine constants
   because the engine's measured-node set (support/cache/Typed OM) is
   implementation-specific; the rect/pair counts are exact `2N`.
 - DPR 1/3 and reduced-motion variants remain P5c; P4 remains pending.
+
+## Iteration 5 — N15 fixes: N15-01/N15-02 and S3
+
+- Worktree: `ani-h15`, branch `helper/h15`, base `ba20a0f`; no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-5/report.json`
+- Report: `bench/layout/iteration-5/report.json`; log:
+  `bench/layout/iteration-5/run.log`.
+- 1-minute load at start: **2.66**, cost advisory; frame gates decide.
+- Self-tests: **80/80**; browser controls **50 (25 per engine), all ok,
+  46 conclusive, 4 inconclusive** (the same primary-G1-failing photo/acc
+  controls).
+- Scene result: S-CARD, S-SEG, S-STACK, S-ISLAND, S-INSERT and S-DELETE pass
+  in Chromium and WebKit; S-PHOTO and S-ACC fail on the H18 engine defects.
+  Certification is NOT CERTIFIED for those two, pending P4 and the unchanged
+  S-BULK cost block.
+
+### N15-01 — S-ISLAND post-removal restoration proof
+
+- Failing before: the H15-07 exemption skipped G6 for `card-content` and only
+  mapped it to the follower; there was no evidence that the engine removed the
+  owned `translate`/`scale`.
+- Fix: `PhotoRuntime` — no; **S-ISLAND** takes a before snapshot from the last
+  connected observation (frame 65) and an after snapshot immediately after the
+  engine `remove()` in `removeExitedCard()`, records them on the trace
+  (`restorations`), and the S-ISLAND plan requires
+  `requiredRestorations: ['card-content']`. `restorationMismatches()` checks
+  the after snapshot against the mount (owned declarations + author cssText
+  rule); a missing snapshot or a leftover declaration fails G6.
+- Evidence: before `translate: 5.8e-05px !important; scale: 0.998141
+  0.996705 !important` at frame 65; after `translate`/`scale` empty. G6 0 in
+  every measured run, detail `1 post-removal restoration snapshot(s)`.
+- Test: `scoring.test` N15-01 (after matches -> pass; leftover -> fail; missing
+  required restoration -> fail; author cssText accepted). 80/80.
+
+### N15-02 — S-PHOTO real-twin fidelity
+
+- Failing before: `openReal()` did not unregister the cell/image or insert the
+  placeholder; `backReal()` appended the new cell instead of inserting it at
+  the selected index, did not set the image's `data-p`, and the real twin
+  emitted **three** `capture-less-flush` diagnostics versus the manual's two.
+- Fix: `openReal()` and `backReal()` now mirror the manual path exactly:
+  unregister the selected cell/image, remove the cell, insert the placeholder;
+  on back, create the cell/image with `data-p="cell-37"`/`"cell-37-image"`,
+  set the `elements` entries, remove the detail registrations, and insert the
+  returned cell at `ROW * 3 + COL` before `group.add`; focus and detail
+  visibility match. The real twin asserts that its diagnostics are exactly the
+  two H18 stale events (`capture-less-flush` open image + back image); the
+  diagnostics remain in `RealTrace.diagnostics` and are reported as problems,
+  not hidden.
+- Evidence: real `final.connected = 301`; diagnostics exactly 2/2, same as the
+  manual; no extra; G13 2/4 (Chromium) and 4/4 (WebKit) still exact. S-PHOTO
+  still fails G1 306.25 / G2 306.25 / G4 306.25 / G7 4 as H18 evidence.
+
+### S3 quick fixes
+
+- README S-ACC movers: `33/17/33` (c1/c2/c3), not `33/17/35`.
+- Removed the duplicate `delete-no-lift` guard and the dead `excludeReads`
+  option.
+- S-ISLAND exiting-content text-crispness assertion documented in README and
+  here: the incoming pill content and the expanded card content are
+  position-pinned at the authored glyph size; the exiting card content is a
+  0.28 s size-tracking layer whose declared opacity fades to 0 over 0.12 s
+  (`shape.presence-opacity`), with the G1 box track as the geometry assertion;
+  the departing text is not presented after the fade. The position-wrapper
+  attempt was rejected because the engine does not counter-project the
+  position child under the follower (G1 121 px), so the documented H15-10
+  contribution remains.
+- S-PHOTO private-use glyphs were replaced with inline SVG/currentColor in
+  iteration 4 (toolbar); S-ACC icons are inline SVG/currentColor; the S3 claim
+  is corrected.
+- README/report G13 and popBox numbers corrected: S-DELETE 18/18 rects;
+  Chromium 4/4 and 3/3; WebKit 10/10 and 8/8; presence reads 2/2 per commit;
+  no blanket exclusion.
+
+### Scene and metric table (5 measured runs; medians and worst)
+
+| Scene | Chromium | WebKit |
+|---|---|---|
+| S-CARD | **pass**; G1 0.0013, G13 8/15, 8/15, 9/16, G8 0.320 ms | **pass**; G1 0.0004, G13 15/15, 16/16, G8 1.000 ms |
+| S-SEG | **pass**; G1 0.0001, G13 2/2, G8 0.280 ms | **pass**; G1 0.0000, G13 3/3, G8 1.000 ms |
+| S-PHOTO | **FAIL** RUN 5, G1/G2/G4 306.2501 (frame 81 cell-37-image top), G7 4; G13 2/2; G8 0.255 ms | **FAIL** RUN 5, G1/G2/G4 306.2501, G7 4; G13 4/4; G8 1.000 ms |
+| S-STACK | **pass**; G1 0.0003, G13 21/33 and 12/24, badge-scale 0, G8 0.415 ms | **pass**; G1 0.0002, G13 33/33 and 24/24, G8 1.000 ms |
+| S-ISLAND | **pass**; G1 0.0006, G2 0.0006, G6 0 with 1 restoration snapshot, G13 5/9 and 6/10, G8 0.420 ms | **pass**; G1 0.0003, G2 0.0001, G6 0 with 1 snapshot, G13 9/9 and 10/10, G8 1.000 ms |
+| S-ACC | **FAIL** RUN 5, G1/G4 120.0000 (frame 12 body-6 bottom), G2 55.6732 (frame 18 body-6 c3); G13 47/47; G8 0.525 ms | **FAIL** RUN 5, G1/G4 120.0001, G2 55.6732; G13 82/82; G8 1.000–2.000 ms |
+| S-INSERT | **pass**; G1 0.0001, G2 0, G4 0.0001, G7 0, G13 16/16, G8 0.600 ms | **pass**; G1 0.0001, G13 29/29, G8 2.000 ms median |
+| S-DELETE | **pass**; G1 0.0095, G2 0.0095, G3 0, G6 0, G7 0, G13 18/18 with 4/4 and 3/3, G8 0.465 ms | **pass**; G1 0.0095, G2 0.0095, G13 18/18 with 10/10 and 8/8, G8 1.000 ms |
+
+### Merge verdict
+
+**Conditionally PASS, mergeable as H15 P5b evidence.** The two N15
+conditions are met: S-ISLAND G6 is backed by a before/after post-removal
+restoration snapshot (and the required-restoration gate), and the S-PHOTO
+real twin mirrors the manual unregister/add/registration path with exactly the
+same two H18 stale diagnostics (no unexplained third). S-PHOTO and S-ACC
+remain the two genuine H18 engine defects; certification remains NOT CERTIFIED
+for those, pending P4 and the unchanged S-BULK cost block. No gate, tolerance,
+production source or knownFailure was added.
