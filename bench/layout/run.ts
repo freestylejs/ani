@@ -101,6 +101,9 @@ const SCENES = [
 const SCENE_NAMES = [...SCENES, 'cost'] as const
 const IOS_VIEWPORT = { width: 390, height: 844 } as const
 const COST_VIEWPORT = { width: 1280, height: 720 } as const
+/** Clarification 2026-10-29: G12 is BLOCK until the D11/H17c harness lands. */
+const G12_D11_BLOCK =
+    'BLOCK: the D11 baseline-subtracted G12 harness is not in H17c yet; the raw 1/10-held p95 is evidence only'
 
 type EngineName = 'chromium' | 'webkit' | 'firefox'
 
@@ -751,11 +754,13 @@ function evaluateCost(
             ...gate,
             id: `G12-${label}`,
             label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
-            blocked: !validity.timerValid,
+            // D11/H17c is not in this tree: the baseline-subtracted gate is
+            // unavailable, so G12 is BLOCK, not a measured pass/fail.
+            blocked: true,
+            deciding: true,
             measured: samplesComplete,
-            pass:
-                samplesComplete && shape.releaseClean && readPass && gate.pass,
-            detail: `${gate.detail ?? ''}; ${shape.samples.length} samples; per held ${shape.perHeld.toFixed(4)} ms; held reads exactly one rect per element; release ${shape.releaseClean ? 'clean' : 'left a hold/track'}`,
+            pass: false,
+            detail: `${G12_D11_BLOCK}; ${gate.detail ?? ''}; ${shape.samples.length} samples; raw per held ${shape.perHeld.toFixed(4)} ms; held reads exactly one rect per element; release ${shape.releaseClean ? 'clean' : 'left a hold/track'}`,
         })
     }
     findings.push({
@@ -1349,15 +1354,13 @@ function sceneOutcome(
             ...gate,
             id: 'G12',
             label: 'Held frame at 1 held element (scene shape)',
-            blocked: real.g > 0.05,
-            deciding: real.g <= 0.05,
+            // D11/H17c is not in this tree: raw scene held p95 is evidence
+            // only; the G12 row is BLOCK, not pass/fail.
+            blocked: true,
+            deciding: false,
             measured: real.held.samples.length === 600,
-            pass:
-                real.held.samples.length === 600 &&
-                real.held.releaseClean &&
-                readsPass &&
-                gate.pass,
-            detail: `${gate.detail ?? ''}; scene held shape, 1 held; ${real.held.samples.length} samples; per held ${gate.value.toFixed(4)} ms; reads ${real.held.reads.rects}/${real.held.reads.holds} rects/hold-frames; ${real.held.reads.mismatches} mismatched frames; release ${real.held.releaseClean ? 'clean' : 'left a hold/track'}`,
+            pass: false,
+            detail: `${G12_D11_BLOCK}; ${gate.detail ?? ''}; scene held shape, 1 held; ${real.held.samples.length} samples; raw per held ${gate.value.toFixed(4)} ms; reads ${real.held.reads.rects}/${real.held.reads.holds} rects/hold-frames; ${real.held.reads.mismatches} mismatched frames; release ${real.held.releaseClean ? 'clean' : 'left a hold/track'}`,
         })
         metrics.push({
             id: 'G13-held',
@@ -1749,6 +1752,10 @@ async function main(): Promise<number> {
     blockedEntries.push({
         item: 'reduced-motion variants',
         reason: "P5c BLOCK: the 'jump' and maxDuration 0.2 variants are not part of this iteration",
+    })
+    blockedEntries.push({
+        item: 'G12 baseline-subtracted',
+        reason: G12_D11_BLOCK,
     })
     const certificationEngines = engineReports.map((engine) => ({
         engine: engine.engine,

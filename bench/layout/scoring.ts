@@ -770,18 +770,19 @@ function scoreVelocity(
             }
         }
     }
-    if (count === 0 && plan.g3Blocked !== undefined) {
+    if (count === 0 && plan.g3NotApplicable !== undefined) {
+        // Clarification 2026-10-29: a release has no analytic layout track
+        // before it; the release G3 row is N/A, not BLOCK or fail.
         return {
             id: 'G3',
             label: 'Velocity continuity at each retarget',
             gate: '<= 1 % of the larger edge speed + 1 px/s',
             unit: 'ratio',
-            value: Number.NaN,
-            pass: false,
-            blocked: true,
-            deciding: true,
+            value: 0,
+            pass: true,
+            deciding: false,
             measured: false,
-            detail: plan.g3Blocked,
+            detail: `n/a: ${plan.g3NotApplicable}`,
         }
     }
     return {
@@ -1100,10 +1101,13 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     let problems = 0
     let detail: string | undefined
     const blockedRows: string[] = []
+    const naRows: string[] = []
     for (const commit of plan.commits) {
         if (commit.kind === 'release') {
-            blockedRows.push(
-                `${commit.label}: release() has no public LayoutReport (§5.10/§7.1)`
+            // Clarification 2026-10-29: release() has no public
+            // LayoutReport; the release G7 row is N/A, not a failure.
+            naRows.push(
+                `${commit.label}: release() has no public LayoutReport; G7 not applicable`
             )
             continue
         }
@@ -1157,6 +1161,7 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
     }
     const firstLabel = plan.commits[0]?.label
     const blocked = blockedRows.length > 0
+    const naDetail = naRows.length > 0 ? `N/A: ${naRows.join('; ')}` : undefined
     return {
         id: 'G7',
         label: 'Reports: status, snapped set and diagnostics',
@@ -1169,9 +1174,14 @@ function scoreReports(plan: ScenePlan, trace: SceneTrace): MetricFinding {
         measured: true,
         worst: {
             label: firstLabel,
-            detail: blockedRows.join('; ') || detail || 'all reports match',
+            detail:
+                blockedRows.join('; ') ||
+                [detail, naDetail].filter(Boolean).join('; ') ||
+                'all reports match',
         },
-        detail: blocked ? `BLOCK/authority: ${blockedRows.join('; ')}` : detail,
+        detail: blocked
+            ? `BLOCK/authority: ${blockedRows.join('; ')}`
+            : [detail, naDetail].filter(Boolean).join('; ') || undefined,
     }
 }
 

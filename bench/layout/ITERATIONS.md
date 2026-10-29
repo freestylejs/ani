@@ -1203,3 +1203,72 @@ scene has the exemption.
 - S-BULK is **BLOCKED** on WebKit (G8), not a measured pass; Chromium S-BULK
   passes the frame scene. S-SHEET is fail on Chromium (G12) and blocked on
   WebKit. S-REORDER fails G1/G2/G4/G13/G12 and blocks G3/G7.
+
+## Iteration 9 — H16 clarifications on the H18/H17 base
+
+- Worktree: `ani-h16`, branch `helper/h16`, fast-forwarded from `68c8ab4` to
+  the H18/H17 integration base `c3c482c` (no reset/fetch/push).
+- Date: 2026-10-29.
+- Authority: `.trace/ani_ios_production/p5_scene_clarifications.md`
+  (2026-10-29); authority wins over this note.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-9/report.json`
+- Report: `bench/layout/iteration-9/report.json`; log:
+  `bench/layout/iteration-9/run.log`.
+
+### Clarification ledger
+
+| Item | Change | Result |
+|---|---|---|
+| S-REORDER G7 | Per-sibling reorder does not replace a running sibling track; expected statuses are `ended` at frames 28/31/35. Removed the A-13 BLOCK from the reorder rows. A future script that retargets a running sibling must expect `interrupted`. | G7 pass; statuses `ended`; the release row is N/A (no public report). |
+| S-SHEET release G7 | `release()` returns void and starts no public `LayoutReport`; `release-1`/`release-2` G7 rows are **not applicable**, not fail/BLOCK. | G7 pass; detail records the two N/A release rows; G2/G4/origin/restoration are scored. |
+| S-SHEET release G3 | No analytic layout track before a release; release G3 is **not applicable**; G2/G4/origin/observed FD decide. Other G3 rows remain deciding. | G3 prints n/a; no fail/BLOCK. |
+| S-SHEET 16 ms/detents | Documented scene contribution; no change. | Both holds 16 ms; `top + v·0.20` nearest and ≥1 s second take. |
+| G12 | D11 baseline-subtracted G12 is not in H17c yet; G12 rows remain **BLOCK** with raw evidence. | Cost G12-1/G12-10 and scene G12 BLOCK; top-level blocked + cert reason. |
+| H18 base | Rebases onto the H18 engine fixes (A–F) and H17 perf; S-PHOTO assertion fix included. | S-PHOTO/S-ACC pass with zero stale diagnostics; S-REORDER measured rows pass. |
+
+- 1-minute load at start: **7.69**; cost fingerprint **advisory**.
+- Self-tests: **81/81, 14 controls**. Browser controls: **74 (37 per engine),
+  all ok, 74 conclusive, 0 inconclusive** — the H18 base makes the previously
+  contaminated photo/acc G1 controls and `reorder-no-rebase` conclusive.
+
+### Scene and metric table (5 measured runs; median)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1/G2/G4 | pass 0.0000211 / 0 / 0.0000211 | pass 0.0000211 / 0 / 0.0000211 |
+| S-REORDER | G3 | **n/a** (release; no analytic prior track) | **n/a** |
+| S-REORDER | G5/G6/G7/G13 | pass 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 |
+| S-REORDER | G8 | 0.515 ms pass | 1.000 ms pass |
+| S-REORDER | G12 scene | **BLOCK** (raw 0.305 ms/held; D11/H17c unavailable) | **BLOCK** (raw 1.0) |
+| S-REORDER | G13-held / hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G4 | pass 0.0000825 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0.0000871 |
+| S-SHEET | G3/G7 | **G3 n/a; G7 pass** (release rows N/A) | **G3 n/a; G7 pass** |
+| S-SHEET | G5/G6/G13 | pass 0 / 0 (1 removal proof) / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G8 | 0.285 ms pass | 1.000 ms pass |
+| S-SHEET | G12 scene | **BLOCK** (raw 0.255 ms/held) | **BLOCK** (raw 1.0) |
+| S-SHEET | G13-held / hold | pass 0 / 0 | pass 0 / 0 |
+| S-PHOTO | G1/G2/G4/G7 | **pass** 0.000169 / 0.000152 / 0.000169 / 0 | **pass** 0.000158 / 0.000093 / 0.000158 / 0 |
+| S-ACC | G1/G2/G4/G7 | **pass** 0.000234 / 0.000061 / 0.000234 / 0 | **pass** 0.000185 / 0.000061 / 0.000185 / 0 |
+| S-BULK | G1–G7/G13 | pass (G13 2000/2000, 300/300) | pass (G13 2000/2000, 600/600) |
+| S-BULK | G8 | 1.395 ms pass | **BLOCK** (1 ms-quantized; 20-frame mean not claimed) |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **pass 1.838 / 1.922** | BLOCK (raw 1.250 / 1.429) |
+| S-BULK cost | G10 | pass 1.120 ms | BLOCK (raw 2.000) |
+| S-BULK cost | G11 | **FAIL 6.465 ms** | BLOCK (raw 7.000) |
+| S-BULK cost | G12-1 / G12-10 | **BLOCK** (raw 0.265 / 0.0175) | **BLOCK** (raw 1.0 / 0.1) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Controls and certification
+
+- 74 browser controls, 37 per engine, all ok and **74 conclusive**; the H18
+  base fixes the primary targets so `photo-no-counter-scale`,
+  `acc-separator-1px` and `reorder-no-rebase` now fail their targets
+  conclusively.
+- `certified: false`; reasons: S-REORDER/S-SHEET blocked on G12 in both
+  engines (D11/H17c G12 harness not yet available), WebKit S-BULK blocked on
+  G8, WebKit S-BULK cost blocked, Chromium S-BULK G11 6.465 failed, DPR 1/3
+  and reduced-motion variants BLOCK, and the advisory cost fingerprint.
+  S-PHOTO and S-ACC now pass with zero stale diagnostics and ~0.0002 px.
+  `pending` is empty.
+- The H16 scene assertion fix for S-PHOTO is valid on this base: the real twin
+  records actual diagnostics (zero) and the manual/real stale path is gone.
