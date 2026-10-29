@@ -974,14 +974,22 @@ root-cause hypotheses as iterations 0–5 (300 computed reads, 300 track plans,
 600 pose declarations, support checks over the 1,000-participant tree). WebKit
 is BLOCK on its 1 ms timer. Not fixed in P5c.
 
-### Release status / report gap
+### Status / report ambiguities
 
-`LayoutDriveHandle.release()` returns void and starts no `LayoutRun`: the
-engine creates a release track but no `LayoutReport`. The p5 spec's
-"release run `'ended'`" row is therefore not observable through the public
-API. The scenes record the release's `t = 0` flush observation (G2/G3/G4) and
-expect `no-change` for the detent updates; G7 does not claim a release status.
-This is an authority/API ambiguity for H18, not a scene tolerance.
+- `LayoutDriveHandle.release()` returns void and starts no `LayoutRun`: the
+  engine creates a release track but no `LayoutReport`. The p5 spec's
+  "release run `'ended'`" row is therefore not observable through the public
+  API. The scenes record the release's `t = 0` flush observation (G2/G3/G4) and
+  expect `no-change` for the detent updates; G7 does not claim a release status.
+- The p5 table's S-REORDER statuses (`interrupted` at the next reorder) do not
+  match §7.1/A-13 for this script. Each reorder targets a different sibling;
+  the earlier sibling's track is untouched and keeps running, and the three
+  runs resolve `ended` at frames 28/31/35. The plan expects `ended`; the p5
+  row is the ambiguity, not a gate change.
+- A reorder-adjacent held frame changes the held layout, so the engine's §4.2
+  support check reads one offset pair + one computed style in addition to the
+  one held rect. G13's strict reading counts 6 excess; the authority does not
+  explicitly exempt the support read.
 
 ### Controls
 
