@@ -966,14 +966,6 @@ shapes are deciding on Chromium; WebKit's 1 ms timer makes the ratio BLOCK.
 Recorded; no gate change. This is the main P4 cost finding: the 1-held fixed
 cost must come down to ≤0.1 ms.
 
-### Failure 5 — S-BULK G9/G11 (unchanged)
-
-Chromium G9 ≈3.3–3.5× and G11 ≈12 ms; the floor audit is exact and G10/G13
-pass. The engine commit is still ~10 ms and the sustained state ~12 ms; same
-root-cause hypotheses as iterations 0–5 (300 computed reads, 300 track plans,
-600 pose declarations, support checks over the 1,000-participant tree). WebKit
-is BLOCK on its 1 ms timer. Not fixed in P5c.
-
 ### Status / report ambiguities
 
 - `LayoutDriveHandle.release()` returns void and starts no `LayoutRun`: the
@@ -1071,6 +1063,13 @@ control is 0.11 ms/held.
 | F15 | WebKit's 1 ms timer makes the 20-frame mean unclaimable; cost/G12 are BLOCK, not a measured pass. | WebKit cost BLOCK; top-level blocked list and certification reasons. |
 | F18 | Biome is reported honestly; DPR 1/3 and reduced-motion variants are P5c BLOCK. | **810 infos, 0 errors, 0 warnings** (not "clean"); DPR/reduced in the top-level blocked list. |
 
+**Scene contributions.** S-SHEET uses the manual clock's uniform 16 ms step
+for both holds; the spec's second-hold 20 ms row is amended (source comment
+and README). `allowEmptyFinal` is used only by S-SHEET (single participant
+unmounted after the second release) and is backed by
+`requiredRestorations: ['sheet']` plus the post-removal snapshot; no other
+scene has the exemption.
+
 ### Scene and metric table (5 measured runs; median)
 
 | Scene | Gate | Chromium | WebKit |
@@ -1127,3 +1126,77 @@ control is 0.11 ms/held.
 4. WebKit 1 ms timer: G9–G12 BLOCK; no 20-frame mean claimed.
 5. S-BULK G9/G11 remain above the gate.
 6. DPR/reduced variants and Firefox remain BLOCK/advisory.
+
+## Iteration 8 — H16 S2 verification fixes
+
+- Worktree: `ani-h16`, branch `helper/h16`, base `e4a6867` (H16 iteration 7);
+  no reset/fetch/push.
+- Date: 2026-10-29.
+- Command:
+  `node bench/layout/run.ts --runs 5 --engine chromium --engine webkit --check --out bench/layout/iteration-8/report.json`
+- Report: `bench/layout/iteration-8/report.json`; log:
+  `bench/layout/iteration-8/run.log`.
+- Instrument: MacBook Pro `Mac14,9`, Apple M2 Pro (10 cores), 32 GB,
+  macOS 27.0.1, Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0,
+  `chromium_headless_shell-1187`, `webkit-2203`.
+- 1-minute load at start: **2.62**; cost fingerprint **advisory**.
+- Self-tests: **81/81, 14 controls**. Browser controls: **74 (37 per engine),
+  all ok, 68 conclusive, 6 inconclusive** (photo/acc G1 ×2 and
+  `reorder-no-rebase` ×2).
+
+### S2 fixes
+
+| ID | Fix | Failing before | Result |
+|---|---|---|---|
+| F8 | `releaseContinuity` uses each rider's rest size (title 270×22), not the held row's 358×52. | G2 88.0000 px (width-edge artifact) | **G2 60.0000 px** (row-1 top, frame 11); title top 49.06 px. Failure kept. |
+| G8 | S-BULK WebKit G8 is BLOCK when `g > 0.05`: its p95 is raw 1 ms-quantized frames and the §11.5 20-frame mean is not claimed. | 2.000 ms pass | **BLOCK**; WebKit S-BULK scene blocked, top-level blocked + cert reason. |
+| S3 | Certification reasons list every deciding, non-blocked failed metric; RUN detail labels blocked G3/G7 as `BLOCK` rather than NaN/0. | RUN detail `G3 NaN; G7 0`, cert reason only scene status | `BLOCK G3; BLOCK G7; G1 96; G2 60; G4 60; G13 6; G12 ...`; cert reasons enumerate G1/G2/G4/G13/G12 and S-SHEET G12. |
+| S3 | Removed the stale iteration-6 Failure 5 (3.3–3.5× / 12 ms) text. | stale | removed; iteration 7/8 values remain. |
+| S3 | S-SHEET second hold uses the uniform 16 ms step; the p5 20 ms row is an explicit scene contribution in source/README/ITERATIONS. | implicit | documented. |
+| S3 | `allowEmptyFinal` scope documented: only S-SHEET, backed by `requiredRestorations: ['sheet']` and the post-removal snapshot. | implicit | documented and source-commented. |
+
+### Scene and metric table (5 measured runs; median)
+
+| Scene | Gate | Chromium | WebKit |
+|---|---|---|---|
+| S-REORDER | G1 oracle | **FAIL 96.0000 px** (title-1, frame 3) | **FAIL 96.0000 px** |
+| S-REORDER | G2 release continuity | **FAIL 60.0000 px** (row-1 top, frame 11); title top 49.06 px | **FAIL 60.0000 px** |
+| S-REORDER | G3 | **BLOCK/authority** (gesture release) | **BLOCK/authority** |
+| S-REORDER | G4 spring | **FAIL 60.0000 px** (row-1, frame 11) | **FAIL 60.0000 px** |
+| S-REORDER | G5/G6 | pass 0 / 0 | pass 0 / 0 |
+| S-REORDER | G7 | **BLOCK/authority** (A-13 ended vs p5 interrupted; no release report) | **BLOCK/authority** |
+| S-REORDER | G8 | 0.695 ms pass | 2.000 ms pass |
+| S-REORDER | G12 scene | **FAIL 0.330 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-REORDER | G13 | **FAIL 6** (held support read; commit 28/28, 8/8) | **FAIL 6** (16/16 computed) |
+| S-REORDER | G13-held / shape.hold / kill-switch | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-SHEET | G1/G2/G4 | pass 0.0000825 / 0 / 0.0000825 | pass 0.0000871 / 0 / 0.0000871 |
+| S-SHEET | G3/G7 | **BLOCK/authority** | **BLOCK/authority** |
+| S-SHEET | G5/G6 | pass 0 / 0 (1 removal proof) | pass 0 / 0 |
+| S-SHEET | G8 | 0.305 ms pass | 1.000 ms pass |
+| S-SHEET | G12 scene | **FAIL 0.310 ms/held** | BLOCK 1 ms (non-deciding) |
+| S-SHEET | G13 / G13-held / shape.hold | pass 0 / 0 / 0 | pass 0 / 0 / 0 |
+| S-BULK | G1/G4 | pass 0.0000848 | pass 0.0000848 |
+| S-BULK | G2/G3/G5/G6/G7 | pass 0 / 0 / 0 / 0 / 0 | pass 0 / 0 / 0 / 0 / 0 |
+| S-BULK | G8 | 1.490 ms pass (48 frames) | **BLOCK** (1 ms-quantized; 20-frame mean not claimed) |
+| S-BULK | G13 | pass 0 (2000/2000, 300/300) | pass 0 (2000/2000, 600/600) |
+| S-BULK cost | G9-unscrolled / G9-scrolled | **FAIL 2.951 / 2.817** | BLOCK (raw 1.750 / 1.714) |
+| S-BULK cost | G10 | pass 1.365 ms | BLOCK (raw 3.000) |
+| S-BULK cost | G11 | **FAIL 8.090 ms** | BLOCK (raw 8.000) |
+| S-BULK cost | G12-1 / G12-10 | **FAIL 0.415 / pass 0.061** | BLOCK (raw 1.000 / 0.100) |
+| S-BULK cost | G13 / G13-held | pass 0 / 0 | pass 0 / 0 |
+
+### Controls and certification
+
+- 74 browser controls, 37 per engine, all ok; **68 conclusive, 6
+  inconclusive** (photo/acc G1 ×2 and `reorder-no-rebase` ×2). The
+  `reorder-extra-read` isolated delta is 34 vs the primary 6; the held-read
+  control is 11/10.
+- `certified: false`; top-level `blocked` names `webkit scene s-sheet`
+  (G3/G7/G12), `webkit scene s-bulk` (G8), `webkit S-BULK cost` (1 ms timer),
+  the DPR 1/3 sweep and the reduced-motion variants. Certification reasons
+  list every failed metric, e.g. Chromium S-REORDER `G1 96, G2 60, G4 60,
+  G13 6, G12 0.330`, Chromium S-SHEET `G12 0.310`, and the RUN detail labels
+  the blocked G3/G7 (and G12 on WebKit) as `BLOCK`, not NaN/0.
+- S-BULK is **BLOCKED** on WebKit (G8), not a measured pass; Chromium S-BULK
+  passes the frame scene. S-SHEET is fail on Chromium (G12) and blocked on
+  WebKit. S-REORDER fails G1/G2/G4/G13/G12 and blocks G3/G7.
