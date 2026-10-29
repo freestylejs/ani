@@ -833,7 +833,7 @@ function evaluateCost(
             id: `G12-${label}`,
             label: `Held frame at ${shape.held} held element${shape.held === 1 ? '' : 's'}`,
             blocked: !validity.timerValid,
-            deciding: !validity.timerValid,
+            deciding: validity.timerValid,
             measured: samplesComplete,
             pass:
                 samplesComplete && shape.releaseClean && readPass && gate.pass,
