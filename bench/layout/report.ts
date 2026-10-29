@@ -354,6 +354,9 @@ export function formatReport(report: BenchReport): string {
     for (const reason of report.certification.reasons) {
         lines.push(`  cert block: ${reason}`)
     }
+    for (const reason of report.certification.advisory) {
+        lines.push(`  cert advisory: ${reason}`)
+    }
     return lines.join('\n')
 }
 
@@ -455,6 +458,8 @@ export function compareReports(
 export interface CertificationReport {
     readonly certified: boolean
     readonly reasons: readonly string[]
+    /** WebKit cost BLOCK/advisory rows (D12); they do not block P5. */
+    readonly advisory: readonly string[]
     readonly requiredEngines: readonly string[]
     readonly requiredRuns: number
     readonly requiredScenes: readonly string[]
