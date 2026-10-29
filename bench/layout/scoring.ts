@@ -1747,8 +1747,11 @@ function pairProgress(
             active = state
         }
     }
-    if (!active || active.kind === 'none') return 0
+    if (!active) return 0
+    // A `'jump'` pair ends at the completed fade's endpoint even though its
+    // rewritten segment has kind `none` (§9.4, §1.10).
     if (active.jump) return 1
+    if (active.kind === 'none') return 0
     return perceptualOf(active.motion!, elapsedAt(active, frame, plan.stepMs))
 }
 

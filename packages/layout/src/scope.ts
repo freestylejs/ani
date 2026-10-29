@@ -214,6 +214,13 @@ interface DriveFade {
     started: boolean
     /** The lead track's law (§5.8). */
     readonly law: TrackLaw
+    /**
+     * A follower's fade endpoint has been applied (opacity 0, presence
+     * released): it keeps drawing at the lead's track until that track ends,
+     * then stays invisible at the lead's A until presence unmounts it (§5.8,
+     * §9.4). The lead layer clears its fade instead.
+     */
+    finished?: boolean
 }
 
 /**
@@ -268,6 +275,8 @@ interface Drive {
      */
     started: boolean
     fade: DriveFade | null
+    /** A follower held after its lead left: the last drawn box, view space. */
+    frozen: { readonly box: Box; readonly velocity: BoxVelocity } | null
     /** On-screen radii mixed across a shared handoff (§5.7). */
     radiusBlend: Pick<RadiusBlend, 'from' | 'to'> | null
     lead: Participant | null
@@ -1676,7 +1685,7 @@ export function createLayoutGroup(
                     : null
             }
             s.layers = layers[i] ?? null
-            s.override = held ? heldOverride(hold, node.p) : null
+            s.override = held ? heldOverride(hold, node.p) : (d?.frozen ?? null)
             s.ride = isLiveHold(ride) ? (index?.get(ride.owner) ?? -1) : -1
             out.push(s)
         })
@@ -1933,6 +1942,8 @@ export function createLayoutGroup(
             } else if (ownsRadius(p.options)) {
                 existing.radius = g.radiusSource
             }
+            // a new action invalidates a previous frozen-follower box
+            existing.frozen = null
             existing.kind = kind
             return existing
         }
@@ -1954,6 +1965,7 @@ export function createLayoutGroup(
             elapsed: 0,
             started: false,
             fade: null,
+            frozen: null,
             radiusBlend: null,
             lead: null,
             inert: null,
@@ -3441,12 +3453,17 @@ export function createLayoutGroup(
     function endFade(p: Participant): void {
         const d = p.drive!
         const fade = d.fade!
-        d.fade = null
         if (fade.role === 'lead') {
+            d.fade = null
             restoreOpacity(p.element, d)
             return
         }
-        d.kind = 'held'
+        if (fade.finished) return
+        // The follower's opacity and presence release end at `p = 1` (§5.8);
+        // its pose keeps following the lead's clamped track to its own end so
+        // the pair never draws at two different timelines (§9.4). A jump
+        // converts this drive to `held` at the caller.
+        fade.finished = true
         writeValue(p.element, d, 'opacity', '0')
         d.release?.()
         d.release = null
@@ -3524,7 +3541,17 @@ export function createLayoutGroup(
         // a follower whose lead left the frame stays where it is
         for (const node of frame) {
             const d = node.p.drive
-            if (d?.kind === 'follow' && (!d.lead?.drive || d.lead.removed)) {
+            if (d?.kind === 'follow' && (!d.lead || d.lead.removed)) {
+                // The DOM already draws the follower at its last box; freeze
+                // that box in view space so its subtree keeps a valid map
+                // (§5.8, §5.10).
+                const box = node.solved?.drawn ?? node.geometry?.a ?? null
+                if (box) {
+                    d.frozen ??= {
+                        box: { ...box },
+                        velocity: ZERO_VELOCITY,
+                    }
+                }
                 d.kind = 'held'
                 d.release?.()
                 d.release = null
@@ -3555,29 +3582,41 @@ export function createLayoutGroup(
                 (g.a.y + g.fy * g.a.h)
         })
         const animating: boolean[] = []
+        /** A finished follower (and its subtree) is a latched map: it is drawn but does not keep the clock. */
+        const latched: boolean[] = []
+        const ownLive: boolean[] = []
         let running = false
         for (const node of frame) {
             const d = node.p.drive
             const live = d !== null && d.kind !== 'held'
             const ownTrack = live && runs(d)
             const ownFade = live && d.fade !== null && !fadeEnded(d.fade)
+            // a follower whose opacity timeline ended keeps drawing at the
+            // lead's track until that track ends; its subtree must not settle
+            // into the follower's frozen map before presence unmounts it
+            const fadeLatched =
+                live &&
+                d.fade !== null &&
+                d.fade.role === 'follower' &&
+                fadeEnded(d.fade)
             const hold = node.p.hold
             const held = isLiveHold(hold)
             const ride = node.p.ride
             const riding = isLiveHold(ride)
+            const parent = node.parent >= 0 && animating[node.parent]!
             animating.push(
-                ownTrack ||
-                    ownFade ||
-                    held ||
-                    riding ||
-                    (node.parent >= 0 && animating[node.parent]!)
+                ownTrack || ownFade || held || riding || fadeLatched || parent
             )
+            latched.push(
+                fadeLatched || (node.parent >= 0 && latched[node.parent]!)
+            )
+            ownLive.push(ownTrack || ownFade || held || riding)
         }
         frame.forEach((node, i) => {
             const p = node.p
             if (!p.drive || p.drive.kind === 'held') return
             // a lead gives its opacity back; a follower is drawn at the lead
-            // one last time, then held invisible
+            // one last time, then stays invisible at the lead's track
             if (p.drive.fade && fadeEnded(p.drive.fade)) {
                 if (p.drive.fade.role === 'follower') {
                     queuePose(node, solved[i]!)
@@ -3689,7 +3728,7 @@ export function createLayoutGroup(
                 return
             }
             queuePose(node, solved[i]!)
-            running = true
+            if (!latched[i] || ownLive[i]) running = true
         })
         stats.tracks = countTracks()
         return running
@@ -6031,7 +6070,14 @@ export function createLayoutGroup(
                     })
                 }
             })
-            actions = actions.map(() => ({ kind: 'none' }) as const)
+            // A new follower keeps its action so the completed fade's
+            // endpoint (opacity 0, inert, radius) is applied in this flush;
+            // every mover's pose is still `none` (§9.4).
+            actions = actions.map((action) =>
+                action.kind === 'follow' && action.start
+                    ? action
+                    : ({ kind: 'none' } as const)
+            )
         }
         if (stale) {
             // §4.4: every node without a valid B that may have jumped is
@@ -6830,6 +6876,32 @@ export function createLayoutGroup(
                 }
             }
 
+        /**
+         * §9.4 `'jump'`: the follower's visible fade is already over, so its
+         * corners are the lead's endpoint radii, expressed in the follower's
+         * own box. The authored declarations stay owned until unmount.
+         */
+        function writeJumpRadius(
+            p: Participant,
+            target: readonly number[] | null,
+            drive: Drive,
+            g: Geometry
+        ): void {
+            if (!target || !ownsRadius(p.options) || !g.radius) return
+            const presented = fresh?.rects.get(p) ?? null
+            if (!presented) return
+            const nx = presented.w > 0 ? g.a.w / presented.w : 1
+            const ny = presented.h > 0 ? g.a.h / presented.h : 1
+            for (let corner = 0; corner < 4; corner++) {
+                writeValue(
+                    p.element,
+                    drive,
+                    RADIUS_PROPERTIES[corner]!,
+                    `${format(target[corner * 2]! * nx)}px ${format(target[corner * 2 + 1]! * ny)}px`
+                )
+            }
+        }
+
         actions.forEach((action, i) => {
             const p = list[i]!
             const g = geometry[i]
@@ -6859,7 +6931,23 @@ export function createLayoutGroup(
             if (action.kind !== 'none' || d) touch(p)
             switch (action.kind) {
                 case 'none':
-                    if (reduced === 'jump' && d?.fade) endFade(p)
+                    if (reduced === 'jump' && d?.fade) {
+                        const follower = d.fade.role === 'follower'
+                        const target = follower
+                            ? (d.radiusBlend?.to ??
+                              (d.lead
+                                  ? geometry[index.get(d.lead)!]?.radius
+                                  : null) ??
+                              null)
+                            : null
+                        endFade(p)
+                        // §9.4: jump ends the fade at once; the exiting
+                        // follower stays held invisible at its presented box
+                        if (follower) {
+                            d.kind = 'held'
+                            if (g) writeJumpRadius(p, target, d, g)
+                        }
+                    }
                     // a crossfade follower stays invisible until presence removes it
                     if (d && (d.kind !== 'held' || !nodes[i]?.exiting))
                         settle(p)
@@ -6932,9 +7020,13 @@ export function createLayoutGroup(
                     return
                 }
                 case 'static': {
-                    if (d?.kind === 'held') {
-                        // a held follower that is no longer exiting was
-                        // reversed into a lead: it belongs at A, not at 0
+                    if (
+                        d?.kind === 'held' ||
+                        (d?.kind === 'follow' && (!d.fade || d.fade.finished))
+                    ) {
+                        // a held follower (or one whose fade ended) that is no
+                        // longer exiting was reversed into a lead: it belongs
+                        // at A, not at 0 (§5.8, §9.4)
                         if (!nodes[i]?.exiting) settle(p)
                         return
                     }
@@ -7027,6 +7119,37 @@ export function createLayoutGroup(
                         d.run = null
                         interrupt(old)
                     }
+                    if (reduced === 'jump') {
+                        // §9.4: jump ends the crossfade at once. The pair has
+                        // no track; the exiting follower is held at its
+                        // presented box, invisible, inert, drawing the lead's
+                        // endpoint radius, and presence releases immediately.
+                        const drive = startDrive(
+                            p,
+                            'held',
+                            g!,
+                            OPACITY_PROPERTIES
+                        )
+                        drive.track = null
+                        drive.timeline = null
+                        drive.target = null
+                        drive.elapsed = 0
+                        drive.started = true
+                        drive.lead = null
+                        drive.radiusBlend = null
+                        drive.fade = null
+                        writeValue(p.element, drive, 'opacity', '0')
+                        writeJumpRadius(
+                            p,
+                            geometry[action.lead]?.radius ?? null,
+                            drive,
+                            g!
+                        )
+                        ownInert(p, drive)
+                        drive.release?.()
+                        drive.release = null
+                        return
+                    }
                     const lead = list[action.lead]!
                     const leadAction = actions[action.lead]!
                     const track =
@@ -7076,8 +7199,16 @@ export function createLayoutGroup(
             }
         })
 
-        // the frame: every driven node and its participant ancestors
+        // the frame: every driven node and its participant ancestors; a
+        // follower's lead stays in the frame even after it settles, so the
+        // follower keeps drawing at the lead's final A (§5.8)
         const inFrame: boolean[] = list.map((p) => p.drive !== null)
+        for (const p of list) {
+            const d = p.drive
+            if (d?.kind !== 'follow' || !d.lead) continue
+            const lead = index.get(d.lead)
+            if (lead !== undefined) inFrame[lead] = true
+        }
         for (let i = list.length - 1; i >= 0; i--) {
             if (inFrame[i] && parents[i]! >= 0) inFrame[parents[i]!] = true
         }
@@ -7517,7 +7648,11 @@ export function createLayoutGroup(
                 // presence removes it
                 for (const node of frame) {
                     const d = node.p.drive
-                    if (d?.fade) endFade(node.p)
+                    if (d?.fade) {
+                        const follower = d.fade.role === 'follower'
+                        endFade(node.p)
+                        if (follower) d.kind = 'held'
+                    }
                 }
             }
             for (const node of frame) {
