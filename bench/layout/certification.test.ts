@@ -338,3 +338,47 @@ test('D12: invocation pass ignores a WebKit cost BLOCK', () => {
     assert.equal(result.pass, true)
     assert.deepEqual(result.reasons, [])
 })
+
+
+test('D12: invocation ignores a WebKit G12 cost-only scene block', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateInvocation({
+        engines: [
+            cleanEngine('chromium'),
+            {
+                ...webkit,
+                scenes: webkit.scenes.map((scene) =>
+                    scene.scene === 's-sheet'
+                        ? {
+                              scene: 's-sheet',
+                              status: 'blocked' as const,
+                              blockedReasons: ['G12 (D11 held cost)'],
+                          }
+                        : scene
+                ),
+                cost: { status: 'blocked' as const, valid: false },
+            },
+        ],
+    })
+    assert.equal(result.pass, true)
+    assert.deepEqual(result.reasons, [])
+})
+
+test('D12: a WebKit frame failure still fails the invocation', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateInvocation({
+        engines: [
+            cleanEngine('chromium'),
+            {
+                ...webkit,
+                scenes: webkit.scenes.map((scene) =>
+                    scene.scene === 's-sheet'
+                        ? { scene: 's-sheet', status: 'fail' as const }
+                        : scene
+                ),
+            },
+        ],
+    })
+    assert.equal(result.pass, false)
+    assert.match(result.reasons.join(';'), /webkit s-sheet fail/)
+})

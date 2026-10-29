@@ -3974,12 +3974,12 @@ export function createLayoutGroup(
             if (
                 list[i] !== support.list[i] ||
                 parents[i] !== support.parents[i] ||
-                a.w !== b.w ||
-                a.h !== b.h ||
+                Math.abs(a.w - b.w) > 1e-4 ||
+                Math.abs(a.h - b.h) > 1e-4 ||
                 oa[0] !== ob[0] ||
                 oa[1] !== ob[1] ||
-                pose.sx !== was.sx ||
-                pose.sy !== was.sy
+                Math.abs(pose.sx - was.sx) > 1e-4 ||
+                Math.abs(pose.sy - was.sy) > 1e-4
             ) {
                 return false
             }
