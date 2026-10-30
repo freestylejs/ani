@@ -1367,3 +1367,28 @@ presented as a pass or failure.
   ms/held pass; G11 is 2.131× and remains open. WebKit cost/G12 are D12
   advisory. The load was 10.24, so cost is advisory. G11 remains open; no P5
   claim is made.
+
+## Iteration 12 — P5 final certification
+
+- **H17h/H17i.** Capture/flush scratch reuse, lazy pose rates and the guarded retarget-only plan
+  fast path moved sustained G11 from 2.368× to 1.884–2.000× on the pinned host.
+- **H21.** Every browser operation is bounded (launch 60 s, page 60 s, close 30 s, scene/probe/cost
+  300 s), progress is synchronously flushed, and a timed-out scene becomes an honest failed row.
+  The old apparent "hang" was long CPU-bound oracle scoring, not an engine deadlock.
+- **H21 D12.** WebKit cost-only rows G8–G12 are classified as D12 advisories; Chromium G8 failures
+  still fail. **H21 D13.** A recorded load above 1.0 is controlled-load evidence, separate from a
+  hard fingerprint mismatch; two independent five-run Chromium cost invocations are required.
+- **Final full report (`pre-fix/report.json`, code `f552728`, load 4.24).** `CERTIFIED`, `pass`:
+  all 11 scenes and 23 variants green in Chromium; WebKit frame/scoring/shape/status green with
+  D12 cost advisories; controls 94/94; self-tests 14/14; Chromium G9 1.683/1.669×, G10 1.320 ms,
+  G11 1.959× (2.016/1.992/1.954/1.887/1.959), G12 −0.150/0.007 ms/held, G13/G13-held exact.
+- **D13 repeat (`pre-fix/cost-repeat-3.json`, load 3.65).** G11 2.000×, G9 1.657/1.666×, G10
+  1.230 ms, G12 −0.200/−0.005 pass. Two extra repeats failed only G11 at load 6.11/3.33 (2.042×,
+  2.024×); they are retained as load-sensitivity evidence.
+- **`ea1475c` lifecycle fix.** A finished crossfade follower is no longer reported as a live mover
+  by the kill switch; the CAPS_STATUS row now asserts the §5.8/§9.1 cap hold. At `ea1475c`:
+  unit 1928/1928, layout 481/481, bench 130/130, typecheck 11/11, Chromium browser 223/223,
+  WebKit 221/221 + 2 skips. A full ea1475c rerun at load 7.53 passed all scenes and G11 1.884× but
+  failed four Chromium reduced-motion variant G12 rows by 0.005–0.03 ms; it is preserved under
+  `attempt-load7.53/` and is not a certification input. Owner ruling 2026-10-30 accepts the
+  f552728 certified report plus the ea1475c lifecycle/browser evidence, with no gate change.

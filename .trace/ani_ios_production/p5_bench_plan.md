@@ -37,7 +37,7 @@ reads, shape/status/restoration checks, a negative control and a viewable page.
 | G13 exact reads | 2N rects/offsets + §4.3 computed reads + poses; steady 0 |
 | G14 fingerprint | matching D9 instrument; otherwise advisory cost |
 | Shape | opacity/coverage/radius/pill/inert/focus/font/teardown |
-| Certification | 5 measured runs, Chromium+WebKit, all scenes, no pending/launch errors, controls+self-tests pass, non-advisory cost |
+| Certification | 5 measured runs, Chromium+WebKit, all scenes, no pending/launch errors, controls+self-tests pass, G9/G10/G11/G12 green. D13: controlled load is recorded; two independent five-run Chromium cost invocations (full + cost-only repeat) must both have G11 ≤2. A hard fingerprint mismatch is advisory/not certifiable. |
 
 ## Iteration process
 

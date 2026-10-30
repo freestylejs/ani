@@ -1,0 +1,251 @@
+[11:53:08 +0.9s] chromium: measured runs start
+[11:53:08 +0.9s] chromium run 0/5 (warm-up): start
+[11:53:08 +0.9s] chromium run 0/5 (warm-up) manual: launch chromium
+[11:53:08 +1.0s] chromium run 0/5 (warm-up) manual: launch chromium ok (140.0.7339.16)
+[11:53:08 +1.0s] chromium run 0/5 (warm-up) manual teardown: close chromium
+[11:53:08 +1.0s] chromium: browser disconnected
+[11:53:08 +1.0s] chromium run 0/5 (warm-up) manual teardown: close chromium ok
+[11:53:08 +1.0s] chromium run 0/5 (warm-up) manual teardown: server close chromium ok
+[11:53:08 +1.0s] chromium run 0/5 (warm-up) real: launch chromium
+[11:53:08 +1.1s] chromium run 0/5 (warm-up) real: launch chromium ok (140.0.7339.16)
+[11:53:08 +1.1s] chromium run 0/5 (warm-up) real teardown: close chromium
+[11:53:08 +1.1s] chromium: browser disconnected
+[11:53:08 +1.1s] chromium run 0/5 (warm-up) real teardown: close chromium ok
+[11:53:09 +1.1s] chromium run 0/5 (warm-up) real teardown: server close chromium ok
+[11:53:09 +1.1s] chromium run 0/5 (warm-up) cost: launch chromium
+[11:53:09 +1.2s] chromium run 0/5 (warm-up) cost: launch chromium ok (140.0.7339.16)
+[11:53:09 +1.2s] chromium run 0/5 (warm-up) cost: open page 1280x720@1
+[11:53:09 +1.4s] chromium run 0/5 (warm-up) cost: page ready
+[11:53:09 +1.4s] chromium run 0/5 (warm-up) cost: evaluate cost
+[11:54:12 +64.9s] chromium run 0/5 (warm-up) cost: evaluate cost ok
+[11:54:12 +64.9s] chromium run 0/5 (warm-up) cost: context close
+[11:54:12 +64.9s] chromium run 0/5 (warm-up) cost: context close ok
+[11:54:12 +64.9s] chromium run 0/5 (warm-up) cost teardown: close chromium
+[11:54:12 +64.9s] chromium: browser disconnected
+[11:54:12 +64.9s] chromium run 0/5 (warm-up) cost teardown: close chromium ok
+[11:54:12 +65.0s] chromium run 0/5 (warm-up) cost teardown: server close chromium ok
+chromium run 0/5 (warm-up): cost audit ok
+[11:54:12 +65.0s] chromium run 0/5 (warm-up): done
+[11:54:12 +65.0s] chromium run 1/5: start
+[11:54:12 +65.0s] chromium run 1/5 manual: launch chromium
+[11:54:12 +65.0s] chromium run 1/5 manual: launch chromium ok (140.0.7339.16)
+[11:54:12 +65.0s] chromium run 1/5 manual teardown: close chromium
+[11:54:12 +65.0s] chromium: browser disconnected
+[11:54:12 +65.0s] chromium run 1/5 manual teardown: close chromium ok
+[11:54:12 +65.0s] chromium run 1/5 manual teardown: server close chromium ok
+[11:54:12 +65.0s] chromium run 1/5 real: launch chromium
+[11:54:12 +65.1s] chromium run 1/5 real: launch chromium ok (140.0.7339.16)
+[11:54:12 +65.1s] chromium run 1/5 real teardown: close chromium
+[11:54:12 +65.1s] chromium: browser disconnected
+[11:54:12 +65.1s] chromium run 1/5 real teardown: close chromium ok
+[11:54:13 +65.1s] chromium run 1/5 real teardown: server close chromium ok
+[11:54:13 +65.1s] chromium run 1/5 cost: launch chromium
+[11:54:13 +65.2s] chromium run 1/5 cost: launch chromium ok (140.0.7339.16)
+[11:54:13 +65.2s] chromium run 1/5 cost: open page 1280x720@1
+[11:54:13 +65.4s] chromium run 1/5 cost: page ready
+[11:54:13 +65.4s] chromium run 1/5 cost: evaluate cost
+[11:55:16 +128.9s] chromium run 1/5 cost: evaluate cost ok
+[11:55:16 +128.9s] chromium run 1/5 cost: context close
+[11:55:16 +128.9s] chromium run 1/5 cost: context close ok
+[11:55:16 +128.9s] chromium run 1/5 cost teardown: close chromium
+[11:55:16 +128.9s] chromium: browser disconnected
+[11:55:16 +128.9s] chromium run 1/5 cost teardown: close chromium ok
+[11:55:16 +128.9s] chromium run 1/5 cost teardown: server close chromium ok
+chromium run 1/5: cost audit ok
+[11:55:16 +128.9s] chromium run 1/5: done
+[11:55:16 +128.9s] chromium run 2/5: start
+[11:55:16 +128.9s] chromium run 2/5 manual: launch chromium
+[11:55:16 +129.0s] chromium run 2/5 manual: launch chromium ok (140.0.7339.16)
+[11:55:16 +129.0s] chromium run 2/5 manual teardown: close chromium
+[11:55:16 +129.0s] chromium: browser disconnected
+[11:55:16 +129.0s] chromium run 2/5 manual teardown: close chromium ok
+[11:55:16 +129.0s] chromium run 2/5 manual teardown: server close chromium ok
+[11:55:16 +129.0s] chromium run 2/5 real: launch chromium
+[11:55:16 +129.1s] chromium run 2/5 real: launch chromium ok (140.0.7339.16)
+[11:55:16 +129.1s] chromium run 2/5 real teardown: close chromium
+[11:55:16 +129.1s] chromium: browser disconnected
+[11:55:16 +129.1s] chromium run 2/5 real teardown: close chromium ok
+[11:55:16 +129.1s] chromium run 2/5 real teardown: server close chromium ok
+[11:55:16 +129.1s] chromium run 2/5 cost: launch chromium
+[11:55:17 +129.2s] chromium run 2/5 cost: launch chromium ok (140.0.7339.16)
+[11:55:17 +129.2s] chromium run 2/5 cost: open page 1280x720@1
+[11:55:17 +129.3s] chromium run 2/5 cost: page ready
+[11:55:17 +129.3s] chromium run 2/5 cost: evaluate cost
+[11:56:20 +192.9s] chromium run 2/5 cost: evaluate cost ok
+[11:56:20 +192.9s] chromium run 2/5 cost: context close
+[11:56:20 +192.9s] chromium run 2/5 cost: context close ok
+[11:56:20 +192.9s] chromium run 2/5 cost teardown: close chromium
+[11:56:20 +192.9s] chromium: browser disconnected
+[11:56:20 +192.9s] chromium run 2/5 cost teardown: close chromium ok
+[11:56:20 +192.9s] chromium run 2/5 cost teardown: server close chromium ok
+chromium run 2/5: cost audit ok
+[11:56:20 +192.9s] chromium run 2/5: done
+[11:56:20 +192.9s] chromium run 3/5: start
+[11:56:20 +192.9s] chromium run 3/5 manual: launch chromium
+[11:56:20 +193.0s] chromium run 3/5 manual: launch chromium ok (140.0.7339.16)
+[11:56:20 +193.0s] chromium run 3/5 manual teardown: close chromium
+[11:56:20 +193.0s] chromium: browser disconnected
+[11:56:20 +193.0s] chromium run 3/5 manual teardown: close chromium ok
+[11:56:20 +193.0s] chromium run 3/5 manual teardown: server close chromium ok
+[11:56:20 +193.0s] chromium run 3/5 real: launch chromium
+[11:56:20 +193.1s] chromium run 3/5 real: launch chromium ok (140.0.7339.16)
+[11:56:20 +193.1s] chromium run 3/5 real teardown: close chromium
+[11:56:20 +193.1s] chromium: browser disconnected
+[11:56:20 +193.1s] chromium run 3/5 real teardown: close chromium ok
+[11:56:20 +193.1s] chromium run 3/5 real teardown: server close chromium ok
+[11:56:20 +193.1s] chromium run 3/5 cost: launch chromium
+[11:56:21 +193.2s] chromium run 3/5 cost: launch chromium ok (140.0.7339.16)
+[11:56:21 +193.2s] chromium run 3/5 cost: open page 1280x720@1
+[11:56:21 +193.3s] chromium run 3/5 cost: page ready
+[11:56:21 +193.3s] chromium run 3/5 cost: evaluate cost
+[11:57:24 +256.9s] chromium run 3/5 cost: evaluate cost ok
+[11:57:24 +256.9s] chromium run 3/5 cost: context close
+[11:57:24 +256.9s] chromium run 3/5 cost: context close ok
+[11:57:24 +256.9s] chromium run 3/5 cost teardown: close chromium
+[11:57:24 +256.9s] chromium: browser disconnected
+[11:57:24 +256.9s] chromium run 3/5 cost teardown: close chromium ok
+[11:57:24 +256.9s] chromium run 3/5 cost teardown: server close chromium ok
+chromium run 3/5: cost audit ok
+[11:57:24 +256.9s] chromium run 3/5: done
+[11:57:24 +256.9s] chromium run 4/5: start
+[11:57:24 +256.9s] chromium run 4/5 manual: launch chromium
+[11:57:24 +257.0s] chromium run 4/5 manual: launch chromium ok (140.0.7339.16)
+[11:57:24 +257.0s] chromium run 4/5 manual teardown: close chromium
+[11:57:24 +257.0s] chromium: browser disconnected
+[11:57:24 +257.0s] chromium run 4/5 manual teardown: close chromium ok
+[11:57:24 +257.0s] chromium run 4/5 manual teardown: server close chromium ok
+[11:57:24 +257.0s] chromium run 4/5 real: launch chromium
+[11:57:24 +257.1s] chromium run 4/5 real: launch chromium ok (140.0.7339.16)
+[11:57:24 +257.1s] chromium run 4/5 real teardown: close chromium
+[11:57:24 +257.1s] chromium: browser disconnected
+[11:57:24 +257.1s] chromium run 4/5 real teardown: close chromium ok
+[11:57:24 +257.1s] chromium run 4/5 real teardown: server close chromium ok
+[11:57:24 +257.1s] chromium run 4/5 cost: launch chromium
+[11:57:25 +257.2s] chromium run 4/5 cost: launch chromium ok (140.0.7339.16)
+[11:57:25 +257.2s] chromium run 4/5 cost: open page 1280x720@1
+[11:57:25 +257.3s] chromium run 4/5 cost: page ready
+[11:57:25 +257.3s] chromium run 4/5 cost: evaluate cost
+[11:58:28 +320.9s] chromium run 4/5 cost: evaluate cost ok
+[11:58:28 +320.9s] chromium run 4/5 cost: context close
+[11:58:28 +320.9s] chromium run 4/5 cost: context close ok
+[11:58:28 +320.9s] chromium run 4/5 cost teardown: close chromium
+[11:58:28 +320.9s] chromium: browser disconnected
+[11:58:28 +320.9s] chromium run 4/5 cost teardown: close chromium ok
+[11:58:28 +320.9s] chromium run 4/5 cost teardown: server close chromium ok
+chromium run 4/5: cost audit ok
+[11:58:28 +320.9s] chromium run 4/5: done
+[11:58:28 +320.9s] chromium run 5/5: start
+[11:58:28 +320.9s] chromium run 5/5 manual: launch chromium
+[11:58:28 +321.0s] chromium run 5/5 manual: launch chromium ok (140.0.7339.16)
+[11:58:28 +321.0s] chromium run 5/5 manual teardown: close chromium
+[11:58:28 +321.0s] chromium: browser disconnected
+[11:58:28 +321.0s] chromium run 5/5 manual teardown: close chromium ok
+[11:58:28 +321.0s] chromium run 5/5 manual teardown: server close chromium ok
+[11:58:28 +321.0s] chromium run 5/5 real: launch chromium
+[11:58:28 +321.1s] chromium run 5/5 real: launch chromium ok (140.0.7339.16)
+[11:58:28 +321.1s] chromium run 5/5 real teardown: close chromium
+[11:58:28 +321.1s] chromium: browser disconnected
+[11:58:28 +321.1s] chromium run 5/5 real teardown: close chromium ok
+[11:58:29 +321.1s] chromium run 5/5 real teardown: server close chromium ok
+[11:58:29 +321.1s] chromium run 5/5 cost: launch chromium
+[11:58:29 +321.2s] chromium run 5/5 cost: launch chromium ok (140.0.7339.16)
+[11:58:29 +321.2s] chromium run 5/5 cost: open page 1280x720@1
+[11:58:29 +321.4s] chromium run 5/5 cost: page ready
+[11:58:29 +321.4s] chromium run 5/5 cost: evaluate cost
+[11:59:32 +384.9s] chromium run 5/5 cost: evaluate cost ok
+[11:59:32 +384.9s] chromium run 5/5 cost: context close
+[11:59:32 +384.9s] chromium run 5/5 cost: context close ok
+[11:59:32 +384.9s] chromium run 5/5 cost teardown: close chromium
+[11:59:32 +384.9s] chromium: browser disconnected
+[11:59:32 +384.9s] chromium run 5/5 cost teardown: close chromium ok
+[11:59:32 +384.9s] chromium run 5/5 cost teardown: server close chromium ok
+chromium run 5/5: cost audit ok
+[11:59:32 +384.9s] chromium run 5/5: done
+
+P5 layout bench — 2026-10-30T02:59:32.826Z (pnpm bench:layout --engine chromium --scene cost --runs 5 --out bench/layout/iteration-12/cost-repeat-2.json)
+fingerprint Mac14,9 / 27.0.1 / Apple M2 Pro / chromium_headless_shell-1187 / webkit-2203
+1-minute load 3.33: above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason
+controlled load: YES (D13; cost gates remain deciding)
+cost gates: deciding
+
+== chromium 140.0.7339.16 [chromium_headless_shell-1187]
+FAIL S-BULK cost shapes
+  ok   G9-unscrolled             1.638  median of 5 per-run ratios <= 2
+  ok   G9-scrolled               1.656  median of 5 per-run ratios <= 2
+  ok   G9.floor-unscrolled 0.0000 count mismatches  exact required counts; no extra read
+  ok   G9.floor-scrolled  0.0000 count mismatches  exact required counts; no extra read
+  ok   G10                    1.155 ms  p95 <= 2 ms
+  FAIL G11                       2.024  p95(engine commits) / p95(floor commits) <= 2
+  ok   G11.floor          0.0000 count mismatches  exact required counts; no extra read
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero
+  ok   G12-1                 -0.130 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms
+  ok   G12-10                -0.005 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames
+  run 0 (warm-up): ratio 1.661 unscrolled / 1.729 scrolled; floor audit ok; steady p95 1.035 ms; sustained p95 6.230 ms / floor p95 3.045 ms = 2.046× (commit); held 1 0.370-0.490=-0.1200 ms/held; 10 0.555-0.595=-0.0040 ms/held; held reads ok; g 0.0050 ms
+  run 1: ratio 1.638 unscrolled / 1.656 scrolled; floor audit ok; steady p95 0.970 ms; sustained p95 6.280 ms / floor p95 3.035 ms = 2.069× (commit); held 1 0.385-0.490=-0.1050 ms/held; 10 0.585-0.630=-0.0045 ms/held; held reads ok; g 0.0050 ms
+  run 2: ratio 1.654 unscrolled / 1.644 scrolled; floor audit ok; steady p95 1.050 ms; sustained p95 6.280 ms / floor p95 3.005 ms = 2.090× (commit); held 1 0.395-0.515=-0.1200 ms/held; 10 0.580-0.675=-0.0095 ms/held; held reads ok; g 0.0050 ms
+  run 3: ratio 1.661 unscrolled / 1.662 scrolled; floor audit ok; steady p95 1.155 ms; sustained p95 5.470 ms / floor p95 3.055 ms = 1.791× (commit); held 1 0.400-0.655=-0.2550 ms/held; 10 0.625-0.655=-0.0030 ms/held; held reads ok; g 0.0050 ms
+  run 4: ratio 1.612 unscrolled / 1.734 scrolled; floor audit ok; steady p95 1.245 ms; sustained p95 6.285 ms / floor p95 3.120 ms = 2.014× (commit); held 1 0.390-0.520=-0.1300 ms/held; 10 0.600-0.700=-0.0100 ms/held; held reads ok; g 0.0050 ms
+  run 5: ratio 1.632 unscrolled / 1.600 scrolled; floor audit ok; steady p95 1.275 ms; sustained p95 6.415 ms / floor p95 3.170 ms = 2.024× (commit); held 1 0.380-0.515=-0.1350 ms/held; 10 0.595-0.565=0.0030 ms/held; held reads ok; g 0.0050 ms
+
+negative controls (expected to fail their target gate)
+self-tests ok: 14 controls across 10 files
+
+invocation: FAIL
+certification: NOT CERTIFIED
+  cert block: required engine webkit not selected
+  cert block: required scene s-card not selected
+  cert block: required scene s-seg not selected
+  cert block: required scene s-photo not selected
+  cert block: required scene s-stack not selected
+  cert block: required scene s-island not selected
+  cert block: required scene s-acc not selected
+  cert block: required scene s-insert not selected
+  cert block: required scene s-delete not selected
+  cert block: required scene s-reorder not selected
+  cert block: required scene s-sheet not selected
+  cert block: required scene s-bulk not selected
+  cert block: negative controls failed or were not run
+  cert block: chromium variant s-card@dpr1 missing
+  cert block: chromium variant s-card@dpr3 missing
+  cert block: chromium variant s-photo@dpr1 missing
+  cert block: chromium variant s-photo@dpr3 missing
+  cert block: chromium variant s-acc@dpr1 missing
+  cert block: chromium variant s-acc@dpr3 missing
+  cert block: chromium variant s-seg@dpr1 missing
+  cert block: chromium variant s-seg@dpr3 missing
+  cert block: chromium variant s-card@rm-jump missing
+  cert block: chromium variant s-card@rm-max missing
+  cert block: chromium variant s-card@rm-ignore missing
+  cert block: chromium variant s-photo@rm-jump missing
+  cert block: chromium variant s-photo@rm-max missing
+  cert block: chromium variant s-photo@rm-ignore missing
+  cert block: chromium variant s-acc@rm-jump missing
+  cert block: chromium variant s-acc@rm-max missing
+  cert block: chromium variant s-acc@rm-ignore missing
+  cert block: chromium variant s-reorder@rm-jump missing
+  cert block: chromium variant s-reorder@rm-max missing
+  cert block: chromium variant s-reorder@rm-ignore missing
+  cert block: chromium variant s-sheet@rm-jump missing
+  cert block: chromium variant s-sheet@rm-max missing
+  cert block: chromium variant s-sheet@rm-ignore missing
+  cert block: chromium scene s-card missing
+  cert block: chromium scene s-seg missing
+  cert block: chromium scene s-photo missing
+  cert block: chromium scene s-stack missing
+  cert block: chromium scene s-island missing
+  cert block: chromium scene s-acc missing
+  cert block: chromium scene s-insert missing
+  cert block: chromium scene s-delete missing
+  cert block: chromium scene s-reorder missing
+  cert block: chromium scene s-sheet missing
+  cert block: chromium scene s-bulk missing
+  cert block: chromium S-BULK cost fail
+  cert block: chromium S-BULK G11 2.024 failed
+  cert block: required engine webkit has no report
+  cert controlled load: YES — above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason
+
+wrote /Users/june/Documents/project/freestylejs/ani-ios-scope-correction/bench/layout/iteration-12/cost-repeat-2.json
+
+controlled load 3.33: cost gates remain deciding (D13; D9 <1.0 pin retired)
+EXIT:1
