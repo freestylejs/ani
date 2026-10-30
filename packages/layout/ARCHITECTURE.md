@@ -983,9 +983,10 @@ interface LayoutReport {
 
 interface LayoutStats {
   readonly captures: number
-  readonly reads: number      // rects + offsets + styles
+  readonly reads: number      // rects + offsets + layoutOffsets + styles
   readonly rects: number      // getBoundingClientRect calls
   readonly offsets: number    // offsetWidth/offsetHeight pairs
+  readonly layoutOffsets: number // offsetLeft/offsetTop reads of live holds (§5.10)
   readonly styles: number     // computed-style reads
   readonly probes: number     // anchoring probes (§11.4 S2): one write, one reflow, one scrollTop read each
   readonly parents: number    // offsetParent reads of the viewport-fixed test (§5.8)
@@ -1028,7 +1029,8 @@ function sameLayoutMotion(a: LayoutMotion | undefined, b: LayoutMotion | undefin
 type LayoutDiagnosticCode =
   | 'capture-less-flush' | 'capture-aged' | 'measurement-unsupported' | 'unsupported-geometry' | 'handoff-scroll-active'
   | 'spring-timeout' | 'participant-cap' | 'mover-cap' | 'document-mismatch'
-  | 'runtime-disabled' | 'focus-in-follower' | 'callback-error' | 'internal-error'
+  | 'runtime-disabled' | 'focus-in-follower' | 'drive-rejected' | 'reduced-no-fit'
+  | 'callback-error' | 'internal-error'
   | (string & Record<never, never>)   // codes may be added; existing meanings are stable
 
 interface LayoutDiagnostic {

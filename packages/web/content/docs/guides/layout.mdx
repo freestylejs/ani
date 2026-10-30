@@ -813,11 +813,14 @@ layer or legacy bridge. Code written against the earlier surface must change:
 
 ### Release status and evidence
 
-The iOS-native-grade claim is a **certification target**, not a shipped claim. It is earned only
-when `.trace/ani_ios_production/p5_bench.md` exists and is a TRIBUNAL PASS on the D9 instrument in
-`ARCHITECTURE.md` §11.5, with the P0–P4 evidence body green and every carried tribunal defect
-closed. At this commit P5 has no report; this guide does not claim iOS Native Grade. A report with
-a mismatched fingerprint, a skipped scene, a missing metric or a weakened tolerance is not a pass.
+The iOS-native-grade claim is **earned** by the P5 evidence body: `.trace/ani_ios_production/p5_bench.md`
+is a final TRIBUNAL PASS on the D9 instrument in `ARCHITECTURE.md` §11.5, after the P0–P4 evidence
+body and every carried tribunal defect was closed. The full report is
+`bench/layout/iteration-12/pre-fix/report.json` at code `f552728`; the D13 independent repeat is
+`pre-fix/cost-repeat-3.json`; the final code `ea1475c` adds the lifecycle fix covered by the
+final-source browser suite. The claim is bounded Chromium/WebKit Playwright evidence under
+D5/D8–D13, not iOS-device or Mobile Safari certification. A report with a mismatched fingerprint,
+a skipped scene, a missing metric or a weakened tolerance is not a pass.
 
 Cost evidence follows D12/D13: Chromium decides G9/G11/G12; WebKit cost rows are BLOCK/advisory
 while its frame/scoring/shape/status rows decide. The recorded 1-minute load may be above the

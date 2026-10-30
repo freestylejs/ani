@@ -184,10 +184,12 @@ The vanilla migration table is in the layout README.
 
 ### Release status
 
-The iOS-native-grade claim is a **certification target**, not a shipped claim. It is earned only
-when `.trace/ani_ios_production/p5_bench.md` is a TRIBUNAL PASS on the D9 instrument; at this
-commit P5 has no report, so the adapter does not claim it. The layout README carries the evidence
-contract, D12/D13 cost rules and the certification commands.
+The iOS-native-grade claim is **earned** by the P5 evidence body:
+`.trace/ani_ios_production/p5_bench.md` is a final TRIBUNAL PASS on the D9 instrument, with the
+full report and the D13 repeat recorded in `bench/layout/iteration-12/pre-fix/`. The adapter's
+React layout rows are part of that evidence. The claim is bounded Chromium/WebKit Playwright
+evidence, not iOS-device certification. The layout README carries the evidence contract, D12/D13
+cost rules and the certification commands.
 
 ## Documentation
 

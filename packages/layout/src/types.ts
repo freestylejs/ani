@@ -101,7 +101,7 @@ export interface LayoutReport {
 /** Every read the engine made, by kind, and what runs now (§7.1). */
 export interface LayoutStats {
     readonly captures: number
-    /** `rects + offsets + styles`. */
+    /** `rects + offsets + layoutOffsets + styles`. */
     readonly reads: number
     /** `getBoundingClientRect()` calls. */
     readonly rects: number
