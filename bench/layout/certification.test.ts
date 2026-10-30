@@ -125,6 +125,51 @@ test('advisory cost, even when passing, does not certify', () => {
     assert.match(result.reasons.join(';'), /advisory/)
 })
 
+test('D13: controlled load alone certifies when every gate passes', () => {
+    const result = evaluateCertification(
+        {
+            ...clean,
+            advisory: {
+                cost: false,
+                reasons: [],
+                load1: 8.64,
+                controlledLoad: true,
+                loadReason:
+                    'above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason',
+            },
+        },
+        full
+    )
+    assert.equal(result.certified, true)
+    assert.deepEqual(result.reasons, [])
+    assert.equal(result.controlledLoad, true)
+    assert.equal(result.load1, 8.64)
+    assert.match(result.loadReason, /controlled-load/)
+})
+
+test('D13: a hard fingerprint mismatch cannot certify under controlled load', () => {
+    const result = evaluateCertification(
+        {
+            ...clean,
+            advisory: {
+                cost: true,
+                reasons: ['host is Mac15,1, pinned Mac14,9'],
+                load1: 8.64,
+                controlledLoad: true,
+                loadReason:
+                    'above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason',
+            },
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(
+        result.reasons.join(';'),
+        /cost fingerprint is advisory: host is Mac15,1/
+    )
+    assert.equal(result.controlledLoad, true)
+})
+
 test('N1: a conclusive control failure does not certify', () => {
     const result = evaluateCertification(
         { ...clean, controlsPass: false },

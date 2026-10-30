@@ -59,7 +59,7 @@ pnpm bench:layout --out bench/layout/results/iter-1.json
 pnpm bench:layout --compare bench/layout/results/iter-0.json
 
 # the pure harness tests alone (oracle, scoring, stats, sampler, aggregation,
-# certification, cost validity, variants, timeouts)
+# certification, cost validity, variants, timeouts, fingerprint)
 pnpm test:bench-layout
 ```
 
@@ -122,10 +122,16 @@ gitignored; the files are generated from the current source on every run.
     },
     "load1": 2.39013671875
   },
-  "advisory": { "cost": true, "reasons": ["1-minute load is 2.39, pinned below 1"] },
+  "advisory": {
+    "cost": false, "reasons": [], "load1": 8.64,
+    "controlledLoad": true,
+    "loadReason": "above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason"
+  },
   "certification": {
     "certified": false,
-    "reasons": ["cost fingerprint is advisory", "chromium variant s-card@rm-jump fail (failed G6 ...)", "chromium variant s-card@rm-max fail (failed G1 ...)", "webkit variant s-reorder@rm-jump fail (G8 3 ...)", "chromium S-BULK G11 2.131 failed"],
+    "reasons": ["chromium variant s-card@rm-jump fail (failed G6 ...)", "chromium variant s-card@rm-max fail (failed G1 ...)", "webkit variant s-reorder@rm-jump fail (G8 3 ...)", "chromium S-BULK G11 2.131 failed"],
+    "controlledLoad": true, "load1": 8.64,
+    "loadReason": "above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason",
     "requiredEngines": ["chromium", "webkit"],
     "requiredRuns": 5,
     "requiredScenes": ["s-card", "s-seg", "s-photo", "s-stack", "s-island", "s-acc", "s-insert", "s-delete", "s-reorder", "s-sheet", "s-bulk", "cost"],
@@ -221,7 +227,7 @@ Cost gates:
 | G10 | Steady frame at 300 nested movers | p95 of 600 samples ≤ 2 ms |
 | G11 | Sustained 60 Hz commits, 300 moving participants, 5 s | per-run `p95(engine commits) / p95(floor commits) ≤ 2`; the D10 gate is the literal median of the 5 per-run ratios. The floor is the same audited required-work replica at the same 60 Hz cadence; cadence 58.5–61.5 Hz over 300 commits or the run is invalid |
 | G12 | Held incremental ≤ 0.1 ms per held element | D11: `(p95(held frames) − p95(same-scene no-hold frames)) / held` at 1 and 10 held on the S-BULK DOM, and the 1-held S-REORDER/S-SHEET shape. Both p95 values and the subtraction are reported. WebKit's 1 ms timer makes the result BLOCK/non-deciding |
-| G14 | Fingerprint | mismatch makes cost advisory; frame gates still decide |
+| G14 | Fingerprint | a hardware/software mismatch makes cost advisory; frame gates still decide. D13: recorded load alone is controlled-load evidence, not advisory |
 
 `G12` is measured, not fabricated: the 1- and 10-held shapes each run 600
 real-clock frames and the held read is audited (one rect per held element per
@@ -318,14 +324,20 @@ silently passing G11.
 
 The pinned instrument is D9: MacBook Pro `Mac14,9`, Apple M2 Pro, 10 cores,
 32 GB, macOS 27.0.1 (Darwin 27.0.0), Node 24.19.0, pnpm 10.20.0, Playwright
-1.55.0, `chromium_headless_shell-1187`, `webkit-2203`, `firefox-1490`, and a
-1-minute load below 1.0 at start. The report records all of them. A mismatch
-anywhere marks the cost result **advisory**; the frame gates still decide.
-On this host the 1-minute load has been above 1.0 during the P5a runs, so every
-cost report is advisory until a quiet run is produced. A report with an
-advisory cost fingerprint cannot claim the cost gates; its top-level `pass` is
-`false` when the cost scene is selected, while the frame-scoring values remain
-deciding evidence. WebKit's timer is 1 ms. G10 uses the real-clock 20-frame
+1.55.0, `chromium_headless_shell-1187`, `webkit-2203`, `firefox-1490`. The
+report records all of them plus the measured 1-minute load.
+
+Under D13 (2026-10-30) a **hardware/software mismatch** makes the cost result
+**advisory**; the frame gates still decide. The recorded load is separate
+evidence: the retired D9 `<1.0` pin is not a gate, and a load above it is
+**controlled-load** evidence, not by itself an advisory or certification
+reason. Cost gates keep the same paired-floor ratios and exact reads. P5
+requires two independent five-run Chromium cost invocations (a full combined
+report plus a cost-only repeat, or two full combined reports) with G11 ≤ 2×
+and G9/G10/G12 green; WebKit cost remains BLOCK/advisory under D12. A report
+with a hard fingerprint mismatch cannot claim the cost gates; its top-level
+`pass` is `false` when the cost scene is selected, while the frame-scoring
+values remain deciding evidence. WebKit's timer is 1 ms. G10 uses the real-clock 20-frame
 batch (one real rAF tick, 20 engine frame callbacks under one
 `performance.now()` pair, 30 samples, ±0.05 ms) and is deciding when the bound
 does not straddle 2 ms. G9/G11 remain BLOCK: a 20-commit interval cannot preserve
@@ -340,7 +352,7 @@ policy runs are scored separately with the same gates.
 
 ## Negative controls
 
-The self-tests in all nine files run by `test:bench-layout` feed deliberately
+The self-tests in all ten files run by `test:bench-layout` feed deliberately
 broken traces and assert each gate fails. The certification input consumes the
 result of the whole suite, not only oracle/scoring:
 
@@ -361,7 +373,7 @@ result of the whole suite, not only oracle/scoring:
 | extra rect / steady-frame read | G13 |
 | DPR 1/3 variant: the primary scene control at DPR 1/3 | G1/G6 (same gate, same oracle) |
 | reduced-motion variant: ignore/unclamp the policy | G1 (the variant's endpoint/curve misses) |
-| load or build mismatch | G14 advisory (not a frame gate) |
+| hardware/software fingerprint mismatch | G14 advisory (not a frame gate); load alone is controlled-load evidence (D13) |
 | broken opacity, coverage, radius, inert, focus, font | shape checks |
 
 Browser controls are run by `--check`, once per engine, through the real page:

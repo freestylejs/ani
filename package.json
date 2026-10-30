@@ -31,7 +31,7 @@
         "img:compress": "chmod +x ./scripts/img_compress.sh && ./scripts/img_compress.sh",
         "bench:browser": "pnpm --filter @freestylejs/ani-core build && node bench/browser/run.ts",
         "bench:layout": "node bench/layout/run.ts",
-        "test:bench-layout": "node --test bench/layout/oracle.test.ts bench/layout/scoring.test.ts bench/layout/stats.test.ts bench/layout/frame_sampler.test.ts bench/layout/aggregate.test.ts bench/layout/certification.test.ts bench/layout/cost_validity.test.ts bench/layout/variants.test.ts bench/layout/timeout.test.ts",
+        "test:bench-layout": "node --test bench/layout/oracle.test.ts bench/layout/scoring.test.ts bench/layout/stats.test.ts bench/layout/frame_sampler.test.ts bench/layout/aggregate.test.ts bench/layout/certification.test.ts bench/layout/cost_validity.test.ts bench/layout/variants.test.ts bench/layout/timeout.test.ts bench/layout/fingerprint.test.ts",
         "bench:check": "pnpm --filter @freestylejs/ani-core build && node bench/browser/run.ts --check",
         "size": "pnpm --filter @freestylejs/ani-core build && node bench/size/run.ts",
         "soak": "pnpm --filter @freestylejs/ani-core build && node --expose-gc bench/soak/run.ts",
