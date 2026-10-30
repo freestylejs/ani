@@ -109,11 +109,17 @@ fresh full bench solely for the bridge; the release-phase changes are docs/test/
 
 ## Self verdict
 
-**P6 release work: PASS on the release diff and fresh-clone evidence, pending the final P0–P6
-tribunal.** The versions, docs, migration, hard-migration audit, P5 claim and fresh-clone gate are
-green. No source motion or gate changed after the accepted P5 bridge. The final Chief Justice must
-independently verify the release and the complete P0–P6 evidence body.
+**P6 release work: FINAL TRIBUNAL PASS; the complete P0–P6 program is FINAL TRIBUNAL PASS and
+release-approved for `fe3ad08`.** The versions, docs, migration, hard-migration audit, P5 claim and
+fresh-clone gate are green. The owner-approved P6 carry-forward amendment closed J-FINAL-001 on the
+unchanged release apparatus/motion; the final judge accepted the P5 f552728 full/repeat + ea1475c
+bridge, the Mac fresh-clone browser evidence, and the june-wsl fresh-clone build/unit/type/check
+corroboration. No source motion or gate changed after the accepted P5 bridge.
 
 ## Final P0–P6 tribunal
 
-TBD.
+**FINAL TRIBUNAL PASS** — `final_tribunal_rejudgment_result.md`, judge
+`openai/gpt-6.1-sol#high` (owner-authorized superseding final route), 2026-10-30. J-FINAL-001 is
+closed; open S0/S1/S2 = 0. Release approval: **YES** for `fe3ad08`, within the bounded D5/D8–D13
+Chromium/WebKit Playwright claim; it is not iOS-device/Mobile Safari certification. The prior P6
+BLOCK report (`final_tribunal_result.md`) is preserved as history.
