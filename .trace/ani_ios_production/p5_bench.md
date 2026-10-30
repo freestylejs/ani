@@ -160,14 +160,19 @@ sensitivity the owner accepted.
 
 ## Self verdict
 
-**P5 implementation and gates: PASS under the owner's 2026-10-30 ruling.** The full `f552728`
-combined report certifies all 11 primary scenes and all 23 support variants in Chromium; WebKit
-frame/scoring/shape/status rows are green, with only D12 cost advisories. Chromium G9/G10/G11/G12
-and exact reads pass; D13's two independent cost invocations (full + repeat 3) are green. The
-one-source-commit lifecycle delta at `ea1475c` is covered by the green unit/browser suites and the
-corrected CAPS_STATUS/L_OPS_1 rows. This is the implementer's verdict; no iOS Native Grade claim is
-final until the tribunal result is appended.
+**P5 implementation and gates: PASS under the owner's 2026-10-30 ruling, and final TRIBUNAL PASS
+after the P4 prerequisite closure.** The full `f552728` combined report certifies all 11 primary
+scenes and all 23 support variants in Chromium; WebKit frame/scoring/shape/status rows are green,
+with only D12 cost advisories. Chromium G9/G10/G11/G12 and exact reads pass; D13's two independent
+cost invocations (full + repeat 3) are green. The one-source-commit lifecycle delta at `ea1475c` is
+covered by the green unit/browser suites and the corrected CAPS_STATUS/L_OPS_1 rows.
 
 ## P5 tribunal
 
-TBD.
+**Final TRIBUNAL PASS** — `p5_bench_rejudgment_result.md`, judge `openai/gpt-6.1-sol#high`
+(owner-authorized superseding final route), 2026-10-30. The original tribunal
+(`p5_bench_trial_result.md`) accepted all 35 technical rows and the f552728→ea1475c bridge, then
+BLOCKED on J-P5-001: P4 was still acting PASS. The final P4 J-001 ratification
+(`p4_drive_ratification_final_result.md`) passed after the prescribed unit regressions at
+`8cf346b`; J-P5-001 is closed; the final P5 matrix is **36 PASS / 0 FAIL / 0 BLOCK**. No fresh full
+bench was ordered. P6 release may start.
