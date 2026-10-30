@@ -9,6 +9,7 @@ This is the implementer's verdict. It is not the final tribunal's PASS.
 ## Release identity
 
 - Release commit: **`fe3ad081b81271d750af105b38319901f88be8c1`**.
+- Evidence/docs commit: **`871d178cf0734257348426a90f04b006bb94e60c`** (this artifact; docs/log only).
 - Branch: `dev/ecstatic-ramanujan-1mjr9q` (pushed).
 - Versions: `@freestylejs/ani-core` **2.0.0**, `@freestylejs/ani-layout` **0.2.0**,
   `@freestylejs/ani-react` **2.0.0**; layout peer `ani-core ^2.0.0`, React peer
