@@ -7,12 +7,13 @@
  * cross-origin isolated, so `performance.now()` has the §11.5 resolution.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync, writeSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
     type Browser,
     type BrowserContext,
+    type BrowserServer,
     chromium,
     firefox,
     type Page,
@@ -73,6 +74,7 @@ import {
 } from './scene_plans.ts'
 import { type MetricFinding, scoreScene } from './scoring.ts'
 import { median, percentile } from './stats.ts'
+import { withTimeout } from './timeout.ts'
 import type {
     CostTrace,
     FloorAuditTrace,
@@ -165,6 +167,15 @@ function writeStderr(message: string): void {
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error)
+}
+
+/** The revision measured: resolve it before any long run can move HEAD. */
+function gitRevision(): string | undefined {
+    const revision = spawnSync('git', ['rev-parse', 'HEAD'], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+    })
+    return revision.status === 0 ? revision.stdout.trim() : undefined
 }
 
 function globToRegExp(glob: string): RegExp {
@@ -275,25 +286,197 @@ function parseOptions(argv: readonly string[]): Options {
     }
 }
 
+/* ───────────────────────── deadlines and progress ───────────────────────── */
+
+/**
+ * Deadlines are chosen to fail long before a bench run becomes unusable while
+ * leaving room for the pinned instrument under load:
+ * - launch 60 s: a cold pinned browser normally starts in < 3 s; 60 s is a
+ *   20x allowance and still bounds a stuck driver.
+ * - page 60 s: the page is served by request interception from localhost and
+ *   boots in well under 1 s; 60 s covers a heavily loaded renderer.
+ * - close 30 s: a graceful context/browser close is normally < 1 s; 30 s
+ *   before the harness declares the process leaked and kills the server.
+ * - scene/probe/cost 300 s: the slowest measured call (S-PHOTO/S-BULK real
+ *   twin, 600 held frames) is tens of seconds under load; 300 s is a 10x
+ *   ceiling that keeps a single hung operation from stalling five runs.
+ */
+const LAUNCH_TIMEOUT_MS = 60_000
+const PAGE_TIMEOUT_MS = 60_000
+const CLOSE_TIMEOUT_MS = 30_000
+const SCENE_TIMEOUT_MS = 300_000
+
+const BENCH_STARTED_AT = performance.now()
+
+/**
+ * Unbuffered stage progress, so a hang is visible in a piped log. `writeSync`
+ * matters: a long synchronous scoring phase blocks the event loop, and a
+ * queued `process.stdout.write` would stay invisible until that phase ended.
+ */
+function progress(stage: string): void {
+    const now = new Date()
+    const clock = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map((part) => String(part).padStart(2, '0'))
+        .join(':')
+    const elapsed = ((performance.now() - BENCH_STARTED_AT) / 1000).toFixed(1)
+    writeSync(1, `[${clock} +${elapsed}s] ${stage}\n`)
+}
+
 /* ───────────────────────── browsers and pages ───────────────────────── */
 
-function launch(engine: EngineName): Promise<Browser> {
-    const options = {
-        headless: true,
-        timeout: 60000,
-        ...(engine === 'chromium'
-            ? {
-                  args: [
-                      '--disable-background-timer-throttling',
-                      '--disable-backgrounding-occluded-windows',
-                      '--disable-renderer-backgrounding',
-                  ],
-              }
-            : {}),
+function processAlive(server: BrowserServer): boolean {
+    try {
+        return server.process().exitCode === null
+    } catch {
+        return false
     }
-    if (engine === 'webkit') return webkit.launch(options)
-    if (engine === 'firefox') return firefox.launch(options)
-    return chromium.launch(options)
+}
+
+async function killServer(server: BrowserServer, stage: string): Promise<void> {
+    if (!processAlive(server)) return
+    try {
+        await withTimeout(server.kill(), CLOSE_TIMEOUT_MS, `${stage}: kill`)
+        progress(`${stage}: kill ok`)
+    } catch (error) {
+        progress(`${stage}: kill failed: ${describeError(error)}`)
+    }
+}
+
+/**
+ * A launched browser plus the server process that owns it. `close` never
+ * waits unbounded: if the browser does not close within the deadline, the
+ * server process is killed so a timed-out scene cannot leak a browser.
+ */
+class BenchBrowser {
+    readonly browser: Browser
+    readonly engine: EngineName
+    readonly version: string
+    readonly problems: string[] = []
+    private readonly server: BrowserServer
+    private closed = false
+
+    private constructor(
+        engine: EngineName,
+        server: BrowserServer,
+        browser: Browser
+    ) {
+        this.engine = engine
+        this.server = server
+        this.browser = browser
+        this.version = browser.version()
+    }
+
+    static async launch(
+        engine: EngineName,
+        stage: string
+    ): Promise<BenchBrowser> {
+        const options = {
+            headless: true,
+            timeout: LAUNCH_TIMEOUT_MS,
+            ...(engine === 'chromium'
+                ? {
+                      args: [
+                          '--disable-background-timer-throttling',
+                          '--disable-backgrounding-occluded-windows',
+                          '--disable-renderer-backgrounding',
+                      ],
+                  }
+                : {}),
+        }
+        const type =
+            engine === 'webkit'
+                ? webkit
+                : engine === 'firefox'
+                  ? firefox
+                  : chromium
+        progress(`${stage}: launch ${engine}`)
+        const launching = type.launchServer(options)
+        let server: BrowserServer
+        try {
+            server = await withTimeout(
+                launching,
+                LAUNCH_TIMEOUT_MS,
+                `${stage}: launch ${engine}`
+            )
+        } catch (error) {
+            // The driver may still spawn the server after the deadline; make
+            // sure a late launch cannot leak a browser process.
+            void launching
+                .then((late) =>
+                    killServer(late, `${stage}: ${engine} late launch cleanup`)
+                )
+                .catch(() => undefined)
+            throw error
+        }
+        try {
+            const browser = await withTimeout(
+                type.connect(server.wsEndpoint()),
+                LAUNCH_TIMEOUT_MS,
+                `${stage}: connect ${engine}`
+            )
+            browser.on('disconnected', () =>
+                progress(`${engine}: browser disconnected`)
+            )
+            progress(`${stage}: launch ${engine} ok (${browser.version()})`)
+            return new BenchBrowser(engine, server, browser)
+        } catch (error) {
+            await killServer(server, `${stage}: ${engine} launch cleanup`)
+            throw error
+        }
+    }
+
+    async close(stage: string): Promise<void> {
+        if (this.closed) return
+        this.closed = true
+        progress(`${stage}: close ${this.engine}`)
+        try {
+            await withTimeout(
+                this.browser.close(),
+                CLOSE_TIMEOUT_MS,
+                `${stage}: close ${this.engine}`
+            )
+            progress(`${stage}: close ${this.engine} ok`)
+        } catch (error) {
+            const problem = `${stage}: close ${this.engine} failed: ${describeError(error)}`
+            this.problems.push(problem)
+            progress(problem)
+        }
+        if (!processAlive(this.server)) {
+            progress(`${stage}: ${this.engine} process exited`)
+            return
+        }
+        try {
+            await withTimeout(
+                this.server.close(),
+                CLOSE_TIMEOUT_MS,
+                `${stage}: server close ${this.engine}`
+            )
+            progress(`${stage}: server close ${this.engine} ok`)
+        } catch (error) {
+            const problem = `${stage}: server close ${this.engine} failed: ${describeError(error)}`
+            this.problems.push(problem)
+            progress(problem)
+            await killServer(this.server, `${stage}: ${this.engine} leaked`)
+        }
+    }
+}
+
+async function closeContext(
+    context: BrowserContext,
+    stage: string
+): Promise<void> {
+    progress(`${stage}: context close`)
+    try {
+        await withTimeout(
+            context.close(),
+            CLOSE_TIMEOUT_MS,
+            `${stage}: context close`
+        )
+        progress(`${stage}: context close ok`)
+    } catch (error) {
+        progress(`${stage}: context close failed: ${describeError(error)}`)
+        throw error
+    }
 }
 
 interface OpenedPage {
@@ -316,59 +499,97 @@ async function openPage(
     bundle: string,
     viewport: { readonly width: number; readonly height: number },
     dpr: number,
-    engine: EngineName
+    engine: EngineName,
+    stage: string
 ): Promise<OpenedPage> {
-    const context = await browser.newContext({
-        viewport: { width: viewport.width, height: viewport.height },
-        deviceScaleFactor: dpr,
-    })
-    const page = await context.newPage()
-    const problems: string[] = []
-    page.on('pageerror', (error) =>
-        problems.push(`pageerror: ${error.message}`)
+    progress(`${stage}: open page ${viewport.width}x${viewport.height}@${dpr}`)
+    const context = await withTimeout(
+        browser.newContext({
+            viewport: { width: viewport.width, height: viewport.height },
+            deviceScaleFactor: dpr,
+        }),
+        PAGE_TIMEOUT_MS,
+        `${stage}: new context`
     )
-    page.on('console', (message) => {
-        const type = message.type()
-        if (type === 'error' || type === 'warning') {
-            problems.push(`console.${type}: ${message.text()}`)
-        }
-    })
-    await page.route(ROUTE, async (route: Route) => {
-        const headers = {
-            'Cross-Origin-Opener-Policy': 'same-origin',
-            'Cross-Origin-Embedder-Policy': 'require-corp',
-            'Cross-Origin-Resource-Policy': 'same-origin',
-            'Cache-Control': 'no-store',
-        }
-        const { pathname } = new URL(route.request().url())
-        if (pathname === '/') {
-            await route.fulfill({
-                body: pageHtml(bundle),
-                contentType: 'text/html',
-                headers,
-            })
-            return
-        }
-        await route.fulfill({
-            status: 404,
-            contentType: 'text/plain',
-            body: 'not found',
-            headers,
+    try {
+        const page = await withTimeout(
+            context.newPage(),
+            PAGE_TIMEOUT_MS,
+            `${stage}: new page`
+        )
+        const problems: string[] = []
+        page.on('pageerror', (error) =>
+            problems.push(`pageerror: ${error.message}`)
+        )
+        page.on('console', (message) => {
+            const type = message.type()
+            if (type === 'error' || type === 'warning') {
+                problems.push(`console.${type}: ${message.text()}`)
+            }
         })
-    })
-    await page.goto(PAGE_URL)
-    await page.waitForFunction(() => Boolean(window.__bench?.ready))
-    const isolated = await page.evaluate(() => globalThis.crossOriginIsolated)
-    if (!isolated) {
-        // Playwright's WebKit does not expose cross-origin isolation even with
-        // the COOP/COEP headers (the headers are present). Its performance.now
-        // tick is 1 ms, which measureGranularity observes and the §11.5
-        // 20-frame sampler applies. Chromium is deciding and must be isolated.
-        if (engine === 'chromium') {
-            problems.push('the page is not cross-origin isolated (COOP/COEP)')
+        await withTimeout(
+            page.route(ROUTE, async (route: Route) => {
+                const headers = {
+                    'Cross-Origin-Opener-Policy': 'same-origin',
+                    'Cross-Origin-Embedder-Policy': 'require-corp',
+                    'Cross-Origin-Resource-Policy': 'same-origin',
+                    'Cache-Control': 'no-store',
+                }
+                const { pathname } = new URL(route.request().url())
+                if (pathname === '/') {
+                    await route.fulfill({
+                        body: pageHtml(bundle),
+                        contentType: 'text/html',
+                        headers,
+                    })
+                    return
+                }
+                await route.fulfill({
+                    status: 404,
+                    contentType: 'text/plain',
+                    body: 'not found',
+                    headers,
+                })
+            }),
+            PAGE_TIMEOUT_MS,
+            `${stage}: route`
+        )
+        await withTimeout(
+            page.goto(PAGE_URL),
+            PAGE_TIMEOUT_MS,
+            `${stage}: page load`
+        )
+        await withTimeout(
+            page.waitForFunction(() => Boolean(window.__bench?.ready)),
+            PAGE_TIMEOUT_MS,
+            `${stage}: wait for ready`
+        )
+        const isolated = await withTimeout(
+            page.evaluate(() => globalThis.crossOriginIsolated),
+            PAGE_TIMEOUT_MS,
+            `${stage}: isolation probe`
+        )
+        if (!isolated) {
+            // Playwright's WebKit does not expose cross-origin isolation even
+            // with the COOP/COEP headers (the headers are present). Its
+            // performance.now tick is 1 ms, which measureGranularity observes
+            // and the §11.5 20-frame sampler applies. Chromium is deciding and
+            // must be isolated.
+            if (engine === 'chromium') {
+                problems.push(
+                    'the page is not cross-origin isolated (COOP/COEP)'
+                )
+            }
         }
+        progress(`${stage}: page ready`)
+        return { context, page, problems }
+    } catch (error) {
+        progress(`${stage}: open failed: ${describeError(error)}`)
+        await closeContext(context, `${stage}: open cleanup`).catch(() => {
+            // the caller reports the open failure; the cleanup is best effort
+        })
+        throw error
     }
-    return { context, page, problems }
 }
 
 function sceneViewport(scene: string): {
@@ -381,10 +602,44 @@ function sceneViewport(scene: string): {
         : { viewport: IOS_VIEWPORT, dpr: 2 }
 }
 
+async function runWithContext<T>(
+    opened: OpenedPage,
+    stage: string,
+    operation: () => Promise<T>
+): Promise<T> {
+    let outcome!: T
+    let failed = false
+    let failure: unknown
+    try {
+        outcome = await operation()
+    } catch (error) {
+        failed = true
+        failure = error
+    }
+    try {
+        await closeContext(opened.context, stage)
+    } catch (error) {
+        if (!failed) throw error
+        progress(
+            `${stage}: cleanup failed after error: ${describeError(error)}`
+        )
+    }
+    if (failed) throw failure
+    return outcome
+}
+
+function sceneLabel(
+    scene: string,
+    variant?: VariantRunOptions | undefined
+): string {
+    return variant ? `${scene}@${variant.id}` : scene
+}
+
 async function runManual(
     browser: Browser,
     bundle: string,
     scene: string,
+    stage: string,
     options: {
         control?: string | undefined
         variant?: VariantRunOptions | undefined
@@ -392,89 +647,102 @@ async function runManual(
 ): Promise<{ trace: SceneTrace; problems: readonly string[] }> {
     const { viewport } = sceneViewport(scene)
     const dpr = options.variant?.dpr ?? sceneViewport(scene).dpr
+    const label = sceneLabel(scene, options.variant)
     const opened = await openPage(
         browser,
         bundle,
         viewport,
         dpr,
-        engineFor(browser)
+        engineFor(browser),
+        `${stage} ${label}`
     )
-    try {
-        const trace = (await opened.page.evaluate(
-            async ({ scene, control, variant }) => {
-                const bench = (
-                    window as unknown as {
-                        __bench: {
-                            scenes: Record<
-                                string,
-                                {
-                                    runManual(options: {
-                                        control?: string | undefined
-                                        variant?: unknown
-                                    }): Promise<unknown>
-                                }
-                            >
+    return runWithContext(opened, `${stage} ${label}`, async () => {
+        progress(`${stage}: evaluate manual ${label}`)
+        const trace = (await withTimeout(
+            opened.page.evaluate(
+                async ({ scene, control, variant }) => {
+                    const bench = (
+                        window as unknown as {
+                            __bench: {
+                                scenes: Record<
+                                    string,
+                                    {
+                                        runManual(options: {
+                                            control?: string | undefined
+                                            variant?: unknown
+                                        }): Promise<unknown>
+                                    }
+                                >
+                            }
                         }
-                    }
-                ).__bench
-                return bench.scenes[scene]!.runManual({ control, variant })
-            },
-            {
-                scene,
-                control: options.control,
-                variant: options.variant,
-            }
+                    ).__bench
+                    return bench.scenes[scene]!.runManual({ control, variant })
+                },
+                {
+                    scene,
+                    control: options.control,
+                    variant: options.variant,
+                }
+            ),
+            SCENE_TIMEOUT_MS,
+            `${stage} ${label}`
         )) as SceneTrace
+        progress(`${stage}: manual ${label} ok`)
         const variant = options.variant
         return {
             trace: variant ? { ...trace, variant: variant.id } : trace,
             problems: opened.problems,
         }
-    } finally {
-        await opened.context.close()
-    }
+    })
 }
 
 async function runReal(
     browser: Browser,
     bundle: string,
     scene: string,
+    stage: string,
     variant?: VariantRunOptions | undefined
 ): Promise<{ trace: RealTrace; problems: readonly string[] }> {
     const { viewport } = sceneViewport(scene)
     const dpr = variant?.dpr ?? sceneViewport(scene).dpr
+    const label = sceneLabel(scene, variant)
     const opened = await openPage(
         browser,
         bundle,
         viewport,
         dpr,
-        engineFor(browser)
+        engineFor(browser),
+        `${stage} ${label}`
     )
-    try {
-        const trace = (await opened.page.evaluate(
-            async ({ scene, variant }) => {
-                const bench = (
-                    window as unknown as {
-                        __bench: {
-                            scenes: Record<
-                                string,
-                                {
-                                    runReal(options: {
-                                        variant?: unknown
-                                    }): Promise<unknown>
-                                }
-                            >
+    return runWithContext(opened, `${stage} ${label}`, async () => {
+        progress(`${stage}: evaluate real ${label}`)
+        const trace = (await withTimeout(
+            opened.page.evaluate(
+                async ({ scene, variant }) => {
+                    const bench = (
+                        window as unknown as {
+                            __bench: {
+                                scenes: Record<
+                                    string,
+                                    {
+                                        runReal(options: {
+                                            variant?: unknown
+                                        }): Promise<unknown>
+                                    }
+                                >
+                            }
                         }
-                    }
-                ).__bench
-                return bench.scenes[scene]!.runReal({ variant })
-            },
-            { scene, variant }
+                    ).__bench
+                    return bench.scenes[scene]!.runReal({ variant })
+                },
+                { scene, variant }
+            ),
+            SCENE_TIMEOUT_MS,
+            `${stage} ${label}`
         )) as RealTrace
+        progress(`${stage}: real ${label} ok`)
         return { trace, problems: opened.problems }
-    } finally {
-        await opened.context.close()
-    }
+    })
 }
 
 interface SceneCostProbeResult {
@@ -489,61 +757,75 @@ interface SceneCostProbeResult {
 async function runSceneCostProbe(
     browser: Browser,
     bundle: string,
-    scene: string
+    scene: string,
+    stage: string
 ): Promise<SceneCostProbeResult> {
     const opened = await openPage(
         browser,
         bundle,
         IOS_VIEWPORT,
         2,
-        engineFor(browser)
+        engineFor(browser),
+        `${stage} ${scene}`
     )
-    try {
-        return (await opened.page.evaluate(async (scene) => {
-            const bench = (
-                window as unknown as {
-                    __bench: {
-                        runSceneCostProbe(scene: string): Promise<unknown>
+    return runWithContext(opened, `${stage} ${scene}`, async () => {
+        progress(`${stage}: evaluate probe ${scene}`)
+        const result = (await withTimeout(
+            opened.page.evaluate(async (scene) => {
+                const bench = (
+                    window as unknown as {
+                        __bench: {
+                            runSceneCostProbe(scene: string): Promise<unknown>
+                        }
                     }
-                }
-            ).__bench
-            return bench.runSceneCostProbe(scene)
-        }, scene)) as SceneCostProbeResult
-    } finally {
-        await opened.context.close()
-    }
+                ).__bench
+                return bench.runSceneCostProbe(scene)
+            }, scene),
+            SCENE_TIMEOUT_MS,
+            `${stage} ${scene}`
+        )) as SceneCostProbeResult
+        progress(`${stage}: probe ${scene} ok`)
+        return result
+    })
 }
 
 async function runCost(
     browser: Browser,
-    bundle: string
+    bundle: string,
+    stage: string
 ): Promise<{ trace: CostTrace; problems: readonly string[] }> {
     const opened = await openPage(
         browser,
         bundle,
         COST_VIEWPORT,
         1,
-        engineFor(browser)
+        engineFor(browser),
+        stage
     )
-    try {
-        const trace = (await opened.page.evaluate(async () => {
-            const bench = (
-                window as unknown as {
-                    __bench: { runCost(): Promise<unknown> }
-                }
-            ).__bench
-            return bench.runCost()
-        })) as CostTrace
+    return runWithContext(opened, stage, async () => {
+        progress(`${stage}: evaluate cost`)
+        const trace = (await withTimeout(
+            opened.page.evaluate(async () => {
+                const bench = (
+                    window as unknown as {
+                        __bench: { runCost(): Promise<unknown> }
+                    }
+                ).__bench
+                return bench.runCost()
+            }),
+            SCENE_TIMEOUT_MS,
+            stage
+        )) as CostTrace
+        progress(`${stage}: evaluate cost ok`)
         return { trace, problems: opened.problems }
-    } finally {
-        await opened.context.close()
-    }
+    })
 }
 
 async function runHeldAudit(
     browser: Browser,
     bundle: string,
-    extraRead: boolean
+    extraRead: boolean,
+    stage: string
 ): Promise<{
     frames: number
     rects: number
@@ -557,19 +839,25 @@ async function runHeldAudit(
         bundle,
         COST_VIEWPORT,
         1,
-        engineFor(browser)
+        engineFor(browser),
+        stage
     )
-    try {
-        return (await opened.page.evaluate(async (extraRead) => {
-            const bench = (
-                window as unknown as {
-                    __bench: {
-                        runHeldAudit(extraRead: boolean): Promise<unknown>
+    return runWithContext(opened, stage, async () => {
+        progress(`${stage}: evaluate held audit`)
+        const result = (await withTimeout(
+            opened.page.evaluate(async (extraRead) => {
+                const bench = (
+                    window as unknown as {
+                        __bench: {
+                            runHeldAudit(extraRead: boolean): Promise<unknown>
+                        }
                     }
-                }
-            ).__bench
-            return bench.runHeldAudit(extraRead)
-        }, extraRead)) as {
+                ).__bench
+                return bench.runHeldAudit(extraRead)
+            }, extraRead),
+            SCENE_TIMEOUT_MS,
+            stage
+        )) as {
             frames: number
             rects: number
             offsets: number
@@ -577,37 +865,44 @@ async function runHeldAudit(
             holds: number
             mismatches: number
         }
-    } finally {
-        await opened.context.close()
-    }
+        progress(`${stage}: held audit ok`)
+        return result
+    })
 }
 
 async function runFloorAudit(
     browser: Browser,
     bundle: string,
-    extraRead: boolean
+    extraRead: boolean,
+    stage: string
 ): Promise<FloorAuditTrace> {
     const opened = await openPage(
         browser,
         bundle,
         COST_VIEWPORT,
         1,
-        engineFor(browser)
+        engineFor(browser),
+        stage
     )
-    try {
-        return (await opened.page.evaluate(async (extraRead) => {
-            const bench = (
-                window as unknown as {
-                    __bench: {
-                        runFloorAudit(extraRead: boolean): Promise<unknown>
+    return runWithContext(opened, stage, async () => {
+        progress(`${stage}: evaluate floor audit`)
+        const trace = (await withTimeout(
+            opened.page.evaluate(async (extraRead) => {
+                const bench = (
+                    window as unknown as {
+                        __bench: {
+                            runFloorAudit(extraRead: boolean): Promise<unknown>
+                        }
                     }
-                }
-            ).__bench
-            return bench.runFloorAudit(extraRead)
-        }, extraRead)) as FloorAuditTrace
-    } finally {
-        await opened.context.close()
-    }
+                ).__bench
+                return bench.runFloorAudit(extraRead)
+            }, extraRead),
+            SCENE_TIMEOUT_MS,
+            stage
+        )) as FloorAuditTrace
+        progress(`${stage}: floor audit ok`)
+        return trace
+    })
 }
 
 /* ───────────────────────── aggregation ───────────────────────── */
@@ -1326,9 +1621,9 @@ async function browserControls(
     scenes: readonly string[]
 ): Promise<NegativeControlResult[]> {
     const results: NegativeControlResult[] = []
-    let browser: Browser | null = null
+    let browser: BenchBrowser | null = null
     try {
-        browser = await launch(engine)
+        browser = await BenchBrowser.launch(engine, `${engine} controls`)
         let primaryCardInert: boolean | null = null
         const primaryScores = new Map<string, ReturnType<typeof scoreScene>>()
         const controls = SCENE_CONTROLS.filter((entry) =>
@@ -1345,13 +1640,35 @@ async function browserControls(
                 id === 'primary'
                     ? undefined
                     : variantSpec(scene, id as VariantId)
-            const primary = await runManual(browser, bundle, scene, {
-                ...(spec ? { variant: spec } : {}),
-            })
-            primaryScores.set(
-                key,
-                scoreScene(planFor(scene, primary.trace, spec), primary.trace)
-            )
+            try {
+                const primary = await runManual(
+                    browser.browser,
+                    bundle,
+                    scene,
+                    `${engine} controls primary`,
+                    {
+                        ...(spec ? { variant: spec } : {}),
+                    }
+                )
+                progress(`${engine} controls: score primary ${key}`)
+                primaryScores.set(
+                    key,
+                    scoreScene(
+                        planFor(scene, primary.trace, spec),
+                        primary.trace
+                    )
+                )
+            } catch (error) {
+                results.push({
+                    name: `${key} primary`,
+                    target: 'baseline',
+                    expected: 'fail',
+                    observed: 'error',
+                    conclusive: true,
+                    ok: false,
+                    detail: describeError(error),
+                })
+            }
         }
         const primaryScore = primaryScores.get('s-card|primary')
         primaryCardInert =
@@ -1364,11 +1681,18 @@ async function browserControls(
                     ? undefined
                     : variantSpec(control.scene, control.variant)
             try {
-                const run = await runManual(browser, bundle, control.scene, {
-                    control: control.control,
-                    ...(spec ? { variant: spec } : {}),
-                })
+                const run = await runManual(
+                    browser.browser,
+                    bundle,
+                    control.scene,
+                    `${engine} controls`,
+                    {
+                        control: control.control,
+                        ...(spec ? { variant: spec } : {}),
+                    }
+                )
                 const plan = planFor(run.trace.scene, run.trace, spec)
+                progress(`${engine} controls: score ${control.name}`)
                 const score = scoreScene(plan, run.trace)
                 const finding = [...score.metrics, ...score.shape].find(
                     (entry) => entry.id === control.target
@@ -1426,7 +1750,12 @@ async function browserControls(
             }
         }
         try {
-            const heldAudit = await runHeldAudit(browser, bundle, true)
+            const heldAudit = await runHeldAudit(
+                browser.browser,
+                bundle,
+                true,
+                `${engine} controls held-extra-read`
+            )
             results.push({
                 name: 'held-extra-read',
                 target: 'G13-held',
@@ -1448,7 +1777,12 @@ async function browserControls(
             })
         }
         try {
-            const auditTrace = await runFloorAudit(browser, bundle, true)
+            const auditTrace = await runFloorAudit(
+                browser.browser,
+                bundle,
+                true,
+                `${engine} controls floor-extra-read`
+            )
             const audit = auditFloor({
                 participants: auditTrace.participants,
                 poses: auditTrace.poses,
@@ -1492,7 +1826,7 @@ async function browserControls(
             detail: describeError(error),
         })
     } finally {
-        await browser?.close().catch(() => undefined)
+        await browser?.close(`${engine} controls teardown`)
     }
     return results
 }
@@ -1508,6 +1842,8 @@ const SELF_TEST_FILES = [
     'bench/layout/certification.test.ts',
     'bench/layout/cost_validity.test.ts',
     'bench/layout/variants.test.ts',
+    'bench/layout/timeout.test.ts',
+    'bench/layout/fingerprint.test.ts',
 ] as const
 
 function selfTests(): {
@@ -1764,7 +2100,86 @@ interface MeasuredRun {
     readonly variants: readonly RunSceneOutcome[]
     readonly cost: CostRunReport | null
     readonly costFindings: readonly MetricFinding[] | null
+    /** A cost stage that timed out or failed; the run is not silently absent. */
+    readonly costError: string | null
     readonly browserVersion: string
+}
+
+interface SceneFailure {
+    readonly scene: string
+    readonly variant?: VariantSpec | undefined
+    readonly stage: string
+    readonly error: unknown
+}
+
+function failedSceneOutcome(
+    scene: string,
+    run: number,
+    warmup: boolean,
+    variant: VariantSpec | undefined,
+    failure: SceneFailure
+): RunSceneOutcome {
+    const key = variant ? variantKey(scene, variant.id) : scene
+    const problem = `${failure.stage} failed: ${describeError(failure.error)}`
+    return {
+        report: {
+            scene: key,
+            run,
+            warmup,
+            pass: false,
+            costProbe: {
+                participants: 0,
+                movers: 0,
+                engineMedian: Number.NaN,
+                floorMedian: Number.NaN,
+                ratio: Number.NaN,
+            },
+            metrics: [],
+            shape: [],
+            real: {
+                g: Number.NaN,
+                gSource: 'reads',
+                frames: 0,
+                p95: Number.NaN,
+                longFrames: 0,
+                pass: false,
+                blocked: false,
+            },
+            summary: {
+                observations: 0,
+                commits: [],
+                reports: [],
+                settleFrames: [],
+                steadyFrameReads: 0,
+                final: {
+                    tracks: 0,
+                    holds: 0,
+                    clockPending: 0,
+                    clockSize: 0,
+                    connected: [],
+                    diagnostics: [],
+                },
+            },
+            problems: [problem],
+        },
+        findings: [],
+        shape: [],
+    }
+}
+
+/** A failed real twin keeps the manual evidence and fails G8/RUN honestly. */
+function failedRealTrace(scene: string): RealTrace {
+    return {
+        scene,
+        mode: 'real',
+        g: Number.NaN,
+        gSource: 'reads',
+        frameCosts: [],
+        commits: [],
+        diagnostics: [],
+        allowEmptyFinal: true,
+        final: { tracks: 0, holds: 0, connected: 0 },
+    }
 }
 
 async function measureRun(
@@ -1776,8 +2191,7 @@ async function measureRun(
 ): Promise<MeasuredRun> {
     // The manual-clock scoring run and the real-clock twin each get a fresh
     // browser process; the cost shapes get a third with its own 1280x720 page.
-    const manualBrowser = await launch(engine)
-    const version = manualBrowser.version()
+    const runStage = `${engine} run ${run}/${options.runs}${warmup ? ' (warm-up)' : ''}`
     const variantSpecs = selectedVariants(
         options.scenes.filter((scene) => scene !== 'cost'),
         options.variants
@@ -1788,98 +2202,153 @@ async function measureRun(
         problems: string[]
         variant?: VariantSpec
     }[] = []
+    const failures: SceneFailure[] = []
     const probes = new Map<string, SceneCostProbeResult>()
+    const probeProblems = new Map<string, string>()
+    const runProblems: string[] = []
+    let manualBrowser = await BenchBrowser.launch(engine, `${runStage} manual`)
+    const version = manualBrowser.version
     try {
         for (const scene of options.scenes) {
             if (scene === 'cost') continue
-            const manual = await runManual(manualBrowser, bundle, scene)
-            manualTraces.push({
-                scene,
-                trace: manual.trace,
-                problems: [...manual.problems],
-            })
+            const stage = `${runStage} manual`
+            try {
+                const manual = await runManual(
+                    manualBrowser.browser,
+                    bundle,
+                    scene,
+                    stage
+                )
+                manualTraces.push({
+                    scene,
+                    trace: manual.trace,
+                    problems: [...manual.problems],
+                })
+            } catch (error) {
+                failures.push({ scene, stage: `${stage} ${scene}`, error })
+                progress(
+                    `${stage} ${scene}: failed, restarting the manual browser`
+                )
+                await manualBrowser.close(`${stage} ${scene} after failure`)
+                manualBrowser = await BenchBrowser.launch(
+                    engine,
+                    `${runStage} manual relaunch`
+                )
+            }
         }
         for (const variant of variantSpecs) {
-            const manual = await runManual(
-                manualBrowser,
-                bundle,
-                variant.scene,
-                {
+            const stage = `${runStage} manual`
+            const label = sceneLabel(variant.scene, variant)
+            try {
+                const manual = await runManual(
+                    manualBrowser.browser,
+                    bundle,
+                    variant.scene,
+                    stage,
+                    { variant }
+                )
+                manualTraces.push({
+                    scene: variant.scene,
+                    trace: manual.trace,
+                    problems: [...manual.problems],
                     variant,
-                }
-            )
-            manualTraces.push({
-                scene: variant.scene,
-                trace: manual.trace,
-                problems: [...manual.problems],
-                variant,
-            })
+                })
+            } catch (error) {
+                failures.push({
+                    scene: variant.scene,
+                    variant,
+                    stage: `${stage} ${label}`,
+                    error,
+                })
+                progress(
+                    `${stage} ${label}: failed, restarting the manual browser`
+                )
+                await manualBrowser.close(`${stage} ${label} after failure`)
+                manualBrowser = await BenchBrowser.launch(
+                    engine,
+                    `${runStage} manual relaunch`
+                )
+            }
         }
         for (const manual of manualTraces) {
             if (manual.variant) continue
-            probes.set(
-                manual.scene,
-                await runSceneCostProbe(manualBrowser, bundle, manual.scene)
-            )
+            try {
+                probes.set(
+                    manual.scene,
+                    await runSceneCostProbe(
+                        manualBrowser.browser,
+                        bundle,
+                        manual.scene,
+                        `${runStage} probe`
+                    )
+                )
+            } catch (error) {
+                const problem = `${runStage} probe ${manual.scene} failed: ${describeError(error)}`
+                probeProblems.set(manual.scene, problem)
+                progress(`${problem}; restarting the manual browser`)
+                await manualBrowser.close(
+                    `${runStage} probe ${manual.scene} after failure`
+                )
+                manualBrowser = await BenchBrowser.launch(
+                    engine,
+                    `${runStage} manual relaunch`
+                )
+            }
         }
     } finally {
-        await manualBrowser.close()
+        await manualBrowser.close(`${runStage} manual teardown`)
+        runProblems.push(...manualBrowser.problems)
     }
-    const realBrowser = await launch(engine)
+    let realBrowser = await BenchBrowser.launch(engine, `${runStage} real`)
     const realTraces = new Map<
         string,
         { trace: RealTrace; problems: readonly string[] }
     >()
+    const realFailures = new Map<string, string>()
     try {
         for (const manual of manualTraces) {
             const key = manual.variant
                 ? variantKey(manual.scene, manual.variant.id)
                 : manual.scene
-            realTraces.set(
-                key,
-                await runReal(realBrowser, bundle, manual.scene, manual.variant)
-            )
+            const stage = `${runStage} real`
+            try {
+                realTraces.set(
+                    key,
+                    await runReal(
+                        realBrowser.browser,
+                        bundle,
+                        manual.scene,
+                        stage,
+                        manual.variant
+                    )
+                )
+            } catch (error) {
+                const problem = `${stage} ${key} failed: ${describeError(error)}`
+                realFailures.set(key, problem)
+                progress(`${problem}; restarting the real browser`)
+                await realBrowser.close(`${stage} ${key} after failure`)
+                realBrowser = await BenchBrowser.launch(
+                    engine,
+                    `${runStage} real relaunch`
+                )
+            }
         }
     } finally {
-        await realBrowser.close()
+        await realBrowser.close(`${runStage} real teardown`)
+        runProblems.push(...realBrowser.problems)
     }
-    const scenes = manualTraces
-        .filter((manual) => manual.variant === undefined)
-        .map((manual) => {
-            const real = realTraces.get(manual.scene)!
-            return sceneOutcome(
-                run,
-                warmup,
-                manual.trace,
-                real.trace,
-                probes.get(manual.scene) ?? null,
-                [...manual.problems, ...real.problems]
-            )
-        })
-    const variants = manualTraces
-        .filter(
-            (manual): manual is typeof manual & { variant: VariantSpec } =>
-                manual.variant !== undefined
-        )
-        .map((manual) => {
-            const key = variantKey(manual.scene, manual.variant.id)
-            const real = realTraces.get(key)!
-            return sceneOutcome(
-                run,
-                warmup,
-                manual.trace,
-                real.trace,
-                null,
-                [...manual.problems, ...real.problems],
-                manual.variant
-            )
-        })
     let cost: CostRunReport | null = null
     let costFindings: MetricFinding[] | null = null
+    let costError: string | null = null
     if (options.scenes.includes('cost')) {
-        const costBrowser = await launch(engine)
+        let costBrowser: BenchBrowser | null = null
         try {
-            const measured = await runCost(costBrowser, bundle)
+            costBrowser = await BenchBrowser.launch(engine, `${runStage} cost`)
+            const measured = await runCost(
+                costBrowser.browser,
+                bundle,
+                `${runStage} cost`
+            )
             const evaluated = evaluateCost(measured.trace, measured.problems)
             cost = {
                 ...evaluated.report,
@@ -1890,11 +2359,110 @@ async function measureRun(
                 ...finding,
                 pass: finding.pass && evaluated.problems.length === 0,
             }))
+        } catch (error) {
+            costError = `${runStage} cost failed: ${describeError(error)}`
+            progress(costError)
         } finally {
-            await costBrowser.close()
+            await costBrowser?.close(`${runStage} cost teardown`)
+            runProblems.push(...(costBrowser?.problems ?? []))
         }
     }
-    return { scenes, variants, cost, costFindings, browserVersion: version }
+    const primaryScenes = options.scenes.filter((scene) => scene !== 'cost')
+    const scenes = primaryScenes.map((scene) => {
+        progress(`${runStage}: score primary ${scene}`)
+        const failure = failures.find(
+            (entry) => entry.variant === undefined && entry.scene === scene
+        )
+        if (failure) {
+            return failedSceneOutcome(scene, run, warmup, undefined, failure)
+        }
+        const manual = manualTraces.find(
+            (entry) => entry.variant === undefined && entry.scene === scene
+        )
+        if (!manual) {
+            return failedSceneOutcome(scene, run, warmup, undefined, {
+                scene,
+                stage: `${runStage} manual ${scene}`,
+                error: new Error('no manual trace was produced'),
+            })
+        }
+        const extraProblems = [
+            ...manual.problems,
+            ...(probeProblems.get(scene) === undefined
+                ? []
+                : [probeProblems.get(scene)!]),
+            ...(realFailures.get(scene) === undefined
+                ? []
+                : [realFailures.get(scene)!]),
+            ...runProblems,
+        ]
+        const real = realTraces.get(scene)
+        return sceneOutcome(
+            run,
+            warmup,
+            manual.trace,
+            real?.trace ?? failedRealTrace(scene),
+            probes.get(scene) ?? null,
+            [...extraProblems, ...(real?.problems ?? [])]
+        )
+    })
+    const variants = variantSpecs.map((variant) => {
+        const key = variantKey(variant.scene, variant.id)
+        progress(`${runStage}: score variant ${key}`)
+        const failure = failures.find(
+            (entry) =>
+                entry.variant !== undefined &&
+                entry.scene === variant.scene &&
+                entry.variant.id === variant.id
+        )
+        if (failure) {
+            return failedSceneOutcome(
+                variant.scene,
+                run,
+                warmup,
+                variant,
+                failure
+            )
+        }
+        const manual = manualTraces.find(
+            (entry) =>
+                entry.variant !== undefined &&
+                entry.scene === variant.scene &&
+                entry.variant.id === variant.id
+        )
+        if (!manual) {
+            return failedSceneOutcome(variant.scene, run, warmup, variant, {
+                scene: variant.scene,
+                stage: `${runStage} manual ${key}`,
+                error: new Error('no manual trace was produced'),
+            })
+        }
+        const real = realTraces.get(key)
+        return sceneOutcome(
+            run,
+            warmup,
+            manual.trace,
+            real?.trace ?? failedRealTrace(key),
+            null,
+            [
+                ...manual.problems,
+                ...(realFailures.get(key) === undefined
+                    ? []
+                    : [realFailures.get(key)!]),
+                ...runProblems,
+                ...(real?.problems ?? []),
+            ],
+            variant
+        )
+    })
+    return {
+        scenes,
+        variants,
+        cost,
+        costFindings,
+        costError,
+        browserVersion: version,
+    }
 }
 
 function pendingEntries(
@@ -1966,8 +2534,44 @@ function variantBlockedEntries(
     return entries
 }
 
+function failedCostReport(
+    errors: readonly string[],
+    expectedRuns: number
+): CostReport {
+    return {
+        scene: 'S-BULK',
+        status: 'fail',
+        pending: null,
+        pass: false,
+        valid: false,
+        blockedReasons: [],
+        metrics: [
+            {
+                id: 'G9-unscrolled',
+                label: 'S-BULK cost shapes (the cost stage did not complete)',
+                gate: 'the cost shapes must run and pass; a timed-out cost stage is a failure',
+                unit: 'ratio',
+                median: Number.NaN,
+                pass: false,
+                blocked: false,
+                deciding: true,
+                perRun: [],
+                passPerRun: [],
+                worst: { detail: errors.join('; ') },
+            },
+        ],
+        runs: [],
+        notes: [
+            ...errors,
+            `0 of ${expectedRuns} measured cost runs produced evidence`,
+        ],
+        measuredRuns: 0,
+    }
+}
+
 async function main(): Promise<number> {
     const options = parseOptions(process.argv.slice(2))
+    const sourceRevision = gitRevision()
     const fingerprint = collectFingerprint()
     const advisory = evaluateFingerprint(fingerprint)
     const bundle = await bundlePage()
@@ -1985,12 +2589,18 @@ async function main(): Promise<number> {
         let launchError: string | null = null
         try {
             if (options.check) {
+                progress(`${engine}: negative controls start`)
                 controls.push(
                     ...(await browserControls(engine, bundle, options.scenes))
                 )
+                progress(`${engine}: negative controls done`)
             }
+            progress(`${engine}: measured runs start`)
             for (let index = 0; index <= options.runs; index++) {
                 const warmup = index === 0
+                progress(
+                    `${engine} run ${index}/${options.runs}${warmup ? ' (warm-up)' : ''}: start`
+                )
                 const measured = await measureRun(
                     engine,
                     bundle,
@@ -2008,14 +2618,20 @@ async function main(): Promise<number> {
                     parts.push(
                         `cost ${measured.cost.floorAuditPass ? 'audit ok' : 'FAIL'}`
                     )
+                } else if (measured.costError !== null) {
+                    parts.push('cost FAIL')
                 }
                 writeOut(
                     `${engine} run ${index}/${options.runs}${warmup ? ' (warm-up)' : ''}: ${parts.join(', ') || 'no scenes'}`
+                )
+                progress(
+                    `${engine} run ${index}/${options.runs}${warmup ? ' (warm-up)' : ''}: done`
                 )
             }
         } catch (error) {
             launchError = describeError(error)
             writeStderr(`${engine}: ${launchError}`)
+            progress(`${engine}: aborted: ${launchError}`)
         }
         const sceneReports: SceneReport[] = []
         for (const scene of options.scenes) {
@@ -2064,10 +2680,16 @@ async function main(): Promise<number> {
             .map((run) => run.measured.costFindings)
             .filter((entry): entry is MetricFinding[] => entry !== null)
         const measuredCostRuns = costRuns.filter((run) => !run.warmup).length
+        const costErrors = runs
+            .map((run) => run.measured.costError)
+            .filter((entry): entry is string => entry !== null)
         let cost =
             options.scenes.includes('cost') && costRuns.length > 0
                 ? aggregateCost(costRuns, costFindings, options.runs)
                 : null
+        if (options.scenes.includes('cost') && costErrors.length > 0) {
+            cost = failedCostReport(costErrors, options.runs)
+        }
         if (
             cost !== null &&
             measuredCostRuns < options.runs &&
@@ -2278,13 +2900,6 @@ async function main(): Promise<number> {
         scenePass &&
         variantPass &&
         costPass
-    const sourceRevision = (() => {
-        const revision = spawnSync('git', ['rev-parse', 'HEAD'], {
-            cwd: REPO_ROOT,
-            encoding: 'utf8',
-        })
-        return revision.status === 0 ? revision.stdout.trim() : undefined
-    })()
     const report: BenchReport = {
         schema: 'ani-layout-bench/v1',
         generatedAt: new Date().toISOString(),
@@ -2314,6 +2929,10 @@ async function main(): Promise<number> {
     if (advisory.cost) {
         writeOut(
             `\ncost gates are ADVISORY: ${advisory.reasons.join('; ')} (pinned ${PINNED_FINGERPRINT.host} / ${PINNED_FINGERPRINT.productVersion} / ${PINNED_FINGERPRINT.cpu})`
+        )
+    } else if (advisory.controlledLoad) {
+        writeOut(
+            `\ncontrolled load ${advisory.load1.toFixed(2)}: cost gates remain deciding (D13; D9 <1.0 pin retired)`
         )
     }
     return pass ? 0 : 1

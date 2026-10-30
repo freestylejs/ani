@@ -1,0 +1,1934 @@
+[03:44:56 +1.3s] chromium: measured runs start
+[03:44:56 +1.3s] chromium run 0/1 (warm-up): start
+[03:44:56 +1.3s] chromium run 0/1 (warm-up) manual: launch chromium
+[03:44:56 +1.5s] chromium run 0/1 (warm-up) manual: launch chromium ok (140.0.7339.16)
+[03:44:56 +1.5s] chromium run 0/1 (warm-up) manual s-card: open page 390x844@2
+[03:44:56 +1.7s] chromium run 0/1 (warm-up) manual s-card: page ready
+[03:44:56 +1.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-card
+[03:44:56 +1.9s] chromium run 0/1 (warm-up) manual: manual s-card ok
+[03:44:56 +1.9s] chromium run 0/1 (warm-up) manual s-card: context close
+[03:44:56 +1.9s] chromium run 0/1 (warm-up) manual s-card: context close ok
+[03:44:56 +1.9s] chromium run 0/1 (warm-up) manual s-seg: open page 390x844@2
+[03:44:57 +2.1s] chromium run 0/1 (warm-up) manual s-seg: page ready
+[03:44:57 +2.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-seg
+[03:44:57 +2.1s] chromium run 0/1 (warm-up) manual: manual s-seg ok
+[03:44:57 +2.1s] chromium run 0/1 (warm-up) manual s-seg: context close
+[03:44:57 +2.1s] chromium run 0/1 (warm-up) manual s-seg: context close ok
+[03:44:57 +2.1s] chromium run 0/1 (warm-up) manual s-photo: open page 390x844@2
+[03:44:57 +2.4s] chromium run 0/1 (warm-up) manual s-photo: page ready
+[03:44:57 +2.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo
+[03:45:01 +6.4s] chromium run 0/1 (warm-up) manual: manual s-photo ok
+[03:45:01 +6.4s] chromium run 0/1 (warm-up) manual s-photo: context close
+[03:45:01 +6.4s] chromium run 0/1 (warm-up) manual s-photo: context close ok
+[03:45:01 +6.4s] chromium run 0/1 (warm-up) manual s-stack: open page 390x844@2
+[03:45:01 +6.7s] chromium run 0/1 (warm-up) manual s-stack: page ready
+[03:45:01 +6.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-stack
+[03:45:01 +6.9s] chromium run 0/1 (warm-up) manual: manual s-stack ok
+[03:45:01 +6.9s] chromium run 0/1 (warm-up) manual s-stack: context close
+[03:45:01 +6.9s] chromium run 0/1 (warm-up) manual s-stack: context close ok
+[03:45:01 +6.9s] chromium run 0/1 (warm-up) manual s-island: open page 390x844@2
+[03:45:02 +7.2s] chromium run 0/1 (warm-up) manual s-island: page ready
+[03:45:02 +7.2s] chromium run 0/1 (warm-up) manual: evaluate manual s-island
+[03:45:02 +7.2s] chromium run 0/1 (warm-up) manual: manual s-island ok
+[03:45:02 +7.2s] chromium run 0/1 (warm-up) manual s-island: context close
+[03:45:02 +7.2s] chromium run 0/1 (warm-up) manual s-island: context close ok
+[03:45:02 +7.2s] chromium run 0/1 (warm-up) manual s-acc: open page 390x844@2
+[03:45:02 +7.4s] chromium run 0/1 (warm-up) manual s-acc: page ready
+[03:45:02 +7.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc
+[03:45:02 +7.8s] chromium run 0/1 (warm-up) manual: manual s-acc ok
+[03:45:02 +7.8s] chromium run 0/1 (warm-up) manual s-acc: context close
+[03:45:02 +7.8s] chromium run 0/1 (warm-up) manual s-acc: context close ok
+[03:45:02 +7.8s] chromium run 0/1 (warm-up) manual s-insert: open page 390x844@2
+[03:45:02 +8.0s] chromium run 0/1 (warm-up) manual s-insert: page ready
+[03:45:02 +8.0s] chromium run 0/1 (warm-up) manual: evaluate manual s-insert
+[03:45:03 +8.2s] chromium run 0/1 (warm-up) manual: manual s-insert ok
+[03:45:03 +8.2s] chromium run 0/1 (warm-up) manual s-insert: context close
+[03:45:03 +8.2s] chromium run 0/1 (warm-up) manual s-insert: context close ok
+[03:45:03 +8.2s] chromium run 0/1 (warm-up) manual s-delete: open page 390x844@2
+[03:45:03 +8.4s] chromium run 0/1 (warm-up) manual s-delete: page ready
+[03:45:03 +8.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-delete
+[03:45:03 +8.5s] chromium run 0/1 (warm-up) manual: manual s-delete ok
+[03:45:03 +8.5s] chromium run 0/1 (warm-up) manual s-delete: context close
+[03:45:03 +8.5s] chromium run 0/1 (warm-up) manual s-delete: context close ok
+[03:45:03 +8.5s] chromium run 0/1 (warm-up) manual s-reorder: open page 390x844@2
+[03:45:03 +8.8s] chromium run 0/1 (warm-up) manual s-reorder: page ready
+[03:45:03 +8.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder
+[03:45:03 +8.9s] chromium run 0/1 (warm-up) manual: manual s-reorder ok
+[03:45:03 +8.9s] chromium run 0/1 (warm-up) manual s-reorder: context close
+[03:45:03 +8.9s] chromium run 0/1 (warm-up) manual s-reorder: context close ok
+[03:45:03 +8.9s] chromium run 0/1 (warm-up) manual s-sheet: open page 390x844@2
+[03:45:04 +9.1s] chromium run 0/1 (warm-up) manual s-sheet: page ready
+[03:45:04 +9.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet
+[03:45:04 +9.2s] chromium run 0/1 (warm-up) manual: manual s-sheet ok
+[03:45:04 +9.2s] chromium run 0/1 (warm-up) manual s-sheet: context close
+[03:45:04 +9.2s] chromium run 0/1 (warm-up) manual s-sheet: context close ok
+[03:45:04 +9.2s] chromium run 0/1 (warm-up) manual s-bulk: open page 1280x720@1
+[03:45:04 +9.4s] chromium run 0/1 (warm-up) manual s-bulk: page ready
+[03:45:04 +9.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-bulk
+[03:45:09 +14.8s] chromium run 0/1 (warm-up) manual: manual s-bulk ok
+[03:45:09 +14.8s] chromium run 0/1 (warm-up) manual s-bulk: context close
+[03:45:09 +14.8s] chromium run 0/1 (warm-up) manual s-bulk: context close ok
+[03:45:09 +14.8s] chromium run 0/1 (warm-up) manual s-card@dpr1: open page 390x844@1
+[03:45:09 +15.0s] chromium run 0/1 (warm-up) manual s-card@dpr1: page ready
+[03:45:09 +15.0s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@dpr1
+[03:45:10 +15.2s] chromium run 0/1 (warm-up) manual: manual s-card@dpr1 ok
+[03:45:10 +15.2s] chromium run 0/1 (warm-up) manual s-card@dpr1: context close
+[03:45:10 +15.2s] chromium run 0/1 (warm-up) manual s-card@dpr1: context close ok
+[03:45:10 +15.2s] chromium run 0/1 (warm-up) manual s-card@dpr3: open page 390x844@3
+[03:45:10 +15.4s] chromium run 0/1 (warm-up) manual s-card@dpr3: page ready
+[03:45:10 +15.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@dpr3
+[03:45:10 +15.5s] chromium run 0/1 (warm-up) manual: manual s-card@dpr3 ok
+[03:45:10 +15.5s] chromium run 0/1 (warm-up) manual s-card@dpr3: context close
+[03:45:10 +15.5s] chromium run 0/1 (warm-up) manual s-card@dpr3: context close ok
+[03:45:10 +15.5s] chromium run 0/1 (warm-up) manual s-card@rm-jump: open page 390x844@2
+[03:45:10 +15.7s] chromium run 0/1 (warm-up) manual s-card@rm-jump: page ready
+[03:45:10 +15.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@rm-jump
+[03:45:10 +15.8s] chromium run 0/1 (warm-up) manual: manual s-card@rm-jump ok
+[03:45:10 +15.8s] chromium run 0/1 (warm-up) manual s-card@rm-jump: context close
+[03:45:10 +15.8s] chromium run 0/1 (warm-up) manual s-card@rm-jump: context close ok
+[03:45:10 +15.8s] chromium run 0/1 (warm-up) manual s-card@rm-max: open page 390x844@2
+[03:45:10 +16.0s] chromium run 0/1 (warm-up) manual s-card@rm-max: page ready
+[03:45:10 +16.0s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@rm-max
+[03:45:11 +16.0s] chromium run 0/1 (warm-up) manual: manual s-card@rm-max ok
+[03:45:11 +16.0s] chromium run 0/1 (warm-up) manual s-card@rm-max: context close
+[03:45:11 +16.0s] chromium run 0/1 (warm-up) manual s-card@rm-max: context close ok
+[03:45:11 +16.0s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: open page 390x844@2
+[03:45:11 +16.2s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: page ready
+[03:45:11 +16.2s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@rm-ignore
+[03:45:11 +16.4s] chromium run 0/1 (warm-up) manual: manual s-card@rm-ignore ok
+[03:45:11 +16.4s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: context close
+[03:45:11 +16.4s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: context close ok
+[03:45:11 +16.4s] chromium run 0/1 (warm-up) manual s-seg@dpr1: open page 390x844@1
+[03:45:11 +16.6s] chromium run 0/1 (warm-up) manual s-seg@dpr1: page ready
+[03:45:11 +16.6s] chromium run 0/1 (warm-up) manual: evaluate manual s-seg@dpr1
+[03:45:11 +16.6s] chromium run 0/1 (warm-up) manual: manual s-seg@dpr1 ok
+[03:45:11 +16.6s] chromium run 0/1 (warm-up) manual s-seg@dpr1: context close
+[03:45:11 +16.6s] chromium run 0/1 (warm-up) manual s-seg@dpr1: context close ok
+[03:45:11 +16.6s] chromium run 0/1 (warm-up) manual s-seg@dpr3: open page 390x844@3
+[03:45:11 +16.9s] chromium run 0/1 (warm-up) manual s-seg@dpr3: page ready
+[03:45:11 +16.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-seg@dpr3
+[03:45:11 +16.9s] chromium run 0/1 (warm-up) manual: manual s-seg@dpr3 ok
+[03:45:11 +16.9s] chromium run 0/1 (warm-up) manual s-seg@dpr3: context close
+[03:45:11 +16.9s] chromium run 0/1 (warm-up) manual s-seg@dpr3: context close ok
+[03:45:11 +16.9s] chromium run 0/1 (warm-up) manual s-photo@dpr1: open page 390x844@1
+[03:45:12 +17.1s] chromium run 0/1 (warm-up) manual s-photo@dpr1: page ready
+[03:45:12 +17.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@dpr1
+[03:45:15 +21.0s] chromium run 0/1 (warm-up) manual: manual s-photo@dpr1 ok
+[03:45:15 +21.0s] chromium run 0/1 (warm-up) manual s-photo@dpr1: context close
+[03:45:16 +21.0s] chromium run 0/1 (warm-up) manual s-photo@dpr1: context close ok
+[03:45:16 +21.0s] chromium run 0/1 (warm-up) manual s-photo@dpr3: open page 390x844@3
+[03:45:16 +21.3s] chromium run 0/1 (warm-up) manual s-photo@dpr3: page ready
+[03:45:16 +21.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@dpr3
+[03:45:20 +25.5s] chromium run 0/1 (warm-up) manual: manual s-photo@dpr3 ok
+[03:45:20 +25.5s] chromium run 0/1 (warm-up) manual s-photo@dpr3: context close
+[03:45:20 +25.5s] chromium run 0/1 (warm-up) manual s-photo@dpr3: context close ok
+[03:45:20 +25.5s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: open page 390x844@2
+[03:45:20 +25.7s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: page ready
+[03:45:20 +25.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@rm-jump
+[03:45:21 +26.8s] chromium run 0/1 (warm-up) manual: manual s-photo@rm-jump ok
+[03:45:21 +26.8s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: context close
+[03:45:21 +26.8s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: context close ok
+[03:45:21 +26.8s] chromium run 0/1 (warm-up) manual s-photo@rm-max: open page 390x844@2
+[03:45:22 +27.1s] chromium run 0/1 (warm-up) manual s-photo@rm-max: page ready
+[03:45:22 +27.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@rm-max
+[03:45:23 +28.9s] chromium run 0/1 (warm-up) manual: manual s-photo@rm-max ok
+[03:45:23 +28.9s] chromium run 0/1 (warm-up) manual s-photo@rm-max: context close
+[03:45:23 +28.9s] chromium run 0/1 (warm-up) manual s-photo@rm-max: context close ok
+[03:45:23 +28.9s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: open page 390x844@2
+[03:45:24 +29.1s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: page ready
+[03:45:24 +29.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@rm-ignore
+[03:45:28 +33.0s] chromium run 0/1 (warm-up) manual: manual s-photo@rm-ignore ok
+[03:45:28 +33.0s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: context close
+[03:45:28 +33.0s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: context close ok
+[03:45:28 +33.0s] chromium run 0/1 (warm-up) manual s-acc@dpr1: open page 390x844@1
+[03:45:28 +33.3s] chromium run 0/1 (warm-up) manual s-acc@dpr1: page ready
+[03:45:28 +33.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@dpr1
+[03:45:28 +33.7s] chromium run 0/1 (warm-up) manual: manual s-acc@dpr1 ok
+[03:45:28 +33.7s] chromium run 0/1 (warm-up) manual s-acc@dpr1: context close
+[03:45:28 +33.7s] chromium run 0/1 (warm-up) manual s-acc@dpr1: context close ok
+[03:45:28 +33.7s] chromium run 0/1 (warm-up) manual s-acc@dpr3: open page 390x844@3
+[03:45:28 +33.9s] chromium run 0/1 (warm-up) manual s-acc@dpr3: page ready
+[03:45:28 +33.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@dpr3
+[03:45:29 +34.2s] chromium run 0/1 (warm-up) manual: manual s-acc@dpr3 ok
+[03:45:29 +34.2s] chromium run 0/1 (warm-up) manual s-acc@dpr3: context close
+[03:45:29 +34.2s] chromium run 0/1 (warm-up) manual s-acc@dpr3: context close ok
+[03:45:29 +34.2s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: open page 390x844@2
+[03:45:29 +34.5s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: page ready
+[03:45:29 +34.5s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@rm-jump
+[03:45:29 +34.7s] chromium run 0/1 (warm-up) manual: manual s-acc@rm-jump ok
+[03:45:29 +34.7s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: context close
+[03:45:29 +34.7s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: context close ok
+[03:45:29 +34.7s] chromium run 0/1 (warm-up) manual s-acc@rm-max: open page 390x844@2
+[03:45:29 +34.9s] chromium run 0/1 (warm-up) manual s-acc@rm-max: page ready
+[03:45:29 +34.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@rm-max
+[03:45:30 +35.2s] chromium run 0/1 (warm-up) manual: manual s-acc@rm-max ok
+[03:45:30 +35.2s] chromium run 0/1 (warm-up) manual s-acc@rm-max: context close
+[03:45:30 +35.2s] chromium run 0/1 (warm-up) manual s-acc@rm-max: context close ok
+[03:45:30 +35.2s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: open page 390x844@2
+[03:45:30 +35.5s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: page ready
+[03:45:30 +35.5s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@rm-ignore
+[03:45:30 +35.9s] chromium run 0/1 (warm-up) manual: manual s-acc@rm-ignore ok
+[03:45:30 +35.9s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: context close
+[03:45:30 +35.9s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: context close ok
+[03:45:30 +35.9s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: open page 390x844@2
+[03:45:31 +36.1s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: page ready
+[03:45:31 +36.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder@rm-jump
+[03:45:31 +36.1s] chromium run 0/1 (warm-up) manual: manual s-reorder@rm-jump ok
+[03:45:31 +36.1s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: context close
+[03:45:31 +36.1s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: context close ok
+[03:45:31 +36.1s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: open page 390x844@2
+[03:45:31 +36.4s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: page ready
+[03:45:31 +36.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder@rm-max
+[03:45:31 +36.5s] chromium run 0/1 (warm-up) manual: manual s-reorder@rm-max ok
+[03:45:31 +36.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: context close
+[03:45:31 +36.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: context close ok
+[03:45:31 +36.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: open page 390x844@2
+[03:45:31 +36.7s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: page ready
+[03:45:31 +36.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder@rm-ignore
+[03:45:31 +36.8s] chromium run 0/1 (warm-up) manual: manual s-reorder@rm-ignore ok
+[03:45:31 +36.8s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: context close
+[03:45:31 +36.8s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: context close ok
+[03:45:31 +36.8s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: open page 390x844@2
+[03:45:31 +37.0s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: page ready
+[03:45:31 +37.0s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet@rm-jump
+[03:45:32 +37.1s] chromium run 0/1 (warm-up) manual: manual s-sheet@rm-jump ok
+[03:45:32 +37.1s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: context close
+[03:45:32 +37.1s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: context close ok
+[03:45:32 +37.1s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: open page 390x844@2
+[03:45:32 +37.3s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: page ready
+[03:45:32 +37.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet@rm-max
+[03:45:32 +37.3s] chromium run 0/1 (warm-up) manual: manual s-sheet@rm-max ok
+[03:45:32 +37.3s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: context close
+[03:45:32 +37.3s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: context close ok
+[03:45:32 +37.3s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: open page 390x844@2
+[03:45:32 +37.6s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: page ready
+[03:45:32 +37.6s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet@rm-ignore
+[03:45:32 +37.6s] chromium run 0/1 (warm-up) manual: manual s-sheet@rm-ignore ok
+[03:45:32 +37.6s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: context close
+[03:45:32 +37.6s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: context close ok
+[03:45:32 +37.6s] chromium run 0/1 (warm-up) probe s-card: open page 390x844@2
+[03:45:32 +37.9s] chromium run 0/1 (warm-up) probe s-card: page ready
+[03:45:32 +37.9s] chromium run 0/1 (warm-up) probe: evaluate probe s-card
+[03:45:33 +38.5s] chromium run 0/1 (warm-up) probe: probe s-card ok
+[03:45:33 +38.5s] chromium run 0/1 (warm-up) probe s-card: context close
+[03:45:33 +38.5s] chromium run 0/1 (warm-up) probe s-card: context close ok
+[03:45:33 +38.5s] chromium run 0/1 (warm-up) probe s-seg: open page 390x844@2
+[03:45:33 +38.9s] chromium run 0/1 (warm-up) probe s-seg: page ready
+[03:45:33 +38.9s] chromium run 0/1 (warm-up) probe: evaluate probe s-seg
+[03:45:34 +39.5s] chromium run 0/1 (warm-up) probe: probe s-seg ok
+[03:45:34 +39.5s] chromium run 0/1 (warm-up) probe s-seg: context close
+[03:45:34 +39.5s] chromium run 0/1 (warm-up) probe s-seg: context close ok
+[03:45:34 +39.5s] chromium run 0/1 (warm-up) probe s-photo: open page 390x844@2
+[03:45:34 +39.7s] chromium run 0/1 (warm-up) probe s-photo: page ready
+[03:45:34 +39.7s] chromium run 0/1 (warm-up) probe: evaluate probe s-photo
+[03:45:35 +40.3s] chromium run 0/1 (warm-up) probe: probe s-photo ok
+[03:45:35 +40.3s] chromium run 0/1 (warm-up) probe s-photo: context close
+[03:45:35 +40.3s] chromium run 0/1 (warm-up) probe s-photo: context close ok
+[03:45:35 +40.3s] chromium run 0/1 (warm-up) probe s-stack: open page 390x844@2
+[03:45:35 +40.5s] chromium run 0/1 (warm-up) probe s-stack: page ready
+[03:45:35 +40.5s] chromium run 0/1 (warm-up) probe: evaluate probe s-stack
+[03:45:36 +41.1s] chromium run 0/1 (warm-up) probe: probe s-stack ok
+[03:45:36 +41.1s] chromium run 0/1 (warm-up) probe s-stack: context close
+[03:45:36 +41.1s] chromium run 0/1 (warm-up) probe s-stack: context close ok
+[03:45:36 +41.1s] chromium run 0/1 (warm-up) probe s-island: open page 390x844@2
+[03:45:36 +41.3s] chromium run 0/1 (warm-up) probe s-island: page ready
+[03:45:36 +41.3s] chromium run 0/1 (warm-up) probe: evaluate probe s-island
+[03:45:36 +41.9s] chromium run 0/1 (warm-up) probe: probe s-island ok
+[03:45:36 +41.9s] chromium run 0/1 (warm-up) probe s-island: context close
+[03:45:36 +41.9s] chromium run 0/1 (warm-up) probe s-island: context close ok
+[03:45:36 +41.9s] chromium run 0/1 (warm-up) probe s-acc: open page 390x844@2
+[03:45:37 +42.2s] chromium run 0/1 (warm-up) probe s-acc: page ready
+[03:45:37 +42.2s] chromium run 0/1 (warm-up) probe: evaluate probe s-acc
+[03:45:37 +42.7s] chromium run 0/1 (warm-up) probe: probe s-acc ok
+[03:45:37 +42.7s] chromium run 0/1 (warm-up) probe s-acc: context close
+[03:45:37 +42.7s] chromium run 0/1 (warm-up) probe s-acc: context close ok
+[03:45:37 +42.7s] chromium run 0/1 (warm-up) probe s-insert: open page 390x844@2
+[03:45:37 +43.0s] chromium run 0/1 (warm-up) probe s-insert: page ready
+[03:45:37 +43.0s] chromium run 0/1 (warm-up) probe: evaluate probe s-insert
+[03:45:38 +43.5s] chromium run 0/1 (warm-up) probe: probe s-insert ok
+[03:45:38 +43.5s] chromium run 0/1 (warm-up) probe s-insert: context close
+[03:45:38 +43.5s] chromium run 0/1 (warm-up) probe s-insert: context close ok
+[03:45:38 +43.5s] chromium run 0/1 (warm-up) probe s-delete: open page 390x844@2
+[03:45:38 +43.7s] chromium run 0/1 (warm-up) probe s-delete: page ready
+[03:45:38 +43.7s] chromium run 0/1 (warm-up) probe: evaluate probe s-delete
+[03:45:39 +44.3s] chromium run 0/1 (warm-up) probe: probe s-delete ok
+[03:45:39 +44.3s] chromium run 0/1 (warm-up) probe s-delete: context close
+[03:45:39 +44.3s] chromium run 0/1 (warm-up) probe s-delete: context close ok
+[03:45:39 +44.3s] chromium run 0/1 (warm-up) probe s-reorder: open page 390x844@2
+[03:45:39 +44.5s] chromium run 0/1 (warm-up) probe s-reorder: page ready
+[03:45:39 +44.5s] chromium run 0/1 (warm-up) probe: evaluate probe s-reorder
+[03:45:40 +45.1s] chromium run 0/1 (warm-up) probe: probe s-reorder ok
+[03:45:40 +45.1s] chromium run 0/1 (warm-up) probe s-reorder: context close
+[03:45:40 +45.1s] chromium run 0/1 (warm-up) probe s-reorder: context close ok
+[03:45:40 +45.1s] chromium run 0/1 (warm-up) probe s-sheet: open page 390x844@2
+[03:45:40 +45.3s] chromium run 0/1 (warm-up) probe s-sheet: page ready
+[03:45:40 +45.3s] chromium run 0/1 (warm-up) probe: evaluate probe s-sheet
+[03:45:40 +45.9s] chromium run 0/1 (warm-up) probe: probe s-sheet ok
+[03:45:40 +45.9s] chromium run 0/1 (warm-up) probe s-sheet: context close
+[03:45:40 +45.9s] chromium run 0/1 (warm-up) probe s-sheet: context close ok
+[03:45:40 +45.9s] chromium run 0/1 (warm-up) probe s-bulk: open page 390x844@2
+[03:45:41 +46.1s] chromium run 0/1 (warm-up) probe s-bulk: page ready
+[03:45:41 +46.1s] chromium run 0/1 (warm-up) probe: evaluate probe s-bulk
+[03:45:48 +53.1s] chromium run 0/1 (warm-up) probe: probe s-bulk ok
+[03:45:48 +53.1s] chromium run 0/1 (warm-up) probe s-bulk: context close
+[03:45:48 +53.1s] chromium run 0/1 (warm-up) probe s-bulk: context close ok
+[03:45:48 +53.1s] chromium run 0/1 (warm-up) manual teardown: close chromium
+[03:45:48 +53.1s] chromium run 0/1 (warm-up) manual teardown: close chromium ok
+[03:45:48 +53.2s] chromium run 0/1 (warm-up) manual teardown: server close chromium ok
+[03:45:48 +53.2s] chromium run 0/1 (warm-up) real: launch chromium
+[03:45:48 +53.3s] chromium run 0/1 (warm-up) real: launch chromium ok (140.0.7339.16)
+[03:45:48 +53.3s] chromium run 0/1 (warm-up) real s-card: open page 390x844@2
+[03:45:48 +53.5s] chromium run 0/1 (warm-up) real s-card: page ready
+[03:45:48 +53.5s] chromium run 0/1 (warm-up) real: evaluate real s-card
+[03:45:50 +55.4s] chromium run 0/1 (warm-up) real: real s-card ok
+[03:45:50 +55.4s] chromium run 0/1 (warm-up) real s-card: context close
+[03:45:50 +55.4s] chromium run 0/1 (warm-up) real s-card: context close ok
+[03:45:50 +55.4s] chromium run 0/1 (warm-up) real s-seg: open page 390x844@2
+[03:45:50 +55.6s] chromium run 0/1 (warm-up) real s-seg: page ready
+[03:45:50 +55.6s] chromium run 0/1 (warm-up) real: evaluate real s-seg
+[03:45:51 +56.5s] chromium run 0/1 (warm-up) real: real s-seg ok
+[03:45:51 +56.5s] chromium run 0/1 (warm-up) real s-seg: context close
+[03:45:51 +56.5s] chromium run 0/1 (warm-up) real s-seg: context close ok
+[03:45:51 +56.5s] chromium run 0/1 (warm-up) real s-photo: open page 390x844@2
+[03:45:51 +56.7s] chromium run 0/1 (warm-up) real s-photo: page ready
+[03:45:51 +56.7s] chromium run 0/1 (warm-up) real: evaluate real s-photo
+[03:45:53 +58.9s] chromium run 0/1 (warm-up) real: real s-photo ok
+[03:45:53 +58.9s] chromium run 0/1 (warm-up) real s-photo: context close
+[03:45:53 +58.9s] chromium run 0/1 (warm-up) real s-photo: context close ok
+[03:45:53 +58.9s] chromium run 0/1 (warm-up) real s-stack: open page 390x844@2
+[03:45:54 +59.1s] chromium run 0/1 (warm-up) real s-stack: page ready
+[03:45:54 +59.1s] chromium run 0/1 (warm-up) real: evaluate real s-stack
+[03:45:56 +61.1s] chromium run 0/1 (warm-up) real: real s-stack ok
+[03:45:56 +61.1s] chromium run 0/1 (warm-up) real s-stack: context close
+[03:45:56 +61.1s] chromium run 0/1 (warm-up) real s-stack: context close ok
+[03:45:56 +61.1s] chromium run 0/1 (warm-up) real s-island: open page 390x844@2
+[03:45:56 +61.3s] chromium run 0/1 (warm-up) real s-island: page ready
+[03:45:56 +61.3s] chromium run 0/1 (warm-up) real: evaluate real s-island
+[03:45:57 +62.0s] chromium run 0/1 (warm-up) real: real s-island ok
+[03:45:57 +62.0s] chromium run 0/1 (warm-up) real s-island: context close
+[03:45:57 +62.0s] chromium run 0/1 (warm-up) real s-island: context close ok
+[03:45:57 +62.0s] chromium run 0/1 (warm-up) real s-acc: open page 390x844@2
+[03:45:57 +62.3s] chromium run 0/1 (warm-up) real s-acc: page ready
+[03:45:57 +62.3s] chromium run 0/1 (warm-up) real: evaluate real s-acc
+[03:45:58 +63.4s] chromium run 0/1 (warm-up) real: real s-acc ok
+[03:45:58 +63.4s] chromium run 0/1 (warm-up) real s-acc: context close
+[03:45:58 +63.4s] chromium run 0/1 (warm-up) real s-acc: context close ok
+[03:45:58 +63.4s] chromium run 0/1 (warm-up) real s-insert: open page 390x844@2
+[03:45:58 +63.6s] chromium run 0/1 (warm-up) real s-insert: page ready
+[03:45:58 +63.6s] chromium run 0/1 (warm-up) real: evaluate real s-insert
+[03:45:59 +64.5s] chromium run 0/1 (warm-up) real: real s-insert ok
+[03:45:59 +64.5s] chromium run 0/1 (warm-up) real s-insert: context close
+[03:45:59 +64.5s] chromium run 0/1 (warm-up) real s-insert: context close ok
+[03:45:59 +64.5s] chromium run 0/1 (warm-up) real s-delete: open page 390x844@2
+[03:45:59 +64.7s] chromium run 0/1 (warm-up) real s-delete: page ready
+[03:45:59 +64.7s] chromium run 0/1 (warm-up) real: evaluate real s-delete
+[03:46:00 +65.5s] chromium run 0/1 (warm-up) real: real s-delete ok
+[03:46:00 +65.5s] chromium run 0/1 (warm-up) real s-delete: context close
+[03:46:00 +65.5s] chromium run 0/1 (warm-up) real s-delete: context close ok
+[03:46:00 +65.5s] chromium run 0/1 (warm-up) real s-reorder: open page 390x844@2
+[03:46:00 +65.7s] chromium run 0/1 (warm-up) real s-reorder: page ready
+[03:46:00 +65.7s] chromium run 0/1 (warm-up) real: evaluate real s-reorder
+[03:46:11 +76.9s] chromium run 0/1 (warm-up) real: real s-reorder ok
+[03:46:11 +76.9s] chromium run 0/1 (warm-up) real s-reorder: context close
+[03:46:11 +76.9s] chromium run 0/1 (warm-up) real s-reorder: context close ok
+[03:46:11 +76.9s] chromium run 0/1 (warm-up) real s-sheet: open page 390x844@2
+[03:46:12 +77.1s] chromium run 0/1 (warm-up) real s-sheet: page ready
+[03:46:12 +77.1s] chromium run 0/1 (warm-up) real: evaluate real s-sheet
+[03:46:24 +89.7s] chromium run 0/1 (warm-up) real: real s-sheet ok
+[03:46:24 +89.7s] chromium run 0/1 (warm-up) real s-sheet: context close
+[03:46:24 +89.7s] chromium run 0/1 (warm-up) real s-sheet: context close ok
+[03:46:24 +89.7s] chromium run 0/1 (warm-up) real s-bulk: open page 1280x720@1
+[03:46:24 +89.9s] chromium run 0/1 (warm-up) real s-bulk: page ready
+[03:46:24 +89.9s] chromium run 0/1 (warm-up) real: evaluate real s-bulk
+[03:46:25 +90.7s] chromium run 0/1 (warm-up) real: real s-bulk ok
+[03:46:25 +90.7s] chromium run 0/1 (warm-up) real s-bulk: context close
+[03:46:25 +90.7s] chromium run 0/1 (warm-up) real s-bulk: context close ok
+[03:46:25 +90.7s] chromium run 0/1 (warm-up) real s-card@dpr1: open page 390x844@1
+[03:46:25 +91.0s] chromium run 0/1 (warm-up) real s-card@dpr1: page ready
+[03:46:25 +91.0s] chromium run 0/1 (warm-up) real: evaluate real s-card@dpr1
+[03:46:27 +92.9s] chromium run 0/1 (warm-up) real: real s-card@dpr1 ok
+[03:46:27 +92.9s] chromium run 0/1 (warm-up) real s-card@dpr1: context close
+[03:46:27 +92.9s] chromium run 0/1 (warm-up) real s-card@dpr1: context close ok
+[03:46:27 +92.9s] chromium run 0/1 (warm-up) real s-card@dpr3: open page 390x844@3
+[03:46:28 +93.2s] chromium run 0/1 (warm-up) real s-card@dpr3: page ready
+[03:46:28 +93.2s] chromium run 0/1 (warm-up) real: evaluate real s-card@dpr3
+[03:46:30 +95.1s] chromium run 0/1 (warm-up) real: real s-card@dpr3 ok
+[03:46:30 +95.1s] chromium run 0/1 (warm-up) real s-card@dpr3: context close
+[03:46:30 +95.1s] chromium run 0/1 (warm-up) real s-card@dpr3: context close ok
+[03:46:30 +95.1s] chromium run 0/1 (warm-up) real s-card@rm-jump: open page 390x844@2
+[03:46:30 +95.3s] chromium run 0/1 (warm-up) real s-card@rm-jump: page ready
+[03:46:30 +95.3s] chromium run 0/1 (warm-up) real: evaluate real s-card@rm-jump
+[03:46:30 +95.4s] chromium run 0/1 (warm-up) real: real s-card@rm-jump ok
+[03:46:30 +95.4s] chromium run 0/1 (warm-up) real s-card@rm-jump: context close
+[03:46:30 +95.4s] chromium run 0/1 (warm-up) real s-card@rm-jump: context close ok
+[03:46:30 +95.4s] chromium run 0/1 (warm-up) real s-card@rm-max: open page 390x844@2
+[03:46:30 +95.6s] chromium run 0/1 (warm-up) real s-card@rm-max: page ready
+[03:46:30 +95.6s] chromium run 0/1 (warm-up) real: evaluate real s-card@rm-max
+[03:46:31 +96.1s] chromium run 0/1 (warm-up) real: real s-card@rm-max ok
+[03:46:31 +96.1s] chromium run 0/1 (warm-up) real s-card@rm-max: context close
+[03:46:31 +96.1s] chromium run 0/1 (warm-up) real s-card@rm-max: context close ok
+[03:46:31 +96.1s] chromium run 0/1 (warm-up) real s-card@rm-ignore: open page 390x844@2
+[03:46:31 +96.3s] chromium run 0/1 (warm-up) real s-card@rm-ignore: page ready
+[03:46:31 +96.3s] chromium run 0/1 (warm-up) real: evaluate real s-card@rm-ignore
+[03:46:33 +98.3s] chromium run 0/1 (warm-up) real: real s-card@rm-ignore ok
+[03:46:33 +98.3s] chromium run 0/1 (warm-up) real s-card@rm-ignore: context close
+[03:46:33 +98.3s] chromium run 0/1 (warm-up) real s-card@rm-ignore: context close ok
+[03:46:33 +98.3s] chromium run 0/1 (warm-up) real s-seg@dpr1: open page 390x844@1
+[03:46:33 +98.5s] chromium run 0/1 (warm-up) real s-seg@dpr1: page ready
+[03:46:33 +98.5s] chromium run 0/1 (warm-up) real: evaluate real s-seg@dpr1
+[03:46:34 +99.4s] chromium run 0/1 (warm-up) real: real s-seg@dpr1 ok
+[03:46:34 +99.4s] chromium run 0/1 (warm-up) real s-seg@dpr1: context close
+[03:46:34 +99.4s] chromium run 0/1 (warm-up) real s-seg@dpr1: context close ok
+[03:46:34 +99.4s] chromium run 0/1 (warm-up) real s-seg@dpr3: open page 390x844@3
+[03:46:34 +99.6s] chromium run 0/1 (warm-up) real s-seg@dpr3: page ready
+[03:46:34 +99.6s] chromium run 0/1 (warm-up) real: evaluate real s-seg@dpr3
+[03:46:35 +100.5s] chromium run 0/1 (warm-up) real: real s-seg@dpr3 ok
+[03:46:35 +100.5s] chromium run 0/1 (warm-up) real s-seg@dpr3: context close
+[03:46:35 +100.5s] chromium run 0/1 (warm-up) real s-seg@dpr3: context close ok
+[03:46:35 +100.5s] chromium run 0/1 (warm-up) real s-photo@dpr1: open page 390x844@1
+[03:46:35 +100.8s] chromium run 0/1 (warm-up) real s-photo@dpr1: page ready
+[03:46:35 +100.8s] chromium run 0/1 (warm-up) real: evaluate real s-photo@dpr1
+[03:46:37 +103.0s] chromium run 0/1 (warm-up) real: real s-photo@dpr1 ok
+[03:46:37 +103.0s] chromium run 0/1 (warm-up) real s-photo@dpr1: context close
+[03:46:37 +103.0s] chromium run 0/1 (warm-up) real s-photo@dpr1: context close ok
+[03:46:37 +103.0s] chromium run 0/1 (warm-up) real s-photo@dpr3: open page 390x844@3
+[03:46:38 +103.2s] chromium run 0/1 (warm-up) real s-photo@dpr3: page ready
+[03:46:38 +103.2s] chromium run 0/1 (warm-up) real: evaluate real s-photo@dpr3
+[03:46:40 +105.4s] chromium run 0/1 (warm-up) real: real s-photo@dpr3 ok
+[03:46:40 +105.4s] chromium run 0/1 (warm-up) real s-photo@dpr3: context close
+[03:46:40 +105.4s] chromium run 0/1 (warm-up) real s-photo@dpr3: context close ok
+[03:46:40 +105.4s] chromium run 0/1 (warm-up) real s-photo@rm-jump: open page 390x844@2
+[03:46:40 +105.6s] chromium run 0/1 (warm-up) real s-photo@rm-jump: page ready
+[03:46:40 +105.6s] chromium run 0/1 (warm-up) real: evaluate real s-photo@rm-jump
+[03:46:41 +106.2s] chromium run 0/1 (warm-up) real: real s-photo@rm-jump ok
+[03:46:41 +106.2s] chromium run 0/1 (warm-up) real s-photo@rm-jump: context close
+[03:46:41 +106.2s] chromium run 0/1 (warm-up) real s-photo@rm-jump: context close ok
+[03:46:41 +106.2s] chromium run 0/1 (warm-up) real s-photo@rm-max: open page 390x844@2
+[03:46:41 +106.4s] chromium run 0/1 (warm-up) real s-photo@rm-max: page ready
+[03:46:41 +106.4s] chromium run 0/1 (warm-up) real: evaluate real s-photo@rm-max
+[03:46:42 +107.4s] chromium run 0/1 (warm-up) real: real s-photo@rm-max ok
+[03:46:42 +107.4s] chromium run 0/1 (warm-up) real s-photo@rm-max: context close
+[03:46:42 +107.4s] chromium run 0/1 (warm-up) real s-photo@rm-max: context close ok
+[03:46:42 +107.4s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: open page 390x844@2
+[03:46:42 +107.6s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: page ready
+[03:46:42 +107.6s] chromium run 0/1 (warm-up) real: evaluate real s-photo@rm-ignore
+[03:46:44 +109.8s] chromium run 0/1 (warm-up) real: real s-photo@rm-ignore ok
+[03:46:44 +109.8s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: context close
+[03:46:44 +109.8s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: context close ok
+[03:46:44 +109.8s] chromium run 0/1 (warm-up) real s-acc@dpr1: open page 390x844@1
+[03:46:44 +110.0s] chromium run 0/1 (warm-up) real s-acc@dpr1: page ready
+[03:46:44 +110.0s] chromium run 0/1 (warm-up) real: evaluate real s-acc@dpr1
+[03:46:46 +111.1s] chromium run 0/1 (warm-up) real: real s-acc@dpr1 ok
+[03:46:46 +111.1s] chromium run 0/1 (warm-up) real s-acc@dpr1: context close
+[03:46:46 +111.1s] chromium run 0/1 (warm-up) real s-acc@dpr1: context close ok
+[03:46:46 +111.1s] chromium run 0/1 (warm-up) real s-acc@dpr3: open page 390x844@3
+[03:46:46 +111.5s] chromium run 0/1 (warm-up) real s-acc@dpr3: page ready
+[03:46:46 +111.5s] chromium run 0/1 (warm-up) real: evaluate real s-acc@dpr3
+[03:46:47 +112.6s] chromium run 0/1 (warm-up) real: real s-acc@dpr3 ok
+[03:46:47 +112.6s] chromium run 0/1 (warm-up) real s-acc@dpr3: context close
+[03:46:47 +112.6s] chromium run 0/1 (warm-up) real s-acc@dpr3: context close ok
+[03:46:47 +112.6s] chromium run 0/1 (warm-up) real s-acc@rm-jump: open page 390x844@2
+[03:46:47 +112.9s] chromium run 0/1 (warm-up) real s-acc@rm-jump: page ready
+[03:46:47 +112.9s] chromium run 0/1 (warm-up) real: evaluate real s-acc@rm-jump
+[03:46:48 +113.3s] chromium run 0/1 (warm-up) real: real s-acc@rm-jump ok
+[03:46:48 +113.3s] chromium run 0/1 (warm-up) real s-acc@rm-jump: context close
+[03:46:48 +113.3s] chromium run 0/1 (warm-up) real s-acc@rm-jump: context close ok
+[03:46:48 +113.3s] chromium run 0/1 (warm-up) real s-acc@rm-max: open page 390x844@2
+[03:46:48 +113.7s] chromium run 0/1 (warm-up) real s-acc@rm-max: page ready
+[03:46:48 +113.7s] chromium run 0/1 (warm-up) real: evaluate real s-acc@rm-max
+[03:46:49 +114.3s] chromium run 0/1 (warm-up) real: real s-acc@rm-max ok
+[03:46:49 +114.3s] chromium run 0/1 (warm-up) real s-acc@rm-max: context close
+[03:46:49 +114.3s] chromium run 0/1 (warm-up) real s-acc@rm-max: context close ok
+[03:46:49 +114.3s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: open page 390x844@2
+[03:46:49 +114.6s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: page ready
+[03:46:49 +114.6s] chromium run 0/1 (warm-up) real: evaluate real s-acc@rm-ignore
+[03:46:50 +115.7s] chromium run 0/1 (warm-up) real: real s-acc@rm-ignore ok
+[03:46:50 +115.7s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: context close
+[03:46:50 +115.7s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: context close ok
+[03:46:50 +115.7s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: open page 390x844@2
+[03:46:50 +116.0s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: page ready
+[03:46:50 +116.0s] chromium run 0/1 (warm-up) real: evaluate real s-reorder@rm-jump
+[03:47:01 +126.2s] chromium run 0/1 (warm-up) real: real s-reorder@rm-jump ok
+[03:47:01 +126.2s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: context close
+[03:47:01 +126.2s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: context close ok
+[03:47:01 +126.2s] chromium run 0/1 (warm-up) real s-reorder@rm-max: open page 390x844@2
+[03:47:01 +126.4s] chromium run 0/1 (warm-up) real s-reorder@rm-max: page ready
+[03:47:01 +126.4s] chromium run 0/1 (warm-up) real: evaluate real s-reorder@rm-max
+[03:47:12 +137.0s] chromium run 0/1 (warm-up) real: real s-reorder@rm-max ok
+[03:47:12 +137.0s] chromium run 0/1 (warm-up) real s-reorder@rm-max: context close
+[03:47:12 +137.0s] chromium run 0/1 (warm-up) real s-reorder@rm-max: context close ok
+[03:47:12 +137.0s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: open page 390x844@2
+[03:47:12 +137.3s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: page ready
+[03:47:12 +137.3s] chromium run 0/1 (warm-up) real: evaluate real s-reorder@rm-ignore
+[03:47:23 +148.5s] chromium run 0/1 (warm-up) real: real s-reorder@rm-ignore ok
+[03:47:23 +148.5s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: context close
+[03:47:23 +148.5s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: context close ok
+[03:47:23 +148.5s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: open page 390x844@2
+[03:47:23 +148.9s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: page ready
+[03:47:23 +148.9s] chromium run 0/1 (warm-up) real: evaluate real s-sheet@rm-jump
+[03:47:35 +160.2s] chromium run 0/1 (warm-up) real: real s-sheet@rm-jump ok
+[03:47:35 +160.2s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: context close
+[03:47:35 +160.2s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: context close ok
+[03:47:35 +160.2s] chromium run 0/1 (warm-up) real s-sheet@rm-max: open page 390x844@2
+[03:47:35 +160.4s] chromium run 0/1 (warm-up) real s-sheet@rm-max: page ready
+[03:47:35 +160.4s] chromium run 0/1 (warm-up) real: evaluate real s-sheet@rm-max
+[03:47:47 +172.3s] chromium run 0/1 (warm-up) real: real s-sheet@rm-max ok
+[03:47:47 +172.3s] chromium run 0/1 (warm-up) real s-sheet@rm-max: context close
+[03:47:47 +172.3s] chromium run 0/1 (warm-up) real s-sheet@rm-max: context close ok
+[03:47:47 +172.3s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: open page 390x844@2
+[03:47:47 +172.5s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: page ready
+[03:47:47 +172.5s] chromium run 0/1 (warm-up) real: evaluate real s-sheet@rm-ignore
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) real: real s-sheet@rm-ignore ok
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: context close
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: context close ok
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) real teardown: close chromium
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) real teardown: close chromium ok
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) real teardown: server close chromium ok
+[03:48:00 +185.1s] chromium run 0/1 (warm-up) cost: launch chromium
+[03:48:00 +185.2s] chromium run 0/1 (warm-up) cost: launch chromium ok (140.0.7339.16)
+[03:48:00 +185.2s] chromium run 0/1 (warm-up) cost: open page 1280x720@1
+[03:48:00 +185.4s] chromium run 0/1 (warm-up) cost: page ready
+[03:48:00 +185.4s] chromium run 0/1 (warm-up) cost: evaluate cost
+[03:49:03 +249.0s] chromium run 0/1 (warm-up) cost: evaluate cost ok
+[03:49:03 +249.0s] chromium run 0/1 (warm-up) cost: context close
+[03:49:03 +249.0s] chromium run 0/1 (warm-up) cost: context close ok
+[03:49:03 +249.0s] chromium run 0/1 (warm-up) cost teardown: close chromium
+[03:49:03 +249.0s] chromium run 0/1 (warm-up) cost teardown: close chromium ok
+[03:49:03 +249.0s] chromium run 0/1 (warm-up) cost teardown: server close chromium ok
+chromium run 0/1 (warm-up): s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+[03:50:58 +363.8s] chromium run 0/1 (warm-up): done
+[03:50:58 +363.8s] chromium run 1/1: start
+[03:50:58 +363.8s] chromium run 1/1 manual: launch chromium
+[03:50:58 +363.9s] chromium run 1/1 manual: launch chromium ok (140.0.7339.16)
+[03:50:58 +363.9s] chromium run 1/1 manual s-card: open page 390x844@2
+[03:50:59 +364.1s] chromium run 1/1 manual s-card: page ready
+[03:50:59 +364.1s] chromium run 1/1 manual: evaluate manual s-card
+[03:50:59 +364.3s] chromium run 1/1 manual: manual s-card ok
+[03:50:59 +364.3s] chromium run 1/1 manual s-card: context close
+[03:50:59 +364.3s] chromium run 1/1 manual s-card: context close ok
+[03:50:59 +364.3s] chromium run 1/1 manual s-seg: open page 390x844@2
+[03:50:59 +364.5s] chromium run 1/1 manual s-seg: page ready
+[03:50:59 +364.5s] chromium run 1/1 manual: evaluate manual s-seg
+[03:50:59 +364.5s] chromium run 1/1 manual: manual s-seg ok
+[03:50:59 +364.5s] chromium run 1/1 manual s-seg: context close
+[03:50:59 +364.5s] chromium run 1/1 manual s-seg: context close ok
+[03:50:59 +364.5s] chromium run 1/1 manual s-photo: open page 390x844@2
+[03:50:59 +364.7s] chromium run 1/1 manual s-photo: page ready
+[03:50:59 +364.7s] chromium run 1/1 manual: evaluate manual s-photo
+[03:51:03 +368.4s] chromium run 1/1 manual: manual s-photo ok
+[03:51:03 +368.4s] chromium run 1/1 manual s-photo: context close
+[03:51:03 +368.4s] chromium run 1/1 manual s-photo: context close ok
+[03:51:03 +368.4s] chromium run 1/1 manual s-stack: open page 390x844@2
+[03:51:03 +368.7s] chromium run 1/1 manual s-stack: page ready
+[03:51:03 +368.7s] chromium run 1/1 manual: evaluate manual s-stack
+[03:51:03 +368.9s] chromium run 1/1 manual: manual s-stack ok
+[03:51:03 +368.9s] chromium run 1/1 manual s-stack: context close
+[03:51:03 +368.9s] chromium run 1/1 manual s-stack: context close ok
+[03:51:03 +368.9s] chromium run 1/1 manual s-island: open page 390x844@2
+[03:51:04 +369.1s] chromium run 1/1 manual s-island: page ready
+[03:51:04 +369.1s] chromium run 1/1 manual: evaluate manual s-island
+[03:51:04 +369.2s] chromium run 1/1 manual: manual s-island ok
+[03:51:04 +369.2s] chromium run 1/1 manual s-island: context close
+[03:51:04 +369.2s] chromium run 1/1 manual s-island: context close ok
+[03:51:04 +369.2s] chromium run 1/1 manual s-acc: open page 390x844@2
+[03:51:04 +369.4s] chromium run 1/1 manual s-acc: page ready
+[03:51:04 +369.4s] chromium run 1/1 manual: evaluate manual s-acc
+[03:51:04 +369.8s] chromium run 1/1 manual: manual s-acc ok
+[03:51:04 +369.8s] chromium run 1/1 manual s-acc: context close
+[03:51:04 +369.8s] chromium run 1/1 manual s-acc: context close ok
+[03:51:04 +369.8s] chromium run 1/1 manual s-insert: open page 390x844@2
+[03:51:04 +370.0s] chromium run 1/1 manual s-insert: page ready
+[03:51:04 +370.0s] chromium run 1/1 manual: evaluate manual s-insert
+[03:51:05 +370.1s] chromium run 1/1 manual: manual s-insert ok
+[03:51:05 +370.1s] chromium run 1/1 manual s-insert: context close
+[03:51:05 +370.1s] chromium run 1/1 manual s-insert: context close ok
+[03:51:05 +370.1s] chromium run 1/1 manual s-delete: open page 390x844@2
+[03:51:05 +370.3s] chromium run 1/1 manual s-delete: page ready
+[03:51:05 +370.3s] chromium run 1/1 manual: evaluate manual s-delete
+[03:51:05 +370.4s] chromium run 1/1 manual: manual s-delete ok
+[03:51:05 +370.4s] chromium run 1/1 manual s-delete: context close
+[03:51:05 +370.4s] chromium run 1/1 manual s-delete: context close ok
+[03:51:05 +370.4s] chromium run 1/1 manual s-reorder: open page 390x844@2
+[03:51:05 +370.6s] chromium run 1/1 manual s-reorder: page ready
+[03:51:05 +370.6s] chromium run 1/1 manual: evaluate manual s-reorder
+[03:51:05 +370.7s] chromium run 1/1 manual: manual s-reorder ok
+[03:51:05 +370.7s] chromium run 1/1 manual s-reorder: context close
+[03:51:05 +370.7s] chromium run 1/1 manual s-reorder: context close ok
+[03:51:05 +370.7s] chromium run 1/1 manual s-sheet: open page 390x844@2
+[03:51:05 +370.9s] chromium run 1/1 manual s-sheet: page ready
+[03:51:05 +370.9s] chromium run 1/1 manual: evaluate manual s-sheet
+[03:51:05 +371.0s] chromium run 1/1 manual: manual s-sheet ok
+[03:51:05 +371.0s] chromium run 1/1 manual s-sheet: context close
+[03:51:05 +371.0s] chromium run 1/1 manual s-sheet: context close ok
+[03:51:05 +371.0s] chromium run 1/1 manual s-bulk: open page 1280x720@1
+[03:51:06 +371.2s] chromium run 1/1 manual s-bulk: page ready
+[03:51:06 +371.2s] chromium run 1/1 manual: evaluate manual s-bulk
+[03:51:11 +376.0s] chromium run 1/1 manual: manual s-bulk ok
+[03:51:11 +376.0s] chromium run 1/1 manual s-bulk: context close
+[03:51:11 +376.0s] chromium run 1/1 manual s-bulk: context close ok
+[03:51:11 +376.0s] chromium run 1/1 manual s-card@dpr1: open page 390x844@1
+[03:51:11 +376.3s] chromium run 1/1 manual s-card@dpr1: page ready
+[03:51:11 +376.3s] chromium run 1/1 manual: evaluate manual s-card@dpr1
+[03:51:11 +376.4s] chromium run 1/1 manual: manual s-card@dpr1 ok
+[03:51:11 +376.4s] chromium run 1/1 manual s-card@dpr1: context close
+[03:51:11 +376.4s] chromium run 1/1 manual s-card@dpr1: context close ok
+[03:51:11 +376.4s] chromium run 1/1 manual s-card@dpr3: open page 390x844@3
+[03:51:11 +376.6s] chromium run 1/1 manual s-card@dpr3: page ready
+[03:51:11 +376.6s] chromium run 1/1 manual: evaluate manual s-card@dpr3
+[03:51:11 +376.7s] chromium run 1/1 manual: manual s-card@dpr3 ok
+[03:51:11 +376.7s] chromium run 1/1 manual s-card@dpr3: context close
+[03:51:11 +376.7s] chromium run 1/1 manual s-card@dpr3: context close ok
+[03:51:11 +376.7s] chromium run 1/1 manual s-card@rm-jump: open page 390x844@2
+[03:51:11 +376.9s] chromium run 1/1 manual s-card@rm-jump: page ready
+[03:51:11 +376.9s] chromium run 1/1 manual: evaluate manual s-card@rm-jump
+[03:51:11 +377.0s] chromium run 1/1 manual: manual s-card@rm-jump ok
+[03:51:11 +377.0s] chromium run 1/1 manual s-card@rm-jump: context close
+[03:51:11 +377.0s] chromium run 1/1 manual s-card@rm-jump: context close ok
+[03:51:11 +377.0s] chromium run 1/1 manual s-card@rm-max: open page 390x844@2
+[03:51:12 +377.2s] chromium run 1/1 manual s-card@rm-max: page ready
+[03:51:12 +377.2s] chromium run 1/1 manual: evaluate manual s-card@rm-max
+[03:51:12 +377.2s] chromium run 1/1 manual: manual s-card@rm-max ok
+[03:51:12 +377.2s] chromium run 1/1 manual s-card@rm-max: context close
+[03:51:12 +377.2s] chromium run 1/1 manual s-card@rm-max: context close ok
+[03:51:12 +377.2s] chromium run 1/1 manual s-card@rm-ignore: open page 390x844@2
+[03:51:12 +377.4s] chromium run 1/1 manual s-card@rm-ignore: page ready
+[03:51:12 +377.4s] chromium run 1/1 manual: evaluate manual s-card@rm-ignore
+[03:51:12 +377.6s] chromium run 1/1 manual: manual s-card@rm-ignore ok
+[03:51:12 +377.6s] chromium run 1/1 manual s-card@rm-ignore: context close
+[03:51:12 +377.6s] chromium run 1/1 manual s-card@rm-ignore: context close ok
+[03:51:12 +377.6s] chromium run 1/1 manual s-seg@dpr1: open page 390x844@1
+[03:51:12 +377.7s] chromium run 1/1 manual s-seg@dpr1: page ready
+[03:51:12 +377.7s] chromium run 1/1 manual: evaluate manual s-seg@dpr1
+[03:51:12 +377.8s] chromium run 1/1 manual: manual s-seg@dpr1 ok
+[03:51:12 +377.8s] chromium run 1/1 manual s-seg@dpr1: context close
+[03:51:12 +377.8s] chromium run 1/1 manual s-seg@dpr1: context close ok
+[03:51:12 +377.8s] chromium run 1/1 manual s-seg@dpr3: open page 390x844@3
+[03:51:12 +378.0s] chromium run 1/1 manual s-seg@dpr3: page ready
+[03:51:12 +378.0s] chromium run 1/1 manual: evaluate manual s-seg@dpr3
+[03:51:12 +378.0s] chromium run 1/1 manual: manual s-seg@dpr3 ok
+[03:51:12 +378.0s] chromium run 1/1 manual s-seg@dpr3: context close
+[03:51:12 +378.0s] chromium run 1/1 manual s-seg@dpr3: context close ok
+[03:51:12 +378.0s] chromium run 1/1 manual s-photo@dpr1: open page 390x844@1
+[03:51:13 +378.2s] chromium run 1/1 manual s-photo@dpr1: page ready
+[03:51:13 +378.2s] chromium run 1/1 manual: evaluate manual s-photo@dpr1
+[03:51:16 +381.9s] chromium run 1/1 manual: manual s-photo@dpr1 ok
+[03:51:16 +381.9s] chromium run 1/1 manual s-photo@dpr1: context close
+[03:51:16 +381.9s] chromium run 1/1 manual s-photo@dpr1: context close ok
+[03:51:16 +381.9s] chromium run 1/1 manual s-photo@dpr3: open page 390x844@3
+[03:51:17 +382.1s] chromium run 1/1 manual s-photo@dpr3: page ready
+[03:51:17 +382.1s] chromium run 1/1 manual: evaluate manual s-photo@dpr3
+[03:51:20 +385.9s] chromium run 1/1 manual: manual s-photo@dpr3 ok
+[03:51:20 +385.9s] chromium run 1/1 manual s-photo@dpr3: context close
+[03:51:20 +385.9s] chromium run 1/1 manual s-photo@dpr3: context close ok
+[03:51:20 +385.9s] chromium run 1/1 manual s-photo@rm-jump: open page 390x844@2
+[03:51:21 +386.1s] chromium run 1/1 manual s-photo@rm-jump: page ready
+[03:51:21 +386.1s] chromium run 1/1 manual: evaluate manual s-photo@rm-jump
+[03:51:22 +387.1s] chromium run 1/1 manual: manual s-photo@rm-jump ok
+[03:51:22 +387.1s] chromium run 1/1 manual s-photo@rm-jump: context close
+[03:51:22 +387.1s] chromium run 1/1 manual s-photo@rm-jump: context close ok
+[03:51:22 +387.1s] chromium run 1/1 manual s-photo@rm-max: open page 390x844@2
+[03:51:22 +387.3s] chromium run 1/1 manual s-photo@rm-max: page ready
+[03:51:22 +387.3s] chromium run 1/1 manual: evaluate manual s-photo@rm-max
+[03:51:24 +389.2s] chromium run 1/1 manual: manual s-photo@rm-max ok
+[03:51:24 +389.2s] chromium run 1/1 manual s-photo@rm-max: context close
+[03:51:24 +389.2s] chromium run 1/1 manual s-photo@rm-max: context close ok
+[03:51:24 +389.2s] chromium run 1/1 manual s-photo@rm-ignore: open page 390x844@2
+[03:51:24 +389.4s] chromium run 1/1 manual s-photo@rm-ignore: page ready
+[03:51:24 +389.4s] chromium run 1/1 manual: evaluate manual s-photo@rm-ignore
+[03:51:28 +393.1s] chromium run 1/1 manual: manual s-photo@rm-ignore ok
+[03:51:28 +393.1s] chromium run 1/1 manual s-photo@rm-ignore: context close
+[03:51:28 +393.1s] chromium run 1/1 manual s-photo@rm-ignore: context close ok
+[03:51:28 +393.1s] chromium run 1/1 manual s-acc@dpr1: open page 390x844@1
+[03:51:28 +393.3s] chromium run 1/1 manual s-acc@dpr1: page ready
+[03:51:28 +393.3s] chromium run 1/1 manual: evaluate manual s-acc@dpr1
+[03:51:28 +393.7s] chromium run 1/1 manual: manual s-acc@dpr1 ok
+[03:51:28 +393.7s] chromium run 1/1 manual s-acc@dpr1: context close
+[03:51:28 +393.7s] chromium run 1/1 manual s-acc@dpr1: context close ok
+[03:51:28 +393.7s] chromium run 1/1 manual s-acc@dpr3: open page 390x844@3
+[03:51:28 +393.9s] chromium run 1/1 manual s-acc@dpr3: page ready
+[03:51:28 +393.9s] chromium run 1/1 manual: evaluate manual s-acc@dpr3
+[03:51:29 +394.2s] chromium run 1/1 manual: manual s-acc@dpr3 ok
+[03:51:29 +394.2s] chromium run 1/1 manual s-acc@dpr3: context close
+[03:51:29 +394.2s] chromium run 1/1 manual s-acc@dpr3: context close ok
+[03:51:29 +394.2s] chromium run 1/1 manual s-acc@rm-jump: open page 390x844@2
+[03:51:29 +394.4s] chromium run 1/1 manual s-acc@rm-jump: page ready
+[03:51:29 +394.4s] chromium run 1/1 manual: evaluate manual s-acc@rm-jump
+[03:51:29 +394.6s] chromium run 1/1 manual: manual s-acc@rm-jump ok
+[03:51:29 +394.6s] chromium run 1/1 manual s-acc@rm-jump: context close
+[03:51:29 +394.6s] chromium run 1/1 manual s-acc@rm-jump: context close ok
+[03:51:29 +394.6s] chromium run 1/1 manual s-acc@rm-max: open page 390x844@2
+[03:51:29 +394.8s] chromium run 1/1 manual s-acc@rm-max: page ready
+[03:51:29 +394.8s] chromium run 1/1 manual: evaluate manual s-acc@rm-max
+[03:51:30 +395.0s] chromium run 1/1 manual: manual s-acc@rm-max ok
+[03:51:30 +395.0s] chromium run 1/1 manual s-acc@rm-max: context close
+[03:51:30 +395.0s] chromium run 1/1 manual s-acc@rm-max: context close ok
+[03:51:30 +395.0s] chromium run 1/1 manual s-acc@rm-ignore: open page 390x844@2
+[03:51:30 +395.2s] chromium run 1/1 manual s-acc@rm-ignore: page ready
+[03:51:30 +395.2s] chromium run 1/1 manual: evaluate manual s-acc@rm-ignore
+[03:51:30 +395.6s] chromium run 1/1 manual: manual s-acc@rm-ignore ok
+[03:51:30 +395.6s] chromium run 1/1 manual s-acc@rm-ignore: context close
+[03:51:30 +395.6s] chromium run 1/1 manual s-acc@rm-ignore: context close ok
+[03:51:30 +395.6s] chromium run 1/1 manual s-reorder@rm-jump: open page 390x844@2
+[03:51:30 +395.8s] chromium run 1/1 manual s-reorder@rm-jump: page ready
+[03:51:30 +395.8s] chromium run 1/1 manual: evaluate manual s-reorder@rm-jump
+[03:51:30 +395.9s] chromium run 1/1 manual: manual s-reorder@rm-jump ok
+[03:51:30 +395.9s] chromium run 1/1 manual s-reorder@rm-jump: context close
+[03:51:30 +395.9s] chromium run 1/1 manual s-reorder@rm-jump: context close ok
+[03:51:30 +395.9s] chromium run 1/1 manual s-reorder@rm-max: open page 390x844@2
+[03:51:31 +396.1s] chromium run 1/1 manual s-reorder@rm-max: page ready
+[03:51:31 +396.1s] chromium run 1/1 manual: evaluate manual s-reorder@rm-max
+[03:51:31 +396.2s] chromium run 1/1 manual: manual s-reorder@rm-max ok
+[03:51:31 +396.2s] chromium run 1/1 manual s-reorder@rm-max: context close
+[03:51:31 +396.2s] chromium run 1/1 manual s-reorder@rm-max: context close ok
+[03:51:31 +396.2s] chromium run 1/1 manual s-reorder@rm-ignore: open page 390x844@2
+[03:51:31 +396.4s] chromium run 1/1 manual s-reorder@rm-ignore: page ready
+[03:51:31 +396.4s] chromium run 1/1 manual: evaluate manual s-reorder@rm-ignore
+[03:51:31 +396.5s] chromium run 1/1 manual: manual s-reorder@rm-ignore ok
+[03:51:31 +396.5s] chromium run 1/1 manual s-reorder@rm-ignore: context close
+[03:51:31 +396.5s] chromium run 1/1 manual s-reorder@rm-ignore: context close ok
+[03:51:31 +396.5s] chromium run 1/1 manual s-sheet@rm-jump: open page 390x844@2
+[03:51:31 +396.7s] chromium run 1/1 manual s-sheet@rm-jump: page ready
+[03:51:31 +396.7s] chromium run 1/1 manual: evaluate manual s-sheet@rm-jump
+[03:51:31 +396.7s] chromium run 1/1 manual: manual s-sheet@rm-jump ok
+[03:51:31 +396.7s] chromium run 1/1 manual s-sheet@rm-jump: context close
+[03:51:31 +396.7s] chromium run 1/1 manual s-sheet@rm-jump: context close ok
+[03:51:31 +396.7s] chromium run 1/1 manual s-sheet@rm-max: open page 390x844@2
+[03:51:31 +396.9s] chromium run 1/1 manual s-sheet@rm-max: page ready
+[03:51:31 +396.9s] chromium run 1/1 manual: evaluate manual s-sheet@rm-max
+[03:51:31 +397.0s] chromium run 1/1 manual: manual s-sheet@rm-max ok
+[03:51:31 +397.0s] chromium run 1/1 manual s-sheet@rm-max: context close
+[03:51:31 +397.0s] chromium run 1/1 manual s-sheet@rm-max: context close ok
+[03:51:31 +397.0s] chromium run 1/1 manual s-sheet@rm-ignore: open page 390x844@2
+[03:51:32 +397.2s] chromium run 1/1 manual s-sheet@rm-ignore: page ready
+[03:51:32 +397.2s] chromium run 1/1 manual: evaluate manual s-sheet@rm-ignore
+[03:51:32 +397.3s] chromium run 1/1 manual: manual s-sheet@rm-ignore ok
+[03:51:32 +397.3s] chromium run 1/1 manual s-sheet@rm-ignore: context close
+[03:51:32 +397.3s] chromium run 1/1 manual s-sheet@rm-ignore: context close ok
+[03:51:32 +397.3s] chromium run 1/1 probe s-card: open page 390x844@2
+[03:51:32 +397.5s] chromium run 1/1 probe s-card: page ready
+[03:51:32 +397.5s] chromium run 1/1 probe: evaluate probe s-card
+[03:51:33 +398.0s] chromium run 1/1 probe: probe s-card ok
+[03:51:33 +398.0s] chromium run 1/1 probe s-card: context close
+[03:51:33 +398.0s] chromium run 1/1 probe s-card: context close ok
+[03:51:33 +398.0s] chromium run 1/1 probe s-seg: open page 390x844@2
+[03:51:33 +398.2s] chromium run 1/1 probe s-seg: page ready
+[03:51:33 +398.2s] chromium run 1/1 probe: evaluate probe s-seg
+[03:51:33 +398.8s] chromium run 1/1 probe: probe s-seg ok
+[03:51:33 +398.8s] chromium run 1/1 probe s-seg: context close
+[03:51:33 +398.8s] chromium run 1/1 probe s-seg: context close ok
+[03:51:33 +398.8s] chromium run 1/1 probe s-photo: open page 390x844@2
+[03:51:33 +399.0s] chromium run 1/1 probe s-photo: page ready
+[03:51:33 +399.0s] chromium run 1/1 probe: evaluate probe s-photo
+[03:51:34 +399.6s] chromium run 1/1 probe: probe s-photo ok
+[03:51:34 +399.6s] chromium run 1/1 probe s-photo: context close
+[03:51:34 +399.6s] chromium run 1/1 probe s-photo: context close ok
+[03:51:34 +399.6s] chromium run 1/1 probe s-stack: open page 390x844@2
+[03:51:34 +399.8s] chromium run 1/1 probe s-stack: page ready
+[03:51:34 +399.8s] chromium run 1/1 probe: evaluate probe s-stack
+[03:51:35 +400.4s] chromium run 1/1 probe: probe s-stack ok
+[03:51:35 +400.4s] chromium run 1/1 probe s-stack: context close
+[03:51:35 +400.4s] chromium run 1/1 probe s-stack: context close ok
+[03:51:35 +400.4s] chromium run 1/1 probe s-island: open page 390x844@2
+[03:51:35 +400.6s] chromium run 1/1 probe s-island: page ready
+[03:51:35 +400.6s] chromium run 1/1 probe: evaluate probe s-island
+[03:51:36 +401.1s] chromium run 1/1 probe: probe s-island ok
+[03:51:36 +401.1s] chromium run 1/1 probe s-island: context close
+[03:51:36 +401.1s] chromium run 1/1 probe s-island: context close ok
+[03:51:36 +401.1s] chromium run 1/1 probe s-acc: open page 390x844@2
+[03:51:36 +401.4s] chromium run 1/1 probe s-acc: page ready
+[03:51:36 +401.4s] chromium run 1/1 probe: evaluate probe s-acc
+[03:51:36 +401.9s] chromium run 1/1 probe: probe s-acc ok
+[03:51:36 +401.9s] chromium run 1/1 probe s-acc: context close
+[03:51:36 +401.9s] chromium run 1/1 probe s-acc: context close ok
+[03:51:36 +401.9s] chromium run 1/1 probe s-insert: open page 390x844@2
+[03:51:37 +402.1s] chromium run 1/1 probe s-insert: page ready
+[03:51:37 +402.1s] chromium run 1/1 probe: evaluate probe s-insert
+[03:51:37 +402.7s] chromium run 1/1 probe: probe s-insert ok
+[03:51:37 +402.7s] chromium run 1/1 probe s-insert: context close
+[03:51:37 +402.7s] chromium run 1/1 probe s-insert: context close ok
+[03:51:37 +402.7s] chromium run 1/1 probe s-delete: open page 390x844@2
+[03:51:37 +402.9s] chromium run 1/1 probe s-delete: page ready
+[03:51:37 +402.9s] chromium run 1/1 probe: evaluate probe s-delete
+[03:51:38 +403.5s] chromium run 1/1 probe: probe s-delete ok
+[03:51:38 +403.5s] chromium run 1/1 probe s-delete: context close
+[03:51:38 +403.5s] chromium run 1/1 probe s-delete: context close ok
+[03:51:38 +403.5s] chromium run 1/1 probe s-reorder: open page 390x844@2
+[03:51:38 +403.7s] chromium run 1/1 probe s-reorder: page ready
+[03:51:38 +403.7s] chromium run 1/1 probe: evaluate probe s-reorder
+[03:51:39 +404.3s] chromium run 1/1 probe: probe s-reorder ok
+[03:51:39 +404.3s] chromium run 1/1 probe s-reorder: context close
+[03:51:39 +404.3s] chromium run 1/1 probe s-reorder: context close ok
+[03:51:39 +404.3s] chromium run 1/1 probe s-sheet: open page 390x844@2
+[03:51:39 +404.5s] chromium run 1/1 probe s-sheet: page ready
+[03:51:39 +404.5s] chromium run 1/1 probe: evaluate probe s-sheet
+[03:51:40 +405.1s] chromium run 1/1 probe: probe s-sheet ok
+[03:51:40 +405.1s] chromium run 1/1 probe s-sheet: context close
+[03:51:40 +405.1s] chromium run 1/1 probe s-sheet: context close ok
+[03:51:40 +405.1s] chromium run 1/1 probe s-bulk: open page 390x844@2
+[03:51:40 +405.3s] chromium run 1/1 probe s-bulk: page ready
+[03:51:40 +405.3s] chromium run 1/1 probe: evaluate probe s-bulk
+[03:51:47 +412.2s] chromium run 1/1 probe: probe s-bulk ok
+[03:51:47 +412.2s] chromium run 1/1 probe s-bulk: context close
+[03:51:47 +412.3s] chromium run 1/1 probe s-bulk: context close ok
+[03:51:47 +412.3s] chromium run 1/1 manual teardown: close chromium
+[03:51:47 +412.3s] chromium run 1/1 manual teardown: close chromium ok
+[03:51:47 +412.3s] chromium run 1/1 manual teardown: server close chromium ok
+[03:51:47 +412.3s] chromium run 1/1 real: launch chromium
+[03:51:47 +412.4s] chromium run 1/1 real: launch chromium ok (140.0.7339.16)
+[03:51:47 +412.4s] chromium run 1/1 real s-card: open page 390x844@2
+[03:51:47 +412.6s] chromium run 1/1 real s-card: page ready
+[03:51:47 +412.6s] chromium run 1/1 real: evaluate real s-card
+[03:51:49 +414.5s] chromium run 1/1 real: real s-card ok
+[03:51:49 +414.5s] chromium run 1/1 real s-card: context close
+[03:51:49 +414.5s] chromium run 1/1 real s-card: context close ok
+[03:51:49 +414.5s] chromium run 1/1 real s-seg: open page 390x844@2
+[03:51:49 +414.8s] chromium run 1/1 real s-seg: page ready
+[03:51:49 +414.8s] chromium run 1/1 real: evaluate real s-seg
+[03:51:50 +415.7s] chromium run 1/1 real: real s-seg ok
+[03:51:50 +415.7s] chromium run 1/1 real s-seg: context close
+[03:51:50 +415.7s] chromium run 1/1 real s-seg: context close ok
+[03:51:50 +415.7s] chromium run 1/1 real s-photo: open page 390x844@2
+[03:51:50 +415.9s] chromium run 1/1 real s-photo: page ready
+[03:51:50 +415.9s] chromium run 1/1 real: evaluate real s-photo
+[03:51:53 +418.1s] chromium run 1/1 real: real s-photo ok
+[03:51:53 +418.1s] chromium run 1/1 real s-photo: context close
+[03:51:53 +418.1s] chromium run 1/1 real s-photo: context close ok
+[03:51:53 +418.1s] chromium run 1/1 real s-stack: open page 390x844@2
+[03:51:53 +418.3s] chromium run 1/1 real s-stack: page ready
+[03:51:53 +418.3s] chromium run 1/1 real: evaluate real s-stack
+[03:51:55 +420.2s] chromium run 1/1 real: real s-stack ok
+[03:51:55 +420.2s] chromium run 1/1 real s-stack: context close
+[03:51:55 +420.2s] chromium run 1/1 real s-stack: context close ok
+[03:51:55 +420.2s] chromium run 1/1 real s-island: open page 390x844@2
+[03:51:55 +420.5s] chromium run 1/1 real s-island: page ready
+[03:51:55 +420.5s] chromium run 1/1 real: evaluate real s-island
+[03:51:56 +421.2s] chromium run 1/1 real: real s-island ok
+[03:51:56 +421.2s] chromium run 1/1 real s-island: context close
+[03:51:56 +421.2s] chromium run 1/1 real s-island: context close ok
+[03:51:56 +421.2s] chromium run 1/1 real s-acc: open page 390x844@2
+[03:51:56 +421.4s] chromium run 1/1 real s-acc: page ready
+[03:51:56 +421.4s] chromium run 1/1 real: evaluate real s-acc
+[03:51:57 +422.5s] chromium run 1/1 real: real s-acc ok
+[03:51:57 +422.5s] chromium run 1/1 real s-acc: context close
+[03:51:57 +422.5s] chromium run 1/1 real s-acc: context close ok
+[03:51:57 +422.6s] chromium run 1/1 real s-insert: open page 390x844@2
+[03:51:57 +422.8s] chromium run 1/1 real s-insert: page ready
+[03:51:57 +422.8s] chromium run 1/1 real: evaluate real s-insert
+[03:51:58 +423.6s] chromium run 1/1 real: real s-insert ok
+[03:51:58 +423.6s] chromium run 1/1 real s-insert: context close
+[03:51:58 +423.6s] chromium run 1/1 real s-insert: context close ok
+[03:51:58 +423.6s] chromium run 1/1 real s-delete: open page 390x844@2
+[03:51:58 +423.8s] chromium run 1/1 real s-delete: page ready
+[03:51:58 +423.8s] chromium run 1/1 real: evaluate real s-delete
+[03:51:59 +424.7s] chromium run 1/1 real: real s-delete ok
+[03:51:59 +424.7s] chromium run 1/1 real s-delete: context close
+[03:51:59 +424.7s] chromium run 1/1 real s-delete: context close ok
+[03:51:59 +424.7s] chromium run 1/1 real s-reorder: open page 390x844@2
+[03:51:59 +424.9s] chromium run 1/1 real s-reorder: page ready
+[03:51:59 +424.9s] chromium run 1/1 real: evaluate real s-reorder
+[03:52:11 +436.1s] chromium run 1/1 real: real s-reorder ok
+[03:52:11 +436.1s] chromium run 1/1 real s-reorder: context close
+[03:52:11 +436.1s] chromium run 1/1 real s-reorder: context close ok
+[03:52:11 +436.1s] chromium run 1/1 real s-sheet: open page 390x844@2
+[03:52:11 +436.3s] chromium run 1/1 real s-sheet: page ready
+[03:52:11 +436.3s] chromium run 1/1 real: evaluate real s-sheet
+[03:52:23 +448.9s] chromium run 1/1 real: real s-sheet ok
+[03:52:23 +448.9s] chromium run 1/1 real s-sheet: context close
+[03:52:23 +448.9s] chromium run 1/1 real s-sheet: context close ok
+[03:52:23 +448.9s] chromium run 1/1 real s-bulk: open page 1280x720@1
+[03:52:24 +449.1s] chromium run 1/1 real s-bulk: page ready
+[03:52:24 +449.1s] chromium run 1/1 real: evaluate real s-bulk
+[03:52:24 +449.9s] chromium run 1/1 real: real s-bulk ok
+[03:52:24 +449.9s] chromium run 1/1 real s-bulk: context close
+[03:52:24 +449.9s] chromium run 1/1 real s-bulk: context close ok
+[03:52:24 +449.9s] chromium run 1/1 real s-card@dpr1: open page 390x844@1
+[03:52:25 +450.1s] chromium run 1/1 real s-card@dpr1: page ready
+[03:52:25 +450.1s] chromium run 1/1 real: evaluate real s-card@dpr1
+[03:52:27 +452.1s] chromium run 1/1 real: real s-card@dpr1 ok
+[03:52:27 +452.1s] chromium run 1/1 real s-card@dpr1: context close
+[03:52:27 +452.1s] chromium run 1/1 real s-card@dpr1: context close ok
+[03:52:27 +452.1s] chromium run 1/1 real s-card@dpr3: open page 390x844@3
+[03:52:27 +452.3s] chromium run 1/1 real s-card@dpr3: page ready
+[03:52:27 +452.3s] chromium run 1/1 real: evaluate real s-card@dpr3
+[03:52:29 +454.2s] chromium run 1/1 real: real s-card@dpr3 ok
+[03:52:29 +454.2s] chromium run 1/1 real s-card@dpr3: context close
+[03:52:29 +454.2s] chromium run 1/1 real s-card@dpr3: context close ok
+[03:52:29 +454.2s] chromium run 1/1 real s-card@rm-jump: open page 390x844@2
+[03:52:29 +454.4s] chromium run 1/1 real s-card@rm-jump: page ready
+[03:52:29 +454.4s] chromium run 1/1 real: evaluate real s-card@rm-jump
+[03:52:29 +454.5s] chromium run 1/1 real: real s-card@rm-jump ok
+[03:52:29 +454.5s] chromium run 1/1 real s-card@rm-jump: context close
+[03:52:29 +454.5s] chromium run 1/1 real s-card@rm-jump: context close ok
+[03:52:29 +454.5s] chromium run 1/1 real s-card@rm-max: open page 390x844@2
+[03:52:29 +454.7s] chromium run 1/1 real s-card@rm-max: page ready
+[03:52:29 +454.7s] chromium run 1/1 real: evaluate real s-card@rm-max
+[03:52:30 +455.3s] chromium run 1/1 real: real s-card@rm-max ok
+[03:52:30 +455.3s] chromium run 1/1 real s-card@rm-max: context close
+[03:52:30 +455.3s] chromium run 1/1 real s-card@rm-max: context close ok
+[03:52:30 +455.3s] chromium run 1/1 real s-card@rm-ignore: open page 390x844@2
+[03:52:30 +455.5s] chromium run 1/1 real s-card@rm-ignore: page ready
+[03:52:30 +455.5s] chromium run 1/1 real: evaluate real s-card@rm-ignore
+[03:52:32 +457.5s] chromium run 1/1 real: real s-card@rm-ignore ok
+[03:52:32 +457.5s] chromium run 1/1 real s-card@rm-ignore: context close
+[03:52:32 +457.5s] chromium run 1/1 real s-card@rm-ignore: context close ok
+[03:52:32 +457.5s] chromium run 1/1 real s-seg@dpr1: open page 390x844@1
+[03:52:32 +457.7s] chromium run 1/1 real s-seg@dpr1: page ready
+[03:52:32 +457.7s] chromium run 1/1 real: evaluate real s-seg@dpr1
+[03:52:33 +458.6s] chromium run 1/1 real: real s-seg@dpr1 ok
+[03:52:33 +458.6s] chromium run 1/1 real s-seg@dpr1: context close
+[03:52:33 +458.6s] chromium run 1/1 real s-seg@dpr1: context close ok
+[03:52:33 +458.6s] chromium run 1/1 real s-seg@dpr3: open page 390x844@3
+[03:52:33 +458.8s] chromium run 1/1 real s-seg@dpr3: page ready
+[03:52:33 +458.8s] chromium run 1/1 real: evaluate real s-seg@dpr3
+[03:52:34 +459.7s] chromium run 1/1 real: real s-seg@dpr3 ok
+[03:52:34 +459.7s] chromium run 1/1 real s-seg@dpr3: context close
+[03:52:34 +459.7s] chromium run 1/1 real s-seg@dpr3: context close ok
+[03:52:34 +459.7s] chromium run 1/1 real s-photo@dpr1: open page 390x844@1
+[03:52:34 +459.9s] chromium run 1/1 real s-photo@dpr1: page ready
+[03:52:34 +459.9s] chromium run 1/1 real: evaluate real s-photo@dpr1
+[03:52:37 +462.1s] chromium run 1/1 real: real s-photo@dpr1 ok
+[03:52:37 +462.1s] chromium run 1/1 real s-photo@dpr1: context close
+[03:52:37 +462.2s] chromium run 1/1 real s-photo@dpr1: context close ok
+[03:52:37 +462.2s] chromium run 1/1 real s-photo@dpr3: open page 390x844@3
+[03:52:37 +462.4s] chromium run 1/1 real s-photo@dpr3: page ready
+[03:52:37 +462.4s] chromium run 1/1 real: evaluate real s-photo@dpr3
+[03:52:39 +464.6s] chromium run 1/1 real: real s-photo@dpr3 ok
+[03:52:39 +464.6s] chromium run 1/1 real s-photo@dpr3: context close
+[03:52:39 +464.6s] chromium run 1/1 real s-photo@dpr3: context close ok
+[03:52:39 +464.6s] chromium run 1/1 real s-photo@rm-jump: open page 390x844@2
+[03:52:39 +464.8s] chromium run 1/1 real s-photo@rm-jump: page ready
+[03:52:39 +464.8s] chromium run 1/1 real: evaluate real s-photo@rm-jump
+[03:52:40 +465.4s] chromium run 1/1 real: real s-photo@rm-jump ok
+[03:52:40 +465.4s] chromium run 1/1 real s-photo@rm-jump: context close
+[03:52:40 +465.4s] chromium run 1/1 real s-photo@rm-jump: context close ok
+[03:52:40 +465.4s] chromium run 1/1 real s-photo@rm-max: open page 390x844@2
+[03:52:40 +465.6s] chromium run 1/1 real s-photo@rm-max: page ready
+[03:52:40 +465.6s] chromium run 1/1 real: evaluate real s-photo@rm-max
+[03:52:41 +466.6s] chromium run 1/1 real: real s-photo@rm-max ok
+[03:52:41 +466.6s] chromium run 1/1 real s-photo@rm-max: context close
+[03:52:41 +466.6s] chromium run 1/1 real s-photo@rm-max: context close ok
+[03:52:41 +466.6s] chromium run 1/1 real s-photo@rm-ignore: open page 390x844@2
+[03:52:41 +466.8s] chromium run 1/1 real s-photo@rm-ignore: page ready
+[03:52:41 +466.8s] chromium run 1/1 real: evaluate real s-photo@rm-ignore
+[03:52:43 +469.0s] chromium run 1/1 real: real s-photo@rm-ignore ok
+[03:52:43 +469.0s] chromium run 1/1 real s-photo@rm-ignore: context close
+[03:52:43 +469.0s] chromium run 1/1 real s-photo@rm-ignore: context close ok
+[03:52:43 +469.0s] chromium run 1/1 real s-acc@dpr1: open page 390x844@1
+[03:52:44 +469.2s] chromium run 1/1 real s-acc@dpr1: page ready
+[03:52:44 +469.2s] chromium run 1/1 real: evaluate real s-acc@dpr1
+[03:52:45 +470.3s] chromium run 1/1 real: real s-acc@dpr1 ok
+[03:52:45 +470.3s] chromium run 1/1 real s-acc@dpr1: context close
+[03:52:45 +470.3s] chromium run 1/1 real s-acc@dpr1: context close ok
+[03:52:45 +470.3s] chromium run 1/1 real s-acc@dpr3: open page 390x844@3
+[03:52:45 +470.6s] chromium run 1/1 real s-acc@dpr3: page ready
+[03:52:45 +470.6s] chromium run 1/1 real: evaluate real s-acc@dpr3
+[03:52:46 +471.7s] chromium run 1/1 real: real s-acc@dpr3 ok
+[03:52:46 +471.7s] chromium run 1/1 real s-acc@dpr3: context close
+[03:52:46 +471.7s] chromium run 1/1 real s-acc@dpr3: context close ok
+[03:52:46 +471.7s] chromium run 1/1 real s-acc@rm-jump: open page 390x844@2
+[03:52:46 +472.0s] chromium run 1/1 real s-acc@rm-jump: page ready
+[03:52:46 +472.0s] chromium run 1/1 real: evaluate real s-acc@rm-jump
+[03:52:47 +472.4s] chromium run 1/1 real: real s-acc@rm-jump ok
+[03:52:47 +472.4s] chromium run 1/1 real s-acc@rm-jump: context close
+[03:52:47 +472.4s] chromium run 1/1 real s-acc@rm-jump: context close ok
+[03:52:47 +472.4s] chromium run 1/1 real s-acc@rm-max: open page 390x844@2
+[03:52:47 +472.7s] chromium run 1/1 real s-acc@rm-max: page ready
+[03:52:47 +472.7s] chromium run 1/1 real: evaluate real s-acc@rm-max
+[03:52:48 +473.3s] chromium run 1/1 real: real s-acc@rm-max ok
+[03:52:48 +473.3s] chromium run 1/1 real s-acc@rm-max: context close
+[03:52:48 +473.3s] chromium run 1/1 real s-acc@rm-max: context close ok
+[03:52:48 +473.3s] chromium run 1/1 real s-acc@rm-ignore: open page 390x844@2
+[03:52:48 +473.6s] chromium run 1/1 real s-acc@rm-ignore: page ready
+[03:52:48 +473.6s] chromium run 1/1 real: evaluate real s-acc@rm-ignore
+[03:52:49 +474.7s] chromium run 1/1 real: real s-acc@rm-ignore ok
+[03:52:49 +474.7s] chromium run 1/1 real s-acc@rm-ignore: context close
+[03:52:49 +474.7s] chromium run 1/1 real s-acc@rm-ignore: context close ok
+[03:52:49 +474.7s] chromium run 1/1 real s-reorder@rm-jump: open page 390x844@2
+[03:52:49 +475.0s] chromium run 1/1 real s-reorder@rm-jump: page ready
+[03:52:49 +475.0s] chromium run 1/1 real: evaluate real s-reorder@rm-jump
+[03:53:00 +485.2s] chromium run 1/1 real: real s-reorder@rm-jump ok
+[03:53:00 +485.2s] chromium run 1/1 real s-reorder@rm-jump: context close
+[03:53:00 +485.2s] chromium run 1/1 real s-reorder@rm-jump: context close ok
+[03:53:00 +485.2s] chromium run 1/1 real s-reorder@rm-max: open page 390x844@2
+[03:53:00 +485.4s] chromium run 1/1 real s-reorder@rm-max: page ready
+[03:53:00 +485.4s] chromium run 1/1 real: evaluate real s-reorder@rm-max
+[03:53:10 +496.0s] chromium run 1/1 real: real s-reorder@rm-max ok
+[03:53:10 +496.0s] chromium run 1/1 real s-reorder@rm-max: context close
+[03:53:10 +496.0s] chromium run 1/1 real s-reorder@rm-max: context close ok
+[03:53:10 +496.0s] chromium run 1/1 real s-reorder@rm-ignore: open page 390x844@2
+[03:53:11 +496.2s] chromium run 1/1 real s-reorder@rm-ignore: page ready
+[03:53:11 +496.2s] chromium run 1/1 real: evaluate real s-reorder@rm-ignore
+[03:53:22 +507.4s] chromium run 1/1 real: real s-reorder@rm-ignore ok
+[03:53:22 +507.4s] chromium run 1/1 real s-reorder@rm-ignore: context close
+[03:53:22 +507.4s] chromium run 1/1 real s-reorder@rm-ignore: context close ok
+[03:53:22 +507.4s] chromium run 1/1 real s-sheet@rm-jump: open page 390x844@2
+[03:53:22 +507.6s] chromium run 1/1 real s-sheet@rm-jump: page ready
+[03:53:22 +507.6s] chromium run 1/1 real: evaluate real s-sheet@rm-jump
+[03:53:33 +519.0s] chromium run 1/1 real: real s-sheet@rm-jump ok
+[03:53:33 +519.0s] chromium run 1/1 real s-sheet@rm-jump: context close
+[03:53:33 +519.0s] chromium run 1/1 real s-sheet@rm-jump: context close ok
+[03:53:33 +519.0s] chromium run 1/1 real s-sheet@rm-max: open page 390x844@2
+[03:53:34 +519.2s] chromium run 1/1 real s-sheet@rm-max: page ready
+[03:53:34 +519.2s] chromium run 1/1 real: evaluate real s-sheet@rm-max
+[03:53:45 +531.0s] chromium run 1/1 real: real s-sheet@rm-max ok
+[03:53:45 +531.0s] chromium run 1/1 real s-sheet@rm-max: context close
+[03:53:46 +531.0s] chromium run 1/1 real s-sheet@rm-max: context close ok
+[03:53:46 +531.0s] chromium run 1/1 real s-sheet@rm-ignore: open page 390x844@2
+[03:53:46 +531.3s] chromium run 1/1 real s-sheet@rm-ignore: page ready
+[03:53:46 +531.3s] chromium run 1/1 real: evaluate real s-sheet@rm-ignore
+[03:53:58 +543.9s] chromium run 1/1 real: real s-sheet@rm-ignore ok
+[03:53:58 +543.9s] chromium run 1/1 real s-sheet@rm-ignore: context close
+[03:53:58 +543.9s] chromium run 1/1 real s-sheet@rm-ignore: context close ok
+[03:53:58 +543.9s] chromium run 1/1 real teardown: close chromium
+[03:53:58 +543.9s] chromium run 1/1 real teardown: close chromium ok
+[03:53:58 +543.9s] chromium run 1/1 real teardown: server close chromium ok
+[03:53:58 +543.9s] chromium run 1/1 cost: launch chromium
+[03:53:59 +544.0s] chromium run 1/1 cost: launch chromium ok (140.0.7339.16)
+[03:53:59 +544.0s] chromium run 1/1 cost: open page 1280x720@1
+[03:53:59 +544.2s] chromium run 1/1 cost: page ready
+[03:53:59 +544.2s] chromium run 1/1 cost: evaluate cost
+[03:55:02 +607.8s] chromium run 1/1 cost: evaluate cost ok
+[03:55:02 +607.8s] chromium run 1/1 cost: context close
+[03:55:02 +607.8s] chromium run 1/1 cost: context close ok
+[03:55:02 +607.8s] chromium run 1/1 cost teardown: close chromium
+[03:55:02 +607.8s] chromium run 1/1 cost teardown: close chromium ok
+[03:55:02 +607.8s] chromium run 1/1 cost teardown: server close chromium ok
+chromium run 1/1: s-card ok, s-seg ok, s-photo ok, s-stack ok, s-island ok, s-acc ok, s-insert ok, s-delete ok, s-reorder ok, s-sheet ok, s-bulk ok, cost audit ok
+[03:56:50 +715.2s] chromium run 1/1: done
+
+P5 layout bench — 2026-10-29T18:56:50.233Z (pnpm bench:layout --engine chromium --runs 1 --out bench/layout/results/hang-probe-chromium.json)
+fingerprint Mac14,9 / 27.0.1 / Apple M2 Pro / chromium_headless_shell-1187 / webkit-2203
+1-minute load 8.64; cost ADVISORY (1-minute load is 8.64, pinned below 1)
+
+== chromium 140.0.7339.16 [chromium_headless_shell-1187]
+PASS s-card
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 757 participant-frames
+  ok   G2                    0.0012 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 68 card-title reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 68 sheet reverse analytic before {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741} after {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741}; observed FD before 0.0 px/s after 218.7 px/s, error 218.7 (allowed 3.2; supporting only, acceleration included)
+  ok   G4                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 630 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 52 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 9/9 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.435 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 116 samples, 116 frames
+  n/a   G9.probe                  1.394  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           4.70e-7  <= 1e-5 against the independent crossfade worst run 1 frame 22 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 69 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-seg
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 59 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 10 pill tap-3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 5 pill tap-2 analytic before {"x":631.6523350823729,"y":0,"w":0,"h":0} after {"x":631.6523350823729,"y":0,"w":0,"h":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 58 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 53 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 tap-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 tap-4 tap-4: 2/2 rects, 2/2 pairs, 2/2 computed reads (1 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.245 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 56 samples, 56 frames
+  n/a   G9.probe                  3.794  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 13 pill
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-photo
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 41237 participant-frames
+  ok   G2                    0.0002 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 82 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 272 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 51 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.225 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 103 samples, 103 frames
+  n/a   G9.probe                  1.691  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-stack
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0003 px  <= 0.05 px on every edge worst run 1 frame 73 badge-1 edge top 1452 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 60 badge-1 collapse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0003 px  <= 0.05 px on every edge worst run 1 frame 73 badge-1 edge top 1440 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 57 card-0
+  ok   G6                            0  byte for byte the authored one worst run 1 card-0 0 mismatches; 16 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 expand all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 collapse collapse: 24/24 rects, 24/24 pairs, 12/12 computed reads (12 radius capture + 12 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.430 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 114 samples, 114 frames
+  n/a   G9.probe                  0.910  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      5.03e-7  <= 1e-5 against the declared curve worst run 1 frame 61 badge-1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1 frame 9 badge-1-disc
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-island
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0006 px  <= 0.05 px on every edge worst run 1 frame 17 card-content edge right 327 participant-frames
+  ok   G2                    0.0006 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 16 card-content reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 16 pill reverse analytic before {"x":-448.9443717270225,"y":0,"w":897.888743454045,"h":468.2954222324974} after {"x":-448.9443717270225,"y":0,"w":897.888743454045,"h":468.2954222324974}; observed FD before 0.0 px/s after 349.9 px/s, error 349.9 (allowed 4.5; supporting only, acceleration included)
+  ok   G4                    0.0006 px  <= 0.05 px on every edge worst run 1 frame 17 card-content edge right 212 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 92 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 4 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 expand all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 8/8 rects, 8/8 pairs, 6/6 computed reads (2 radius capture + 4 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.405 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 46 samples, 46 frames
+  n/a   G9.probe                  3.159  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           4.68e-7  <= 1e-5 against the independent crossfade worst run 1 frame 3 card
+  ok   shape.presence-opacity      4.30e-7  <= 1e-5 against the declared curve worst run 1 frame 1 pill-content
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 18 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-acc
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2752 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-7 c3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":378.6164838814562,"w":0,"h":0} after {"x":0,"y":378.6164838814562,"w":0,"h":0}; observed FD before 0.0 px/s after 356.9 px/s, error 356.9 (allowed 4.6; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2079 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 59 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.590 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 65 samples, 65 frames
+  n/a   G9.probe                  0.667  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-insert
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 14 row-10 edge bottom 781 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 14 row-10 edge bottom 624 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 46 new-0
+  ok   G6                            0  byte for byte the authored one worst run 1 new-0 0 mismatches; 6 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 insert all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 insert insert: 29/29 rects, 29/29 pairs, 16/16 computed reads (0 radius capture + 16 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.650 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 52 samples, 52 frames
+  n/a   G9.probe                  0.756  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      4.29e-7  <= 1e-5 against the declared curve worst run 1 frame 2 new-0
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-delete
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0095 px  <= 0.05 px on every edge worst run 1 frame 18 row-5 edge top 662 participant-frames
+  ok   G2                    0.0095 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-5 delete-2 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 18 row-6 delete-2 analytic before {"x":0,"y":-339.28586992090396,"w":0,"h":0} after {"x":0,"y":-339.28586992090396,"w":0,"h":0}; observed FD before 0.0 px/s after 391.4 px/s, error 391.4 (allowed 4.9; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 21 row-6 edge top 336 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 70 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 delete-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 delete-2 delete-2: 18/18 rects, 18/18 pairs, 3/3 computed reads (0 radius capture + 3 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0; audited non-layout presence reads excluded: 2 rects, 2 styles
+  ok   G8                     0.525 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 45 samples, 45 frames
+  n/a   G9.probe                  1.006  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity     1.11e-16  <= 1e-5 against the declared curve worst run 1 frame 15 row-2
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-reorder
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 630 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 249 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 38 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 8 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 reorder-2 N/A: release: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reorder-9 reorder-9: 28/28 rects, 28/28 pairs, 8/8 computed reads (0 radius capture + 8 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.705 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 44 samples, 44 frames
+  ok   G12                   -0.460 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  n/a   G9.probe                  0.763  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 17 row-2
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  ok   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-sheet
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 92 sheet edge bottom 138 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 92 sheet edge bottom 108 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 47 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 detent-1 N/A: release-1: release() has no public LayoutReport; G7 not applicable; release-2: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 detent-2 detent-2: 2/2 rects, 2/2 pairs, 1/1 computed reads (0 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.265 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 101 samples, 101 frames
+  ok   G12                   -0.040 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  n/a   G9.probe                  3.941  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 89 sheet
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-bulk
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 6 tile-25 edge right 51000 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 6 tile-25 edge right 15000 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 48 tile-0
+  ok   G6                            0  byte for byte the authored one worst run 1 tile-0 0 mismatches; 300 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 shuffle all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 shuffle shuffle: 2000/2000 rects, 2000/2000 pairs, 300/300 computed reads (0 radius capture + 300 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 1, parents 0
+  ok   G8                     1.300 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 48 samples, 48 frames
+  n/a   G9.probe                  0.031  non-deciding; the named G9 gate is S-BULK at 1,000 participants worst run 1
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-card@dpr1 [s-card DPR 1]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 757 participant-frames
+  ok   G2                    0.0012 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 68 card-title reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 68 sheet reverse analytic before {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741} after {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741}; observed FD before 0.0 px/s after 218.7 px/s, error 218.7 (allowed 3.2; supporting only, acceleration included)
+  ok   G4                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 630 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 52 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 9/9 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.340 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 117 samples, 117 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           4.70e-7  <= 1e-5 against the independent crossfade worst run 1 frame 22 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 69 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-card@dpr3 [s-card DPR 3]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 757 participant-frames
+  ok   G2                    0.0012 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 68 card-title reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 68 sheet reverse analytic before {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741} after {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741}; observed FD before 0.0 px/s after 218.7 px/s, error 218.7 (allowed 3.2; supporting only, acceleration included)
+  ok   G4                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 630 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 52 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 9/9 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.330 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 116 samples, 116 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           4.70e-7  <= 1e-5 against the independent crossfade worst run 1 frame 22 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 69 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-card@rm-jump [s-card reduced-motion jump]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 38 participant-frames
+  n/a   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  n/a   G4                    0.0000 px  <= 0.05 px on every edge worst run 1
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 1 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 3 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 close close: 11/11 rects, 11/11 pairs, 8/8 computed reads (1 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.005 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 6 samples, 6 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  status reduced and the run resolves at the jump commit frame; no clock subscription worst run 1
+PASS s-card@rm-max [s-card reduced-motion maxDuration]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0020 px  <= 0.05 px on every edge worst run 1 frame 24 card edge bottom 207 participant-frames
+  ok   G2                    0.0008 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 19 card-image reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 19 sheet reverse analytic before {"x":8.92603193575325,"y":98.18635129328572,"w":-17.8520638715065,"h":-225.3823063777695} after {"x":8.92603193575325,"y":98.18635129328572,"w":-17.8520638715065,"h":-225.3823063777695}; observed FD before 0.0 px/s after 5950.2 px/s, error 5950.2 (allowed 60.5; supporting only, acceleration included)
+  ok   G4                    0.0020 px  <= 0.05 px on every edge worst run 1 frame 24 card edge bottom 168 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 13 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 9/9 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.385 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 34 samples, 34 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           4.54e-7  <= 1e-5 against the independent crossfade worst run 1 frame 3 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1 frame 17 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  every run settles within the { maxDuration } bound; styles restored by G6 worst run 1
+PASS s-card@rm-ignore [s-card reduced-motion ignore]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 757 participant-frames
+  ok   G2                    0.0012 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 68 card-title reverse fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 68 sheet reverse analytic before {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741} after {"x":36.89642720725838,"y":405.8606992798422,"w":-73.79285441451675,"h":-931.6347869832741}; observed FD before 0.0 px/s after 218.7 px/s, error 218.7 (allowed 3.2; supporting only, acceleration included)
+  ok   G4                    0.0013 px  <= 0.05 px on every edge worst run 1 frame 102 card-title edge left 630 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 52 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 11 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reverse reverse: 14/14 rects, 14/14 pairs, 9/9 computed reads (2 radius capture + 7 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.375 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 116 samples, 116 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           4.70e-7  <= 1e-5 against the independent crossfade worst run 1 frame 22 card
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0001 px  <= 0.03 px between both layers and the blend worst run 1 frame 69 card
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-seg@dpr1 [s-seg DPR 1]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 59 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 10 pill tap-3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 5 pill tap-2 analytic before {"x":631.6523350823729,"y":0,"w":0,"h":0} after {"x":631.6523350823729,"y":0,"w":0,"h":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 58 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 53 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 tap-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 tap-4 tap-4: 2/2 rects, 2/2 pairs, 2/2 computed reads (1 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.235 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 56 samples, 56 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 13 pill
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-seg@dpr3 [s-seg DPR 3]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 59 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 10 pill tap-3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 5 pill tap-2 analytic before {"x":631.6523350823729,"y":0,"w":0,"h":0} after {"x":631.6523350823729,"y":0,"w":0,"h":0}; observed FD before 0.0 px/s after 809.3 px/s, error 809.3 (allowed 9.1; supporting only, acceleration included)
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 17 pill edge right 58 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 53 pill
+  ok   G6                            0  byte for byte the authored one worst run 1 pill 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 tap-1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 tap-4 tap-4: 2/2 rects, 2/2 pairs, 2/2 computed reads (1 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.265 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 56 samples, 56 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 13 pill
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-photo@dpr1 [s-photo DPR 1]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 41237 participant-frames
+  ok   G2                    0.0002 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 82 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 272 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 51 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.220 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 103 samples, 103 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-photo@dpr3 [s-photo DPR 3]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 41237 participant-frames
+  ok   G2                    0.0002 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 82 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 272 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 51 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.285 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 103 samples, 103 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-photo@rm-jump [s-photo reduced-motion jump]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 11137 participant-frames
+  n/a   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  n/a   G4                    0.0000 px  <= 0.05 px on every edge worst run 1
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 1 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.005 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 7 samples, 7 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  status reduced and the run resolves at the jump commit frame; no clock subscription worst run 1
+PASS s-photo@rm-max [s-photo reduced-motion maxDuration]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 45 cell-37-image edge right 18963 participant-frames
+  ok   G2                    0.0002 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 45 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 45 cell-37-image edge right 124 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 14 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.355 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 31 samples, 31 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  every run settles within the { maxDuration } bound; styles restored by G6 worst run 1
+PASS s-photo@rm-ignore [s-photo reduced-motion ignore]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 41237 participant-frames
+  ok   G2                    0.0002 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 82 cell-37-image back fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 44 detail-image edge left 272 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 51 cell-0
+  ok   G6                            0  byte for byte the authored one worst run 1 cell-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 open all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 back back: 602/602 rects, 602/602 pairs, 2/2 computed reads (0 radius capture + 301 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.255 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 103 samples, 103 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-acc@dpr1 [s-acc DPR 1]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2752 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-7 c3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":378.6164838814562,"w":0,"h":0} after {"x":0,"y":378.6164838814562,"w":0,"h":0}; observed FD before 0.0 px/s after 356.9 px/s, error 356.9 (allowed 4.6; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2079 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 59 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.410 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 65 samples, 65 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-acc@dpr3 [s-acc DPR 3]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2752 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-7 c3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":378.6164838814562,"w":0,"h":0} after {"x":0,"y":378.6164838814562,"w":0,"h":0}; observed FD before 0.0 px/s after 356.9 px/s, error 356.9 (allowed 4.6; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2079 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 59 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.435 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 65 samples, 65 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-acc@rm-jump [s-acc reduced-motion jump]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 1032 participant-frames
+  n/a   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  n/a   G4                    0.0000 px  <= 0.05 px on every edge worst run 1
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 19 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0; §9.4 jump has no planned tracks, so the §4.3 computed set is policy-dependent: c2 35/47 reported as evidence (rect/pair and frame counts are exact)
+  ok   G8                     0.125 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 8 samples, 8 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  status reduced and the run resolves at the jump commit frame; no clock subscription worst run 1
+PASS s-acc@rm-max [s-acc reduced-motion maxDuration]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 0 body-2 edge bottom 1591 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 12 row-9 c2 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":1.3135568847993322,"w":0,"h":0} after {"x":0,"y":1.3135568847993322,"w":0,"h":0}; observed FD before 0.0 px/s after 0.9 px/s, error 0.9 (allowed 1.0; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 12 body-6 edge bottom 1188 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 32 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.485 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 38 samples, 38 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  every run settles within the { maxDuration } bound; styles restored by G6 worst run 1
+PASS s-acc@rm-ignore [s-acc reduced-motion ignore]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2752 participant-frames
+  ok   G2                    0.0001 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1 frame 18 row-7 c3 fresh capture, gate 0.05 px
+  ok   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1 frame 12 row-6 c2 analytic before {"x":0,"y":378.6164838814562,"w":0,"h":0} after {"x":0,"y":378.6164838814562,"w":0,"h":0}; observed FD before 0.0 px/s after 356.9 px/s, error 356.9 (allowed 4.6; supporting only, acceleration included)
+  ok   G4                    0.0002 px  <= 0.05 px on every edge worst run 1 frame 15 body-6 edge bottom 2079 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 59 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 0 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 c1 all reports match
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 c3 c3: 86/86 rects, 86/86 pairs, 47/47 computed reads (0 radius capture + 43 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 0; probes 0, parents 0
+  ok   G8                     0.505 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 65 samples, 65 frames
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  n/a   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-reorder@rm-jump [s-reorder reduced-motion jump]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 252 participant-frames
+  n/a   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  n/a   G4                    0.0000 px  <= 0.05 px on every edge worst run 1
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 11 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 8 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 reorder-2 N/A: release: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reorder-9 reorder-9: 28/28 rects, 28/28 pairs, 4/8 computed reads (0 radius capture + 8 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0; §9.4 jump has no planned tracks, so the §4.3 computed set is policy-dependent: reorder-5 4/6, reorder-9 4/8 reported as evidence (rect/pair and frame counts are exact)
+  ok   G8                     1.390 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 11 samples, 11 frames
+  ok   G12                   -1.155 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  ok   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  status reduced and the run resolves at the jump commit frame; no clock subscription worst run 1
+PASS s-reorder@rm-max [s-reorder reduced-motion maxDuration]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 18 row-1 edge top 392 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 18 row-1 edge top 130 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 21 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 8 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 reorder-2 N/A: release: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reorder-9 reorder-9: 28/28 rects, 28/28 pairs, 8/8 computed reads (0 radius capture + 8 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.425 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 24 samples, 24 frames
+  ok   G12                   -0.190 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  ok   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  every run settles within the { maxDuration } bound; styles restored by G6 worst run 1
+PASS s-reorder@rm-ignore [s-reorder reduced-motion ignore]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 630 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0000 px  <= 0.05 px on every edge worst run 1 frame 23 row-2 edge bottom 249 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 38 row-0
+  ok   G6                            0  byte for byte the authored one worst run 1 row-0 0 mismatches; 8 inline cssText difference(s) recorded as evidence; 0 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 reorder-2 N/A: release: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 reorder-9 reorder-9: 28/28 rects, 28/28 pairs, 8/8 computed reads (0 radius capture + 8 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.455 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 44 samples, 44 frames
+  ok   G12                   -0.245 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 17 row-2
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  ok   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+PASS s-sheet@rm-jump [s-sheet reduced-motion jump]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0000 px  <= 0.05 px on every edge worst run 1 93 participant-frames
+  n/a   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  n/a   G4                    0.0000 px  <= 0.05 px on every edge worst run 1
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 13 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 detent-1 N/A: release-1: release() has no public LayoutReport; G7 not applicable; release-2: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 detent-2 detent-2: 2/2 rects, 2/2 pairs, 1/1 computed reads (0 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.250 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 23 samples, 23 frames
+  ok   G12                   -0.140 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  status reduced and the run resolves at the jump commit frame; no clock subscription worst run 1
+PASS s-sheet@rm-max [s-sheet reduced-motion maxDuration]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 91 sheet edge bottom 105 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 91 sheet edge bottom 75 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 24 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 detent-1 N/A: release-1: release() has no public LayoutReport; G7 not applicable; release-2: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 detent-2 detent-2: 2/2 rects, 2/2 pairs, 1/1 computed reads (0 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.195 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 47 samples, 47 frames
+  ok   G12                   -0.065 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 87 sheet
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  ok   shape.reduced-policy            0  every run settles within the { maxDuration } bound; styles restored by G6 worst run 1
+PASS s-sheet@rm-ignore [s-sheet reduced-motion ignore]
+  ok   RUN                0.0000 failed runs  every measured run passes worst all measured runs pass
+  ok   C1                 0.0000 contract failures  required observations, commits, reports, settle frames, participants, pair/opacity/radius/font data, and no n/a declared metric worst run 1
+  ok   G1                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 92 sheet edge bottom 138 participant-frames
+  ok   G2                    0.0000 px  <= 0.05 px; <= 0.5 px only for the aged participant of that commit worst run 1
+  n/a   G3                        0.000  <= 1 % of the larger edge speed + 1 px/s worst run 1
+  ok   G4                    0.0001 px  <= 0.05 px on every edge worst run 1 frame 92 sheet edge bottom 108 participant-frames
+  ok   G5                    0.0000 px  <= 0.01 px; no pose declaration left worst run 1 frame 47 sheet
+  ok   G6                            0  byte for byte the authored one worst run 1 sheet 0 mismatches; 2 inline cssText difference(s) recorded as evidence; 1 post-removal restoration snapshot(s)
+  ok   G7                            0  exactly as the scene script expects worst run 1 detent-1 N/A: release-1: release() has no public LayoutReport; G7 not applicable; release-2: release() has no public LayoutReport; G7 not applicable
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the §4.1/§4.3 computed reads; steady frames read zero worst run 1 detent-2 detent-2: 2/2 rects, 2/2 pairs, 1/1 computed reads (0 radius capture + 1 active flush, plus the engine's Typed OM reads), 0 frame reads; layout offsets 2; probes 0, parents 0
+  ok   G8                     0.190 ms  p95 <= 2 ms; no long frame (> 8 ms) after the commit frame worst run 1 one sample per frame; g 0.0050 ms; 101 samples, 101 frames
+  ok   G12                   -0.055 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms worst run 1
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames worst run 1
+  BLOCK G9.probe                    n/a  non-deciding; probe must be reported
+  ok   shape.opacity           0.00e+0  <= 1e-5 against the independent crossfade worst run 1
+  ok   shape.presence-opacity      0.00e+0  <= 1e-5 against the declared curve worst run 1
+  ok   shape.badge-scale  0.0000 scale  <= 1e-4 against the declared scale curve worst run 1
+  ok   shape.coverage          0.00e+0  |coverage - 1| <= 1e-5 worst run 1
+  ok   shape.radius          0.0000 px  <= 0.03 px between both layers and the blend worst run 1
+  ok   shape.pill-radius     0.0000 px  <= 0.01 px worst run 1 frame 89 sheet
+  ok   shape.inert                   0  follower inert from the first crossfade frame, restored on reversal worst run 1
+  ok   shape.focus                   0  activeElement is never the follower participant worst run 1
+  ok   shape.font                    0  identical computed font string worst run 1
+  ok   shape.hold                    0  held while held, one rect per held element per frame, released with no live hold worst run 1
+  n/a   shape.kill-switch             0  runtime-disabled, holds 0, clock 0, styles restored worst run 1
+  ok   shape.teardown                0  all zero worst run 1 tracks 0, holds 0, clock pending 0, clock size 0
+  n/a   shape.reduced-policy            0  primary/ignore policy: full motion; no reduced row worst run 1
+FAIL S-BULK cost shapes
+  ok   G9-unscrolled             1.876  median of 5 per-run ratios <= 2
+  ok   G9-scrolled               1.876  median of 5 per-run ratios <= 2
+  ok   G9.floor-unscrolled 0.0000 count mismatches  exact required counts; no extra read
+  ok   G9.floor-scrolled  0.0000 count mismatches  exact required counts; no extra read
+  ok   G10                    0.460 ms  p95 <= 2 ms
+  FAIL G11                       2.461  p95(engine commits) / p95(floor commits) <= 2
+  ok   G11.floor          0.0000 count mismatches  exact required counts; no extra read
+  ok   G13                           0  <= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero
+  ok   G12-1                 -0.120 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms
+  ok   G12-10                -0.007 ms  (p95(held) - p95(no-hold)) / held <= 0.1 ms
+  ok   G13-held                      0  one rect per live hold per frame, zero offset/style reads, 600 frames
+  run 0 (warm-up): ratio 1.889 unscrolled / 1.858 scrolled; floor audit ok; steady p95 0.470 ms; sustained p95 6.400 ms / floor p95 2.855 ms = 2.242× (commit); held 1 0.175-0.260=-0.0850 ms/held; 10 0.295-0.295=0.0000 ms/held; held reads ok; g 0.0050 ms
+  run 1: ratio 1.876 unscrolled / 1.876 scrolled; floor audit ok; steady p95 0.460 ms; sustained p95 6.485 ms / floor p95 2.635 ms = 2.461× (commit); held 1 0.130-0.250=-0.1200 ms/held; 10 0.155-0.225=-0.0070 ms/held; held reads ok; g 0.0050 ms
+
+negative controls (expected to fail their target gate)
+self-tests ok: 14 controls across 8 files
+
+invocation: FAIL
+certification: NOT CERTIFIED
+  cert block: runs 1 != 5
+  cert block: required engine webkit not selected
+  cert block: cost fingerprint is advisory
+  cert block: negative controls failed or were not run
+  cert block: chromium S-BULK cost fail
+  cert block: chromium S-BULK G11 2.461 failed
+  cert block: required engine webkit has no report
+
+wrote /Users/june/Documents/project/freestylejs/ani-h21/bench/layout/results/hang-probe-chromium.json
+
+cost gates are ADVISORY: 1-minute load is 8.64, pinned below 1 (pinned Mac14,9 / 27.0.1 / Apple M2 Pro)

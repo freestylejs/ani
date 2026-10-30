@@ -123,6 +123,7 @@ import {
     createTrack,
     drawnBoxes,
     drawnRates,
+    drawnVelocities,
     type Fade,
     fadeOpacity,
     INSTANT_LAW,
@@ -1011,6 +1012,132 @@ export function createLayoutGroup(
     let capture: Capture | null = null
     /** The last support pass whose inputs were clean, for the next capture. */
     let lastSupport: Capture['support'] = null
+    /**
+     * Capture scratch, double-buffered: `lastSupport` retains the previous
+     * pass's rects, offsets and poses, so the next capture must write the
+     * other slot. A capped capture uses no scratch and does not advance it.
+     */
+    interface CaptureScratch {
+        slot: number
+        rects: Box[]
+        offsets: [number, number][]
+        poses: Pose[]
+        wanted: boolean[]
+        unsupported: (string | null)[]
+        unpresented: boolean[]
+        rectsMap: Map<Participant, Box>
+        unsupportedMap: Map<Participant, string>
+        radiusMap: Map<Participant, readonly number[]>
+        added: Set<Participant>
+        scrolling: Map<Participant, readonly EventTarget[]>
+        flat: Map<Participant, HTMLElement | null>
+    }
+    /**
+     * Flush scratch, one slot per scope: `flushBody` is synchronous and none
+     * of these arrays outlives it. Kept objects (geometry, lastBox) are
+     * individual values, never the arrays.
+     */
+    interface FlushScratch {
+        rects: Box[]
+        offsets: [number, number][]
+        hasChild: boolean[]
+        subtreeDriven: boolean[]
+        unmeasured: boolean[]
+        beforeRects: (Box | null)[]
+        geometry: (Geometry | null)[]
+        fulls: (Map2 | null)[]
+        chained: boolean[]
+        why: (string | null)[]
+        bounds: (number | undefined)[]
+        lateRegisteredNow: boolean[]
+        scrollActive: boolean[]
+        presented: ({
+            css: Box
+            origin: readonly [number, number]
+        } | null)[]
+        wanted: boolean[]
+        lastBoxes: (Box | null)[]
+        lastGeometry: (Geometry | null)[]
+        lastParent: (Participant | null)[]
+    }
+    const captureScratch: (CaptureScratch | null)[] = [null, null]
+    let captureScratchSlot = 0
+    let lastSupportSlot: number | null = null
+    function captureScratchFor(): CaptureScratch {
+        let slot = captureScratchSlot
+        if (slot === lastSupportSlot) slot ^= 1
+        captureScratchSlot = slot ^ 1
+        let scratch = captureScratch[slot]
+        if (!scratch) {
+            scratch = {
+                slot,
+                rects: [],
+                offsets: [],
+                poses: [],
+                wanted: [],
+                unsupported: [],
+                unpresented: [],
+                rectsMap: new Map(),
+                unsupportedMap: new Map(),
+                radiusMap: new Map(),
+                added: new Set(),
+                scrolling: new Map(),
+                flat: new Map(),
+            }
+            captureScratch[slot] = scratch
+        }
+        scratch.rects.length = 0
+        scratch.poses.length = 0
+        scratch.rectsMap.clear()
+        scratch.unsupportedMap.clear()
+        scratch.radiusMap.clear()
+        scratch.added.clear()
+        scratch.scrolling.clear()
+        scratch.flat.clear()
+        return scratch
+    }
+    function resetWanted(wanted: boolean[], length: number): boolean[] {
+        if (wanted.length < length) wanted.length = length
+        for (let i = 0; i < length; i++) wanted[i] = false
+        return wanted
+    }
+    function resetNulls<T>(values: (T | null)[], length: number): (T | null)[] {
+        values.length = length
+        values.fill(null)
+        return values
+    }
+    function fillOffsets(
+        list: readonly Participant[],
+        offsets: [number, number][]
+    ): void {
+        for (let i = 0; i < list.length; i++) {
+            const element = list[i]!.element
+            const pair = offsets[i] ?? (offsets[i] = [0, 0])
+            pair[0] = element.offsetWidth
+            pair[1] = element.offsetHeight
+        }
+        offsets.length = list.length
+    }
+    const flushScratch: FlushScratch = {
+        rects: [],
+        offsets: [],
+        hasChild: [],
+        subtreeDriven: [],
+        unmeasured: [],
+        beforeRects: [],
+        geometry: [],
+        fulls: [],
+        chained: [],
+        why: [],
+        bounds: [],
+        lateRegisteredNow: [],
+        scrollActive: [],
+        presented: [],
+        wanted: [],
+        lastBoxes: [],
+        lastGeometry: [],
+        lastParent: [],
+    }
     /** The last participant-tree pass: a capture or flush reuses it when its inputs verify. */
     let lastTree: ParticipantTree | null = null
     let frame: FrameNode[] = []
@@ -1508,9 +1635,11 @@ export function createLayoutGroup(
     function scrollingAround(
         list: readonly Participant[],
         flat: readonly (HTMLElement | null)[],
-        tree: FlatTree
+        tree: FlatTree,
+        into?: Map<Participant, readonly EventTarget[]>
     ): Map<Participant, readonly EventTarget[]> {
-        const around = new Map<Participant, readonly EventTarget[]>()
+        const around = into ?? new Map<Participant, readonly EventTarget[]>()
+        around.clear()
         if (active.size === 0) return around
         // a removed container scrolls nothing a participant is drawn in
         for (const target of active) {
@@ -3471,6 +3600,20 @@ export function createLayoutGroup(
     }
 
     /**
+     * §5.8/§9.1: when the scope settles for a cause that is not the author's
+     * removal, a live crossfade still ends as a completed fade. The exiting
+     * follower belongs to presence, so it is held invisible and inert at its
+     * last pose until presence unmounts it; `settle` must not restore its
+     * authored opacity and `inert` while it is still mounted.
+     */
+    function holdFinishedFollower(p: Participant): void {
+        const d = p.drive
+        if (!d || d.kind === 'held' || d.fade?.role !== 'follower') return
+        endFade(p)
+        d.kind = 'held'
+    }
+
+    /**
      * Solves the current frame; `dt === null` writes the current time without
      * advancing (the flush's t = 0 pose). Returns whether anything animates.
      */
@@ -3553,6 +3696,10 @@ export function createLayoutGroup(
                         velocity: ZERO_VELOCITY,
                     }
                 }
+                // F5: the pair has no track any more. Complete the fade so
+                // the follower is not a partially visible ghost until
+                // presence unmounts it; it stays held at that frozen box.
+                if (d.fade?.role === 'follower') endFade(node.p)
                 d.kind = 'held'
                 d.release?.()
                 d.release = null
@@ -3966,19 +4113,24 @@ export function createLayoutGroup(
     function engineState(): EngineState {
         const poses = new Map<Participant, Pose>()
         const rates = new Map<Participant, BoxVelocity>()
-        const poseRates = new Map<Participant, Pose>()
         const moving = new Set<Participant>()
-        if (frame.length === 0) return { poses, rates, poseRates, moving }
+        if (frame.length === 0)
+            return {
+                poses,
+                rates,
+                poseRates: new Map(),
+                moving,
+            }
         if (waapi) syncAnimations()
-        const nodes = solveNodes(frame)
-        const { velocities, poses: poseRate } = drawnRates(nodes)
+        const frameAt = frame
+        const nodes = solveNodes(frameAt)
+        const velocities = drawnVelocities(nodes)
         // a WAAPI track writes no declaration: its pose is its animation's value
         const solved = waapi ? solve(nodes) : null
-        frame.forEach((node, i) => {
+        frameAt.forEach((node, i) => {
             const d = node.p.drive
             poses.set(node.p, solved ? solved[i]!.pose : writtenPose(d))
             rates.set(node.p, velocities[i]!)
-            poseRates.set(node.p, poseRate[i]!)
             if (
                 runs(d) &&
                 (d!.timeline !== null || d!.elapsed >= d!.track!.delay)
@@ -3986,7 +4138,20 @@ export function createLayoutGroup(
                 moving.add(node.p)
             }
         })
-        return { poses, rates, poseRates, moving }
+        let poseRates: Map<Participant, Pose> | null = null
+        return {
+            poses,
+            rates,
+            moving,
+            get poseRates() {
+                if (poseRates) return poseRates
+                const { poses: poseRate } = drawnRates(nodes)
+                const computed = new Map<Participant, Pose>()
+                frameAt.forEach((node, i) => computed.set(node.p, poseRate[i]!))
+                poseRates = computed
+                return computed
+            },
+        }
     }
 
     /**
@@ -4258,20 +4423,20 @@ export function createLayoutGroup(
             })
             return
         }
+        const scratch = captureScratchFor()
         const engine = engineState()
         // 1. one rect and one layout size per connected participant
-        const rects: Box[] = []
-        const offsets: (readonly [number, number])[] = []
-        for (const p of list) {
-            rects.push(viewRect(p.element))
-            offsets.push([p.element.offsetWidth, p.element.offsetHeight])
-        }
+        const rects = scratch.rects
+        const offsets = scratch.offsets
+        for (const p of list) rects.push(viewRect(p.element))
+        fillOffsets(list, offsets)
         stats.rects += list.length
         stats.offsets += list.length
         // 2. the support check on what was presented. A plain driven/static
         // box is re-checked at flush; capture-time exactness is needed for a
         // transformed bounding box (rect != layout size), presence and
         // degenerate boxes (C-6b, L_MEAS-12).
+        const wanted = resetWanted(scratch.wanted, list.length)
         let captureWanted: boolean[] | null = null
         for (let i = 0; i < list.length; i++) {
             const p = list[i]!
@@ -4282,10 +4447,8 @@ export function createLayoutGroup(
                 Math.abs(rects[i]!.w - offsets[i]![0]) > 0.5 ||
                 Math.abs(rects[i]!.h - offsets[i]![1]) > 0.5
             ) {
-                if (!captureWanted) {
-                    captureWanted = new Array<boolean>(list.length).fill(false)
-                }
-                captureWanted[i] = true
+                wanted[i] = true
+                captureWanted = wanted
             }
         }
         if (captureWanted) {
@@ -4308,7 +4471,7 @@ export function createLayoutGroup(
                 engine.poses
             )
         const unsupported = reused
-            ? new Array<string | null>(list.length).fill(null)
+            ? resetNulls(scratch.unsupported, list.length)
             : supportOf(
                   list,
                   parents,
@@ -4321,7 +4484,7 @@ export function createLayoutGroup(
         const readFree = stats.styles === stylesBefore
         // 3. after every rect: shared corner radii at B, on screen (a driven
         // node's own declarations are drawn at its poses' scale)
-        const radius = new Map<Participant, readonly number[]>()
+        const radius = scratch.radiusMap
         let hasRadius = false
         if (shared > 0)
             for (const p of list) {
@@ -4351,9 +4514,10 @@ export function createLayoutGroup(
         // an owned declaration the author replaced inline since layout wrote
         // it is unpresented (the same task): that node and its subtree are
         // not drawn as presented, so they supply no B (§4.1, §6)
-        const unpresented: boolean[] = []
-        const presentedRects = new Map<Participant, Box>()
-        const failing = new Map<Participant, string>()
+        const unpresented = scratch.unpresented
+        unpresented.length = 0
+        const presentedRects = scratch.rectsMap
+        const failing = scratch.unsupportedMap
         list.forEach((p, i) => {
             const parent = parents[i]!
             const un =
@@ -4372,14 +4536,24 @@ export function createLayoutGroup(
                       parents,
                       rects,
                       offsets,
-                      poses: list.map(
-                          (p) => engine.poses.get(p) ?? IDENTITY_POSE
-                      ),
+                      poses: (() => {
+                          const poses = scratch.poses
+                          poses.length = 0
+                          for (const p of list)
+                              poses.push(engine.poses.get(p) ?? IDENTITY_POSE)
+                          return poses
+                      })(),
                       readFree,
                   }
                 : null
-        lastSupport = captureWanted ? null : support
-        const scrolling = scrollingAround(list, flat, tree)
+        if (captureWanted || support === null) {
+            lastSupport = null
+            lastSupportSlot = null
+        } else {
+            lastSupport = support
+            lastSupportSlot = scratch.slot
+        }
+        const scrolling = scrollingAround(list, flat, tree, scratch.scrolling)
         const current: Capture = {
             live: true,
             aged: inFrame,
@@ -4387,7 +4561,7 @@ export function createLayoutGroup(
             disarm: noop,
             rects: presentedRects,
             registeredThrough: sequence,
-            added: new Set(),
+            added: scratch.added,
             unsupported: failing,
             radius,
             engine,
@@ -4397,7 +4571,11 @@ export function createLayoutGroup(
             // only a participant inside an active container can be degraded
             flat:
                 scrolling.size > 0
-                    ? new Map(list.map((p, i) => [p, flat[i]!]))
+                    ? (() => {
+                          for (let i = 0; i < list.length; i++)
+                              scratch.flat.set(list[i]!, flat[i]!)
+                          return scratch.flat
+                      })()
                     : NO_FLAT,
         }
         if (inFrame) {
@@ -4869,9 +5047,13 @@ export function createLayoutGroup(
                 if (!p.drive || p.drive.inert === null) continue
                 assertInert(p.element, p.drive)
             }
-        const hasChild = list.map(() => false)
+        const hasChild = flushScratch.hasChild
+        hasChild.length = list.length
+        hasChild.fill(false)
         /** Some drive in the participant's own subtree: it may be drawn/counter-projected. */
-        const subtreeDriven = list.map((p) => p.drive !== null)
+        const subtreeDriven = flushScratch.subtreeDriven
+        subtreeDriven.length = 0
+        for (const p of list) subtreeDriven.push(p.drive !== null)
         for (let i = list.length - 1; i >= 0; i--) {
             const parent = parents[i]!
             if (parent < 0) continue
@@ -4885,8 +5067,10 @@ export function createLayoutGroup(
          * subtree. Such a node follows the §4.4 table; the rest of the flush
          * plans normally.
          */
-        const unmeasured: boolean[] = []
-        const beforeRects: (Box | null)[] = []
+        const unmeasured = flushScratch.unmeasured
+        unmeasured.length = 0
+        const beforeRects = flushScratch.beforeRects
+        beforeRects.length = 0
         let anyHold = false
         let anyRide = false
         let anyDrive = false
@@ -4915,10 +5099,24 @@ export function createLayoutGroup(
         })
         /** Each node's A at its previous flush, before this one replaces it. */
         const stale = unmeasured.some(Boolean)
-        const lastBoxes = stale ? list.map((p) => p.lastBox) : null
+        let lastBoxes: (Box | null)[] | null = null
         /** Each node's geometry and participant parent at its previous flush. */
-        const lastGeometry = stale ? list.map((p) => p.geometry) : null
-        const lastParent = stale ? list.map((p) => p.parent) : null
+        let lastGeometry: (Geometry | null)[] | null = null
+        let lastParent: (Participant | null)[] | null = null
+        if (stale) {
+            lastBoxes = flushScratch.lastBoxes
+            lastGeometry = flushScratch.lastGeometry
+            lastParent = flushScratch.lastParent
+            for (let i = 0; i < list.length; i++) {
+                const p = list[i]!
+                lastBoxes[i] = p.lastBox
+                lastGeometry[i] = p.geometry
+                lastParent[i] = p.parent
+            }
+            lastBoxes.length = list.length
+            lastGeometry.length = list.length
+            lastParent.length = list.length
+        }
 
         // the engine's own state at t_k: the fresh capture's, or now when there
         // is none (its last writes describe the presented frame either way)
@@ -4951,19 +5149,18 @@ export function createLayoutGroup(
          */
         const anchorFallback = knownTransformAnchoring(doc) === true
         const dpr = doc.defaultView?.devicePixelRatio ?? 1
-        const rects: Box[] = []
-        const offsets: (readonly [number, number])[] = []
-        for (const p of list) {
-            rects.push(viewRect(p.element))
-            offsets.push([p.element.offsetWidth, p.element.offsetHeight])
-        }
+        const rects = flushScratch.rects
+        rects.length = 0
+        for (const p of list) rects.push(viewRect(p.element))
+        const offsets = flushScratch.offsets
+        fillOffsets(list, offsets)
         stats.rects += list.length
         stats.offsets += list.length
         const viewport = viewportBox(doc)
         const styleOf = styleReader(list)
 
-        const geometry: (Geometry | null)[] = list.map(() => null)
-        const fulls: (Map2 | null)[] = list.map(() => null)
+        const geometry = resetNulls(flushScratch.geometry, list.length)
+        const fulls = resetNulls(flushScratch.fulls, list.length)
         let animated: Set<Element> | null = null
         const animatedNow = () => {
             animated ??= animatedOwned(doc)
@@ -5022,7 +5219,8 @@ export function createLayoutGroup(
             return added
         }
         // every node with a driven node at or above it divides out poses
-        const chained: boolean[] = []
+        const chained = flushScratch.chained
+        chained.length = 0
         list.forEach((p, i) => {
             const parent = parents[i]!
             chained.push(p.drive !== null || (parent >= 0 && chained[parent]!))
@@ -5167,6 +5365,7 @@ export function createLayoutGroup(
         }
 
         lastKeepShortcut = skipsKeeps
+        const retargetOnly = skipsKeeps && !anyHold && !anyRide
 
         /**
          * `L_k` per node with a fresh B (§4.2): the capture's rect with the
@@ -5177,10 +5376,7 @@ export function createLayoutGroup(
          * test can draw it through the matrices its track was planned with
          * about its own origin (§5.7), not about A's.
          */
-        const presented: ({
-            css: Box
-            origin: readonly [number, number]
-        } | null)[] = list.map(() => null)
+        const presented = resetNulls(flushScratch.presented, list.length)
         if (fresh && frame.length > 0 && !skipsKeeps) {
             const nodes: PresentedNode[] = []
             const of: number[] = []
@@ -5506,7 +5702,9 @@ export function createLayoutGroup(
                 Math.abs(to.y + to.h - from.y - from.h)
             )
         }
-        const bounds: (number | undefined)[] = list.map(() => undefined)
+        const bounds = flushScratch.bounds
+        bounds.length = list.length
+        bounds.fill(undefined)
         /**
          * `β` of a driven node (§4.4), top-down: `β_π` plus the bound from
          * the change of its layout box in its parent participant's local
@@ -5579,7 +5777,7 @@ export function createLayoutGroup(
         }
 
         /** Why each node cannot be animated exactly, for its warning. */
-        const why: (string | null)[] = list.map(() => null)
+        const why = resetNulls(flushScratch.why, list.length)
         /** Each node's exiting presence, walked once for the whole plan. */
         const exitingMemo = new Map<Element, PresenceLink | null>()
         const exitingNow = (p: Participant): boolean =>
@@ -5735,7 +5933,8 @@ export function createLayoutGroup(
          * box, so the image's parent is measured in this plan. The same
          * eligibility decides the scroll-active handoff check below.
          */
-        const lateRegisteredNow: boolean[] = []
+        const lateRegisteredNow = flushScratch.lateRegisteredNow
+        lateRegisteredNow.length = 0
         list.forEach((p, i) => {
             const parent = parents[i]!
             const registered =
@@ -5750,7 +5949,9 @@ export function createLayoutGroup(
                         lateRegisteredNow[parent]!)
             )
         })
-        const scrollActive = list.map(() => false)
+        const scrollActive = flushScratch.scrollActive
+        scrollActive.length = list.length
+        scrollActive.fill(false)
         if (
             fresh &&
             (fresh.scrolling.size > 0 ||
@@ -5842,11 +6043,13 @@ export function createLayoutGroup(
             threshold,
             maxNodes,
             leadless: shared === 0,
+            retargetOnly,
         })
         for (;;) {
-            const wanted = result.actions.map(
-                (action) => action.kind !== 'none'
-            )
+            const wanted = flushScratch.wanted
+            wanted.length = list.length
+            for (let i = 0; i < list.length; i++)
+                wanted[i] = result.actions[i]!.kind !== 'none'
             const added = measureNodes(wanted)
             let verdicts = false
             if (added.length > 0) {
@@ -5873,6 +6076,7 @@ export function createLayoutGroup(
                 threshold,
                 maxNodes,
                 leadless: shared === 0,
+                retargetOnly,
             })
         }
 
@@ -7567,6 +7771,11 @@ export function createLayoutGroup(
             // the cap displaces running tracks: their reports are interrupted
             for (const run of [...liveRuns]) interrupt(run)
         }
+        // §5.8/§9.1: a cap is a degradation, not the author's removal. A live
+        // crossfade still ends as a completed fade: the lead snaps to A and
+        // gives its opacity back, while the exiting follower stays invisible
+        // and inert at its last pose until presence unmounts it (F2).
+        for (const p of registry.values()) holdFinishedFollower(p)
         for (const p of registry.values()) {
             const d = p.drive
             if (!d || d.kind === 'held') continue
@@ -7667,6 +7876,11 @@ export function createLayoutGroup(
                         if (follower) d.kind = 'held'
                     }
                 }
+            } else if (status === 'ended') {
+                // F1: `step(null)` above ended every live fade at p = 1; the
+                // still-mounted followers must not be settled back to their
+                // authored opacity and interactive state (§5.8).
+                for (const node of frame) holdFinishedFollower(node.p)
             }
             for (const node of frame) {
                 const d = node.p.drive
