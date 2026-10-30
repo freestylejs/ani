@@ -3823,12 +3823,20 @@ export async function CAPS_STATUS(): Promise<string> {
             h.group.capture()
             const report = await h.group.flush()
             expectEqual(report.status, 'capped', 'cap follower: status')
+            // §5.8/§9.1: a cap is a degradation, not the author's removal. The
+            // exiting follower stays invisible and inert while it is still
+            // mounted; only the lead/other participants restore on the cap.
             expectEqual(
                 card.hasAttribute('inert'),
-                false,
-                'cap follower: inert restored'
+                true,
+                'cap follower: inert retained'
             )
-            for (const element of [card, detail]) {
+            expectEqual(
+                card.style.getPropertyValue('opacity'),
+                '0',
+                'cap follower: opacity held'
+            )
+            for (const element of [detail]) {
                 for (const property of [
                     'translate',
                     'scale',
@@ -3842,10 +3850,22 @@ export async function CAPS_STATUS(): Promise<string> {
                 }
             }
             h.group.dispose()
+            expectEqual(
+                card.hasAttribute('inert'),
+                false,
+                'cap follower: inert restored after dispose'
+            )
+            expectEqual(
+                card.style.getPropertyValue('opacity'),
+                '',
+                'cap follower: opacity restored after dispose'
+            )
             await crossfade
             presence.dispose()
             h.root.remove()
-            details.push('participant cap with a live follower: inert restored')
+            details.push(
+                'participant cap with a live follower: held until dispose'
+            )
         }
 
         // H12-17/H12-02: the same follower through a capped flush whose
