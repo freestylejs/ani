@@ -462,7 +462,7 @@ test('negative control G13: an extra rect or a steady-frame read fails', () => {
     assert.equal(metric(scoreScene(plan, frameRead), 'G13').pass, false)
 })
 
-test('negative control G14: a load or build mismatch is advisory, not a frame gate', () => {
+test('negative control G14: a load is controlled evidence; a build mismatch is advisory', () => {
     const fingerprint: Fingerprint = {
         host: 'Mac14,9',
         os: { productVersion: '27.0.1', kernel: '27.0.0' },
@@ -481,9 +481,19 @@ test('negative control G14: a load or build mismatch is advisory, not a frame ga
         load1: 0.5,
     }
     assert.equal(evaluateFingerprint(fingerprint).cost, false)
+    // D13: load alone is controlled-load evidence, not an advisory reason.
     const loaded = evaluateFingerprint({ ...fingerprint, load1: 3.2 })
-    assert.equal(loaded.cost, true)
-    assert.ok(loaded.reasons.length > 0)
+    assert.equal(loaded.cost, false)
+    assert.equal(loaded.controlledLoad, true)
+    assert.deepEqual(loaded.reasons, [])
+    // A true hardware mismatch still makes the cost gates advisory.
+    const mismatched = evaluateFingerprint({
+        ...fingerprint,
+        load1: 3.2,
+        host: 'Mac15,1',
+    })
+    assert.equal(mismatched.cost, true)
+    assert.ok(mismatched.reasons.length > 0)
 })
 
 test('shape negative controls: opacity, coverage, radius, inert and font fail', () => {

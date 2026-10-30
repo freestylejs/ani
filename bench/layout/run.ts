@@ -1843,6 +1843,7 @@ const SELF_TEST_FILES = [
     'bench/layout/cost_validity.test.ts',
     'bench/layout/variants.test.ts',
     'bench/layout/timeout.test.ts',
+    'bench/layout/fingerprint.test.ts',
 ] as const
 
 function selfTests(): {
@@ -2928,6 +2929,10 @@ async function main(): Promise<number> {
     if (advisory.cost) {
         writeOut(
             `\ncost gates are ADVISORY: ${advisory.reasons.join('; ')} (pinned ${PINNED_FINGERPRINT.host} / ${PINNED_FINGERPRINT.productVersion} / ${PINNED_FINGERPRINT.cpu})`
+        )
+    } else if (advisory.controlledLoad) {
+        writeOut(
+            `\ncontrolled load ${advisory.load1.toFixed(2)}: cost gates remain deciding (D13; D9 <1.0 pin retired)`
         )
     }
     return pass ? 0 : 1

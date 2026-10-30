@@ -1,6 +1,8 @@
 /**
- * The §11.5 certification-instrument fingerprint. A mismatch anywhere makes
- * the cost gates advisory; the frame-scoring gates still decide.
+ * The §11.5 certification-instrument fingerprint. Under D13 (2026-10-30) a
+ * hardware/software mismatch makes the cost gates advisory; the recorded
+ * 1-minute load is separate evidence and a load above the retired D9 pin is
+ * controlled-load evidence, not an advisory reason.
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -30,8 +32,16 @@ export interface Fingerprint {
 }
 
 export interface Advisory {
+    /** True only for a hardware/software fingerprint mismatch. */
     readonly cost: boolean
+    /** Hard fingerprint mismatches. Load is never one of these (D13). */
     readonly reasons: readonly string[]
+    /** The recorded 1-minute load, exactly as measured. */
+    readonly load1: number
+    /** D13: load above the retired D9 <1.0 pin is controlled-load evidence. */
+    readonly controlledLoad: boolean
+    /** Human-readable load evidence; never a cost-advisory reason. */
+    readonly loadReason: string
 }
 
 const PINNED = {
@@ -47,8 +57,13 @@ const PINNED = {
     chromium: 'chromium_headless_shell-1187',
     webkit: 'webkit-2203',
     firefox: 'firefox-1490',
-    maxLoad1: 1,
 } as const
+
+/**
+ * D9's quiet-host pin. It is retired: D13 records load above it as
+ * controlled-load evidence rather than an advisory/failure reason.
+ */
+const D9_LOAD_PIN = 1
 
 function run(command: string, args: readonly string[]): string {
     try {
@@ -141,12 +156,24 @@ export function evaluateFingerprint(fingerprint: Fingerprint): Advisory {
     check('browsers.webkit', fingerprint.browsers.webkit, PINNED.webkit)
     // Firefox is advisory (D9); its build is recorded but never decides a
     // Chromium/WebKit cost gate (H14-32).
-    if (!(fingerprint.load1 < PINNED.maxLoad1)) {
-        reasons.push(
-            `1-minute load is ${fingerprint.load1.toFixed(2)}, pinned below ${PINNED.maxLoad1}`
-        )
+    //
+    // D13: the retired D9 <1.0 load pin is not a fingerprint check. Record the
+    // load and whether it is controlled-load evidence; never make a cost row
+    // advisory because of it.
+    const load1 = fingerprint.load1
+    const controlledLoad = Number.isFinite(load1) && load1 > D9_LOAD_PIN
+    const loadReason = Number.isFinite(load1)
+        ? controlledLoad
+            ? `above the retired D9 <${D9_LOAD_PIN.toFixed(1)} pin; recorded as controlled-load evidence (D13), not an advisory reason`
+            : `within the retired D9 <${D9_LOAD_PIN.toFixed(1)} pin`
+        : 'unavailable (the 1-minute load could not be read)'
+    return {
+        cost: reasons.length > 0,
+        reasons,
+        load1,
+        controlledLoad,
+        loadReason,
     }
-    return { cost: reasons.length > 0, reasons }
 }
 
 export const PINNED_FINGERPRINT = PINNED

@@ -1430,12 +1430,16 @@ its cost reports are historical and advisory. The P5 instrument is:
 | OS | macOS 27.0.1 (Darwin 27.0.0), arm64 |
 | Runtime | Node 24.19.0, pnpm 10.20.0, Playwright 1.55.0 |
 | Browsers | `chromium_headless_shell-1187` (Chromium), `webkit-2203` (WebKit), `firefox-1490` (advisory), headless |
-| Load | 1-minute load average below 1.0 at start; no other browser or build running |
+| Load | 1-minute load average recorded exactly. Under D13 (2026-10-30) a load above 1.0 is controlled-load evidence, not by itself advisory; no other benchmark/build may run. P5 requires two independent five-run Chromium cost invocations (full + cost-only repeat) with G11 ≤ 2× and G9/G10/G12 green. |
 
 The fingerprint is `sw_vers -productVersion`, `uname -r`, `sysctl -n machdep.cpu.brand_string`,
 `hw.ncpu`, `hw.memsize`, `node --version`, `pnpm --version`, the Playwright version and the browser
-build directories. A report whose fingerprint differs anywhere is **advisory** for the cost gates
-(its frame-scoring gates still decide); only a matching report decides a cost gate.
+build directories. A report whose **hardware/software** fingerprint differs anywhere is
+**advisory** for the cost gates (its frame-scoring gates still decide); only a matching report
+decides a cost gate. Under D13 (2026-10-30) the recorded 1-minute load is separate evidence: a
+load above 1.0 is controlled-load evidence, not a fingerprint mismatch, and does not by itself make
+the cost rows advisory. P5 requires two independent five-run Chromium cost invocations (full plus
+cost-only repeat) with G11 ≤ 2× and G9/G10/G12 green.
 
 **Required-work floor.** For each measured run, the harness builds the same participant DOM twice:
 the engine fixture and the floor fixture. The floor fixture performs exactly the reads and writes
