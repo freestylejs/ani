@@ -4,7 +4,7 @@
  * runs, both engines, every required scene, controls, self-tests, advisory and
  * pending gates).
  */
-import type { CertificationReport } from './report.ts'
+import type { CertificationReport, SceneReport } from './report.ts'
 import { variantKey } from './variants.ts'
 
 export interface CertificationScene {
@@ -13,6 +13,11 @@ export interface CertificationScene {
     readonly blockedReasons?: readonly string[] | undefined
     /** Deciding, non-blocked metric misses with their medians. */
     readonly failedMetrics?: readonly string[] | undefined
+    /**
+     * D12: computed by the runner from the full scene/variant report. True
+     * only for WebKit and only when every failure is a cost row (G8–G12).
+     */
+    readonly costOnly?: boolean | undefined
 }
 
 export interface CertificationCost {
@@ -66,6 +71,8 @@ export interface InvocationInput {
 export interface InvocationResult {
     readonly pass: boolean
     readonly reasons: readonly string[]
+    /** D12 WebKit cost-only rows; recorded, never an invocation failure. */
+    readonly advisory: readonly string[]
 }
 
 const REQUIRED_ENGINES = ['chromium', 'webkit'] as const
@@ -99,6 +106,112 @@ const REQUIRED_VARIANTS = [
 ]
 
 /**
+ * D12 cost rows. G8 is a real-clock frame-cost row, so it belongs to the
+ * Chromium-decided cost set together with G9/G10/G11/G12. G13 and every
+ * G1–G7/shape/status/RUN failure stay deciding on WebKit.
+ */
+const COST_METRIC_ID = /^(?:G8|G9|G10|G11|G12)(?:[.-]|$)/
+
+export function isCostMetricId(id: string): boolean {
+    return COST_METRIC_ID.test(id)
+}
+
+function isCostReason(reason: string): boolean {
+    const id = reason.trim().split(/[\s(]/, 1)[0] ?? ''
+    return isCostMetricId(id)
+}
+
+function isCostFailure(failure: string): boolean {
+    const id = failure.trim().split(/[\s(]/, 1)[0] ?? ''
+    return isCostMetricId(id)
+}
+
+/**
+ * Classifies a full WebKit scene/variant report as cost-only. Every measured
+ * run must fail only on G8–G12: no page/real-twin problem, no leftover
+ * track/hold/clock, and no failing G1–G7/G13/shape/status metric. `RUN` cannot
+ * hide a non-cost failure: a run that fails without a cost signal keeps the
+ * row blocking.
+ */
+export function classifyWebkitCostOnly(scene: SceneReport): boolean {
+    if (scene.status === 'pass' || scene.status === 'pending') return false
+    const blocked = scene.blockedReasons ?? []
+    if (!blocked.every(isCostReason)) return false
+    if (scene.status === 'blocked' && blocked.length === 0) return false
+    const measured = scene.runs.filter((run) => !run.warmup)
+    if (measured.length === 0) return false
+    let anyCost = blocked.length > 0
+    for (const run of measured) {
+        if (run.problems.length > 0) return false
+        const final = run.summary.final
+        if (
+            final.tracks !== 0 ||
+            final.holds !== 0 ||
+            final.clockPending !== 0 ||
+            final.clockSize !== 0
+        ) {
+            return false
+        }
+        let runCost = false
+        for (const metric of [...run.metrics, ...run.shape]) {
+            if (metric.deciding === false || metric.blocked === true) continue
+            if (metric.pass) continue
+            if (!isCostMetricId(metric.id)) return false
+            runCost = true
+        }
+        // G8's real-clock row is the `real` twin. Other real-twin problems are
+        // already in `run.problems`.
+        if (run.real.blocked === true || !run.real.pass) runCost = true
+        if (!run.pass && !runCost) return false
+        anyCost ||= runCost
+    }
+    for (const metric of [...scene.metrics, ...scene.shape]) {
+        if (
+            metric.id === 'RUN' ||
+            metric.deciding === false ||
+            metric.blocked === true ||
+            metric.pass
+        ) {
+            continue
+        }
+        if (!isCostMetricId(metric.id)) return false
+        anyCost = true
+    }
+    return anyCost
+}
+
+/**
+ * The gate-facing classification. The runner's explicit `costOnly` is
+ * authoritative. For callers that do not carry it, be conservative: every
+ * blocked reason and every non-RUN failed metric must be a cost row.
+ */
+export function isWebkitCostOnly(
+    engine: string,
+    scene: CertificationScene
+): boolean {
+    if (engine !== 'webkit') return false
+    if (scene.costOnly !== undefined) return scene.costOnly
+    if (scene.status === 'pass' || scene.status === 'pending') return false
+    const blocked = scene.blockedReasons ?? []
+    if (!blocked.every(isCostReason)) return false
+    const failures = scene.failedMetrics ?? []
+    if (failures.length === 0) return blocked.length > 0
+    return failures.every(isCostFailure)
+}
+
+function costOnlyNote(
+    engine: string,
+    scene: CertificationScene,
+    label: 'scene' | 'variant'
+): string {
+    const detail = [
+        ...(scene.failedMetrics ?? []),
+        ...(scene.blockedReasons ?? []),
+    ].join('; ')
+    return `${engine} ${label} ${scene.scene} cost-only ${scene.status} (D12 advisory; G8–G12)${detail.length > 0 ? `: ${detail}` : ''}`
+}
+
+/**
  * The selected invocation. It deliberately ignores advisory, global P4
  * pending scenes and the certification-only controls/self-tests; those are
  * certification inputs. A selected scene that fails or is pending still fails
@@ -106,6 +219,7 @@ const REQUIRED_VARIANTS = [
  */
 export function evaluateInvocation(input: InvocationInput): InvocationResult {
     const reasons: string[] = []
+    const advisory: string[] = []
     const deciding = input.engines.filter(
         (engine) => engine.engine !== 'firefox'
     )
@@ -116,30 +230,20 @@ export function evaluateInvocation(input: InvocationInput): InvocationResult {
             reasons.push(`${engine.engine} launch error: ${engine.launchError}`)
         }
         for (const scene of engine.scenes) {
-            const costOnly =
-                engine.engine === 'webkit' &&
-                scene.status === 'blocked' &&
-                (scene.blockedReasons ?? []).length > 0 &&
-                (scene.blockedReasons ?? []).every((reason) =>
-                    reason.startsWith('G12')
-                )
-            if (scene.status !== 'pass' && !costOnly) {
-                reasons.push(`${engine.engine} ${scene.scene} ${scene.status}`)
+            if (scene.status === 'pass') continue
+            if (isWebkitCostOnly(engine.engine, scene)) {
+                advisory.push(costOnlyNote(engine.engine, scene, 'scene'))
+                continue
             }
+            reasons.push(`${engine.engine} ${scene.scene} ${scene.status}`)
         }
         for (const variant of engine.variants ?? []) {
-            const blocked = variant.blockedReasons ?? []
-            const costOnly =
-                engine.engine === 'webkit' &&
-                variant.status === 'blocked' &&
-                blocked.length > 0 &&
-                blocked.every((reason) => reason.startsWith('G12'))
-            if (costOnly) continue
-            if (variant.status !== 'pass') {
-                reasons.push(
-                    `${engine.engine} ${variant.scene} ${variant.status}`
-                )
+            if (variant.status === 'pass') continue
+            if (isWebkitCostOnly(engine.engine, variant)) {
+                advisory.push(costOnlyNote(engine.engine, variant, 'variant'))
+                continue
             }
+            reasons.push(`${engine.engine} ${variant.scene} ${variant.status}`)
         }
         if (
             engine.cost &&
@@ -149,7 +253,7 @@ export function evaluateInvocation(input: InvocationInput): InvocationResult {
             reasons.push(`${engine.engine} S-BULK ${engine.cost.status}`)
         }
     }
-    return { pass: reasons.length === 0, reasons }
+    return { pass: reasons.length === 0, reasons, advisory }
 }
 
 export function evaluateCertification(
@@ -210,15 +314,11 @@ export function evaluateCertification(
                 continue
             }
             const blocked = result.blockedReasons ?? []
-            const costOnly =
-                webkit &&
-                result.status === 'blocked' &&
-                blocked.length > 0 &&
-                blocked.every((reason) => reason.startsWith('G12'))
-            if (costOnly) {
-                advisory.push(
-                    `${engineName} variant ${key} G12 cost BLOCK (D12 advisory): ${blocked.join('; ')}`
-                )
+            if (
+                result.status !== 'pass' &&
+                isWebkitCostOnly(engineName, result)
+            ) {
+                advisory.push(costOnlyNote(engineName, result, 'variant'))
                 continue
             }
             if (result.status !== 'pass') {
@@ -234,15 +334,11 @@ export function evaluateCertification(
                 continue
             }
             const blocked = result.blockedReasons ?? []
-            const costOnly =
-                webkit &&
-                result.status === 'blocked' &&
-                blocked.length > 0 &&
-                blocked.every((reason) => reason.startsWith('G12'))
-            if (costOnly) {
-                advisory.push(
-                    `${engineName} scene ${scene} cost BLOCK (D12 advisory): ${blocked.join('; ')}`
-                )
+            if (
+                result.status !== 'pass' &&
+                isWebkitCostOnly(engineName, result)
+            ) {
+                advisory.push(costOnlyNote(engineName, result, 'scene'))
                 continue
             }
             if (result.status !== 'pass')

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { evaluateCertification, evaluateInvocation } from './certification.ts'
+import {
+    classifyWebkitCostOnly,
+    evaluateCertification,
+    evaluateInvocation,
+} from './certification.ts'
+import type { AggregateMetric, RunSceneReport, SceneReport } from './report.ts'
+import type { MetricFinding } from './scoring.ts'
 
 const variantKeys = [
     ...['s-card', 's-photo', 's-acc', 's-seg'].flatMap((scene) =>
@@ -59,6 +65,94 @@ const full = {
     ],
     runs: 5,
 }
+
+const metric = (
+    id: string,
+    overrides: Partial<MetricFinding> = {}
+): MetricFinding => ({
+    id,
+    label: id,
+    gate: 'gate',
+    unit: 'ms',
+    value: 1,
+    pass: true,
+    deciding: true,
+    blocked: false,
+    ...overrides,
+})
+
+const aggregateMetric = (
+    id: string,
+    overrides: Partial<AggregateMetric> = {}
+): AggregateMetric => ({
+    id,
+    label: id,
+    gate: 'gate',
+    unit: 'ms',
+    median: 1,
+    pass: true,
+    blocked: false,
+    deciding: true,
+    perRun: [1],
+    passPerRun: [true],
+    ...overrides,
+})
+
+const runReport = (
+    overrides: Partial<RunSceneReport> = {}
+): RunSceneReport => ({
+    scene: 's-reorder',
+    run: 0,
+    warmup: false,
+    pass: true,
+    costProbe: {
+        participants: 0,
+        movers: 0,
+        engineMedian: 0,
+        floorMedian: 0,
+        ratio: 0,
+    },
+    metrics: [],
+    shape: [],
+    real: {
+        g: 1,
+        gSource: 'reads',
+        frames: 1,
+        p95: 0.5,
+        longFrames: 0,
+        pass: true,
+    },
+    summary: {
+        observations: 0,
+        commits: [],
+        reports: [],
+        settleFrames: [],
+        steadyFrameReads: 0,
+        final: {
+            tracks: 0,
+            holds: 0,
+            clockPending: 0,
+            clockSize: 0,
+            connected: [],
+            diagnostics: [],
+        },
+    },
+    problems: [],
+    ...overrides,
+})
+
+const sceneReport = (overrides: Partial<SceneReport> = {}): SceneReport => ({
+    scene: 's-reorder',
+    status: 'pass',
+    pending: null,
+    blockedReasons: [],
+    pass: true,
+    metrics: [],
+    shape: [],
+    runs: [],
+    notes: [],
+    ...overrides,
+})
 
 test('a complete clean invocation certifies', () => {
     const result = evaluateCertification(clean, full)
@@ -355,7 +449,7 @@ test('H19: a WebKit variant G12 BLOCK is advisory (D12)', () => {
     assert.equal(result.certified, true)
     assert.match(
         result.advisory.join('; '),
-        /s-sheet@rm-jump G12.*D12 advisory/
+        /s-sheet@rm-jump cost-only blocked .*D12 advisory.*G12/
     )
 })
 
@@ -371,6 +465,341 @@ test('H19: an invocation fails when a selected support variant fails', () => {
     const result = evaluateInvocation({ engines: [failing] })
     assert.equal(result.pass, false)
     assert.match(result.reasons.join(';'), /s-photo@rm-jump fail/)
+})
+
+test('D12: a WebKit G8-only failure is classified cost-only', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        metrics: [aggregateMetric('G8', { pass: false, median: 3 })],
+        runs: [
+            runReport({
+                pass: false,
+                metrics: [metric('G8', { pass: false, value: 3 })],
+                real: {
+                    g: 1,
+                    gSource: 'reads',
+                    frames: 11,
+                    p95: 3,
+                    longFrames: 0,
+                    pass: false,
+                },
+            }),
+        ],
+    })
+    assert.equal(classifyWebkitCostOnly(report), true)
+})
+
+test('D12: a WebKit G8+G12 failure is classified cost-only', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        blockedReasons: ['G12 (D11 held cost)'],
+        metrics: [aggregateMetric('G8', { pass: false, median: 3 })],
+        runs: [
+            runReport({
+                pass: false,
+                metrics: [metric('G8', { pass: false, value: 3 })],
+                real: {
+                    g: 1,
+                    gSource: 'reads',
+                    frames: 11,
+                    p95: 3,
+                    longFrames: 0,
+                    pass: false,
+                },
+            }),
+        ],
+    })
+    assert.equal(classifyWebkitCostOnly(report), true)
+})
+
+test('D12: a WebKit G1 failure is not cost-only', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        metrics: [aggregateMetric('G1', { pass: false, median: 3 })],
+        runs: [
+            runReport({
+                pass: false,
+                metrics: [metric('G1', { pass: false, value: 3 })],
+            }),
+        ],
+    })
+    assert.equal(classifyWebkitCostOnly(report), false)
+})
+
+test('D12: a WebKit non-cost problem is not cost-only', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        metrics: [aggregateMetric('G8', { pass: false, median: 3 })],
+        runs: [
+            runReport({
+                pass: false,
+                metrics: [metric('G8', { pass: false, value: 3 })],
+                problems: ['real twin diagnostic: stale'],
+            }),
+        ],
+    })
+    assert.equal(classifyWebkitCostOnly(report), false)
+})
+
+test('D12: a WebKit RUN-only failure with no cost signal is not cost-only', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        runs: [runReport({ pass: false })],
+    })
+    assert.equal(classifyWebkitCostOnly(report), false)
+})
+
+test('D12: a per-run WebKit G8 failure is cost-only even when the aggregate passes', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        metrics: [aggregateMetric('G8', { pass: true, median: 1 })],
+        runs: [
+            runReport(),
+            runReport({
+                run: 1,
+                pass: false,
+                metrics: [metric('G8', { pass: false, value: 3 })],
+                real: {
+                    g: 1,
+                    gSource: 'reads',
+                    frames: 11,
+                    p95: 3,
+                    longFrames: 0,
+                    pass: false,
+                },
+            }),
+        ],
+    })
+    assert.equal(classifyWebkitCostOnly(report), true)
+})
+
+test('D12: a per-run WebKit G1 failure keeps the row blocking', () => {
+    const report = sceneReport({
+        status: 'fail',
+        pass: false,
+        metrics: [aggregateMetric('G1', { pass: true, median: 0.001 })],
+        runs: [
+            runReport(),
+            runReport({
+                run: 1,
+                pass: false,
+                metrics: [metric('G1', { pass: false, value: 3 })],
+            }),
+        ],
+    })
+    assert.equal(classifyWebkitCostOnly(report), false)
+})
+
+test('D12: a non-cost blocked reason keeps a WebKit row blocking', () => {
+    const report = sceneReport({
+        status: 'blocked',
+        pass: false,
+        blockedReasons: ['G12 (D11 held cost)', 'G7 status authority'],
+        runs: [runReport()],
+    })
+    assert.equal(classifyWebkitCostOnly(report), false)
+})
+
+test('D12: a WebKit G8-only failure is advisory and certifies', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'fail' as const,
+                                  failedMetrics: ['G8 3'],
+                                  costOnly: true,
+                              }
+                            : scene
+                    ),
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, true)
+    assert.match(
+        result.advisory.join('; '),
+        /s-reorder cost-only fail.*D12 advisory.*G8 3/
+    )
+    assert.doesNotMatch(result.reasons.join('; '), /s-reorder/)
+})
+
+test('D12: a WebKit G8+G12 failure is advisory and certifies', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'fail' as const,
+                                  failedMetrics: ['G8 3'],
+                                  blockedReasons: ['G12 (D11 held cost)'],
+                                  costOnly: true,
+                              }
+                            : scene
+                    ),
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, true)
+    assert.match(result.advisory.join('; '), /G8 3/)
+    assert.match(result.advisory.join('; '), /G12/)
+})
+
+test('D12: a WebKit G1 failure still blocks certification', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'fail' as const,
+                                  failedMetrics: ['G1 3'],
+                                  costOnly: false,
+                              }
+                            : scene
+                    ),
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /webkit scene s-reorder fail/)
+})
+
+test('D12: a Chromium G8 failure still blocks certification', () => {
+    const chromium = cleanEngine('chromium')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                {
+                    ...chromium,
+                    scenes: chromium.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'fail' as const,
+                                  failedMetrics: ['G8 3'],
+                                  costOnly: true,
+                              }
+                            : scene
+                    ),
+                },
+                cleanEngine('webkit'),
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /chromium scene s-reorder fail/)
+})
+
+test('D12: a WebKit non-cost problem still blocks certification', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateCertification(
+        {
+            ...clean,
+            engines: [
+                cleanEngine('chromium'),
+                {
+                    ...webkit,
+                    scenes: webkit.scenes.map((scene) =>
+                        scene.scene === 's-reorder'
+                            ? {
+                                  scene: 's-reorder',
+                                  status: 'fail' as const,
+                                  failedMetrics: [
+                                      'RUN real twin diagnostic: stale',
+                                  ],
+                                  costOnly: false,
+                              }
+                            : scene
+                    ),
+                },
+            ],
+        },
+        full
+    )
+    assert.equal(result.certified, false)
+    assert.match(result.reasons.join(';'), /webkit scene s-reorder fail/)
+})
+
+test('D12: invocation ignores a WebKit G8-only failure and records it', () => {
+    const webkit = cleanEngine('webkit')
+    const result = evaluateInvocation({
+        engines: [
+            cleanEngine('chromium'),
+            {
+                ...webkit,
+                scenes: webkit.scenes.map((scene) =>
+                    scene.scene === 's-reorder'
+                        ? {
+                              scene: 's-reorder',
+                              status: 'fail' as const,
+                              failedMetrics: ['G8 3'],
+                              costOnly: true,
+                          }
+                        : scene
+                ),
+            },
+        ],
+    })
+    assert.equal(result.pass, true)
+    assert.deepEqual(result.reasons, [])
+    assert.match(result.advisory.join('; '), /s-reorder cost-only fail/)
+})
+
+test('D12: invocation still fails a Chromium G8 failure', () => {
+    const chromium = cleanEngine('chromium')
+    const result = evaluateInvocation({
+        engines: [
+            {
+                ...chromium,
+                scenes: chromium.scenes.map((scene) =>
+                    scene.scene === 's-reorder'
+                        ? {
+                              scene: 's-reorder',
+                              status: 'fail' as const,
+                              failedMetrics: ['G8 3'],
+                              costOnly: true,
+                          }
+                        : scene
+                ),
+            },
+        ],
+    })
+    assert.equal(result.pass, false)
+    assert.match(result.reasons.join(';'), /chromium s-reorder fail/)
 })
 
 test('D12: a WebKit cost BLOCK is advisory when every WebKit frame row passes', () => {
@@ -399,7 +828,10 @@ test('D12: a WebKit cost BLOCK is advisory when every WebKit frame row passes', 
     )
     assert.equal(result.certified, true)
     assert.deepEqual(result.reasons, [])
-    assert.match(result.advisory.join('; '), /G12.*D12 advisory/)
+    assert.match(
+        result.advisory.join('; '),
+        /cost-only blocked .*D12 advisory.*G12/
+    )
     assert.match(result.advisory.join('; '), /S-BULK cost blocked/)
 })
 
