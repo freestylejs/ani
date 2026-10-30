@@ -1,0 +1,994 @@
+[17:39:15 +4.4s] chromium: negative controls start
+[17:39:15 +4.4s] chromium controls: launch chromium
+[17:39:15 +4.9s] chromium controls: launch chromium ok (140.0.7339.16)
+[17:39:15 +4.9s] chromium controls primary s-card: open page 390x844@2
+[17:39:16 +5.4s] chromium controls primary s-card: page ready
+[17:39:16 +5.4s] chromium controls primary: evaluate manual s-card
+[17:39:16 +5.9s] chromium controls primary: manual s-card ok
+[17:39:16 +5.9s] chromium controls primary s-card: context close
+[17:39:16 +5.9s] chromium controls primary s-card: context close ok
+[17:39:16 +5.9s] chromium controls: score primary s-card|primary
+[17:40:31 +80.4s] chromium controls primary s-seg: open page 390x844@2
+[17:40:31 +80.7s] chromium controls primary s-seg: page ready
+[17:40:31 +80.7s] chromium controls primary: evaluate manual s-seg
+[17:40:31 +80.7s] chromium controls primary: manual s-seg ok
+[17:40:31 +80.7s] chromium controls primary s-seg: context close
+[17:40:31 +80.7s] chromium controls primary s-seg: context close ok
+[17:40:31 +80.7s] chromium controls: score primary s-seg|primary
+[17:40:31 +80.7s] chromium controls primary s-photo: open page 390x844@2
+[17:40:32 +81.0s] chromium controls primary s-photo: page ready
+[17:40:32 +81.0s] chromium controls primary: evaluate manual s-photo
+[17:40:36 +85.9s] chromium controls primary: manual s-photo ok
+[17:40:36 +85.9s] chromium controls primary s-photo: context close
+[17:40:36 +85.9s] chromium controls primary s-photo: context close ok
+[17:40:36 +85.9s] chromium controls: score primary s-photo|primary
+[17:40:37 +86.1s] chromium controls primary s-acc: open page 390x844@2
+[17:40:37 +86.4s] chromium controls primary s-acc: page ready
+[17:40:37 +86.4s] chromium controls primary: evaluate manual s-acc
+[17:40:38 +86.9s] chromium controls primary: manual s-acc ok
+[17:40:38 +86.9s] chromium controls primary s-acc: context close
+[17:40:38 +87.0s] chromium controls primary s-acc: context close ok
+[17:40:38 +87.0s] chromium controls: score primary s-acc|primary
+[17:40:38 +87.0s] chromium controls primary s-stack: open page 390x844@2
+[17:40:38 +87.3s] chromium controls primary s-stack: page ready
+[17:40:38 +87.3s] chromium controls primary: evaluate manual s-stack
+[17:40:38 +87.6s] chromium controls primary: manual s-stack ok
+[17:40:38 +87.6s] chromium controls primary s-stack: context close
+[17:40:38 +87.6s] chromium controls primary s-stack: context close ok
+[17:40:38 +87.6s] chromium controls: score primary s-stack|primary
+[17:40:38 +87.6s] chromium controls primary s-island: open page 390x844@2
+[17:40:38 +87.8s] chromium controls primary s-island: page ready
+[17:40:38 +87.8s] chromium controls primary: evaluate manual s-island
+[17:40:39 +87.9s] chromium controls primary: manual s-island ok
+[17:40:39 +87.9s] chromium controls primary s-island: context close
+[17:40:39 +88.0s] chromium controls primary s-island: context close ok
+[17:40:39 +88.0s] chromium controls: score primary s-island|primary
+[17:40:42 +91.9s] chromium controls primary s-insert: open page 390x844@2
+[17:40:43 +92.3s] chromium controls primary s-insert: page ready
+[17:40:43 +92.3s] chromium controls primary: evaluate manual s-insert
+[17:40:43 +92.5s] chromium controls primary: manual s-insert ok
+[17:40:43 +92.5s] chromium controls primary s-insert: context close
+[17:40:43 +92.5s] chromium controls primary s-insert: context close ok
+[17:40:43 +92.5s] chromium controls: score primary s-insert|primary
+[17:40:43 +92.5s] chromium controls primary s-delete: open page 390x844@2
+[17:40:43 +92.9s] chromium controls primary s-delete: page ready
+[17:40:43 +92.9s] chromium controls primary: evaluate manual s-delete
+[17:40:44 +93.1s] chromium controls primary: manual s-delete ok
+[17:40:44 +93.1s] chromium controls primary s-delete: context close
+[17:40:44 +93.1s] chromium controls primary s-delete: context close ok
+[17:40:44 +93.1s] chromium controls: score primary s-delete|primary
+[17:40:44 +93.1s] chromium controls primary s-reorder: open page 390x844@2
+[17:40:44 +93.4s] chromium controls primary s-reorder: page ready
+[17:40:44 +93.4s] chromium controls primary: evaluate manual s-reorder
+[17:40:44 +93.5s] chromium controls primary: manual s-reorder ok
+[17:40:44 +93.5s] chromium controls primary s-reorder: context close
+[17:40:44 +93.5s] chromium controls primary s-reorder: context close ok
+[17:40:44 +93.5s] chromium controls: score primary s-reorder|primary
+[17:40:44 +93.5s] chromium controls primary s-sheet: open page 390x844@2
+[17:40:44 +93.9s] chromium controls primary s-sheet: page ready
+[17:40:44 +93.9s] chromium controls primary: evaluate manual s-sheet
+[17:40:45 +93.9s] chromium controls primary: manual s-sheet ok
+[17:40:45 +93.9s] chromium controls primary s-sheet: context close
+[17:40:45 +93.9s] chromium controls primary s-sheet: context close ok
+[17:40:45 +93.9s] chromium controls: score primary s-sheet|primary
+[17:40:45 +94.0s] chromium controls primary s-bulk: open page 1280x720@1
+[17:40:45 +94.4s] chromium controls primary s-bulk: page ready
+[17:40:45 +94.4s] chromium controls primary: evaluate manual s-bulk
+[17:40:53 +102.4s] chromium controls primary: manual s-bulk ok
+[17:40:53 +102.4s] chromium controls primary s-bulk: context close
+[17:40:53 +102.4s] chromium controls primary s-bulk: context close ok
+[17:40:53 +102.4s] chromium controls: score primary s-bulk|primary
+[17:40:54 +103.4s] chromium controls primary s-card@dpr1: open page 390x844@1
+[17:40:54 +103.9s] chromium controls primary s-card@dpr1: page ready
+[17:40:54 +103.9s] chromium controls primary: evaluate manual s-card@dpr1
+[17:40:55 +104.1s] chromium controls primary: manual s-card@dpr1 ok
+[17:40:55 +104.1s] chromium controls primary s-card@dpr1: context close
+[17:40:55 +104.1s] chromium controls primary s-card@dpr1: context close ok
+[17:40:55 +104.1s] chromium controls: score primary s-card|dpr1
+[17:41:39 +148.5s] chromium controls primary s-photo@dpr3: open page 390x844@3
+[17:41:39 +148.7s] chromium controls primary s-photo@dpr3: page ready
+[17:41:39 +148.7s] chromium controls primary: evaluate manual s-photo@dpr3
+[17:41:43 +152.8s] chromium controls primary: manual s-photo@dpr3 ok
+[17:41:43 +152.8s] chromium controls primary s-photo@dpr3: context close
+[17:41:43 +152.8s] chromium controls primary s-photo@dpr3: context close ok
+[17:41:43 +152.8s] chromium controls: score primary s-photo|dpr3
+[17:41:44 +152.9s] chromium controls primary s-acc@dpr1: open page 390x844@1
+[17:41:44 +153.1s] chromium controls primary s-acc@dpr1: page ready
+[17:41:44 +153.1s] chromium controls primary: evaluate manual s-acc@dpr1
+[17:41:44 +153.5s] chromium controls primary: manual s-acc@dpr1 ok
+[17:41:44 +153.5s] chromium controls primary s-acc@dpr1: context close
+[17:41:44 +153.5s] chromium controls primary s-acc@dpr1: context close ok
+[17:41:44 +153.5s] chromium controls: score primary s-acc|dpr1
+[17:41:44 +153.6s] chromium controls primary s-seg@dpr3: open page 390x844@3
+[17:41:44 +153.8s] chromium controls primary s-seg@dpr3: page ready
+[17:41:44 +153.8s] chromium controls primary: evaluate manual s-seg@dpr3
+[17:41:44 +153.8s] chromium controls primary: manual s-seg@dpr3 ok
+[17:41:44 +153.8s] chromium controls primary s-seg@dpr3: context close
+[17:41:44 +153.8s] chromium controls primary s-seg@dpr3: context close ok
+[17:41:44 +153.8s] chromium controls: score primary s-seg|dpr3
+[17:41:44 +153.8s] chromium controls primary s-card@rm-jump: open page 390x844@2
+[17:41:45 +154.1s] chromium controls primary s-card@rm-jump: page ready
+[17:41:45 +154.1s] chromium controls primary: evaluate manual s-card@rm-jump
+[17:41:45 +154.1s] chromium controls primary: manual s-card@rm-jump ok
+[17:41:45 +154.1s] chromium controls primary s-card@rm-jump: context close
+[17:41:45 +154.1s] chromium controls primary s-card@rm-jump: context close ok
+[17:41:45 +154.1s] chromium controls: score primary s-card|rm-jump
+[17:41:45 +154.1s] chromium controls primary s-photo@rm-jump: open page 390x844@2
+[17:41:45 +154.3s] chromium controls primary s-photo@rm-jump: page ready
+[17:41:45 +154.3s] chromium controls primary: evaluate manual s-photo@rm-jump
+[17:41:46 +155.5s] chromium controls primary: manual s-photo@rm-jump ok
+[17:41:46 +155.5s] chromium controls primary s-photo@rm-jump: context close
+[17:41:46 +155.5s] chromium controls primary s-photo@rm-jump: context close ok
+[17:41:46 +155.5s] chromium controls: score primary s-photo|rm-jump
+[17:41:46 +155.5s] chromium controls primary s-acc@rm-max: open page 390x844@2
+[17:41:46 +155.7s] chromium controls primary s-acc@rm-max: page ready
+[17:41:46 +155.7s] chromium controls primary: evaluate manual s-acc@rm-max
+[17:41:47 +156.0s] chromium controls primary: manual s-acc@rm-max ok
+[17:41:47 +156.0s] chromium controls primary s-acc@rm-max: context close
+[17:41:47 +156.0s] chromium controls primary s-acc@rm-max: context close ok
+[17:41:47 +156.0s] chromium controls: score primary s-acc|rm-max
+[17:41:47 +156.3s] chromium controls primary s-reorder@rm-jump: open page 390x844@2
+[17:41:47 +156.5s] chromium controls primary s-reorder@rm-jump: page ready
+[17:41:47 +156.5s] chromium controls primary: evaluate manual s-reorder@rm-jump
+[17:41:47 +156.6s] chromium controls primary: manual s-reorder@rm-jump ok
+[17:41:47 +156.6s] chromium controls primary s-reorder@rm-jump: context close
+[17:41:47 +156.6s] chromium controls primary s-reorder@rm-jump: context close ok
+[17:41:47 +156.6s] chromium controls: score primary s-reorder|rm-jump
+[17:41:47 +156.6s] chromium controls primary s-sheet@rm-max: open page 390x844@2
+[17:41:47 +156.8s] chromium controls primary s-sheet@rm-max: page ready
+[17:41:47 +156.8s] chromium controls primary: evaluate manual s-sheet@rm-max
+[17:41:47 +156.9s] chromium controls primary: manual s-sheet@rm-max ok
+[17:41:47 +156.9s] chromium controls primary s-sheet@rm-max: context close
+[17:41:47 +156.9s] chromium controls primary s-sheet@rm-max: context close ok
+[17:41:47 +156.9s] chromium controls: score primary s-sheet|rm-max
+[17:41:47 +156.9s] chromium controls primary s-photo@rm-ignore: open page 390x844@2
+[17:41:48 +157.1s] chromium controls primary s-photo@rm-ignore: page ready
+[17:41:48 +157.1s] chromium controls primary: evaluate manual s-photo@rm-ignore
+[17:41:53 +162.1s] chromium controls primary: manual s-photo@rm-ignore ok
+[17:41:53 +162.1s] chromium controls primary s-photo@rm-ignore: context close
+[17:41:53 +162.1s] chromium controls primary s-photo@rm-ignore: context close ok
+[17:41:53 +162.1s] chromium controls: score primary s-photo|rm-ignore
+[17:41:53 +162.3s] chromium controls s-card: open page 390x844@2
+[17:41:53 +162.5s] chromium controls s-card: page ready
+[17:41:53 +162.5s] chromium controls: evaluate manual s-card
+[17:41:53 +162.7s] chromium controls: manual s-card ok
+[17:41:53 +162.7s] chromium controls s-card: context close
+[17:41:53 +162.7s] chromium controls s-card: context close ok
+[17:41:53 +162.7s] chromium controls: score card-no-image-id
+[17:42:29 +198.1s] chromium controls s-card: open page 390x844@2
+[17:42:29 +198.5s] chromium controls s-card: page ready
+[17:42:29 +198.5s] chromium controls: evaluate manual s-card
+[17:42:29 +198.7s] chromium controls: manual s-card ok
+[17:42:29 +198.7s] chromium controls s-card: context close
+[17:42:29 +198.7s] chromium controls s-card: context close ok
+[17:42:29 +198.7s] chromium controls: score card-no-inert
+[17:43:07 +236.8s] chromium controls s-card: open page 390x844@2
+[17:43:08 +237.2s] chromium controls s-card: page ready
+[17:43:08 +237.2s] chromium controls: evaluate manual s-card
+[17:43:08 +237.3s] chromium controls: manual s-card ok
+[17:43:08 +237.3s] chromium controls s-card: context close
+[17:43:08 +237.3s] chromium controls s-card: context close ok
+[17:43:08 +237.3s] chromium controls: score card-image-offset
+[17:44:20 +309.8s] chromium controls s-card: open page 390x844@2
+[17:44:21 +310.1s] chromium controls s-card: page ready
+[17:44:21 +310.1s] chromium controls: evaluate manual s-card
+[17:44:21 +310.3s] chromium controls: manual s-card ok
+[17:44:21 +310.3s] chromium controls s-card: context close
+[17:44:21 +310.3s] chromium controls s-card: context close ok
+[17:44:21 +310.3s] chromium controls: score card-focus-follower
+[17:45:01 +350.9s] chromium controls s-seg: open page 390x844@2
+[17:45:02 +351.2s] chromium controls s-seg: page ready
+[17:45:02 +351.2s] chromium controls: evaluate manual s-seg
+[17:45:02 +351.2s] chromium controls: manual s-seg ok
+[17:45:02 +351.2s] chromium controls s-seg: context close
+[17:45:02 +351.3s] chromium controls s-seg: context close ok
+[17:45:02 +351.3s] chromium controls: score seg-rest-retarget
+[17:45:02 +351.3s] chromium controls s-seg: open page 390x844@2
+[17:45:02 +351.5s] chromium controls s-seg: page ready
+[17:45:02 +351.5s] chromium controls: evaluate manual s-seg
+[17:45:02 +351.6s] chromium controls: manual s-seg ok
+[17:45:02 +351.6s] chromium controls s-seg: context close
+[17:45:02 +351.6s] chromium controls s-seg: context close ok
+[17:45:02 +351.6s] chromium controls: score seg-jump-from-A
+[17:45:02 +351.6s] chromium controls s-seg: open page 390x844@2
+[17:45:02 +351.9s] chromium controls s-seg: page ready
+[17:45:02 +351.9s] chromium controls: evaluate manual s-seg
+[17:45:03 +351.9s] chromium controls: manual s-seg ok
+[17:45:03 +351.9s] chromium controls s-seg: context close
+[17:45:03 +351.9s] chromium controls s-seg: context close ok
+[17:45:03 +351.9s] chromium controls: score seg-leftover-pose
+[17:45:03 +351.9s] chromium controls s-photo: open page 390x844@2
+[17:45:03 +352.3s] chromium controls s-photo: page ready
+[17:45:03 +352.3s] chromium controls: evaluate manual s-photo
+[17:45:09 +358.3s] chromium controls: manual s-photo ok
+[17:45:09 +358.3s] chromium controls s-photo: context close
+[17:45:09 +358.3s] chromium controls s-photo: context close ok
+[17:45:09 +358.3s] chromium controls: score photo-no-counter-scale
+[17:45:09 +358.5s] chromium controls s-acc: open page 390x844@2
+[17:45:09 +358.8s] chromium controls s-acc: page ready
+[17:45:09 +358.8s] chromium controls: evaluate manual s-acc
+[17:45:10 +359.2s] chromium controls: manual s-acc ok
+[17:45:10 +359.2s] chromium controls s-acc: context close
+[17:45:10 +359.2s] chromium controls s-acc: context close ok
+[17:45:10 +359.2s] chromium controls: score acc-separator-1px
+[17:45:10 +359.3s] chromium controls s-stack: open page 390x844@2
+[17:45:10 +359.6s] chromium controls s-stack: page ready
+[17:45:10 +359.6s] chromium controls: evaluate manual s-stack
+[17:45:10 +359.9s] chromium controls: manual s-stack ok
+[17:45:10 +359.9s] chromium controls s-stack: context close
+[17:45:10 +359.9s] chromium controls s-stack: context close ok
+[17:45:10 +359.9s] chromium controls: score stack-badge-nonparticipant
+[17:45:11 +360.0s] chromium controls s-island: open page 390x844@2
+[17:45:11 +360.3s] chromium controls s-island: page ready
+[17:45:11 +360.3s] chromium controls: evaluate manual s-island
+[17:45:11 +360.4s] chromium controls: manual s-island ok
+[17:45:11 +360.4s] chromium controls s-island: context close
+[17:45:11 +360.4s] chromium controls s-island: context close ok
+[17:45:11 +360.4s] chromium controls: score island-snap-reverse
+[17:45:16 +365.7s] chromium controls s-insert: open page 390x844@2
+[17:45:17 +366.1s] chromium controls s-insert: page ready
+[17:45:17 +366.1s] chromium controls: evaluate manual s-insert
+[17:45:17 +366.6s] chromium controls: manual s-insert ok
+[17:45:17 +366.6s] chromium controls s-insert: context close
+[17:45:17 +366.6s] chromium controls s-insert: context close ok
+[17:45:17 +366.6s] chromium controls: score insert-no-presence
+[17:45:17 +366.6s] chromium controls s-delete: open page 390x844@2
+[17:45:17 +366.8s] chromium controls s-delete: page ready
+[17:45:17 +366.8s] chromium controls: evaluate manual s-delete
+[17:45:18 +367.0s] chromium controls: manual s-delete ok
+[17:45:18 +367.0s] chromium controls s-delete: context close
+[17:45:18 +367.1s] chromium controls s-delete: context close ok
+[17:45:18 +367.1s] chromium controls: score delete-no-lift
+[17:45:18 +367.1s] chromium controls s-photo: open page 390x844@2
+[17:45:18 +367.4s] chromium controls s-photo: page ready
+[17:45:18 +367.4s] chromium controls: evaluate manual s-photo
+[17:45:28 +377.6s] chromium controls: manual s-photo ok
+[17:45:28 +377.6s] chromium controls s-photo: context close
+[17:45:28 +377.6s] chromium controls s-photo: context close ok
+[17:45:28 +377.6s] chromium controls: score photo-leftover-pose
+[17:45:28 +377.9s] chromium controls s-photo: open page 390x844@2
+[17:45:29 +378.3s] chromium controls s-photo: page ready
+[17:45:29 +378.3s] chromium controls: evaluate manual s-photo
+[17:45:38 +387.5s] chromium controls: manual s-photo ok
+[17:45:38 +387.5s] chromium controls s-photo: context close
+[17:45:38 +387.5s] chromium controls s-photo: context close ok
+[17:45:38 +387.5s] chromium controls: score photo-extra-read
+[17:45:38 +387.9s] chromium controls s-acc: open page 390x844@2
+[17:45:39 +388.1s] chromium controls s-acc: page ready
+[17:45:39 +388.1s] chromium controls: evaluate manual s-acc
+[17:45:39 +388.9s] chromium controls: manual s-acc ok
+[17:45:39 +388.9s] chromium controls s-acc: context close
+[17:45:40 +389.0s] chromium controls s-acc: context close ok
+[17:45:40 +389.0s] chromium controls: score acc-leftover-pose
+[17:45:40 +389.4s] chromium controls s-acc: open page 390x844@2
+[17:45:40 +389.8s] chromium controls s-acc: page ready
+[17:45:40 +389.8s] chromium controls: evaluate manual s-acc
+[17:45:41 +390.8s] chromium controls: manual s-acc ok
+[17:45:41 +390.8s] chromium controls s-acc: context close
+[17:45:41 +390.8s] chromium controls s-acc: context close ok
+[17:45:41 +390.8s] chromium controls: score acc-extra-read
+[17:45:42 +391.0s] chromium controls s-insert: open page 390x844@2
+[17:45:42 +391.4s] chromium controls s-insert: page ready
+[17:45:42 +391.4s] chromium controls: evaluate manual s-insert
+[17:45:42 +391.6s] chromium controls: manual s-insert ok
+[17:45:42 +391.6s] chromium controls s-insert: context close
+[17:45:42 +391.6s] chromium controls s-insert: context close ok
+[17:45:42 +391.6s] chromium controls: score insert-leftover-pose
+[17:45:42 +391.6s] chromium controls s-insert: open page 390x844@2
+[17:45:42 +391.9s] chromium controls s-insert: page ready
+[17:45:42 +391.9s] chromium controls: evaluate manual s-insert
+[17:45:43 +392.1s] chromium controls: manual s-insert ok
+[17:45:43 +392.1s] chromium controls s-insert: context close
+[17:45:43 +392.2s] chromium controls s-insert: context close ok
+[17:45:43 +392.2s] chromium controls: score insert-extra-read
+[17:45:43 +392.2s] chromium controls s-stack: open page 390x844@2
+[17:45:43 +392.5s] chromium controls s-stack: page ready
+[17:45:43 +392.5s] chromium controls: evaluate manual s-stack
+[17:45:44 +393.1s] chromium controls: manual s-stack ok
+[17:45:44 +393.1s] chromium controls s-stack: context close
+[17:45:44 +393.1s] chromium controls s-stack: context close ok
+[17:45:44 +393.1s] chromium controls: score stack-extra-read
+[17:45:44 +393.2s] chromium controls s-stack: open page 390x844@2
+[17:45:44 +393.6s] chromium controls s-stack: page ready
+[17:45:44 +393.6s] chromium controls: evaluate manual s-stack
+[17:45:45 +394.0s] chromium controls: manual s-stack ok
+[17:45:45 +394.0s] chromium controls s-stack: context close
+[17:45:45 +394.0s] chromium controls s-stack: context close ok
+[17:45:45 +394.0s] chromium controls: score stack-leftover-pose
+[17:45:45 +394.1s] chromium controls s-stack: open page 390x844@2
+[17:45:45 +394.6s] chromium controls s-stack: page ready
+[17:45:45 +394.6s] chromium controls: evaluate manual s-stack
+[17:45:46 +395.0s] chromium controls: manual s-stack ok
+[17:45:46 +395.0s] chromium controls s-stack: context close
+[17:45:46 +395.0s] chromium controls s-stack: context close ok
+[17:45:46 +395.0s] chromium controls: score stack-no-badge-scale
+[17:45:46 +395.1s] chromium controls s-island: open page 390x844@2
+[17:45:47 +396.1s] chromium controls s-island: page ready
+[17:45:47 +396.1s] chromium controls: evaluate manual s-island
+[17:45:47 +396.2s] chromium controls: manual s-island ok
+[17:45:47 +396.2s] chromium controls s-island: context close
+[17:45:47 +396.2s] chromium controls s-island: context close ok
+[17:45:47 +396.2s] chromium controls: score island-extra-read
+[17:45:54 +403.6s] chromium controls s-delete: open page 390x844@2
+[17:45:55 +404.0s] chromium controls s-delete: page ready
+[17:45:55 +404.0s] chromium controls: evaluate manual s-delete
+[17:45:55 +404.3s] chromium controls: manual s-delete ok
+[17:45:55 +404.3s] chromium controls s-delete: context close
+[17:45:55 +404.4s] chromium controls s-delete: context close ok
+[17:45:55 +404.4s] chromium controls: score delete-extra-read
+[17:45:55 +404.4s] chromium controls s-reorder: open page 390x844@2
+[17:45:55 +404.8s] chromium controls s-reorder: page ready
+[17:45:55 +404.8s] chromium controls: evaluate manual s-reorder
+[17:45:56 +405.0s] chromium controls: manual s-reorder ok
+[17:45:56 +405.0s] chromium controls s-reorder: context close
+[17:45:56 +405.1s] chromium controls s-reorder: context close ok
+[17:45:56 +405.1s] chromium controls: score reorder-kill-switch-skip
+[17:45:56 +405.1s] chromium controls s-reorder: open page 390x844@2
+[17:45:56 +405.5s] chromium controls s-reorder: page ready
+[17:45:56 +405.5s] chromium controls: evaluate manual s-reorder
+[17:45:56 +405.7s] chromium controls: manual s-reorder ok
+[17:45:56 +405.7s] chromium controls s-reorder: context close
+[17:45:56 +405.7s] chromium controls s-reorder: context close ok
+[17:45:56 +405.7s] chromium controls: score reorder-extra-read
+[17:45:56 +405.8s] chromium controls s-reorder: open page 390x844@2
+[17:45:57 +406.2s] chromium controls s-reorder: page ready
+[17:45:57 +406.2s] chromium controls: evaluate manual s-reorder
+[17:45:57 +406.3s] chromium controls: manual s-reorder ok
+[17:45:57 +406.3s] chromium controls s-reorder: context close
+[17:45:57 +406.3s] chromium controls s-reorder: context close ok
+[17:45:57 +406.3s] chromium controls: score reorder-no-rebase
+[17:45:57 +406.3s] chromium controls s-reorder: open page 390x844@2
+[17:45:57 +406.6s] chromium controls s-reorder: page ready
+[17:45:57 +406.6s] chromium controls: evaluate manual s-reorder
+[17:45:57 +406.8s] chromium controls: manual s-reorder ok
+[17:45:57 +406.8s] chromium controls s-reorder: context close
+[17:45:57 +406.8s] chromium controls s-reorder: context close ok
+[17:45:57 +406.8s] chromium controls: score reorder-cancel-instead
+[17:45:57 +406.8s] chromium controls s-sheet: open page 390x844@2
+[17:45:58 +407.2s] chromium controls s-sheet: page ready
+[17:45:58 +407.2s] chromium controls: evaluate manual s-sheet
+[17:45:58 +407.4s] chromium controls: manual s-sheet ok
+[17:45:58 +407.4s] chromium controls s-sheet: context close
+[17:45:58 +407.4s] chromium controls s-sheet: context close ok
+[17:45:58 +407.4s] chromium controls: score sheet-medium-detent
+[17:45:58 +407.4s] chromium controls s-sheet: open page 390x844@2
+[17:45:58 +407.7s] chromium controls s-sheet: page ready
+[17:45:58 +407.7s] chromium controls: evaluate manual s-sheet
+[17:45:58 +407.8s] chromium controls: manual s-sheet ok
+[17:45:58 +407.8s] chromium controls s-sheet: context close
+[17:45:58 +407.8s] chromium controls s-sheet: context close ok
+[17:45:58 +407.8s] chromium controls: score sheet-release-jump
+[17:45:58 +407.8s] chromium controls s-sheet: open page 390x844@2
+[17:45:59 +408.2s] chromium controls s-sheet: page ready
+[17:45:59 +408.2s] chromium controls: evaluate manual s-sheet
+[17:45:59 +408.3s] chromium controls: manual s-sheet ok
+[17:45:59 +408.3s] chromium controls s-sheet: context close
+[17:45:59 +408.3s] chromium controls s-sheet: context close ok
+[17:45:59 +408.3s] chromium controls: score sheet-extra-read
+[17:45:59 +408.3s] chromium controls s-sheet: open page 390x844@2
+[17:45:59 +408.7s] chromium controls s-sheet: page ready
+[17:45:59 +408.7s] chromium controls: evaluate manual s-sheet
+[17:45:59 +408.8s] chromium controls: manual s-sheet ok
+[17:45:59 +408.8s] chromium controls s-sheet: context close
+[17:45:59 +408.8s] chromium controls s-sheet: context close ok
+[17:45:59 +408.8s] chromium controls: score sheet-cancel-instead
+[17:45:59 +408.8s] chromium controls s-bulk: open page 1280x720@1
+[17:46:00 +409.2s] chromium controls s-bulk: page ready
+[17:46:00 +409.2s] chromium controls: evaluate manual s-bulk
+[17:46:08 +416.9s] chromium controls: manual s-bulk ok
+[17:46:08 +416.9s] chromium controls s-bulk: context close
+[17:46:08 +416.9s] chromium controls s-bulk: context close ok
+[17:46:08 +416.9s] chromium controls: score bulk-target-offset
+[17:46:09 +417.9s] chromium controls s-bulk: open page 1280x720@1
+[17:46:09 +418.2s] chromium controls s-bulk: page ready
+[17:46:09 +418.2s] chromium controls: evaluate manual s-bulk
+[17:46:15 +424.0s] chromium controls: manual s-bulk ok
+[17:46:15 +424.0s] chromium controls s-bulk: context close
+[17:46:15 +424.0s] chromium controls s-bulk: context close ok
+[17:46:15 +424.0s] chromium controls: score bulk-extra-read
+[17:46:15 +424.8s] chromium controls s-bulk: open page 1280x720@1
+[17:46:16 +425.0s] chromium controls s-bulk: page ready
+[17:46:16 +425.0s] chromium controls: evaluate manual s-bulk
+[17:46:21 +430.9s] chromium controls: manual s-bulk ok
+[17:46:21 +430.9s] chromium controls s-bulk: context close
+[17:46:21 +430.9s] chromium controls s-bulk: context close ok
+[17:46:21 +430.9s] chromium controls: score bulk-leftover-pose
+[17:46:22 +431.7s] chromium controls s-card@dpr1: open page 390x844@1
+[17:46:23 +432.0s] chromium controls s-card@dpr1: page ready
+[17:46:23 +432.0s] chromium controls: evaluate manual s-card@dpr1
+[17:46:23 +432.1s] chromium controls: manual s-card@dpr1 ok
+[17:46:23 +432.1s] chromium controls s-card@dpr1: context close
+[17:46:23 +432.1s] chromium controls s-card@dpr1: context close ok
+[17:46:23 +432.1s] chromium controls: score dpr1-card-no-image-id
+[17:47:04 +473.0s] chromium controls s-photo@dpr3: open page 390x844@3
+[17:47:04 +473.3s] chromium controls s-photo@dpr3: page ready
+[17:47:04 +473.3s] chromium controls: evaluate manual s-photo@dpr3
+[17:47:12 +481.0s] chromium controls: manual s-photo@dpr3 ok
+[17:47:12 +481.0s] chromium controls s-photo@dpr3: context close
+[17:47:12 +481.0s] chromium controls s-photo@dpr3: context close ok
+[17:47:12 +481.0s] chromium controls: score dpr3-photo-no-counter-scale
+[17:47:12 +481.2s] chromium controls s-acc@dpr1: open page 390x844@1
+[17:47:12 +481.5s] chromium controls s-acc@dpr1: page ready
+[17:47:12 +481.5s] chromium controls: evaluate manual s-acc@dpr1
+[17:47:13 +482.1s] chromium controls: manual s-acc@dpr1 ok
+[17:47:13 +482.1s] chromium controls s-acc@dpr1: context close
+[17:47:13 +482.1s] chromium controls s-acc@dpr1: context close ok
+[17:47:13 +482.1s] chromium controls: score dpr1-acc-separator-1px
+[17:47:13 +482.2s] chromium controls s-seg@dpr3: open page 390x844@3
+[17:47:13 +482.6s] chromium controls s-seg@dpr3: page ready
+[17:47:13 +482.6s] chromium controls: evaluate manual s-seg@dpr3
+[17:47:13 +482.7s] chromium controls: manual s-seg@dpr3 ok
+[17:47:13 +482.7s] chromium controls s-seg@dpr3: context close
+[17:47:13 +482.7s] chromium controls s-seg@dpr3: context close ok
+[17:47:13 +482.7s] chromium controls: score dpr3-seg-leftover-pose
+[17:47:13 +482.7s] chromium controls s-card@rm-jump: open page 390x844@2
+[17:47:14 +483.0s] chromium controls s-card@rm-jump: page ready
+[17:47:14 +483.0s] chromium controls: evaluate manual s-card@rm-jump
+[17:47:14 +483.1s] chromium controls: manual s-card@rm-jump ok
+[17:47:14 +483.1s] chromium controls s-card@rm-jump: context close
+[17:47:14 +483.1s] chromium controls s-card@rm-jump: context close ok
+[17:47:14 +483.1s] chromium controls: score rm-jump-card-policy-ignored
+[17:47:14 +483.1s] chromium controls s-photo@rm-jump: open page 390x844@2
+[17:47:14 +483.4s] chromium controls s-photo@rm-jump: page ready
+[17:47:14 +483.4s] chromium controls: evaluate manual s-photo@rm-jump
+[17:47:19 +488.6s] chromium controls: manual s-photo@rm-jump ok
+[17:47:19 +488.6s] chromium controls s-photo@rm-jump: context close
+[17:47:19 +488.6s] chromium controls s-photo@rm-jump: context close ok
+[17:47:19 +488.6s] chromium controls: score rm-jump-photo-policy-ignored
+[17:47:19 +488.8s] chromium controls s-acc@rm-max: open page 390x844@2
+[17:47:20 +489.1s] chromium controls s-acc@rm-max: page ready
+[17:47:20 +489.1s] chromium controls: evaluate manual s-acc@rm-max
+[17:47:20 +489.7s] chromium controls: manual s-acc@rm-max ok
+[17:47:20 +489.7s] chromium controls s-acc@rm-max: context close
+[17:47:20 +489.7s] chromium controls s-acc@rm-max: context close ok
+[17:47:21 +490.0s] chromium controls: score rm-max-acc-unclamped
+[17:47:21 +490.0s] chromium controls s-reorder@rm-jump: open page 390x844@2
+[17:47:21 +490.2s] chromium controls s-reorder@rm-jump: page ready
+[17:47:21 +490.2s] chromium controls: evaluate manual s-reorder@rm-jump
+[17:47:21 +490.4s] chromium controls: manual s-reorder@rm-jump ok
+[17:47:21 +490.4s] chromium controls s-reorder@rm-jump: context close
+[17:47:21 +490.4s] chromium controls s-reorder@rm-jump: context close ok
+[17:47:21 +490.4s] chromium controls: score rm-jump-reorder-policy-ignored
+[17:47:21 +490.4s] chromium controls s-sheet@rm-max: open page 390x844@2
+[17:47:21 +490.7s] chromium controls s-sheet@rm-max: page ready
+[17:47:21 +490.7s] chromium controls: evaluate manual s-sheet@rm-max
+[17:47:21 +490.7s] chromium controls: manual s-sheet@rm-max ok
+[17:47:21 +490.7s] chromium controls s-sheet@rm-max: context close
+[17:47:21 +490.8s] chromium controls s-sheet@rm-max: context close ok
+[17:47:21 +490.8s] chromium controls: score rm-max-sheet-unclamped
+[17:47:21 +490.8s] chromium controls s-photo@rm-ignore: open page 390x844@2
+[17:47:22 +491.1s] chromium controls s-photo@rm-ignore: page ready
+[17:47:22 +491.1s] chromium controls: evaluate manual s-photo@rm-ignore
+[17:47:23 +492.3s] chromium controls: manual s-photo@rm-ignore ok
+[17:47:23 +492.3s] chromium controls s-photo@rm-ignore: context close
+[17:47:23 +492.3s] chromium controls s-photo@rm-ignore: context close ok
+[17:47:23 +492.3s] chromium controls: score rm-ignore-photo-jump
+[17:47:23 +492.4s] chromium controls held-extra-read: open page 1280x720@1
+[17:47:23 +492.7s] chromium controls held-extra-read: page ready
+[17:47:23 +492.7s] chromium controls held-extra-read: evaluate held audit
+[17:47:23 +492.7s] chromium controls held-extra-read: held audit ok
+[17:47:23 +492.7s] chromium controls held-extra-read: context close
+[17:47:23 +492.7s] chromium controls held-extra-read: context close ok
+[17:47:23 +492.7s] chromium controls floor-extra-read: open page 1280x720@1
+[17:47:24 +493.0s] chromium controls floor-extra-read: page ready
+[17:47:24 +493.0s] chromium controls floor-extra-read: evaluate floor audit
+[17:47:24 +493.0s] chromium controls floor-extra-read: floor audit ok
+[17:47:24 +493.0s] chromium controls floor-extra-read: context close
+[17:47:24 +493.0s] chromium controls floor-extra-read: context close ok
+[17:47:24 +493.0s] chromium controls teardown: close chromium
+[17:47:24 +493.0s] chromium: browser disconnected
+[17:47:24 +493.0s] chromium controls teardown: close chromium ok
+[17:47:24 +493.1s] chromium controls teardown: server close chromium ok
+[17:47:24 +493.1s] chromium: negative controls done
+[17:47:24 +493.1s] chromium: measured runs start
+[17:47:24 +493.1s] chromium run 0/1 (warm-up): start
+[17:47:24 +493.1s] chromium run 0/1 (warm-up) manual: launch chromium
+[17:47:24 +493.2s] chromium run 0/1 (warm-up) manual: launch chromium ok (140.0.7339.16)
+[17:47:24 +493.2s] chromium run 0/1 (warm-up) manual s-card: open page 390x844@2
+[17:47:24 +493.5s] chromium run 0/1 (warm-up) manual s-card: page ready
+[17:47:24 +493.5s] chromium run 0/1 (warm-up) manual: evaluate manual s-card
+[17:47:24 +493.7s] chromium run 0/1 (warm-up) manual: manual s-card ok
+[17:47:24 +493.7s] chromium run 0/1 (warm-up) manual s-card: context close
+[17:47:24 +493.7s] chromium run 0/1 (warm-up) manual s-card: context close ok
+[17:47:24 +493.7s] chromium run 0/1 (warm-up) manual s-seg: open page 390x844@2
+[17:47:25 +494.1s] chromium run 0/1 (warm-up) manual s-seg: page ready
+[17:47:25 +494.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-seg
+[17:47:25 +494.2s] chromium run 0/1 (warm-up) manual: manual s-seg ok
+[17:47:25 +494.2s] chromium run 0/1 (warm-up) manual s-seg: context close
+[17:47:25 +494.2s] chromium run 0/1 (warm-up) manual s-seg: context close ok
+[17:47:25 +494.2s] chromium run 0/1 (warm-up) manual s-photo: open page 390x844@2
+[17:47:25 +494.5s] chromium run 0/1 (warm-up) manual s-photo: page ready
+[17:47:25 +494.5s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo
+[17:47:31 +500.0s] chromium run 0/1 (warm-up) manual: manual s-photo ok
+[17:47:31 +500.0s] chromium run 0/1 (warm-up) manual s-photo: context close
+[17:47:31 +500.0s] chromium run 0/1 (warm-up) manual s-photo: context close ok
+[17:47:31 +500.0s] chromium run 0/1 (warm-up) manual s-stack: open page 390x844@2
+[17:47:31 +500.3s] chromium run 0/1 (warm-up) manual s-stack: page ready
+[17:47:31 +500.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-stack
+[17:47:31 +500.7s] chromium run 0/1 (warm-up) manual: manual s-stack ok
+[17:47:31 +500.7s] chromium run 0/1 (warm-up) manual s-stack: context close
+[17:47:31 +500.7s] chromium run 0/1 (warm-up) manual s-stack: context close ok
+[17:47:31 +500.7s] chromium run 0/1 (warm-up) manual s-island: open page 390x844@2
+[17:47:31 +500.9s] chromium run 0/1 (warm-up) manual s-island: page ready
+[17:47:31 +500.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-island
+[17:47:32 +501.0s] chromium run 0/1 (warm-up) manual: manual s-island ok
+[17:47:32 +501.0s] chromium run 0/1 (warm-up) manual s-island: context close
+[17:47:32 +501.0s] chromium run 0/1 (warm-up) manual s-island: context close ok
+[17:47:32 +501.0s] chromium run 0/1 (warm-up) manual s-acc: open page 390x844@2
+[17:47:32 +501.3s] chromium run 0/1 (warm-up) manual s-acc: page ready
+[17:47:32 +501.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc
+[17:47:32 +501.8s] chromium run 0/1 (warm-up) manual: manual s-acc ok
+[17:47:32 +501.8s] chromium run 0/1 (warm-up) manual s-acc: context close
+[17:47:32 +501.8s] chromium run 0/1 (warm-up) manual s-acc: context close ok
+[17:47:32 +501.8s] chromium run 0/1 (warm-up) manual s-insert: open page 390x844@2
+[17:47:33 +502.1s] chromium run 0/1 (warm-up) manual s-insert: page ready
+[17:47:33 +502.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-insert
+[17:47:33 +502.5s] chromium run 0/1 (warm-up) manual: manual s-insert ok
+[17:47:33 +502.5s] chromium run 0/1 (warm-up) manual s-insert: context close
+[17:47:33 +502.5s] chromium run 0/1 (warm-up) manual s-insert: context close ok
+[17:47:33 +502.5s] chromium run 0/1 (warm-up) manual s-delete: open page 390x844@2
+[17:47:33 +502.8s] chromium run 0/1 (warm-up) manual s-delete: page ready
+[17:47:33 +502.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-delete
+[17:47:34 +503.0s] chromium run 0/1 (warm-up) manual: manual s-delete ok
+[17:47:34 +503.0s] chromium run 0/1 (warm-up) manual s-delete: context close
+[17:47:34 +503.0s] chromium run 0/1 (warm-up) manual s-delete: context close ok
+[17:47:34 +503.0s] chromium run 0/1 (warm-up) manual s-reorder: open page 390x844@2
+[17:47:34 +503.3s] chromium run 0/1 (warm-up) manual s-reorder: page ready
+[17:47:34 +503.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder
+[17:47:34 +503.5s] chromium run 0/1 (warm-up) manual: manual s-reorder ok
+[17:47:34 +503.5s] chromium run 0/1 (warm-up) manual s-reorder: context close
+[17:47:34 +503.5s] chromium run 0/1 (warm-up) manual s-reorder: context close ok
+[17:47:34 +503.5s] chromium run 0/1 (warm-up) manual s-sheet: open page 390x844@2
+[17:47:34 +503.8s] chromium run 0/1 (warm-up) manual s-sheet: page ready
+[17:47:34 +503.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet
+[17:47:34 +503.9s] chromium run 0/1 (warm-up) manual: manual s-sheet ok
+[17:47:34 +503.9s] chromium run 0/1 (warm-up) manual s-sheet: context close
+[17:47:34 +503.9s] chromium run 0/1 (warm-up) manual s-sheet: context close ok
+[17:47:34 +503.9s] chromium run 0/1 (warm-up) manual s-bulk: open page 1280x720@1
+[17:47:35 +504.1s] chromium run 0/1 (warm-up) manual s-bulk: page ready
+[17:47:35 +504.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-bulk
+[17:47:42 +511.7s] chromium run 0/1 (warm-up) manual: manual s-bulk ok
+[17:47:42 +511.7s] chromium run 0/1 (warm-up) manual s-bulk: context close
+[17:47:42 +511.7s] chromium run 0/1 (warm-up) manual s-bulk: context close ok
+[17:47:42 +511.7s] chromium run 0/1 (warm-up) manual s-card@dpr1: open page 390x844@1
+[17:47:43 +512.2s] chromium run 0/1 (warm-up) manual s-card@dpr1: page ready
+[17:47:43 +512.2s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@dpr1
+[17:47:43 +512.4s] chromium run 0/1 (warm-up) manual: manual s-card@dpr1 ok
+[17:47:43 +512.4s] chromium run 0/1 (warm-up) manual s-card@dpr1: context close
+[17:47:43 +512.4s] chromium run 0/1 (warm-up) manual s-card@dpr1: context close ok
+[17:47:43 +512.4s] chromium run 0/1 (warm-up) manual s-card@dpr3: open page 390x844@3
+[17:47:43 +512.8s] chromium run 0/1 (warm-up) manual s-card@dpr3: page ready
+[17:47:43 +512.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@dpr3
+[17:47:44 +513.0s] chromium run 0/1 (warm-up) manual: manual s-card@dpr3 ok
+[17:47:44 +513.0s] chromium run 0/1 (warm-up) manual s-card@dpr3: context close
+[17:47:44 +513.0s] chromium run 0/1 (warm-up) manual s-card@dpr3: context close ok
+[17:47:44 +513.0s] chromium run 0/1 (warm-up) manual s-card@rm-jump: open page 390x844@2
+[17:47:44 +513.3s] chromium run 0/1 (warm-up) manual s-card@rm-jump: page ready
+[17:47:44 +513.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@rm-jump
+[17:47:44 +513.4s] chromium run 0/1 (warm-up) manual: manual s-card@rm-jump ok
+[17:47:44 +513.4s] chromium run 0/1 (warm-up) manual s-card@rm-jump: context close
+[17:47:44 +513.4s] chromium run 0/1 (warm-up) manual s-card@rm-jump: context close ok
+[17:47:44 +513.4s] chromium run 0/1 (warm-up) manual s-card@rm-max: open page 390x844@2
+[17:47:44 +513.7s] chromium run 0/1 (warm-up) manual s-card@rm-max: page ready
+[17:47:44 +513.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@rm-max
+[17:47:44 +513.8s] chromium run 0/1 (warm-up) manual: manual s-card@rm-max ok
+[17:47:44 +513.8s] chromium run 0/1 (warm-up) manual s-card@rm-max: context close
+[17:47:44 +513.9s] chromium run 0/1 (warm-up) manual s-card@rm-max: context close ok
+[17:47:44 +513.9s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: open page 390x844@2
+[17:47:45 +514.2s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: page ready
+[17:47:45 +514.2s] chromium run 0/1 (warm-up) manual: evaluate manual s-card@rm-ignore
+[17:47:45 +514.4s] chromium run 0/1 (warm-up) manual: manual s-card@rm-ignore ok
+[17:47:45 +514.4s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: context close
+[17:47:45 +514.4s] chromium run 0/1 (warm-up) manual s-card@rm-ignore: context close ok
+[17:47:45 +514.4s] chromium run 0/1 (warm-up) manual s-seg@dpr1: open page 390x844@1
+[17:47:45 +514.8s] chromium run 0/1 (warm-up) manual s-seg@dpr1: page ready
+[17:47:45 +514.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-seg@dpr1
+[17:47:45 +514.9s] chromium run 0/1 (warm-up) manual: manual s-seg@dpr1 ok
+[17:47:45 +514.9s] chromium run 0/1 (warm-up) manual s-seg@dpr1: context close
+[17:47:45 +514.9s] chromium run 0/1 (warm-up) manual s-seg@dpr1: context close ok
+[17:47:45 +514.9s] chromium run 0/1 (warm-up) manual s-seg@dpr3: open page 390x844@3
+[17:47:46 +515.3s] chromium run 0/1 (warm-up) manual s-seg@dpr3: page ready
+[17:47:46 +515.3s] chromium run 0/1 (warm-up) manual: evaluate manual s-seg@dpr3
+[17:47:46 +515.4s] chromium run 0/1 (warm-up) manual: manual s-seg@dpr3 ok
+[17:47:46 +515.4s] chromium run 0/1 (warm-up) manual s-seg@dpr3: context close
+[17:47:46 +515.4s] chromium run 0/1 (warm-up) manual s-seg@dpr3: context close ok
+[17:47:46 +515.4s] chromium run 0/1 (warm-up) manual s-photo@dpr1: open page 390x844@1
+[17:47:47 +516.4s] chromium run 0/1 (warm-up) manual s-photo@dpr1: page ready
+[17:47:47 +516.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@dpr1
+[17:47:56 +525.4s] chromium run 0/1 (warm-up) manual: manual s-photo@dpr1 ok
+[17:47:56 +525.4s] chromium run 0/1 (warm-up) manual s-photo@dpr1: context close
+[17:47:56 +525.5s] chromium run 0/1 (warm-up) manual s-photo@dpr1: context close ok
+[17:47:56 +525.5s] chromium run 0/1 (warm-up) manual s-photo@dpr3: open page 390x844@3
+[17:47:57 +526.1s] chromium run 0/1 (warm-up) manual s-photo@dpr3: page ready
+[17:47:57 +526.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@dpr3
+[17:48:37 +566.7s] chromium run 0/1 (warm-up) manual: manual s-photo@dpr3 ok
+[17:48:37 +566.7s] chromium run 0/1 (warm-up) manual s-photo@dpr3: context close
+[17:48:37 +566.7s] chromium run 0/1 (warm-up) manual s-photo@dpr3: context close ok
+[17:48:37 +566.7s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: open page 390x844@2
+[17:48:38 +567.8s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: page ready
+[17:48:38 +567.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@rm-jump
+[17:48:43 +572.7s] chromium run 0/1 (warm-up) manual: manual s-photo@rm-jump ok
+[17:48:43 +572.7s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: context close
+[17:48:43 +572.7s] chromium run 0/1 (warm-up) manual s-photo@rm-jump: context close ok
+[17:48:43 +572.7s] chromium run 0/1 (warm-up) manual s-photo@rm-max: open page 390x844@2
+[17:48:44 +573.2s] chromium run 0/1 (warm-up) manual s-photo@rm-max: page ready
+[17:48:44 +573.2s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@rm-max
+[17:48:50 +579.8s] chromium run 0/1 (warm-up) manual: manual s-photo@rm-max ok
+[17:48:50 +579.8s] chromium run 0/1 (warm-up) manual s-photo@rm-max: context close
+[17:48:50 +579.8s] chromium run 0/1 (warm-up) manual s-photo@rm-max: context close ok
+[17:48:50 +579.8s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: open page 390x844@2
+[17:48:51 +580.2s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: page ready
+[17:48:51 +580.2s] chromium run 0/1 (warm-up) manual: evaluate manual s-photo@rm-ignore
+[17:49:00 +589.1s] chromium run 0/1 (warm-up) manual: manual s-photo@rm-ignore ok
+[17:49:00 +589.1s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: context close
+[17:49:00 +589.1s] chromium run 0/1 (warm-up) manual s-photo@rm-ignore: context close ok
+[17:49:00 +589.1s] chromium run 0/1 (warm-up) manual s-acc@dpr1: open page 390x844@1
+[17:49:00 +589.5s] chromium run 0/1 (warm-up) manual s-acc@dpr1: page ready
+[17:49:00 +589.5s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@dpr1
+[17:49:01 +590.2s] chromium run 0/1 (warm-up) manual: manual s-acc@dpr1 ok
+[17:49:01 +590.2s] chromium run 0/1 (warm-up) manual s-acc@dpr1: context close
+[17:49:01 +590.2s] chromium run 0/1 (warm-up) manual s-acc@dpr1: context close ok
+[17:49:01 +590.2s] chromium run 0/1 (warm-up) manual s-acc@dpr3: open page 390x844@3
+[17:49:01 +590.6s] chromium run 0/1 (warm-up) manual s-acc@dpr3: page ready
+[17:49:01 +590.6s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@dpr3
+[17:49:02 +591.4s] chromium run 0/1 (warm-up) manual: manual s-acc@dpr3 ok
+[17:49:02 +591.4s] chromium run 0/1 (warm-up) manual s-acc@dpr3: context close
+[17:49:02 +591.4s] chromium run 0/1 (warm-up) manual s-acc@dpr3: context close ok
+[17:49:02 +591.4s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: open page 390x844@2
+[17:49:03 +592.1s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: page ready
+[17:49:03 +592.1s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@rm-jump
+[17:49:03 +592.6s] chromium run 0/1 (warm-up) manual: manual s-acc@rm-jump ok
+[17:49:03 +592.6s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: context close
+[17:49:03 +592.6s] chromium run 0/1 (warm-up) manual s-acc@rm-jump: context close ok
+[17:49:03 +592.6s] chromium run 0/1 (warm-up) manual s-acc@rm-max: open page 390x844@2
+[17:49:03 +592.9s] chromium run 0/1 (warm-up) manual s-acc@rm-max: page ready
+[17:49:03 +592.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@rm-max
+[17:49:04 +593.3s] chromium run 0/1 (warm-up) manual: manual s-acc@rm-max ok
+[17:49:04 +593.3s] chromium run 0/1 (warm-up) manual s-acc@rm-max: context close
+[17:49:04 +593.3s] chromium run 0/1 (warm-up) manual s-acc@rm-max: context close ok
+[17:49:04 +593.3s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: open page 390x844@2
+[17:49:04 +593.7s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: page ready
+[17:49:04 +593.7s] chromium run 0/1 (warm-up) manual: evaluate manual s-acc@rm-ignore
+[17:49:05 +594.5s] chromium run 0/1 (warm-up) manual: manual s-acc@rm-ignore ok
+[17:49:05 +594.5s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: context close
+[17:49:05 +594.5s] chromium run 0/1 (warm-up) manual s-acc@rm-ignore: context close ok
+[17:49:05 +594.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: open page 390x844@2
+[17:49:05 +594.8s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: page ready
+[17:49:05 +594.8s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder@rm-jump
+[17:49:05 +594.9s] chromium run 0/1 (warm-up) manual: manual s-reorder@rm-jump ok
+[17:49:05 +594.9s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: context close
+[17:49:05 +594.9s] chromium run 0/1 (warm-up) manual s-reorder@rm-jump: context close ok
+[17:49:05 +594.9s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: open page 390x844@2
+[17:49:06 +595.4s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: page ready
+[17:49:06 +595.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder@rm-max
+[17:49:06 +595.5s] chromium run 0/1 (warm-up) manual: manual s-reorder@rm-max ok
+[17:49:06 +595.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: context close
+[17:49:06 +595.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-max: context close ok
+[17:49:06 +595.5s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: open page 390x844@2
+[17:49:07 +596.0s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: page ready
+[17:49:07 +596.0s] chromium run 0/1 (warm-up) manual: evaluate manual s-reorder@rm-ignore
+[17:49:07 +596.2s] chromium run 0/1 (warm-up) manual: manual s-reorder@rm-ignore ok
+[17:49:07 +596.2s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: context close
+[17:49:07 +596.2s] chromium run 0/1 (warm-up) manual s-reorder@rm-ignore: context close ok
+[17:49:07 +596.2s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: open page 390x844@2
+[17:49:07 +596.9s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: page ready
+[17:49:07 +596.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet@rm-jump
+[17:49:08 +596.9s] chromium run 0/1 (warm-up) manual: manual s-sheet@rm-jump ok
+[17:49:08 +596.9s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: context close
+[17:49:08 +596.9s] chromium run 0/1 (warm-up) manual s-sheet@rm-jump: context close ok
+[17:49:08 +596.9s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: open page 390x844@2
+[17:49:08 +597.4s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: page ready
+[17:49:08 +597.4s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet@rm-max
+[17:49:08 +597.5s] chromium run 0/1 (warm-up) manual: manual s-sheet@rm-max ok
+[17:49:08 +597.5s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: context close
+[17:49:08 +597.5s] chromium run 0/1 (warm-up) manual s-sheet@rm-max: context close ok
+[17:49:08 +597.5s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: open page 390x844@2
+[17:49:08 +597.9s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: page ready
+[17:49:08 +597.9s] chromium run 0/1 (warm-up) manual: evaluate manual s-sheet@rm-ignore
+[17:49:09 +598.0s] chromium run 0/1 (warm-up) manual: manual s-sheet@rm-ignore ok
+[17:49:09 +598.0s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: context close
+[17:49:09 +598.1s] chromium run 0/1 (warm-up) manual s-sheet@rm-ignore: context close ok
+[17:49:09 +598.1s] chromium run 0/1 (warm-up) probe s-card: open page 390x844@2
+[17:49:09 +598.5s] chromium run 0/1 (warm-up) probe s-card: page ready
+[17:49:09 +598.5s] chromium run 0/1 (warm-up) probe: evaluate probe s-card
+[17:49:10 +599.1s] chromium run 0/1 (warm-up) probe: probe s-card ok
+[17:49:10 +599.1s] chromium run 0/1 (warm-up) probe s-card: context close
+[17:49:10 +599.1s] chromium run 0/1 (warm-up) probe s-card: context close ok
+[17:49:10 +599.1s] chromium run 0/1 (warm-up) probe s-seg: open page 390x844@2
+[17:49:10 +599.3s] chromium run 0/1 (warm-up) probe s-seg: page ready
+[17:49:10 +599.3s] chromium run 0/1 (warm-up) probe: evaluate probe s-seg
+[17:49:10 +599.9s] chromium run 0/1 (warm-up) probe: probe s-seg ok
+[17:49:10 +599.9s] chromium run 0/1 (warm-up) probe s-seg: context close
+[17:49:10 +599.9s] chromium run 0/1 (warm-up) probe s-seg: context close ok
+[17:49:10 +599.9s] chromium run 0/1 (warm-up) probe s-photo: open page 390x844@2
+[17:49:11 +600.2s] chromium run 0/1 (warm-up) probe s-photo: page ready
+[17:49:11 +600.2s] chromium run 0/1 (warm-up) probe: evaluate probe s-photo
+[17:49:11 +600.8s] chromium run 0/1 (warm-up) probe: probe s-photo ok
+[17:49:11 +600.8s] chromium run 0/1 (warm-up) probe s-photo: context close
+[17:49:11 +600.8s] chromium run 0/1 (warm-up) probe s-photo: context close ok
+[17:49:11 +600.8s] chromium run 0/1 (warm-up) probe s-stack: open page 390x844@2
+[17:49:12 +601.1s] chromium run 0/1 (warm-up) probe s-stack: page ready
+[17:49:12 +601.1s] chromium run 0/1 (warm-up) probe: evaluate probe s-stack
+[17:49:12 +601.7s] chromium run 0/1 (warm-up) probe: probe s-stack ok
+[17:49:12 +601.7s] chromium run 0/1 (warm-up) probe s-stack: context close
+[17:49:12 +601.7s] chromium run 0/1 (warm-up) probe s-stack: context close ok
+[17:49:12 +601.7s] chromium run 0/1 (warm-up) probe s-island: open page 390x844@2
+[17:49:13 +602.1s] chromium run 0/1 (warm-up) probe s-island: page ready
+[17:49:13 +602.1s] chromium run 0/1 (warm-up) probe: evaluate probe s-island
+[17:49:13 +602.7s] chromium run 0/1 (warm-up) probe: probe s-island ok
+[17:49:13 +602.7s] chromium run 0/1 (warm-up) probe s-island: context close
+[17:49:13 +602.7s] chromium run 0/1 (warm-up) probe s-island: context close ok
+[17:49:13 +602.7s] chromium run 0/1 (warm-up) probe s-acc: open page 390x844@2
+[17:49:14 +603.0s] chromium run 0/1 (warm-up) probe s-acc: page ready
+[17:49:14 +603.0s] chromium run 0/1 (warm-up) probe: evaluate probe s-acc
+[17:49:14 +603.6s] chromium run 0/1 (warm-up) probe: probe s-acc ok
+[17:49:14 +603.6s] chromium run 0/1 (warm-up) probe s-acc: context close
+[17:49:14 +603.6s] chromium run 0/1 (warm-up) probe s-acc: context close ok
+[17:49:14 +603.6s] chromium run 0/1 (warm-up) probe s-insert: open page 390x844@2
+[17:49:15 +604.0s] chromium run 0/1 (warm-up) probe s-insert: page ready
+[17:49:15 +604.0s] chromium run 0/1 (warm-up) probe: evaluate probe s-insert
+[17:49:15 +604.6s] chromium run 0/1 (warm-up) probe: probe s-insert ok
+[17:49:15 +604.6s] chromium run 0/1 (warm-up) probe s-insert: context close
+[17:49:15 +604.6s] chromium run 0/1 (warm-up) probe s-insert: context close ok
+[17:49:15 +604.6s] chromium run 0/1 (warm-up) probe s-delete: open page 390x844@2
+[17:49:16 +605.5s] chromium run 0/1 (warm-up) probe s-delete: page ready
+[17:49:16 +605.5s] chromium run 0/1 (warm-up) probe: evaluate probe s-delete
+[17:49:17 +606.1s] chromium run 0/1 (warm-up) probe: probe s-delete ok
+[17:49:17 +606.1s] chromium run 0/1 (warm-up) probe s-delete: context close
+[17:49:17 +606.1s] chromium run 0/1 (warm-up) probe s-delete: context close ok
+[17:49:17 +606.1s] chromium run 0/1 (warm-up) probe s-reorder: open page 390x844@2
+[17:49:17 +606.6s] chromium run 0/1 (warm-up) probe s-reorder: page ready
+[17:49:17 +606.6s] chromium run 0/1 (warm-up) probe: evaluate probe s-reorder
+[17:49:18 +607.2s] chromium run 0/1 (warm-up) probe: probe s-reorder ok
+[17:49:18 +607.2s] chromium run 0/1 (warm-up) probe s-reorder: context close
+[17:49:18 +607.2s] chromium run 0/1 (warm-up) probe s-reorder: context close ok
+[17:49:18 +607.2s] chromium run 0/1 (warm-up) probe s-sheet: open page 390x844@2
+[17:49:18 +607.8s] chromium run 0/1 (warm-up) probe s-sheet: page ready
+[17:49:18 +607.8s] chromium run 0/1 (warm-up) probe: evaluate probe s-sheet
+[17:49:19 +608.4s] chromium run 0/1 (warm-up) probe: probe s-sheet ok
+[17:49:19 +608.4s] chromium run 0/1 (warm-up) probe s-sheet: context close
+[17:49:19 +608.4s] chromium run 0/1 (warm-up) probe s-sheet: context close ok
+[17:49:19 +608.4s] chromium run 0/1 (warm-up) probe s-bulk: open page 390x844@2
+[17:49:20 +609.2s] chromium run 0/1 (warm-up) probe s-bulk: page ready
+[17:49:20 +609.2s] chromium run 0/1 (warm-up) probe: evaluate probe s-bulk
+[17:49:27 +616.6s] chromium run 0/1 (warm-up) probe: probe s-bulk ok
+[17:49:27 +616.6s] chromium run 0/1 (warm-up) probe s-bulk: context close
+[17:49:27 +616.7s] chromium run 0/1 (warm-up) probe s-bulk: context close ok
+[17:49:27 +616.7s] chromium run 0/1 (warm-up) manual teardown: close chromium
+[17:49:27 +616.7s] chromium: browser disconnected
+[17:49:27 +616.7s] chromium run 0/1 (warm-up) manual teardown: close chromium ok
+[17:49:28 +617.1s] chromium run 0/1 (warm-up) manual teardown: server close chromium ok
+[17:49:28 +617.1s] chromium run 0/1 (warm-up) real: launch chromium
+[17:49:28 +617.6s] chromium run 0/1 (warm-up) real: launch chromium ok (140.0.7339.16)
+[17:49:28 +617.6s] chromium run 0/1 (warm-up) real s-card: open page 390x844@2
+[17:49:30 +619.1s] chromium run 0/1 (warm-up) real s-card: page ready
+[17:49:30 +619.1s] chromium run 0/1 (warm-up) real: evaluate real s-card
+[17:49:32 +621.1s] chromium run 0/1 (warm-up) real: real s-card ok
+[17:49:32 +621.1s] chromium run 0/1 (warm-up) real s-card: context close
+[17:49:32 +621.2s] chromium run 0/1 (warm-up) real s-card: context close ok
+[17:49:32 +621.2s] chromium run 0/1 (warm-up) real s-seg: open page 390x844@2
+[17:49:33 +622.1s] chromium run 0/1 (warm-up) real s-seg: page ready
+[17:49:33 +622.1s] chromium run 0/1 (warm-up) real: evaluate real s-seg
+[17:49:34 +623.1s] chromium run 0/1 (warm-up) real: real s-seg ok
+[17:49:34 +623.1s] chromium run 0/1 (warm-up) real s-seg: context close
+[17:49:34 +623.1s] chromium run 0/1 (warm-up) real s-seg: context close ok
+[17:49:34 +623.1s] chromium run 0/1 (warm-up) real s-photo: open page 390x844@2
+[17:49:35 +624.8s] chromium run 0/1 (warm-up) real s-photo: page ready
+[17:49:35 +624.8s] chromium run 0/1 (warm-up) real: evaluate real s-photo
+[17:49:38 +627.0s] chromium run 0/1 (warm-up) real: real s-photo ok
+[17:49:38 +627.0s] chromium run 0/1 (warm-up) real s-photo: context close
+[17:49:38 +627.0s] chromium run 0/1 (warm-up) real s-photo: context close ok
+[17:49:38 +627.0s] chromium run 0/1 (warm-up) real s-stack: open page 390x844@2
+[17:49:39 +628.8s] chromium run 0/1 (warm-up) real s-stack: page ready
+[17:49:39 +628.8s] chromium run 0/1 (warm-up) real: evaluate real s-stack
+[17:49:41 +630.8s] chromium run 0/1 (warm-up) real: real s-stack ok
+[17:49:41 +630.8s] chromium run 0/1 (warm-up) real s-stack: context close
+[17:49:41 +630.8s] chromium run 0/1 (warm-up) real s-stack: context close ok
+[17:49:41 +630.8s] chromium run 0/1 (warm-up) real s-island: open page 390x844@2
+[17:49:43 +632.3s] chromium run 0/1 (warm-up) real s-island: page ready
+[17:49:43 +632.3s] chromium run 0/1 (warm-up) real: evaluate real s-island
+[17:49:44 +633.0s] chromium run 0/1 (warm-up) real: real s-island ok
+[17:49:44 +633.0s] chromium run 0/1 (warm-up) real s-island: context close
+[17:49:44 +633.2s] chromium run 0/1 (warm-up) real s-island: context close ok
+[17:49:44 +633.2s] chromium run 0/1 (warm-up) real s-acc: open page 390x844@2
+[17:49:46 +635.0s] chromium run 0/1 (warm-up) real s-acc: page ready
+[17:49:46 +635.0s] chromium run 0/1 (warm-up) real: evaluate real s-acc
+[17:49:47 +636.6s] chromium run 0/1 (warm-up) real: real s-acc ok
+[17:49:47 +636.6s] chromium run 0/1 (warm-up) real s-acc: context close
+[17:49:47 +636.6s] chromium run 0/1 (warm-up) real s-acc: context close ok
+[17:49:47 +636.6s] chromium run 0/1 (warm-up) real s-insert: open page 390x844@2
+[17:49:50 +639.5s] chromium run 0/1 (warm-up) real s-insert: page ready
+[17:49:50 +639.5s] chromium run 0/1 (warm-up) real: evaluate real s-insert
+[17:49:51 +640.4s] chromium run 0/1 (warm-up) real: real s-insert ok
+[17:49:51 +640.4s] chromium run 0/1 (warm-up) real s-insert: context close
+[17:49:51 +640.4s] chromium run 0/1 (warm-up) real s-insert: context close ok
+[17:49:51 +640.4s] chromium run 0/1 (warm-up) real s-delete: open page 390x844@2
+[17:49:53 +642.3s] chromium run 0/1 (warm-up) real s-delete: page ready
+[17:49:53 +642.3s] chromium run 0/1 (warm-up) real: evaluate real s-delete
+[17:49:54 +643.3s] chromium run 0/1 (warm-up) real: real s-delete ok
+[17:49:54 +643.3s] chromium run 0/1 (warm-up) real s-delete: context close
+[17:49:54 +643.3s] chromium run 0/1 (warm-up) real s-delete: context close ok
+[17:49:54 +643.3s] chromium run 0/1 (warm-up) real s-reorder: open page 390x844@2
+[17:49:55 +644.6s] chromium run 0/1 (warm-up) real s-reorder: page ready
+[17:49:55 +644.6s] chromium run 0/1 (warm-up) real: evaluate real s-reorder
+[17:50:06 +655.8s] chromium run 0/1 (warm-up) real: real s-reorder ok
+[17:50:06 +655.8s] chromium run 0/1 (warm-up) real s-reorder: context close
+[17:50:06 +655.8s] chromium run 0/1 (warm-up) real s-reorder: context close ok
+[17:50:06 +655.8s] chromium run 0/1 (warm-up) real s-sheet: open page 390x844@2
+[17:50:08 +657.5s] chromium run 0/1 (warm-up) real s-sheet: page ready
+[17:50:08 +657.5s] chromium run 0/1 (warm-up) real: evaluate real s-sheet
+[17:50:21 +670.1s] chromium run 0/1 (warm-up) real: real s-sheet ok
+[17:50:21 +670.1s] chromium run 0/1 (warm-up) real s-sheet: context close
+[17:50:21 +670.2s] chromium run 0/1 (warm-up) real s-sheet: context close ok
+[17:50:21 +670.2s] chromium run 0/1 (warm-up) real s-bulk: open page 1280x720@1
+[17:50:22 +671.1s] chromium run 0/1 (warm-up) real s-bulk: page ready
+[17:50:22 +671.1s] chromium run 0/1 (warm-up) real: evaluate real s-bulk
+[17:50:22 +671.9s] chromium run 0/1 (warm-up) real: real s-bulk ok
+[17:50:22 +671.9s] chromium run 0/1 (warm-up) real s-bulk: context close
+[17:50:22 +671.9s] chromium run 0/1 (warm-up) real s-bulk: context close ok
+[17:50:22 +671.9s] chromium run 0/1 (warm-up) real s-card@dpr1: open page 390x844@1
+[17:50:23 +672.3s] chromium run 0/1 (warm-up) real s-card@dpr1: page ready
+[17:50:23 +672.3s] chromium run 0/1 (warm-up) real: evaluate real s-card@dpr1
+[17:50:25 +674.3s] chromium run 0/1 (warm-up) real: real s-card@dpr1 ok
+[17:50:25 +674.3s] chromium run 0/1 (warm-up) real s-card@dpr1: context close
+[17:50:25 +674.3s] chromium run 0/1 (warm-up) real s-card@dpr1: context close ok
+[17:50:25 +674.3s] chromium run 0/1 (warm-up) real s-card@dpr3: open page 390x844@3
+[17:50:25 +674.9s] chromium run 0/1 (warm-up) real s-card@dpr3: page ready
+[17:50:25 +674.9s] chromium run 0/1 (warm-up) real: evaluate real s-card@dpr3
+[17:50:27 +676.9s] chromium run 0/1 (warm-up) real: real s-card@dpr3 ok
+[17:50:27 +676.9s] chromium run 0/1 (warm-up) real s-card@dpr3: context close
+[17:50:27 +676.9s] chromium run 0/1 (warm-up) real s-card@dpr3: context close ok
+[17:50:27 +676.9s] chromium run 0/1 (warm-up) real s-card@rm-jump: open page 390x844@2
+[17:50:28 +677.5s] chromium run 0/1 (warm-up) real s-card@rm-jump: page ready
+[17:50:28 +677.5s] chromium run 0/1 (warm-up) real: evaluate real s-card@rm-jump
+[17:50:28 +677.5s] chromium run 0/1 (warm-up) real: real s-card@rm-jump ok
+[17:50:28 +677.5s] chromium run 0/1 (warm-up) real s-card@rm-jump: context close
+[17:50:28 +677.6s] chromium run 0/1 (warm-up) real s-card@rm-jump: context close ok
+[17:50:28 +677.6s] chromium run 0/1 (warm-up) real s-card@rm-max: open page 390x844@2
+[17:50:29 +678.9s] chromium run 0/1 (warm-up) real s-card@rm-max: page ready
+[17:50:29 +678.9s] chromium run 0/1 (warm-up) real: evaluate real s-card@rm-max
+[17:50:30 +679.4s] chromium run 0/1 (warm-up) real: real s-card@rm-max ok
+[17:50:30 +679.4s] chromium run 0/1 (warm-up) real s-card@rm-max: context close
+[17:50:30 +679.5s] chromium run 0/1 (warm-up) real s-card@rm-max: context close ok
+[17:50:30 +679.5s] chromium run 0/1 (warm-up) real s-card@rm-ignore: open page 390x844@2
+[17:50:31 +680.7s] chromium run 0/1 (warm-up) real s-card@rm-ignore: page ready
+[17:50:31 +680.7s] chromium run 0/1 (warm-up) real: evaluate real s-card@rm-ignore
+[17:50:33 +682.6s] chromium run 0/1 (warm-up) real: real s-card@rm-ignore ok
+[17:50:33 +682.6s] chromium run 0/1 (warm-up) real s-card@rm-ignore: context close
+[17:50:33 +682.6s] chromium run 0/1 (warm-up) real s-card@rm-ignore: context close ok
+[17:50:33 +682.6s] chromium run 0/1 (warm-up) real s-seg@dpr1: open page 390x844@1
+[17:50:34 +683.5s] chromium run 0/1 (warm-up) real s-seg@dpr1: page ready
+[17:50:34 +683.5s] chromium run 0/1 (warm-up) real: evaluate real s-seg@dpr1
+[17:50:35 +684.4s] chromium run 0/1 (warm-up) real: real s-seg@dpr1 ok
+[17:50:35 +684.4s] chromium run 0/1 (warm-up) real s-seg@dpr1: context close
+[17:50:35 +684.4s] chromium run 0/1 (warm-up) real s-seg@dpr1: context close ok
+[17:50:35 +684.4s] chromium run 0/1 (warm-up) real s-seg@dpr3: open page 390x844@3
+[17:50:36 +685.9s] chromium run 0/1 (warm-up) real s-seg@dpr3: page ready
+[17:50:36 +685.9s] chromium run 0/1 (warm-up) real: evaluate real s-seg@dpr3
+[17:50:37 +686.8s] chromium run 0/1 (warm-up) real: real s-seg@dpr3 ok
+[17:50:37 +686.8s] chromium run 0/1 (warm-up) real s-seg@dpr3: context close
+[17:50:37 +686.8s] chromium run 0/1 (warm-up) real s-seg@dpr3: context close ok
+[17:50:37 +686.8s] chromium run 0/1 (warm-up) real s-photo@dpr1: open page 390x844@1
+[17:50:38 +687.2s] chromium run 0/1 (warm-up) real s-photo@dpr1: page ready
+[17:50:38 +687.2s] chromium run 0/1 (warm-up) real: evaluate real s-photo@dpr1
+[17:50:40 +689.4s] chromium run 0/1 (warm-up) real: real s-photo@dpr1 ok
+[17:50:40 +689.4s] chromium run 0/1 (warm-up) real s-photo@dpr1: context close
+[17:50:40 +689.4s] chromium run 0/1 (warm-up) real s-photo@dpr1: context close ok
+[17:50:40 +689.4s] chromium run 0/1 (warm-up) real s-photo@dpr3: open page 390x844@3
+[17:50:40 +689.7s] chromium run 0/1 (warm-up) real s-photo@dpr3: page ready
+[17:50:40 +689.7s] chromium run 0/1 (warm-up) real: evaluate real s-photo@dpr3
+[17:50:43 +691.9s] chromium run 0/1 (warm-up) real: real s-photo@dpr3 ok
+[17:50:43 +691.9s] chromium run 0/1 (warm-up) real s-photo@dpr3: context close
+[17:50:43 +691.9s] chromium run 0/1 (warm-up) real s-photo@dpr3: context close ok
+[17:50:43 +692.0s] chromium run 0/1 (warm-up) real s-photo@rm-jump: open page 390x844@2
+[17:50:43 +692.4s] chromium run 0/1 (warm-up) real s-photo@rm-jump: page ready
+[17:50:43 +692.4s] chromium run 0/1 (warm-up) real: evaluate real s-photo@rm-jump
+[17:50:44 +693.0s] chromium run 0/1 (warm-up) real: real s-photo@rm-jump ok
+[17:50:44 +693.0s] chromium run 0/1 (warm-up) real s-photo@rm-jump: context close
+[17:50:44 +693.1s] chromium run 0/1 (warm-up) real s-photo@rm-jump: context close ok
+[17:50:44 +693.1s] chromium run 0/1 (warm-up) real s-photo@rm-max: open page 390x844@2
+[17:50:44 +693.5s] chromium run 0/1 (warm-up) real s-photo@rm-max: page ready
+[17:50:44 +693.5s] chromium run 0/1 (warm-up) real: evaluate real s-photo@rm-max
+[17:50:45 +694.5s] chromium run 0/1 (warm-up) real: real s-photo@rm-max ok
+[17:50:45 +694.5s] chromium run 0/1 (warm-up) real s-photo@rm-max: context close
+[17:50:45 +694.5s] chromium run 0/1 (warm-up) real s-photo@rm-max: context close ok
+[17:50:45 +694.5s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: open page 390x844@2
+[17:50:45 +694.8s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: page ready
+[17:50:45 +694.8s] chromium run 0/1 (warm-up) real: evaluate real s-photo@rm-ignore
+[17:50:48 +697.0s] chromium run 0/1 (warm-up) real: real s-photo@rm-ignore ok
+[17:50:48 +697.0s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: context close
+[17:50:48 +697.0s] chromium run 0/1 (warm-up) real s-photo@rm-ignore: context close ok
+[17:50:48 +697.0s] chromium run 0/1 (warm-up) real s-acc@dpr1: open page 390x844@1
+[17:50:48 +697.4s] chromium run 0/1 (warm-up) real s-acc@dpr1: page ready
+[17:50:48 +697.4s] chromium run 0/1 (warm-up) real: evaluate real s-acc@dpr1
+[17:50:49 +698.5s] chromium run 0/1 (warm-up) real: real s-acc@dpr1 ok
+[17:50:49 +698.5s] chromium run 0/1 (warm-up) real s-acc@dpr1: context close
+[17:50:49 +698.5s] chromium run 0/1 (warm-up) real s-acc@dpr1: context close ok
+[17:50:49 +698.5s] chromium run 0/1 (warm-up) real s-acc@dpr3: open page 390x844@3
+[17:50:50 +698.9s] chromium run 0/1 (warm-up) real s-acc@dpr3: page ready
+[17:50:50 +698.9s] chromium run 0/1 (warm-up) real: evaluate real s-acc@dpr3
+[17:50:51 +700.0s] chromium run 0/1 (warm-up) real: real s-acc@dpr3 ok
+[17:50:51 +700.0s] chromium run 0/1 (warm-up) real s-acc@dpr3: context close
+[17:50:51 +700.0s] chromium run 0/1 (warm-up) real s-acc@dpr3: context close ok
+[17:50:51 +700.0s] chromium run 0/1 (warm-up) real s-acc@rm-jump: open page 390x844@2
+[17:50:51 +700.4s] chromium run 0/1 (warm-up) real s-acc@rm-jump: page ready
+[17:50:51 +700.4s] chromium run 0/1 (warm-up) real: evaluate real s-acc@rm-jump
+[17:50:51 +700.9s] chromium run 0/1 (warm-up) real: real s-acc@rm-jump ok
+[17:50:51 +700.9s] chromium run 0/1 (warm-up) real s-acc@rm-jump: context close
+[17:50:51 +700.9s] chromium run 0/1 (warm-up) real s-acc@rm-jump: context close ok
+[17:50:51 +700.9s] chromium run 0/1 (warm-up) real s-acc@rm-max: open page 390x844@2
+[17:50:52 +701.2s] chromium run 0/1 (warm-up) real s-acc@rm-max: page ready
+[17:50:52 +701.2s] chromium run 0/1 (warm-up) real: evaluate real s-acc@rm-max
+[17:50:52 +701.9s] chromium run 0/1 (warm-up) real: real s-acc@rm-max ok
+[17:50:52 +701.9s] chromium run 0/1 (warm-up) real s-acc@rm-max: context close
+[17:50:52 +701.9s] chromium run 0/1 (warm-up) real s-acc@rm-max: context close ok
+[17:50:52 +701.9s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: open page 390x844@2
+[17:50:53 +702.6s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: page ready
+[17:50:53 +702.6s] chromium run 0/1 (warm-up) real: evaluate real s-acc@rm-ignore
+[17:50:54 +703.7s] chromium run 0/1 (warm-up) real: real s-acc@rm-ignore ok
+[17:50:54 +703.7s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: context close
+[17:50:54 +703.7s] chromium run 0/1 (warm-up) real s-acc@rm-ignore: context close ok
+[17:50:54 +703.7s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: open page 390x844@2
+[17:50:55 +704.1s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: page ready
+[17:50:55 +704.1s] chromium run 0/1 (warm-up) real: evaluate real s-reorder@rm-jump
+[17:51:05 +714.3s] chromium run 0/1 (warm-up) real: real s-reorder@rm-jump ok
+[17:51:05 +714.3s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: context close
+[17:51:05 +714.3s] chromium run 0/1 (warm-up) real s-reorder@rm-jump: context close ok
+[17:51:05 +714.3s] chromium run 0/1 (warm-up) real s-reorder@rm-max: open page 390x844@2
+[17:51:05 +714.7s] chromium run 0/1 (warm-up) real s-reorder@rm-max: page ready
+[17:51:05 +714.7s] chromium run 0/1 (warm-up) real: evaluate real s-reorder@rm-max
+[17:51:16 +725.4s] chromium run 0/1 (warm-up) real: real s-reorder@rm-max ok
+[17:51:16 +725.4s] chromium run 0/1 (warm-up) real s-reorder@rm-max: context close
+[17:51:16 +725.4s] chromium run 0/1 (warm-up) real s-reorder@rm-max: context close ok
+[17:51:16 +725.4s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: open page 390x844@2
+[17:51:17 +726.0s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: page ready
+[17:51:17 +726.0s] chromium run 0/1 (warm-up) real: evaluate real s-reorder@rm-ignore
+[17:51:28 +737.2s] chromium run 0/1 (warm-up) real: real s-reorder@rm-ignore ok
+[17:51:28 +737.2s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: context close
+[17:51:28 +737.2s] chromium run 0/1 (warm-up) real s-reorder@rm-ignore: context close ok
+[17:51:28 +737.2s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: open page 390x844@2
+[17:51:28 +737.6s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: page ready
+[17:51:28 +737.6s] chromium run 0/1 (warm-up) real: evaluate real s-sheet@rm-jump
+[17:51:40 +749.0s] chromium run 0/1 (warm-up) real: real s-sheet@rm-jump ok
+[17:51:40 +749.0s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: context close
+[17:51:40 +749.0s] chromium run 0/1 (warm-up) real s-sheet@rm-jump: context close ok
+[17:51:40 +749.0s] chromium run 0/1 (warm-up) real s-sheet@rm-max: open page 390x844@2
+[17:51:40 +749.5s] chromium run 0/1 (warm-up) real s-sheet@rm-max: page ready
+[17:51:40 +749.5s] chromium run 0/1 (warm-up) real: evaluate real s-sheet@rm-max
+[17:51:52 +761.4s] chromium run 0/1 (warm-up) real: real s-sheet@rm-max ok
+[17:51:52 +761.4s] chromium run 0/1 (warm-up) real s-sheet@rm-max: context close
+[17:51:52 +761.4s] chromium run 0/1 (warm-up) real s-sheet@rm-max: context close ok
+[17:51:52 +761.4s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: open page 390x844@2
+[17:51:53 +762.0s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: page ready
+[17:51:53 +762.0s] chromium run 0/1 (warm-up) real: evaluate real s-sheet@rm-ignore
+[17:52:05 +774.6s] chromium run 0/1 (warm-up) real: real s-sheet@rm-ignore ok
+[17:52:05 +774.6s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: context close
+[17:52:05 +774.6s] chromium run 0/1 (warm-up) real s-sheet@rm-ignore: context close ok
+[17:52:05 +774.6s] chromium run 0/1 (warm-up) real teardown: close chromium
+[17:52:05 +774.6s] chromium: browser disconnected
+[17:52:05 +774.6s] chromium run 0/1 (warm-up) real teardown: close chromium ok
+[17:52:05 +774.7s] chromium run 0/1 (warm-up) real teardown: server close chromium ok
+[17:52:05 +774.7s] chromium run 0/1 (warm-up) cost: launch chromium
+[17:52:06 +774.9s] chromium run 0/1 (warm-up) cost: launch chromium ok (140.0.7339.16)
+[17:52:06 +774.9s] chromium run 0/1 (warm-up) cost: open page 1280x720@1
+[17:52:06 +775.4s] chromium run 0/1 (warm-up) cost: page ready
+[17:52:06 +775.4s] chromium run 0/1 (warm-up) cost: evaluate cost
+[17:53:11 +840.1s] chromium run 0/1 (warm-up) cost: evaluate cost ok
+[17:53:11 +840.1s] chromium run 0/1 (warm-up) cost: context close
+[17:53:11 +840.1s] chromium run 0/1 (warm-up) cost: context close ok
+[17:53:11 +840.1s] chromium run 0/1 (warm-up) cost teardown: close chromium
+[17:53:11 +840.1s] chromium: browser disconnected
+[17:53:11 +840.1s] chromium run 0/1 (warm-up) cost teardown: close chromium ok
+[17:53:11 +840.4s] chromium run 0/1 (warm-up) cost teardown: server close chromium ok
+[17:53:11 +840.4s] chromium run 0/1 (warm-up): score primary s-card
+[17:54:46 +935.2s] chromium run 0/1 (warm-up): score primary s-seg
+[17:54:46 +935.2s] chromium run 0/1 (warm-up): score primary s-photo
+[17:54:46 +935.8s] chromium run 0/1 (warm-up): score primary s-stack
+[17:54:47 +935.9s] chromium run 0/1 (warm-up): score primary s-island
+[17:55:00 +949.6s] chromium run 0/1 (warm-up): score primary s-acc
+[17:55:00 +949.7s] chromium run 0/1 (warm-up): score primary s-insert
+[17:55:00 +949.7s] chromium run 0/1 (warm-up): score primary s-delete
+[17:55:00 +949.7s] chromium run 0/1 (warm-up): score primary s-reorder
+[17:55:00 +949.7s] chromium run 0/1 (warm-up): score primary s-sheet
+[17:55:00 +949.7s] chromium run 0/1 (warm-up): score primary s-bulk
+[17:55:02 +951.2s] chromium run 0/1 (warm-up): score variant s-card@dpr1
