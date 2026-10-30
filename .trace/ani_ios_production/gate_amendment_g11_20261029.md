@@ -17,8 +17,8 @@ is **2.81–3.00 ms/commit**, with a direct 300-commit floor replica p95 of **3.
   measured together with a floor replica of exactly the required work, at the same cadence and DOM.
 - Per run: `ratio = p95(engine commit cost) / p95(floor commit cost)`.
 - The gate value is the median of 5 fresh-process per-run ratios; it passes only when ≤ **2** in
-  Chromium. D12 supersedes the original WebKit clause: WebKit cost is BLOCK/advisory and no
-  sub-tick ratio is fabricated; WebKit frame/scoring rows remain deciding.
+  Chromium. D12 supersedes the original WebKit clause: WebKit cost rows (G8–G12) are
+  BLOCK/advisory and no sub-tick ratio is fabricated; WebKit frame/scoring rows remain deciding.
 - The floor audit is the same as G9: 2N rects/offsets + §4.3 step 2 computed reads + 300 poses,
   zero extra/steady reads.
 - The absolute steady-frame p95 ≤ 2 ms remains for **non-commit frames**. G10 is unchanged.
