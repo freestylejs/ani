@@ -129,7 +129,8 @@ gitignored; the files are generated from the current source on every run.
   },
   "certification": {
     "certified": false,
-    "reasons": ["chromium variant s-card@rm-jump fail (failed G6 ...)", "chromium variant s-card@rm-max fail (failed G1 ...)", "webkit variant s-reorder@rm-jump fail (G8 3 ...)", "chromium S-BULK G11 2.131 failed"],
+    "reasons": ["chromium variant s-card@rm-jump fail (failed G6 ...)", "chromium variant s-card@rm-max fail (failed G1 ...)", "webkit variant s-sheet@rm-ignore fail (failed G2 ...)", "chromium S-BULK G11 2.131 failed"],
+    "advisory": ["webkit variant s-reorder@rm-jump cost-only fail (D12 advisory; G8–G12): G8 3"],
     "controlledLoad": true, "load1": 8.64,
     "loadReason": "above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason",
     "requiredEngines": ["chromium", "webkit"],
@@ -139,7 +140,7 @@ gitignored; the files are generated from the current source on every run.
   },
   "engines": [
     {
-      "engine": "chromium", "advisory": true,
+      "engine": "chromium", "advisory": false,
       "browserVersion": "140.0.7339.16", "build": "chromium_headless_shell-1187",
       "launchError": null, "notes": [],
       "scenes": [
@@ -216,7 +217,7 @@ WebKit; Firefox advisory):
 | G5 | Settle exactness: rect vs layout box, and the pose | ≤ 0.01 px; no pose declaration left |
 | G6 | Restoration of owned inline declarations | byte for byte; mount snapshots are required and the full cssText is checked for participants whose inline style the scene does not own |
 | G7 | Reports: `status`, `snapped`, diagnostics | exactly as scripted; `measured:true` required |
-| G8 | Real-clock frame | p95 ≤ 2 ms; no > 8 ms frame after the commit frame |
+| G8 | Real-clock frame | p95 ≤ 2 ms; no > 8 ms frame after the commit frame. D12 cost row: Chromium decides, WebKit advisory |
 | G13 | Exact reads | commit ≤ 2N rects, 2N pairs and the exact §4.1/§4.3 computed count; steady frames zero; `measured:true` required |
 
 Cost gates:
@@ -334,7 +335,7 @@ evidence: the retired D9 `<1.0` pin is not a gate, and a load above it is
 reason. Cost gates keep the same paired-floor ratios and exact reads. P5
 requires two independent five-run Chromium cost invocations (a full combined
 report plus a cost-only repeat, or two full combined reports) with G11 ≤ 2×
-and G9/G10/G12 green; WebKit cost remains BLOCK/advisory under D12. A report
+and G9/G10/G12 green; WebKit cost rows (G8–G12) remain BLOCK/advisory under D12. A report
 with a hard fingerprint mismatch cannot claim the cost gates; its top-level
 `pass` is `false` when the cost scene is selected, while the frame-scoring
 values remain deciding evidence. WebKit's timer is 1 ms. G10 uses the real-clock 20-frame
@@ -725,8 +726,9 @@ the same plan/oracle/gates as the primary scene:
   variant oracle is not a pass-by-construction.
 - Certification requires all 23 variant keys (8 DPR + 15 reduced) in both
   engines in addition to the 11 primary scenes and the cost scene. A missing
-  or failed variant is a certification reason; a WebKit variant blocked only
-  on the 1 ms G12 timer is a D12 advisory, exactly like the scene/cost rows.
+  or failed variant is a certification reason; a WebKit variant whose only
+  deciding failures/BLOCKs are cost rows (G8–G12, including the 1 ms G12
+  timer) is a D12 advisory, exactly like the scene/cost rows.
 
 ### H19 measured outcome (`iteration-10/report.json`, five runs)
 
@@ -741,7 +743,8 @@ the same plan/oracle/gates as the primary scene:
   S-SEG 2/2 and 2/2 / 3/3.
 - **Reduced motion.** S-PHOTO, S-ACC, S-REORDER and S-SHEET pass their
   `'jump'`, `{ maxDuration: 0.2 }` and `'ignore'` variants in both engines,
-  apart from the D12 WebKit G12 advisories on S-REORDER/S-SHEET (and the
+  apart from the D12 WebKit cost-row (G8–G12) advisories on S-REORDER/S-SHEET
+  (and the
   WebKit `s-reorder@rm-jump` G8 below). S-PHOTO/ACC G1/G4 are at most
   0.0002 px; S-REORDER/S-SHEET G1/G4 at most 0.0001 px. `shape.reduced-policy`
   passes 0 in every variant; G7 statuses and G6 restoration pass.
@@ -822,19 +825,20 @@ WebKit, five runs:
 | Gate | Result |
 |---|---|
 | S-CARD, S-SEG, S-PHOTO, S-STACK, S-ISLAND, S-ACC, S-INSERT, S-DELETE, S-BULK | **pass** |
-| S-REORDER, S-SHEET | **BLOCKED/cost-advisory** on the scene G12 timer bound; frame/status rows pass (D12) |
+| S-REORDER, S-SHEET | **BLOCKED/cost-advisory** on the scene G12 timer bound; frame/status rows pass (D12; G8–G12 cost rows) |
 | G10 | **0.200 ms pass** with the real-clock 20-frame batch |
 | G9/G11 | **BLOCK**, no gate value |
-| G12 | **BLOCK/advisory** on the 1 ms timer (D12) |
+| G12 | **BLOCK/advisory** on the 1 ms timer (D12 cost row) |
 | G13 / floor | exact |
 
 The combined run load was 8.01, so cost remains advisory. D11 accepts a
 negative incremental (held p95 below the no-hold baseline) as a valid
 measurement; it is a diagnostic of zero marginal held cost, not a claim of
 positive held work.
-D12 applies: Chromium decides G9/G11/G12; WebKit remains required for
-frame/scoring/shape/status rows, and its cost/G12 BLOCKs are advisory
-(`cert advisory`), not certification blockers. H18-F F4 is fixed by counting
+D12 applies: Chromium decides the cost rows (G8–G12); WebKit remains required
+for frame/scoring/shape/status rows, and a WebKit scene/variant whose only
+deciding failures/BLOCKs are G8–G12 is advisory (`cert advisory`), not a
+certification blocker. H18-F F4 is fixed by counting
 `offsetLeft`/`offsetTop` in `stats.layoutOffsets`; G13 reports the count
 instead of hiding it. G11 remains open at 2.055×; there is no performance-complete claim. The best
 observed combined run was 2.015× at load 5.42, also open.
