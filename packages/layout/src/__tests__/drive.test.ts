@@ -404,10 +404,9 @@ describe('D1: public drive surface and take preconditions (§5.10)', () => {
                     await Promise.resolve()
                 }
 
-                expect(
-                    handle.state,
-                    `${landing}/${cause}: invalidated`
-                ).toBe('invalidated')
+                expect(handle.state, `${landing}/${cause}: invalidated`).toBe(
+                    'invalidated'
+                )
                 expect(h.group.stats.holds, `${landing}/${cause}: holds`).toBe(
                     0
                 )

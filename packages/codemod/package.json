@@ -1,7 +1,7 @@
 {
     "name": "@freestylejs/ani-codemod",
     "author": "freestyle",
-    "version": "0.0.0",
+    "version": "1.0.0",
     "description": "Migrates code from ANI 1.x to ANI 2.",
     "license": "MIT",
     "type": "module",

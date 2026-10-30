@@ -1,5 +1,16 @@
 # @freestylejs/ani-web
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [9d1b777]
+- Updated dependencies [05e5bba]
+- Updated dependencies [9d1b777]
+- Updated dependencies [6691fff]
+  - @freestylejs/ani-core@2.0.0
+  - @freestylejs/ani-react@2.0.0
+
 ## 0.3.0
 
 ### Minor Changes
