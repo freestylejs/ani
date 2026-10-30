@@ -12,6 +12,7 @@ import { resolveMotion, type TimingMotion } from '../motion'
 import {
     type AnchorPath,
     drawnBoxes,
+    drawnRates,
     drawnVelocities,
     fadeEnded,
     fadeOpacity,
@@ -521,6 +522,15 @@ describe('solve: track endpoints and velocity', () => {
         const track = createTrack(b, a, v, 0.5, 0.5, true, motion, null)
         const node = rootNode(a, { fx: 0.5, fy: 0.5, track })
         expect(drawnVelocities([node])[0]!.x).toBeCloseTo(3571.428571, 3)
+    })
+
+    it('drawnVelocities returns the same velocities as drawnRates on random trees', () => {
+        for (let seed = 900; seed < 920; seed++) {
+            const built = randomTree(seed)
+            expect(drawnVelocities(built.nodes)).toEqual(
+                drawnRates(built.nodes).velocities
+            )
+        }
     })
 
     it('analytic velocities match finite differences on random trees', () => {
