@@ -68,6 +68,25 @@ The transient browser/unit failures occurred only on the first loaded runs while
 shared with unrelated owner workloads (load up to 32+); the clean reruns are recorded. They are not
 relabelled as passes in the first attempts.
 
+### Second fresh clone (`june-wsl`, Ubuntu 26.04 x64, 8 cores)
+
+Cloned `dev/ecstatic-ramanujan-1mjr9q` at `67f0637`; clean tree.
+
+| Check | Result |
+|---|---|
+| `pnpm install --frozen-lockfile` | PASS (pnpm 10.20.0; codemod bin warning only) |
+| `pnpm build` | **8/8 tasks** |
+| `pnpm test` | **1929/1929 pass** |
+| `pnpm ts:typecheck` | **11/11 tasks** |
+| `pnpm check` | **0 errors**, 10 warnings, 8495 infos |
+| Browser / bench | **not runnable**: Playwright 1.55 rejects Ubuntu 26.04 (`Playwright does not support chromium on ubuntu26.04-x64`); no Docker/Podman. No pass is claimed. |
+
+The june-wsl unit/build/type/check results corroborate the Mac fresh-clone results. The Mac fresh
+clone remains the browser evidence; the P5 D9 report remains the bench certification. The
+owner-approved P6 carry-forward amendment
+(`p6_carry_forward_amendment_20261030.md`) governs the bench/final-release certification for the
+unchanged apparatus.
+
 ## P5 / P6 boundary
 
 The P5 full report is at `bench/layout/iteration-12/pre-fix/report.json` (code `f552728`); the
