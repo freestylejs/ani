@@ -7925,7 +7925,10 @@ export function createLayoutGroup(
             // (a hold taken at rest) or it is landing (P4-C3/P4-C4)
             if (
                 d.kind === 'track' ||
-                d.kind === 'follow' ||
+                // a finished follower is a held visual layer, not a live
+                // mover: the kill switch must not emit a false event for it
+                (d.kind === 'follow' &&
+                    (d.fade === null || !fadeEnded(d.fade))) ||
                 isLiveHold(node.p.hold)
             ) {
                 movers.push({ participant: node.p, run: run?.id ?? null })
