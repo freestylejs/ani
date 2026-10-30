@@ -3,6 +3,7 @@
 import { isAniError, timing } from '@freestylejs/ani-core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createManualClock } from '../../../core/src/testing/index'
+import { clearLayoutFaults, injectLayoutFault } from '../fault'
 import type { Box } from '../geometry'
 import { type Motion, resolveMotion } from '../motion'
 import { layoutRuntime } from '../runtime'
@@ -104,6 +105,7 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks()
+    clearLayoutFaults()
     layoutRuntime.setMode('animate')
     document.body.innerHTML = ''
 })
@@ -358,6 +360,76 @@ describe('D1: public drive surface and take preconditions (§5.10)', () => {
             expect(a.style.scale, path).toBe('')
             expect(a.style.cssText, path).toBe(authored)
             h.dispose()
+        }
+    })
+
+    it('J-001: released/cancelled landings are invalidated by snap and abort', async () => {
+        for (const landing of ['released', 'cancelled'] as const) {
+            for (const cause of ['snap', 'abort'] as const) {
+                const h = harness({
+                    motion: { ...linear, duration: 0.3 },
+                })
+                const events: LayoutDiagnostic[] = []
+                const stop = layoutRuntime.onDiagnostic((e) => events.push(e))
+                const a = node(h.root, { x: 0, y: 0, w: 80, h: 80 })
+                h.add(a, {
+                    radius: false,
+                    layoutId: `j001-unit-${landing}-${cause}`,
+                })
+                h.group.capture()
+                await h.group.flush()
+                const authored = a.style.cssText
+                const handle = h.group.take(a)
+                handle.move({ x: 40, y: 20 })
+                h.mc.frame(16)
+                await Promise.resolve()
+                if (landing === 'released') handle.release({ x: 100, y: 0 })
+                else handle.cancel()
+                h.mc.frame(16)
+                await Promise.resolve()
+                expect(handle.state, `${landing}/${cause}: live`).toBe(landing)
+                expect(
+                    h.group.stats.holds,
+                    `${landing}/${cause}: live hold`
+                ).toBe(1)
+
+                if (cause === 'snap') {
+                    layoutRuntime.setMode('snap')
+                } else {
+                    injectLayoutFault(
+                        'write',
+                        new Error(`${landing}/${cause}: unit abort`)
+                    )
+                    h.mc.frame(16)
+                    await Promise.resolve()
+                }
+
+                expect(
+                    handle.state,
+                    `${landing}/${cause}: invalidated`
+                ).toBe('invalidated')
+                expect(h.group.stats.holds, `${landing}/${cause}: holds`).toBe(
+                    0
+                )
+                expect(a.style.cssText, `${landing}/${cause}: restored`).toBe(
+                    authored
+                )
+                expect(h.mc.clock.size, `${landing}/${cause}: clock`).toBe(0)
+                expect(
+                    events.some(
+                        (e) =>
+                            e.code ===
+                            (cause === 'snap'
+                                ? 'runtime-disabled'
+                                : 'internal-error')
+                    ),
+                    `${landing}/${cause}: diagnostic`
+                ).toBe(true)
+                clearLayoutFaults()
+                layoutRuntime.setMode('animate')
+                stop()
+                h.dispose()
+            }
         }
     })
 })
