@@ -1036,9 +1036,41 @@ export function drawnBoxes(nodes: readonly SolveNode[]): Box[] {
     return drawnMotion(nodes, false).boxes
 }
 
+/** The simple drawn-rate path: no layers, followers, poses, rides or anchors. */
+function simpleRates(nodes: readonly SolveNode[]): boolean {
+    return nodes.every(
+        (node) =>
+            (node.layers === null || node.layers === undefined) &&
+            node.follow < 0 &&
+            (node.posed === undefined || node.posed === null) &&
+            (node.override === undefined || node.override === null) &&
+            (node.ride === undefined || node.ride < 0) &&
+            !node.track?.anchor
+    )
+}
+
 /** Analytic velocity of every node's drawn box (see `drawnMotion`). */
 export function drawnVelocities(nodes: readonly SolveNode[]): BoxVelocity[] {
-    return drawnMotion(nodes, true).velocities
+    if (!simpleRates(nodes)) return drawnMotion(nodes, true).velocities
+    const velocities: BoxVelocity[] = []
+    for (const node of nodes) {
+        const track = node.track
+        let velocity = ZERO_VELOCITY
+        if (track) {
+            const holding = isHolding(track, node.elapsed)
+            const t = localTime(track, node.elapsed)
+            const w = holding ? 0 : channelVelocity(track, 2, t)
+            const h = holding ? 0 : channelVelocity(track, 3, t)
+            velocity = {
+                x: channelVelocity(track, 0, t) - track.fx * w,
+                y: channelVelocity(track, 1, t) - track.fy * h,
+                w,
+                h,
+            }
+        }
+        velocities.push(velocity)
+    }
+    return velocities
 }
 
 /**
@@ -1049,16 +1081,7 @@ export function drawnRates(nodes: readonly SolveNode[]): {
     velocities: BoxVelocity[]
     poses: Pose[]
 } {
-    const simple = nodes.every(
-        (node) =>
-            (node.layers === null || node.layers === undefined) &&
-            node.follow < 0 &&
-            (node.posed === undefined || node.posed === null) &&
-            (node.override === undefined || node.override === null) &&
-            (node.ride === undefined || node.ride < 0) &&
-            !node.track?.anchor
-    )
-    if (simple) {
+    if (simpleRates(nodes)) {
         const velocities: BoxVelocity[] = []
         const fulls: MovingMap[] = []
         for (const node of nodes) {

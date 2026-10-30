@@ -37,7 +37,14 @@ export interface CertificationInput {
         readonly scene: string
         readonly reason: string
     }[]
-    readonly advisory: { readonly cost: boolean }
+    readonly advisory: {
+        /** A hard hardware/software fingerprint mismatch (D13). */
+        readonly cost: boolean
+        readonly reasons?: readonly string[] | undefined
+        readonly load1?: number | undefined
+        readonly controlledLoad?: boolean | undefined
+        readonly loadReason?: string | undefined
+    }
     readonly controlsPass: boolean
     readonly selfTestPass: boolean
     readonly blocked?: readonly {
@@ -165,7 +172,10 @@ export function evaluateCertification(
         }
     }
     if (input.advisory.cost) {
-        reasons.push('cost fingerprint is advisory')
+        const hardReasons = input.advisory.reasons ?? []
+        reasons.push(
+            `cost fingerprint is advisory${hardReasons.length > 0 ? `: ${hardReasons.join('; ')}` : ''}`
+        )
     }
     if (!input.controlsPass) {
         reasons.push('negative controls failed or were not run')
@@ -270,6 +280,10 @@ export function evaluateCertification(
         certified: reasons.length === 0,
         reasons,
         advisory,
+        // D13: recorded load evidence, not a certification reason.
+        controlledLoad: input.advisory.controlledLoad === true,
+        load1: input.advisory.load1 ?? Number.NaN,
+        loadReason: input.advisory.loadReason ?? '1-minute load not recorded',
         requiredEngines: [...REQUIRED_ENGINES],
         requiredRuns: REQUIRED_RUNS,
         requiredScenes: [...REQUIRED_SCENES],

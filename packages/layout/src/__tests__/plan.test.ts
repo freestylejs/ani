@@ -8,6 +8,7 @@ import {
     type PlanInput,
     type PlanNode,
     plan,
+    retargetEligible,
 } from '../plan'
 import { drawnBoxes, drawnVelocities } from '../solve'
 import { trackOf as createTrack, rootNode } from './nodes'
@@ -772,6 +773,63 @@ describe('plan: snaps', () => {
         ])
         expect(result.leads.get('x')).toBe(2)
         expect(result.snapped).toEqual([{ index: 3, reason: 'unsupported' }])
+    })
+})
+
+describe('plan: retarget-only fast path', () => {
+    const a = { x: 100, y: 100, w: 100, h: 50 }
+    const b = { x: 0, y: 100, w: 100, h: 50 }
+
+    it('matches the general plan for a plain retarget frame', () => {
+        const running = createTrack(b, a, null, 0.5, 0.5, true, motion, null)
+        const nodes = [
+            node({ before: a, a }),
+            node({
+                before: b,
+                a,
+                moving: true,
+                track: running,
+                trackTarget: a,
+                path: 'retarget',
+            }),
+            node({
+                parent: 1,
+                before: { x: 10, y: 110, w: 20, h: 20 },
+                a: { x: 30, y: 110, w: 20, h: 20 },
+            }),
+            node({
+                parent: 1,
+                before: { x: 100, y: 100, w: 20, h: 20 },
+                a: { x: 100, y: 100, w: 20, h: 20 },
+            }),
+        ]
+        expect(retargetEligible(nodes)).toBe(true)
+        const general = plan(input(nodes))
+        const fast = plan(input(nodes, { retargetOnly: true, leadless: true }))
+        expect(fast).toEqual(general)
+        expect(fast.actions.map((action) => action.kind)).toEqual([
+            'none',
+            'track',
+            'track',
+            'static',
+        ])
+    })
+
+    it('falls back to the general plan when a node is scroll-active', () => {
+        const nodes = [
+            node({
+                before: { x: 0, y: 0, w: 100, h: 50 },
+                a: { x: 40, y: 0, w: 100, h: 50 },
+                scrollActive: true,
+            }),
+        ]
+        expect(retargetEligible(nodes)).toBe(false)
+        const general = plan(input(nodes))
+        const fast = plan(input(nodes, { retargetOnly: true, leadless: true }))
+        expect(fast).toEqual(general)
+        expect(fast.degraded).toEqual([
+            { index: 0, reason: 'handoff-scroll-active' },
+        ])
     })
 })
 

@@ -273,8 +273,17 @@ export function formatReport(report: BenchReport): string {
     lines.push(
         `fingerprint ${report.fingerprint.host} / ${report.fingerprint.os.productVersion} / ${report.fingerprint.cpu} / ${report.fingerprint.browsers.chromium} / ${report.fingerprint.browsers.webkit}`
     )
+    const load = Number.isFinite(report.fingerprint.load1)
+        ? report.fingerprint.load1.toFixed(2)
+        : 'unavailable'
     lines.push(
-        `1-minute load ${report.fingerprint.load1.toFixed(2)}; cost ${report.advisory.cost ? 'ADVISORY' : 'deciding'}${report.advisory.reasons.length > 0 ? ` (${report.advisory.reasons.join('; ')})` : ''}`
+        `1-minute load ${load}: ${report.advisory.loadReason ?? 'not recorded'}`
+    )
+    lines.push(
+        `controlled load: ${report.advisory.controlledLoad ? 'YES (D13; cost gates remain deciding)' : 'no'}`
+    )
+    lines.push(
+        `cost gates: ${report.advisory.cost ? 'ADVISORY' : 'deciding'}${report.advisory.reasons.length > 0 ? ` (${report.advisory.reasons.join('; ')})` : ''}`
     )
     for (const engine of report.engines) {
         lines.push('')
@@ -395,6 +404,9 @@ export function formatReport(report: BenchReport): string {
     for (const reason of report.certification.reasons) {
         lines.push(`  cert block: ${reason}`)
     }
+    lines.push(
+        `  cert controlled load: ${report.certification.controlledLoad ? 'YES' : 'no'}${report.certification.controlledLoad ? ` — ${report.certification.loadReason ?? 'not recorded'}` : ''}`
+    )
     for (const reason of report.certification.advisory) {
         lines.push(`  cert advisory: ${reason}`)
     }
@@ -521,6 +533,10 @@ export interface CertificationReport {
     readonly reasons: readonly string[]
     /** WebKit cost BLOCK/advisory rows (D12); they do not block P5. */
     readonly advisory: readonly string[]
+    /** D13: recorded load above the retired D9 pin; never a certification reason. */
+    readonly controlledLoad: boolean
+    readonly load1: number
+    readonly loadReason: string
     readonly requiredEngines: readonly string[]
     readonly requiredRuns: number
     readonly requiredScenes: readonly string[]
