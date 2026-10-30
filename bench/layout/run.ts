@@ -26,7 +26,11 @@ import {
     realTwinProblems,
 } from './aggregate.ts'
 import { bundlePage, pageHtml } from './bundle.ts'
-import { evaluateCertification, evaluateInvocation } from './certification.ts'
+import {
+    classifyWebkitCostOnly,
+    evaluateCertification,
+    evaluateInvocation,
+} from './certification.ts'
 import {
     costOutcome,
     costValidity,
@@ -2502,14 +2506,12 @@ function variantBlockedEntries(
                     reason: 'missing from the report',
                 })
             } else if (!report.pass) {
-                const costOnly =
+                if (
                     engine.engine === 'webkit' &&
-                    report.status === 'blocked' &&
-                    report.blockedReasons.length > 0 &&
-                    report.blockedReasons.every((reason) =>
-                        reason.startsWith('G12')
-                    )
-                if (costOnly) continue
+                    classifyWebkitCostOnly(report)
+                ) {
+                    continue
+                }
                 entries.push({
                     item: `${engine.engine} variant ${key}`,
                     reason:
@@ -2737,12 +2739,7 @@ async function main(): Promise<number> {
         engine.scenes.every(
             (scene) =>
                 scene.status === 'pass' ||
-                (engine.engine === 'webkit' &&
-                    scene.status === 'blocked' &&
-                    scene.blockedReasons.length > 0 &&
-                    scene.blockedReasons.every((reason) =>
-                        reason.startsWith('G12')
-                    ))
+                (engine.engine === 'webkit' && classifyWebkitCostOnly(scene))
         )
     )
     const costPass = required.every(
@@ -2755,12 +2752,7 @@ async function main(): Promise<number> {
         engine.variants.every(
             (variant) =>
                 variant.status === 'pass' ||
-                (engine.engine === 'webkit' &&
-                    variant.status === 'blocked' &&
-                    variant.blockedReasons.length > 0 &&
-                    variant.blockedReasons.every((reason) =>
-                        reason.startsWith('G12')
-                    ))
+                (engine.engine === 'webkit' && classifyWebkitCostOnly(variant))
         )
     )
     const controlsPass =
@@ -2773,11 +2765,9 @@ async function main(): Promise<number> {
     for (const engine of engineReports) {
         for (const scene of engine.scenes) {
             if (scene.status !== 'blocked') continue
-            const costOnly =
-                engine.engine === 'webkit' &&
-                scene.blockedReasons.length > 0 &&
-                scene.blockedReasons.every((reason) => reason.startsWith('G12'))
-            if (costOnly) continue
+            if (engine.engine === 'webkit' && classifyWebkitCostOnly(scene)) {
+                continue
+            }
             blockedEntries.push({
                 item: `${engine.engine} scene ${scene.scene}`,
                 reason: scene.blockedReasons.join('; ') || 'blocked',
@@ -2829,6 +2819,8 @@ async function main(): Promise<number> {
                 status: scene.status,
                 blockedReasons: scene.blockedReasons,
                 failedMetrics,
+                costOnly:
+                    engine.engine === 'webkit' && classifyWebkitCostOnly(scene),
             }
         }),
         variants: engine.variants.map((variant) => {
@@ -2855,6 +2847,9 @@ async function main(): Promise<number> {
                 status: variant.status,
                 blockedReasons: variant.blockedReasons,
                 failedMetrics,
+                costOnly:
+                    engine.engine === 'webkit' &&
+                    classifyWebkitCostOnly(variant),
             }
         }),
         cost: engine.cost

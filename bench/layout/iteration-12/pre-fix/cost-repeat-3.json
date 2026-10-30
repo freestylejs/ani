@@ -1,0 +1,983 @@
+{
+  "schema": "ani-layout-bench/v1",
+  "generatedAt": "2026-10-30T03:08:43.702Z",
+  "command": "pnpm bench:layout --engine chromium --scene cost --runs 5 --out bench/layout/iteration-12/cost-repeat-3.json",
+  "sourceRevision": "f552728b18bfd6c4f386dece47b4192e1de3cc7d",
+  "fingerprint": {
+    "host": "Mac14,9",
+    "os": {
+      "productVersion": "27.0.1",
+      "kernel": "27.0.0"
+    },
+    "cpu": "Apple M2 Pro",
+    "cores": 10,
+    "memoryBytes": 34359738368,
+    "node": "v24.19.0",
+    "pnpm": "10.20.0",
+    "playwright": "1.55.0",
+    "browsers": {
+      "chromium": "chromium_headless_shell-1187",
+      "chromiumHeadlessShell": "chromium_headless_shell-1187",
+      "webkit": "webkit-2203",
+      "firefox": "firefox-1490"
+    },
+    "load1": 3.64501953125
+  },
+  "advisory": {
+    "cost": false,
+    "reasons": [],
+    "load1": 3.64501953125,
+    "controlledLoad": true,
+    "loadReason": "above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason"
+  },
+  "engines": [
+    {
+      "engine": "chromium",
+      "advisory": false,
+      "browserVersion": "140.0.7339.16",
+      "build": "chromium_headless_shell-1187",
+      "launchError": null,
+      "scenes": [],
+      "variants": [],
+      "cost": {
+        "scene": "S-BULK",
+        "status": "pass",
+        "pending": null,
+        "pass": true,
+        "valid": true,
+        "blockedReasons": [],
+        "metrics": [
+          {
+            "id": "G9-unscrolled",
+            "label": "Commit over the required-work floor, unscrolled",
+            "gate": "median of 5 per-run ratios <= 2",
+            "unit": "ratio",
+            "median": 1.6568457907798866,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.6483421523939161,
+              1.6377682203876658,
+              1.662371185860844,
+              1.676392542637822,
+              1.6568457907798866
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 4
+            }
+          },
+          {
+            "id": "G9-scrolled",
+            "label": "Commit over the required-work floor, scrolled 1.5 viewports",
+            "gate": "median of 5 per-run ratios <= 2",
+            "unit": "ratio",
+            "median": 1.6663708471166203,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.6972639142598804,
+              1.5982455822606205,
+              1.6693052075734658,
+              1.648049585990795,
+              1.6663708471166203
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G9.floor-unscrolled",
+            "label": "Required-work floor audit (unscrolled)",
+            "gate": "exact required counts; no extra read",
+            "unit": "count mismatches",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G9.floor-scrolled",
+            "label": "Required-work floor audit (scrolled)",
+            "gate": "exact required counts; no extra read",
+            "unit": "count mismatches",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G10",
+            "label": "Steady frame at 300 nested movers (A-19 150+150)",
+            "gate": "p95 <= 2 ms",
+            "unit": "ms",
+            "median": 1.2300000190734863,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.1699998378753662,
+              1.2300000190734863,
+              1.2800002098083496,
+              1.2450001239776611,
+              1.1999998092651367
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 3
+            }
+          },
+          {
+            "id": "G11",
+            "label": "Sustained 60 Hz commits with 300 moving participants",
+            "gate": "p95(engine commits) / p95(floor commits) <= 2",
+            "unit": "ratio",
+            "median": 2,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              1.9665604286674794,
+              2.0840197261320816,
+              1.9125766605323857,
+              2.021103915204727,
+              2
+            ],
+            "passPerRun": [
+              true,
+              false,
+              true,
+              false,
+              true
+            ],
+            "worst": {
+              "run": 2
+            }
+          },
+          {
+            "id": "G11.floor",
+            "label": "Sustained required-work floor audit",
+            "gate": "exact required counts; no extra read",
+            "unit": "count mismatches",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G13",
+            "label": "Exact read counts per commit and zero steady-frame reads",
+            "gate": "<= 2N rects and 2N layout-size pairs, exactly the computed reads; steady frames read zero",
+            "unit": "excess reads",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          },
+          {
+            "id": "G12-1",
+            "label": "Held frame at 1 held element",
+            "gate": "(p95(held) - p95(no-hold)) / held <= 0.1 ms",
+            "unit": "ms/held",
+            "median": -0.20000004768371582,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              -0.20000004768371582,
+              -0.2499997615814209,
+              -0.22499990463256836,
+              -0.1400001049041748,
+              -0.059999704360961914
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 5
+            }
+          },
+          {
+            "id": "G12-10",
+            "label": "Held frame at 10 held elements",
+            "gate": "(p95(held) - p95(no-hold)) / held <= 0.1 ms",
+            "unit": "ms/held",
+            "median": -0.004999995231628418,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              -0.014499998092651368,
+              -0.00950000286102295,
+              0.004000020027160644,
+              -0.004999995231628418,
+              0.005999994277954101
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 5
+            }
+          },
+          {
+            "id": "G13-held",
+            "label": "Held frame reads exactly one rect per held element",
+            "gate": "one rect per live hold per frame, zero offset/style reads, 600 frames",
+            "unit": "excess reads",
+            "median": 0,
+            "blocked": false,
+            "deciding": true,
+            "pass": true,
+            "perRun": [
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "passPerRun": [
+              true,
+              true,
+              true,
+              true,
+              true
+            ],
+            "worst": {
+              "run": 1
+            }
+          }
+        ],
+        "runs": [
+          {
+            "run": 0,
+            "warmup": true,
+            "valid": true,
+            "blockedReasons": [],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.695079107618961,
+            "ratioScrolled": 1.6669643209144782,
+            "engineMedianUnscrolled": 4.822500109672546,
+            "floorMedianUnscrolled": 2.8450000286102295,
+            "engineMedianScrolled": 4.667500019073486,
+            "floorMedianScrolled": 2.799999952316284,
+            "steadyP95": 1.3650000095367432,
+            "steadySampleMode": "frame",
+            "sustainedP95": 6.184999942779541,
+            "sustainedFloorP95": 3.195000171661377,
+            "sustainedRatio": 1.9358371237781142,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 60.053748103407116,
+            "sustainedSampleMode": "commit",
+            "sustainedErrorBound": 0.0024999380111694336,
+            "sustainedEngineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "sustainedFloorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "sustainedFloorAuditPass": true,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 300 computed reads (Chromium set), 300 poses; steady frames read zero",
+            "heldBaselineP95": 0.5750000476837158,
+            "heldTenBaselineP95": 0.684999942779541,
+            "heldOneP95": 0.38499999046325684,
+            "heldTenP95": 0.5450003147125244,
+            "heldOnePerHeld": -0.19000005722045898,
+            "heldTenPerHeld": -0.01399996280670166,
+            "heldReadsPass": true,
+            "heldReadsDetail": "1 held: 600 rects / 600 hold-frames, 0 pairs, 0 styles, 0 mismatched frames; 10 held: 6000 rects / 6000 hold-frames, 0 pairs, 0 styles, 0 mismatched frames",
+            "g": 0.004999876022338867,
+            "gSource": "reads"
+          },
+          {
+            "run": 1,
+            "warmup": false,
+            "valid": true,
+            "blockedReasons": [],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.6483421523939161,
+            "ratioScrolled": 1.6972639142598804,
+            "engineMedianUnscrolled": 4.7225000858306885,
+            "floorMedianUnscrolled": 2.8649998903274536,
+            "engineMedianScrolled": 4.807500004768372,
+            "floorMedianScrolled": 2.8324999809265137,
+            "steadyP95": 1.1699998378753662,
+            "steadySampleMode": "frame",
+            "sustainedP95": 6.174999952316284,
+            "sustainedFloorP95": 3.140000104904175,
+            "sustainedRatio": 1.9665604286674794,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 60.01848569313558,
+            "sustainedSampleMode": "commit",
+            "sustainedErrorBound": 0.0024999380111694336,
+            "sustainedEngineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "sustainedFloorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "sustainedFloorAuditPass": true,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 300 computed reads (Chromium set), 300 poses; steady frames read zero",
+            "heldBaselineP95": 0.5899999141693115,
+            "heldTenBaselineP95": 0.7549998760223389,
+            "heldOneP95": 0.3899998664855957,
+            "heldTenP95": 0.6099998950958252,
+            "heldOnePerHeld": -0.20000004768371582,
+            "heldTenPerHeld": -0.014499998092651368,
+            "heldReadsPass": true,
+            "heldReadsDetail": "1 held: 600 rects / 600 hold-frames, 0 pairs, 0 styles, 0 mismatched frames; 10 held: 6000 rects / 6000 hold-frames, 0 pairs, 0 styles, 0 mismatched frames",
+            "g": 0.004999876022338867,
+            "gSource": "reads"
+          },
+          {
+            "run": 2,
+            "warmup": false,
+            "valid": true,
+            "blockedReasons": [],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.6377682203876658,
+            "ratioScrolled": 1.5982455822606205,
+            "engineMedianUnscrolled": 4.769999980926514,
+            "floorMedianUnscrolled": 2.912500023841858,
+            "engineMedianScrolled": 4.554999947547913,
+            "floorMedianScrolled": 2.850000023841858,
+            "steadyP95": 1.2300000190734863,
+            "steadySampleMode": "frame",
+            "sustainedP95": 6.325000047683716,
+            "sustainedFloorP95": 3.0350000858306885,
+            "sustainedRatio": 2.0840197261320816,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 60.04881969109607,
+            "sustainedSampleMode": "commit",
+            "sustainedErrorBound": 0.0024999380111694336,
+            "sustainedEngineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "sustainedFloorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "sustainedFloorAuditPass": true,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 300 computed reads (Chromium set), 300 poses; steady frames read zero",
+            "heldBaselineP95": 0.6399998664855957,
+            "heldTenBaselineP95": 0.7000000476837158,
+            "heldOneP95": 0.3900001049041748,
+            "heldTenP95": 0.6050000190734863,
+            "heldOnePerHeld": -0.2499997615814209,
+            "heldTenPerHeld": -0.00950000286102295,
+            "heldReadsPass": true,
+            "heldReadsDetail": "1 held: 600 rects / 600 hold-frames, 0 pairs, 0 styles, 0 mismatched frames; 10 held: 6000 rects / 6000 hold-frames, 0 pairs, 0 styles, 0 mismatched frames",
+            "g": 0.004999876022338867,
+            "gSource": "reads"
+          },
+          {
+            "run": 3,
+            "warmup": false,
+            "valid": true,
+            "blockedReasons": [],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.662371185860844,
+            "ratioScrolled": 1.6693052075734658,
+            "engineMedianUnscrolled": 4.837500095367432,
+            "floorMedianUnscrolled": 2.909999966621399,
+            "engineMedianScrolled": 4.745000004768372,
+            "floorMedianScrolled": 2.8424999713897705,
+            "steadyP95": 1.2800002098083496,
+            "steadySampleMode": "frame",
+            "sustainedP95": 6.234999895095825,
+            "sustainedFloorP95": 3.259999990463257,
+            "sustainedRatio": 1.9125766605323857,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 60.05873744361612,
+            "sustainedSampleMode": "commit",
+            "sustainedErrorBound": 0.0024999380111694336,
+            "sustainedEngineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "sustainedFloorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "sustainedFloorAuditPass": true,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 300 computed reads (Chromium set), 300 poses; steady frames read zero",
+            "heldBaselineP95": 0.6349999904632568,
+            "heldTenBaselineP95": 0.5999999046325684,
+            "heldOneP95": 0.4100000858306885,
+            "heldTenP95": 0.6400001049041748,
+            "heldOnePerHeld": -0.22499990463256836,
+            "heldTenPerHeld": 0.004000020027160644,
+            "heldReadsPass": true,
+            "heldReadsDetail": "1 held: 600 rects / 600 hold-frames, 0 pairs, 0 styles, 0 mismatched frames; 10 held: 6000 rects / 6000 hold-frames, 0 pairs, 0 styles, 0 mismatched frames",
+            "g": 0.004999876022338867,
+            "gSource": "reads"
+          },
+          {
+            "run": 4,
+            "warmup": false,
+            "valid": true,
+            "blockedReasons": [],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.676392542637822,
+            "ratioScrolled": 1.648049585990795,
+            "engineMedianUnscrolled": 4.739999890327454,
+            "floorMedianUnscrolled": 2.8274999856948853,
+            "engineMedianScrolled": 4.647499918937683,
+            "floorMedianScrolled": 2.8200000524520874,
+            "steadyP95": 1.2450001239776611,
+            "steadySampleMode": "frame",
+            "sustainedP95": 6.224999904632568,
+            "sustainedFloorP95": 3.0799999237060547,
+            "sustainedRatio": 2.021103915204727,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 60.04659615999451,
+            "sustainedSampleMode": "commit",
+            "sustainedErrorBound": 0.0024999380111694336,
+            "sustainedEngineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "sustainedFloorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "sustainedFloorAuditPass": true,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 300 computed reads (Chromium set), 300 poses; steady frames read zero",
+            "heldBaselineP95": 0.5499999523162842,
+            "heldTenBaselineP95": 0.6449999809265137,
+            "heldOneP95": 0.4099998474121094,
+            "heldTenP95": 0.5950000286102295,
+            "heldOnePerHeld": -0.1400001049041748,
+            "heldTenPerHeld": -0.004999995231628418,
+            "heldReadsPass": true,
+            "heldReadsDetail": "1 held: 600 rects / 600 hold-frames, 0 pairs, 0 styles, 0 mismatched frames; 10 held: 6000 rects / 6000 hold-frames, 0 pairs, 0 styles, 0 mismatched frames",
+            "g": 0.004999876022338867,
+            "gSource": "reads"
+          },
+          {
+            "run": 5,
+            "warmup": false,
+            "valid": true,
+            "blockedReasons": [],
+            "engineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "engineAuditScrolled": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "floorAuditScrolled": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "ratioUnscrolled": 1.6568457907798866,
+            "ratioScrolled": 1.6663708471166203,
+            "engineMedianUnscrolled": 4.78000009059906,
+            "floorMedianUnscrolled": 2.884999990463257,
+            "engineMedianScrolled": 4.695000052452087,
+            "floorMedianScrolled": 2.817500114440918,
+            "steadyP95": 1.1999998092651367,
+            "steadySampleMode": "frame",
+            "sustainedP95": 6.309999942779541,
+            "sustainedFloorP95": 3.1549999713897705,
+            "sustainedRatio": 2,
+            "sustainedCommits": 300,
+            "sustainedCommitHz": 60.024069653304814,
+            "sustainedSampleMode": "commit",
+            "sustainedErrorBound": 0.0024999380111694336,
+            "sustainedEngineAudit": {
+              "rects": 2000,
+              "offsets": 2000,
+              "styleReads": 300,
+              "poseWrites": 300
+            },
+            "sustainedFloorAudit": {
+              "captureRects": 1000,
+              "captureOffsets": 1000,
+              "flushRects": 1000,
+              "flushOffsets": 1000,
+              "styleReads": 300,
+              "poseWrites": 300,
+              "extraReads": 0
+            },
+            "sustainedFloorAuditPass": true,
+            "floorAuditPass": true,
+            "floorAuditDetail": "1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0; 1000 participants, 300 active poses; capture 1000/1000, flush 1000/1000, computed 300, writes 300, extra 0",
+            "exactReadsPass": true,
+            "exactReadsDetail": "every commit 2000 rect/pair reads, 300 computed reads (Chromium set), 300 poses; steady frames read zero",
+            "heldBaselineP95": 0.44499993324279785,
+            "heldTenBaselineP95": 0.5,
+            "heldOneP95": 0.38500022888183594,
+            "heldTenP95": 0.559999942779541,
+            "heldOnePerHeld": -0.059999704360961914,
+            "heldTenPerHeld": 0.005999994277954101,
+            "heldReadsPass": true,
+            "heldReadsDetail": "1 held: 600 rects / 600 hold-frames, 0 pairs, 0 styles, 0 mismatched frames; 10 held: 6000 rects / 6000 hold-frames, 0 pairs, 0 styles, 0 mismatched frames",
+            "g": 0.004999876022338867,
+            "gSource": "reads"
+          }
+        ],
+        "notes": [
+          "G9/G10/G11/G12/G13 are measured; G12 is the 1- and 10-held shape on the real clock.",
+          "G12 and G13-held pass only when every held frame reads exactly one rect per held element and the release leaves no hold or track.",
+          "S-BULK frame scoring (G1–G8, manual clock) is the separate s-bulk scene."
+        ],
+        "measuredRuns": 5
+      },
+      "notes": []
+    }
+  ],
+  "negativeControls": [],
+  "selfTests": {
+    "pass": true,
+    "controls": [
+      "negative control G1: a 0.1 px offset fails the oracle error (3.933875ms)",
+      "negative control G2: a 0.1 px first-frame jump fails continuity (2.701375ms)",
+      "negative control G3: starting a retarget from rest fails velocity continuity (2.513916ms)",
+      "negative control G4: a 0.1 px spring displacement fails spring fidelity (2.505875ms)",
+      "negative control G5: a leftover pose and a 0.02 px settle error fail (2.526334ms)",
+      "negative control G6: a leftover declaration fails restoration (2.615ms)",
+      "negative control G7: a wrong status or a wrong snapped set fails reports (4.91175ms)",
+      "negative control G8: a 9 ms frame after the commit and a high p95 fail (0.236667ms)",
+      "negative control G9: a floor with an extra read fails its audit (0.282417ms)",
+      "negative control G10 and G11: a p95 above 2 ms or 2x floor fails (0.149125ms)",
+      "negative control G12: 0.11 ms per held element fails (0.170625ms)",
+      "negative control G13: an extra rect or a steady-frame read fails (4.671625ms)",
+      "negative control G14: a load is controlled evidence; a build mismatch is advisory (0.443166ms)",
+      "shape negative controls: opacity, coverage, radius, inert and font fail (157.375375ms)"
+    ],
+    "files": [
+      "bench/layout/oracle.test.ts",
+      "bench/layout/scoring.test.ts",
+      "bench/layout/stats.test.ts",
+      "bench/layout/frame_sampler.test.ts",
+      "bench/layout/aggregate.test.ts",
+      "bench/layout/certification.test.ts",
+      "bench/layout/cost_validity.test.ts",
+      "bench/layout/variants.test.ts",
+      "bench/layout/timeout.test.ts",
+      "bench/layout/fingerprint.test.ts"
+    ],
+    "detail": "14 negative controls failed as required across 10 test files"
+  },
+  "pending": [],
+  "blocked": [],
+  "certification": {
+    "certified": false,
+    "reasons": [
+      "required engine webkit not selected",
+      "required scene s-card not selected",
+      "required scene s-seg not selected",
+      "required scene s-photo not selected",
+      "required scene s-stack not selected",
+      "required scene s-island not selected",
+      "required scene s-acc not selected",
+      "required scene s-insert not selected",
+      "required scene s-delete not selected",
+      "required scene s-reorder not selected",
+      "required scene s-sheet not selected",
+      "required scene s-bulk not selected",
+      "negative controls failed or were not run",
+      "chromium variant s-card@dpr1 missing",
+      "chromium variant s-card@dpr3 missing",
+      "chromium variant s-photo@dpr1 missing",
+      "chromium variant s-photo@dpr3 missing",
+      "chromium variant s-acc@dpr1 missing",
+      "chromium variant s-acc@dpr3 missing",
+      "chromium variant s-seg@dpr1 missing",
+      "chromium variant s-seg@dpr3 missing",
+      "chromium variant s-card@rm-jump missing",
+      "chromium variant s-card@rm-max missing",
+      "chromium variant s-card@rm-ignore missing",
+      "chromium variant s-photo@rm-jump missing",
+      "chromium variant s-photo@rm-max missing",
+      "chromium variant s-photo@rm-ignore missing",
+      "chromium variant s-acc@rm-jump missing",
+      "chromium variant s-acc@rm-max missing",
+      "chromium variant s-acc@rm-ignore missing",
+      "chromium variant s-reorder@rm-jump missing",
+      "chromium variant s-reorder@rm-max missing",
+      "chromium variant s-reorder@rm-ignore missing",
+      "chromium variant s-sheet@rm-jump missing",
+      "chromium variant s-sheet@rm-max missing",
+      "chromium variant s-sheet@rm-ignore missing",
+      "chromium scene s-card missing",
+      "chromium scene s-seg missing",
+      "chromium scene s-photo missing",
+      "chromium scene s-stack missing",
+      "chromium scene s-island missing",
+      "chromium scene s-acc missing",
+      "chromium scene s-insert missing",
+      "chromium scene s-delete missing",
+      "chromium scene s-reorder missing",
+      "chromium scene s-sheet missing",
+      "chromium scene s-bulk missing",
+      "required engine webkit has no report"
+    ],
+    "advisory": [],
+    "controlledLoad": true,
+    "load1": 3.64501953125,
+    "loadReason": "above the retired D9 <1.0 pin; recorded as controlled-load evidence (D13), not an advisory reason",
+    "requiredEngines": [
+      "chromium",
+      "webkit"
+    ],
+    "requiredRuns": 5,
+    "requiredScenes": [
+      "s-card",
+      "s-seg",
+      "s-photo",
+      "s-stack",
+      "s-island",
+      "s-acc",
+      "s-insert",
+      "s-delete",
+      "s-reorder",
+      "s-sheet",
+      "s-bulk",
+      "cost"
+    ],
+    "requiredVariants": [
+      "s-card@dpr1",
+      "s-card@dpr3",
+      "s-photo@dpr1",
+      "s-photo@dpr3",
+      "s-acc@dpr1",
+      "s-acc@dpr3",
+      "s-seg@dpr1",
+      "s-seg@dpr3",
+      "s-card@rm-jump",
+      "s-card@rm-max",
+      "s-card@rm-ignore",
+      "s-photo@rm-jump",
+      "s-photo@rm-max",
+      "s-photo@rm-ignore",
+      "s-acc@rm-jump",
+      "s-acc@rm-max",
+      "s-acc@rm-ignore",
+      "s-reorder@rm-jump",
+      "s-reorder@rm-max",
+      "s-reorder@rm-ignore",
+      "s-sheet@rm-jump",
+      "s-sheet@rm-max",
+      "s-sheet@rm-ignore"
+    ]
+  },
+  "pass": true
+}
