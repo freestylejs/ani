@@ -187,7 +187,7 @@ The vanilla migration table is in the layout README.
 The iOS-native-grade claim is a **certification target**, not a shipped claim. It is earned only
 when `.trace/ani_ios_production/p5_bench.md` is a TRIBUNAL PASS on the D9 instrument; at this
 commit P5 has no report, so the adapter does not claim it. The layout README carries the evidence
-contract and the certification commands.
+contract, D12/D13 cost rules and the certification commands.
 
 ## Documentation
 

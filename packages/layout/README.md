@@ -401,6 +401,12 @@ carried tribunal defect closed. At this commit there is no `p5_bench.md`; P5 is 
 this package must not be cited as "iOS Native Grade". A P5 report with a mismatched fingerprint,
 a skipped scene, a missing metric or a weakened tolerance is not a pass.
 
+Cost evidence follows D12/D13: Chromium decides G9/G11/G12; WebKit cost rows are BLOCK/advisory
+while its frame/scoring/shape/status rows decide. The recorded 1-minute load may be above the
+retired D9 `<1.0` pin; under D13 it is controlled-load evidence, not by itself an advisory reason.
+P5 requires two independent five-run Chromium cost invocations (a full combined report plus a
+cost-only repeat) with G11 ≤ 2× and G9/G10/G12 green.
+
 ## Checks
 
 Run the release checks from the repository root:
