@@ -3471,6 +3471,20 @@ export function createLayoutGroup(
     }
 
     /**
+     * §5.8/§9.1: when the scope settles for a cause that is not the author's
+     * removal, a live crossfade still ends as a completed fade. The exiting
+     * follower belongs to presence, so it is held invisible and inert at its
+     * last pose until presence unmounts it; `settle` must not restore its
+     * authored opacity and `inert` while it is still mounted.
+     */
+    function holdFinishedFollower(p: Participant): void {
+        const d = p.drive
+        if (!d || d.kind === 'held' || d.fade?.role !== 'follower') return
+        endFade(p)
+        d.kind = 'held'
+    }
+
+    /**
      * Solves the current frame; `dt === null` writes the current time without
      * advancing (the flush's t = 0 pose). Returns whether anything animates.
      */
@@ -3553,6 +3567,10 @@ export function createLayoutGroup(
                         velocity: ZERO_VELOCITY,
                     }
                 }
+                // F5: the pair has no track any more. Complete the fade so
+                // the follower is not a partially visible ghost until
+                // presence unmounts it; it stays held at that frozen box.
+                if (d.fade?.role === 'follower') endFade(node.p)
                 d.kind = 'held'
                 d.release?.()
                 d.release = null
@@ -7567,6 +7585,11 @@ export function createLayoutGroup(
             // the cap displaces running tracks: their reports are interrupted
             for (const run of [...liveRuns]) interrupt(run)
         }
+        // §5.8/§9.1: a cap is a degradation, not the author's removal. A live
+        // crossfade still ends as a completed fade: the lead snaps to A and
+        // gives its opacity back, while the exiting follower stays invisible
+        // and inert at its last pose until presence unmounts it (F2).
+        for (const p of registry.values()) holdFinishedFollower(p)
         for (const p of registry.values()) {
             const d = p.drive
             if (!d || d.kind === 'held') continue
@@ -7667,6 +7690,11 @@ export function createLayoutGroup(
                         if (follower) d.kind = 'held'
                     }
                 }
+            } else if (status === 'ended') {
+                // F1: `step(null)` above ended every live fade at p = 1; the
+                // still-mounted followers must not be settled back to their
+                // authored opacity and interactive state (§5.8).
+                for (const node of frame) holdFinishedFollower(node.p)
             }
             for (const node of frame) {
                 const d = node.p.drive
