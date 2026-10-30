@@ -5365,6 +5365,7 @@ export function createLayoutGroup(
         }
 
         lastKeepShortcut = skipsKeeps
+        const retargetOnly = skipsKeeps && !anyHold && !anyRide
 
         /**
          * `L_k` per node with a fresh B (§4.2): the capture's rect with the
@@ -6042,6 +6043,7 @@ export function createLayoutGroup(
             threshold,
             maxNodes,
             leadless: shared === 0,
+            retargetOnly,
         })
         for (;;) {
             const wanted = flushScratch.wanted
@@ -6074,6 +6076,7 @@ export function createLayoutGroup(
                 threshold,
                 maxNodes,
                 leadless: shared === 0,
+                retargetOnly,
             })
         }
 

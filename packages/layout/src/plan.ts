@@ -178,6 +178,14 @@ export interface PlanInput {
      * the per-node actions are unchanged).
      */
     readonly leadless?: boolean
+    /**
+     * The scope has a fresh, measured, plain retarget frame: every running
+     * track has `path: 'retarget'`, no holds/rides/ids/anchors/layers/fades
+     * are present and every node is measured. The plan may use the
+     * retarget-only path when the nodes still satisfy that proof; otherwise
+     * it falls back to the general plan unchanged.
+     */
+    readonly retargetOnly?: boolean
 }
 
 export type Action =
@@ -468,7 +476,176 @@ function keeps(
     )
 }
 
+/**
+ * The retarget-only proof: every non-null node is measured, has no
+ * hold/skip/degradation, shared-id, anchor, layer or fade complication, and a
+ * moving node is a plain measured retarget with a valid B. Unsupported
+ * ancestors are excluded too. If anything fails, the caller uses the general
+ * plan; the fast path never has to guess.
+ */
+export function retargetEligible(nodes: readonly (PlanNode | null)[]): boolean {
+    const unsupported: boolean[] = []
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i]
+        if (!node) {
+            unsupported.push(false)
+            continue
+        }
+        const inherited =
+            node.unsupported || (node.parent >= 0 && unsupported[node.parent]!)
+        if (inherited) return false
+        unsupported.push(false)
+        if (
+            !node.measured ||
+            node.lateRegistered ||
+            node.scrollActive ||
+            node.skip ||
+            node.following >= 0 ||
+            node.anchor !== null ||
+            node.layoutId !== null ||
+            node.exiting ||
+            node.presenceOpacity ||
+            node.focusInside
+        ) {
+            return false
+        }
+        if (node.moving) {
+            if (
+                node.before === null ||
+                node.path !== 'retarget' ||
+                node.track === null ||
+                node.trackTarget === null ||
+                node.track.anchor !== null
+            ) {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+/**
+ * The exact plan for a retarget-only flush: no leads, handoffs, follows,
+ * presence, keeps or anchors are possible by `retargetEligible`, so each node is
+ * either a plain retarget track, a new track from a measured B, or
+ * none/static under a moving ancestor. Every other decision is the same as
+ * the general `decide` branch it replaces.
+ */
+function planRetarget(input: PlanInput): Plan {
+    const { nodes, threshold } = input
+    const actions: Action[] = []
+    const snapped: { index: number; reason: SnapReason }[] = []
+    const warnings: PlanWarning[] = []
+    const animated: boolean[] = []
+    const ancestorAnimated: boolean[] = []
+    let movers = 0
+    for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i]
+        if (!node) {
+            actions.push(NONE)
+            animated.push(false)
+            ancestorAnimated.push(false)
+            continue
+        }
+        const p = node.parent
+        const underMotion = p >= 0 && (animated[p]! || ancestorAnimated[p]!)
+        ancestorAnimated.push(underMotion)
+        const b = node.before
+        let own: Action = NONE
+        if (
+            node.moving ||
+            (b !== null &&
+                moved(b, node.a, node, undefined, undefined) >= threshold)
+        ) {
+            const from = b ?? node.a
+            const velocity = node.velocity
+            const motion = velocity ? { ...node.motion, delay: 0 } : node.motion
+            const refusal: TrackRefusalDetail = { settle: null }
+            const track = createTrack(
+                from,
+                node.a,
+                velocity,
+                node.fx,
+                node.fy,
+                node.mode,
+                motion,
+                null,
+                refusal
+            )
+            if (typeof track === 'string') {
+                snapped.push({
+                    index: i,
+                    reason: track === 'reduced' ? 'reduced' : 'unsupported',
+                })
+                if (track === 'spring-timeout')
+                    warnings.push({
+                        kind: 'spring-timeout',
+                        index: i,
+                        settleMs:
+                            refusal.settle === null
+                                ? null
+                                : refusal.settle * 1000,
+                    })
+                const action = underMotion ? STATIC : NONE
+                actions.push(action)
+                animated.push(false)
+                continue
+            }
+            own = {
+                kind: 'track',
+                track,
+                fadeLead: false,
+                handoffFrom: undefined,
+            }
+        }
+        if (own.kind === 'none') {
+            const action = underMotion ? STATIC : NONE
+            actions.push(action)
+            animated.push(false)
+            continue
+        }
+        if (!visible(b ?? node.a, node.a, input.viewport)) {
+            snapped.push({ index: i, reason: 'culled' })
+            const action = underMotion ? STATIC : NONE
+            actions.push(action)
+            animated.push(false)
+            continue
+        }
+        actions.push(own)
+        animated.push(true)
+        movers += 1
+    }
+    if (movers > input.maxNodes) {
+        const capped = actions.flatMap((action, index) =>
+            action.kind === 'track'
+                ? [{ index, reason: 'capped' as const }]
+                : []
+        )
+        return {
+            status: 'capped',
+            actions: nodes.map(() => NONE),
+            snapped: [...snapped, ...capped],
+            degraded: [],
+            leads: new Map(),
+            handoffs: new Map(),
+            warnings,
+        }
+    }
+    return {
+        status: 'run',
+        actions,
+        snapped,
+        degraded: [],
+        leads: new Map(),
+        handoffs: new Map(),
+        warnings,
+    }
+}
+
 export function plan(input: PlanInput): Plan {
+    if (input.retargetOnly && input.leadless && retargetEligible(input.nodes)) {
+        return planRetarget(input)
+    }
     const { nodes, threshold } = input
     const warnings: PlanWarning[] = []
     const snapped: { index: number; reason: SnapReason }[] = []
