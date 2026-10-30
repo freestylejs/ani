@@ -1284,13 +1284,13 @@ scene has the exemption.
   the exact read audit. D11 G12 is the baseline-subtracted incremental:
   `(p95(held) − p95(no-hold)) / held` at 1 and 10 held on S-BULK, and the
   1-held S-REORDER/S-SHEET shape.
-- Combined report (`iteration-9/report.json`, source `8939234`, load 5.42,
-  five runs): all 11 scenes pass on Chromium; G9 1.687× unscrolled / 1.661×
-  scrolled pass; G10 1.120 ms pass; G13/G13-held exact; G12-1 −0.030 and
-  G12-10 0.0015 incremental ms/held pass; **G11 2.015× FAIL** (per-run
-  1.977/2.054/2.015/1.979/2.299, floor audit exact). G11 remains open; cost is
-  advisory.
-- WebKit in the combined report (`iteration-9/report.json`, source `8939234`, load 5.42):
+- Combined report (`iteration-9/report.json`, source `77cc8f9`, load 8.01,
+  five runs): all 11 scenes pass on Chromium; G9 1.752× unscrolled / 1.703×
+  scrolled pass; G10 1.015 ms pass; G13/G13-held exact; G12-1 −0.155 and
+  G12-10 0.001 incremental ms/held pass; **G11 2.055× FAIL** (per-run
+  2.045/1.992/2.094/2.055/2.069, floor audit exact). G11 remains open; cost is
+  advisory. A prior combined run at load 5.42 was 2.015×, also open.
+- WebKit in the combined report (`iteration-9/report.json`, source `77cc8f9`, load 8.01):
   S-CARD/S-SEG/S-PHOTO/S-STACK/S-ISLAND/S-ACC/S-INSERT/S-DELETE/S-BULK pass;
   S-REORDER/S-SHEET blocked only on the G12 1 ms timer bound (D12 cost
   advisory); their frame/status rows pass; G10 0.200 ms pass with the real-clock 20-frame batch;
@@ -1308,8 +1308,8 @@ scene has the exemption.
   Chromium; WebKit S-REORDER/S-SHEET cost G12 BLOCKs are D12 advisory; their frame
   rows pass.
 
-Residual: G11 is 2.015× (advisory load, open); no performance-complete
-claim. The D11 negative increments are valid signed measurements (held p95
+Residual: G11 is 2.055× (advisory load, open; best combined 2.015×); no
+performance-complete claim. The D11 negative increments are valid signed measurements (held p95
 below the no-hold baseline), not positive held-cost claims.
 WebKit G9/G11/G12 cannot be decided with the 1 ms timer; no quantized ratio is
 presented as a pass or failure.
