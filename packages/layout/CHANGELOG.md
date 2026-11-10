@@ -4,6 +4,10 @@
 
 ### Minor Changes
 
+- Hard migration: the typed `LayoutGroup.captureAdded(element)` lifecycle replaces the hidden symbol protocol. Upgrade to React adapter 2.0.0 with layout 0.2.0; there is no old-adapter compatibility bridge. Late-mount capture remains bounded to the same task's live, non-aged capture.
+- Zero-duration timing jumps and settles without an extra frame, including frozen/paused clocks, WAAPI and drive release. Descendants keep their independent residual motion when a parent landing ends first.
+- View Transitions accept timing motion only and reject unsupported physical springs before effects. Reduced-motion duration caps apply even without explicit motion, override the ordinary minimum duration and remove native delays/repeats; a zero cap skips the transition while executing the update once.
+- DOM capability helpers preserve scope-owned sequencing and exact read accounting. Native interaction examples use physical layout springs and LayoutDrive. Geometry/script qualification and browser proxies do not certify real iOS presentation or physical input.
 - 3927376: `@freestylejs/ani-layout` 0.2.0: layout animation with a clock-driven RAF engine and an optional compositor engine. Mark an element and it animates whenever a change moves or resizes it, from where it was drawn to where layout put it. This replaces the unreleased 0.1.0 surface as a hard migration: no page boxes, no inner-scroll `'stale'`, no field-by-field motion merge and no legacy bridge or alias.
 
   - **Default RAF engine.** At each change the group reads every participant's box once before and once after; animation frames do no DOM reads. Every frame computes each moving box from its two ends, parent before child, and writes only `translate` and `scale` (plus `opacity` for a `layoutId` crossfade and `border-radius` when `radius` is on). The default `'raf'` engine is one subscriber of the core clock, so it shares frame time, time scale and reduced motion with every other Ani animation.

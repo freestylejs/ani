@@ -21,6 +21,12 @@ pnpm add @freestylejs/ani-core @freestylejs/ani-layout @freestylejs/ani-react
 
 The first painted frame after a change shows the previous picture; the last frame is the real layout with your inline styles exactly as they were. A participant that mounts has no previous box: it appears where it lays out (give it an enter with [presence](#presence)), unless it takes over a [`layoutId`](#shared-elements). On the server nothing runs, and hydration never animates.
 
+### Native-quality evidence
+
+Ani reports geometry, script cost, browser proxies, physical presentation/input and content/accessibility as separate dimensions. A production browser run that samples real `requestAnimationFrame` callbacks or measures an event-to-observed-DOM update is useful proxy evidence, but it does **not** establish physical display cadence, physical input latency or input-to-photon latency. Native-device qualification requires matching-build evidence from a real iOS Safari device; desktop Playwright WebKit is not an iPhone/Safari substitute.
+
+This distinction does not weaken the layout gates: continuity, exact restore/read counts and script-cost checks still decide their own dimensions. Missing physical-device evidence is a qualification block, not a browser-test pass. A physical measurement is not a pass merely because it exists: qualifying evidence records whether it was measured, the explicit accepted pass/fail outcome, the method and the observed result. Browser-proxy qualification records finite cadence/event-to-DOM observations with sample counts, scene/load context and the exact source-state identity (including relevant dirty tracked/untracked code).
+
 ### Animate a list
 
 Mark each item with `useLayout`. Nothing else is needed: the state change re-renders the items, and every item whose box changed animates.
@@ -113,27 +119,38 @@ The timing must be stateless and must start with a finite slope. The default `'r
 
 A participant's `motion` is merged by kind over the `motion` of its groups, outermost first: a layer that names `type: 'spring'`, `timing` or `type: 'timing'` selects the kind, a kind switch keeps only `delay`, and `duration`, `timing` and `bounce` override within the chosen kind.
 
+For interactive layout, use the full RAF engine with an explicit physical layout spring. This is the profile used by the native-quality showcase: `engine="raf"`, `{ type: 'spring', duration: 0.5, bounce: 0.15 }`, and the explicit reduced-motion `'jump'` policy. The core `timing.spring(...)` API remains useful for authored finite timing choreography (for example presence), but it is not the physical layout profile.
+
 ```tsx
-import { timing } from '@freestylejs/ani-core'
 import { LayoutGroup, useLayout } from '@freestylejs/ani-react/layout'
 import type { ReactNode } from 'react'
 
-const springy = {
+const nativeLayoutMotion = {
+    type: 'spring',
     duration: 0.5,
-    timing: timing.spring({ m: 1, k: 300, c: 30 }),
-}
+    bounce: 0.15,
+} as const
 
-export function Springy({ children }: { children: ReactNode }) {
-    return <LayoutGroup motion={springy}>{children}</LayoutGroup>
+export function NativeLayout({ children }: { children: ReactNode }) {
+    return (
+        <LayoutGroup
+            engine="raf"
+            motion={nativeLayoutMotion}
+            reducedMotion="jump"
+        >
+            {children}
+        </LayoutGroup>
+    )
 }
 
 export function Row({ label }: { label: string }) {
-    // inside <Springy>: duration 0.5 and the spring from the group,
-    // plus a delay of its own
+    // inside <NativeLayout>: the physical spring plus a row-specific delay
     const ref = useLayout<HTMLLIElement>({ motion: { delay: 0.05 } })
     return <li ref={ref}>{label}</li>
 }
 ```
+
+The optional WAAPI engine is intentionally narrower, not an alternative native profile: it accepts flat `layout: 'position'` moves only, rejects physical spring motion and shared/nested layout features, and carries no analytic velocity across a retarget. Use it when compositor progress during a blocked main thread matters more than the RAF engine's full geometry contract.
 
 ### Shared elements
 
@@ -150,7 +167,7 @@ Elements with the same `layoutId` are one element to the user. On the default `'
 A card that opens into a detail view, with the surface, the image and the title as three nested ids:
 
 ```tsx
-import { ani, timing } from '@freestylejs/ani-core'
+import { ani } from '@freestylejs/ani-core'
 import {
     AnimatePresence,
     LayoutGroup,
@@ -162,9 +179,10 @@ import { useState } from 'react'
 type CardData = { id: string; title: string; image: string }
 
 const cardMotion = {
-    duration: 0.45,
-    timing: timing.spring({ m: 1, k: 300, c: 30 }),
-}
+    type: 'spring',
+    duration: 0.5,
+    bounce: 0.15,
+} as const
 
 // An exit that changes nothing: presence keeps the detail mounted, and marks
 // it as exiting, until the crossfade back to the card has ended.
@@ -367,6 +385,12 @@ export function Board({ initial }: { initial: string[] }) {
 
 Under `StrictMode`, the replayed renders, effects and ref callbacks keep one group and each participant's captured box. Transitions, deferred values and Suspense work as well: a render that React restarts in a later task captures again.
 
+#### Transactions and intrinsic size
+
+A capture is historical evidence for one commit, not a promise to interpolate every future browser reflow. Use `useLayoutGroup().update(fn)` for an otherwise invisible mutation that must belong to a layout transaction. A participant mounted during the same live capture is baselined through the typed post-mount lifecycle; in the vanilla API this is `captureAdded(element)`. It measures only that newly registered element, only while the existing capture is still live, and never refreshes or un-ages a capture.
+
+Image decode, font swap and external resize can change intrinsic geometry without a participant, `LayoutGroup` or presence owner rendering in the changing commit. Reserve the geometry when possible (explicit dimensions or `aspect-ratio` for media), or wrap the stateful size change in an explicit layout transaction. A `ResizeObserver` notification is not a historical before-picture, so observing a size change after it happened cannot reconstruct B truthfully.
+
 ### Presence
 
 `AnimatePresence` keeps a removed child mounted while it exits. It renders no DOM and never clones its children; each child that should animate calls `usePresence` with its motion.
@@ -471,6 +495,16 @@ With the default `'raf'` engine, layout and the other style writers own separate
 | `rotate`, skew | You | An element with them, or under a non-participant ancestor that rotates, skews or scales, jumps with `'unsupported'`. |
 
 **CSS transitions.** A CSS transition on `translate`, `scale` or `all` would animate layout's own writes, so the element jumps with `'unsupported'` and a development warning. Tailwind's `transition` and `transition-all` include them; use `transition-colors`, `transition-opacity` or a `transition-property` list without them. A running CSS animation of `translate` or `scale` jumps the same way.
+
+#### Surface and content recipe
+
+Keep geometry ownership explicit:
+
+-   Put `layout: true` (and `radius: true` where needed) on the visual surface that is allowed to resize.
+-   Make text, icons and other size-invariant content their own `layout: 'position'` participants so a resizing parent does not stretch glyphs.
+-   Reserve image geometry with `width`/`height` or `aspect-ratio`, and choose the crop explicitly with `object-fit`/`object-position`.
+-   Put hover/press transforms on an inner interaction layer rather than making that layer compete with layout's `translate`/`scale` ownership.
+-   Treat clipping, masks and shadows as authored visual layers. Layout does not claim arbitrary clip/mask/shadow correction; use a bounded recipe you can verify for the scene instead of assuming the solver is clip-aware.
 
 ### Interruption
 
@@ -751,6 +785,7 @@ group.dispose()
 | `add(element, options?)` | Registers a participant and returns an idempotent remove function that restores its styles. |
 | `set(element, options)` | Replaces a participant's options. |
 | `capture()` | Reads the boxes before a change, where they are drawn. Repeated calls in the same task reuse the reading; a call in a later task reads again. The reading is valid until the next frame. |
+| `captureAdded(element)` | Typed post-mount lifecycle port for a newly registered participant in the same live capture. Reads that element once without re-reading existing participants; it is a no-op when no valid capture/registration exists and never refreshes an aged capture. |
 | `flush()` | Reads the boxes after the change and starts the animations. Resolves the report. |
 | `update(mutate)` | `capture()`, `mutate()`, `flush()`. A throwing `mutate` discards the capture and rethrows. |
 | `take(element)` | Starts a direct-manipulation hold and returns its handle; see [Direct manipulation](#direct-manipulation). |
@@ -813,7 +848,7 @@ layer or legacy bridge. Code written against the earlier surface must change:
 
 ### Release status and evidence
 
-The iOS-native-grade claim is **earned** by the P5 evidence body: `.trace/ani_ios_production/p5_bench.md`
+The P5 evidence body records the engine geometry/script qualification history: `.trace/ani_ios_production/p5_bench.md`; it does **not** by itself earn an iOS native-device claim.
 is a final TRIBUNAL PASS on the D9 instrument in `ARCHITECTURE.md` §11.5, after the P0–P4 evidence
 body and every carried tribunal defect was closed. The full report is
 `bench/layout/iteration-12/pre-fix/report.json` at code `f552728`; the D13 independent repeat is

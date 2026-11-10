@@ -246,8 +246,17 @@ test('H19 DPR: the authored plan is unchanged', () => {
 })
 
 test('H20 maxDuration: a follower sees its lead source from the previous commit', () => {
-    const base = plan()
-    const t = trace()
+    const sourcePlan = plan()
+    const base = {
+        ...sourcePlan,
+        initial: { ...sourcePlan.initial },
+        commits: [...sourcePlan.commits],
+    }
+    const sourceTrace = trace()
+    const t = {
+        ...sourceTrace,
+        observations: [...sourceTrace.observations],
+    }
     // The lead's previous track is still active at the reverse frame; both
     // the lead and its follower take the same source box and velocity.
     base.initial.sheet = box(10, 10, 100, 100)

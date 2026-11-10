@@ -9,14 +9,17 @@
 //   right after it continues the step right before it;
 // - always: no snap, crossfading pairs preserve source-over coverage, and at rest every
 //   marked element's inline style is byte-identical to a fresh render.
+import { timing } from '@freestylejs/ani-core'
 import type { ManualClock } from '@freestylejs/ani-core/testing'
 import { createManualClock } from '@freestylejs/ani-core/testing'
+import { layoutRuntime } from '@freestylejs/ani-layout'
 import { createElement as h, type ReactNode, useState } from 'react'
 import {
     expectedBox,
     maxDiff,
     type OBox,
     type OTrackSpec,
+    settleOracle,
 } from '../../../packages/layout/src/__tests__/oracle'
 import {
     ACCORDION,
@@ -50,6 +53,7 @@ import {
     DT,
     expectAt,
     frames,
+    framesUntilDone,
     type Mounted,
     macrotask,
     microtasks,
@@ -65,7 +69,14 @@ export const pageOptions = {}
 
 export const knownFailures: Record<string, string> = {}
 
-type Motion = { duration: number; timing: typeof MOTION.timing }
+interface Motion {
+    readonly duration: number
+    readonly bounce: number
+}
+
+const NATIVE_MOTION: Motion = { duration: 0.5, bounce: 0.15 }
+const NATIVE_SWITCH_MOTION: Motion = { duration: 0.45, bounce: 0.35 }
+const ORACLE_LINEAR = timing.linear()
 
 interface Entry {
     readonly element: HTMLElement
@@ -164,8 +175,8 @@ interface Context {
     readonly props: Required<Pick<ExampleProps, 'clock' | 'onSnap'>>
 }
 
-function context(): Context {
-    const mc = createManualClock()
+function context(reducedMotion = false): Context {
+    const mc = createManualClock({ reducedMotion })
     const snaps: string[] = []
     return {
         view: mountRoot(),
@@ -274,6 +285,54 @@ interface RunStats {
     at: string
 }
 
+function physicalSpec(
+    before: OBox,
+    after: OBox,
+    {
+        duration,
+        bounce,
+        delay = 0,
+        fx = 0.5,
+        fy = 0.5,
+        mode = true,
+        velocity = null,
+    }: Motion &
+        Partial<Pick<OTrackSpec, 'delay' | 'fx' | 'fy' | 'mode' | 'velocity'>>
+): OTrackSpec {
+    const track = spec(before, after, {
+        duration,
+        timing: ORACLE_LINEAR,
+        delay,
+        fx,
+        fy,
+        mode,
+        velocity,
+    })
+    const channels = (box: OBox) => [
+        box.x + fx * box.w,
+        box.y + fy * box.h,
+        box.w,
+        box.h,
+    ]
+    const B = channels(before)
+    const A = channels(after)
+    const V = velocity ? channels(velocity) : null
+    let end = 0
+    for (let i = 0; i < 4; i++) {
+        const pinned = i < 2 ? mode === 'size' : mode === 'position'
+        if (pinned) continue
+        end = Math.max(
+            end,
+            settleOracle(duration, bounce, B[i]! - A[i]!, V?.[i] ?? 0)
+        )
+    }
+    return { ...track, spring: { duration, bounce, end } }
+}
+
+function trackEnd(track: OTrackSpec): number {
+    return track.delay + (track.spring?.end ?? track.duration)
+}
+
 /**
  * A change made at rest: every key with one element before and one after
  * follows the oracle from its before-box to its final box at every frame it
@@ -284,7 +343,7 @@ async function oracleRun(
     act: () => Promise<void>,
     label: string,
     {
-        motion = MOTION,
+        motion = NATIVE_MOTION,
         moving = [],
     }: {
         motion?: Motion
@@ -321,7 +380,7 @@ async function oracleRun(
         const [fx, fy] = origin(end.element)
         const mode =
             end.element.dataset.lkMode === 'position' ? 'position' : true
-        const track = spec(from[0]!.box, end.box, {
+        const track = physicalSpec(from[0]!.box, end.box, {
             ...motion,
             fx,
             fy,
@@ -423,7 +482,7 @@ async function chainRun(
     ctx: Context,
     steps: readonly Step[],
     label: string,
-    motion: Motion = MOTION
+    motion: Motion = NATIVE_MOTION
 ): Promise<RunStats & { changes: number; kept: number }> {
     if (!idle(ctx)) throw new Error(`${label}: not at rest`)
     const host = ctx.view.host
@@ -472,9 +531,7 @@ async function chainRun(
                 continue
             }
             const t = current ? elapsed(current.start) : 0
-            const moving =
-                current !== undefined &&
-                t < current.track.delay + current.track.duration
+            const moving = current !== undefined && t < trackEnd(current.track)
             // During a shared-id crossfade there are two live elements for
             // one key. A running oracle track already defines their common
             // drawn box, so keep/retarget that track instead of dropping it.
@@ -486,7 +543,7 @@ async function chainRun(
             if (!moving && maxDiff(to.box, drawn) < 1) continue
             live.set(key, {
                 track: {
-                    ...spec(drawn, to.box, {
+                    ...physicalSpec(drawn, to.box, {
                         ...motion,
                         fx: to.fx,
                         fy: to.fy,
@@ -669,6 +726,40 @@ export async function Gallery(): Promise<string> {
 
 /* ───────────────────────── Switch ───────────────────────── */
 
+export async function PhysicalMotionProfiles(): Promise<string> {
+    const base = MOTION as Record<string, unknown>
+    const toggle = SWITCH.motion as Record<string, unknown>
+    expectEqual(base.type, 'spring', 'default showcase layout motion kind')
+    expectClose(
+        Number(base.duration),
+        NATIVE_MOTION.duration,
+        1e-9,
+        'default showcase spring duration'
+    )
+    expectClose(
+        Number(base.bounce),
+        NATIVE_MOTION.bounce,
+        1e-9,
+        'default showcase spring bounce'
+    )
+    expectEqual('timing' in base, false, 'default showcase has no timing curve')
+    expectEqual(toggle.type, 'spring', 'switch layout motion kind')
+    expectClose(
+        Number(toggle.duration),
+        NATIVE_SWITCH_MOTION.duration,
+        1e-9,
+        'switch spring duration'
+    )
+    expectClose(
+        Number(toggle.bounce),
+        NATIVE_SWITCH_MOTION.bounce,
+        1e-9,
+        'switch spring bounce'
+    )
+    expectEqual('timing' in toggle, false, 'switch has no timing curve')
+    return 'native layout profiles are explicit physical springs'
+}
+
 export async function Switch(): Promise<string> {
     const ctx = context()
     const app = (on: boolean[]) => h(SwitchFixture, { on, ...ctx.props })
@@ -682,10 +773,10 @@ export async function Switch(): Promise<string> {
         await ctx.view.render(app([false, true, false]))
         const runs = [
             await oracleRun(ctx, render([true, true, false]), 'on', {
-                motion: SWITCH.motion,
+                motion: NATIVE_SWITCH_MOTION,
             }),
             await oracleRun(ctx, render([true, false, true]), 'two', {
-                motion: SWITCH.motion,
+                motion: NATIVE_SWITCH_MOTION,
             }),
         ]
         const knob = q(ctx.view.host, '[data-lk="switch-0"]')
@@ -704,7 +795,7 @@ export async function Switch(): Promise<string> {
                 to([false, false, true], 3),
             ],
             'flick',
-            SWITCH.motion
+            NATIVE_SWITCH_MOTION
         )
         await expectFresh(ctx, app([false, false, true]), 'switch')
         expectNoSnap(ctx)
@@ -854,17 +945,86 @@ export async function Shuffle(): Promise<string> {
 
 /* ───────────────────────── Drag to reorder ───────────────────────── */
 
-function pointer(type: string, y: number, target: EventTarget = window) {
-    target.dispatchEvent(
-        new PointerEvent(type, {
-            bubbles: true,
-            clientX: 20,
-            clientY: y,
-            button: 0,
-            pointerId: 1,
-            isPrimary: true,
+interface TestPointerSample {
+    readonly x?: number
+    readonly y: number
+    readonly time?: number
+}
+
+function testPointerEvent(
+    type: string,
+    sample: TestPointerSample,
+    pointerId: number,
+    coalesced: readonly TestPointerSample[] = []
+): PointerEvent {
+    const event = new PointerEvent(type, {
+        bubbles: true,
+        clientX: sample.x ?? 20,
+        clientY: sample.y,
+        button: 0,
+        buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1,
+        pointerId,
+        isPrimary: pointerId === 1,
+    })
+    if (sample.time !== undefined) {
+        Object.defineProperty(event, 'timeStamp', { value: sample.time })
+    }
+    if (coalesced.length > 0) {
+        Object.defineProperty(event, 'getCoalescedEvents', {
+            value: () =>
+                coalesced.map((point) =>
+                    testPointerEvent('pointermove', point, pointerId)
+                ),
         })
+    }
+    return event
+}
+
+function pointer(
+    type: string,
+    y: number,
+    target: EventTarget = window,
+    options: {
+        readonly pointerId?: number
+        readonly time?: number
+        readonly coalesced?: readonly TestPointerSample[]
+    } = {}
+) {
+    const sample: TestPointerSample =
+        options.time === undefined ? { y } : { y, time: options.time }
+    target.dispatchEvent(
+        testPointerEvent(
+            type,
+            sample,
+            options.pointerId ?? 1,
+            options.coalesced ?? []
+        )
     )
+}
+
+function pointerCapture(element: HTMLElement) {
+    let captured: number | null = null
+    Object.defineProperties(element, {
+        setPointerCapture: {
+            configurable: true,
+            value(pointerId: number) {
+                captured = pointerId
+            },
+        },
+        hasPointerCapture: {
+            configurable: true,
+            value(pointerId: number) {
+                return captured === pointerId
+            },
+        },
+        releasePointerCapture: {
+            configurable: true,
+            value(pointerId: number) {
+                if (captured === pointerId) captured = null
+            },
+        },
+    })
+    return () => captured
 }
 
 /**
@@ -879,6 +1039,480 @@ async function settleReact(done: () => boolean = () => true) {
     if (!done()) throw new Error('React did not commit')
     await microtasks()
     await macrotask()
+}
+
+export async function DragGestureOwnership(): Promise<string> {
+    const ctx = context()
+    let order = [0, 1, 2, 3]
+    let renders = 0
+    function Harness() {
+        const [state, setState] = useState(order)
+        order = state
+        renders += 1
+        return h(DragFixture, {
+            order: state,
+            onReorder: setState,
+            ...ctx.props,
+        })
+    }
+    try {
+        await ctx.view.render(h(Harness))
+        const row = q(ctx.view.host, '[data-drag-row="0"]')
+        const captured = pointerCapture(row)
+        const home = pageBox(row)
+        const y0 = home.y - scrollY + 10
+        pointer('pointerdown', y0, row, { time: 0 })
+        await settleReact(
+            () => q(row, '[data-drag-content]').style.transform !== 'none'
+        )
+        expectEqual(captured(), 1, 'gesture captures its pointer')
+        expectEqual(
+            row.style.transform,
+            '',
+            'layout surface owns no author transform'
+        )
+        expectEqual(
+            q(row, '[data-drag-content]').style.transform,
+            'scale(0.985)',
+            'drag press feedback lives on the inner content layer'
+        )
+        const renderAtPress = renders
+
+        pointer('pointermove', y0 + 6, row, { time: 10 })
+        ctx.mc.frame(16)
+        expectAt(row, { ...home, y: home.y + 6 }, 'drive move', 0.01)
+        expectEqual(row.style.transform, '', 'drag does not author transform')
+        expectEqual(
+            renders,
+            renderAtPress,
+            'pointer move does not rerender list'
+        )
+
+        pointer('pointermove', y0 + 30, row, {
+            pointerId: 2,
+            time: 12,
+        })
+        ctx.mc.frame(16)
+        expectAt(
+            row,
+            { ...home, y: home.y + 6 },
+            'second pointer ignored',
+            0.01
+        )
+        expectEqual(order.join(), '0,1,2,3', 'second pointer does not reorder')
+
+        pointer('pointercancel', y0 + 6, row, { time: 20 })
+        await framesUntilDone(
+            ctx.mc,
+            160,
+            noCheck,
+            () => idle(ctx),
+            'cancel landing'
+        )
+        expectAt(row, home, 'cancel returns to slot', 0.01)
+        expectEqual(captured(), null, 'cancel releases pointer capture')
+        expectNoSnap(ctx)
+        return 'pointer identity/capture + LayoutDrive-only move + idempotent cancel'
+    } finally {
+        ctx.view.dispose()
+    }
+}
+
+export async function DragRejectedReorderRelease(): Promise<string> {
+    const ctx = context()
+    try {
+        await ctx.view.render(
+            h(DragFixture, {
+                order: [0, 1, 2, 3],
+                onReorder: () => {
+                    // The author rejects the requested reorder.
+                },
+                ...ctx.props,
+            })
+        )
+        const row = q(ctx.view.host, '[data-drag-row="0"]')
+        pointerCapture(row)
+        const home = pageBox(row)
+        const y0 = home.y - scrollY + 10
+
+        pointer('pointerdown', y0, row, { time: 0 })
+        pointer('pointermove', y0 + 24, row, { time: 10 })
+        ctx.mc.frame(16)
+        const held = pageBox(row)
+        expectAt(
+            row,
+            { ...home, y: home.y + 24 },
+            'rejected reorder held position before slot crossing',
+            0.01
+        )
+
+        // Only the final up crosses into slot 1. The authored order rejects it,
+        // and the unpainted +30 px pointer coordinate must never become a hold
+        // frame or release origin. The bounded microtask fallback releases from
+        // the painted +24 px origin toward the latest accepted layout (slot 0).
+        pointer('pointerup', y0 + 30, row, { time: 200 })
+        expectAt(
+            row,
+            held,
+            'rejected reorder up keeps the last presented origin',
+            0.01
+        )
+        await microtasks()
+        const landing = physicalSpec(held, home, NATIVE_MOTION)
+        ctx.mc.frame(16)
+        expectAt(row, expectedBox(landing, 0), 'rejected release frame 0', TOL)
+        ctx.mc.frame(16)
+        expectAt(
+            row,
+            expectedBox(landing, DT),
+            'rejected reorder releases to accepted slot',
+            TOL
+        )
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            noCheck,
+            () => idle(ctx),
+            'rejected reorder landing'
+        )
+        expectAt(row, home, 'rejected reorder final accepted slot', 0.01)
+        expectNoSnap(ctx)
+        return 'rejected reorder releases against latest accepted layout'
+    } finally {
+        ctx.view.dispose()
+    }
+}
+
+export async function DragVelocityAndRecatch(): Promise<string> {
+    const ctx = context()
+    try {
+        await ctx.view.render(
+            h(DragFixture, { order: [0, 1, 2, 3], ...ctx.props })
+        )
+        const row = q(ctx.view.host, '[data-drag-row="0"]')
+        pointerCapture(row)
+        const home = pageBox(row)
+        const y0 = home.y - scrollY + 10
+
+        // A coalesced burst supplies the recent velocity even though the
+        // pointerdown sample is too old for the estimator's recent window.
+        pointer('pointerdown', y0, row, { time: 0 })
+        pointer('pointermove', y0 + 20, row, {
+            time: 100,
+            coalesced: [
+                { y: y0, time: 80 },
+                { y: y0 + 10, time: 90 },
+                { y: y0 + 20, time: 100 },
+            ],
+        })
+        ctx.mc.frame(16)
+        const held = pageBox(row)
+        expectClose(held.y, home.y + 20, 0.01, 'coalesced move held position')
+        pointer('pointerup', y0 + 20, row, { time: 101 })
+        const coalescedVelocity = (20 / 21) * 1000
+        const flick = physicalSpec(held, home, {
+            ...NATIVE_MOTION,
+            velocity: { x: 0, y: coalescedVelocity, w: 0, h: 0 },
+        })
+        ctx.mc.frame(16)
+        expectAt(row, expectedBox(flick, 0), 'flick release frame 0', TOL)
+        ctx.mc.frame(16)
+        expectAt(row, expectedBox(flick, DT), 'coalesced flick velocity', TOL)
+
+        // Catch the moving row. take() must freeze the measured current pose,
+        // then a new direct offset is relative to that pose rather than A.
+        const beforeCatch = pageBox(row)
+        const catchY = beforeCatch.y - scrollY + 10
+        pointer('pointerdown', catchY, row, { time: 120 })
+        expectAt(row, beforeCatch, 're-catch has no jump', 0.01)
+        pointer('pointermove', catchY + 4, row, { time: 130 })
+        ctx.mc.frame(16)
+        expectAt(
+            row,
+            { ...beforeCatch, y: beforeCatch.y + 4 },
+            're-catch direct move',
+            TOL
+        )
+        pointer('pointercancel', catchY + 4, row, { time: 140 })
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            noCheck,
+            () => idle(ctx),
+            'recatch cancel'
+        )
+        expectAt(row, home, 're-catch cancellation settles', 0.01)
+
+        // Final pointerup is part of the velocity sample. The last move is
+        // only 5 px in 10 ms; the up reaches 20 px at 20 ms, so the expected
+        // release speed is 1000 px/s, not the 500 px/s move-only estimate.
+        pointer('pointerdown', y0, row, { time: 200 })
+        pointer('pointermove', y0 + 5, row, { time: 210 })
+        ctx.mc.frame(16)
+        const finalSampleStart = pageBox(row)
+        pointer('pointerup', y0 + 20, row, { time: 220 })
+        // The up event contributes a velocity sample only. Its unpainted
+        // clientY must not become a synthetic hold frame or release origin.
+        expectAt(
+            row,
+            finalSampleStart,
+            'final-up sample does not move the presented release origin',
+            0.01
+        )
+        const finalSampleTrack = physicalSpec(finalSampleStart, home, {
+            ...NATIVE_MOTION,
+            velocity: { x: 0, y: 1000, w: 0, h: 0 },
+        })
+        ctx.mc.frame(16)
+        expectAt(
+            row,
+            expectedBox(finalSampleTrack, 0),
+            'final-up release frame 0',
+            TOL
+        )
+        ctx.mc.frame(16)
+        expectAt(
+            row,
+            expectedBox(finalSampleTrack, DT),
+            'final-up sample seeds velocity',
+            TOL
+        )
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            noCheck,
+            () => idle(ctx),
+            'final sample landing'
+        )
+
+        // A long pause at a held point expires earlier samples, producing a
+        // zero-speed release rather than a stale flick.
+        pointer('pointerdown', y0, row, { time: 400 })
+        pointer('pointermove', y0 + 8, row, { time: 410 })
+        ctx.mc.frame(16)
+        const zeroStart = pageBox(row)
+        pointer('pointerup', y0 + 8, row, { time: 520 })
+        expectAt(
+            row,
+            zeroStart,
+            'zero-speed up keeps the last presented hold origin',
+            0.01
+        )
+        const zero = physicalSpec(zeroStart, home, {
+            ...NATIVE_MOTION,
+            velocity: { x: 0, y: 0, w: 0, h: 0 },
+        })
+        ctx.mc.frame(16)
+        ctx.mc.frame(16)
+        expectAt(row, expectedBox(zero, DT), 'zero-speed release', TOL)
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            noCheck,
+            () => idle(ctx),
+            'zero landing'
+        )
+        expectNoSnap(ctx)
+        return 'coalesced/final-up velocity, zero release, and moving re-catch'
+    } finally {
+        ctx.view.dispose()
+    }
+}
+
+export async function DragLifecycle(): Promise<string> {
+    const ctx = context()
+    try {
+        await ctx.view.render(
+            h(DragFixture, { order: [0, 1, 2, 3], ...ctx.props })
+        )
+        const row = q(ctx.view.host, '[data-drag-row="0"]')
+        const captured = pointerCapture(row)
+        const home = pageBox(row)
+        const y0 = home.y - scrollY + 10
+
+        pointer('pointerdown', y0, row, { time: 0 })
+        pointer('pointermove', y0 + 7, row, { time: 10 })
+        ctx.mc.frame(16)
+        row.releasePointerCapture(1)
+        pointer('lostpointercapture', y0 + 7, row, { time: 11 })
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            noCheck,
+            () => idle(ctx),
+            'lost capture landing'
+        )
+        expectAt(row, home, 'lost capture cancels hold', 0.01)
+        expectEqual(captured(), null, 'lost capture is terminal')
+
+        pointer('pointerdown', y0, row, { time: 100 })
+        pointer('pointermove', y0 + 9, row, { time: 110 })
+        ctx.mc.frame(16)
+        layoutRuntime.setMode('snap')
+        expectAt(row, home, 'runtime snap invalidates hold immediately', TOL)
+        expectEqual(
+            captured(),
+            1,
+            'gesture capture remains until local code observes invalidation'
+        )
+        pointer('pointerup', y0 + 20, row, { time: 120 })
+        expectEqual(
+            row.style.transform,
+            '',
+            'terminal input after invalidation writes no transform'
+        )
+        expectEqual(
+            captured(),
+            null,
+            'terminal input clears invalidated gesture capture'
+        )
+        layoutRuntime.setMode('animate')
+
+        // A new take proves terminal input also cleared DragList's local state.
+        pointer('pointerdown', y0, row, { time: 200 })
+        expectEqual(
+            captured(),
+            1,
+            'new take succeeds after invalidated terminal input'
+        )
+        pointer('pointermove', y0 + 5, row, { time: 210 })
+        ctx.mc.frame(16)
+
+        // If no further input arrives, unmount is the bounded local cleanup.
+        layoutRuntime.setMode('snap')
+        expectAt(row, home, 'second runtime snap invalidates immediately', TOL)
+        expectEqual(
+            captured(),
+            1,
+            'capture remains before invalidated unmount cleanup'
+        )
+        await ctx.view.render(null)
+        await microtasks()
+        await macrotask()
+        expectEqual(
+            captured(),
+            null,
+            'unmount clears invalidated gesture capture'
+        )
+        expectEqual(
+            ctx.mc.clock.size,
+            0,
+            'unmount leaves no live hold/subscriber'
+        )
+        return 'lost capture; runtime invalidation is immediate in layout and cleared locally on terminal input or unmount'
+    } finally {
+        layoutRuntime.setMode('animate')
+        ctx.view.dispose()
+    }
+}
+
+function key(target: EventTarget, value: string) {
+    target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            bubbles: true,
+            key: value,
+        })
+    )
+}
+
+export async function DragKeyboardAndReducedMotion(): Promise<string> {
+    const ctx = context()
+    let order = [0, 1, 2, 3]
+    function Harness() {
+        const [state, setState] = useState(order)
+        order = state
+        return h(DragFixture, {
+            order: state,
+            onReorder: setState,
+            ...ctx.props,
+        })
+    }
+    try {
+        await ctx.view.render(h(Harness))
+        const row = q(ctx.view.host, '[data-drag-row="0"]')
+        row.focus()
+        expectEqual(
+            document.activeElement,
+            row,
+            'drag row is keyboard focusable'
+        )
+        key(row, ' ')
+        await settleReact()
+        const status = q(ctx.view.host, '[data-drag-status]')
+        if (!status.textContent?.includes('Picked up')) {
+            throw new Error(
+                'keyboard pickup announcement missing: ' + status.textContent
+            )
+        }
+        // Key repeat can outrun a React commit: requested-slot state must
+        // advance twice, then the same port must support a reversal.
+        key(row, 'ArrowDown')
+        key(row, 'ArrowDown')
+        ctx.mc.frame(16)
+        await settleReact(() => order.join() === '1,2,0,3')
+        expectEqual(
+            order.join(),
+            '1,2,0,3',
+            'rapid keyboard repeat advances requested slot'
+        )
+        expectEqual(document.activeElement, row, 'focus survives keyed reorder')
+        key(row, 'ArrowUp')
+        ctx.mc.frame(16)
+        await settleReact(() => order.join() === '1,0,2,3')
+        expectEqual(order.join(), '1,0,2,3', 'keyboard reversal uses same port')
+        if (!status.textContent?.includes('position 2')) {
+            throw new Error(
+                'keyboard move announcement missing: ' + status.textContent
+            )
+        }
+        key(row, ' ')
+        await settleReact()
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            noCheck,
+            () => idle(ctx),
+            'keyboard drop landing'
+        )
+        if (!status.textContent?.includes('Dropped')) {
+            throw new Error(
+                'keyboard drop announcement missing: ' + status.textContent
+            )
+        }
+        expectNoSnap(ctx)
+    } finally {
+        ctx.view.dispose()
+    }
+
+    const reduced = context(true)
+    try {
+        await reduced.view.render(
+            h(DragFixture, { order: [0, 1, 2, 3], ...reduced.props })
+        )
+        const row = q(reduced.view.host, '[data-drag-row="0"]')
+        pointerCapture(row)
+        const home = pageBox(row)
+        const y0 = home.y - scrollY + 10
+        pointer('pointerdown', y0, row, { time: 0 })
+        pointer('pointermove', y0 + 8, row, { time: 10 })
+        reduced.mc.frame(16)
+        expectAt(
+            row,
+            { ...home, y: home.y + 8 },
+            'reduced motion keeps direct manipulation',
+            TOL
+        )
+        pointer('pointerup', y0 + 8, row, { time: 120 })
+        reduced.mc.frame(16)
+        expectAt(row, home, 'reduced motion jumps on release', TOL)
+        if (!idle(reduced)) {
+            throw new Error('reduced-motion release left layout work alive')
+        }
+        expectNoSnap(reduced)
+        return 'keyboard take/move/release announcements + reduced-motion direct hold'
+    } finally {
+        reduced.view.dispose()
+    }
 }
 
 export async function DragReorder(): Promise<string> {
@@ -897,86 +1531,102 @@ export async function DragReorder(): Promise<string> {
     try {
         await ctx.view.render(h(Harness))
         const row = q(ctx.view.host, '[data-drag-row="0"]')
+        pointerCapture(row)
         const home = pageBox(row)
         const y0 = home.y - scrollY + 10
-        pointer('pointerdown', y0, row)
+        pointer('pointerdown', y0, row, { time: 0 })
         await settleReact()
-        // the row follows the pointer exactly, with no commit
-        for (const dy of [6, 12, 18, 24]) {
-            pointer('pointermove', y0 + dy)
+        // LayoutDrive applies direct manipulation on the shared clock, with no
+        // authored transform and no list-state render before a slot crossing.
+        for (const [i, dy] of [6, 12, 18, 24].entries()) {
+            pointer('pointermove', y0 + dy, row, { time: 10 * (i + 1) })
+            ctx.mc.frame(16)
             expectAt(row, { ...home, y: home.y + dy }, `drag ${dy}`, 0.01)
+            expectEqual(
+                row.style.transform,
+                '',
+                `drag ${dy} transform ownership`
+            )
         }
         expectEqual(order.join(), '0,1,2,3', 'no reorder before the middle')
-        const runs: RunStats[] = []
-        // crossing the middle of the next slot reorders; the row stays put
-        runs.push(
-            await oracleRun(
-                ctx,
-                async () => {
-                    pointer('pointermove', y0 + 30)
-                    // under the pointer before the reorder commits
-                    expectAt(
-                        row,
-                        { ...home, y: home.y + 30 },
-                        'row under the pointer, reorder pending',
-                        0.01
-                    )
-                    await settleReact(() => order.join() === '1,0,2,3')
-                },
-                'cross 1',
-                { moving: ['drag-0'] }
-            )
+
+        // Crossing the midpoint changes authored order underneath the hold.
+        // The held row remains in view space while its sibling follows the
+        // independent physical spring oracle into the vacated slot.
+        const sibling = q(ctx.view.host, '[data-drag-row="1"]')
+        const siblingBefore = pageBox(sibling)
+        pointer('pointermove', y0 + 30, row, { time: 50 })
+        ctx.mc.frame(16)
+        expectAt(
+            row,
+            { ...home, y: home.y + 30 },
+            'row under the pointer before reorder commit',
+            0.01
         )
+        await settleReact(() => order.join() === '1,0,2,3')
         expectEqual(order.join(), '1,0,2,3', 'reordered')
         expectAt(
             row,
             { ...home, y: home.y + 30 },
-            'row under the pointer',
+            'row stays under pointer across reorder',
             0.01
         )
-        // two slots at once, mid-flight
-        const c = await chainRun(
-            ctx,
-            [
-                {
-                    frames: 6,
-                    act: async () => {
-                        pointer('pointermove', y0 + 2 * slot + 4)
-                        await settleReact(() => order.join() === '1,2,0,3')
-                    },
-                    moving: ['drag-0'],
-                    state: () =>
-                        h(DragFixture, { order: [1, 2, 0, 3], ...ctx.props }),
-                },
-            ],
-            'cross 2'
+        const siblingTarget = { ...siblingBefore, y: home.y }
+        const siblingTrack = physicalSpec(
+            siblingBefore,
+            siblingTarget,
+            NATIVE_MOTION
         )
-        expectEqual(order.join(), '1,2,0,3', 'reordered twice')
-        expectAt(
-            row,
-            { ...home, y: home.y + 2 * slot + 4 },
-            'row under the pointer',
-            0.01
-        )
-        // the release draws the row into its slot
-        runs.push(
-            await oracleRun(
-                ctx,
-                async () => {
-                    pointer('pointerup', y0 + 2 * slot + 4)
-                    await settleReact()
-                },
-                'release'
+        let siblingWorst = 0
+        const siblingFrames = Math.ceil(siblingTrack.spring!.end / DT) + 2
+        await frames(ctx.mc, siblingFrames, (t) => {
+            siblingWorst = Math.max(
+                siblingWorst,
+                expectAt(
+                    sibling,
+                    expectedBox(siblingTrack, t),
+                    `reorder sibling t=${t}`
+                )
             )
+            expectAt(
+                row,
+                { ...home, y: home.y + 30 },
+                `held row during sibling t=${t}`,
+                TOL
+            )
+        })
+
+        // A paused release has zero gesture velocity. Its first update is t=0
+        // and the landing target is the latest authored slot.
+        const held = pageBox(row)
+        const target = { ...home, y: home.y + slot }
+        pointer('pointerup', y0 + 30, row, { time: 200 })
+        const releaseTrack = physicalSpec(held, target, NATIVE_MOTION)
+        let releaseWorst = 0
+        await framesUntilDone(
+            ctx.mc,
+            180,
+            (t) => {
+                releaseWorst = Math.max(
+                    releaseWorst,
+                    expectAt(
+                        row,
+                        expectedBox(releaseTrack, t),
+                        `release t=${t}`
+                    )
+                )
+            },
+            () => idle(ctx),
+            'drag release'
         )
-        expectAt(row, { ...home, y: home.y + 2 * slot }, 'row in slot 2', 0.01)
+        expectAt(row, target, 'row in slot 1', 0.01)
         await expectFresh(
             ctx,
-            h(DragFixture, { order: [1, 2, 0, 3], ...ctx.props }),
+            h(DragFixture, { order: [1, 0, 2, 3], ...ctx.props }),
             'drag'
         )
         expectNoSnap(ctx)
-        return summary('drag to reorder', runs, chainText(c))
+        return `drag to reorder: hold survives reorder (sibling oracle worst ${siblingWorst.toFixed(4)} px); zero-speed release oracle worst ${releaseWorst.toFixed(4)} px`
     } finally {
         ctx.view.dispose()
     }

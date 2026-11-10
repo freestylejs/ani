@@ -1,10 +1,41 @@
 /**
- * Every DOM read of the layout engine, every owned-style write and the
- * byte-exact restore (§4, §6). No decisions: callers interpret the values.
+ * Participant geometry/computed-style capabilities, owned-style/attribute
+ * writes and byte-exact restore (§4, §6). Scope retains transaction ordering
+ * and topology/lifecycle decisions; feature.ts owns isolated capability probes.
  */
 
 import { layoutFault } from './fault'
 import type { Box } from './geometry'
+
+/** Computed-style capability; read accounting and transaction order stay in scope. */
+export function readComputedStyle(element: Element): CSSStyleDeclaration {
+    return getComputedStyle(element)
+}
+
+/** Layout-size pair, optionally into the scope's reusable scratch tuple. */
+export function readOffsetSize(
+    element: HTMLElement,
+    into: [number, number] = [0, 0]
+): [number, number] {
+    into[0] = element.offsetWidth
+    into[1] = element.offsetHeight
+    return into
+}
+
+/** Local layout offsets used only by the held rebase/support path. */
+export function readLayoutOffsets(element: HTMLElement): [number, number] {
+    return [element.offsetLeft, element.offsetTop]
+}
+
+/** Apply an owned attribute or restore its exact absence/value. */
+export function putAttribute(
+    element: Element,
+    name: string,
+    value: string | null
+): void {
+    if (value === null) element.removeAttribute(name)
+    else element.setAttribute(name, value)
+}
 
 /** A CSS length as `px + pct · basis`. */
 export interface Len {

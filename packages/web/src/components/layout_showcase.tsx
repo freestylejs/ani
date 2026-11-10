@@ -193,7 +193,7 @@ const tile = useLayout({
 })
 const item = useLayout({ layout: 'position', ref: itemPresence.ref })
 
-<LayoutGroup motion={{ duration: DURATION, timing: SPRING }}>
+<LayoutGroup motion={{ type: 'spring', duration: 0.5, bounce: 0.15 }}>
     <AnimatePresence mode="popLayout">
         {open ? <Panel ref={surface} /> : <Folder ref={surface} />}
     </AnimatePresence>
@@ -516,8 +516,8 @@ function DragDemo() {
         <ShowcaseCard
             id="Drag"
             title="Drag to reorder"
-            description="Built in user land. The row follows the pointer with its own transform; crossing a slot reorders the state and the others make room; the release draws it into place."
-            tag="useLayoutGroup"
+            description="Built in user land. Pointer capture and velocity stay in the gesture layer; useLayoutDrive keeps the held row under the pointer while state reorders underneath it, then hands velocity to the physical spring on release."
+            tag="useLayoutDrive"
             controls={
                 <>
                     <Control ghost={true} onClick={() => setOrder(DRAG_START)}>
@@ -526,12 +526,16 @@ function DragDemo() {
                     <span className={styles.state}>Drag a row.</span>
                 </>
             }
-            code={`// move: outside React, so nothing re-renders
-row.style.transform = \`translateY(\${offset}px)\`
-// crossing a slot: reorder, then re-base the offset before the flush
+            code={`const drive = useLayoutDrive()
+const hold = drive.take(row)
+row.setPointerCapture(event.pointerId)
+
+// move: view-space CSS px; layout is the only position writer
+hold.move({ x: dx, y: dy })
+// crossing a slot only changes authored list state
 setOrder(moved(order, from, to))
-// release: layout draws the row into its slot
-group.update(() => { row.style.transform = '' })`}
+// release: recent pointer velocity enters the physical spring once
+hold.release({ x: vx, y: vy })`}
         >
             <DragFixture order={order} onReorder={setOrder} />
         </ShowcaseCard>

@@ -164,6 +164,9 @@ importers:
       '@freestylejs/ani-core':
         specifier: workspace:^
         version: link:../core
+      '@freestylejs/ani-layout':
+        specifier: workspace:^
+        version: link:../layout
       '@freestylejs/ani-react':
         specifier: workspace:^
         version: link:../react

@@ -3,8 +3,8 @@ import {
     type RefObject,
     useEffect,
     useLayoutEffect,
-    useReducer,
     useRef,
+    useState,
 } from 'react'
 
 // `useLayoutEffect` warns during SSR (React 18); effects never run there anyway.
@@ -17,8 +17,6 @@ export interface OwnedSlot<T> {
     disposed: boolean
 }
 
-const bump = (version: number): number => version + 1
-
 function sameDeps(a: DependencyList, b: DependencyList): boolean {
     if (a.length !== b.length) return false
     for (let i = 0; i < a.length; i++) {
@@ -28,9 +26,11 @@ function sameDeps(a: DependencyList, b: DependencyList): boolean {
 }
 
 /**
- * Creates the object on first render and disposes it when the component goes
- * away or `deps` change. Re-creates it when an effect re-run (StrictMode)
- * finds it disposed. `slot.current` always holds the live one.
+ * Render candidates belong to React state, not to a ref shared with the
+ * committed fiber. A suspended/abandoned render cannot replace the live owner.
+ * Factories must be pure, discard-safe constructors: acquire external resources
+ * or start execution only in commit callbacks/effects/events. React may discard
+ * a candidate without ever committing an effect (also during SSR/StrictMode).
  */
 export function useOwned<T extends { dispose(): void }>(
     factory: () => T,
@@ -38,33 +38,36 @@ export function useOwned<T extends { dispose(): void }>(
 ): readonly [T, RefObject<OwnedSlot<T>>] {
     const create = (): OwnedSlot<T> => ({
         value: factory(),
-        deps,
+        deps: [...deps],
         disposed: false,
     })
-    const ref = useRef<OwnedSlot<T> | null>(null)
-    const [, refresh] = useReducer(bump, 0)
+    let [slot, setSlot] = useState(create)
+    const committed = useRef(slot)
 
-    if (
-        ref.current === null ||
-        ref.current.disposed ||
-        !sameDeps(ref.current.deps, deps)
-    ) {
-        ref.current = create()
+    if (slot.disposed || !sameDeps(slot.deps, deps)) {
+        slot = create()
+        // Conditional render-state adjustment is local to this work-in-progress
+        // render. React retries before committing children; it rolls this state
+        // back if the render is abandoned. No committed resource is disposed here.
+        setSlot(slot)
     }
-    const slot = ref.current
 
     useIsoLayoutEffect(() => {
         if (slot.disposed) {
-            ref.current = create()
-            refresh()
+            // StrictMode reconnects effects after their cleanup. Re-activate
+            // with a new inert object, then rebind through the following render.
+            const replacement = create()
+            committed.current = replacement
+            setSlot(replacement)
+        } else {
+            committed.current = slot
         }
         return () => {
-            // A slot disposed by the StrictMode cleanup is not disposed again.
             if (slot.disposed) return
             slot.disposed = true
             slot.value.dispose()
         }
     }, [slot])
 
-    return [slot.value, ref as RefObject<OwnedSlot<T>>] as const
+    return [slot.value, committed] as const
 }

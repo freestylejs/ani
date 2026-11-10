@@ -356,7 +356,7 @@ export function createTrack(
     const x0 = start.map((x, i) => x - to[i]!)
     // The visible box edges, from the track's actual start size (a pinned
     // channel starts at A's size, not at B's): the last step to A must land
-    // under 0.05 px on every edge, not only on the origin point and size.
+    // under 0.1 px on every edge, not only on the origin point and size.
     const startBox = {
         x: start[0]! - fx * start[2]!,
         y: start[1]! - fy * start[3]!,
@@ -486,7 +486,12 @@ export function trackEndTime(track: Track): number {
 /** Whether the track has reached A. */
 export function trackEnded(track: Track, elapsed: number): boolean {
     const t = localTime(track, elapsed)
-    return t > 0 && t >= lawEnd(track.law)
+    // A zero timing law ends at its boundary, not at the next clock tick.
+    // Physical springs retain their existing first-frame contract.
+    return (
+        t >= lawEnd(track.law) &&
+        (t > 0 || (t === 0 && track.law.kind === 'timing'))
+    )
 }
 
 /**
@@ -496,7 +501,7 @@ export function trackEnded(track: Track, elapsed: number): boolean {
  */
 export function lawProgress(law: TrackLaw, t: number): number {
     if (law.kind === 'spring') return physics.perceptual(t, law.duration)
-    if (t <= 0) return 0
+    if (t < 0) return 0
     if (law.duration <= 0) return 1
     return Math.min(
         1,
@@ -511,7 +516,7 @@ export function trackProgress(track: Track, elapsed: number): number {
 
 /** Timing progress τ in [0, 1]. */
 function tauOf(law: { readonly duration: number }, t: number): number {
-    if (t <= 0) return 0
+    if (t < 0) return 0
     if (law.duration <= 0) return 1
     return Math.min(1, t / law.duration)
 }
@@ -524,7 +529,7 @@ function pathAt(
     seed: number,
     t: number
 ): number {
-    if (t <= 0) return from
+    if (t < 0) return from
     const law = track.law
     if (law.kind === 'timing') {
         const tau = tauOf(law, t)
@@ -532,6 +537,7 @@ function pathAt(
         const e = law.curve.value(tau)
         return to + (from - to) * (1 - e) + seed * tau * (1 - tau) * (1 - tau)
     }
+    if (t === 0) return from
     if (t >= law.settle) return to
     return to + law.spring.at(t, from - to, seed)
 }

@@ -107,6 +107,37 @@ describe('M5W: WAAPI timeline (multi-target run surface)', () => {
         vi.unstubAllGlobals()
     })
 
+    it('snapshots caller inputs for both cached and fresh WAAPI compilation', async () => {
+        const to = { opacity: 1, translateX: 100 }
+        const children = [a.ani({ to, duration: 1, timing: a.timing.linear() })]
+        const root = a.sequence(children)
+        const target = document.createElement('div')
+        const warm = waapiTimeline(root)
+        const warmRun = warm.play(target, { from: fromZero })
+        const expectedWarm = structuredClone(createdEffects.at(-1)!.keyframes)
+        to.translateX = 900
+        children.push(
+            a.ani({ to: { opacity: 1, translateX: 1000 }, duration: 1 })
+        )
+
+        const cached = waapiTimeline(root)
+        const cachedRun = cached.play(target, { from: fromZero })
+        expect(createdEffects.at(-1)!.keyframes).toEqual(expectedWarm)
+        const fresh = waapiTimeline(root)
+        const from = { opacity: 0.1, translateX: 10 }
+        const freshRun = fresh.play(target, { from })
+        const actual = structuredClone(createdEffects.at(-1)!.keyframes)
+        const reference = waapiTimeline(tree())
+        const referenceRun = reference.play(target, { from })
+        expect(actual).toEqual(createdEffects.at(-1)!.keyframes)
+        expect(fresh.duration).toBe(1)
+        warm.dispose()
+        cached.dispose()
+        fresh.dispose()
+        reference.dispose()
+        await Promise.all([warmRun, cachedRun, freshRun, referenceRun])
+    })
+
     it('A1: creates one animation per target with stacked delays', () => {
         const line = waapiTimeline(tree())
         const elements = makeTargets(3)

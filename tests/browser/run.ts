@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { arch, loadavg, platform } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import {
@@ -12,7 +13,12 @@ import {
     type Route,
     webkit,
 } from 'playwright'
-import { type BrowserVariant, bundleForBrowser } from './bundle.ts'
+import { collectSourceIdentity } from '../../bench/layout/fingerprint.ts'
+import {
+    type BrowserBuildMode,
+    type BrowserVariant,
+    bundleForBrowser,
+} from './bundle.ts'
 import { EngineCoverage } from './coverage.ts'
 import { renderToMarkup } from './ssr.ts'
 
@@ -25,6 +31,7 @@ declare global {
 }
 
 const ORIGIN = 'http://ani.test'
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const MODULES = [
     'core',
     'react',
@@ -39,6 +46,8 @@ const MODULES = [
     'react_layout',
     'acceptance',
     'showcase',
+    'qualification',
+    'ios_quality',
     'regressions',
     'waapi',
     'react_layout_r18',
@@ -67,6 +76,7 @@ Usage:
 Options:
   --case <glob>   run matching cases only, repeatable (e.g. "react:*", "core:C1")
   --browser <name> chromium | firefox | webkit (default: chromium)
+  --build <mode>  development | production (default: development)
   --headed        show the browser window
   --coverage      report the layout engine's coverage; a full run gates it (Chromium)
   --list          print the case ids and exit
@@ -79,6 +89,7 @@ class UsageError extends Error {}
 type ModuleName = (typeof MODULES)[number]
 
 interface PageOptions {
+    viewport?: { width: number; height: number }
     reducedMotion?: 'reduce' | 'no-preference'
     ssr?: boolean
     /**
@@ -115,6 +126,7 @@ interface Options {
     patterns: Pattern[]
     filters: string[]
     browser: BrowserName
+    build: BrowserBuildMode
     headed: boolean
     list: boolean
     coverage: boolean
@@ -160,6 +172,7 @@ function parseOptions(argv: readonly string[]): Options {
     const patterns: Pattern[] = []
     const filters: string[] = []
     let browser: BrowserName = 'chromium'
+    let build: BrowserBuildMode = 'development'
     let headed = false
     let list = false
     let coverage = false
@@ -191,6 +204,17 @@ function parseOptions(argv: readonly string[]): Options {
                 i += 1
                 break
             }
+            case '--build': {
+                const value = argv[i + 1]
+                if (value !== 'development' && value !== 'production') {
+                    throw new UsageError(
+                        '--build must be development or production'
+                    )
+                }
+                build = value
+                i += 1
+                break
+            }
             case '--headed':
                 headed = true
                 break
@@ -210,7 +234,7 @@ function parseOptions(argv: readonly string[]): Options {
     if (coverage && browser !== 'chromium') {
         throw new UsageError('--coverage needs --browser chromium')
     }
-    return { patterns, filters, browser, headed, list, coverage }
+    return { patterns, filters, browser, build, headed, list, coverage }
 }
 
 function pageHtml(markup: string): string {
@@ -268,6 +292,18 @@ async function openPage(
         const { usedSize } = await client.send('Runtime.getHeapUsage')
         return usedSize
     })
+    // Real input for product regressions, in this existing isolated runner.
+    // Cases still import and mount the production components themselves.
+    await page.exposeFunction(
+        'aniPointerInput',
+        async (kind: string, x?: number, y?: number) => {
+            if (kind === 'move' && Number.isFinite(x) && Number.isFinite(y))
+                await page.mouse.move(x!, y!)
+            else if (kind === 'down') await page.mouse.down()
+            else if (kind === 'up') await page.mouse.up()
+            else throw new Error('Invalid native pointer test command')
+        }
+    )
     await page.exposeFunction('aniLayoutCount', async () => {
         const client = await session()
         const { metrics } = await client.send('Performance.getMetrics')
@@ -316,11 +352,12 @@ async function load(page: Page, module: CaseModule): Promise<void> {
 async function inspect(
     browser: Browser,
     name: ModuleName,
-    sourcemap: boolean
+    sourcemap: boolean,
+    buildMode: BrowserBuildMode
 ): Promise<CaseModule> {
     const code = await bundleForBrowser(
         fileURLToPath(new URL(`./cases/${name}.ts`, import.meta.url)),
-        VARIANTS[name],
+        { ...VARIANTS[name], mode: buildMode },
         sourcemap
     )
     const module: CaseModule = {
@@ -471,7 +508,11 @@ async function runCase(
         }
         // without viewport emulation, which would force overlay scrollbars
         context = await (own?.browser ?? shared).newContext(
-            own ? { viewport: null } : {}
+            own
+                ? { viewport: null }
+                : options.viewport
+                  ? { viewport: options.viewport }
+                  : {}
         )
         const markup = options.ssr
             ? await renderToMarkup(module.name as 'react' | 'vue')
@@ -582,6 +623,10 @@ async function findCases(name: ModuleName): Promise<string[]> {
 
 async function main(): Promise<number> {
     const options = parseOptions(process.argv.slice(2))
+    const sourceIdentity = collectSourceIdentity(REPO_ROOT)
+    // SSR modules are bundled in this Node process; keep their compile-time
+    // NODE_ENV / __ANI_DEV__ defines aligned with the selected browser build.
+    process.env.NODE_ENV = options.build
     const wanted = (moduleName: string, caseName: string) =>
         options.patterns.length === 0 ||
         options.patterns.some(
@@ -630,6 +675,20 @@ async function main(): Promise<number> {
             ],
         }),
     })
+    if (selectedCases.some((id) => id.startsWith('qualification:'))) {
+        const load1 = loadavg()[0] ?? Number.NaN
+        writeOut(
+            [
+                'qualification provenance',
+                `revision=${sourceIdentity ?? 'unavailable'}`,
+                'artifact=tests/browser source bundle',
+                `mode=${options.build}`,
+                `browser=${options.browser} ${browser.version()}`,
+                `os=${platform()} ${arch()}`,
+                `load1=${Number.isFinite(load1) ? load1 : 'unavailable'}`,
+            ].join('; ')
+        )
+    }
     const counts = { PASS: 0, FAIL: 0, KNOWN: 0, SKIP: 0 }
     const coverage =
         options.coverage && !options.list ? new EngineCoverage() : null
@@ -642,7 +701,12 @@ async function main(): Promise<number> {
 
             let module: CaseModule
             try {
-                module = await inspect(browser, name, coverage !== null)
+                module = await inspect(
+                    browser,
+                    name,
+                    coverage !== null,
+                    options.build
+                )
             } catch (error) {
                 counts.FAIL += 1
                 report(`${name}:*`, {

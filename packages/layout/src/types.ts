@@ -7,7 +7,7 @@ import type {
     Resolver,
     RunResult,
 } from '@freestylejs/ani-core'
-import type { LayoutMotion, LayoutOptions } from './motion'
+import type { LayoutMotion, LayoutOptions, LayoutTimingMotion } from './motion'
 import type { LayoutStatus, SnapReason } from './plan'
 
 /* ───────────────────────── Layout ───────────────────────── */
@@ -128,6 +128,13 @@ export interface LayoutGroup extends LayoutDrive {
     set(element: HTMLElement, options: LayoutOptions): void
     /** Reads the before-boxes; reused within the task, re-read in a later one. */
     capture(): void
+    /**
+     * Post-mount adapter lifecycle: records a newly registered participant in
+     * this task's live capture once. Never creates, refreshes or un-ages a
+     * capture; existing, disconnected, presence-managed or capped nodes are
+     * not read. Not a substitute for capture() or update().
+     */
+    captureAdded(element: HTMLElement): void
     /** Reads the after-boxes, plans and starts the run. Never rejects. */
     flush(): Promise<LayoutReport>
     /** `capture()` → `mutate()` → `flush()`. A throwing `mutate` discards the capture and rethrows. */
@@ -242,14 +249,20 @@ export interface PresenceHandle {
 
 /* ─────────────────── View Transitions ─────────────────── */
 
+/** Native snapshot transitions accept timing curves, not physical layout springs. */
+export type ViewTransitionMotion = Pick<
+    LayoutTimingMotion,
+    'type' | 'duration' | 'timing'
+>
+
 export interface ViewTransitionOptions {
     /** Layout ids to morph. Only these get names, only for this transition. */
     readonly share?: Iterable<string>
     /** Applied when ViewTransition.prototype.types exists. */
     readonly types?: readonly string[]
-    /** Retimes UA group/old/new animations; clamped to [0.1, 0.5]s. */
-    readonly motion?: LayoutMotion
-    /** Default: 'jump'. */
+    /** Timing-only; normally clamped to [0.1, 0.5]s. Reduced-motion caps take priority. */
+    readonly motion?: ViewTransitionMotion
+    /** Default: 'jump'. A maxDuration of zero also skips the native animation. */
     readonly reducedMotion?: ReducedMotionPolicy
     readonly clock?: Pick<Clock, 'reducedMotion'>
 }

@@ -23,9 +23,15 @@ import {
 } from '@freestylejs/ani-react/layout'
 import type { CSSProperties, ReactNode } from 'react'
 
-/** The spring every fixture moves with: released from rest, so `e′(0) = 0`. */
+/** Authored finite timing spring used only by presence choreography. */
 export const SPRING: TimingFunction = timing.spring({ m: 1, k: 170, c: 22 })
 export const DURATION = 0.5
+/** Native-grade layout motion: the physical layout solver, not `timing.spring`. */
+export const LAYOUT_MOTION = {
+    type: 'spring',
+    duration: DURATION,
+    bounce: 0.15,
+} as const
 
 export const INK = 'var(--color-fd-foreground, #1d1d1f)'
 export const CARD = 'var(--color-fd-card, #ffffff)'
@@ -151,10 +157,7 @@ export function AnchorFixture({
     clock,
 }: FixtureProps & { expanded: boolean }) {
     return (
-        <LayoutGroup
-            clock={clock}
-            motion={{ duration: DURATION, timing: SPRING }}
-        >
+        <LayoutGroup clock={clock} motion={LAYOUT_MOTION}>
             <Stage name="anchor" width={E1.large} height={E1.large}>
                 <AnchorParent expanded={expanded} />
             </Stage>
@@ -281,10 +284,7 @@ export function CreateFixture({
     clock,
 }: FixtureProps & { open: boolean }) {
     return (
-        <LayoutGroup
-            clock={clock}
-            motion={{ duration: DURATION, timing: SPRING }}
-        >
+        <LayoutGroup clock={clock} motion={LAYOUT_MOTION}>
             <Stage name="create" width={240} height={180}>
                 <AnimatePresence initial={false} mode="popLayout">
                     <CreateWrapper
@@ -490,11 +490,7 @@ export function FolderFixture({
     onSnap?: LayoutGroupProps['onSnap']
 }) {
     return (
-        <LayoutGroup
-            clock={clock}
-            onSnap={onSnap}
-            motion={{ duration: DURATION, timing: SPRING }}
-        >
+        <LayoutGroup clock={clock} onSnap={onSnap} motion={LAYOUT_MOTION}>
             <Stage name="folder" width={340} height={260}>
                 <AnimatePresence initial={false} mode="popLayout">
                     {open ? (
@@ -528,15 +524,28 @@ function CardBody({ i, detail }: { i: number; detail: boolean }) {
             <div
                 ref={image}
                 data-layout-id={`card-${i}-image`}
+                data-image-crop="cover"
                 style={{
                     width: '100%',
                     height: size.image,
-                    background: `linear-gradient(135deg, ${TILE_COLORS[i]}, ${TILE_COLORS[(i + 3) % TILE_COLORS.length]})`,
+                    position: 'relative',
+                    overflow: 'hidden',
                 }}
-            />
+            >
+                <div
+                    data-card-art=""
+                    aria-hidden={true}
+                    style={{
+                        position: 'absolute',
+                        inset: '-8%',
+                        background: `linear-gradient(135deg, ${TILE_COLORS[i]}, ${TILE_COLORS[(i + 3) % TILE_COLORS.length]})`,
+                    }}
+                />
+            </div>
             <div
                 ref={title}
                 data-layout-id={`card-${i}-title`}
+                data-lk-mode="position"
                 style={{
                     width: 'max-content',
                     margin: '12px 14px 0',
@@ -651,10 +660,7 @@ export function CardFixture({
 }) {
     const { card } = E4
     return (
-        <LayoutGroup
-            clock={clock}
-            motion={{ duration: DURATION, timing: SPRING }}
-        >
+        <LayoutGroup clock={clock} motion={LAYOUT_MOTION}>
             <Stage name="card" width={480} height={404}>
                 <div style={{ display: 'flex', gap: card.gap }}>
                     {E4.cards.map((_, i) =>
@@ -753,10 +759,7 @@ export function ToastFixture({
     clock,
 }: FixtureProps & { toasts: readonly string[] }) {
     return (
-        <LayoutGroup
-            clock={clock}
-            motion={{ duration: DURATION, timing: SPRING }}
-        >
+        <LayoutGroup clock={clock} motion={LAYOUT_MOTION}>
             <Stage
                 name="toasts"
                 width={E5.width}
@@ -894,11 +897,7 @@ export function GalleryFixture({
               }
             : { display: 'flex', flexDirection: 'column', gap: list.gap }
     return (
-        <LayoutGroup
-            clock={clock}
-            onSnap={onSnap}
-            motion={{ duration: DURATION, timing: SPRING }}
-        >
+        <LayoutGroup clock={clock} onSnap={onSnap} motion={LAYOUT_MOTION}>
             <Stage
                 name="gallery"
                 width={list.width}

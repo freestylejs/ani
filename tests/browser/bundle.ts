@@ -24,11 +24,16 @@ const ALIAS: Record<string, string> = {
     '@freestylejs/ani-svelte': join(REPO_ROOT, 'packages/svelte/src/index.ts'),
 }
 
-const DEFINE = {
-    'process.env.NODE_ENV': '"development"',
-    __VUE_OPTIONS_API__: 'true',
-    __VUE_PROD_DEVTOOLS__: 'false',
-    __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+export type BrowserBuildMode = 'development' | 'production'
+
+function defines(mode: BrowserBuildMode): Record<string, string> {
+    return {
+        'process.env.NODE_ENV': JSON.stringify(mode),
+        __ANI_DEV__: mode === 'development' ? 'true' : 'false',
+        __VUE_OPTIONS_API__: 'true',
+        __VUE_PROD_DEVTOOLS__: 'false',
+        __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: 'false',
+    }
 }
 
 /**
@@ -39,6 +44,7 @@ const DEFINE = {
 export interface BrowserVariant {
     readonly react18?: boolean
     readonly compiler?: boolean
+    readonly mode?: BrowserBuildMode
 }
 
 const REACT_18_ALIAS: Record<string, string> = {
@@ -92,7 +98,7 @@ async function bundle(
         write: false,
         format: 'esm',
         alias: variant.react18 ? { ...ALIAS, ...REACT_18_ALIAS } : ALIAS,
-        define: DEFINE,
+        define: defines(variant.mode ?? 'development'),
         logLevel: 'silent',
         plugins: variant.compiler
             ? [reactCompiler(variant.react18 === true)]
@@ -134,12 +140,20 @@ export function bundleForBrowser(
  * Bundles a Node-side module into one self-contained ESM string, so it can be
  * imported from memory (`data:` URL) without writing a file.
  */
-export function bundleForNode(entry: string): Promise<string> {
-    return bundle({
-        entryPoints: [entry],
-        platform: 'node',
-        banner: {
-            js: `import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(${JSON.stringify(import.meta.url)});`,
+export function bundleForNode(
+    entry: string,
+    mode: BrowserBuildMode = process.env.NODE_ENV === 'production'
+        ? 'production'
+        : 'development'
+): Promise<string> {
+    return bundle(
+        {
+            entryPoints: [entry],
+            platform: 'node',
+            banner: {
+                js: `import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(${JSON.stringify(import.meta.url)});`,
+            },
         },
-    })
+        { mode }
+    )
 }

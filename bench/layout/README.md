@@ -1,7 +1,31 @@
-# P5 layout bench — iOS Native Grade certification instrument (P5a)
+# P5 layout bench — geometry/script engine certification instrument (P5a)
 
-This is the certification instrument of `packages/layout/ARCHITECTURE.md` §11.5
-and §11.6, not a demo. It scores every frame of an iOS interaction on a manual
+The existing `certification.certified` field and G1–G13/G14 gates certify the
+layout engine's geometry/continuity/lifetime and script-cost evidence only.
+They are **not native-device certification** and do not establish physical iOS
+presentation cadence or input-to-photon latency.
+
+`qualification.ts` is the separate fail-closed native-grade release contract.
+Production-path browser rAF cadence and event-to-DOM timing are proxy evidence;
+actual presentation and physical input stay `block` until matching-build
+evidence exists from a real iOS Safari device. Desktop Playwright WebKit cannot
+satisfy those physical rows.
+Submitted physical evidence distinguishes measurement availability from its
+accepted outcome: a measured row needs an explicit pass/fail outcome, method
+and observed result. A failed or malformed measured row is `fail`; an
+unavailable row is `block`.
+Browser-proxy evidence likewise carries finite positive-integer sample counts,
+finite observed cadence/event-to-DOM values, scene/load context and an exact
+source-state identity. The source identity includes relevant tracked and
+untracked working-tree code, while benchmark result/history directories such
+as the protected `bench/layout/iteration-13/` evidence are excluded.
+The benchmark text report emits all six qualification dimensions. Bench-local
+output can establish the existing geometry/script certification only; browser
+proxy, product-content and physical-device evidence remain separate observations
+rather than being silently promoted into the benchmark certification.
+
+This is the engine certification instrument of `packages/layout/ARCHITECTURE.md` §11.5
+and §11.6, not a demo. It scores every authored interaction frame on a manual
 clock against an independent oracle, measures the real-clock script cost and
 the required-work floor, and fails a deliberately wrong frame. A harness that
 cannot fail is worthless; every deciding metric has a negative control or a
@@ -61,6 +85,13 @@ pnpm bench:layout --compare bench/layout/results/iter-0.json
 # the pure harness tests alone (oracle, scoring, stats, sampler, aggregation,
 # certification, cost validity, variants, timeouts, fingerprint)
 pnpm test:bench-layout
+
+# native-grade fail-closed contract (also included by test:bench-layout)
+node --test bench/layout/qualification.test.ts
+
+# production-source browser proxy + bounded product-scene observations
+pnpm test:browser --build production --browser chromium --case 'qualification:*'
+pnpm test:browser --build production --browser webkit --case 'qualification:*'
 ```
 
 `pnpm bench:layout` always writes the report before exiting and exits `1` on a

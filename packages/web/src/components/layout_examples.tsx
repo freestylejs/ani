@@ -14,11 +14,12 @@ import {
     LayoutGroup,
     type LayoutGroupProps,
     useLayout,
-    useLayoutGroup,
+    useLayoutDrive,
     usePresence,
 } from '@freestylejs/ani-react/layout'
 import {
     type CSSProperties,
+    type KeyboardEvent as ReactKeyboardEvent,
     type ReactNode,
     type PointerEvent as ReactPointerEvent,
     useEffect,
@@ -29,9 +30,9 @@ import {
 import {
     ACCENT,
     CARD,
-    DURATION,
     type FixtureProps,
     INK,
+    LAYOUT_MOTION,
     MUTED,
     presenceClock,
     SPRING,
@@ -40,7 +41,7 @@ import {
 } from './layout_fixtures'
 
 /** The layout motion of every example but the switch. */
-export const MOTION = { duration: DURATION, timing: SPRING }
+export const MOTION = LAYOUT_MOTION
 
 const SOFT = 'var(--color-fd-muted-foreground, #71717a)'
 /** A fill under white text or a white knob: the same in both themes. */
@@ -84,9 +85,10 @@ export const SWITCH = {
     knob: 26,
     /** A bouncier spring: the knob overshoots its end a little. */
     motion: {
+        type: 'spring',
         duration: 0.45,
-        timing: timing.spring({ m: 1, k: 260, c: 20 }),
-    },
+        bounce: 0.35,
+    } as const,
 }
 
 function Switch({
@@ -649,41 +651,88 @@ export function moved<T>(order: readonly T[], from: number, to: number): T[] {
     return next
 }
 
+type GestureDriveState = 'held' | 'released' | 'cancelled' | 'invalidated'
+
+interface GestureDriveHandle {
+    readonly state: GestureDriveState
+    readonly velocity: { readonly x: number; readonly y: number }
+    move(offset: { readonly x: number; readonly y: number }): void
+    release(velocity?: { readonly x: number; readonly y: number }): void
+    cancel(): void
+}
+
+interface DragSample {
+    readonly x: number
+    readonly y: number
+    readonly time: number
+}
+
 interface DragState {
     readonly id: number
     readonly element: HTMLElement
-    /** The pointer's y at the press, and the slot it was pressed in. */
+    readonly handle: GestureDriveHandle
+    readonly input: 'pointer' | 'keyboard'
+    readonly pointerId: number | null
+    readonly startX: number
     readonly startY: number
     readonly startSlot: number
-    y: number
-    /** The slot last asked for, until the reorder commits. */
     requested: number
+    readonly samples: DragSample[]
+    pendingRelease: { x: number; y: number } | null
+    pendingAnnouncement: string
 }
 
 const SLOT = DRAG.height + DRAG.gap
+const VELOCITY_WINDOW_MS = 80
+const VELOCITY_MIN_SPAN_MS = 8
 
 function DragRow({
     id,
+    position,
+    count,
     dragging,
-    onPress,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+    onLostPointerCapture,
+    onKeyDown,
 }: {
     id: number
+    position: number
+    count: number
     dragging: boolean
-    onPress: (id: number, event: ReactPointerEvent<HTMLElement>) => void
+    onPointerDown: (
+        id: number,
+        event: ReactPointerEvent<HTMLDivElement>
+    ) => void
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => void
+    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => void
+    onLostPointerCapture: (event: ReactPointerEvent<HTMLDivElement>) => void
+    onKeyDown: (id: number, event: ReactKeyboardEvent<HTMLDivElement>) => void
 }) {
     const ref = useLayout<HTMLDivElement>()
     return (
         <div
             ref={ref}
+            role="listitem"
+            tabIndex={0}
+            aria-label={`${DRAG.labels[id]}, position ${position + 1} of ${count}`}
+            aria-keyshortcuts="Space ArrowUp ArrowDown Escape"
             data-lk={`drag-${id}`}
             data-drag-row={id}
-            onPointerDown={(event) => onPress(id, event)}
+            onPointerDown={(event) => onPointerDown(id, event)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            onLostPointerCapture={onLostPointerCapture}
+            onKeyDown={(event) => onKeyDown(id, event)}
             style={{
                 position: 'relative',
                 zIndex: dragging ? 1 : 0,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
                 width: DRAG.width,
                 height: DRAG.height,
                 boxSizing: 'border-box',
@@ -701,21 +750,34 @@ function DragRow({
                 userSelect: 'none',
             }}
         >
-            <span aria-hidden={true} style={{ color: SOFT, letterSpacing: 1 }}>
-                ⋮⋮
-            </span>
-            {DRAG.labels[id]}
+            <div
+                data-drag-content=""
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    width: '100%',
+                    transform: dragging ? 'scale(0.985)' : 'none',
+                    transition: 'transform 0.12s ease-out',
+                }}
+            >
+                <span
+                    aria-hidden={true}
+                    style={{ color: SOFT, letterSpacing: 1 }}
+                >
+                    ⋮⋮
+                </span>
+                {DRAG.labels[id]}
+            </div>
         </div>
     )
 }
 
 /**
- * Drag to reorder in user land. The dragged row follows the pointer through
- * its own inline `transform` (the inner map layout composes, §3.1), written
- * outside React so a move renders nothing. Crossing a slot reorders the
- * state: the other rows animate by layout, and the dragged row's transform is
- * re-based on its new slot before the flush, so it does not move. The release
- * drops the transform inside `update()`, which draws the row into its slot.
+ * Direct manipulation stays in the gesture layer: pointer identity/capture,
+ * recent velocity and keyboard semantics live here; LayoutDrive is the sole
+ * position writer. Reordering changes only authored list state, while the
+ * held row remains at one view-space point across the commit.
  */
 function DragList({
     order,
@@ -724,98 +786,395 @@ function DragList({
     order: readonly number[]
     onReorder?: ((order: number[]) => void) | undefined
 }) {
-    const group = useLayoutGroup()
+    const drive = useLayoutDrive()
     const drag = useRef<DragState | null>(null)
     const orderRef = useRef(order)
     orderRef.current = order
     const [dragging, setDragging] = useState<number | null>(null)
+    const [announcement, setAnnouncement] = useState('')
 
-    const offset = (state: DragState) => {
+    const releaseCapture = (state: DragState) => {
+        if (state.pointerId === null) return
+        try {
+            if (state.element.hasPointerCapture(state.pointerId)) {
+                state.element.releasePointerCapture(state.pointerId)
+            }
+        } catch {
+            // The browser may already have released capture.
+        }
+    }
+
+    const clearLocal = (state: DragState, message = '') => {
+        if (drag.current !== state) return
+        drag.current = null
+        setDragging(null)
+        if (message) setAnnouncement(message)
+    }
+
+    const abandonInvalidated = (state: DragState): false => {
+        releaseCapture(state)
+        clearLocal(state)
+        return false
+    }
+
+    const held = (state: DragState): boolean => {
+        if (state.handle.state === 'held') return true
+        return abandonInvalidated(state)
+    }
+
+    const appendSample = (state: DragState, event: PointerEvent) => {
+        const sample = {
+            x: event.clientX,
+            y: event.clientY,
+            time: event.timeStamp,
+        }
+        const last = state.samples.at(-1)
+        if (
+            !last ||
+            last.x !== sample.x ||
+            last.y !== sample.y ||
+            last.time !== sample.time
+        ) {
+            state.samples.push(sample)
+        }
+        const cutoff = sample.time - VELOCITY_WINDOW_MS
+        while (state.samples.length > 1 && state.samples[0]!.time < cutoff) {
+            state.samples.shift()
+        }
+    }
+
+    const recordPointer = (state: DragState, event: PointerEvent) => {
+        const coalesced =
+            typeof event.getCoalescedEvents === 'function'
+                ? event.getCoalescedEvents()
+                : []
+        for (const sample of coalesced) appendSample(state, sample)
+        appendSample(state, event)
+    }
+
+    const recentVelocity = (state: DragState) => {
+        const last = state.samples.at(-1)
+        if (!last) return { x: 0, y: 0 }
+        let first: DragSample | undefined
+        for (const sample of state.samples) {
+            const dt = last.time - sample.time
+            if (dt >= VELOCITY_MIN_SPAN_MS && dt <= VELOCITY_WINDOW_MS) {
+                first = sample
+                break
+            }
+        }
+        if (!first) return { x: 0, y: 0 }
+        const seconds = (last.time - first.time) / 1000
+        return {
+            x: (last.x - first.x) / seconds,
+            y: (last.y - first.y) / seconds,
+        }
+    }
+
+    const requestReorder = (state: DragState, to: number) => {
+        const from = orderRef.current.indexOf(state.id)
+        if (!onReorder || from < 0 || to === state.requested) return
+        state.requested = to
+        onReorder(
+            to === from
+                ? [...orderRef.current]
+                : moved(orderRef.current, from, to)
+        )
+    }
+
+    const pointerTargetSlot = (state: DragState, clientY: number) =>
+        Math.max(
+            0,
+            Math.min(
+                orderRef.current.length - 1,
+                state.startSlot + Math.round((clientY - state.startY) / SLOT)
+            )
+        )
+
+    const finishRelease = (
+        state: DragState,
+        velocity: { x: number; y: number },
+        message: string
+    ) => {
+        if (!held(state)) return
+        state.handle.release(velocity)
+        clearLocal(state, message)
+        releaseCapture(state)
+    }
+
+    const finishPendingRelease = (state: DragState, message: string) => {
+        const velocity = state.pendingRelease
+        if (!velocity) return
+        state.pendingRelease = null
+        state.pendingAnnouncement = ''
+        finishRelease(state, velocity, message)
+    }
+
+    const releaseWhenReady = (
+        state: DragState,
+        velocity: { x: number; y: number },
+        message: string
+    ) => {
         const slot = orderRef.current.indexOf(state.id)
-        return state.y - state.startY + (state.startSlot - slot) * SLOT
-    }
-    const place = (state: DragState) => {
-        state.element.style.transform = `translateY(${offset(state)}px)`
+        if (slot === state.requested) {
+            finishRelease(state, velocity, message)
+            return
+        }
+        state.pendingRelease = velocity
+        state.pendingAnnouncement = message
+        releaseCapture(state)
+        queueMicrotask(() => {
+            if (drag.current !== state || !state.pendingRelease) return
+            const accepted = orderRef.current.indexOf(state.id)
+            const acceptedMessage =
+                accepted < 0
+                    ? message
+                    : `Dropped ${DRAG.labels[state.id]}, position ${accepted + 1} of ${orderRef.current.length}.`
+            finishPendingRelease(state, acceptedMessage)
+        })
     }
 
-    // a reorder moved the dragged row's slot: keep it under the pointer
+    const cancel = (state: DragState, message: string) => {
+        if (state.handle.state === 'held') state.handle.cancel()
+        clearLocal(state, message)
+        releaseCapture(state)
+    }
+
     useLayoutEffect(() => {
-        if (drag.current) place(drag.current)
+        const state = drag.current
+        if (
+            !state ||
+            !state.pendingRelease ||
+            orderRef.current.indexOf(state.id) !== state.requested
+        ) {
+            return
+        }
+        const message = state.pendingAnnouncement
+        finishPendingRelease(state, message)
     })
 
-    useEffect(() => {
-        if (dragging === null) return
-        const move = (event: PointerEvent) => {
+    useEffect(
+        () => () => {
             const state = drag.current
             if (!state) return
-            state.y = event.clientY
-            // against the order the DOM shows: a reorder may not have
-            // committed yet, and the commit re-bases the row (above)
-            place(state)
-            const from = orderRef.current.indexOf(state.id)
-            const to = Math.max(
-                0,
-                Math.min(
-                    orderRef.current.length - 1,
-                    state.startSlot +
-                        Math.round((state.y - state.startY) / SLOT)
-                )
-            )
-            if (to !== from && to !== state.requested) {
-                state.requested = to
-                onReorder?.(moved(orderRef.current, from, to))
-            }
-        }
-        const release = () => {
-            const state = drag.current
+            if (state.handle.state === 'held') state.handle.cancel()
+            releaseCapture(state)
             drag.current = null
-            setDragging(null)
-            if (state) {
-                void group.update(() => {
-                    state.element.style.transform = ''
-                })
-            }
-        }
-        window.addEventListener('pointermove', move)
-        window.addEventListener('pointerup', release)
-        window.addEventListener('pointercancel', release)
-        return () => {
-            window.removeEventListener('pointermove', move)
-            window.removeEventListener('pointerup', release)
-            window.removeEventListener('pointercancel', release)
-        }
-    }, [dragging, group, onReorder])
+        },
+        []
+    )
 
-    const press = (id: number, event: ReactPointerEvent<HTMLElement>) => {
+    const pointerDown = (
+        id: number,
+        event: ReactPointerEvent<HTMLDivElement>
+    ) => {
         if (drag.current || event.button !== 0) return
+        const element = event.currentTarget
+        const handle = drive.take(element)
+        if (handle.state !== 'held') return
+        try {
+            element.setPointerCapture(event.pointerId)
+        } catch {
+            handle.cancel()
+            return
+        }
+        const slot = orderRef.current.indexOf(id)
+        const state: DragState = {
+            id,
+            element,
+            handle,
+            input: 'pointer',
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            startSlot: slot,
+            requested: slot,
+            samples: [],
+            pendingRelease: null,
+            pendingAnnouncement: '',
+        }
+        recordPointer(state, event.nativeEvent)
+        drag.current = state
+        setDragging(id)
+        setAnnouncement(
+            `Picked up ${DRAG.labels[id]}, position ${slot + 1} of ${order.length}.`
+        )
+    }
+
+    const pointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = drag.current
+        if (
+            !state ||
+            state.input !== 'pointer' ||
+            state.pointerId !== event.pointerId ||
+            !held(state)
+        ) {
+            return
+        }
+        recordPointer(state, event.nativeEvent)
+        state.handle.move({
+            x: event.clientX - state.startX,
+            y: event.clientY - state.startY,
+        })
+        requestReorder(state, pointerTargetSlot(state, event.clientY))
+    }
+
+    const pointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = drag.current
+        if (
+            !state ||
+            state.input !== 'pointer' ||
+            state.pointerId !== event.pointerId ||
+            !held(state)
+        ) {
+            return
+        }
+        recordPointer(state, event.nativeEvent)
+        requestReorder(state, pointerTargetSlot(state, event.clientY))
+        releaseWhenReady(
+            state,
+            recentVelocity(state),
+            `Dropped ${DRAG.labels[state.id]}, position ${state.requested + 1} of ${order.length}.`
+        )
+    }
+
+    const pointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = drag.current
+        if (
+            !state ||
+            state.input !== 'pointer' ||
+            state.pointerId !== event.pointerId
+        ) {
+            return
+        }
+        cancel(state, `Cancelled ${DRAG.labels[state.id]}.`)
+    }
+
+    const lostPointerCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+        const state = drag.current
+        if (
+            !state ||
+            state.input !== 'pointer' ||
+            state.pointerId !== event.pointerId ||
+            state.pendingRelease
+        ) {
+            return
+        }
+        cancel(state, `Cancelled ${DRAG.labels[state.id]}.`)
+    }
+
+    const keyboardTake = (id: number, element: HTMLElement) => {
+        if (drag.current) return
+        const handle = drive.take(element)
+        if (handle.state !== 'held') return
+        const slot = orderRef.current.indexOf(id)
         drag.current = {
             id,
-            element: event.currentTarget,
-            startY: event.clientY,
-            startSlot: orderRef.current.indexOf(id),
-            y: event.clientY,
-            requested: orderRef.current.indexOf(id),
+            element,
+            handle,
+            input: 'keyboard',
+            pointerId: null,
+            startX: 0,
+            startY: 0,
+            startSlot: slot,
+            requested: slot,
+            samples: [],
+            pendingRelease: null,
+            pendingAnnouncement: '',
         }
         setDragging(id)
+        setAnnouncement(
+            `Picked up ${DRAG.labels[id]}, position ${slot + 1} of ${order.length}.`
+        )
+    }
+
+    const keyDown = (id: number, event: ReactKeyboardEvent<HTMLDivElement>) => {
+        const isToggle = event.key === ' ' || event.key === 'Enter'
+        const state = drag.current
+        if (!state) {
+            if (!isToggle) return
+            event.preventDefault()
+            keyboardTake(id, event.currentTarget)
+            return
+        }
+        if (state.id !== id || state.input !== 'keyboard' || !held(state))
+            return
+        if (event.key === 'Escape') {
+            event.preventDefault()
+            cancel(state, `Cancelled ${DRAG.labels[id]}.`)
+            return
+        }
+        if (isToggle) {
+            event.preventDefault()
+            releaseWhenReady(
+                state,
+                { x: 0, y: 0 },
+                `Dropped ${DRAG.labels[id]}, position ${state.requested + 1} of ${order.length}.`
+            )
+            return
+        }
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+        event.preventDefault()
+        const to = Math.max(
+            0,
+            Math.min(
+                orderRef.current.length - 1,
+                state.requested + (event.key === 'ArrowDown' ? 1 : -1)
+            )
+        )
+        if (to === state.requested) return
+        state.handle.move({ x: 0, y: (to - state.startSlot) * SLOT })
+        requestReorder(state, to)
+        setAnnouncement(
+            `Moved ${DRAG.labels[id]} to position ${to + 1} of ${order.length}.`
+        )
     }
 
     return (
-        <div
-            style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: DRAG.gap,
-            }}
-        >
-            {order.map((id) => (
-                <DragRow
-                    key={id}
-                    id={id}
-                    dragging={dragging === id}
-                    onPress={press}
-                />
-            ))}
-        </div>
+        <>
+            <div
+                role="list"
+                style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: DRAG.gap,
+                }}
+            >
+                {order.map((id, position) => (
+                    <DragRow
+                        key={id}
+                        id={id}
+                        position={position}
+                        count={order.length}
+                        dragging={dragging === id}
+                        onPointerDown={pointerDown}
+                        onPointerMove={pointerMove}
+                        onPointerUp={pointerUp}
+                        onPointerCancel={pointerCancel}
+                        onLostPointerCapture={lostPointerCapture}
+                        onKeyDown={keyDown}
+                    />
+                ))}
+            </div>
+            <div
+                data-drag-status=""
+                role="status"
+                aria-live="polite"
+                style={{
+                    position: 'absolute',
+                    width: 1,
+                    height: 1,
+                    padding: 0,
+                    margin: -1,
+                    overflow: 'hidden',
+                    clipPath: 'inset(50%)',
+                    whiteSpace: 'nowrap',
+                    border: 0,
+                }}
+            >
+                {announcement}
+            </div>
+        </>
     )
 }
 

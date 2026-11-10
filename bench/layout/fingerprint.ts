@@ -5,11 +5,112 @@
  * controlled-load evidence, not an advisory reason.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { cpus, loadavg, totalmem } from 'node:os'
 import { join } from 'node:path'
 import { chromium, firefox, webkit } from 'playwright'
+
+const SOURCE_IDENTITY_ROOTS = [
+    'packages',
+    'tests/browser',
+    'tests/release',
+    'bench/layout',
+    'package.json',
+    'pnpm-lock.yaml',
+    'pnpm-workspace.yaml',
+    'turbo.json',
+    'tsconfig.json',
+] as const
+
+function sourceIdentityPath(path: string): boolean {
+    if (
+        path.endsWith('.log') ||
+        path.startsWith('.trace/') ||
+        path.includes('/.trace/') ||
+        path.startsWith('results/') ||
+        path.includes('/results/') ||
+        path.startsWith('bench/layout/iteration-') ||
+        path.startsWith('bench/layout/results/')
+    ) {
+        return false
+    }
+    if (
+        path.includes('/node_modules/') ||
+        path.includes('/dist/') ||
+        path.includes('/.turbo/') ||
+        path.includes('/.source/')
+    ) {
+        return false
+    }
+    return true
+}
+
+/**
+ * Exact current source-state identity for qualification provenance.
+ *
+ * The digest uses working-tree bytes for tracked and untracked source/tooling
+ * inputs, so two dirty trees at the same HEAD cannot share an identity.
+ * Historical benchmark/output directories are excluded, including the
+ * protected user-owned bench/layout/iteration-13 evidence.
+ */
+export function collectSourceIdentity(repoRoot: string): string | undefined {
+    let head: string
+    let listed: string
+    try {
+        head = execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: repoRoot,
+            encoding: 'utf8',
+        }).trim()
+        listed = execFileSync(
+            'git',
+            [
+                'ls-files',
+                '-z',
+                '--cached',
+                '--others',
+                '--exclude-standard',
+                '--',
+                ...SOURCE_IDENTITY_ROOTS,
+            ],
+            {
+                cwd: repoRoot,
+                encoding: 'utf8',
+            }
+        )
+    } catch {
+        return undefined
+    }
+    if (head.length === 0) return undefined
+
+    const files = listed
+        .split('\0')
+        .filter((path) => path.length > 0 && sourceIdentityPath(path))
+        .sort()
+    const hash = createHash('sha256')
+    for (const path of files) {
+        hash.update(path)
+        hash.update('\0')
+        try {
+            const bytes = readFileSync(join(repoRoot, path))
+            // Frame present bytes separately from an absent tracked input.
+            // Literal source contents must never collide with a deletion marker.
+            hash.update(`file:${bytes.byteLength}\0`)
+            hash.update(bytes)
+        } catch (error) {
+            if (
+                !(error instanceof Error) ||
+                !('code' in error) ||
+                error.code !== 'ENOENT'
+            )
+                return undefined
+            hash.update('missing\0')
+        }
+        hash.update('\0')
+    }
+    return `${head}+source-sha256:${hash.digest('hex')}`
+}
 
 export interface BrowserBuilds {
     readonly chromium: string

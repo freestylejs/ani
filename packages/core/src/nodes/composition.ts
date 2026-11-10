@@ -21,7 +21,7 @@ function cloneCompositionNodeWithChildren<T extends CompositionChildren>(
         children: T
     }
     Object.assign(clone, source)
-    clone.children = children
+    clone.children = Object.freeze(children)
     return clone
 }
 
@@ -77,7 +77,9 @@ export abstract class CompositionNode<
             return (changed ? adjusted : children) as unknown as T
         }
 
-        const timingOverridingChildren = adjustTiming(children)
-        this.children = timingOverridingChildren
+        // Own the array while sharing its immutable nodes. A caller can keep
+        // editing its input list without invalidating this tree's cached plan.
+        const ownedChildren = [...children] as unknown as Children
+        this.children = Object.freeze(adjustTiming(ownedChildren))
     }
 }

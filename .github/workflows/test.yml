@@ -62,13 +62,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: pnpm exec playwright install --with-deps chromium webkit
 
       # also gates the coverage of the layout DOM engine, which only real
       # layout runs (tests/browser/coverage.ts)
-      - name: Browser binding tests
-        run: pnpm test:browser --coverage
+      - name: Chromium binding tests and layout coverage
+        run: pnpm test:browser --browser chromium --coverage
+
+      - name: WebKit binding tests
+        run: pnpm test:browser --browser webkit
+
+      # Production source fixtures are proxy evidence, never device qualification.
+      - name: Production interaction proxies (Chromium)
+        run: pnpm test:browser --browser chromium --build production --case 'qualification:*'
+
+      - name: Production interaction proxies (WebKit)
+        run: pnpm test:browser --browser webkit --build production --case 'qualification:*'
 
       - name: Browser benchmark unit tests
         run: pnpm test:bench

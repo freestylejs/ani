@@ -11,7 +11,7 @@
     "publishConfig": {
         "access": "public"
     },
-    "files": ["dist"],
+    "files": ["dist", "NATIVE_QUALITY.md"],
     "main": "./dist/index.js",
     "module": "./dist/index.js",
     "types": "./dist/index.d.ts",

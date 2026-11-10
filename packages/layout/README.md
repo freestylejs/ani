@@ -17,7 +17,8 @@ pnpm add @freestylejs/ani-core @freestylejs/ani-layout
 ```
 
 For React, use `@freestylejs/ani-react/layout` (`useLayout`, `LayoutGroup`, `useLayoutGroup`,
-`AnimatePresence`, `usePresence`, `usePresenceControl`, `useLayoutDrive`). See the
+`AnimatePresence`, `usePresence`, `usePresenceControl`, `useLayoutDrive`). Layout 0.2.0 pairs with
+React adapter 2.0.0 (optional layout peer `^0.2.0`); upgrade both together. See the
 [Layout guide](https://freestyle-ani.vercel.app/en/docs/guides/layout).
 
 ## Quick start
@@ -51,7 +52,10 @@ const run = await group.flush() // read the boxes after it and start the run
 - `add(element, options?)` registers a participant and returns an idempotent remove function
   that restores its inline styles. `set(element, options)` replaces its options.
 - An element added after the capture has no previous box: it appears in place, unless it takes
-  over a `layoutId`.
+  over a `layoutId`. A framework adapter can call the typed `captureAdded(element)` after its
+  mount refs attach. It snapshots a new eligible participant once into the same task's live
+  capture; it never creates, refreshes or un-ages a capture. Ordinary vanilla mutations still
+  use `capture()`/`flush()` or `update()`.
 - `finish()` jumps every running animation to its end. `dispose()` cancels everything and
   restores every inline style the group wrote.
 - `capture()` is valid until the next frame: take it in the same task as the change. A capture
@@ -365,14 +369,24 @@ full.
   `layoutId` handoff and crossfade.
 - `viewTransition(update, { share, types, motion })`, `shareElement(element, id)` and
   `retimeViewTransition(motion, names?)` wrap the browser's View Transitions for discrete swaps
-  such as route changes. Without browser support the update runs without a transition and
-  resolves `'unsupported'`.
+  such as route changes. `ViewTransitionMotion` accepts only `type?: 'timing'`, `duration` and
+  stateless `timing`; physical springs, bounce and delay are rejected before any update or
+  naming side effect. Ordinary duration is bounded to 0.1–0.5 seconds. When reduced motion is
+  active, `{ maxDuration }` overrides that minimum, applies even without explicit motion, and
+  removes native delays/repeats; a zero cap skips. Incomplete native retiming skips the native
+  transition rather than silently exceeding the cap. Without browser support the validated
+  update runs once without a transition and resolves `'unsupported'`.
 
-## Migrating from the 0.1/0.2 surface
+## Migrating to 0.2.0
 
-The old 0.1.0 surface was never published; 0.2.0 replaces it. This is a hard migration: there is
-no shim, alias, compatibility layer or legacy bridge. Code written against the earlier surface
-must be changed as follows.
+The typed `LayoutGroup.captureAdded(element)` replaces the 0.2.x hidden symbol lifecycle.
+React adapter 2.0.0 requires layout `^0.2.0`; the old adapter/layout pair is not bridged.
+Custom adapters implement the same bounded mount contract in `ARCHITECTURE.md` §7.1.
+View Transition motion is timing-only; use the RAF layout engine for physical spring motion.
+A zero-duration, zero-delay timing jump settles synchronously without an extra frame.
+
+Earlier pre-release surfaces remain removed. There is no shim, alias or compatibility layer:
+code written against those surfaces must use the final API below.
 
 - **No page boxes.** The old surface assumed page coordinates and scroll markers. The engine now
   plans each flush in its own view space and moves kept tracks by their rest displacement. There
@@ -394,18 +408,17 @@ must be changed as follows.
 
 ## Release status and evidence
 
-The iOS-native-grade claim is **earned** by the P5 evidence body: `.trace/ani_ios_production/p5_bench.md`
-is a **final TRIBUNAL PASS** on the D9 instrument in §11.5, after the P0–P4 evidence body and every
-carried tribunal defect was closed. The full certification report is
-`bench/layout/iteration-12/pre-fix/report.json` at code `f552728` (all 11 primary scenes and 23
-support variants green in Chromium; WebKit frame/scoring/shape/status green with D12 cost
-advisories; G11 1.959×, G9/G10/G12/G13 green; controls 94/94). D13's independent repeat is
-`pre-fix/cost-repeat-3.json` (G11 2.000×). The final code `ea1475c` adds the lifecycle fix covered
-by the final-source Chromium/WebKit browser suite; the owner-approved evidence bridge and the
-final P4/P5 tribunals are recorded in `.trace/ani_ios_production/`. The claim is bounded
-Chromium/WebKit Playwright evidence under D5/D8–D13, not iOS-device or Mobile Safari
-certification. A report with a mismatched fingerprint, a skipped scene, a missing metric or a
-weakened tolerance is not a pass.
+`ARCHITECTURE.md` v4 and `NATIVE_QUALITY.md` define the current contracts. The native-interaction
+showcase uses physical layout springs and LayoutDrive. Code/test readiness, geometry/lifetime,
+script cost, browser frame/input proxies, content/accessibility, and actual iOS presentation/input
+are distinct results. A recorded measurement is not automatically an accepted quality result.
+
+The older P5 records in `.trace/ani_ios_production/` are historical geometry/script qualification,
+not proof for the current dirty tree or for real iOS Safari. The current execution and neutral
+checkpoint judgments are in `.trace/ani_native_grade_v4/`. Missing real-device presentation or
+physical-input evidence is BLOCK, never inferred from desktop WebKit, unit counts or DOM/rAF
+measurements. A mismatched source fingerprint, skipped required scene, missing metric or weakened
+tolerance cannot earn a PASS.
 
 Cost evidence follows D12/D13: Chromium decides G9/G11/G12; WebKit cost rows are BLOCK/advisory
 while its frame/scoring/shape/status rows decide. The recorded 1-minute load may be above the
@@ -428,8 +441,8 @@ pnpm test:browser --browser webkit
 pnpm bench:layout --runs 5 --engine chromium --engine webkit --check
 ```
 
-The browser suite and the bench are the certification instrument; do not treat a docs-only run as
-native-grade evidence. Firefox is advisory (D5/D9); a launch failure on macOS 27 is recorded, not
-counted as a pass.
+The browser suite and the bench prove their defined code/geometry/script contracts. They do not
+alone certify real-device presentation or physical-input latency. Firefox is advisory (D5/D9);
+a launch failure is recorded, not counted as a pass.
 
 `ARCHITECTURE.md` holds the full model and its contracts.

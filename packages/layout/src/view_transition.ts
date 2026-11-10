@@ -1,8 +1,14 @@
 import { type TimingFunction, timing } from '@freestylejs/ani-core'
 import { cssEasing } from './easing'
 import { hasDOM, reducedLayoutMotion, supportsViewTransition } from './feature'
+import {
+    assertKeys,
+    invalidOptions,
+    validateMotion,
+    validateReducedMotion,
+} from './motion'
 import type {
-    LayoutMotion,
+    ViewTransitionMotion,
     ViewTransitionOptions,
     ViewTransitionResult,
 } from './types'
@@ -133,16 +139,21 @@ export async function viewTransition(
     update: () => void | Promise<void>,
     options: ViewTransitionOptions = {}
 ): Promise<ViewTransitionResult> {
+    // Validate before naming elements, interrupting a run, or calling update,
+    // including the unsupported-API fallback.
+    validateTransitionMotion(options.motion)
+    const policy = validateReducedMotion(options.reducedMotion, true)
     if (!hasDOM() || !supportsViewTransition()) {
         await update()
         return 'unsupported'
     }
 
-    const reduced = reducedLayoutMotion(options.clock, options.reducedMotion)
-    if (reduced === 'skip') {
-        await update()
-        return 'reduced'
-    }
+    const reduced = reducedLayoutMotion(options.clock, policy)
+    const maxDuration =
+        reduced === 'clamp' && typeof policy === 'object'
+            ? policy.maxDuration
+            : null
+    const skipForReduced = reduced === 'skip' || maxDuration === 0
 
     const active = nativeActive()
     const own = current && (!active || active === current.transition)
@@ -152,7 +163,7 @@ export async function viewTransition(
             current = null
         }
         await update()
-        return 'yielded'
+        return skipForReduced ? 'reduced' : 'yielded'
     }
     if (own && current) {
         current.lifecycle.interrupted = true
@@ -163,6 +174,10 @@ export async function viewTransition(
         }
         current.restore()
         current = null
+    }
+    if (skipForReduced) {
+        await update()
+        return 'reduced'
     }
 
     const ids = [...new Set(options.share ?? [])]
@@ -241,7 +256,7 @@ export async function viewTransition(
         finished: Promise<unknown>
         updateCallbackDone?: Promise<unknown>
         types?: { add: (value: string) => void }
-        skipTransition?: () => void
+        skipTransition: () => void
     }
     try {
         transition = (
@@ -273,6 +288,11 @@ export async function viewTransition(
         lifecycle,
     }
     current = activeState
+    // Observe rejection even when an earlier ready/retiming failure exits.
+    const finishedResult = transition.finished.then(
+        () => true,
+        () => false
+    )
 
     if (transition.updateCallbackDone) {
         transition.updateCallbackDone.catch(() => undefined)
@@ -307,19 +327,37 @@ export async function viewTransition(
         throw updateError
     }
 
-    if (!skippedByReady && options.motion) {
-        retimeViewTransition(options.motion, names)
-    }
-
+    let reducedFallback = false
     let finished = false
     try {
-        await transition.finished
-        finished = true
-        if (transition.updateCallbackDone) {
+        if (
+            !skippedByReady &&
+            !closed &&
+            (options.motion || maxDuration !== null)
+        ) {
+            const retimed = retimeEffects(
+                options.motion ?? {},
+                // The accessibility cap covers the root as well as shared names.
+                maxDuration === null ? names : undefined,
+                maxDuration
+            )
+            if (
+                maxDuration !== null &&
+                (!retimed.complete || retimed.count === 0)
+            ) {
+                // With no observable VT effects the cap is unproven, not a
+                // successful cosmetic fallback. Ordinary retiming still may
+                // return zero without skipping.
+                // Do not claim a reduced fallback unless the native skip ran.
+                // A throwing/incomplete native API still restores names below.
+                transition.skipTransition()
+                reducedFallback = true
+            }
+        }
+        finished = await finishedResult
+        if (finished && transition.updateCallbackDone) {
             await transition.updateCallbackDone.catch(() => undefined)
         }
-    } catch {
-        finished = false
     } finally {
         closed = true
         restoreNames(saved)
@@ -328,6 +366,7 @@ export async function viewTransition(
 
     if (failed) throw updateError
     if (lifecycle.interrupted) return 'interrupted'
+    if (reducedFallback) return 'reduced'
     if (skippedByReady || !finished) return 'skipped'
     return 'finished'
 }
@@ -337,17 +376,51 @@ export async function viewTransition(
  * Returns the number retimed; 0 is a cosmetic UA-timing fallback.
  */
 export function retimeViewTransition(
-    motion: LayoutMotion,
+    motion: ViewTransitionMotion,
     names?: readonly string[]
 ): number {
-    if (!hasDOM() || typeof document.getAnimations !== 'function') return 0
-    const duration = Math.min(
+    validateTransitionMotion(motion)
+    return retimeEffects(motion, names, null).count
+}
+
+function validateTransitionMotion(motion: unknown): void {
+    validateMotion(motion, 'viewTransition.motion')
+    if (motion === undefined) return
+    const value = motion as Record<string, unknown>
+    assertKeys(value, ['type', 'duration', 'timing'], 'viewTransition.motion')
+    if (value.type !== undefined && value.type !== 'timing') {
+        throw invalidOptions(
+            'type',
+            'View Transitions support timing motion only.'
+        )
+    }
+}
+
+/** Retiming metadata stays local; no public spring fallback or second motion law. */
+function retimeEffects(
+    motion: ViewTransitionMotion,
+    names: readonly string[] | undefined,
+    maxDuration: number | null
+): { count: number; complete: boolean } {
+    if (!hasDOM() || typeof document.getAnimations !== 'function') {
+        return { count: 0, complete: false }
+    }
+    const ordinary = Math.min(
         500,
         Math.max(100, (motion.duration ?? 0.35) * 1000)
     )
+    const duration =
+        maxDuration === null ? ordinary : Math.min(ordinary, maxDuration * 1000)
     const easing = cssEasing(motion.timing ?? defaultTiming())
     let count = 0
-    for (const animation of document.getAnimations()) {
+    let complete = true
+    let animations: Animation[]
+    try {
+        animations = document.getAnimations()
+    } catch {
+        return { count: 0, complete: false }
+    }
+    for (const animation of animations) {
         const effect = animation.effect
         if (!effect) continue
         const pseudo = (
@@ -361,11 +434,22 @@ export function retimeViewTransition(
             continue
         }
         try {
-            effect.updateTiming({ duration, easing })
+            effect.updateTiming({
+                duration,
+                easing,
+                // A duration cap must not leave an authored delay or repeat
+                // that can keep a native effect alive beyond that cap.
+                ...(maxDuration !== null && {
+                    delay: 0,
+                    endDelay: 0,
+                    iterations: 1,
+                    iterationStart: 0,
+                }),
+            })
             count++
         } catch {
-            // skipped effect
+            complete = false
         }
     }
-    return count
+    return { count, complete }
 }

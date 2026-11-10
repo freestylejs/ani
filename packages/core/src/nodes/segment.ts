@@ -46,7 +46,17 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
                     : ''
             )
         }
-        if (!isTarget(props.to)) {
+        // Snapshot caller-owned numeric containers once. Plan/footprint caches
+        // must never observe a later mutation through an input alias.
+        const input = props.to
+        const to = (
+            input !== null && typeof input === 'object'
+                ? Array.isArray(input)
+                    ? input.slice()
+                    : { ...input }
+                : input
+        ) as G
+        if (!isTarget(to)) {
             throw createAniError(
                 TypeError,
                 'ANI_INVALID_NODE',
@@ -56,12 +66,12 @@ export class SegmentNode<G extends Groupable> extends AnimationNode<G> {
             )
         }
         const nodeProps: SegmentNodeProps<G> = {
-            to: props.to,
+            to: Object.freeze(to) as G,
             duration: props.duration,
             ...(props.timing !== undefined && { timing: props.timing }),
         }
-        this.props = nodeProps
-        this.footprint = segmentFootprint(props.to, props.duration)
+        this.props = Object.freeze(nodeProps)
+        this.footprint = segmentFootprint(to, props.duration)
     }
 
     public get duration(): number {

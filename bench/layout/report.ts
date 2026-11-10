@@ -1,5 +1,10 @@
 /** Report schema, aggregation labels and text output for the P5 bench. */
 import type { Advisory, Fingerprint } from './fingerprint.ts'
+import {
+    formatNativeGradeQualification,
+    type QualificationDimensionInput,
+    qualifyNativeGrade,
+} from './qualification.ts'
 import type { MetricFinding } from './scoring.ts'
 import type { SceneTrace } from './types.ts'
 
@@ -213,7 +218,7 @@ export interface BenchReport {
     readonly schema: 'ani-layout-bench/v1'
     readonly generatedAt: string
     readonly command: string
-    /** Git revision of the source that produced the bundle, when available. */
+    /** Exact HEAD + working-tree source identity that produced the bundle. */
     readonly sourceRevision?: string
     readonly fingerprint: Fingerprint
     readonly advisory: Advisory
@@ -267,9 +272,197 @@ function formatValue(value: number, unit: string): string {
     return `${value.toFixed(4)} ${unit}`
 }
 
+const SCRIPT_METRIC_ID = /^(?:G8|G9|G10|G11|G12)(?:[.-]|$)/
+
+function benchmarkQualificationDimensions(report: BenchReport): {
+    geometry: QualificationDimensionInput
+    script: QualificationDimensionInput
+} {
+    if (report.certification.certified) {
+        const passed = {
+            status: 'pass',
+            detail: 'existing full five-run Chromium/WebKit certification passed',
+        } as const
+        return {
+            geometry: {
+                ...passed,
+                detail: `geometry/lifetime: ${passed.detail}`,
+            },
+            script: {
+                ...passed,
+                detail: `script cost: ${passed.detail}`,
+            },
+        }
+    }
+
+    const geometryFailures: string[] = []
+    const scriptFailures: string[] = []
+    const geometryBlocks: string[] = []
+    const scriptBlocks: string[] = []
+    const addMetric = (
+        engine: EngineReport,
+        scope: string,
+        metric: AggregateMetric | MetricFinding
+    ): void => {
+        if (metric.id === 'RUN' || metric.deciding === false) return
+        const script = SCRIPT_METRIC_ID.test(metric.id)
+        if ('measured' in metric && metric.measured === false) {
+            if (script) {
+                if (engine.engine === 'chromium') {
+                    scriptBlocks.push(
+                        `${engine.engine} ${scope} ${metric.id} unmeasured`
+                    )
+                }
+            } else {
+                geometryBlocks.push(
+                    `${engine.engine} ${scope} ${metric.id} unmeasured`
+                )
+            }
+            return
+        }
+        if (metric.blocked === true) {
+            if (script) {
+                if (engine.engine === 'chromium') {
+                    scriptBlocks.push(`${engine.engine} ${scope} ${metric.id}`)
+                }
+            } else {
+                geometryBlocks.push(`${engine.engine} ${scope} ${metric.id}`)
+            }
+            return
+        }
+        if (metric.pass) return
+        if (script) {
+            // D12 keeps WebKit G8-G12 advisory; Chromium is the deciding
+            // script/cost engine for a measured miss.
+            if (engine.engine === 'chromium') {
+                scriptFailures.push(
+                    `${engine.engine} ${scope} ${metric.id} failed`
+                )
+            }
+        } else {
+            geometryFailures.push(
+                `${engine.engine} ${scope} ${metric.id} failed`
+            )
+        }
+    }
+    const addScene = (engine: EngineReport, scene: SceneReport): void => {
+        const scope = scene.variant?.id ?? scene.scene
+        for (const metric of [...scene.metrics, ...scene.shape]) {
+            addMetric(engine, scope, metric)
+        }
+        for (const run of scene.runs) {
+            if (run.warmup) continue
+            for (const metric of [...run.metrics, ...run.shape]) {
+                addMetric(engine, `${scope} run ${run.run}`, metric)
+            }
+            if (run.problems.length > 0) {
+                geometryFailures.push(
+                    `${engine.engine} ${scope} run ${run.run} reported ${run.problems.length} runtime problem(s)`
+                )
+            }
+            if (
+                run.summary.final.tracks !== 0 ||
+                run.summary.final.holds !== 0 ||
+                run.summary.final.clockPending !== 0 ||
+                run.summary.final.clockSize !== 0
+            ) {
+                geometryFailures.push(
+                    `${engine.engine} ${scope} run ${run.run} failed lifetime cleanup`
+                )
+            }
+            if (engine.engine === 'chromium') {
+                if (run.real.blocked === true) {
+                    scriptBlocks.push(
+                        `${engine.engine} ${scope} run ${run.run} G8`
+                    )
+                } else if (!run.real.pass) {
+                    scriptFailures.push(
+                        `${engine.engine} ${scope} run ${run.run} G8 failed`
+                    )
+                }
+            }
+        }
+        if (scene.status === 'blocked' || scene.status === 'pending') {
+            geometryBlocks.push(`${engine.engine} ${scope} ${scene.status}`)
+            if (engine.engine === 'chromium') {
+                scriptBlocks.push(`${engine.engine} ${scope} ${scene.status}`)
+            }
+        }
+    }
+
+    for (const engine of report.engines) {
+        if (engine.launchError !== null) {
+            geometryBlocks.push(`${engine.engine} launch unavailable`)
+            if (engine.engine === 'chromium') {
+                scriptBlocks.push(`${engine.engine} launch unavailable`)
+            }
+        }
+        for (const scene of engine.scenes) addScene(engine, scene)
+        for (const variant of engine.variants) addScene(engine, variant)
+        if (engine.engine !== 'chromium' || engine.cost === null) continue
+        for (const metric of engine.cost.metrics) {
+            addMetric(engine, 'S-BULK cost', metric)
+        }
+        if (engine.cost.status === 'fail' && engine.cost.valid) {
+            if (
+                !engine.cost.metrics.some(
+                    (metric) =>
+                        metric.deciding &&
+                        !metric.blocked &&
+                        !metric.pass &&
+                        SCRIPT_METRIC_ID.test(metric.id)
+                )
+            ) {
+                scriptBlocks.push(
+                    'chromium S-BULK cost failed without a classified deciding G8-G12 metric'
+                )
+            }
+        } else if (
+            engine.cost.status === 'blocked' ||
+            engine.cost.status === 'pending' ||
+            !engine.cost.valid
+        ) {
+            scriptBlocks.push(`chromium S-BULK cost ${engine.cost.status}`)
+        }
+    }
+
+    const incomplete =
+        report.certification.reasons.length > 0
+            ? report.certification.reasons.join('; ')
+            : 'full five-run Chromium/WebKit certification has not been established by this report'
+    const geometry: QualificationDimensionInput =
+        geometryFailures.length > 0
+            ? {
+                  status: 'fail',
+                  detail: `geometry/lifetime measured failure: ${geometryFailures.join('; ')}`,
+              }
+            : {
+                  status: 'block',
+                  detail: `geometry/lifetime evidence incomplete: ${[
+                      ...geometryBlocks,
+                      incomplete,
+                  ].join('; ')}`,
+              }
+    const script: QualificationDimensionInput =
+        scriptFailures.length > 0
+            ? {
+                  status: 'fail',
+                  detail: `script cost measured failure: ${scriptFailures.join('; ')}`,
+              }
+            : {
+                  status: 'block',
+                  detail: `script cost evidence incomplete: ${[
+                      ...scriptBlocks,
+                      incomplete,
+                  ].join('; ')}`,
+              }
+    return { geometry, script }
+}
+
 export function formatReport(report: BenchReport): string {
     const lines: string[] = []
     lines.push(`P5 layout bench — ${report.generatedAt} (${report.command})`)
+    lines.push(`source identity: ${report.sourceRevision ?? 'unavailable'}`)
     lines.push(
         `fingerprint ${report.fingerprint.host} / ${report.fingerprint.os.productVersion} / ${report.fingerprint.cpu} / ${report.fingerprint.browsers.chromium} / ${report.fingerprint.browsers.webkit}`
     )
@@ -399,7 +592,7 @@ export function formatReport(report: BenchReport): string {
     lines.push('')
     lines.push(`invocation: ${report.pass ? 'PASS' : 'FAIL'}`)
     lines.push(
-        `certification: ${report.certification.certified ? 'CERTIFIED' : 'NOT CERTIFIED'}`
+        `engine benchmark certification: ${report.certification.certified ? 'CERTIFIED' : 'NOT CERTIFIED'} (geometry/script only; not native-device certification)`
     )
     for (const reason of report.certification.reasons) {
         lines.push(`  cert block: ${reason}`)
@@ -410,6 +603,24 @@ export function formatReport(report: BenchReport): string {
     for (const reason of report.certification.advisory) {
         lines.push(`  cert advisory: ${reason}`)
     }
+    const benchmark = benchmarkQualificationDimensions(report)
+    const nativeGrade = qualifyNativeGrade({
+        build: {
+            revision: report.sourceRevision ?? null,
+            artifact: 'bench/layout source bundle',
+            mode: 'development',
+        },
+        geometry: benchmark.geometry,
+        script: benchmark.script,
+        browserProxy: null,
+        physicalDevice: null,
+        content: {
+            status: 'block',
+            detail: 'product content/accessibility evidence is outside this benchmark report and must come from bounded browser/showcase observations',
+        },
+    })
+    lines.push('')
+    lines.push(formatNativeGradeQualification(nativeGrade))
     return lines.join('\n')
 }
 

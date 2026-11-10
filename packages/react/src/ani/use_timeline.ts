@@ -2,13 +2,14 @@ import type { DependencyList } from 'react'
 import { useOwned } from './owned'
 
 /**
- * Owner primitive: creates an object with `dispose()` (a timeline, a group)
- * and disposes it when the component unmounts or `deps` change.
+ * Owns a committed inert object (a timeline, group or follower). Only a
+ * committed dependency change replaces it; abandoned renders cannot reset it.
+ * Disposes committed instances on replacement/unmount. StrictMode effect
+ * reconnection re-creates a disposed instance.
  *
- * The same instance is returned on every render. Under StrictMode, where
- * effects re-run on the same instance, a disposed object is re-created.
- *
- * @param factory - Creates the object; called on the first render and after `deps` change.
+ * @param factory - Pure, discard-safe constructor. React may discard a render
+ * candidate without disposal. Do not start playback or acquire external
+ * resources here; activate the object in a ref callback, effect or event.
  * @param deps - Dependencies that replace the object when they change.
  */
 export function useTimeline<T extends { dispose(): void }>(

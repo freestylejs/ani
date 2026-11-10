@@ -12,7 +12,10 @@ import { compileTiming } from './timing_compiler'
 
 declare const __ANI_DEV__: boolean
 
-export interface WebAniKeyframe extends Record<string, string | number | null> {
+// Optional native keyframe fields must also fit the index signature when a
+// consumer enables strictNullChecks without exactOptionalPropertyTypes.
+export interface WebAniKeyframe
+    extends Record<string, string | number | null | undefined> {
     offset: number
     easing?: string
 }

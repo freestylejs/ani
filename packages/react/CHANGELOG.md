@@ -4,6 +4,8 @@
 
 ### Major Changes
 
+- The optional layout entry requires `@freestylejs/ani-layout` `^0.2.0` and calls its typed `captureAdded` lifecycle directly. Upgrade the pair together; the 0.2.x symbol fallback is removed. The base React entry still does not require layout.
+- Uses core 2.0.0's immutable input containers. LayoutDrive showcase integration demonstrates pointer identity/capture, timestamped release velocity, cancellation and keyboard reorder without a competing authored-transform drag path.
 - 6691fff: ANI 2.0. The 1.x surface is removed and replaced by one that batches DOM writes in a commit phase, drives lists through groups, behaves the same on the RAF and WAAPI engines, honors reduced motion by default and measures every duration in seconds.
 
   **Upgrade:** run `npx @freestylejs/ani-codemod <dirs>` once on your 1.x code (commit before you do), read every warning it prints, then read the migration guide "Migrating from 1.x" on the documentation site. Removed names are gone, and 1.x call shapes throw a `TypeError` that names the 2.0 form. The changes that do not throw are listed under "Behavior changes"; the one to watch is `delay`, which is now in seconds.

@@ -1,6 +1,6 @@
 {
     "extends": "../../tsconfig.json",
-    "include": ["./**/*", "./*.d.ts"],
+    "include": ["./**/*", "./*.d.ts", "../release/**/*.ts"],
     "compilerOptions": {
         "noEmit": true,
         "jsx": "react-jsx",

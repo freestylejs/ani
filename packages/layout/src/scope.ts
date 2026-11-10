@@ -22,7 +22,11 @@ import {
     ownedAnimationIn,
     POSE_PROPERTIES,
     put,
+    putAttribute,
     RADIUS_PROPERTIES,
+    readComputedStyle,
+    readLayoutOffsets,
+    readOffsetSize,
     readRadius,
     readTransform,
     replacedOwned,
@@ -1113,8 +1117,7 @@ export function createLayoutGroup(
         for (let i = 0; i < list.length; i++) {
             const element = list[i]!.element
             const pair = offsets[i] ?? (offsets[i] = [0, 0])
-            pair[0] = element.offsetWidth
-            pair[1] = element.offsetHeight
+            readOffsetSize(element, pair)
         }
         offsets.length = list.length
     }
@@ -2141,12 +2144,9 @@ export function createLayoutGroup(
      * own, an owned CSS animation, or a mismatched scale fails (P4-C7).
      */
     function heldRectSupported(p: Participant, rect: Box): Measured | null {
-        const offset: readonly [number, number] = [
-            p.element.offsetWidth,
-            p.element.offsetHeight,
-        ]
+        const offset = readOffsetSize(p.element)
         stats.offsets += 1
-        const style = getComputedStyle(p.element)
+        const style = readComputedStyle(p.element)
         stats.styles += 1
         const measured = measure(
             p.element,
@@ -2168,7 +2168,7 @@ export function createLayoutGroup(
                 expectedY *= apose.sy * ag.inner.y.k
                 continue
             }
-            const astyle = getComputedStyle(a.element)
+            const astyle = readComputedStyle(a.element)
             stats.styles += 1
             const at = readTransform(astyle)
             if (typeof at === 'string') return null
@@ -2277,7 +2277,7 @@ export function createLayoutGroup(
     /** The two layout-offset reads a hold needs; counted in `stats`. */
     function readLayoutOffset(element: HTMLElement): [number, number] {
         stats.layoutOffsets += 2
-        return [element.offsetLeft, element.offsetTop]
+        return readLayoutOffsets(element)
     }
 
     /** The capture read phase's rect read for one held element (§5.10, §4.5). */
@@ -2670,6 +2670,16 @@ export function createLayoutGroup(
         return found
     }
 
+    /** The landing cannot erase a descendant's independent residual motion. */
+    function hasLiveResiduals(hold: DriveHold): boolean {
+        for (const rider of hold.rides) {
+            const drive = rider.drive
+            const fade = drive?.fade
+            if (runs(drive) || (fade && !fadeEnded(fade))) return true
+        }
+        return false
+    }
+
     /** Ends a hold at its end state: every handle terminal, every drive settled. */
     function finishHold(hold: DriveHold): void {
         const p = hold.owner
@@ -2785,12 +2795,9 @@ export function createLayoutGroup(
         // layout-size pair and one computed style, all before any write
         const rect = viewRect(element)
         stats.rects += 1
-        const offset: readonly [number, number] = [
-            element.offsetWidth,
-            element.offsetHeight,
-        ]
+        const offset = readOffsetSize(element)
         stats.offsets += 1
-        const style = getComputedStyle(element)
+        const style = readComputedStyle(element)
         stats.styles += 1
         const measured = measure(
             element,
@@ -2824,7 +2831,7 @@ export function createLayoutGroup(
             }
             // an undriven participant ancestor has no geometry: its computed
             // scale is its inner map (the §4.2 check would read it too)
-            const astyle = getComputedStyle(a.element)
+            const astyle = readComputedStyle(a.element)
             stats.styles += 1
             const at = readTransform(astyle)
             if (typeof at === 'string') {
@@ -3436,7 +3443,8 @@ export function createLayoutGroup(
         if (
             speed < 1e-9 &&
             distance <= HOLD_ORIGIN_TOL &&
-            sizeDistance <= HOLD_SIZE_TOL
+            sizeDistance <= HOLD_SIZE_TOL &&
+            !hasLiveResiduals(hold)
         ) {
             hold.releaseTrack = null
             hold.releaseTarget = target
@@ -3510,7 +3518,30 @@ export function createLayoutGroup(
         // §4.5: a release starts from rest timing-wise with its velocity
         d.started = false
         d.mode = reduced
-        realizer.start()
+        if (trackEnded(track, 0) && deferDepth === 0 && !clock.inFrame) {
+            // An explicit jump needs no clock time. Re-solve the scene so
+            // live ancestors and descendant residuals keep their projection;
+            // finishing the entire hold here would incorrectly erase them.
+            deferDepth += 1
+            try {
+                const running = frameBoundary(
+                    () => {
+                        const active = step(null)
+                        commitWrites()
+                        return active
+                    },
+                    false,
+                    null
+                )
+                if (running) realizer.start()
+                else realizer.stop()
+            } finally {
+                deferDepth -= 1
+                if (deferDepth === 0) flushDeferred()
+            }
+        } else {
+            realizer.start()
+        }
     }
 
     /* ───────────────────────── WAAPI (§10) ───────────────────────── */
@@ -3534,6 +3565,7 @@ export function createLayoutGroup(
      * pose to the authored translate, keeping the running ones.
      */
     function playTracks(): void {
+        let settled = false
         for (const node of frame) {
             const p = node.p
             const d = p.drive
@@ -3541,6 +3573,13 @@ export function createLayoutGroup(
             if (animations.get(p)?.track === d.track) continue
             stopAnimation(p)
             const track = d.track
+            if (trackEnded(track, d.elapsed)) {
+                // A zero-delay timing jump is already at A. Do not create a
+                // paused native animation that would need another frame.
+                settle(p)
+                settled = true
+                continue
+            }
             // the WAAPI engine rejects springs at validation (§10)
             const law = track.law as Extract<TrackLaw, { kind: 'timing' }>
             const start = drawnBoxes(solveNodes([{ ...node, parent: -1 }]))[0]!
@@ -3569,6 +3608,10 @@ export function createLayoutGroup(
                 }
             )
             animations.set(p, { animation, track })
+        }
+        if (settled) {
+            commitWrites()
+            frame = frame.filter((node) => node.p.drive !== null)
         }
         stats.tracks = animations.size
     }
@@ -3842,7 +3885,8 @@ export function createLayoutGroup(
                     Math.abs(hy) <= HOLD_ORIGIN_TOL &&
                     Math.abs(hold.sizeW - target.w) <= HOLD_ORIGIN_TOL &&
                     Math.abs(hold.sizeH - target.h) <= HOLD_ORIGIN_TOL &&
-                    !ancestor
+                    !ancestor &&
+                    !hasLiveResiduals(hold)
                 ) {
                     finishHold(hold)
                     return
@@ -4284,7 +4328,7 @@ export function createLayoutGroup(
         const read = (i: number): CSSStyleDeclaration => {
             let style = styles[i]
             if (!style) {
-                style = getComputedStyle(list[i]!.element)
+                style = readComputedStyle(list[i]!.element)
                 styles[i] = style
                 stats.styles += 1
             }
@@ -4352,16 +4396,22 @@ export function createLayoutGroup(
     }
 
     /**
-     * Internal adapter hand-off: a participant registered after the render's
-     * capture (a React mount) is given B = its current box, so it appears at
-     * its layout without a false `'stale'`. The capture is still open and in
-     * the same task. Used through the package-internal symbol below; not a
-     * public export.
+     * Typed post-mount lifecycle: a participant registered after the render's
+     * capture is given B = its current box, so it appears at its layout
+     * without a false `'stale'`. Only the same task's live capture is eligible;
+     * this operation never creates, refreshes or un-ages an epoch.
      */
     function captureAdded(element: HTMLElement): void {
         if (!capture?.live || capture.aged || capture.capped) return
         const p = registry.get(element)
-        if (!p || !element.isConnected) return
+        if (!p) return
+        // Adoption ends document-affine ownership before any geometry read,
+        // just as capture()/flush() do for the established participants.
+        if (scopeDocument && element.ownerDocument !== scopeDocument) {
+            documentMismatch(p)
+            return
+        }
+        if (!element.isConnected) return
         // an existing participant at the capture is never re-read here; a
         // presence enter owns the mount's first frame, and an author-replaced
         // declaration keeps its §4.4 path
@@ -4792,7 +4842,7 @@ export function createLayoutGroup(
         }
         const rect = viewRect(element)
         stats.rects += 1
-        const style = getComputedStyle(element)
+        const style = readComputedStyle(element)
         stats.styles += 1
         const measured = measure(
             element,
@@ -7542,8 +7592,7 @@ export function createLayoutGroup(
         const attributes = pendingAttributes
         pendingAttributes = []
         for (const w of attributes) {
-            if (w.value === null) w.element.removeAttribute(w.name)
-            else w.element.setAttribute(w.name, w.value)
+            putAttribute(w.element, w.name, w.value)
         }
         const writes = pending
         pending = []
@@ -7643,8 +7692,7 @@ export function createLayoutGroup(
             pendingAttributes = []
             for (const w of attributes) {
                 try {
-                    if (w.value === null) w.element.removeAttribute(w.name)
-                    else w.element.setAttribute(w.name, w.value)
+                    putAttribute(w.element, w.name, w.value)
                 } catch {
                     // handled as a cleanup failure; the first error is reported
                 }
@@ -8228,6 +8276,8 @@ export function createLayoutGroup(
 
         capture: () => takeCapture(true),
 
+        captureAdded,
+
         flush,
 
         take: takeDrive,
@@ -8321,11 +8371,6 @@ export function createLayoutGroup(
             }
         },
     }
-    // the React adapter's package-internal mount hand-off: no public export
-    Object.defineProperty(group, Symbol.for('ani-layout.capture-added'), {
-        value: captureAdded,
-        enumerable: false,
-    })
     // test-only observation of the measured-jump shortcut; no public export
     Object.defineProperty(group, Symbol.for('ani-layout.keep-shortcut'), {
         value: () => lastKeepShortcut,

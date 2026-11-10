@@ -34,7 +34,7 @@ export function useFollow<G extends Record<string, number>>(
     follower: Follower<G>
 } {
     const first = useRef({ initial, options })
-    const [follower] = useOwned(() => {
+    const [follower, slot] = useOwned(() => {
         const { resolver: _resolver, ...followOptions } = first.current.options
         return follow(first.current.initial, followOptions)
     }, [])
@@ -43,10 +43,11 @@ export function useFollow<G extends Record<string, number>>(
 
     const ref = useMemo(
         () =>
-            createElementRef((element) =>
-                follower.bind(element, bindOptions(resolver.current))
-            ),
-        [follower, resolver]
+            createElementRef((element) => {
+                if (slot.current.disposed) return () => undefined
+                return follower.bind(element, bindOptions(resolver.current))
+            }),
+        [follower, resolver, slot]
     )
 
     return { ref, style, follower }

@@ -52,10 +52,11 @@ export function useAniStates<const S extends AnimationStateShape>(
 
     const ref = useMemo(
         () =>
-            createElementRef((element) =>
-                machine.bind(element, bindOptions(resolver.current))
-            ),
-        [machine, resolver]
+            createElementRef((element) => {
+                if (slot.current.disposed) return () => undefined
+                return machine.bind(element, bindOptions(resolver.current))
+            }),
+        [machine, resolver, slot]
     )
 
     const subscribe = useCallback(

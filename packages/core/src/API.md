@@ -484,7 +484,8 @@ The `ani` function is the fundamental building block of the entire animation sys
 #### Best Practices
 
 -   **Do** use `ani` for any individual tween.
--   **Do** share one node (and tree) between many timelines. Nodes are immutable.
+-   **Do** share one node (and tree) between many timelines. Nodes are immutable descriptions: a segment snapshots and shallow-freezes its numeric target container and props; a composition owns a shallow-frozen children array while sharing its child nodes. Later mutation of the caller's original target or children array cannot change an existing tree, footprint or cached RAF/WAAPI plan. The caller's input objects are not frozen.
+-   **Do** keep supplied timing objects and per-property timing configurations stable after construction. Their implementations may be user-defined; Ani does not deep-freeze arbitrary timing objects or turn mutable custom timing behavior into immutable behavior.
 -   **Don't** try to animate multiple, unrelated properties in a single `ani` call if they belong to different conceptual animations. Instead, use multiple `ani` nodes within a `parallel` block.
 
 ### API Reference

@@ -29,9 +29,6 @@ export function ownerOf(element: Element): LayoutScope | undefined {
     return owners.get(element)
 }
 
-/** Package-internal mount hand-off; not part of the public layout API. */
-const CAPTURE_ADDED = Symbol.for('ani-layout.capture-added')
-
 export const hasDOM = (): boolean => typeof document !== 'undefined'
 
 /**
@@ -349,17 +346,7 @@ export function createLayoutScope(
         },
 
         captureAdded(element) {
-            const current = group
-            if (!current) return
-            const capture = (current as unknown as Record<symbol, unknown>)[
-                CAPTURE_ADDED
-            ]
-            if (typeof capture === 'function') {
-                ;(capture as (mount: HTMLElement) => void).call(
-                    current,
-                    element
-                )
-            }
+            group?.captureAdded(element)
         },
 
         update(fn) {

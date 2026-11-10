@@ -2,13 +2,15 @@
 
 These React hooks integrate the `@freestylejs/ani-core` animation engine with React. Element styling goes through the core (`bind`, `bindAt`, `machine.bind`, `follower.bind`), so frames are written to the DOM without rendering the component. DOM events are React's job: use `onClick` and friends and call the timeline from there.
 
-**Ownership:** a primitive that receives a timeline, group or machine never disposes it. A primitive that creates one (`useTimeline`, `useAniStates`, `useFollow`) disposes it when the component unmounts, and re-creates it when React's StrictMode re-runs effects on the same instance.
+**Ownership:** a primitive that receives a timeline, group or machine never disposes it. A creating primitive (`useTimeline`, `useAniStates`, `useFollow`) owns its **committed** object and disposes it when the component unmounts or a replacement commits. Speculative renders cannot replace the committed owner. StrictMode effect reconnection re-creates a disposed object.
+
+**Pure construction:** factories run during render and must be pure, discard-safe constructors. Return an inert Ani timeline/group/follower/clock (or an equivalently inert object); do not start playback, subscribe, attach listeners, allocate external resources, or mutate the DOM in the factory. Start that work in a ref callback, effect, or event handler after commit. React may discard an uncommitted construction without calling `dispose()`, including Suspense, abandoned updates, StrictMode render replay, and SSR. Such constructions must therefore require no external cleanup. No compatibility mode permits resource acquisition during render.
 
 **SSR:** `initialValue` becomes an initial inline `style` that is rendered on the server. Nothing subscribes to a clock or touches the DOM while rendering on the server.
 
 | Hook | Purpose |
 | :--- | :--- |
-| `useTimeline(factory, deps?)` | Create and dispose any object with `dispose()`. |
+| `useTimeline(factory, deps?)` | Construct a discard-safe inert object; own and dispose its committed instance. |
 | `useAni(timeline, initialValue)` | Re-render with the timeline value. |
 | `useAniRef(timeline, options?)` | Animate one element, no renders. |
 | `useAniGroup(group, options?)` | Animate many elements, one ref per index. |
@@ -26,7 +28,7 @@ function useTimeline<T extends { dispose(): void }>(
 ): T
 ```
 
-Creates the object on the first render, returns the same instance on every render, disposes it on unmount and when `deps` change (then creates a new one). Under StrictMode a disposed instance is re-created and the component renders again with it.
+Constructs an inert candidate on the first render. For unchanged committed dependencies, returns the same committed instance with its progress intact, even if an intervening speculative dependency change suspends and is abandoned. A changed dependency creates a render candidate; only a successful commit retires the preceding object. Disposes committed objects on unmount or replacement. Under StrictMode effect replay, a disposed instance is re-created and the component renders again with it. The pure-construction rule above applies to all candidates; `dispose()` is not a render-abort callback.
 
 ```tsx
 const timeline = useTimeline(() =>

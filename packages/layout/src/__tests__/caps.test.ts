@@ -134,9 +134,7 @@ describe('§4.1/§9.1 maxParticipants', () => {
         group.add(a)
         group.capture()
         group.add(b)
-        const captureAdded = (
-            group as unknown as Record<symbol, (element: HTMLElement) => void>
-        )[Symbol.for('ani-layout.capture-added')]!
+        const captureAdded = group.captureAdded
         const rects = group.stats.rects
         model.reset()
         captureAdded(b)
@@ -363,9 +361,7 @@ describe('H17-04 capture-added order', () => {
         const c = element(200)
         group.add(b)
         group.add(c)
-        const captureAdded = (
-            group as unknown as Record<symbol, (element: HTMLElement) => void>
-        )[Symbol.for('ani-layout.capture-added')]!
+        const captureAdded = group.captureAdded
         model.reset()
         captureAdded(c)
         expect(model.reads.rects).toBe(1)

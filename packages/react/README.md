@@ -38,17 +38,29 @@ export function Box() {
 
 | Hook | Purpose |
 | :--- | :--- |
-| `useTimeline(factory, deps?)` | Create and dispose any object with `dispose()`. |
+| `useTimeline(factory, deps?)` | Construct an inert object; own and dispose its committed instance. |
 | `useAni(timeline, initialValue)` | Re-render with the timeline value. |
 | `useAniRef(timeline, options?)` | Animate one element, no renders. |
 | `useAniGroup(group, options?)` | Animate many elements, one ref per index. |
 | `useAniStates(config)` | Own a state machine and animate an element. |
 | `useFollow(initial, options?)` | Own a spring follower and animate an element. |
 
+### Render and commit ownership
+
+`useTimeline` factories must be pure, discard-safe constructors. Create inert Ani
+objects here; start playback, subscriptions and external-resource acquisition in a
+ref callback, effect or event instead. React may discard a candidate render without
+an effect or disposal callback. An abandoned dependency render never replaces the
+still-committed timeline or loses its progress. Only committed replacement/unmount
+retires an owned object; StrictMode effect reconnection re-creates a disposed one.
+See `src/API.md` for the single ownership contract.
+
 ## Layout animation
 
-`@freestylejs/ani-react/layout` animates layout changes on every commit. It needs the optional peer
-`@freestylejs/ani-layout`:
+`@freestylejs/ani-react/layout` animates layout changes on commits that render a participant,
+group or presence owner. Adapter 2.0.0 needs the optional peer `@freestylejs/ani-layout` `^0.2.0`
+and uses its typed `captureAdded` lifecycle directly. Upgrade the pair together; the old 0.2.x
+symbol protocol has no fallback. The base React entry does not require layout:
 
 ```sh
 npm install @freestylejs/ani-layout

@@ -1,11 +1,19 @@
 import * as a from '@freestylejs/ani-core'
+import { createManualClock } from '@freestylejs/ani-core/testing'
 import {
     useAniGroup,
     useAniStates,
     useFollow,
     useTimeline,
 } from '@freestylejs/ani-react'
-import { createElement, type ReactElement } from 'react'
+import {
+    createElement,
+    type ReactElement,
+    StrictMode,
+    Suspense,
+    startTransition,
+    useLayoutEffect,
+} from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, hydrateRoot } from 'react-dom/client'
 import { createContainer, expectEqual, frames, waitFor } from './assert.ts'
@@ -21,6 +29,131 @@ import {
 } from './fixtures.ts'
 import { Box, type BoxProbe } from './react_box.ts'
 import * as shared from './shared.ts'
+
+/** A discarded render must not publish an owner into the committed tree. */
+export async function OwnerAbortedRender(): Promise<string> {
+    const container = createContainer()
+    const root = createRoot(container)
+    const mc = createManualClock()
+    const node = a.ani({
+        to: { x: 100 },
+        duration: 1,
+        timing: a.timing.linear(),
+    })
+    type Timeline = ReturnType<typeof a.rafTimeline<{ x: number }>>
+    let committed: Timeline | null = null
+    let suspended = 0
+    const never = new Promise<void>(() => undefined)
+    const created: Array<{
+        dep: number
+        value: Timeline
+        commits: number
+        disposals: number
+    }> = []
+    function Owner({ dep, stall }: { dep: number; stall: boolean }) {
+        const timeline = useTimeline(() => {
+            const value = a.rafTimeline(node, { clock: mc.clock })
+            const entry = { dep, value, commits: 0, disposals: 0 }
+            const dispose = value.dispose.bind(value)
+            value.dispose = () => {
+                entry.disposals++
+                dispose()
+            }
+            created.push(entry)
+            return value
+        }, [dep])
+        useLayoutEffect(() => {
+            committed = timeline
+            created.find((entry) => entry.value === timeline)!.commits++
+        }, [timeline])
+        if (stall) {
+            suspended++
+            throw never
+        }
+        return createElement('div', null, String(dep))
+    }
+    const render = (dep: number, stall: boolean, strict = false) => {
+        const tree = createElement(
+            Suspense,
+            { fallback: 'waiting' },
+            createElement(Owner, { dep, stall })
+        )
+        root.render(strict ? createElement(StrictMode, null, tree) : tree)
+    }
+    const current = (): Timeline => {
+        if (!committed) throw new Error('No committed owner')
+        return committed
+    }
+    try {
+        flushSync(() => render(0, false))
+        const original = current()
+        void original.play({ from: { x: 0 } })
+        mc.frames(11, 16)
+        const before = original.value!.x
+        startTransition(() => render(1, true))
+        await waitFor(() => suspended > 0, 2000, 'speculative factory ran')
+        flushSync(() => render(0, false))
+        if (current() !== original)
+            throw new Error(
+                'Abandoned render replaced the committed active owner'
+            )
+        expectEqual(
+            current().status,
+            'PLAYING',
+            'aborted update kept execution'
+        )
+        expectEqual(current().value!.x, before)
+        mc.frames(5, 16)
+        if (!(current().value!.x > before))
+            throw new Error('Committed timeline did not continue')
+        expectEqual(
+            created.find((entry) => entry.value === original)!.disposals,
+            0
+        )
+        flushSync(() => render(2, false))
+        if (current() === original)
+            throw new Error('Committed dependency change did not replace owner')
+        expectEqual(
+            created.find((entry) => entry.value === original)!.disposals,
+            1
+        )
+        // Exercise StrictMode re-activation and ordinary committed replacement.
+        flushSync(() => render(3, false, true))
+        await waitFor(
+            () => {
+                const entry = created.find(
+                    (candidate) => candidate.value === current()
+                )
+                return entry?.dep === 3 && entry.disposals === 0
+            },
+            2000,
+            'StrictMode owner reconnected'
+        )
+        void current().play({ from: { x: 0 } })
+        mc.frames(4, 16)
+        expectEqual(
+            current().status,
+            'PLAYING',
+            'StrictMode live instance executes'
+        )
+        flushSync(() => root.unmount())
+        expectEqual(mc.clock.size, 0)
+        for (const entry of created) {
+            if (entry.commits > 0 && entry.disposals !== 1)
+                throw new Error(
+                    `Committed owner disposed ${entry.disposals} times`
+                )
+            // Discarded pure constructors never acquire a clock subscription.
+            if (entry.commits === 0 && entry.value.status !== 'IDLE')
+                throw new Error('Speculative owner acquired execution')
+        }
+        return 'Aborted dependency render preserves active owner/progress; committed replacement and StrictMode dispose once; discarded constructors stay inert'
+    } finally {
+        flushSync(() => root.unmount())
+        container.remove()
+        mc.clock.dispose()
+    }
+}
 
 function mountComponent(element: ReactElement): {
     container: HTMLElement

@@ -35,6 +35,7 @@ interface Fake {
     readonly options: LayoutGroupOptions
     readonly members: Map<HTMLElement, LayoutOptions>
     readonly calls: string[]
+    readonly mounted: HTMLElement[]
     disposed: boolean
 }
 
@@ -54,6 +55,7 @@ vi.mock('@freestylejs/ani-layout', async (original) => {
                 options,
                 members: new Map(),
                 calls: [],
+                mounted: [],
                 disposed: false,
             }
             recorder.fakes.push(fake)
@@ -73,6 +75,9 @@ vi.mock('@freestylejs/ani-layout', async (original) => {
                 capture() {
                     fake.calls.push('capture')
                     recorder.onCapture?.()
+                },
+                captureAdded(element) {
+                    fake.mounted.push(element)
                 },
                 flush() {
                     fake.calls.push('flush')
@@ -175,6 +180,21 @@ const order = (container: HTMLElement): string =>
     [...container.querySelectorAll('li')].map((li) => li.dataset.id).join('')
 
 describe('react layout adapter', () => {
+    it('uses the typed post-mount lifecycle for attached participants', async () => {
+        const view = await mount(<List ids={['a']} />)
+        try {
+            const [fake] = live()
+            expect(fake!.mounted.map((el) => el.dataset.id)).toContain('a')
+            fake!.mounted.length = 0
+            await view.rerender(<List ids={['a', 'b']} />)
+            await settle()
+            expect(fake!.mounted.map((el) => el.dataset.id)).toContain('b')
+            expect(fake!.mounted.every((el) => el.isConnected)).toBe(true)
+        } finally {
+            await view.unmount()
+        }
+    })
+
     it('captures in render, before React mutates, and flushes once per commit', async () => {
         const view = await mount(<List ids={['a', 'b', 'c']} />)
         try {

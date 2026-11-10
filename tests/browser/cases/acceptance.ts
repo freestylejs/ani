@@ -1,11 +1,14 @@
 // Acceptance rows (ARCHITECTURE.md §11, plan T6.1): the showcase fixtures on a
 // manual clock, every frame checked against the independent oracle or the
 // row's own frame-level assertion, in Chromium, Firefox and WebKit.
+import { timing } from '@freestylejs/ani-core'
 import { createManualClock } from '@freestylejs/ani-core/testing'
 import { createElement as h } from 'react'
 import {
     expectedBox,
     type OBox,
+    type OTrackSpec,
+    settleOracle,
 } from '../../../packages/layout/src/__tests__/oracle'
 import {
     AnchorFixture,
@@ -46,7 +49,54 @@ export const pageOptions = {}
 
 export const knownFailures: Record<string, string> = {}
 
-const motion = { duration: DURATION, timing: SPRING }
+const motion = { duration: DURATION, bounce: 0.15 } as const
+const ORACLE_LINEAR = timing.linear()
+
+function physicalSpec(
+    before: OBox,
+    after: OBox,
+    {
+        duration,
+        bounce,
+        delay = 0,
+        fx = 0.5,
+        fy = 0.5,
+        mode = true,
+        velocity = null,
+    }: {
+        readonly duration: number
+        readonly bounce: number
+    } & Partial<Pick<OTrackSpec, 'delay' | 'fx' | 'fy' | 'mode' | 'velocity'>>
+): OTrackSpec {
+    const track = spec(before, after, {
+        duration,
+        timing: ORACLE_LINEAR,
+        delay,
+        fx,
+        fy,
+        mode,
+        velocity,
+    })
+    const channels = (box: OBox) => [
+        box.x + fx * box.w,
+        box.y + fy * box.h,
+        box.w,
+        box.h,
+    ]
+    const B = channels(before)
+    const A = channels(after)
+    const V = velocity ? channels(velocity) : null
+    let end = 0
+    for (let i = 0; i < 4; i++) {
+        const pinned = i < 2 ? mode === 'size' : mode === 'position'
+        if (pinned) continue
+        end = Math.max(
+            end,
+            settleOracle(duration, bounce, B[i]! - A[i]!, V?.[i] ?? 0)
+        )
+    }
+    return { ...track, spring: { duration, bounce, end } }
+}
 
 function centre(box: OBox): [number, number] {
     return [box.x + box.w / 2, box.y + box.h / 2]
@@ -142,7 +192,7 @@ export async function E1Anchor(): Promise<string> {
         const stage = pageBox(q(view.host, '[data-fixture="anchor"]'))
         const before = pageBox(parent)
         await view.render(h(AnchorFixture, { expanded: true, clock: mc.clock }))
-        const track = spec(
+        const track = physicalSpec(
             before,
             offset(stage, { x: 0, y: 0, w: E1.large, h: E1.large }),
             motion
@@ -654,7 +704,7 @@ export async function E3Folder(): Promise<string> {
         if (firstFrameProblems.length > 0) {
             throw new Error(firstFrameProblems.join('; '))
         }
-        const openingSurface = spec(
+        const openingSurface = physicalSpec(
             closedSurfaceBox,
             surfaceLayoutBox(openSurface),
             motion
@@ -672,7 +722,7 @@ export async function E3Folder(): Promise<string> {
         })
         // then on their tracks from the folder to the panel every frame
         const tracks = shared.map((_, i) =>
-            spec(at(i, false), at(i, true), motion)
+            physicalSpec(at(i, false), at(i, true), motion)
         )
         let worst = 0
         await enter('open', (t) => {
@@ -708,7 +758,7 @@ export async function E3Folder(): Promise<string> {
         jumps = Math.max(jumps, expectUnmoved(before, 'close'))
         const closedAfter = q(view.host, '[data-folder="closed"]')
         expectAt(closedAfter, openSurfaceBox, 'surface close first frame')
-        const closingSurface = spec(
+        const closingSurface = physicalSpec(
             openSurfaceBox,
             surfaceLayoutBox(closedAfter),
             motion
@@ -735,7 +785,7 @@ export async function E3Folder(): Promise<string> {
         await view.render(app(true))
         const openAgain = q(view.host, '[data-folder="open"]')
         expectAt(openAgain, closedAgainBox, 'surface reopen first frame')
-        const reopeningSurface = spec(
+        const reopeningSurface = physicalSpec(
             closedAgainBox,
             surfaceLayoutBox(openAgain),
             motion
@@ -760,7 +810,7 @@ export async function E3Folder(): Promise<string> {
         await view.render(app(false))
         jumps = Math.max(jumps, expectUnmoved(before, 'close for reopen'))
         const closedMid = q(view.host, '[data-folder="closed"]')
-        const midClosingSurface = spec(
+        const midClosingSurface = physicalSpec(
             openBeforeMidBox,
             surfaceLayoutBox(closedMid),
             motion
@@ -1063,7 +1113,7 @@ export async function E5Toasts(): Promise<string> {
                 0.5,
                 `${id} layout final at t = 0`
             )
-            return spec(before.get(id)!.box, slot(i), {
+            return physicalSpec(before.get(id)!.box, slot(i), {
                 ...motion,
                 mode: 'position',
             })
@@ -1153,7 +1203,7 @@ export async function Gallery(): Promise<string> {
         ] as const) {
             await view.render(app(to))
             const tracks = Array.from({ length: GALLERY.count }, (_, i) =>
-                spec(box(i, from), box(i, to), motion)
+                physicalSpec(box(i, from), box(i, to), motion)
             )
             await framesUntilDone(
                 mc,
@@ -1210,7 +1260,7 @@ export async function Gallery(): Promise<string> {
         const detail = q(view.host, `[data-gallery-detail="${k}"]`)
         expectAt(detail, from, 'detail first frame')
         checkGalleryRadius(12, 'grid detail first frame')
-        const opening = spec(from, layoutBox(detail), motion)
+        const opening = physicalSpec(from, layoutBox(detail), motion)
         let detailWorst = 0
         await framesUntilDone(
             mc,
@@ -1241,7 +1291,7 @@ export async function Gallery(): Promise<string> {
         const back = tile(k)
         expectAt(back, open, 'tile return first frame')
         checkGalleryRadius(12, 'grid detail return first frame')
-        const returning = spec(open, layoutBox(back), motion)
+        const returning = physicalSpec(open, layoutBox(back), motion)
         await framesUntilDone(
             mc,
             120,
@@ -1360,6 +1410,24 @@ export async function Honest(): Promise<string> {
                     [`card-${i}-image`, `card-${i}-title`],
                     `E4 card ${i}`
                 )
+                const image = q(surface, `[data-layout-id="card-${i}-image"]`)
+                const title = q(surface, `[data-layout-id="card-${i}-title"]`)
+                expectEqual(
+                    image.dataset.imageCrop,
+                    'cover',
+                    `E4 card ${i} explicit crop recipe`
+                )
+                expectEqual(
+                    getComputedStyle(image).overflow,
+                    'hidden',
+                    `E4 card ${i} crop boundary`
+                )
+                q(image, '[data-card-art]')
+                expectEqual(
+                    title.dataset.lkMode,
+                    'position',
+                    `E4 card ${i} title is position-only`
+                )
             }
             await framesUntilDone(
                 mc,
@@ -1368,7 +1436,7 @@ export async function Honest(): Promise<string> {
                 () => settled(view.host) && mc.clock.size === 0
             )
         }
-        return 'E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: image and title nested in every card and in the detail'
+        return 'E2: wrapper/icon/label in button and menu; E3: four shared tiles in folder and panel; E4: bounded crop surface + nested image + position-only title in every card/detail'
     } finally {
         view.dispose()
     }

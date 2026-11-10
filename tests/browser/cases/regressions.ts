@@ -114,9 +114,17 @@ function Above({
     )
 }
 
+interface SampledElement {
+    readonly role: 'card' | 'detail' | 'other'
+    readonly opacity: number
+    readonly ownedOpacity: string
+    readonly inert: string | null
+}
+
 interface Sampled {
     readonly boxes: OBox[][]
     readonly opacities: number[][]
+    readonly elements: SampledElement[][]
 }
 
 /**
@@ -141,6 +149,7 @@ async function sample(
     const show = () => view.render(h(Above, { tick: ++tick }, tree(mc)))
     const boxes: OBox[][] = []
     const opacities: number[][] = []
+    const sampledElements: SampledElement[][] = []
     try {
         await script(show)
         await frames(
@@ -148,10 +157,22 @@ async function sample(
             120,
             (elapsed) => {
                 const elements = [...view.host.querySelectorAll(selector)]
+                const states = elements.map((element) => {
+                    const html = element as HTMLElement
+                    return {
+                        role: html.hasAttribute('data-card-detail')
+                            ? ('detail' as const)
+                            : html.hasAttribute('data-card')
+                              ? ('card' as const)
+                              : ('other' as const),
+                        opacity: Number(getComputedStyle(html).opacity),
+                        ownedOpacity: html.style.opacity,
+                        inert: html.getAttribute('inert'),
+                    }
+                })
                 boxes.push(elements.map(pageBox))
-                opacities.push(
-                    elements.map((e) => Number(getComputedStyle(e).opacity))
-                )
+                opacities.push(states.map(({ opacity }) => opacity))
+                sampledElements.push(states)
                 if (
                     rerender &&
                     Math.round(elapsed / (FRAME_MS / 1000)) % 3 === 2
@@ -161,7 +182,7 @@ async function sample(
             () => settled(view.host) && mc.clock.size === 0
         )
         await afterwards(view.host, show, mc)
-        return { boxes, opacities }
+        return { boxes, opacities, elements: sampledElements }
     } finally {
         view.dispose()
     }
@@ -191,6 +212,43 @@ function difference(
 
 const flat = (boxes: readonly OBox[][]) =>
     boxes.map((frame) => frame.flatMap((b) => [b.x, b.y, b.w, b.h]))
+
+function finishedFollower(
+    frame: readonly SampledElement[],
+    state: SampledElement
+): boolean {
+    const leads = frame.filter(({ role }) => role === 'card')
+    if (leads.length !== 1) return false
+    const lead = leads[0]!
+    return (
+        state.role === 'detail' &&
+        state.opacity === 0 &&
+        state.ownedOpacity === '0' &&
+        state.inert === '' &&
+        lead.opacity === 1 &&
+        lead.ownedOpacity === '' &&
+        lead.inert === null
+    )
+}
+
+/**
+ * AnimatePresence removes a completed follower through a React state update.
+ * An unrelated flushSync re-render may commit that update before the control
+ * does. Normalize only after the follower is invisible/inert and its paired
+ * lead has returned layout opacity ownership.
+ */
+function comparable(sampled: Sampled): Pick<Sampled, 'boxes' | 'opacities'> {
+    const keep = (f: number, i: number) =>
+        !finishedFollower(sampled.elements[f]!, sampled.elements[f]![i]!)
+    return {
+        boxes: sampled.boxes.map((frame, f) =>
+            frame.filter((_, i) => keep(f, i))
+        ),
+        opacities: sampled.opacities.map((frame, f) =>
+            frame.filter((_, i) => keep(f, i))
+        ),
+    }
+}
 
 /** Gallery grid → list; an ancestor of the LayoutGroup re-renders every third frame. */
 export async function Unrelated(): Promise<string> {
@@ -230,6 +288,16 @@ export async function Crossfade(): Promise<string> {
     ) => {
         // after the crossfade: a re-render with no box change
         await show()
+        expectEqual(
+            host.querySelector('[data-card-detail="1"]'),
+            null,
+            'detail unmounted after'
+        )
+        expectEqual(
+            host.querySelectorAll('[data-layout-id="card-1"]').length,
+            1,
+            'one shared card participant after'
+        )
         mc.frame(FRAME_MS)
         const card = q(host, '[data-card="1"]')
         expectEqual(card.style.opacity, '', 'no owned opacity after')
@@ -241,8 +309,42 @@ export async function Crossfade(): Promise<string> {
         )
     }
     const selector = '[data-layout-id="card-1"]'
-    const control = await sample(tree, script, selector, false, afterwards)
-    const test = await sample(tree, script, selector, true, afterwards)
+    const liveTail = comparable({
+        boxes: [
+            [
+                { x: 0, y: 0, w: 1, h: 1 },
+                { x: 0, y: 0, w: 1, h: 1 },
+            ],
+        ],
+        opacities: [[1, 0]],
+        elements: [
+            [
+                {
+                    role: 'card',
+                    opacity: 1,
+                    ownedOpacity: '1',
+                    inert: null,
+                },
+                {
+                    role: 'detail',
+                    opacity: 0,
+                    ownedOpacity: '0',
+                    inert: '',
+                },
+            ],
+        ],
+    })
+    expectEqual(
+        liveTail.opacities[0]?.length,
+        2,
+        'live tail remains in comparison until lead releases opacity'
+    )
+    const control = comparable(
+        await sample(tree, script, selector, false, afterwards)
+    )
+    const test = comparable(
+        await sample(tree, script, selector, true, afterwards)
+    )
     const worst = difference(flat(control.boxes), flat(test.boxes), 'boxes')
     const fade = difference(control.opacities, test.opacities, 'opacities')
     if (!(worst <= 0.02)) throw new Error(`boxes differ by ${worst} px`)

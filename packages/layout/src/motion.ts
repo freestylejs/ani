@@ -321,19 +321,26 @@ export function validateLayoutOptions(value: unknown): void {
     validateMotion(value.motion)
 }
 
-export function validateReducedMotion(policy: unknown): ReducedMotionPolicy {
+export function validateReducedMotion(
+    policy: unknown,
+    allowZero = false
+): ReducedMotionPolicy {
     if (policy === undefined || policy === 'jump') return 'jump'
     if (policy === 'ignore') return 'ignore'
     if (isPlainObject(policy)) {
         assertKeys(policy, ['maxDuration'], 'reducedMotion')
         const max = policy.maxDuration
-        if (typeof max === 'number' && Number.isFinite(max) && max > 0) {
+        if (
+            typeof max === 'number' &&
+            Number.isFinite(max) &&
+            (max > 0 || (allowZero && max === 0))
+        ) {
             return { maxDuration: max }
         }
     }
     throw invalidOptions(
         'type',
-        `reducedMotion must be 'jump', 'ignore' or { maxDuration: number > 0 }, received ${String(policy)}.`
+        `reducedMotion must be 'jump', 'ignore' or { maxDuration: number ${allowZero ? '>=' : '>'} 0 }, received ${String(policy)}.`
     )
 }
 

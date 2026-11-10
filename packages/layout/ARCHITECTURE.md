@@ -1,14 +1,13 @@
 # ANI Layout — Architecture
 
 **Status:** authority for `@freestylejs/ani-layout` and `@freestylejs/ani-react/layout`.
-**Version of the design:** v3 (measured presentation, the physical spring, the drive seam, the
-safety and operations contract). It was signed off by a three-reviewer design review and approved
-by the owner on 2026-10-27, with decisions D1–D6 (§2.2). The design record is
-`.trace/ani_layout_ios/architecture.md`. This file replaces the 0.2.0 text completely: page boxes,
-the inner-scroll `'stale'` snap, the analytic before-box for driven nodes and the field-by-field
-motion merge no longer exist anywhere.
+**Version of the design:** v4 (native-interaction product integration and explicit quality
+qualification), authorized for hard migration on 2026-11-04. The measured-layout model,
+physical spring and drive seam from v3 remain. This file is the current engine/adapter authority;
+`NATIVE_QUALITY.md` is its delegated product-profile and qualification contract. Historical
+`.trace` design/release records are evidence, not alternative runtime specifications.
 
-Execution plan and evidence: `.trace/ani_ios_production/`.
+Current execution plan and checkpoint judgments: `.trace/ani_native_grade_v4/`.
 
 ---
 
@@ -61,8 +60,9 @@ is blocked) is not promised for layout; it exists only as the optional WAAPI eng
 - Core gains exactly two additive surfaces (D2): the pure numeric `physics` module (§5.3) and the
   read-only `Clock.inFrame` flag (true while the clock runs a frame: read callbacks, update and
   commit). Core gains no DOM or layout types.
-- The vanilla API must not block later Vue, Svelte and Solid adapters: an adapter only needs
-  `add`, `set`, `capture`, `flush` and, for gestures, `take`.
+- The vanilla API must not block later Vue, Svelte and Solid adapters: an adapter uses
+  `add`, `set`, `capture`, `captureAdded`, `flush` and, for gestures, `take`.
+  `captureAdded` is a public typed lifecycle operation (§7.1), not a symbol-based SPI.
 - Out of scope: 3D, rotation and skew projection, arc paths, shadow correction, SVG and inline
   layout, cross-document scopes and handoffs, iframes as one scope, clip-aware crossfade (D4),
   springs and drives on the WAAPI engine, a "quiet window" upgrade of aged captures, a
@@ -77,10 +77,32 @@ is blocked) is not promised for layout; it exists only as the optional WAAPI eng
 | D2 | Core additions | Approved: `physics`, and the read-only `Clock.inFrame` that §4.1 needs |
 | D3 | Visual continuity (an unpresented scroll is part of the change) | Approved (§4.1) |
 | D4 | Clip-aware crossfade | Deferred |
-| D5 | Device gate | The bench harness of §11.5, in Chromium and WebKit under Playwright |
+| D5 | Qualification gate | §11.5 Chromium/WebKit verifies geometry and script cost; actual iOS presentation/input qualification is separate and mandatory for a device-certified claim (`NATIVE_QUALITY.md`) |
 | D6 | New public surface: `layoutKey`, `maxParticipants`, `layoutRuntime`, diagnostics, `'failed'`/`'disabled'` | Approved as specified in §7 |
 
-### 2.3 Support matrix
+### 2.3 v4 implementation contracts (2026-11-04)
+
+- Timing `duration: 0, delay: 0` is an intentional synchronous jump at flush: the target
+  and all independent-track cleanup are applied without waiting for a clock frame, including
+  paused clocks and `timeScale: 0`. Promise reactions still run as JavaScript microtasks.
+  Positive delay holds B strictly before its boundary, and jumps at that boundary. A node
+  under a still-moving ancestor retains only the compensation needed by that dependency.
+- Native-interaction showcase layout uses explicit physical springs and the existing
+  `LayoutDrive` seam. Core timing functions remain valid for authored choreography, but no
+  parallel authored-transform drag or compatibility showcase path remains.
+- `LayoutGroup.captureAdded(element)` is the typed adapter lifecycle port for a newly mounted
+  participant in an open capture. It records the post-mount baseline without refreshing other
+  participants' B. It is not a general substitute for capture/update. The hidden
+  `Symbol.for('ani-layout.capture-added')` protocol is removed, not supported as a bridge.
+- View Transition motion is timing-only (`type?: 'timing'`, duration and timing). Physical
+  springs and unsupported fields are rejected before transition effects or the update callback.
+  An active reduced-motion `{ maxDuration }` cap applies with or without explicit motion and
+  overrides the ordinary 100 ms minimum; a zero cap skips animation, updating exactly once.
+  These semantics do not promise physical-spring View Transitions.
+- Browser geometry, script cost, real-rAF proxies and actual screen presentation are distinct
+  evidence classes. A missing device result cannot become a PASS by passing a DOM oracle.
+
+### 2.4 Support matrix
 
 | Area | Exact | Defined degradation | Not supported (documented) |
 |---|---|---|---|
@@ -858,7 +880,7 @@ estimation, conversion to view-space CSS px, keyboard operation and announcement
 | — | `take` while the runtime mode is `'snap'` | returns a handle already `invalidated` (diagnostic `runtime-disabled`); the gesture layer moves nothing through layout |
 | `held` | `move(o)` with finite `o` | origin target = take point + `o`; applied at the next frame |
 | `held` | `move`/`release` with a non-finite component | throws `ANI_INVALID_OPTIONS`, no state change |
-| `held` | `release(v)` | `released`; the next frame starts the origin track from the presented origin toward the current A with incoming `v`, first update `dt = 0`, under the node's effective motion and the reduced-motion policy at that moment; descendants keep their residuals and ride `h` (below) |
+| `held` | `release(v)` | `released`; normally the next frame starts the origin track from the presented origin toward the current A with incoming `v`, first update `dt = 0`, under the effective motion and reduced-motion policy; an explicit zero-duration/zero-delay timing jump outside a clock frame applies immediately. Descendants keep their independent residuals and ride `h` (below); they are not finished merely because the origin reached A. |
 | `held` | `cancel()` | `cancelled`; as `release({ x: 0, y: 0 })` |
 | `held` | removal, `ownerDocument` change, `layoutKey` change, `dispose`, `finish`, kill switch, a failed support check of the held read, a `'failed'` abort | `invalidated`; the node follows that event's rule; reads stop |
 | terminal | `release`/`cancel` | no-op (idempotent) |
@@ -998,6 +1020,7 @@ interface LayoutGroup extends LayoutDrive {
   add(element: HTMLElement, options?: LayoutOptions): () => void
   set(element: HTMLElement, options: LayoutOptions): void
   capture(): void
+  captureAdded(element: HTMLElement): void          // post-mount baseline in an open capture
   flush(): Promise<LayoutReport>
   update(mutate: () => void): Promise<LayoutReport>   // capture → mutate → flush
   take(element: HTMLElement): LayoutDriveHandle        // §5.10
@@ -1013,6 +1036,12 @@ function mergeLayoutMotion(layers: readonly (LayoutMotion | undefined)[]): Layou
 function sameLayoutMotion(a: LayoutMotion | undefined, b: LayoutMotion | undefined): boolean  // by effective value
 ```
 
+- `captureAdded(element)` is the public typed post-mount lifecycle port. In the same task's
+  live, unaged, uncapped capture it measures a newly registered connected participant once,
+  without re-reading existing participants. It is a no-op for an existing/already-captured or
+  presence-managed participant, a disconnected/unregistered element, no live capture, or a
+  scope over its participant cap. It never creates, refreshes or un-ages a capture and is not
+  a substitute for `capture()` / `update()`. There is no symbol or compatibility fallback.
 - `flush()` and `update()` follow core's run contract: the promise never rejects and resolves once
   per run. A run whose track is replaced by a later flush resolves `'interrupted'` at that moment;
   its untouched tracks keep running under the engine. Status precedence is §9.3.
@@ -1149,7 +1178,7 @@ usePresenceControl(options?): { isPresent, safeToRemove }
 | Pure | `motion.ts` | The motion union, the kind-level merge, validation, defaults, timing evaluation, the settle cap, the reduced-motion clamp and grid search. |
 | Pure | `plan.ts` | Per flush: who animates, the keep test, handoff, crossfade pairs, every snap reason, status precedence. |
 | Pure | `solve.ts` | Per frame: tracks (timing and spring) → drawn boxes → poses, opacities, radii, the perceptual timeline, held origins. |
-| Shell | `dom.ts` | Every DOM read (rects, layout sizes, computed values, the held read), every owned-style and `inert` write and byte-exact restore, the flat-tree ancestry primitive, the dev-only ancestor classifier. |
+| Shell | `dom.ts` | Raw participant geometry/computed-style reads (rects, layout sizes, offsets, held support), owned-style and attribute writes and byte-exact restore, flat-tree ancestry primitives. Scope interprets these values and retains read accounting. |
 | Shell | `scope.ts` | Registry, epochs, captures and their aging, runs, the drive state machine, `layoutKey`, document affinity, active-scroller listeners, the transactional boundary; the public `LayoutGroup`. |
 | Shell | `runtime.ts` | `layoutRuntime`, the diagnostics stream and its isolation. |
 | Shell | `realize/raf.ts` | The one `Animatable`. |
@@ -1157,9 +1186,13 @@ usePresenceControl(options?): { isPresent, safeToRemove }
 | Shell | `presence_link.ts` | Package-internal presence registry (§6). |
 | Kept | `presence.ts`, `presence_state.ts`, `view_transition.ts`, `feature.ts`, `easing.ts` | Presence, View Transitions. |
 
-The pure modules and `physics` import nothing from the DOM or the clock. Only `dom.ts` reads layout
-and writes owned styles, and only `realize/*` realizes tracks. The React adapter calls only the
-public group API, `layoutRuntime`, `mergeLayoutMotion` and `sameLayoutMotion`.
+The pure modules and `physics` import nothing from the DOM or the clock. Participant layout/computed-style
+reads and owned-style/attribute mutations go through `dom.ts`; `scope.ts` retains transaction order,
+read accounting, registry/connectivity and listener lifecycle. The isolated browser capability probes
+remain in `feature.ts` (§4). Only `realize/*` realizes tracks. The React adapter calls the
+public typed group API (including the post-mount `captureAdded` operation of §7.1),
+`layoutRuntime`, `mergeLayoutMotion`, `sameLayoutMotion` and the public motion validators.
+It has no hidden symbol protocol or fallback implementation.
 
 ```tsx
 // List reorder: mark the items, nothing else

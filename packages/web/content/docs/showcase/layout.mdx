@@ -9,9 +9,11 @@ There are no capture or flush calls. Interrupt any of them mid-flight: every ele
 from where it is drawn, with the speed it had. Open **Code** under an example for the pattern
 it uses. The [Layout guide](/en/docs/guides/layout) explains the API.
 
-The browser tests drive these same components on a manual clock in Chromium, Firefox and
-WebKit and check every frame of every marked element against an independent model of the
-motion, including changes made mid-flight.
+Native-quality layout motions use explicit physical springs (`type: 'spring'`). Finite timing
+curves remain for separate presence choreography. The browser tests drive these same components
+on a manual clock and compare marked boxes with an independent motion model, including changes
+made mid-flight. Results are reported per engine; an unavailable run is not a pass. DOM geometry
+and browser callback cadence do not certify physical iOS display or touch latency.
 
 **Essentials**
 
@@ -24,8 +26,9 @@ motion, including changes made mid-flight.
 **Lists**
 
 - **Shuffle.** Reorder the array; every tile moves from where it is drawn.
-- **Drag to reorder.** Built on the public API: the row follows the pointer with its own
-  transform, and `useLayoutGroup().update()` draws it into its slot on release.
+- **Drag to reorder.** `useLayoutDrive()` takes the row, moves its held origin 1:1, and releases
+  it with the gesture's velocity into its latest slot. The gesture layer owns pointer identity,
+  capture, cancellation and keyboard reorder; layout is the only position writer.
 - **To-do list.** Add, tick and remove under `AnimatePresence mode="popLayout"`.
 - **Stacked notifications.** A collapsed stack that fans out into a list.
 - **E5 Notifications.** `useLayout` and `usePresence` share each toast; a removed toast exits
