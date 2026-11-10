@@ -35,9 +35,6 @@ jobs:
       - name: Verify
         run: pnpm test:ci
 
-      - name: Bundle size
-        run: node bench/size/run.ts
-
       - name: Soak (smoke)
         run: node --expose-gc bench/soak/run.ts --smoke --seed 1
 

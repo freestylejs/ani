@@ -15,7 +15,7 @@ time is injected).
 
 - Node 24 (TypeScript is run directly, with erasable syntax only).
 - The built core: the runner imports `packages/core/dist/index.js` and
-  `packages/core/dist/testing.js`, like `bench/size`.
+  `packages/core/dist/testing.js`.
 - `--expose-gc` (the memory check needs `gc()`).
 
 ## Run
